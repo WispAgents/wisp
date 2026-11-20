@@ -343,8 +343,9 @@ fn missing_folder_projects(plan: &Plan, resources: &[Resource]) -> Vec<(String, 
 }
 
 /// `wisp import [v1 home] [--dry-run] [--yes]`.
-pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
-    let v1 = o.words.first().map_or_else(|| home.to_owned(), |p| Path::new(p).to_owned());
+pub async fn import(c: &Client, o: &Opts, home: &Path, cwd: &Path) -> Result<i32> {
+    // the folder as this shell names it: the server reads paths from its own folder (audit H HS1)
+    let v1 = o.words.first().map_or_else(|| home.to_owned(), |p| cwd.join(p));
     let file = v1.join("config.json");
     let text = std::fs::read_to_string(&file).map_err(|e| CliError::said(crate::words::no_v1_home(&v1, &file, &e)))?;
     let cfg: Value = serde_json::from_str(&text).map_err(|e| CliError::said(format!("{}: {e}", file.display())))?;
@@ -411,15 +412,56 @@ pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
     say(&format!("  {} applied {} change{}", paint(&st, GREEN, "✓"), done["applied"], if done["applied"] == 1 { "" } else { "s" }));
     if n > 0 {
         let r = c.cmd("runtime.import", json!({ "dir": sessions.display().to_string() })).await?;
-        say(&format!(
-            "  {} {} task{} imported, {} unchanged",
-            paint(&st, GREEN, "✓"),
-            r["imported"],
-            if r["imported"] == 1 { "" } else { "s" },
-            r["skipped"]
-        ));
+        let (said, failed) = import_words(&r, n);
+        say(&said.iter().map(|l| l.replacen("✓", &paint(&st, GREEN, "✓"), 1)).collect::<Vec<_>>().join("\n"));
+        if failed {
+            return Ok(1);
+        }
     }
     Ok(0)
+}
+
+/// What `runtime.import`'s report says, and whether the import failed: a file it couldn't read is printed, and a
+/// plan that counted tasks the import didn't reach (none imported, none unchanged) is an error, never "0 imported"
+/// (audit H HS1).
+fn import_words(r: &Value, counted: usize) -> (Vec<String>, bool) {
+    let n = |k: &str| r[k].as_u64().unwrap_or(0);
+    let failed: Vec<&str> = r["failed"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    let mut out = Vec::new();
+    if n("imported") + n("skipped") > 0 {
+        let s = if n("imported") == 1 { "" } else { "s" };
+        out.push(format!("  ✓ {} task{s} imported, {} unchanged", n("imported"), n("skipped")));
+    }
+    out.extend(failed.iter().map(|f| format!("  ✗ not imported: {f}")));
+    let none = counted > 0 && n("imported") + n("skipped") == 0;
+    if none && failed.is_empty() {
+        let s = if counted == 1 { "" } else { "s" };
+        out.push(format!("  ✗ the plan counted {counted} task{s}, but none was imported"));
+    }
+    (out, none)
+}
+
+#[cfg(test)]
+mod import_tests {
+    use serde_json::json;
+
+    use super::import_words;
+
+    /// Audit H HS1: "✓ 0 tasks imported, 0 unchanged" after a plan that counted one, and `failed` never printed.
+    #[test]
+    fn an_import_that_reached_none_of_the_counted_tasks_fails_and_says_why_audit_h_hs1() {
+        let (said, failed) = import_words(&json!({ "imported": 0, "skipped": 0, "failed": [] }), 1);
+        assert_eq!((said, failed), (vec!["  ✗ the plan counted 1 task, but none was imported".to_owned()], true));
+        let (said, failed) = import_words(&json!({ "imported": 0, "skipped": 0, "failed": ["a.json: not JSON"] }), 1);
+        assert_eq!((said, failed), (vec!["  ✗ not imported: a.json: not JSON".to_owned()], true));
+        let (said, failed) = import_words(&json!({ "imported": 1, "skipped": 0, "failed": ["b.json: not JSON"] }), 2);
+        assert_eq!(said, ["  ✓ 1 task imported, 0 unchanged", "  ✗ not imported: b.json: not JSON"]);
+        assert!(!failed, "some came in");
+        assert_eq!(
+            import_words(&json!({ "imported": 0, "skipped": 2, "failed": [] }), 2),
+            (vec!["  ✓ 0 tasks imported, 2 unchanged".to_owned()], false)
+        );
+    }
 }
 
 #[cfg(test)]

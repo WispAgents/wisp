@@ -22,6 +22,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- v2 terminal context masks npm's, pnpm's and yarn's `config set <key> <value>` tokens (`//registry.npmjs.org/:_authToken`, `npmAuthToken`, behind `sudo` or `corepack` too), npm tokens by their shape, a here-string into `--password-stdin`, `sudo docker login -p`, and openssl's `-k`, `-pass pass:`, `-passin pass:` and `-passout pass:` passwords; it no longer eats a here-string's `<<<`, a header's name (`X-Api-Key: <secret>`) or a closing quote.
+- v2 a tap on a Telegram button answers again: every button on a task said "That button is out of date." because the ask id didn't fit in the button and wasn't read back from the task.
+- v2 a change to your setup an agent asks for (a crew member, a connector) reaches ntfy without Allow and Deny buttons, which did nothing there, and says to answer it in wisp; on Telegram, Slack and Discord the person who linked the chat still answers it with a tap.
+- v2 `wisp import <folder>` reads a relative folder from where you run it: `wisp import v1home` imported the settings and said "0 tasks imported". An import that reaches none of the tasks the plan counted, or a file it can't read, now says so and exits 1.
+- v2 a task that names no harness (from the CLI, MCP, crew or a channel) runs on New task's saved model and thinking level too, not only its harness.
+- v2 `delegate` to a harness that isn't here says so to the agent ("no harness frob: name one of claude, codex, …") instead of an empty list of reports.
+- v2 with Auto off, agents' tools no longer offer `auto` as a harness, a crew member made without one gets your default harness, and `agent: auto` is refused for a new crew member, in a formula too; a refusal no longer repeats its path ("agents.a1: agents.a1: …").
+- v2 your own harness (`wisp mcp`) can switch, remove and list triggers and run every automations, settings, channels and worktrees command; a task's agent still gets only what its capability set allows.
+- v2 `wisp help trigger` lists its verbs, `wisp triggers` takes `off` and `on` as `wisp trigger` does, `--modle` suggests `--model` as well as `--mode`, `--mode opus` is refused in words, and an unknown one-letter flag after an unquoted prompt (`-x`) is refused like a long one instead of launching (put the prompt in quotes, or after `--`, to keep it).
+- v2 a trigger whose `project` names no project is refused by `wisp validate` and the plan, not only when applied.
+- v2 Bring in offers a worktree once, under the project whose repository owns it, when a project is a linked worktree of another.
+- v2 `wisp update apply` with update checks off says checks are off and how to turn them on, instead of "There's no automatic update for this copy of wisp".
+- v2 the first page after a restart no longer gets a 401 from a cloud computer's event stream: wisp read the machine's token after it opened the stream.
+- v2 a bad Telegram (or Slack, Discord, ntfy) token's message no longer starts with an internal field name (`secrets.token:`); Settings → Cloud's retry line says why in words instead of the request's error, and a declined or expired sign-in's line goes after a minute.
 - v2 an agent can make a subagent on the fly: `delegate` with a harness (`agent`, and a `name`, model, effort or machine) and no `subagent` joins the task's team and runs, with or without a team (it was refused with "missing field `subagent`"); the same name again continues it.
 - v2 `wisp "…" --mdoe plan` (a flag no launch takes) is refused before anything starts, naming the close flag ("did you mean --mode?"); it used to launch in Full auto with the typo in its prompt. Words after `--`, and inside the quoted prompt, stay the prompt's.
 - v2 a goal judge that answers without MET or NOT MET hasn't judged: the goal asks you once instead of sending the work back with "didn't say whether it's met" every round.

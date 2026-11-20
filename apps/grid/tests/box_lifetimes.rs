@@ -18,7 +18,8 @@ use wisp_grid::boxhost::{BoxHost as _, BoxState};
 const FORM: &str = "application/x-www-form-urlencoded";
 
 /// The stand-in box: `/api/health`, `/api/status` (its next wake from `WISP_FAKE_NEXT_WAKE`), anything else "fake box".
-/// Writes its pid to `$HOME/fakebox.pid` (hostd's HOME for a box is its own folder).
+/// Writes its pid to `$HOME/fakebox.pid` (hostd's HOME for a box is its own folder), and, as `wisp serve` does, the port
+/// it bound to `$WISP_HOME/server.json`.
 #[test]
 fn fake_box_serve() {
     if std::env::var("WISP_BOX").as_deref() != Ok("1") {
@@ -28,7 +29,12 @@ fn fake_box_serve() {
     let home = std::path::PathBuf::from(std::env::var("HOME").unwrap());
     std::fs::write(home.join("fakebox.pid"), std::process::id().to_string()).unwrap();
     let next = std::env::var("WISP_FAKE_NEXT_WAKE").ok().and_then(|v| v.parse::<i64>().ok());
-    let l = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+    // as `wisp serve` does: `WISP_PORT=0` binds a port of its own, and `server.json` in its `WISP_HOME` says which
+    let l = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap_or_else(|e| panic!("the box couldn't bind {port}: {e}"));
+    let bound = l.local_addr().unwrap().port();
+    let wisp_home = std::path::PathBuf::from(std::env::var("WISP_HOME").unwrap());
+    let file = json!({ "url": format!("http://127.0.0.1:{bound}"), "port": bound, "pid": std::process::id() });
+    std::fs::write(wisp_home.join("server.json"), file.to_string()).unwrap();
     for s in l.incoming().flatten() {
         let mut r = BufReader::new(s);
         let mut line = String::new();
@@ -310,4 +316,59 @@ async fn wisp_grid_dev_stops_its_boxes_on_sigterm() {
         .unwrap();
     assert_eq!(st, vec![("stopped".to_owned(), Some("grid stopped".to_owned()))]);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The macOS flake (CI 44759143055: "wisp in the box stopped as it started (exit status: 101)"): hostd read a free port,
+/// closed it and handed it to the box, which binds it only once it has started; a port another bind took in that window
+/// fails the box's bind, and it exits 101. Shown here with a port held on purpose. So no port is handed any more: a
+/// process box binds one of its own (`WISP_PORT=0`) and says which in its `server.json`, as `wisp serve` does.
+#[test]
+fn a_box_handed_a_port_someone_took_stops_as_it_started_so_none_is_handed() {
+    let dir = std::env::temp_dir().join(format!("wisp-grid-life-taken-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let taken = held.local_addr().unwrap().port();
+    let start = |port: u16| {
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("serve")
+            .env("WISP_BOX", "1")
+            .env("WISP_PORT", port.to_string())
+            .env("HOME", &dir)
+            .env("WISP_HOME", &dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap()
+    };
+    // handed a port someone took: it stops as it starts, as on CI
+    let status = start(taken).wait().unwrap();
+    assert_eq!(status.code(), Some(101), "{status}");
+    // its own port: it starts, and says which
+    let mut own = start(0);
+    let mut said = None;
+    for _ in 0..200 {
+        if let Some(p) = std::fs::read(dir.join("server.json")).ok().and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok()) {
+            said = p["port"].as_u64();
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = own.kill();
+    let _ = own.wait();
+    let said = said.expect("it wrote server.json");
+    assert!(said != 0 && said != u64::from(taken), "a port of its own: {said}");
+    drop(held);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The grid starts a box on the port the box says it bound (its `server.json`, for its pid), never one picked for it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_grid_reaches_a_box_on_the_port_the_box_bound() {
+    let g = rig("own-port", None).await;
+    assert_eq!(g.open(&g.session()).await, "fake box");
+    let home = g.dir.join("users").join(g.uid()).join("home");
+    let said: serde_json::Value = serde_json::from_slice(&std::fs::read(home.join("server.json")).unwrap()).unwrap();
+    assert_eq!(g.grid.boxes.port(&g.uid()).map(u64::from), said["port"].as_u64());
+    g.done().await;
 }

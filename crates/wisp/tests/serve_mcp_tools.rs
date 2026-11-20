@@ -1574,3 +1574,43 @@ async fn the_users_own_calls_on_an_agents_task_keep_the_users_mode() {
     assert_eq!(fork["ok"], true, "the user's fork: {fork}");
     a.serve.stop();
 }
+
+/// Audit H HS6: the trigger switch (and every automations command), the channels', worktrees' and settings' commands had
+/// no MCP tool: the MCP plugin's permissions didn't name them. The user's harness has them now (the screen-only ones say
+/// why, `uiOnly`); a task's agent gets what its capability set allows (ADR-0112: never a trigger, a setting, a channel
+/// or a worktree write). HS7: with Auto off no list offers `auto` as a harness. HS11: `delegate` to a harness that isn't
+/// here says so, by name.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_users_harness_reaches_triggers_settings_channels_and_worktrees_and_an_agent_only_what_it_may_audit_h() {
+    let a = Agent::start("mcp-audit-h").await;
+    let user = a.names(false).await;
+    for want in [
+        "automations_trigger_switch",
+        "automations_trigger_remove",
+        "automations_trigger_ls",
+        "settings_get",
+        "settings_set",
+        "channels_status",
+        "channels_setup",
+        "worktrees_status",
+        "worktrees_bringIn",
+    ] {
+        assert!(user.iter().any(|n| n == want), "the user's harness lacks {want}: {user:?}");
+    }
+    for screen_only in ["channels_inbound", "channels_act", "worktrees_save", "worktrees_grep"] {
+        assert!(!user.iter().any(|n| n == screen_only), "{screen_only} is the screen's");
+    }
+    let agent = a.names(true).await;
+    for never in ["automations_trigger_switch", "automations_trigger_remove", "settings_set", "channels_setup", "worktrees_remove"] {
+        assert!(!agent.iter().any(|n| n == never), "an agent got {never}: {agent:?}");
+    }
+    let (t, err) = a.user_call("automations_trigger_switch", json!({ "name": "nosuch", "on": false })).await;
+    assert!(err && !t.contains("unknown command") && !t.contains("not allowed"), "it reaches the trigger switch: {t}");
+    for agent_side in [true, false] {
+        let list = a.post(json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }), agent_side).await.to_string();
+        assert!(!list.contains(r#""auto","claude""#) && !list.contains("Harness: auto"), "auto offered (agent {agent_side})");
+    }
+    let (t, _) = a.call("delegate", json!({ "tasks": [{ "agent": "frob", "prompt": "x" }] })).await;
+    assert!(t.starts_with("Nothing was delegated.") && t.contains("- frob: no harness frob: name one of claude"), "{t}");
+    a.serve.stop();
+}

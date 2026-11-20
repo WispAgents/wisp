@@ -508,6 +508,42 @@ impl Runtime {
         Ok(self.lock_list().contains_key(id.as_str()) || self.repo.session(id.as_str()).await.is_ok())
     }
 
+    /// A new task's model and level: Auto's pick, else what the caller names, else what New task keeps for that harness
+    /// (`runtime.launch`'s `models` / `efforts`: the CLI, MCP, crew and channels get the user's Opus · max as New task
+    /// does, audit H HS5), else the harness's first model and no level.
+    fn model_and_effort(&self, pick: Option<&wisp_router_api::Pick>, a: &StartArgs, agent: &str) -> (String, String) {
+        let saved = |k: &str| -> Option<String> {
+            pick.is_none()
+                .then(|| self.host.setting(LAUNCH_SETTING))
+                .flatten()
+                .and_then(|v| v.get(k)?.get(agent)?.as_str().map(str::to_owned))
+                .filter(|x| !x.is_empty())
+        };
+        let (named, saved_model) = (a.model.clone().filter(|m| !m.is_empty()), saved("models"));
+        let model = pick
+            .map(|p| p.model.clone())
+            .filter(|m| !m.is_empty())
+            .or_else(|| named.clone())
+            .or_else(|| saved_model.clone())
+            .or_else(|| self.harness(agent).ok().and_then(|h| h.info().models.first().map(|m| m.id.clone())))
+            .unwrap_or_default();
+        // the saved level goes with its model: not with another one the caller named, and only a level that model has
+        let level_ok = |e: &String| {
+            named.as_ref().is_none_or(|m| Some(m) == saved_model.as_ref())
+                && self.harness(agent).ok().is_none_or(|h| {
+                    let lv = crate::handoff::levels_of(h.as_ref(), &model);
+                    lv.is_empty() || lv.contains(e)
+                })
+        };
+        let effort = pick
+            .map(|p| p.effort.clone())
+            .filter(|e| !e.is_empty())
+            .or_else(|| a.effort.clone().filter(|e| !e.is_empty()))
+            .or_else(|| saved("efforts").filter(level_ok))
+            .unwrap_or_default();
+        (model, effort)
+    }
+
     /// `runtime.create`: a new task, and its first turn starts.
     pub async fn create(self: &Arc<Self>, a: StartArgs) -> Result<Created> {
         if a.prompt.trim().is_empty() {
@@ -523,13 +559,7 @@ impl Runtime {
             .or_else(|| a.agent.clone().filter(|x| !x.is_empty() && x != "auto"))
             .or_else(|| first.as_ref().map(|h| h.info().id.clone()))
             .unwrap_or_default();
-        let model = pick
-            .as_ref()
-            .map(|p| p.model.clone())
-            .filter(|m| !m.is_empty())
-            .or_else(|| a.model.clone())
-            .or_else(|| self.harness(&agent).ok().and_then(|h| h.info().models.first().map(|m| m.id.clone())))
-            .unwrap_or_default();
+        let (model, effort) = self.model_and_effort(pick.as_ref(), &a, &agent);
         let id = self.new_task_id(a.id.clone()).await?;
         let now = self.now();
         let mut s = Session {
@@ -541,7 +571,7 @@ impl Runtime {
                 .unwrap_or_else(|| land::auto_title(&prompt::mentions::plain_mentions(&a.prompt))),
             agent,
             model,
-            effort: pick.as_ref().map(|p| p.effort.clone()).filter(|e| !e.is_empty()).or_else(|| a.effort.clone()).unwrap_or_default(),
+            effort,
             account: a.account.clone(),
             mode: a.mode.unwrap_or(Mode::Auto),
             cwd: a.cwd.clone().unwrap_or_default(),
@@ -778,7 +808,16 @@ impl Runtime {
 
     /// A team's rows made the roster `wisp_delegate` reads (v1 normalizeTeam): an unknown harness refuses it.
     pub(crate) fn roster(&self, list: &[serde_json::Value]) -> Result<Vec<serde_json::Value>> {
-        wisp_runtime_core::team::normalize_team(list, |agent| self.harness(agent).is_ok()).map_err(RuntimeError::Invalid)
+        wisp_runtime_core::team::normalize_team(list, |agent| self.harness(agent).is_ok()).map_err(|e| {
+            // the harnesses there are, as `--agent frob` says them (audit H HS11)
+            match e.strip_prefix("unknown subagent harness: ") {
+                Some(agent) => {
+                    let ids: Vec<String> = self.host.harnesses().iter().map(|h| h.info().id.clone()).collect();
+                    RuntimeError::Invalid(format!("no harness {agent}: name one of {}", ids.join(", ")))
+                }
+                None => RuntimeError::Invalid(e),
+            }
+        })
     }
 
     /// A follow-up's team (v1 sessions.js followUpTeam): the task's subagents from now on, `[]` none; a subagent can't

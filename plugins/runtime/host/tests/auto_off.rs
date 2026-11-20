@@ -77,3 +77,43 @@ async fn with_auto_off_no_harness_means_the_one_new_task_last_picked_v1_defaults
 async fn the_one_switch_turns_auto_back_on() {
     assert_eq!(agent_of(&[("runtime.auto", json!(true))], None).await, ("two".to_owned(), 1));
 }
+
+/// Audit H HS5: New task's pick was Claude · Opus · max, but a task from the CLI (it names no harness) ran on Claude
+/// with no model and no level. It gets the saved harness's model and level, as New task does; what a caller names
+/// wins.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_task_that_names_no_harness_gets_the_saved_harness_model_and_level_audit_h_hs5() {
+    let host = Recorder {
+        settings: [(
+            "runtime.launch".to_owned(),
+            json!({ "agent": "three", "models": { "three": "opus", "two": "big" }, "efforts": { "three": "max", "four": "max" } }),
+        )]
+        .into_iter()
+        .collect(),
+        ..Recorder::default()
+    };
+    let r = rig_on(
+        host,
+        vec![
+            Fake::harness(),
+            Fake::named("two", "Two", &[]),
+            Fake::named("three", "Three", &[]),
+            Fake::named("four", "Four", &["low", "high"]),
+        ],
+    )
+    .await;
+    let get = async |a: StartArgs| {
+        let id = r.rt.create(a).await.unwrap().id;
+        let s = r.rt.get(id.as_str()).await.unwrap();
+        (s.agent, s.model, s.effort)
+    };
+    assert_eq!(get(start(None)).await, ("three".into(), "opus".into(), "max".into()), "the CLI's `wisp \"…\"`");
+    assert_eq!(get(start(Some("auto"))).await, ("three".into(), "opus".into(), "max".into()), "auto, Auto off");
+    assert_eq!(get(start(Some("two"))).await, ("two".into(), "big".into(), String::new()), "that harness's own saved model");
+    let named = StartArgs { model: Some("haiku".into()), effort: Some("low".into()), ..start(None) };
+    assert_eq!(get(named).await, ("three".into(), "haiku".into(), "low".into()), "what the caller names wins");
+    // review: the saved level goes with its model, never with another one the caller named, and only a level it has
+    let other = StartArgs { model: Some("haiku".into()), ..start(None) };
+    assert_eq!(get(other).await, ("three".into(), "haiku".into(), String::new()));
+    assert_eq!(get(start(Some("four"))).await, ("four".into(), "four-m".into(), String::new()), "four has no max");
+}

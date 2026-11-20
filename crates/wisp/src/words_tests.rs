@@ -25,6 +25,11 @@ fn a_known_command_word_alone_is_never_a_task() {
     assert!(usage("tasks").contains("wisp tasks --touching <path>"), "{}", usage("tasks"));
     assert!(usage("ship").contains("wisp ship <id>"), "{}", usage("ship"));
     assert!(usage("validate").contains("wisp diff|validate -f F"), "{}", usage("validate"));
+    // audit H HS2: `wisp help trigger` said "needs more"; it lists its 13 verbs, the alias the same ones
+    let all = "add|ls|list|rm|remove|off|on|fire|test|log|resume|approve|sources";
+    assert!(usage("trigger").contains(&format!("wisp trigger {all}")) && !usage("trigger").contains("needs more"), "{}", usage("trigger"));
+    assert!(usage("triggers").contains(&format!("wisp triggers {all}")), "{}", usage("triggers"));
+    assert!(own_verb("triggers", "off") && own_verb("triggers", "on"), "the alias takes off and on");
     assert!(usage("tui").contains("wisp -- tui"), "a word without a help line still says how to make it a task");
     assert!(usage("list").contains("wisp ls") && usage("list").contains("wisp -- list"), "{}", usage("list"));
     assert!(usage("plugins").contains("wisp plugin new") && usage("plugins").contains("wisp -- plugins"), "{}", usage("plugins"));
@@ -608,6 +613,24 @@ fn a_misspelled_launch_flag_is_a_stray_named_with_its_close_flag_audit_h2() {
     assert!(launch_stray(&w(&["x", "--at"]), "--at").contains("can't start later from here"));
     // nothing before the flag: no empty quotes in the way out
     assert!(launch_stray(&w(&["--mdoe", "plan"]), "--mdoe").ends_with("A task that says it: wisp -- --mdoe plan"));
+}
+
+/// Audit H HS3: `--modle` was steered to --mode only (it's as close to --model), and `--mode opus` was refused with
+/// serde's words. The smaller note: an unknown short flag (`-x`) after a prompt launched with it in the prompt.
+#[test]
+fn a_slip_names_every_close_flag_and_a_bad_mode_is_said_in_words_audit_h_hs3() {
+    let said = launch_stray(&w(&["H typo", "--modle", "opus"]), "--modle");
+    assert!(said.starts_with("wisp takes no --modle: did you mean --mode or --model?"), "{said}");
+    let m = bad_mode("opus").unwrap();
+    assert_eq!(m, "--mode takes plan, edits or auto, not opus (a model goes after --model: --model opus). Nothing was launched");
+    assert!(!m.contains('`'));
+    assert!(["plan", "edits", "auto"].iter().all(|m| bad_mode(m).is_none()));
+    assert_eq!(p(&["H typo", "-x"]).strays, ["-x"]);
+    let none: [String; 0] = [];
+    assert_eq!(p(&["H", "-d", "-y"]).strays, none, "the short flags a launch takes");
+    assert_eq!(p(&["why does rm -rf fail"]).strays, none);
+    assert_eq!(p(&["H", "--", "-x"]).strays, none, "after -- it's the prompt");
+    assert!(launch_stray(&w(&["H typo", "-x"]), "-x").starts_with("wisp takes no -x\n"));
 }
 
 /// Audit H11: `wisp run nosuch` said "no recipe or workflow named nosuch: wisp recipes lists them"; it runs declared

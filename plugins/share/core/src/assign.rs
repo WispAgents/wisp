@@ -200,7 +200,21 @@ const USER_PASS: [&str; 2] = ["curl", "wget"];
 /// Flags that read a secret from stdin: an `echo`/`printf` piped into one hands it a secret typed inline.
 const FROM_STDIN: [&str; 3] = ["--with-token", "--password-stdin", "--token-stdin"];
 
-const WRAPPERS: [&str; 6] = ["sudo", "env", "export", "exec", "command", "time"];
+const WRAPPERS: [&str; 7] = ["sudo", "env", "export", "exec", "command", "time", "corepack"];
+
+/// Package managers whose `config set <key> <value>` (npm and pnpm: also `set <key> <value>`) stores a value under a
+/// key: a secret one when the key is named like one (`//registry.npmjs.org/:_authToken`, `npmAuthToken`; audit H HS9).
+const CONFIG_SET: [&str; 3] = ["npm", "pnpm", "yarn"];
+
+/// Whether `t` is a shell redirection, never a flag's value: `--with-token <<< …`, `--password < file`.
+fn redirect(t: &str) -> bool {
+    let t = t.trim_start_matches(|c: char| c.is_ascii_digit() || c == '&');
+    !t.is_empty() && t.chars().all(|c| matches!(c, '<' | '>' | '&' | '|'))
+}
+
+/// openssl's password arguments (HS9): `-k <password>`, and `-pass` / `-passin` / `-passout` followed by `pass:<it>`
+/// (`env:`, `file:`, `fd:` and `stdin` name where it is, and stay).
+const OPENSSL_PASS: [&str; 3] = ["-pass", "-passin", "-passout"];
 
 /// One command of a line (between `|`, `&&`, `;`): the tool, its first word after it, and the tokens.
 struct Seg {
@@ -209,10 +223,10 @@ struct Seg {
 }
 
 /// The cuts (byte spans to mask) of one line's tokens.
-fn line_cuts(l: &str, base: usize, command: bool, cuts: &mut Vec<(usize, usize)>) {
-    let all = tokens(l);
+/// A line's commands, split at `|`, `||`, `&&`, `;` and `&`.
+fn segments(l: &str) -> Vec<Seg> {
     let mut segs: Vec<Seg> = vec![Seg { toks: Vec::new(), piped_out: false }];
-    for &(a, b) in &all {
+    for (a, b) in tokens(l) {
         let t = &l[a..b];
         if matches!(t, "|" | "||" | "&&" | ";" | "&") {
             if let Some(last) = segs.last_mut() {
@@ -223,24 +237,95 @@ fn line_cuts(l: &str, base: usize, command: bool, cuts: &mut Vec<(usize, usize)>
             s.toks.push((a, b));
         }
     }
+    segs
+}
+
+/// The span of the password in openssl's `pass:<it>` (quoted or not), when it's one to mask.
+fn openssl_pass(t: &str, a: usize, b: usize) -> Option<(usize, usize)> {
+    let q = usize::from(t.starts_with(['"', '\'']));
+    unquoted(t).strip_prefix("pass:").filter(|v| masks(v))?;
+    Some((a + q + "pass:".len(), b - usize::from(q == 1 && t.len() > 1 && t.ends_with(['"', '\'']))))
+}
+
+/// The span of the password in `user:password` (curl's `-u`), when it's one to mask.
+fn user_pass(t: &str, a: usize, b: usize) -> Option<(usize, usize)> {
+    let c = unquoted(t).find(':').map(|c| c + usize::from(t.starts_with(['"', '\''])))?;
+    masks(&t[c + 1..]).then(|| (a + c + 1, b - usize::from(t.ends_with(['"', '\'']))))
+}
+
+/// Whether `t` is the value of `npm|pnpm|yarn config set <secret-named key> <value>` (npm and pnpm: `set` too), given
+/// the words before it.
+fn config_value(tool: Option<&str>, words: &[&str], t: &str) -> bool {
+    let Some(pm) = tool.filter(|x| CONFIG_SET.contains(x)) else { return false };
+    // `config set` wherever it comes (a flag's value may go before it: `npm --userconfig ./.npmrc config set …`); npm's
+    // and pnpm's bare `set` only first (`npm run set …` is a script)
+    let Some(i) = words
+        .iter()
+        .enumerate()
+        .position(|(i, w)| *w == "set" && (i.checked_sub(1).and_then(|p| words.get(p)) == Some(&"config") || (pm != "yarn" && i == 0)))
+    else {
+        return false;
+    };
+    let (Some(key), true) = (words.get(i + 1), words.len() == i + 2) else { return false };
+    // a registry's key names its secret after the last `:` (`//npm.example.id/:_authToken`: the host's parts don't count)
+    let name = if key.contains("/:") { key.rsplit(':').next().unwrap_or(key) } else { key };
+    !key.contains('=') && secret_name(unquoted(name)) && masks(t)
+}
+
+/// A `--flag[=value]` token at `a..b` (`flag`: without the dashes): the span of a secret value it carries, and whether the
+/// next word is a secret or a `user:password`. `next_word`: a word, not a flag, follows.
+fn long_flag(flag: &str, a: usize, b: usize, user_pass: bool, next_word: bool) -> (Option<(usize, usize)>, bool, bool) {
+    let (n, v) = flag.split_once('=').map_or((flag, None), |(n, v)| (n, Some(v)));
+    match v {
+        Some(v) if user_pass && n == "user" => {
+            (v.find(':').filter(|c| masks(&v[c + 1..])).map(|c| (a + 2 + n.len() + 1 + c + 1, b)), false, false)
+        }
+        Some(v) if secret_name(n) && masks(v) => (Some((a + 2 + n.len() + 1, b)), false, false),
+        None if user_pass && n == "user" => (None, false, true),
+        None if secret_name(n) => (None, next_word, false),
+        _ => (None, false, false),
+    }
+}
+
+fn line_cuts(l: &str, base: usize, command: bool, cuts: &mut Vec<(usize, usize)>) {
+    let segs = segments(l);
     let cut = |cuts: &mut Vec<(usize, usize)>, a: usize, b: usize| cuts.push((base + a, base + b));
     for (si, seg) in segs.iter().enumerate() {
         let mut tool: Option<&str> = None;
         let mut sub: Option<&str> = None;
         let mut next_is_secret = false;
         let mut next_is_userpass = false;
+        let mut next_is_openssl_pass = false;
+        // the words after the tool that aren't flags (`config`, `set`, the key: `npm config set <key> <value>`)
+        let mut words: Vec<&str> = Vec::new();
         for (k, &(a, b)) in seg.toks.iter().enumerate() {
             let t = &l[a..b];
+            if redirect(t) {
+                // a here-string's word is what the flag reads: `--with-token <<< <secret>`; any other redirection
+                // names a file, and the flag's value isn't typed here
+                next_is_secret = next_is_secret && t.ends_with("<<<");
+                continue;
+            }
             if std::mem::take(&mut next_is_secret) && masks(t) {
                 cut(cuts, a, b);
                 continue;
             }
-            if std::mem::take(&mut next_is_userpass) {
-                if let Some(c) = unquoted(t).find(':').map(|c| c + usize::from(t.starts_with(['"', '\''])))
-                    && masks(&t[c + 1..])
-                {
-                    cut(cuts, a + c + 1, b - usize::from(t.ends_with(['"', '\''])));
+            if std::mem::take(&mut next_is_openssl_pass) {
+                if let Some((x, y)) = openssl_pass(t, a, b) {
+                    cut(cuts, x, y);
                 }
+                continue;
+            }
+            if std::mem::take(&mut next_is_userpass) {
+                if let Some((x, y)) = user_pass(t, a, b) {
+                    cut(cuts, x, y);
+                }
+                continue;
+            }
+            // the value of `npm config set <key> <value>` first: a base64 one (`dXNl…==`) reads like NAME=value
+            if command && !t.starts_with('-') && config_value(tool, &words, t) {
+                cut(cuts, a, b);
+                words.push(unquoted(t));
                 continue;
             }
             if let Some(name) = assigned(t) {
@@ -253,31 +338,34 @@ fn line_cuts(l: &str, base: usize, command: bool, cuts: &mut Vec<(usize, usize)>
                 continue;
             }
             let user_pass = tool.is_some_and(|x| USER_PASS.contains(&x));
+            // a flag that reads its secret from stdin, fed by a here-string: `--password-stdin <<< <secret>`
+            if FROM_STDIN.contains(&t) {
+                next_is_secret = seg.toks.get(k + 1).is_some_and(|&(c, d)| &l[c..d] == "<<<");
+                continue;
+            }
             if let Some(flag) = t.strip_prefix("--").filter(|f| !f.is_empty() && !f.starts_with("no-")) {
-                let (n, v) = flag.split_once('=').map_or((flag, None), |(n, v)| (n, Some(v)));
-                match v {
-                    Some(v) if user_pass && n == "user" => {
-                        if let Some(c) = v.find(':')
-                            && masks(&v[c + 1..])
-                        {
-                            cut(cuts, a + 2 + n.len() + 1 + c + 1, b);
-                        }
-                    }
-                    Some(v) if secret_name(n) && masks(v) => cut(cuts, a + 2 + n.len() + 1, b),
-                    None if user_pass && n == "user" => next_is_userpass = true,
-                    None if secret_name(n) => {
-                        next_is_secret = seg.toks.get(k + 1).is_some_and(|&(c, d)| !l[c..d].starts_with('-'));
-                    }
-                    _ => {}
+                let next_word = seg.toks.get(k + 1).is_some_and(|&(c, d)| !l[c..d].starts_with('-'));
+                let (span, secret, userpass) = long_flag(flag, a, b, user_pass, next_word);
+                if let Some((x, y)) = span {
+                    cut(cuts, x, y);
                 }
+                (next_is_secret, next_is_userpass) = (secret, userpass);
                 continue;
             }
             if tool.is_none() && !WRAPPERS.contains(&t) {
                 tool = Some(t.rsplit(['/', '\\']).next().unwrap_or(t));
                 continue;
             }
+            // a wrapper (`sudo`, `corepack`) is neither the tool nor one of its words
+            if tool.is_none() {
+                continue;
+            }
             if user_pass && t == "-u" {
                 next_is_userpass = true;
+                continue;
+            }
+            if tool == Some("openssl") && (t == "-k" || OPENSSL_PASS.contains(&t)) {
+                (next_is_secret, next_is_openssl_pass) = (t == "-k", t != "-k");
                 continue;
             }
             if let Some(&(_, _, f, spaced)) = SHORT.iter().find(|(n, s, _, _)| Some(*n) == tool && (s.is_none() || *s == sub))
@@ -290,21 +378,29 @@ fn line_cuts(l: &str, base: usize, command: bool, cuts: &mut Vec<(usize, usize)>
                 }
                 continue;
             }
-            if sub.is_none() && !t.starts_with('-') {
-                sub = Some(t);
-            }
-        }
-        // `echo <token> | gh auth login --with-token`: what's echoed is the secret
-        let reads_stdin = |s: &Seg| s.toks.iter().any(|&(a, b)| FROM_STDIN.contains(&&l[a..b]));
-        let echoes = seg.toks.first().is_some_and(|&(a, b)| matches!(&l[a..b], "echo" | "printf"));
-        if command && echoes && seg.piped_out && segs.get(si + 1).is_some_and(reads_stdin) {
-            for &(a, b) in seg.toks.iter().skip(1).filter(|&&(a, b)| !l[a..b].starts_with('-')) {
-                if masks(&l[a..b]) {
-                    cut(cuts, a, b);
+            if !t.starts_with('-') {
+                words.push(unquoted(t));
+                if sub.is_none() {
+                    sub = Some(t);
                 }
             }
         }
+        if command {
+            for (a, b) in echoed(l, seg, segs.get(si + 1)) {
+                cut(cuts, a, b);
+            }
+        }
     }
+}
+
+/// `echo <token> | gh auth login --with-token`: what's echoed into a flag that reads a secret from stdin is the secret.
+fn echoed(l: &str, seg: &Seg, next: Option<&Seg>) -> Vec<(usize, usize)> {
+    let reads_stdin = |s: &Seg| s.toks.iter().any(|&(a, b)| FROM_STDIN.contains(&&l[a..b]));
+    let echoes = seg.toks.first().is_some_and(|&(a, b)| matches!(&l[a..b], "echo" | "printf"));
+    if !(echoes && seg.piped_out && next.is_some_and(reads_stdin)) {
+        return Vec::new();
+    }
+    seg.toks.iter().skip(1).copied().filter(|&(a, b)| !l[a..b].starts_with('-') && masks(&l[a..b])).collect()
 }
 
 /// The shapes a secret takes in any text, each with what of it stays: (pattern, how a match is masked).
@@ -333,7 +429,7 @@ fn shapes() -> &'static [Shape] {
                 (secret_name(&c[2]) && masks(&c[3])).then(|| format!("{}<secret>", &c[1]))
             }),
             // npm's `//registry.npmjs.org/:_authToken=<secret>` (and `_auth`, `_password`)
-            (r"(?i)(:_(?:authToken|auth|password)\s*=\s*)(\S+)", |c| real(&c[2]).then(|| format!("{}<secret>", &c[1]))),
+            (r#"(?i)(:_(?:authToken|auth|password)\s*=\s*)([^\s"']+)"#, |c| real(&c[2]).then(|| format!("{}<secret>", &c[1]))),
             // GitLab's tokens (`glpat-…`, `glptt-…`), which the share's shapes didn't know
             (r"\b(gl(?:pat|ptt|dt|rt)-)[A-Za-z0-9_-]{20,}", |_| Some("<secret>".to_owned())),
         ];
@@ -471,6 +567,64 @@ mod tests {
         }
         let (netrc, n) = mask_inline("machine api.x.dev login ada password hunter2qa", false);
         assert_eq!((netrc.as_str(), n), ("machine api.x.dev login ada password <secret>", 1));
+    }
+
+    /// Audit H HS9: npm's own documented `config set <key> <value>` form, yarn's and pnpm's, and openssl's passwords
+    /// went out as typed.
+    #[test]
+    fn package_manager_config_and_openssl_passwords_are_masked_audit_h_hs9() {
+        for (said, want) in [
+            (
+                "npm config set //registry.npmjs.org/:_authToken s3cr3tvalue123456",
+                "npm config set //registry.npmjs.org/:_authToken <secret>",
+            ),
+            ("npm set //npm.x.dev/:_password hunter2qa", "npm set //npm.x.dev/:_password <secret>"),
+            ("pnpm config set //npm.x.dev/:_authToken s3cr3tvalue123456", "pnpm config set //npm.x.dev/:_authToken <secret>"),
+            ("yarn config set npmAuthToken s3cr3tvalue123456", "yarn config set npmAuthToken <secret>"),
+            ("npm config set --location=project _auth s3cr3tvalue123456", "npm config set --location=project _auth <secret>"),
+            ("openssl enc -aes-256-cbc -k hunter2qa -in a.txt", "openssl enc -aes-256-cbc -k <secret> -in a.txt"),
+            ("openssl rsa -passin pass:hunter2qa -in k.pem", "openssl rsa -passin pass:<secret> -in k.pem"),
+            ("openssl pkcs12 -export -passout 'pass:hunter2qa' -out a.p12", "openssl pkcs12 -export -passout 'pass:<secret>' -out a.p12"),
+            ("openssl enc -d -pass pass:hunter2qa -in a.enc", "openssl enc -d -pass pass:<secret> -in a.enc"),
+            // review: a wrapper, a flag's value before `config set`, a registry host with a context word in it
+            (
+                "sudo npm config set //registry.npmjs.org/:_auth dXNlcjpwYXNzd29yZA==",
+                "sudo npm config set //registry.npmjs.org/:_auth <secret>",
+            ),
+            (
+                "npm --userconfig ./.npmrc config set //r/:_password hunter2qa",
+                "npm --userconfig ./.npmrc config set //r/:_password <secret>",
+            ),
+            ("corepack yarn config set npmAuthToken s3cr3tvalue123456", "corepack yarn config set npmAuthToken <secret>"),
+            ("npm config set //npm.example.id/:_authToken s3cr3tvalue123456", "npm config set //npm.example.id/:_authToken <secret>"),
+            ("sudo docker login -u ada -p hunter2qa", "sudo docker login -u ada -p <secret>"),
+            ("docker login -u ada --password-stdin <<< hunter2qa", "docker login -u ada --password-stdin <<< <secret>"),
+        ] {
+            assert_eq!(cmd(said), want, "{said}");
+        }
+        for keep in [
+            "npm config set registry https://npm.x.dev/",
+            "npm config set save-exact true",
+            "yarn config set nodeLinker node-modules",
+            "npm config get //registry.npmjs.org/:_authToken",
+            "openssl rsa -passin env:KEY_PASS -in k.pem",
+            "openssl rsa -passin file:./pass.txt -in k.pem",
+            "openssl enc -aes-256-cbc -kfile ./key.txt -in a.txt",
+            "npm run set token abcdefghijk",
+        ] {
+            assert_eq!(cmd(keep), keep);
+        }
+    }
+
+    /// Audit H HS9's over-masking: the here-string operator, a header's name and a closing quote are kept.
+    #[test]
+    fn what_around_a_secret_stays_audit_h_hs9() {
+        assert_eq!(cmd("gh auth login --with-token <<< abcdef0123456789"), "gh auth login --with-token <<< <secret>");
+        assert_eq!(cmd("gh auth login --with-token < ./token.txt"), "gh auth login --with-token < ./token.txt");
+        assert_eq!(
+            cmd(r#"echo "//registry.npmjs.org/:_authToken=s3cr3tvalue123456" >> ~/.npmrc"#),
+            r#"echo "//registry.npmjs.org/:_authToken=<secret>" >> ~/.npmrc"#
+        );
     }
 
     /// Review r194 of GS4: names that only contain KEY/TOKEN/AUTH, and values that plainly aren't secrets, were masked.

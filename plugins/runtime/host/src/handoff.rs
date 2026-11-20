@@ -11,7 +11,7 @@ use wisp_runtime_core::prompt::handoff::{Handoff, PastTurn, Render, handoff_note
 use crate::runtime::Runtime;
 
 /// The thinking levels `h` offers for `model` (the model's own, else the harness's).
-fn levels_of<'a>(h: &'a dyn Harness, model: &str) -> &'a [String] {
+pub(crate) fn levels_of<'a>(h: &'a dyn Harness, model: &str) -> &'a [String] {
     let info = h.info();
     info.models.iter().find(|m| m.id == model && !m.efforts.is_empty()).map_or(info.efforts.as_slice(), |m| m.efforts.as_slice())
 }

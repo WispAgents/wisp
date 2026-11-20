@@ -58,11 +58,14 @@ fn patterns() -> &'static [Regex] {
             r"\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}",
             r"\bgh[pousr]_[A-Za-z0-9]{30,}",
             r"\bgithub_pat_[A-Za-z0-9_]{30,}",
+            // npm's access tokens: `npm_` and 36 (or more) letters and digits (audit H HS9)
+            r"\bnpm_[A-Za-z0-9]{36,}\b",
             r"\bxox[abprs]-[A-Za-z0-9-]{10,}",
             r"\bAKIA[0-9A-Z]{16}\b",
             r"\bAIza[0-9A-Za-z_-]{35}",
             r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{20,}=*",
-            r#"(?i)\b(?:api[_-]?key|(?:access[_-]?)?token|secret|password|passwd)\b\s*[:=]\s*["']?[^\s"',;]{8,}"#,
+            // the name and what joins it stay (`X-Api-Key: <secret>`, `password=<secret>`; audit H HS9): group 1
+            r#"(?i)(\b(?:api[_-]?key|(?:access[_-]?)?token|secret|password|passwd)\b\s*[:=]\s*["']?)[^\s"',;]{8,}"#,
         ]
         .iter()
         .filter_map(|p| Regex::new(p).ok())
@@ -214,7 +217,7 @@ fn secrets(text: &str, at: &str, out: &mut Vec<Redaction>) -> String {
             t = re
                 .replace_all(&t, |c: &regex::Captures<'_>| {
                     found.push(c[0].to_owned());
-                    "<secret>".to_owned()
+                    c.get(1).map_or_else(|| "<secret>".to_owned(), |kept| format!("{}<secret>", kept.as_str()))
                 })
                 .into_owned();
             out.extend(found.into_iter().map(|f| Redaction {
@@ -306,7 +309,7 @@ mod tests {
         let v = json!({ "prompt": "use sk-ant-abcdefghijklmnopqrstuvwx and token=abcd1234efgh in /Users/me/api/src/a.ts, see ~/notes and /Users/me/x; key hunter2hunter2; like @[Payroll migration](wisp:01aa0000payroll0000000000000001)", "n": 3 });
         let got = scrub(&v, &s, "spec", &mut r);
         let p = got["prompt"].as_str().unwrap();
-        assert_eq!(p, "use <secret> and <secret> in <project>/src/a.ts, see ~/notes and ~/x; key <env:MY_API_KEY>; like <task>");
+        assert_eq!(p, "use <secret> and token=<secret> in <project>/src/a.ts, see ~/notes and ~/x; key <env:MY_API_KEY>; like <task>");
         let kinds: Vec<&str> = r.iter().map(|x| x.kind.as_str()).collect();
         assert_eq!(kinds, ["secret", "secret", "env", "path", "path", "name"]);
         assert_eq!(r[0].was, "sk-a…uvwx", "the preview shows only its ends");
@@ -334,6 +337,21 @@ mod tests {
             r#"cloned https://ada:<secret>@git.x.dev/r.git; -H "Authorization: Basic <secret>" -d '{"password":"<secret>"}'"#
         );
         assert_eq!(r.len(), 3, "{r:?}");
+    }
+
+    /// Audit H HS9: a header's name stayed cut off (`"X-<secret>"`), and npm's tokens weren't known by their shape.
+    #[test]
+    fn a_header_keeps_its_name_and_npm_tokens_go_by_shape_audit_h_hs9() {
+        let mut r = Vec::new();
+        assert_eq!(
+            scrub_text(r#"curl -H "X-Api-Key: abcd1234efgh5678" https://x.dev"#, &Scrub::default(), "x", &mut r),
+            r#"curl -H "X-Api-Key: <secret>" https://x.dev"#
+        );
+        assert_eq!(
+            scrub_text("token is npm_Ab3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5z, ok", &Scrub::default(), "x", &mut r),
+            "token is <secret>, ok"
+        );
+        assert_eq!(scrub_text("npm_install_flags", &Scrub::default(), "x", &mut r), "npm_install_flags");
     }
 
     /// QA round 12 #3: a task titled "login" made the shared prompt "fix the login bug" read "fix the <task> bug". Other

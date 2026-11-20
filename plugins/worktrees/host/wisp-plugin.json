@@ -53,14 +53,15 @@
       { "key": "worktrees.worktree", "type": "enum", "values": ["on", "off"], "default": "on", "title": "New tasks run in their own worktree by default" }
     ],
     "commands": [
-      { "id": "worktrees.source", "title": "Open a file of a task's folder (the file view)", "readOnly": true },
-      { "id": "worktrees.save", "title": "Save a file of a task's folder (refused while it runs, or if it changed)" },
-      { "id": "worktrees.files", "title": "A task folder's (or a project's) files, as git lists them", "readOnly": true },
-      { "id": "worktrees.warm", "title": "Fetch a project's remote now, while its task is typed (New task)", "readOnly": true },
-      { "id": "worktrees.grep", "title": "Where a name is declared in a task's folder (Go to definition)", "readOnly": true },
+      { "id": "worktrees.source", "title": "Open a file of a task's folder (the file view)", "readOnly": true, "uiOnly": "the file view's read of a file in a task's folder; a harness reads files itself" },
+      { "id": "worktrees.save", "title": "Save a file of a task's folder (refused while it runs, or if it changed)", "uiOnly": "the file view's Save in a task's folder; a harness edits files in its own folder" },
+      { "id": "worktrees.files", "title": "A task folder's (or a project's) files, as git lists them", "readOnly": true, "uiOnly": "the file view's list of a task's folder; a harness lists files itself" },
+      { "id": "worktrees.warm", "title": "Fetch a project's remote now, while its task is typed (New task)", "readOnly": true, "uiOnly": "New task fetches a project's remote while the prompt is typed; nothing a harness waits on" },
+      { "id": "worktrees.grep", "title": "Where a name is declared in a task's folder (Go to definition)", "readOnly": true, "uiOnly": "the file view's Go to definition; a harness searches its folder itself" },
       {
         "id": "worktrees.create",
-        "title": "Make a session's worktree"
+        "title": "Make a session's worktree",
+        "uiOnly": "the runtime makes a task's worktree as the task starts; a harness starts a task with wisp_launch"
       },
       {
         "id": "worktrees.ensure",

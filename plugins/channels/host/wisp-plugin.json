@@ -61,27 +61,33 @@
       },
       {
         "id": "channels.send",
-        "title": "Send a notice"
+        "title": "Send a notice",
+        "uiOnly": "wisp's own notices to the user's chats (a finished task, a silent run); a harness answers in its task, never through the user's phone"
       },
       {
         "id": "channels.notify",
-        "title": "Notify about a task"
+        "title": "Notify about a task",
+        "uiOnly": "the runtime tells the user's channels a task needs them; a harness asks with ask_user, which reaches the phone that way"
       },
       {
         "id": "channels.act",
-        "title": "Act on a task from a channel"
+        "title": "Act on a task from a channel",
+        "uiOnly": "a button tapped on the user's phone, signed by this wisp; no harness holds that signature"
       },
       {
         "id": "channels.inbound",
-        "title": "A message the grid held"
+        "title": "A message the grid held",
+        "uiOnly": "the grid's inbox hands in a chat platform's message for this wisp; no harness receives one"
       },
       {
         "id": "channels.routed",
-        "title": "A message the grid routed"
+        "title": "A message the grid routed",
+        "uiOnly": "a chat platform's webhook reaching this wisp over the grid's tunnel; no harness sends one"
       },
       {
         "id": "channels.rotate",
-        "title": "Replace a channel's private URL"
+        "title": "Replace a channel's private URL",
+        "uiOnly": "Settings → Phone's button that replaces a channel's private URL, shown there to copy; a harness never holds the URL"
       },
       {
         "id": "channels.extra",

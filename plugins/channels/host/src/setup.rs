@@ -162,8 +162,10 @@ pub async fn phone_status(ctx: &Ctx, live: &Live) -> PhoneStatus {
     PhoneStatus { cloud, channels }
 }
 
+/// A refusal worded for the toast it becomes; the field it's about goes in `details.field`, not in the words (audit H
+/// HS14: "secrets.token: That doesn’t look like a bot token…").
 fn invalid(path: &str, msg: &str) -> WireError {
-    WireError::invalid(format!("{path}: {msg}"))
+    WireError::invalid(msg).with_details(serde_json::json!({ "field": path }))
 }
 
 /// Every field checked before anything is written: a refusal leaves secrets and the resource as they were.

@@ -243,6 +243,7 @@ impl State {
         now: i64,
         profiles: &[String],
         machines: &[String],
+        default_agent: &str,
     ) -> std::result::Result<Member, WireError> {
         let taken = lock(&self.saved).crew.clone();
         if prev.is_none() && taken.len() >= wisp_crew_api::MAX_CREW {
@@ -253,7 +254,8 @@ impl State {
         // list that failed just now mustn't lock every edit (pausing them above all)
         let machine_ok = |m: &str| machines.iter().any(|x| x == m) || prev.is_some_and(|p| p.machine == m);
         let agent_ok = |a: &str| profiles.iter().any(|p| p == a);
-        let checks = Checks { taken: &taken, exists: &exists, machine_ok: &machine_ok, words: &CronOnly, agent_ok: &agent_ok };
+        let checks =
+            Checks { taken: &taken, exists: &exists, machine_ok: &machine_ok, words: &CronOnly, agent_ok: &agent_ok, default_agent };
         normalize_member(body, prev, &checks, &mut NewIds, now).map_err(wire)
     }
 }
@@ -438,25 +440,50 @@ mod tests {
             cron: Some("*/30 * * * *".into()),
             ..c::MemberBody::default()
         };
-        let m = st.normalize(&body, None, 1_000, &[], &[]).unwrap();
+        let m = st.normalize(&body, None, 1_000, &[], &[], "auto").unwrap();
         assert_eq!((m.name.as_str(), m.cron.as_str(), m.agent.as_str()), ("Ada Lovelace", "*/30 * * * *", "auto"));
         st.put(m.clone());
         assert_eq!(st.member("@ada-lovelace").unwrap().id, m.id);
-        let dup = st.normalize(&c::MemberBody { name: Some("ada lovelace".into()), ..c::MemberBody::default() }, None, 2_000, &[], &[]);
+        let dup =
+            st.normalize(&c::MemberBody { name: Some("ada lovelace".into()), ..c::MemberBody::default() }, None, 2_000, &[], &[], "auto");
         assert!(dup.is_err(), "the same name twice");
+    }
+
+    /// Audit H HS7: with Auto off, an agent's `wisp_crew_add` with no harness stored `Qa Reviewer · auto`. A member
+    /// gets the default harness; `auto` is refused for a new one or a move, and one already on it keeps it.
+    #[test]
+    fn with_auto_off_a_member_gets_the_default_harness_and_auto_is_refused_audit_h_hs7() {
+        let st = State::new();
+        let body = |agent: Option<&str>| c::MemberBody {
+            name: Some("Qa Reviewer".into()),
+            agent: agent.map(str::to_owned),
+            ..c::MemberBody::default()
+        };
+        let m = st.normalize(&body(None), None, 1_000, &[], &[], "codex").unwrap();
+        assert_eq!(m.agent, "codex", "the default harness, never auto");
+        assert_eq!(st.normalize(&body(Some("")), None, 1_000, &[], &[], "codex").unwrap().agent, "codex");
+        let e = st.normalize(&body(Some("auto")), None, 1_000, &[], &[], "codex").unwrap_err();
+        assert_eq!(e.message, "Auto is off (runtime.auto): name a harness, or leave it out for the default one.");
+        assert!(st.normalize(&body(Some("auto")), Some(&m), 2_000, &[], &[], "codex").is_err(), "nor moved onto it");
+        let mut old = m.clone();
+        old.agent = "auto".into();
+        let paused = c::MemberBody { agent: Some("auto".into()), paused: Some(true), ..c::MemberBody::default() };
+        assert_eq!(st.normalize(&paused, Some(&old), 3_000, &[], &[], "codex").unwrap().agent, "auto", "one already on it keeps it");
+        // Auto on: as before
+        assert_eq!(st.normalize(&body(None), None, 1_000, &[], &[], "auto").unwrap().agent, "auto");
     }
 
     #[test]
     fn a_member_on_a_machine_gone_from_the_list_can_still_be_edited_but_not_moved_to_an_unknown_one() {
         let st = State::new();
         let on = |m: &str| c::MemberBody { name: Some("Scout".into()), machine: Some(m.into()), ..c::MemberBody::default() };
-        assert!(st.normalize(&on("studio"), None, 1_000, &[], &[]).is_err(), "a machine this wisp doesn't know");
-        let m = st.normalize(&on("studio"), None, 1_000, &[], &["studio".into()]).unwrap();
+        assert!(st.normalize(&on("studio"), None, 1_000, &[], &[], "auto").is_err(), "a machine this wisp doesn't know");
+        let m = st.normalize(&on("studio"), None, 1_000, &[], &["studio".into()], "auto").unwrap();
         assert_eq!(m.machine, "studio");
         // the machine is gone from machines.list (removed, or the list failed just now): pausing them still works
         let pause = c::MemberBody { paused: Some(true), ..c::MemberBody::default() };
-        assert!(st.normalize(&pause, Some(&m), 2_000, &[], &[]).unwrap().paused);
-        assert!(st.normalize(&on("elsewhere"), Some(&m), 3_000, &[], &[]).is_err(), "nor moved to one it doesn't know");
+        assert!(st.normalize(&pause, Some(&m), 2_000, &[], &[], "auto").unwrap().paused);
+        assert!(st.normalize(&on("elsewhere"), Some(&m), 3_000, &[], &[], "auto").is_err(), "nor moved to one it doesn't know");
     }
 
     #[test]
@@ -469,7 +496,8 @@ mod tests {
         // no such member on this wisp: the job's own note
         assert_eq!(note.part(&s), "You are Scout.");
         // a member here: the note is written here, as always
-        let m = st.normalize(&c::MemberBody { name: Some("Ada".into()), ..c::MemberBody::default() }, None, 1_000, &[], &[]).unwrap();
+        let m =
+            st.normalize(&c::MemberBody { name: Some("Ada".into()), ..c::MemberBody::default() }, None, 1_000, &[], &[], "auto").unwrap();
         st.put(m.clone());
         let mine = CrewExt { id: m.id.clone(), note: Some("QQ-carried-QQ".into()), ..CrewExt::default() };
         s.ext.insert(wisp_crew_api::PLUGIN_ID.into(), serde_json::to_value(&mine).unwrap());

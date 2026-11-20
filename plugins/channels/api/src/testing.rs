@@ -227,6 +227,15 @@ impl BoxApi for NoBox {
     }
 }
 
+/// A short signature the test hub verifies over all four fields, in a button's own alphabet (letters and digits), for
+/// a transport whose button data has no room for the long `sig.<…>` form (Telegram's 64 bytes).
+pub fn test_sig(session: &str, kind: &str, reference: &str, index: u32) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (session, kind, reference, index).hash(&mut h);
+    format!("t{:016x}", h.finish())
+}
+
 /// wisp as the flow sees it: a fixed context; counts and heard messages kept; nothing starts.
 #[derive(Debug, Default)]
 pub struct TestPhone {
@@ -237,6 +246,8 @@ pub struct TestPhone {
     pub uploads: Mutex<Vec<(String, String, Vec<u8>)>>,
     /// every tap or reply acted on, as the transport sent it
     pub acts: Mutex<Vec<ActArgs>>,
+    /// the tasks `session` answers with (their open ask and newest turn)
+    pub tasks: Mutex<Vec<SessionView>>,
 }
 
 #[async_trait]
@@ -291,8 +302,8 @@ impl Phone for TestPhone {
     async fn projects(&self) -> Result<Vec<ProjectView>> {
         Ok(self.ctx.projects.clone())
     }
-    async fn session(&self, _id: &str) -> Result<Option<SessionView>> {
-        Ok(None)
+    async fn session(&self, id: &str) -> Result<Option<SessionView>> {
+        Ok(lock(&self.tasks).iter().find(|s| s.id == id).cloned())
     }
     async fn sessions(&self) -> Result<Vec<SessionView>> {
         Ok(Vec::new())
@@ -453,7 +464,7 @@ impl ChannelHub for TestHub {
     }
     /// this hub's own signature, or `signed` (a test's good signature where a channel's format allows no dots)
     fn verify(&self, s: &Signed) -> bool {
-        s.sig == "signed" || s.sig == format!("sig.{}.{}.{}.{}", s.s, s.k, s.r, s.i)
+        s.sig == "signed" || s.sig == format!("sig.{}.{}.{}.{}", s.s, s.k, s.r, s.i) || s.sig == test_sig(&s.s, &s.k, &s.r, s.i)
     }
     fn started_from(&self, session_id: &str) -> Option<(String, Option<String>)> {
         lock(&self.started).get(session_id).cloned()

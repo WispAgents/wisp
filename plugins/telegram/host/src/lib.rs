@@ -18,7 +18,7 @@ use wisp_channels_api::transport::{Headers, InboundOpts, InboundResult};
 use wisp_channels_api::views::{ActArgs, ActKind, Msg, SessionView, Signed};
 use wisp_channels_api::{ChannelHub, HttpRequest, Status, TRANSPORTS, Transport, TransportDef, TransportKind};
 use wisp_kernel::{CancellationToken, Manifest, Plugin, Result, Setup, WireError};
-use wisp_telegram_core::{self as core, Message, Update, encode_tap, forwarded, links_it, parse_tap, publish_text, truncate};
+use wisp_telegram_core::{self as core, Message, Update, encode_tap, forwarded, links_it, parse_tap, publish_text, read_back, truncate};
 
 mod conv;
 mod hook;
@@ -186,10 +186,16 @@ impl Telegram {
         let session = tap.as_ref().and_then(|t| t.session.clone()).or_else(|| q.message_id().and_then(|m| self.session_of(m)));
         let result = match (tap, session) {
             (Some(t), Some(session)) => {
+                // a ref that didn't fit in the button is read back from the task (its open ask, its newest turn), as
+                // the button's data says: the signature is over it either way (audit H HS13)
+                let reference = match t.reference.clone() {
+                    Some(r) => Some(r),
+                    None => self.hub.phone().session(&session).await.ok().flatten().and_then(|s| read_back(t.kind, &s)),
+                };
                 let signed = Signed {
                     s: session.clone(),
                     k: t.kind.code().into(),
-                    r: t.reference.clone().unwrap_or_default(),
+                    r: reference.clone().unwrap_or_default(),
                     i: t.index,
                     sig: t.sig.clone(),
                 };
@@ -197,7 +203,7 @@ impl Telegram {
                     let a = ActArgs {
                         session_id: session,
                         kind: t.kind.into(),
-                        reference: t.reference,
+                        reference,
                         index: Some(t.index),
                         text: None,
                         approvals: false,

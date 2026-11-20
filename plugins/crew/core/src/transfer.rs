@@ -137,7 +137,14 @@ pub fn import_members(plan: &[PlanItem], c: &Checks, ids: &mut dyn Ids, now: i64
     let mut made: Vec<Member> = Vec::new();
     for p in &list {
         let taken: Vec<Member> = c.taken.iter().chain(made.iter()).cloned().collect();
-        let checks = Checks { taken: &taken, exists: c.exists, machine_ok: c.machine_ok, words: c.words, agent_ok: c.agent_ok };
+        let checks = Checks {
+            taken: &taken,
+            exists: c.exists,
+            machine_ok: c.machine_ok,
+            words: c.words,
+            agent_ok: c.agent_ok,
+            default_agent: c.default_agent,
+        };
         made.push(normalize_member(&body_of(p), None, &checks, ids, now)?);
     }
     // Delegates in the same file are the members just made.

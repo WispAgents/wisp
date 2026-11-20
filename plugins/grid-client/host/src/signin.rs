@@ -77,12 +77,35 @@ pub async fn start(st: &Arc<St>, a: &SignInArgs) -> Result<SignIn> {
     Ok(flow)
 }
 
+/// How long an ended sign-in's line stays on Settings → Cloud (declined, expired, failed): then it's forgotten, so the
+/// pane opened minutes later doesn't still say "Sign-in was declined in the browser." (audit H). None: it stays (one
+/// under way, or done).
+pub fn forgotten_after(state: &str) -> Option<u64> {
+    matches!(state, "denied" | "expired" | "failed" | "cancelled").then_some(60_000)
+}
+
 fn finish(st: &Arc<St>, id: &str, state: &str, error: &str) {
     if let Some(f) = lock(&st.flows).get_mut(id) {
         f.state = state.into();
         f.error = error.into();
     }
     crate::view::publish(st);
+    if let Some(ms) = forgotten_after(state) {
+        let (st2, id, state) = (st.clone(), id.to_owned(), state.to_owned());
+        st.ctx.spawn(async move {
+            if let Ok(c) = st2.ctx.clock() {
+                c.sleep(ms).await;
+            }
+            // still that ended one (a new sign-in is another flow): forgotten, and the pane said again
+            let gone = {
+                let mut flows = lock(&st2.flows);
+                flows.get(&id).is_some_and(|f| f.state == state) && flows.remove(&id).is_some()
+            };
+            if gone {
+                crate::view::publish(&st2);
+            }
+        });
+    }
 }
 
 async fn poll(st: Arc<St>, id: String, code: String, mut interval: u64, add_computer: bool) {
@@ -193,4 +216,20 @@ pub async fn sign_out(st: &Arc<St>) -> Result<()> {
         return Ok(());
     }
     crate::accounts::remove(st, &key).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::forgotten_after;
+
+    /// Audit H (a smaller note): the Add an account section still said "Sign-in was declined in the browser." when
+    /// opened minutes after a decline. An ended sign-in is forgotten after a minute; one under way or done stays.
+    #[test]
+    fn an_ended_sign_in_is_forgotten_after_a_minute_one_under_way_stays_audit_h() {
+        for ended in ["denied", "expired", "failed", "cancelled"] {
+            assert_eq!(forgotten_after(ended), Some(60_000), "{ended}");
+        }
+        assert_eq!(forgotten_after("waiting"), None);
+        assert_eq!(forgotten_after("done"), None);
+    }
 }

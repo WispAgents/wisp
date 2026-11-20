@@ -12,6 +12,21 @@ use wisp_runtime_api::model::{Session, Turn};
 type R<T> = Result<T, WireError>;
 
 /// A typed answer as the JSON the crew reads (what `run_json` would have answered).
+/// The harness a member gets when none is given (audit H HS7): `auto` while Auto is on (`runtime.auto`), else the one a
+/// task that names none runs on: New task's last pick (`runtime.launch`), else the first (docs/v2-plan.md §3).
+pub(crate) fn default_agent(ctx: &Ctx) -> String {
+    if ctx.setting("runtime.auto") == Some(Value::Bool(true)) {
+        return "auto".into();
+    }
+    // the harnesses this wisp has, in the order the runtime picks its first from (`runtime.harness@1`)
+    let ids: Vec<String> = ctx.contributions(&wisp_runtime_api::HARNESS).iter().map(|h| h.info().id.clone()).collect();
+    ctx.setting("runtime.launch")
+        .and_then(|v| v.get("agent")?.as_str().map(str::to_owned))
+        .filter(|a| ids.contains(a))
+        .or_else(|| ids.first().cloned())
+        .unwrap_or_else(|| "auto".to_owned())
+}
+
 pub(crate) fn to_json<T: Serialize>(v: &T) -> R<Value> {
     serde_json::to_value(v).map_err(|e| WireError::internal(e.to_string()))
 }

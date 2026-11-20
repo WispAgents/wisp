@@ -184,6 +184,8 @@ async fn notify(ctx: &Ctx, live: &Arc<Live>, event: &str, session: &str, text: &
     };
     // a question's options are signed answer buttons, named by its ask, as the channel's own report makes them (v1
     // `message`; audit G GS2). One only wisp can answer (an approval, a clash, a connector's keys) gets none.
+    // a setup card (ADR-0113): where a tap can't be the linked person's it goes without its buttons (audit H HS8)
+    let setup = event == "asks" && task.pointer("/ext/wisp.runtime/ask/setup").is_some_and(|c| !c.is_null());
     let actions = match (event, task.pointer("/ext/wisp.runtime/ask")) {
         ("asks", Some(a)) if actions.is_empty() => serde_json::from_value::<wisp_channels_api::AskView>(a.clone())
             .ok()
@@ -194,7 +196,7 @@ async fn notify(ctx: &Ctx, live: &Arc<Live>, event: &str, session: &str, text: &
     };
     let msg = Msg { title, text: text.to_owned(), actions };
     for n in due.into_iter().filter(|n| in_projects(&n.projects, &cwd)) {
-        if let Err(e) = deliver(ctx, live, &n.to, event, &msg, &view, fanned).await {
+        if let Err(e) = deliver(ctx, live, &n.to, event, &msg, &view, fanned, setup).await {
             tracing::warn!(to = %n.to, "notification not sent: {}", e.message);
         }
     }
@@ -216,7 +218,8 @@ async fn send_notice(ctx: &Ctx, live: &Arc<Live>, a: &wisp_channels_api::SendArg
 }
 
 /// To a webhook (`https://…`: the event as JSON) or a declared channel's transport.
-async fn deliver(ctx: &Ctx, live: &Arc<Live>, to: &str, event: &str, msg: &Msg, s: &SessionView, fanned: bool) -> Result<()> {
+#[allow(clippy::too_many_arguments)] // the notification, the message and the task it's about, how it was fanned
+async fn deliver(ctx: &Ctx, live: &Arc<Live>, to: &str, event: &str, msg: &Msg, s: &SessionView, fanned: bool, setup: bool) -> Result<()> {
     if to.starts_with("http://") || to.starts_with("https://") {
         let body = json!({ "event": event, "session": { "id": s.id, "title": s.title, "state": s.state, "cwd": s.cwd }, "title": msg.title, "text": msg.text });
         let net = wisp_kernel::services::net(ctx)?;
@@ -243,7 +246,7 @@ async fn deliver(ctx: &Ctx, live: &Arc<Live>, to: &str, event: &str, msg: &Msg, 
     if fanned && report::covered(live, t.as_ref(), s) {
         return Ok(()); // the task came from there: its report already goes there (report.rs)
     }
-    t.publish(msg, Some(s)).await
+    t.publish(&wisp_channels_core::for_channel(msg, &transport, setup), Some(s)).await
 }
 
 fn running(live: &Live) -> Vec<Arc<dyn Transport>> {

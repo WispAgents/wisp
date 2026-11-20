@@ -160,6 +160,12 @@ fn falsy(v: Option<&str>) -> bool {
     v.is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off"))
 }
 
+/// `s` with its first letter lower case (a sentence carried on after a comma).
+fn lower_first(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map(|f| f.to_lowercase().chain(c).collect()).unwrap_or_default()
+}
+
 /// `s` as one `sh` word: in single quotes, each `'` as `'\''`, so nothing in it (`$`, a backtick, `"`, a space) is
 /// ever expanded or run. v1 used JSON quotes, inside which sh still expands `$(…)` and backticks.
 pub fn sh_quote(s: &str) -> String {
@@ -326,7 +332,16 @@ impl Updater {
         let step = match self.method() {
             Method::App => {
                 let Some(asset) = self.asset.clone() else {
-                    let m = format!("There's no automatic update for this copy of wisp. {}", self.later());
+                    // checks off: nothing looked for the download, so the copy isn't to blame (audit H HS10)
+                    let m = if self.enabled {
+                        format!("There's no automatic update for this copy of wisp. {}", self.later())
+                    } else {
+                        format!(
+                            "Update checks are off here (WISP_UPDATE_CHECK=0 or CI), so wisp didn't look for the update. \
+                             Unset WISP_UPDATE_CHECK (outside CI) and try again, or {}",
+                            lower_first(&self.later())
+                        )
+                    };
                     self.error = Some(m.clone());
                     return Err(Refusal::Invalid(m));
                 };

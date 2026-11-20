@@ -75,6 +75,32 @@ pub fn offer<S: std::hash::BuildHasher>(
     })
 }
 
+/// One offer per folder, under the project whose repository owns it (audit H HS4: `repo3` and `repo3-wt`, a linked
+/// worktree of it added as a project, both offered `repo3-wt2`). Projects that are checkouts of one repository list the
+/// same worktrees; the one whose root is that repository's main checkout (git lists it first) keeps them, else the one
+/// listed first. `listed`: each project's root and the folders git lists for it, in git's order. Back: per project, the
+/// folders (by `folder_key`) another project offers instead.
+pub fn elsewhere(listed: &[(String, Vec<String>)]) -> Vec<HashSet<String>> {
+    let main = |(root, paths): &(String, Vec<String>)| paths.first().is_some_and(|m| same_folder(m, root));
+    let mut order: Vec<usize> = (0..listed.len()).collect();
+    // stable: the main checkouts first, each group in the order given
+    order.sort_by_key(|&i| !listed.get(i).is_some_and(main));
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out = vec![HashSet::new(); listed.len()];
+    for i in order {
+        let Some((_, paths)) = listed.get(i) else { continue };
+        for p in paths {
+            let k = folder_key(p);
+            if !seen.insert(k.clone())
+                && let Some(drop) = out.get_mut(i)
+            {
+                drop.insert(k);
+            }
+        }
+    }
+    out
+}
+
 /// The paths a Bring in may take: the offer's own, in its order (a path that isn't one, or no longer is, is
 /// skipped, never made a task).
 /// Paths are compared by `folder_key`, as `offer` does: on Windows git lists `C:/x/stray` for the `C:\x\stray` a client
@@ -92,6 +118,29 @@ mod tests {
 
     fn l(path: &str, branch: &str) -> Listed {
         Listed { path: path.into(), branch: branch.into(), ..Listed::default() }
+    }
+
+    /// Audit H HS4: one worktree, two projects (the main checkout and a linked worktree of it): offered once, under the
+    /// main checkout's project, whichever order the projects come in; a repository no project is the main checkout of
+    /// offers under the first.
+    #[test]
+    fn one_worktree_of_two_projects_is_offered_once_under_the_repositorys_main_checkout_audit_h_hs4() {
+        let git = vec!["/r/repo3".to_owned(), "/r/repo3-wt".to_owned(), "/r/repo3-wt2".to_owned()];
+        for (wt_first, owner, other) in [(true, 1, 0), (false, 0, 1)] {
+            let main = ("/r/repo3".to_owned(), git.clone());
+            let linked = ("/r/repo3-wt".to_owned(), git.clone());
+            let list = if wt_first { vec![linked, main] } else { vec![main, linked] };
+            let drop = elsewhere(&list);
+            assert!(drop[owner].is_empty(), "the main checkout's project keeps them: {drop:?}");
+            assert!(drop[other].contains(&folder_key("/r/repo3-wt2")), "the other offers none of them: {drop:?}");
+        }
+        let two_linked = vec![
+            ("/r/a".to_owned(), vec!["/r/main".into(), "/r/a".into(), "/r/b".into()]),
+            ("/r/b".to_owned(), vec!["/r/main".into(), "/r/a".into(), "/r/b".into()]),
+        ];
+        let drop = elsewhere(&two_linked);
+        assert!(drop[0].is_empty() && drop[1].contains(&folder_key("/r/main")));
+        assert!(elsewhere(&[("/r/x".to_owned(), vec!["/r/x".into(), "/r/x2".into()])])[0].is_empty(), "one project: nothing moves");
     }
 
     #[test]

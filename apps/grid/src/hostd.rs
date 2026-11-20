@@ -115,7 +115,10 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// A port nobody listens on, now.
+/// A port nobody listens on, now. Only for boxd's containers, which bind it through boxd: a box this host starts as a
+/// process binds a port of its own (`WISP_PORT=0`) and says which in its `server.json` (`hostd_spawn::bound_port`). A
+/// port read here and closed is anyone's until the box binds it: on macOS CI another bind took it in that window and
+/// the box stopped as it started, exit 101 (`tests/box_lifetimes.rs`).
 fn free_port() -> Result<u16> {
     let l = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| bad(format!("no free port: {e}"), 503))?;
     Ok(l.local_addr().map_err(|e| bad(e.to_string(), 503))?.port())
@@ -194,7 +197,8 @@ impl ProcessHost {
             p.1 += 1;
             return Err(bad("This grid is full right now. Try again in a few minutes.", 503));
         }
-        let port = free_port()?;
+        // a process box binds its own port and says which (`WISP_PORT=0`): none is read here and handed over
+        let port = if self.o.boxd.is_some() { free_port()? } else { 0 };
         let secret = crate::accounts::token("");
         {
             let mut m = lock(&self.inst);
@@ -216,7 +220,7 @@ impl ProcessHost {
                 return Err(e);
             }
         };
-        let child = self.healthy(user, port, child).await?;
+        let (child, port) = self.healthy(user, port, child).await?;
         let now = self.clock.now_ms();
         {
             let mut m = lock(&self.inst);

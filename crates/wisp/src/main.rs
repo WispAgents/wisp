@@ -150,6 +150,12 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         eprintln!("  ✗ {}", words::launch_stray(&p.words, stray));
         return Ok(1);
     }
+    if p.command.is_none()
+        && let Some(said) = f.mode.as_deref().and_then(words::bad_mode)
+    {
+        eprintln!("  ✗ {said}");
+        return Ok(1);
+    }
     // a group command with a verb it doesn't have (`wisp plugin frob`, `wisp mcp start`): its verbs, exit 2
     // a group that routed as a command (`mcp`, `skill`, `plugin`): its next word decides, however many follow (`wisp
     // mcp foo bar` would serve on stdin)
@@ -414,7 +420,7 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
         }
         "ls" | "list" if history_cli::wants_history(&o) && !p.flags.watch => history_cli::ls(&connect().await?, &o, cwd).await?,
         "history" if o.words.first().map(String::as_str) == Some("export") => history_cli::export(&connect().await?, &o, cwd).await?,
-        "import" if o.words.len() <= 1 => history_cli::import(&connect().await?, &o, home).await?,
+        "import" if o.words.len() <= 1 => history_cli::import(&connect().await?, &o, home, cwd).await?,
         // `-d`/`--detach` as launches take it (audit C #12): a rerun returns with its id already, so it changes nothing
         "rerun"
             if {

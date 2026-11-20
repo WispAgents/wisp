@@ -184,7 +184,8 @@ impl ResourceKind for CrudKind {
     fn check(&self, r: &Resource) -> Vec<String> {
         let Some((_, why, field)) = self.words_while.filter(|_| !self.words_on()) else { return Vec::new() };
         match r.spec.get(field).and_then(Value::as_str) {
-            Some(w) if self.also_words.iter().any(|x| x == w) => vec![format!("{}.{}: {field}: {w}: {why}", self.info.section, r.name)],
+            // the plan puts the resource's path in front (`agents.a1: …`): said once (audit H, "agents.a1: agents.a1:")
+            Some(w) if self.also_words.iter().any(|x| x == w) => vec![format!("{field}: {w}: {why}")],
             _ => Vec::new(),
         }
     }

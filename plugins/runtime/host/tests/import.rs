@@ -87,3 +87,15 @@ async fn a_v1_turns_changes_are_kept_and_a_second_import_does_not_double_them() 
     assert_eq!((again[0].changed_files, files(&again[0])), (Some(2), vec!["server/reconnect.js".to_owned(), "CHANGELOG.md".to_owned()]));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Audit H HS1: `wisp import v1home --yes` sent `v1home/sessions` as typed; the server read it from its own folder,
+/// found nothing and said "0 tasks imported". A relative folder, or one that isn't there, is refused in words.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_relative_or_missing_sessions_folder_is_refused_not_imported_as_nothing_audit_h_hs1() {
+    let r = common::rig().await;
+    let e = r.rt.import_v1(Some("v1home/sessions".into())).await.unwrap_err().to_string();
+    assert_eq!(e, "v1home/sessions isn't a full path: name the v1 sessions folder from /");
+    let gone = std::env::temp_dir().join(format!("wisp-v1-gone-{}", wisp_kernel::ids::uuid7()));
+    let e = r.rt.import_v1(Some(gone.clone())).await.unwrap_err().to_string();
+    assert_eq!(e, format!("No folder at {}", gone.display()));
+}

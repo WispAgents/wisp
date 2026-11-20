@@ -38,6 +38,7 @@ pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {
                 now(&ctx),
                 &calls::profile_names(&ctx, &call).await,
                 &calls::machine_ids(&ctx, &call).await,
+                &calls::default_agent(&ctx),
             ) {
                 Ok(m) => m,
                 Err(e) => return refuse(e),
@@ -136,6 +137,7 @@ pub(crate) fn register_changes(s: &mut Setup, st: &Arc<State>) {
                 now(&ctx),
                 &calls::profile_names(&ctx, &call).await,
                 &calls::machine_ids(&ctx, &call).await,
+                &calls::default_agent(&ctx),
             ) {
                 Ok(m) => m,
                 Err(e) => return Ok(refused(e.message)),

@@ -395,7 +395,17 @@ async fn a_bad_token_is_refused_by_its_field_and_nothing_is_written() {
         a.k.call(Caller::user(), "channels.setup", json!({ "transport": "slack", "enabled": true, "secrets": { "botToken": "nope" } }))
             .await
             .unwrap_err();
-    assert!(e.message.starts_with("secrets.botToken: The bot token starts with xoxb-"), "{}", e.message);
+    assert_eq!(e.message, "The bot token starts with xoxb-.");
+    assert_eq!(e.details.as_ref().map(|d| d["field"].clone()), Some(json!("secrets.botToken")), "the field is said apart");
+    // audit H HS14: the toast read "secrets.token: That doesn’t look like a bot token: …"
+    let e =
+        a.k.call(Caller::user(), "channels.setup", json!({ "transport": "telegram", "secrets": { "token": "123456:bad token" } })).await;
+    assert!(e.is_err());
+    let e =
+        a.k.call(Caller::user(), "channels.setup", json!({ "transport": "telegram", "secrets": { "token": "123456badtoken" } }))
+            .await
+            .unwrap_err();
+    assert_eq!(e.message, "That doesn’t look like a bot token: @BotFather gives one like 123456:ABC…");
     let e =
         a.k.call(Caller::user(), "channels.setup", json!({ "transport": "telegram", "secrets": { "token": "${secret:channels/sign}" } }))
             .await
@@ -403,9 +413,9 @@ async fn a_bad_token_is_refused_by_its_field_and_nothing_is_written() {
     assert!(e.message.contains("not a reference"), "another secret can't be named into a channel: {}", e.message);
     let e =
         a.k.call(Caller::user(), "channels.setup", json!({ "transport": "ntfy", "settings": { "topic": "my topic!" } })).await.unwrap_err();
-    assert!(e.message.starts_with("settings.topic:"), "{}", e.message);
+    assert!(e.message.starts_with("ntfy topic: letters") && e.details.as_ref().is_some_and(|d| d["field"] == "settings.topic"), "{e:?}");
     let e = a.k.call(Caller::user(), "channels.setup", json!({ "transport": "irc" })).await.unwrap_err();
-    assert!(e.message.starts_with("transport:"), "{}", e.message);
+    assert!(e.message.starts_with("Settings → Phone sets up") && e.details.as_ref().is_some_and(|d| d["field"] == "transport"), "{e:?}");
     assert!(a.channel_row().await.is_none(), "no channel was declared");
     assert!(a.secrets.0.lock().unwrap().keys().all(|k| !k.starts_with("channels/slack") && !k.starts_with("channels/telegram")));
 }
@@ -548,9 +558,9 @@ async fn send_me_is_a_notification_to_the_channel_on_by_default_the_first_time_a
     assert_eq!(a.status("ntfy").await["notify"], json!([]));
 
     let e = a.k.call(Caller::user(), "channels.setup", json!({ "transport": "slack", "notify": ["asks"] })).await.unwrap_err();
-    assert!(e.message.starts_with("notify: slack answers where it was asked"), "{}", e.message);
+    assert!(e.message.starts_with("slack answers where it was asked"), "{}", e.message);
     let e = a.k.call(Caller::user(), "channels.setup", json!({ "transport": "ntfy", "notify": ["drain"] })).await.unwrap_err();
-    assert!(e.message.starts_with("notify: Send me takes asks and finished"), "{}", e.message);
+    assert!(e.message.starts_with("Send me takes asks and finished"), "{}", e.message);
     assert_eq!(a.status("ntfy").await["notify"], json!([]), "a refused one changed nothing");
 }
 
@@ -573,7 +583,7 @@ async fn unlink_forgets_who_was_linked_and_shows_a_new_code_that_no_row_holds() 
     assert!(!holds(&a.on_disk(), &code), "the code is in no row, change or file of the store");
 
     let e = a.k.call(Caller::user(), "channels.setup", json!({ "transport": "ntfy", "unlink": true })).await.unwrap_err();
-    assert!(e.message.starts_with("unlink: ntfy links nobody"), "{}", e.message);
+    assert!(e.message.starts_with("ntfy links nobody"), "{}", e.message);
 }
 
 #[tokio::test(flavor = "multi_thread")]

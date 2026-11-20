@@ -89,6 +89,14 @@ impl ResourceKind for TriggerKind {
             Err(e) => vec![format!("not a trigger: {e}")],
         }
     }
+    /// The project a trigger names by name (`project: repo`; a folder is a folder): `wisp validate` and the plan refuse
+    /// one no project has, as the apply did alone before (audit H: it planned as "1 to add").
+    fn refers_to(&self) -> Vec<String> {
+        vec!["project".to_owned()]
+    }
+    fn refs(&self, r: &Resource) -> Vec<wisp_resources_api::Ref> {
+        project_refs(&r.spec)
+    }
     fn describe(&self, op: &Op) -> Option<String> {
         let s: TriggerSpec = serde_json::from_value(op.spec.clone()).unwrap_or_default();
         let what = match s.target() {
@@ -118,6 +126,13 @@ impl ResourceKind for TriggerKind {
 pub(crate) fn project_name(spec: &Value) -> Option<&str> {
     let p = spec.get("project")?.as_str()?.trim();
     (!p.is_empty() && p != "." && p != ".." && !p.starts_with('~') && !p.contains(['/', '\\', ':'])).then_some(p)
+}
+
+/// The project a trigger's spec names by name, as a reference the plan checks; a folder names none.
+pub(crate) fn project_refs(spec: &Value) -> Vec<wisp_resources_api::Ref> {
+    project_name(spec)
+        .map(|name| vec![wisp_resources_api::Ref { kind: "project".into(), name: name.to_owned(), field: "project".into() }])
+        .unwrap_or_default()
 }
 
 /// Each declared project's name and folder.
@@ -523,6 +538,18 @@ mod tests {
         assert!(no.starts_with("on: every minute is no source") && no.contains("pr.opened, schedule, task.finished"), "{no}");
         for ok in ["schedule", "pr.*", "task.finished", ""] {
             assert_eq!(no_source(ok, &list), None, "{ok}");
+        }
+    }
+
+    /// Audit H (a smaller note): `project: repo` naming no project planned as "1 to add" and only the apply refused it;
+    /// it's a reference the plan checks (and `wisp validate` with it), a folder none.
+    #[test]
+    fn a_project_named_by_name_is_a_reference_the_plan_checks_audit_h() {
+        let r = project_refs(&json!({ "on": "schedule", "project": "repo" }));
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].kind.as_str(), r[0].name.as_str(), r[0].field.as_str()), ("project", "repo", "project"));
+        for none in [json!({ "project": "/w/repo" }), json!({ "project": "~/repo" }), json!({}), json!({ "project": "" })] {
+            assert!(project_refs(&none).is_empty(), "{none}");
         }
     }
 

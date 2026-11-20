@@ -356,6 +356,9 @@ const APPLY: &[&str] = &[
     "-w",
 ];
 
+/// `wisp trigger`'s verbs (and its alias `triggers`').
+const TRIGGER_VERBS: &[&str] = &["add", "ls", "list", "rm", "remove", "off", "on", "fire", "test", "log", "resume", "approve", "sources"];
+
 /// Every built-in verb path main.rs routes (its `areas` and `shared_and_cloud` arms), one per line: the e2e
 /// (`tests/serve_cli_verbs.rs`) reads these lines, and `every_verb_main_routes_for_a_built_in_is_in_the_table` keeps
 /// them in step with main.rs. A line starting with one is that command, never a task (QA round 9 #1).
@@ -366,8 +369,9 @@ pub const VERB_PATHS: &[VerbPath] = &[
     vp("sandboxes", &["new", "add", "ls", "list", "rm", "remove", "delete"], &[]),
     vp("team", &["ls", "list", "new", "create", "show", "add", "rm", "remove"], &[]),
     vp("teams", &["ls", "list", "new", "create", "show", "add", "rm", "remove"], &[]),
-    vp("trigger", &["add", "ls", "list", "rm", "remove", "off", "on", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
-    vp("triggers", &["add", "ls", "list", "rm", "remove", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
+    vp("trigger", TRIGGER_VERBS, TRIGGER),
+    // the alias takes the same verbs, `off`/`on` included (audit H HS2: its refusal and completion lacked them)
+    vp("triggers", TRIGGER_VERBS, TRIGGER),
     vp("crew", &["wake", "graph", "pause", "resume"], TRIGGER),
     vp("hook", &["install", "uninstall", "remove", "status"], &[]),
     vp("events", &["tail", "why", "retry", "parked", "ls"], &["--follow", "-f", "--limit", "--since", "--subject", "--type"]),
@@ -617,12 +621,19 @@ pub fn run_miss(name: &str) -> String {
 /// typo in its prompt): the refusal, naming the close flag. Nothing launches; a prompt that says it puts it after `--`.
 pub fn launch_stray(prompt: &[String], stray: &str) -> String {
     let typed = stray.trim_start_matches('-');
-    let close = crate::args::LAUNCH_FLAGS
+    let near_ones: Vec<(usize, &str)> = crate::args::LAUNCH_FLAGS
         .iter()
         .map(|f| (distance(typed, f.trim_start_matches('-')), *f))
         .filter(|(d, f)| *d <= 2 && near(typed, f.trim_start_matches('-'), *d))
-        .min_by_key(|(d, _)| *d)
-        .map_or_else(String::new, |(_, f)| format!(": did you mean {f}?"));
+        .collect();
+    // every flag as close as the closest: `--modle` is one slip from --mode and from --model (audit H HS3)
+    let best = near_ones.iter().map(|(d, _)| *d).min();
+    let tied: Vec<&str> = near_ones.iter().filter(|(d, _)| Some(*d) == best).map(|(_, f)| *f).collect();
+    let close = match tied.as_slice() {
+        [] => String::new(),
+        [one] => format!(": did you mean {one}?"),
+        [rest @ .., last] => format!(": did you mean {} or {last}?", rest.join(", ")),
+    };
     let later = if close.is_empty() && matches!(typed, "at" | "later" | "when" | "start-at") {
         ". A task can't start later from here: Start later in the app, or wisp later plan --help"
     } else {
@@ -636,6 +647,13 @@ pub fn launch_stray(prompt: &[String], stray: &str) -> String {
         "wisp takes no {stray}{close}{later}\n    Nothing was launched (wisp --help lists the flags). A task that says it: wisp {before}-- {}",
         after.join(" ")
     )
+}
+
+/// `--mode <m>` that names no mode (audit H HS3: "runtime.create: unknown variant `opus`, expected one of …"): the
+/// refusal in words, pointing a model at `--model`. None: a mode.
+pub fn bad_mode(m: &str) -> Option<String> {
+    (!matches!(m, "plan" | "edits" | "auto"))
+        .then(|| format!("--mode takes plan, edits or auto, not {m} (a model goes after --model: --model {m}). Nothing was launched"))
 }
 
 /// Edit distance with adjacent swaps (`shwo` is one from `show`).
@@ -680,6 +698,11 @@ pub fn usage(word: &str) -> String {
             out.push_str(line);
             out.push('\n');
         }
+    }
+    // a group HELP has no line for (`wisp trigger`, `wisp triggers`; audit H HS2): its verbs, not "needs more"
+    let verbs: Vec<&str> = VERB_PATHS.iter().filter(|p| p.cmd == word).flat_map(|p| p.verbs.iter().copied()).collect();
+    if out.is_empty() && !verbs.is_empty() {
+        out = format!("  wisp {word} {} …\n", verbs.join("|"));
     }
     if out.is_empty() {
         // a plural or a synonym is documented under its other name

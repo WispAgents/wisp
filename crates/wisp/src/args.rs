@@ -393,6 +393,11 @@ pub fn flag_shaped(a: &str) -> bool {
     })
 }
 
+/// A word typed as a short flag: one dash and one letter (`-x`). `-rf` or `-3` stay words of a prompt.
+pub fn short_flag_shaped(a: &str) -> bool {
+    a.len() == 2 && a.starts_with('-') && a.as_bytes()[1].is_ascii_alphabetic()
+}
+
 /// The flags a launch (`wisp "…"`) takes, for "did you mean" (`set` below, and `--factory`).
 pub const LAUNCH_FLAGS: [&str; 30] = [
     "--mode",
@@ -545,7 +550,8 @@ pub fn parse(input: &[String], env_port: Option<&str>, home: &Path, cwd: &Path) 
                 // machine to run on goes first (`wisp --on laptop crew create …`) (audit B #9)
                 next()?;
             } else if !set(&mut flags, &a, &mut next, home, cwd)? {
-                if flag_shaped(&a) {
+                // a short flag no launch takes (`wisp "fix it" -x`) is refused like a long one (audit H)
+                if flag_shaped(&a) || short_flag_shaped(&a) {
                     strays.push(a.clone());
                 }
                 words.push(a);

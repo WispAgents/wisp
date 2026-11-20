@@ -92,12 +92,16 @@ async fn a_formula_is_read_as_the_ui_reads_it_audit_d() {
         api.try_cmd("resources.plan", json!({ "resources": [{ "kind": "router", "name": "default", "spec": { "best2": true } }] })).await;
     assert!(plan.to_string().contains("Auto is off"), "a plan naming it says why: {plan}");
     // audit G GS6: `auto` as an agent or a harness is put away with the router: refused, and no list offers it
-    let autos = "wisp: 1\nagents:\n  a1: { harness: auto }\ntasks:\n  default: { agent: auto }\n  t1: { prompt: fix it, agent: auto }\n";
+    // audit H HS7: a crew member's `agent: auto` is refused like the others
+    let autos = "wisp: 1\nagents:\n  a1: { harness: auto }\ntasks:\n  default: { agent: auto }\n  t1: { prompt: fix it, agent: auto }\ncrew:\n  - { name: Qa Auto, agent: auto }\n";
     std::fs::write(dir.join("proj/auto3.wisp.yml"), autos).unwrap();
     let (code, out, err) = wisp(&dir, port, &["validate", "-f", "auto3.wisp.yml"]);
     let said = format!("{out}{err}");
     assert!(code != 0, "{said}");
     assert!(said.contains("agents.a1: harness: auto: Auto is off (runtime.auto)"), "{said}");
+    // audit H: the path was said twice ("agents.a1: agents.a1: harness: auto")
+    assert!(!said.contains("agents.a1: agents.a1:"), "{said}");
+    assert!(said.lines().any(|l| l.contains("crew.") && l.contains("no agent named auto")), "{said}");
     assert!(said.contains("no agent named auto") && !said.contains(", auto)"), "{said}");
     // on, it's a kind as before
     api.cmd("settings.set", json!({ "key": "runtime.auto", "value": true })).await;

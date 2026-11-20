@@ -36,6 +36,17 @@ pub fn encode_tap(kind: ActionKind, index: u32, sig: &str, session: &str, refere
     out
 }
 
+/// The ref a tapped button names when it didn't fit in it, read back from its task (audit H HS13: it wasn't, every tap
+/// verified against "" and said "That button is out of date."): an answer's is the open ask, a reply's, Mark done's
+/// and Stop's the newest turn. None: there's nothing to read it from, and the signature can't match.
+pub fn read_back(kind: ActionKind, s: &wisp_channels_api::views::SessionView) -> Option<String> {
+    match kind {
+        ActionKind::Answer => s.ask.as_ref().map(|a| a.id.clone()),
+        ActionKind::Reply | ActionKind::Done | ActionKind::Stop => s.turns.last().map(|t| t.id.clone()),
+    }
+    .filter(|r| !r.is_empty())
+}
+
 /// The tap a button's data says, or `None` (an unknown kind, no signature, a v1 button).
 pub fn parse_tap(data: &str) -> Option<Tap> {
     if data.len() > DATA_MAX {
@@ -61,6 +72,29 @@ mod tests {
     use super::*;
 
     const SIG: &str = "AbCdEfGhIjKlMnOpQrStUv"; // 22, as the hub's
+
+    /// Audit H HS13: a 32-character task id leaves no room for the ask id (`a:1:<sig>:<session>`, 59 bytes): the ref
+    /// is read back from the task, the open ask for an answer and the newest turn for the rest.
+    #[test]
+    fn a_ref_that_did_not_fit_is_read_back_from_the_task_audit_h_hs13() {
+        let session = "0123456789abcdef0123456789abcdef";
+        let ask = "0198a3c1-7f00-7000-8000-0123456789ab";
+        let d = encode_tap(ActionKind::Answer, 1, SIG, session, ask);
+        let t = parse_tap(&d).unwrap();
+        assert_eq!((t.session.as_deref(), t.reference.as_deref()), (Some(session), None), "{d}");
+        let s: wisp_channels_api::views::SessionView = serde_json::from_value(serde_json::json!({
+            "id": session, "title": "t", "state": "waiting", "agent": "claude",
+            "ask": { "id": ask, "question": "red or blue?", "options": ["red", "blue"] },
+            "turns": [{ "id": "turn-1", "status": "running" }]
+        }))
+        .unwrap();
+        assert_eq!(read_back(ActionKind::Answer, &s).as_deref(), Some(ask));
+        for k in [ActionKind::Reply, ActionKind::Done, ActionKind::Stop] {
+            assert_eq!(read_back(k, &s).as_deref(), Some("turn-1"), "{k:?}");
+        }
+        let bare = wisp_channels_api::views::SessionView::default();
+        assert_eq!(read_back(ActionKind::Answer, &bare), None);
+    }
 
     #[test]
     fn short_ids_go_whole() {

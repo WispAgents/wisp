@@ -280,8 +280,14 @@ fn adopt(s: &mut Setup, st: &Arc<State>) {
         if calls::crew_of(&task).get("id").and_then(Value::as_str).is_some() {
             return Err(WireError::invalid("That task is already a crew member's job."));
         }
-        let m =
-            st.normalize(&a.member, None, now(&ctx), &profile_names(&ctx, &call).await, &crate::calls::machine_ids(&ctx, &call).await)?;
+        let m = st.normalize(
+            &a.member,
+            None,
+            now(&ctx),
+            &profile_names(&ctx, &call).await,
+            &crate::calls::machine_ids(&ctx, &call).await,
+            &crate::calls::default_agent(&ctx),
+        )?;
         // claimed before the member is kept: of two adds at once, only one makes a member (the other is refused)
         let ext = CrewExt { id: m.id.clone(), job: JobKind::Task, ..CrewExt::default() };
         if !calls::claim(&ctx, &call, &a.session_id, &calls::to_json(&ext)?).await? {
@@ -352,8 +358,14 @@ pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {
         Ok(out)
     });
     on!(s, st, c::Create, |st, ctx, call, a| {
-        let mut m =
-            st.normalize(&a.member, None, now(&ctx), &profile_names(&ctx, &call).await, &crate::calls::machine_ids(&ctx, &call).await)?;
+        let mut m = st.normalize(
+            &a.member,
+            None,
+            now(&ctx),
+            &profile_names(&ctx, &call).await,
+            &crate::calls::machine_ids(&ctx, &call).await,
+            &crate::calls::default_agent(&ctx),
+        )?;
         // the id the client drew it under (B27: the rail showed the member twice for a frame)
         if let Some(id) = a.id.filter(|id| wisp_crew_core::kit::is_id(id) && st.member(id).is_err()) {
             m.id = id;
@@ -376,6 +388,7 @@ pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {
             now(&ctx),
             &profile_names(&ctx, &call).await,
             &crate::calls::machine_ids(&ctx, &call).await,
+            &crate::calls::default_agent(&ctx),
         )?;
         crate::offers::settle_all(&mut m, a.offers.as_ref(), now(&ctx));
         st.put(m.clone());

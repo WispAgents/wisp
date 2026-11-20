@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 use wisp_channels_api::views::{
     ActArgs, ActKind, ActionKind, ChannelCtx, Parsed, ProjectView, Remote, RunOpts, SessionView, Signed, StartOpts, Started, Thread,
-    ThreadCtx,
+    ThreadCtx, TurnView,
 };
 use wisp_channels_api::{
     AwayEntry, BoxApi, BoxGrid, ChannelHub, ChannelUrl, Exec, ExecOut, HttpRequest, HttpResponse, Later, Net, NetError, Phone, Status, Ws,
@@ -609,7 +609,15 @@ impl Phone for KPhone {
         }
     }
     async fn session(&self, id: &str) -> Result<Option<SessionView>> {
-        Ok(self.cmd::<rt::Get>(get(id)).await.ok().map(|t| session_view(&t)))
+        let Ok(t) = self.cmd::<rt::Get>(get(id)).await else { return Ok(None) };
+        let mut s = session_view(&t);
+        // with its open ask and newest turn, as the trait says: a tapped button whose ref didn't fit is read back from
+        // them (Telegram's 64 bytes; audit H HS13: every tap was "out of date")
+        s.ask = t.pointer("/ext/wisp.runtime/ask").cloned().and_then(|a| serde_json::from_value(a).ok());
+        if let Ok(Value::Array(turns)) = self.cmd_json::<rt::Turns>(json!({ "id": id, "limit": 1 })).await {
+            s.turns = turns.iter().filter_map(|t| serde_json::from_value::<TurnView>(t.clone()).ok()).collect();
+        }
+        Ok(Some(s))
     }
     async fn sessions(&self) -> Result<Vec<SessionView>> {
         let list = self.cmd::<rt::List>(rt::ListArgs::default()).await?;

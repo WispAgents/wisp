@@ -187,6 +187,16 @@ async fn forget(st: &Arc<St>, id: &str) {
     }
 }
 
+/// Why a dial got no answer, in words (audit H: the retry line read "The grid didn’t answer: error sending request for url
+/// (http://…/tunnel)"): the request error itself goes to the log, never the pane.
+pub(crate) fn no_answer(timed_out: bool) -> String {
+    if timed_out {
+        "The grid didn’t answer in time: wisp tries again.".to_owned()
+    } else {
+        "Can’t reach the grid (it may be restarting, or this computer is offline): wisp tries again.".to_owned()
+    }
+}
+
 /// One dial: the tunnel held until it drops. → why it ended, and whether it was up.
 async fn dial_once(st: &Arc<St>, grid: &str, id: &str, token: &str, cancel: &CancellationToken) -> (Ended, bool) {
     let client = net::client(true);
@@ -199,7 +209,13 @@ async fn dial_once(st: &Arc<St>, grid: &str, id: &str, token: &str, cancel: &Can
         .send();
     let resp = tokio::select! {
         () = cancel.cancelled() => return (Ended::Closed, false),
-        r = req => match r { Ok(r) => r, Err(e) => return (Ended::Retry(format!("The grid didn’t answer: {e}")), false) },
+        r = req => match r {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::debug!(error = %e, "grid-client: the tunnel's dial got no answer");
+                return (Ended::Retry(no_answer(e.is_timeout())), false);
+            }
+        },
     };
     let status = resp.status().as_u16();
     match dialed(status) {
@@ -213,7 +229,10 @@ async fn dial_once(st: &Arc<St>, grid: &str, id: &str, token: &str, cancel: &Can
     }
     let up = match resp.upgrade().await {
         Ok(u) => u,
-        Err(e) => return (Ended::Retry(format!("The tunnel didn’t open: {e}")), false),
+        Err(e) => {
+            tracing::debug!(error = %e, "grid-client: the tunnel didn't open");
+            return (Ended::Retry("The tunnel to the grid didn’t open: wisp tries again.".to_owned()), false);
+        }
     };
     set_state(st, "online", "", None);
     let port = local_port(st);
@@ -231,7 +250,12 @@ async fn dial_once(st: &Arc<St>, grid: &str, id: &str, token: &str, cancel: &Can
         .serve_connection(TokioIo::new(up), svc);
     tokio::select! {
         () = cancel.cancelled() => (Ended::Closed, true),
-        r = conn => (Ended::Retry(r.err().map_or_else(|| "The connection to the grid dropped.".to_owned(), |e| format!("The connection to the grid dropped: {e}"))), true),
+        r = conn => {
+            if let Err(e) = &r {
+                tracing::debug!(error = %e, "grid-client: the tunnel dropped");
+            }
+            (Ended::Retry("The connection to the grid dropped: wisp tries again.".to_owned()), true)
+        }
     }
 }
 
@@ -343,5 +367,19 @@ pub async fn reply(st: &St, a: &api::ReplyArgs) -> api::Replied {
             api::Replied { status, error: if status < 300 { String::new() } else { v["error"].as_str().unwrap_or_default().to_owned() } }
         }
         Err(e) => api::Replied { status: 0, error: e.message },
+    }
+}
+
+#[cfg(test)]
+mod no_answer_tests {
+    use super::no_answer;
+
+    /// Audit H (a smaller note): Settings → Cloud's retry line showed reqwest's words ("error sending request for url
+    /// (http://…/tunnel)"). It says what happened and that wisp tries again, never the request's error.
+    #[test]
+    fn a_dial_with_no_answer_is_said_in_words_not_the_request_error_audit_h() {
+        for t in [no_answer(true), no_answer(false)] {
+            assert!(t.ends_with("wisp tries again.") && !t.contains("http") && !t.contains("error sending"), "{t}");
+        }
     }
 }

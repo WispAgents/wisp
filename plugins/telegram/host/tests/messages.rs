@@ -112,3 +112,52 @@ async fn a_tap_is_the_linked_persons_only_when_they_tapped_it_not_anyone_in_the_
         assert_eq!((acts[0].reference.as_deref(), acts[0].person), (Some("ask1"), person), "from {from}");
     }
 }
+
+/// Audit H HS13: every Telegram button on a task said "That button is out of date.": a 32-character task id left no
+/// room for the ask id in the 64 bytes, and the tap verified against "". The ref is read back from the task (its open
+/// ask; its newest turn for Mark done), so the tap answers as an ntfy tap does; a button for an ask that's gone stays
+/// refused.
+#[tokio::test]
+async fn a_tap_whose_ref_did_not_fit_is_read_back_from_the_task_and_answers_audit_h_hs13() {
+    const CHAT: i64 = 1001;
+    let session = "0123456789abcdef0123456789abcdef";
+    let ask = "0198a3c1-7f00-7000-8000-0123456789ab";
+    let tap = |data: String| {
+        json!({ "update_id": 1, "callback_query": {
+            "id": "q1", "data": data, "from": { "id": CHAT, "first_name": "x" },
+            "message": { "message_id": 900, "chat": { "id": CHAT, "type": "private" } },
+        } })
+    };
+    // signed over the ask id, which doesn't fit after the session: `a:1:<sig>:<session>`
+    let data = wisp_telegram_core::encode_tap(
+        wisp_channels_api::ActionKind::Answer,
+        1,
+        &wisp_channels_api::testing::test_sig(session, "a", ask, 1),
+        session,
+        ask,
+    );
+    assert!(!data.contains(ask), "{data}");
+    for (task_ask, want) in [(Some(ask), Some(ask)), (None, None), (Some("another-ask"), None)] {
+        let h = TestHub::default().with_cfg("telegram", json!({ "enabled": true, "token": "123:abc", "chatId": CHAT }));
+        let mut s = wisp_channels_api::views::SessionView { id: session.into(), ..Default::default() };
+        s.ask = task_ask.map(|a| wisp_channels_api::views::AskView { id: a.into(), ..Default::default() });
+        h.phone.tasks.lock().unwrap().push(s);
+        h.net.replies.lock().unwrap().extend([
+            Reply::json("getUpdates", json!({ "ok": true, "result": [tap(data.clone())] })),
+            Reply::json("getUpdates", json!({ "ok": false, "description": "done" })).status(500),
+            Reply::json("answerCallbackQuery", json!({ "ok": true, "result": true })),
+            Reply::json("editMessageReplyMarkup", json!({ "ok": true, "result": true })),
+        ]);
+        let h = Arc::new(h);
+        run(&h).await;
+        let acts = h.phone.acts.lock().unwrap().clone();
+        let answered = h.net.sent("answerCallbackQuery");
+        if let Some(r) = want {
+            assert_eq!(acts.len(), 1, "the tap answers: {answered:?}");
+            assert_eq!((acts[0].reference.as_deref(), acts[0].index), (Some(r), Some(1)));
+        } else {
+            assert!(acts.is_empty(), "no open ask, or another one: nothing to answer");
+            assert_eq!(answered[0]["text"], "That button is out of date.");
+        }
+    }
+}

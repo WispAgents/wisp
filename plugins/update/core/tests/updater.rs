@@ -327,6 +327,22 @@ fn the_app_relaunches_through_the_installer_on_windows_and_open_on_macos() {
     assert_eq!(linux.relaunch_command(true), "'/home/u/wisp.AppImage' >/dev/null 2>&1");
 }
 
+/// Audit H HS10: with checks off, `wisp update apply` blamed the copy ("no automatic update for this copy"), while the
+/// same copy updates with checks on. It says checks are off and how to turn them on, as Settings → Updates does.
+#[test]
+fn an_app_with_checks_off_says_checks_are_off_not_that_it_cant_update() {
+    let p = Platform::new("darwin", "arm64");
+    let env = Env { update_check: Some("0".into()), ..Env::default() };
+    let mut u = Updater::new(detect("/Applications/wisp.app/Contents/Resources/app/wisp", &p, None, true, None), p, CURRENT, 1, env);
+    let Err(Refusal::Invalid(m)) = u.begin_install() else { panic!("must refuse") };
+    assert!(m.starts_with("Update checks are off here (WISP_UPDATE_CHECK=0 or CI)"), "{m}");
+    assert!(
+        m.contains("Unset WISP_UPDATE_CHECK") && m.ends_with("download it from https://github.com/WispAgents/wisp/releases/latest"),
+        "{m}"
+    );
+    assert!(!m.contains("no automatic update"), "{m}");
+}
+
 #[test]
 fn an_app_with_no_download_for_it_says_where_to_get_the_new_version() {
     let mut u = app("linux", "x64", "/usr/lib/wisp/wisp", None);

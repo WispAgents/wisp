@@ -115,12 +115,13 @@ pub fn delegated(all: &[Delegation]) -> Delegated {
         return Delegated::Nothing(format!("Nothing was delegated.\n{errors}"));
     }
     let head = if errors.is_empty() { String::new() } else { format!("Some tasks were not delegated:\n{errors}\n\n") };
-    Delegated::Some { head, ids: ok.iter().map(|d| s(&d.id)).collect() }
+    Delegated::Some { head, ids: ok.iter().map(|d| s(&d.id)).filter(|i| !i.is_empty()).collect() }
 }
 
 pub fn delegated_no_wait(head: &str, all: &[Delegation]) -> String {
     let s = |v: &Option<String>| v.clone().unwrap_or_default();
-    let list = all.iter().filter(|d| d.error.is_none()).map(|d| format!("{} (id {})", s(&d.name), s(&d.id))).collect::<Vec<_>>().join(", ");
+    let name = |d: &Delegation| d.name.clone().or_else(|| d.subagent.clone()).unwrap_or_default();
+    let list = all.iter().filter(|d| d.error.is_none()).map(|d| format!("{} (id {})", name(d), s(&d.id))).collect::<Vec<_>>().join(", ");
     format!("{head}Delegated: {list}. Collect the reports with subagent_results.")
 }
 
@@ -146,4 +147,32 @@ pub fn number_or(v: Option<&Value>, fallback: f64) -> f64 {
 #[allow(clippy::cast_possible_truncation)] // clamped to 1_800_000 first
 pub fn task_wait_ms(seconds: Option<&Value>) -> i64 {
     (number_or(seconds, WAIT_S).clamp(1.0, MAX_WAIT_S) * 1000.0) as i64
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    /// Audit H HS11: the runtime's per-task refusal was dropped and the lead read `{"reports":[]}`.
+    #[test]
+    fn a_task_that_did_not_go_is_said_by_name_and_why_audit_h_hs11() {
+        let all: Vec<Delegation> = serde_json::from_value(json!([
+            { "id": "", "subagent": "frob", "agent": "", "model": "", "effort": "", "turnId": "", "error": "no harness frob: name one of claude, codex" }
+        ]))
+        .unwrap();
+        let Delegated::Nothing(t) = delegated(&all) else { panic!("nothing went") };
+        assert_eq!(t, "Nothing was delegated.\n- frob: no harness frob: name one of claude, codex");
+        let mixed: Vec<Delegation> = serde_json::from_value(json!([
+            { "id": "", "subagent": "frob", "error": "no harness frob: name one of codex" },
+            { "id": "t1", "subagent": "codex" }
+        ]))
+        .unwrap();
+        let Delegated::Some { head, ids } = delegated(&mixed) else { panic!("one went") };
+        assert_eq!(
+            (head.as_str(), ids),
+            ("Some tasks were not delegated:\n- frob: no harness frob: name one of codex\n\n", vec!["t1".to_owned()])
+        );
+        assert_eq!(delegated_no_wait(&head, &mixed), format!("{head}Delegated: codex (id t1). Collect the reports with subagent_results."));
+    }
 }

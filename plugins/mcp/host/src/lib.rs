@@ -59,6 +59,11 @@ pub(crate) fn extras(ctx: &Ctx) -> (Vec<Extra>, Vec<Arc<wisp_mcp_api::ToolContri
     (ex, list)
 }
 
+/// Whether Auto is off (`runtime.auto`, default off; docs/v2-plan.md §3): the tool lists then offer no `auto` harness.
+pub(crate) fn auto_off(ctx: &wisp_kernel::Ctx) -> bool {
+    ctx.setting("runtime.auto") != Some(Value::Bool(true))
+}
+
 /// The contributed tools and, after them, one per catalogue command `call`'s caller may run (ADR-0040),
 /// never under a name wisp's own tools or a contribution already have. A tool call runs through wisp.mcp, so only a
 /// command its own manifest grants is listed (audit B #4: ~250 tools were listed and then refused when called).
@@ -232,7 +237,9 @@ impl Plugin for McpPlugin {
             async move {
                 let w = who(&ctx, &call, &st);
                 let (ex, _) = extras_for(&ctx, &call);
-                let list: Value = serde_json::from_str(&wisp_mcp_core::tools_list(&w, &ex)).unwrap_or(Value::Null);
+                let all = wisp_mcp_core::tools_list(&w, &ex);
+                let all = if auto_off(&ctx) { wisp_mcp_core::table::without_auto(&all).into_owned() } else { all };
+                let list: Value = serde_json::from_str(&all).unwrap_or(Value::Null);
                 Ok(list.get("tools").and_then(Value::as_array).cloned().unwrap_or_default())
             }
         });

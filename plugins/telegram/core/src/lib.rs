@@ -14,7 +14,7 @@ use wisp_kernel::WireError;
 
 pub use link::{Guess, LinkBook, LinkOutcome, links_it};
 pub use poll::{HookSeen, Offset};
-pub use tap::{Tap, encode_tap, parse_tap};
+pub use tap::{Tap, encode_tap, parse_tap, read_back};
 pub use text::{CHUNK_MAX, publish_text, split, truncate};
 pub use update::{CallbackQuery, Chat, From, Message, Update, chat_name, forwarded, slash_command};
 

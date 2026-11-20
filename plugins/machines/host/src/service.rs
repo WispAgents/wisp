@@ -69,8 +69,13 @@ impl MachinesService for Service {
         Box::pin(async move { json(st?, id, method, path, body, timeout_ms).await.map_err(WireError::from) })
     }
     fn stream(&self, call: &Call, id: &str, req: ChannelRequest) -> BoxFuture<'static, Result<ChannelResponse>> {
-        let ch = self.st(call, "machines:call").and_then(|st| st.channel(id).map_err(WireError::from));
-        Box::pin(async move { ch?.request(req).await })
+        let (st, id) = (self.st(call, "machines:call"), id.to_owned());
+        Box::pin(async move {
+            let st = st?;
+            // its token read first, as every request does (audit H HS12)
+            let _ = crate::manager::secret_of(&st, &id).await;
+            st.channel(&id).map_err(WireError::from)?.request(req).await
+        })
     }
     fn usable(&self, call: &Call, id: &str) -> Result<bool> {
         let st = self.st(call, "machines:read")?;

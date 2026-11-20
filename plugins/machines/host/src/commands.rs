@@ -167,6 +167,7 @@ async fn recheck(st: &Arc<State>, a: c::RecheckArgs) -> Res<Done> {
     };
     let fresh = a.agent.unwrap_or_else(|| "all".into());
     for id in ids {
+        let _ = manager::secret_of(st, &id).await;
         let ch = st.channel(&id)?;
         let agents = manager::agents(ch.as_ref(), Some(&fresh)).await;
         st.with_link(&id, |l| l.conn.status.remote.get_or_insert_with(Default::default).agents = agents);

@@ -283,6 +283,45 @@ mod tests {
         assert_eq!(n, 4);
     }
 
+    /// Audit H HS9: npm's, yarn's and openssl's forms went into the prompt as typed; `<<<`, a header's name and a
+    /// closing quote were eaten.
+    #[test]
+    fn package_manager_tokens_and_openssl_passwords_are_masked_audit_h_hs9() {
+        let typed = [
+            "npm config set //registry.npmjs.org/:_authToken npm_Ab3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5z",
+            "yarn config set npmAuthToken s3cr3tvalue123456",
+            "openssl enc -aes-256-cbc -k hunter2qa -in a.txt",
+            "openssl rsa -passin pass:hunter2qa -in k.pem",
+            "gh auth login --with-token <<< ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            r#"curl -H "X-Api-Key: abcd1234efgh5678" https://x.dev"#,
+            r#"echo "//registry.npmjs.org/:_authToken=s3cr3tvalue123456" >> ~/.npmrc"#,
+        ];
+        let ctx = TermContext {
+            cwd: "/w".into(),
+            commands: typed.iter().map(|c| Cmd { cmd: (*c).into(), exit: Some(1), ..Cmd::default() }).collect(),
+            source: "hook".into(),
+            ..TermContext::default()
+        };
+        let (out, _) = scrub(ctx, Vec::new());
+        let block = out.block();
+        for leak in ["npm_Ab3d", "s3cr3tvalue", "hunter2qa", "ghp_", "abcd1234"] {
+            assert!(!block.contains(leak), "{leak} went out: {block}");
+        }
+        let got: Vec<&str> = out.commands.iter().map(|c| c.cmd.as_str()).collect();
+        assert_eq!(
+            got,
+            [
+                "npm config set //registry.npmjs.org/:_authToken <secret>",
+                "yarn config set npmAuthToken <secret>",
+                "openssl enc -aes-256-cbc -k <secret> -in a.txt",
+                "openssl rsa -passin pass:<secret> -in k.pem",
+                "gh auth login --with-token <<< <secret>",
+                r#"curl -H "X-Api-Key: <secret>" https://x.dev"#,
+                r#"echo "//registry.npmjs.org/:_authToken=<secret>" >> ~/.npmrc"#,
+            ]
+        );
+    }
+
     /// The hook's log keeps a week, and a line the shell appends while it's pruned is never lost (review of row 64).
     #[tokio::test]
     async fn the_hook_log_is_pruned_privately_and_never_over_a_line_just_appended() {

@@ -52,6 +52,9 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
                 Box::pin(async move {
                     let st = state(&sl)?;
                     let id = req.param("id").unwrap_or_default().to_owned();
+                    // the peer's token read first: right after a restart the cache is empty, and a cloud box's direct
+                    // channel went without it, so the grid answered the app's event stream 401 (audit H HS12)
+                    let _ = crate::manager::secret_of(&st, &id).await;
                     let ch = st.channel(&id).map_err(WireError::from)?;
                     let mut resp = ch.request(forward(&req, rest)).await?;
                     let ty = resp

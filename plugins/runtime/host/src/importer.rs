@@ -13,7 +13,7 @@ use wisp_runtime_core::import::{self, Imported};
 use wisp_runtime_core::summary::{RowFacts, summarize};
 use wisp_store::{ImportOptions, StoreError, Writer};
 
-use crate::error::Result;
+use crate::error::{Result, RuntimeError};
 use crate::repo;
 use crate::rows;
 use crate::runtime::Runtime;
@@ -74,6 +74,15 @@ fn write_imported(w: &mut Writer<'_>, i: &Imported, projects: &[(String, Value)]
 impl Runtime {
     /// `runtime.import`: every v1 session file new or changed since its last import.
     pub async fn import_v1(self: &Arc<Self>, dir: Option<PathBuf>) -> Result<ImportReport> {
+        // audit H HS1: a relative folder was read from the server's own folder, found nothing and said "0 imported"
+        if let Some(d) = &dir {
+            if !d.is_absolute() {
+                return Err(RuntimeError::Invalid(format!("{} isn't a full path: name the v1 sessions folder from /", d.display())));
+            }
+            if !tokio::fs::metadata(d).await.is_ok_and(|m| m.is_dir()) {
+                return Err(RuntimeError::Invalid(format!("No folder at {}", d.display())));
+            }
+        }
         let dir = dir.unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".wisp/sessions"));
         // the project rows as stored (`project` on `config`): none yet, or the kind off, is no project
         let projects: Arc<Vec<(String, Value)>> = Arc::new(

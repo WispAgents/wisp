@@ -71,7 +71,9 @@ pub fn import(crew: &[Member], a: &c::ImportArgs, now: i64) -> Result<(c::Import
     let exists = |p: &str| std::path::Path::new(p).is_dir();
     let machine_ok = |_: &str| false;
     let agent_ok = |x: &str| HARNESSES.contains(&x);
-    let checks = Checks { taken: crew, exists: &exists, machine_ok: &machine_ok, words: &CronOnly, agent_ok: &agent_ok };
+    // a file's members say their harness (or `auto`, its plan's "Auto picks" note): kept as the file says
+    let checks =
+        Checks { taken: crew, exists: &exists, machine_ok: &machine_ok, words: &CronOnly, agent_ok: &agent_ok, default_agent: "auto" };
     let made = import_members(&plan, &checks, &mut NewIds, now).map_err(wire)?;
     let members: Vec<Member> = made.into_iter().map(|(m, _on)| m).collect();
     let rows = members.iter().map(|m| json!({ "id": m.id, "name": m.name })).collect();

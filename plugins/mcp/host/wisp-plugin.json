@@ -9,6 +9,16 @@
     "builtin": "wisp-mcp"
   },
   "permissions": [
+    "automations:read",
+    "automations:write",
+    "automations:run",
+    "channels:status",
+    "channels:view",
+    "channels:test",
+    "channels:setup",
+    "channels:update",
+    "channels:refresh",
+    "channels:extra",
     "connectors:*",
     "crew:*",
     "events:tail",
@@ -21,12 +31,15 @@
     "resources:read",
     "resources:overlay",
     "runtime:*",
+    "settings:read",
+    "settings:write",
     "ship:*",
     "stuff:*",
     "telemetry:track",
     "threads:read",
     "threads:write",
-    "watch:*"
+    "watch:*",
+    "worktrees:*"
   ],
   "activation": [
     "onStartup"

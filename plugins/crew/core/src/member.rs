@@ -25,6 +25,9 @@ pub struct Checks<'a> {
     /// an agent profile's name (`agents:` in a formula, ADR-0028): a member may name one instead of a
     /// harness; its jobs' tasks resolve it
     pub agent_ok: &'a dyn Fn(&str) -> bool,
+    /// the harness a member gets when none is given: `auto` while Auto is on, else the default harness (New task's
+    /// last pick, else the first; audit H HS7: an agent's `wisp_crew_add` stored `auto` with Auto off)
+    pub default_agent: &'a str,
 }
 
 impl std::fmt::Debug for Checks<'_> {
@@ -184,12 +187,20 @@ fn place(body: &MemberBody, prev: Option<&Member>, c: &Checks) -> Result<(String
     if !machine.is_empty() && (!is_place(&machine) || !(c.machine_ok)(&machine)) {
         return Err(bad("That machine isn’t one of yours. Add it in Machines first."));
     }
-    let agent = pick(body.agent.as_ref(), prev.map(|p| p.agent.as_str()), "auto");
-    let agent = if agent.is_empty() { "auto".to_owned() } else { agent };
+    // Auto off: `auto` is put away as the router is, so a member is never made or moved onto it (one already on it
+    // keeps it, and runs on the default harness)
+    if c.default_agent != "auto" && body.agent.as_deref() == Some("auto") && prev.is_none_or(|p| p.agent != "auto") {
+        return Err(bad("Auto is off (runtime.auto): name a harness, or leave it out for the default one."));
+    }
+    let agent = pick(body.agent.as_ref().filter(|a| !a.is_empty()), prev.map(|p| p.agent.as_str()), c.default_agent);
+    let agent = if agent.is_empty() { c.default_agent.to_owned() } else { agent };
     if !sandbox.is_empty() && agent != "auto" && agent != "claude" {
-        return Err(bad(
-            "Only Claude Code signs in to sandboxes so far: pick Claude Code or Auto for a member whose jobs run in a sandbox.",
-        ));
+        return Err(bad(if c.default_agent == "auto" {
+            "Only Claude Code signs in to sandboxes so far: pick Claude Code or Auto for a member whose jobs run in a sandbox."
+        } else {
+            // Auto is off: it isn't offered (audit H HS7)
+            "Only Claude Code signs in to sandboxes so far: pick Claude Code for a member whose jobs run in a sandbox."
+        }));
     }
     let cwd = pick(body.cwd.as_ref(), prev.map(|p| p.cwd.as_str()), "");
     if !cwd.is_empty() && machine.is_empty() && !(c.exists)(&cwd) {

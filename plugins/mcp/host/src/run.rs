@@ -23,10 +23,15 @@ pub async fn rpc(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: O
     }
     let (ex, contributed) = extras_for(ctx, call);
     let plan = wisp_mcp_core::plan(text, &w, &ex);
+    let auto_off = crate::auto_off(ctx);
     let mut replies = Vec::with_capacity(plan.steps.len());
     for step in plan.steps {
         replies.push(match step {
-            Step::Reply(r) => Some(only.as_ref().map_or_else(|| r.clone(), |o| crate::kinds::filter_list(&r, o))),
+            Step::Reply(r) => {
+                // Auto off: no harness list offers `auto` (audit H HS7)
+                let r = if auto_off { wisp_mcp_core::table::without_auto(&r).into_owned() } else { r };
+                Some(only.as_ref().map_or_else(|| r.clone(), |o| crate::kinds::filter_list(&r, o)))
+            }
             Step::Silent => None,
             Step::Call(c) if only.as_ref().is_some_and(|o| !o.allows(&c.name)) => Some(wisp_mcp_core::finish(
                 &c.id,
@@ -204,19 +209,21 @@ async fn agent_tool(ctx: &Ctx, call: &Call, session: &str, a: AgentAction) -> Ou
         AgentAction::Delegate { args, wait } => {
             let tasks = args.get("tasks").cloned().unwrap_or(Value::Null);
             match typed_json::<rt::Delegate>(ctx, call, json!({ "id": session, "tasks": tasks })).await {
-                Ok(v) if !wait => Outcome::Text(format!("Started: {v}")),
+                // each task that didn't go is said, by its name and why: a harness that isn't here came back as
+                // `{"reports":[]}` with no word (audit H HS11)
                 Ok(v) => {
-                    let ids: Vec<String> = v
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|d| d.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned))
-                        .collect();
-                    text_of(
-                        typed_json::<rt::Results>(ctx, call, json!({ "id": session, "ids": ids, "wait": 600 }))
-                            .await
-                            .map(|r| json!({ "text": r.to_string() })),
-                    )
+                    let Ok(all) = serde_json::from_value::<Vec<words::Delegation>>(v.clone()) else {
+                        return Outcome::Failed(format!("delegate answered something that isn't a list of delegations: {v}"));
+                    };
+                    match words::delegated(&all) {
+                        words::Delegated::Nothing(t) => Outcome::Text(t),
+                        words::Delegated::Some { head, .. } if !wait => Outcome::Text(words::delegated_no_wait(&head, &all)),
+                        words::Delegated::Some { head, ids } => text_of(
+                            typed_json::<rt::Results>(ctx, call, json!({ "id": session, "ids": ids, "wait": 600 }))
+                                .await
+                                .map(|r| json!({ "text": format!("{head}{r}") })),
+                        ),
+                    }
                 }
                 Err(e) => Outcome::Failed(e),
             }

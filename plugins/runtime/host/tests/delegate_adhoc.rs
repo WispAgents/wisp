@@ -73,3 +73,15 @@ async fn a_lead_with_no_team_makes_a_subagent_on_the_fly_audit_h1() {
     assert!(team.as_array().unwrap().iter().all(|m| m["agent"] != "nosuch"));
     open("adhoc-l");
 }
+
+/// Audit H HS11: `delegate {agent: "frob"}` from a lead with no team came back `{"reports":[]}`: the task's error
+/// names the harnesses there are, as `--agent frob` does (the MCP tool says it: `wisp_mcp_core::words::delegated`).
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unknown_harness_alone_is_refused_naming_the_harnesses_audit_h_hs11() {
+    let r = rig().await;
+    let id = lone_lead(&r, "adhoc-u").await;
+    let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task(Some("frob"), None, "x")] }).await.unwrap();
+    assert_eq!(out.len(), 1, "{out:?}");
+    assert_eq!((out[0].subagent.as_str(), out[0].error.as_deref()), ("frob", Some("no harness frob: name one of fake")), "{out:?}");
+    open("adhoc-u");
+}

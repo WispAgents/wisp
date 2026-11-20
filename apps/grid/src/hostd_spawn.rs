@@ -82,6 +82,11 @@ impl ProcessHost {
         }
         let home = logs.join("home");
         std::fs::create_dir_all(&home).map_err(|e| bad(format!("the box's home: {e}"), 500))?;
+        // its last run's `server.json` isn't this one's port: gone before it starts, so the one `healthy` reads is new
+        match std::fs::remove_file(home.join("server.json")) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(bad(format!("the box's last server.json: {e}"), 500)),
+            _ => {}
+        }
         let mut cmd = tokio::process::Command::new(&self.o.bin);
         cmd.arg("serve")
             .env_clear()
@@ -103,11 +108,14 @@ impl ProcessHost {
         Ok(BoxProc::Local(Box::new(cmd.spawn().map_err(|e| bad(format!("wisp didn't start in the box: {e}"), 503))?)))
     }
 
-    /// Waits for the started box to answer `/api/health`: its process, or why it never came up (it stopped as it
-    /// started, it took longer than `startMs`, the grid began stopping). Either way but up, it's marked stopped.
-    pub(super) async fn healthy(&self, user: &BoxUser, port: u16, child: BoxProc) -> Result<BoxProc> {
+    /// Waits for the started box to answer `/api/health`: its process and the port it answers on, or why it never came
+    /// up (it stopped as it started, it took longer than `startMs`, the grid began stopping). Either way but up, it's
+    /// marked stopped. `port` 0: a process box binds its own, read from its `server.json` once it's written.
+    pub(super) async fn healthy(&self, user: &BoxUser, port: u16, child: BoxProc) -> Result<(BoxProc, u16)> {
         let deadline = self.clock.now_ms() + self.o.start_ms;
         let mut child = child;
+        let mut port = port;
+        let home = self.o.data.join("users").join(&user.id).join("home");
         let failed = |event: &str| {
             lock(&self.inst).entry(user.id.clone()).or_default().state = BoxState::Stopped;
             self.change(user, BoxState::Stopped, event);
@@ -119,8 +127,12 @@ impl ProcessHost {
                 failed("grid stopped");
                 return Err(bad("The grid is shutting down.", 503));
             }
-            if self.http.get(format!("http://127.0.0.1:{port}/api/health")).send().await.is_ok_and(|r| r.status().is_success()) {
-                return Ok(child);
+            if port == 0 {
+                port = tokio::fs::read(home.join("server.json")).await.ok().and_then(|b| bound_port(&b)).unwrap_or(0);
+            }
+            if port != 0 && self.http.get(format!("http://127.0.0.1:{port}/api/health")).send().await.is_ok_and(|r| r.status().is_success())
+            {
+                return Ok((child, port));
             }
             if let Some(st) = child.exited() {
                 failed("failed");
@@ -135,12 +147,30 @@ impl ProcessHost {
     }
 }
 
+/// The port a process box bound, from the `server.json` it writes in its `WISP_HOME` (as every `wisp serve` does; the
+/// last run's is removed before it starts, so whatever process wrote it, a launcher's wisp included, it's this run's).
+/// None: not written yet, or half written.
+pub(super) fn bound_port(server_json: &[u8]) -> Option<u16> {
+    let v: serde_json::Value = serde_json::from_slice(server_json).ok()?;
+    v.get("port").and_then(serde_json::Value::as_u64).and_then(|p| u16::try_from(p).ok()).filter(|p| *p != 0)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
 
     use super::*;
+
+    /// A process box's port is the one it bound and wrote in its `server.json`, never one read before it started (the
+    /// macOS flake: a port closed by the grid was taken before the box bound it).
+    #[test]
+    fn a_process_box_s_port_is_the_one_its_server_json_names() {
+        assert_eq!(bound_port(br#"{"url":"http://127.0.0.1:51234","port":51234,"pid":7}"#), Some(51234));
+        assert_eq!(bound_port(br#"{"port":0}"#), None);
+        assert_eq!(bound_port(br#"{"url":"#), None, "half written");
+        assert_eq!(bound_port(b""), None);
+    }
 
     /// A box's cleared environment on Windows (a runner's values): `SystemRoot` and the rest a process needs come
     /// with it, its profile is its own folder, and a variable the grid doesn't have isn't made up. Off Windows: none.

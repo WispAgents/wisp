@@ -222,6 +222,12 @@ pub async fn offers(engine: &Engine, port: &dyn Port, call: &Call) -> Vec<Offer>
         }
         found.push((name, root, listed));
     }
+    // one offer per folder, under the project whose repository owns it (audit H HS4)
+    let roots: Vec<(String, Vec<String>)> =
+        found.iter().map(|(_, root, l)| (root.clone(), l.iter().map(|(_, x)| x.path.clone()).collect())).collect();
+    for ((_, _, listed), drop) in found.iter_mut().zip(offer::elsewhere(&roots)) {
+        listed.retain(|(_, x)| !drop.contains(&folder_key(&x.path)));
+    }
     let asked: Vec<String> = found.iter().flat_map(|(_, _, l)| l.iter().filter(|(c, _)| *c).map(|(_, x)| x.path.clone())).collect();
     let chats = if asked.is_empty() { HashSet::new() } else { port.chats_in(asked).await };
     let mut out = Vec::new();

@@ -191,10 +191,65 @@ fn build_agent_list(t: &Table, info: &SessionInfo) -> String {
     out.join(",")
 }
 
+/// What a tool list says of `auto` as a harness, and what it says while Auto is off (`runtime.auto`, docs/v2-plan.md
+/// §3): no list offers it, as New task and the crew editor don't (audit H HS7). Exact text, so the rest of the bytes
+/// stay v1's.
+const AUTO_HARNESS: [(&str, &str); 5] = [
+    (r#""enum":["auto","claude""#, r#""enum":["claude""#),
+    (
+        "Harness: auto, claude, codex, opencode, cursor, antigravity, grok or copilot. Default auto.",
+        "Harness: claude, codex, opencode, cursor, antigravity, grok or copilot. Default: the user's default harness.",
+    ),
+    ("A harness (auto, claude, ", "A harness (claude, "),
+    (" (auto: wisp picks harness and model)", ""),
+    ("Harness to run; auto lets wisp pick harness and model from what worked before. Default", "Harness to run. Default"),
+];
+
+/// A `tools/list` answer (or any text of tool definitions) with `auto` taken out of the harness lists, for a wisp whose
+/// Auto is off. A list with none of them comes back borrowed.
+pub fn without_auto(list: &str) -> std::borrow::Cow<'_, str> {
+    if !AUTO_HARNESS.iter().any(|(from, _)| list.contains(from)) {
+        return std::borrow::Cow::Borrowed(list);
+    }
+    let mut out = list.to_owned();
+    for (from, to) in AUTO_HARNESS {
+        out = out.replace(from, to);
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    /// Audit H HS7: with Auto off, `wisp_crew_add`, `wisp_crew_edit`, `wisp_launch`, `wisp_task` and `delegate`
+    /// offered `auto`. Every list, the agent's (with a team or none) and the user's, has none of it, and stays JSON.
+    #[test]
+    fn with_auto_off_no_tool_list_offers_auto_as_a_harness_audit_h_hs7() {
+        let t = table().unwrap();
+        let team = vec![wisp_mcp_api::TeamEntry::default()];
+        let lists = [
+            agent_list(t, &SessionInfo::default()).into_owned(),
+            agent_list(t, &SessionInfo { team, ..SessionInfo::default() }).into_owned(),
+            t.user_list().to_owned(),
+        ];
+        for list in &lists {
+            let off = without_auto(list);
+            for said in [r#""auto","#, "Harness: auto", "harness (auto", "auto: wisp picks", "auto lets wisp pick", "copilot. Default auto"]
+            {
+                assert!(!off.contains(said), "{said} is still offered");
+            }
+            let tools: Vec<serde_json::Value> = serde_json::from_str(&format!("[{off}]")).unwrap();
+            assert!(tools.len() > 10);
+        }
+        // the modes keep their `auto` (Full auto): only the harness lists change
+        assert!(without_auto(&lists[0]).contains(r#""plan","edits","auto""#));
+        for list in &lists {
+            assert!(list.contains("Harness: auto") || list.contains(r#""enum":["auto","claude""#), "each list had some to take out");
+        }
+        assert!(matches!(without_auto("{\"tools\":[]}"), std::borrow::Cow::Borrowed(_)), "nothing to take out: no copy");
+    }
 
     fn names(info: &SessionInfo) -> Vec<String> {
         let list: Vec<serde_json::Value> = serde_json::from_str(&format!("[{}]", agent_list(table().unwrap(), info))).unwrap();
