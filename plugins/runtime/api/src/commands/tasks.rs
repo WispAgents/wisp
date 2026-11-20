@@ -232,6 +232,11 @@ pub struct StartArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "unknown", optional)]
     pub goal: Option<Value>,
+    /// the software factory it runs through (ADR-0114): a factory's name (`default` is always there); wisp.factory makes
+    /// the task its run (held, its stations its children) instead of one agent running it. Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub factory: Option<String>,
     /// the Notes it starts with (`{ goal, constraints: [...] }`, ADR-0097): kept in its spec, read by the plugin that
     /// keeps Notes (wisp.threads) when the task is made. Additive (2026-11-18).
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -12,6 +12,7 @@ import { defineCommand, entityKey, type EntityKey, type LocalOp, type PeerId } f
 const bare = (id: string): string => id.slice(id.indexOf(':') + 1);
 import { SESSION, type SessionRow } from '../rows.ts';
 import { capOf, lifts } from './cap.ts';
+import { factoryOf } from './launch-pick.ts';
 
 type Ops = ReturnType<Exclude<Parameters<typeof defineCommand>[0]['optimistic'], 'none'>>;
 
@@ -64,6 +65,8 @@ export interface CreateArgs {
   /** what done means, or a goal declared by name (`{ name }`, ADR-0110: wisp.goal fills it in or refuses it), or one a
    *  picked formula declared, written in (`{ text, judges? … }`, ADR-0111) */
   readonly goal?: string | { readonly name: string } | { readonly text: string; readonly [k: string]: unknown };
+  /** the software factory it runs through (ADR-0114): its stations run it, not `agent` */
+  readonly factory?: string;
   /** a formula it runs under, nothing applied (`resources.overlay`'s overlay: New task's Formula or task file…, ADR-0111) */
   readonly formula?: unknown;
   /** a task file's own fields (ADR-0111): the connectors and crew member it names, its Notes, its title */
@@ -104,7 +107,8 @@ export const create = defineCommand<CreateArgs, { id: string }>({
   id: 'runtime.create',
   owner: (a) => a.peer,
   // `id`: the bare id of the row and page shown at once; the peer makes the task under it (StartArgs.id)
-  wire: ({ shows: _shows, group, ...a }) => ({ ...a, id: bare(a.id), ...(group && { ext: { 'wisp.runtime': { group } } }) }),
+  // a factory pick (ADR-0114) goes as `factory`: its stations run it, with no harness, model or account of its own
+  wire: ({ shows: _shows, group, ...a }) => ({ ...a, id: bare(a.id), ...(group && { ext: { 'wisp.runtime': { group } } }), ...factoryOf(a.agent, a.model ?? '') }),
   // its prompt as the task's first queued item: the page shows it as the first turn, starting, until the real one lands
   // (TaskView `firstQueued`; v1: the prompt card at once, B16)
   optimistic: (_base, a) => [

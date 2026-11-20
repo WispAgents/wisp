@@ -56,6 +56,7 @@ import { phoneTaskMenu } from './phone-menu.ts';
 import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, projectOfRow, statusOf, trailActs } from './rows-view.ts';
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
+import { runFactory } from './run-factory.ts';
 import { goalGate, goalWire, type DeclaredGoal } from './goal-gate.ts';
 import { useGoalKit } from './goal-kit.ts';
 import { isFeedback } from './feedback.ts';
@@ -1136,7 +1137,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // inside the reply box, over the text (the queued follow-ups, then wisp.later's, v1 .c-queued): `shell.task:composer-top`. Made once:
         // a JSX prop beside the box's reactive spread would be rebuilt (rows, an edit in progress) each time the task starts or stops
         const composerTop = <Slot input="shell.task:composer-top" layout="contents" id={key} session={() => s() as never} />;
-        const h = (): { name: string; logo?: string } => harnessView(replyRun()?.agent ?? s().agent);
+        // a factory run names its factory where another task names its harness (ADR-0114): it runs no agent of its own
+        const factory = (): string | undefined => runFactory(s().summary as { factory?: unknown });
+        const factoryWords = (): string => t('shell.task.factory', { name: factory() ?? '' });
+        const h = (): { name: string; logo?: string } => (factory() ? { name: factoryWords() } : harnessView(replyRun()?.agent ?? s().agent));
         // the run a follow-up takes: the reply box's pick, else the task's own harness, model and thinking (QA desktop r3 #1)
         const shownRun = (): Runner => replyRun() ?? taskRunner(s());
         // the reply's harness past 80% of a plan window: Home's ring on the reply box's chip (UX 2026-11-18 #8)
@@ -1146,9 +1150,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           shownRun().agent === s().agent ? String((row()?.body as { account?: unknown } | undefined)?.account || 'default') : '';
         const ring = usePlanRing(shell, { peer: () => peer, agent: () => shownRun().agent, account: ringAccount });
         // the task's own, for its details (not the reply box's pick)
-        const own = (): { name: string; logo?: string } => harnessView(s().agent);
+        const own = (): { name: string; logo?: string } => (factory() ? { name: factoryWords() } : harnessView(s().agent));
         // on its harness's Default: the model that runs, by the same answer as the reply chip (QA r10 #2), else "Default model"
-        const ownWords = (): string => t('shell.task.harness', { name: own().name, model: modelWords(String(s().summary.model || '')) || defaultName(s().agent, t('shell.task.defaultModel')) });
+        const ownWords = (): string => factory() ? factoryWords() : t('shell.task.harness', { name: own().name, model: modelWords(String(s().summary.model || '')) || defaultName(s().agent, t('shell.task.defaultModel')) });
         // the reply box's Delegate panel: on its button in the old footer, on its chip in the desktop's one footer
         const replyTeamAct = (): Act => ({
           // v1 composer.js: the same Delegate panel as New task's, the lead this task's harness where it runs

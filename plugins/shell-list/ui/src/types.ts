@@ -60,6 +60,8 @@ export interface Session {
   id: string;
   title: string;
   agent: string;
+  /** a factory run's line (wisp.factory's summary field, ADR-0114): the row names the factory, not a harness */
+  factory?: { name?: string };
   cwd?: string;
   project?: string;
   projectId?: string | null;

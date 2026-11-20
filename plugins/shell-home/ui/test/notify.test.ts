@@ -36,4 +36,17 @@ describe('notify', () => {
     // a member who left: the job reads as any task's
     expect(noticeFor(running, done!, { siblings: [], t, member: () => undefined })?.head).toContain('shell-home.notify.ready');
   });
+
+  // ADR-0114 (the owner's delegate, 2026-11-20): a factory's stations post nothing of their own; the run tells you when it
+  // waits on you or ends
+  it('a_factory_station_never_notifies_only_its_run_does', () => {
+    const station = (state: string) => flatRow(row(state, { factoryStation: { run: 'r1', station: 'build' } }));
+    expect(noticeFor(station('running'), station('review')!, { siblings: [], t })).toBeNull();
+    const asks = flatRow(row('review', { factoryStation: { run: 'r1', station: 'build' }, question: 'May I?' }));
+    // a station's agent asking you is the run waiting on you: that still tells you
+    expect(noticeFor(station('running'), asks!, { siblings: [], t })?.asks).toBe(true);
+    const run = (state: string, more: Record<string, unknown> = {}) => flatRow(row(state, { factory: { name: 'default', state: 'running', stations: [] }, ...more }));
+    expect(noticeFor(run('running'), run('review')!, { siblings: [], t })?.head).toContain('shell-home.notify.ready');
+    expect(noticeFor(run('running'), run('review', { question: 'Approve the spec?' })!, { siblings: [], t })?.asks).toBe(true);
+  });
 });

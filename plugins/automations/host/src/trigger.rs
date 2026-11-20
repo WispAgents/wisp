@@ -369,7 +369,8 @@ pub fn register(s: &mut Setup, engine: &Shared) {
             .names(wisp_resources_api::Names::new("workflow", "workflow"))
             .names(wisp_resources_api::Names::new("crew", "crew"))
             // its `project` is checked by the trigger's own apply, in its own words (audit A #14)
-            .names(wisp_resources_api::Names::new("agent", "agent")),
+            .names(wisp_resources_api::Names::new("agent", "agent"))
+            .names(wisp_resources_api::Names::new("factory", "factory")),
         s.ctx(),
     ));
     let k: Arc<dyn ResourceKind> = Arc::new(TriggerKind { inner: inner.clone(), engine: engine.clone(), ctx: s.ctx() });

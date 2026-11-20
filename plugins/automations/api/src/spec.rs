@@ -24,6 +24,9 @@ pub struct TriggerSpec {
     /// or a prompt of its own: `{event.summary}`, `{event.payload.x}` are filled in
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub prompt: String,
+    /// the software factory its own prompt runs through (ADR-0114; a declared `task:` says its own)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub factory: String,
     /// a crew member gets the work instead (a wake)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub crew: String,

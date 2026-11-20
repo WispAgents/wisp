@@ -29,7 +29,8 @@ pub fn start_body(a: &Map<String, Value>, cwd: Option<&str>, tree_on: bool) -> V
     let s = |k: &str| a.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
     let mut b = json!({ "prompt": a.get("prompt").cloned().unwrap_or(Value::Null), "by": "agent" });
     // `goal`: a declared goal's name is that goal (wisp.goal reads it, ADR-0110), other words what done means
-    for k in ["agent", "model", "effort", "mode", "goal"] {
+    // `factory`: the stations run it (ADR-0114); wisp.factory refuses a name no factory has
+    for k in ["agent", "model", "effort", "mode", "goal", "factory"] {
         if let Some(v) = s(k) {
             b[k] = json!(v);
         }
@@ -89,6 +90,8 @@ mod tests {
         assert_eq!(tree(json!({ "prompt": "x", "worktree": true, "mode": "plan" }), false), json!(true));
         // a goal: a declared one's name or words, as given (wisp.goal tells them apart)
         assert_eq!(start_body(&args(&json!({ "prompt": "x", "goal": "green-build" })), None, false)["goal"], json!("green-build"));
+        // a factory by name (ADR-0114)
+        assert_eq!(start_body(&args(&json!({ "prompt": "x", "factory": "default" })), None, false)["factory"], json!("default"));
         // a preset when no team is given
         assert_eq!(start_body(&args(&json!({ "prompt": "x", "preset": "p1" })), None, false)["team"], json!("p1"));
     }

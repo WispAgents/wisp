@@ -155,6 +155,10 @@ pub struct TaskSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "unknown", optional)]
     pub goal: Option<Value>,
+    /// the factory it ran through (`StartArgs::factory`, ADR-0114): a rerun goes through it again. Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub factory: Option<String>,
     /// the Notes it started with (`StartArgs::notes`, ADR-0097): a rerun starts with them too. Additive (2026-11-18).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "unknown", optional)]

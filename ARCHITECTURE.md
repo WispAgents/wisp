@@ -8,7 +8,8 @@ and this page disagree, fix whichever one is wrong in the same PR.
 
 **Code first.** Anything a user can do or set up in wisp is a resource or a task operation, available as code:
 a formula (`wisp.yml`), the SDK (TypeScript, Python) or the CLI. The GUI, the TUI and the CLI are frontend
-plugins over that (ADR-0024). Users orchestrate with workflows (DAGs of task specs) in their own code.
+plugins over that (ADR-0024). Users orchestrate with workflows (DAGs of task specs) in their own code, and run one task
+through a factory (stations spec → build → checks → review → ship, looped back to build with a limit; ADR-0114).
 
 ## One sentence
 

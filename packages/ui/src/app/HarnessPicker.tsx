@@ -11,6 +11,7 @@ import { Index, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-j
 import { Portal } from 'solid-js/web';
 import { flag, styleOf } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
+import type { IconName } from '../content/icons.ts';
 import { ThinkingSlider, type ThinkingSliderProps } from '../controls/ThinkingSlider.tsx';
 import '../css/app-picker.css';
 import { usePlatform } from '../platform/PlatformLook.tsx';
@@ -22,6 +23,8 @@ export interface HarnessPickerRow {
   /** the harness's logo (an image URL); Auto draws the spark */
   readonly logo?: string | undefined;
   readonly auto?: boolean;
+  /** a kit icon in place of a logo (a factory's row, ADR-0114). Additive (2026-11-20). */
+  readonly icon?: IconName | undefined;
   readonly sub: string;
   /** the sub-line in the warning tone (a plan near its line) */
   readonly warn?: boolean;
@@ -262,7 +265,7 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
                 onClick={() => props.onUse(r().id)}
               >
                 <span data-kit="pk-logo">
-                  <Show when={!r().auto} fallback={<Icon name="spark" />}>
+                  <Show when={!r().auto && !r().icon} fallback={<Icon name={r().icon ?? 'spark'} />}>
                     <Show when={r().logo}>{(src) => <img src={src()} alt="" />}</Show>
                   </Show>
                 </span>

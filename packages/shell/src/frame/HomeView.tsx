@@ -30,7 +30,7 @@ import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type At
 import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
 import { modelWord, useHarnessRows, type Runner, useDefaultWords } from './runner.ts';
 import { usePlanRing } from './plan-ring.ts';
-import { AUTO_SETTING, LAUNCH_SETTING, autoEnabled, readLaunch, startRunner, withPick, type LaunchPick } from './launch-pick.ts';
+import { AUTO_SETTING, FACTORY, LAUNCH_SETTING, autoEnabled, readLaunch, startRunner, withPick, type LaunchPick } from './launch-pick.ts';
 import { goalGate, goalOf, goalSent, goalWire, isBareGoal, typedInFull, type DeclaredGoal, type HomeGoal } from './goal-gate.ts';
 import { useGoalKit } from './goal-kit.ts';
 import { isFeedback } from './feedback.ts';
@@ -1166,6 +1166,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           peer={target()}
           defaultWord={(a) => defaultName(a, '')}
           auto={autoOn()}
+          factories
           accounts
           // the names ride along, so a thinking or account change (withSetting) keeps the model's and account's words
           value={{ agent: agent(), model: model(), effort: effort(), account: account()?.id ?? '', ...(modelLabel() && { modelLabel: modelLabel() }), ...(account() && { accountLabel: account()?.label ?? '' }) }}
@@ -1176,7 +1177,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             setModelLabel(r.modelLabel ?? '');
             setEffort(r.effort);
             setAccount(r.account ? { id: r.account, label: r.accountLabel ?? r.account } : undefined);
-            keepPick(r.agent, r.model, r.modelLabel ?? '', r.effort);
+            if (r.agent !== FACTORY) keepPick(r.agent, r.model, r.modelLabel ?? '', r.effort);
             // back on Auto, or another goal: what it will run is asked again
             if (r.agent === 'auto') ask(text(), was !== 'auto');
           }}

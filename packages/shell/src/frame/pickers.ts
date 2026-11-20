@@ -5,6 +5,7 @@ import type { IconName, MenuEntry } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import type { HarnessUiDef } from '../contract.ts';
 import { harnessOf } from './harness.ts';
+import { FACTORY } from './launch-pick.ts';
 
 export type Mode = 'plan' | 'edits' | 'auto';
 export const MODES: readonly Mode[] = ['plan', 'edits', 'auto'];
@@ -13,8 +14,9 @@ export const MODE_ICON: Readonly<Record<Mode, IconName>> = { plan: 'plan', edits
 export const modeMenu = (t: ShellContext['t'], on: Mode): MenuEntry[] =>
   MODES.map((m) => ({ value: m, label: t(`shell.mode.${m}`), hint: t(`shell.mode.${m}.hint`), icon: MODE_ICON[m], checked: m === on }));
 
-/** The harnesses: Auto (wisp picks per task) and each one the harness plugins registered. */
-export const agentName = (t: ShellContext['t'], all: readonly HarnessUiDef[], a: string): string => (a === 'auto' ? t('shell.home.auto') : harnessOf(all, a).name);
+/** The harnesses: Auto (wisp picks per task) and each one the harness plugins registered; a factory pick (ADR-0114) by
+ *  wisp.factory's own word, which its plugin's first-page catalogue holds. */
+export const agentName = (t: ShellContext['t'], all: readonly HarnessUiDef[], a: string): string => (a === 'auto' ? t('shell.home.auto') : a === FACTORY ? t('wisp.factory.name') : harnessOf(all, a).name);
 export const agentMenu = (t: ShellContext['t'], all: readonly HarnessUiDef[], on: string, withAuto = true): MenuEntry[] =>
   [...(withAuto ? ['auto'] : []), ...all.map((h) => h.id)].map((a) => ({ value: a, label: agentName(t, all, a), checked: a === on }));
 

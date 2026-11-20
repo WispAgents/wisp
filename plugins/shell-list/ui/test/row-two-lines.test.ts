@@ -33,3 +33,14 @@ test('done_rows_have_no_save_for_later_in_the_slot_as_v1_qa_r6_5', () => {
   expect(rowView(row({ state: 'review' }), c()).quickLater).toBe('save');
   expect(rowView(row({ state: 'done', forLater: { at: 1, by: 'you' } } as Partial<SessionRow>), c()).quickLater).toBe('unsave');
 });
+
+// ADR-0114 (the owner's delegate, 2026-11-20): a factory run's row names the factory, never the harness its own task
+// was made on (it runs no agent)
+test('a_factory_runs_row_says_factory_and_its_name_not_a_harness', () => {
+  const run = rowView(row({ agent: 'claude', model: 'opus', factory: { name: 'careful' } } as Partial<SessionRow>), c());
+  expect(run.run?.agent).toBe('factory');
+  expect(run.run?.agentName).toBe('careful');
+  expect(run.run?.title).toEqual({ key: 'shell-list.run.factory', vars: { name: 'careful' } });
+  expect(run.run?.model).toBeUndefined();
+  expect(rowView(row({ agent: 'claude' }), c()).run?.agentName).not.toContain('Factory');
+});

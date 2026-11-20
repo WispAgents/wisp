@@ -478,6 +478,7 @@ pub async fn prepare(
         base,
         worktree: a.worktree,
         goal: a.goal.clone(),
+        factory: a.factory.clone(),
         notes: a.notes.clone(),
         crew: a.crew.clone(),
         team: a.team.clone(),

@@ -183,6 +183,7 @@ const reason = (why: string, ids: readonly string[]): [string, string][] => ids.
 
 /** Commands the UI defines that the mock refuses on purpose, each with why. Add a command to COMMANDS or here. */
 export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
+  ...reason('a software factory run (ADR-0114): its stations are real tasks a server drives; the mock lists none', ['factory.names', 'factory.stop']),
   ...reason('a sign-in or key flow: needs the harness CLI or a provider to answer', [
     'accounts.add', 'accounts.keys.remove', 'accounts.keys.set', 'accounts.keys.test', 'accounts.login.cancel', 'accounts.login.input',
     'accounts.login.start', 'accounts.logout', 'accounts.remove', 'accounts.update', 'accounts.watch.ask', 'accounts.watch.trust',

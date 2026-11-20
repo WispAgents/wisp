@@ -66,6 +66,11 @@ profile?: AgentSpec,
  */
 base?: Base, worktree?: boolean, goal?: unknown, 
 /**
+ * the software factory it runs through (ADR-0114): a factory's name (`default` is always there); wisp.factory makes
+ * the task its run (held, its stations its children) instead of one agent running it. Additive (2026-11-20).
+ */
+factory?: string, 
+/**
  * the Notes it starts with (`{ goal, constraints: [...] }`, ADR-0097): kept in its spec, read by the plugin that
  * keeps Notes (wisp.threads) when the task is made. Additive (2026-11-18).
  */

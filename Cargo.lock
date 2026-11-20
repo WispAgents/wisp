@@ -4063,6 +4063,8 @@ dependencies = [
  "wisp-discord",
  "wisp-email",
  "wisp-events",
+ "wisp-factory",
+ "wisp-factory-tui",
  "wisp-git",
  "wisp-github",
  "wisp-goal",
@@ -4690,6 +4692,54 @@ dependencies = [
  "serde_json",
  "ts-rs",
  "wisp-kernel",
+]
+
+[[package]]
+name = "wisp-factory"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "wisp-factory-api",
+ "wisp-factory-core",
+ "wisp-kernel",
+ "wisp-proc",
+ "wisp-resources-api",
+ "wisp-runtime-api",
+ "wisp-ship-api",
+ "wisp-store",
+ "wisp-worktrees-api",
+]
+
+[[package]]
+name = "wisp-factory-api"
+version = "2.0.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "wisp-kernel",
+]
+
+[[package]]
+name = "wisp-factory-core"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "wisp-factory-api",
+]
+
+[[package]]
+name = "wisp-factory-tui"
+version = "2.0.0"
+dependencies = [
+ "ratatui",
+ "serde_json",
+ "wisp-tui-api",
 ]
 
 [[package]]

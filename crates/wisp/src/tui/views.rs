@@ -70,6 +70,7 @@ pub fn registry() -> Registry {
     // the plugins' own tui crates (ADR-0024): what they add comes through the same points
     wisp_history_tui::register(&mut r);
     wisp_goal_tui::register(&mut r);
+    wisp_factory_tui::register(&mut r);
     r.view(
         Table::new("history", "Repo history", cmd("runtime.history"))
             .goto('h')

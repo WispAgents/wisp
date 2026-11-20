@@ -35,6 +35,7 @@ pub fn tools() -> Vec<Value> {
                 "effort": { "type": "string", "description": "Thinking level, e.g. low | medium | high." },
                 "worktree": { "type": "boolean", "description": "Its own git worktree. Default: on in a project's folder, as `wisp` from the command line (Settings → Worktree per task)." },
                 "goal": { "type": "string", "description": "Keep going until this holds: a goal declared by name (goals: in the user's formula), or what done means in words. wisp judges it after every round." },
+                "factory": { "type": "string", "description": "Run it through a software factory instead of one agent: a spec the user approves, build, checks, review, a PR the user merges. default is always there; the user declares others under factories:." },
                 "formula": { "description": "Run it under a formula, nothing applied: a formula file (relative to cwd), a list of them, or a formula inline ({ agents: { … } }). Its agents, skills, connectors, teams and goals are this task's; agent and goal may name them.", "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, { "type": "object" }] },
                 "wait": { "type": "boolean", "description": "Block until the agent finishes or asks (up to timeout_seconds)." },
                 "timeout_seconds": { "type": "number", "description": format!("Max wait when wait=true. Default {WAIT_S}.") }
@@ -108,6 +109,10 @@ async fn spelled(dir: String) -> String {
 fn with_goal(args: &mut Value, a: &Value) {
     if let Some(g) = Some(s(a, "goal").trim()).filter(|g| !g.is_empty()) {
         args["goal"] = json!(g);
+    }
+    // through a software factory (ADR-0114): wisp.factory refuses a name no factory has, naming them
+    if let Some(f) = Some(s(a, "factory").trim()).filter(|f| !f.is_empty()) {
+        args["factory"] = json!(f);
     }
 }
 

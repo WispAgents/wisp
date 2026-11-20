@@ -1369,3 +1369,91 @@ async fn a_follow_up_waits_behind_an_open_setup_card_review_7() {
     assert!(t["ext"]["wisp.runtime"]["ask"].is_null(), "{t}");
     a.serve.stop();
 }
+
+/// The build station's task of the factory run `run`, once the run has made it.
+async fn build_station(a: &Agent, run: &str) -> Value {
+    let at = std::time::Instant::now();
+    loop {
+        let t = a.api.cmd("runtime.get", json!({ "id": run })).await;
+        let tasks =
+            t["ext"]["wisp.factory"]["stations"].as_array().and_then(|s| s.iter().find(|x| x["id"] == "build")).map(|b| b["tasks"].clone());
+        if let Some(id) = tasks.as_ref().and_then(|t| t[0].as_str()) {
+            return a.api.cmd("runtime.get", json!({ "id": id })).await;
+        }
+        let why = t["ext"]["wisp.factory"]["why"].as_str().unwrap_or_default().to_owned();
+        assert!(why.is_empty(), "the run ended before building: {why}");
+        assert!(at.elapsed() < std::time::Duration::from_secs(30), "no build station: {t}");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// Review r194 factories #1: the driver made each station as the kernel, so a Plan task's agent ran a factory whose build
+/// station ran in Full auto (from `wisp_launch` and from its token's raw `runtime.create`, with no mode asked). Every
+/// station is held to the agent that started the run, as a task it started itself would be; no mode asked is the
+/// parent's, never Full auto.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_factory_run_never_builds_above_its_parent() {
+    for (parent, asks) in [("plan", vec![None, Some("plan")]), ("edits", vec![None, Some("edits"), Some("plan")])] {
+        let a = Agent::start_spec(&format!("factory-held-{parent}"), |_| Vec::new(), json!({ "mode": parent })).await;
+        // the user's factory builds in Full auto
+        a.api
+            .cmd(
+                "resources.apply",
+                json!({ "resources": [{ "kind": "factory", "name": "quick", "spec": { "stations": { "build": { "mode": "auto" } } } }] }),
+            )
+            .await;
+        for mode in asks {
+            let mut launch = json!({ "prompt": "build it", "factory": "quick", "worktree": false });
+            if let Some(m) = mode {
+                launch["mode"] = json!(m);
+            }
+            // from wisp_launch
+            let (said, err) = a.call("wisp_launch", launch.clone()).await;
+            assert!(!err, "{said}");
+            let run = said.split('`').nth(1).unwrap_or_else(|| panic!("{said}")).to_owned();
+            let b = build_station(&a, &run).await;
+            assert_eq!(b["mode"], mode.unwrap_or(parent), "wisp_launch, {parent} parent, asked {mode:?}: {b}");
+            a.api.cmd("factory.stop", json!({ "id": run })).await;
+            // from its token's raw runtime.create
+            let mut raw = launch.clone();
+            raw["cwd"] = json!(a.dir.join("proj"));
+            let made = raw_create(&a, raw).await;
+            let run = made["result"]["id"].as_str().unwrap_or_else(|| panic!("{made}")).to_owned();
+            let b = build_station(&a, &run).await;
+            assert_eq!(b["mode"], mode.unwrap_or(parent), "raw create, {parent} parent, asked {mode:?}: {b}");
+            a.api.cmd("factory.stop", json!({ "id": run })).await;
+        }
+        a.serve.stop();
+    }
+}
+
+/// Review r194 final pass #1: the agent's `heldTo` holds only the work run for it (a factory's stations), never the
+/// user's own calls on a task an agent made: a Side discussion, a follow-up, a fork and a rerun at Full auto stay the
+/// user's, while a factory station under the same agent is still held.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_users_own_calls_on_an_agents_task_keep_the_users_mode() {
+    let a = Agent::start_spec("held-user-own", |_| Vec::new(), json!({ "mode": "plan" })).await;
+    let (said, err) = a.call("wisp_launch", json!({ "prompt": "look around", "worktree": false })).await;
+    assert!(!err, "{said}");
+    let made = said.split('`').nth(1).unwrap_or_else(|| panic!("{said}")).to_owned();
+    let t = a.api.cmd("runtime.get", json!({ "id": made })).await;
+    assert!(t["ext"]["wisp.runtime"]["heldTo"].is_object(), "an agent's task keeps its limits: {t}");
+    // the user's Side discussion on it, at Full auto
+    let side = a.api.try_cmd("runtime.create", json!({ "prompt": "talk it over", "parentId": made, "mode": "auto" })).await;
+    assert_eq!(side["ok"], true, "the user's side discussion: {side}");
+    let s = a.api.cmd("runtime.get", json!({ "id": side["result"]["id"] })).await;
+    assert_eq!(s["mode"], "auto", "the user's own mode: {s}");
+    // a rerun of it at Full auto
+    let rerun = a
+        .api
+        .try_cmd("runtime.create", json!({ "prompt": "look around", "cwd": a.dir.join("proj"), "mode": "auto", "worktree": false, "parentId": made, "lineage": { "rerunOf": made } }))
+        .await;
+    assert_eq!(rerun["ok"], true, "the user's rerun: {rerun}");
+    assert_eq!(a.api.cmd("runtime.get", json!({ "id": rerun["result"]["id"] })).await["mode"], "auto");
+    // a follow-up at Full auto and a fork
+    let f = a.api.try_cmd("runtime.followUp", json!({ "id": made, "text": "go on", "mode": "auto", "queue": true })).await;
+    assert_eq!(f["ok"], true, "the user's follow-up: {f}");
+    let fork = a.api.try_cmd("runtime.fork", json!({ "id": made })).await;
+    assert_eq!(fork["ok"], true, "the user's fork: {fork}");
+    a.serve.stop();
+}

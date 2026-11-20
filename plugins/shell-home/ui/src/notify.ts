@@ -42,6 +42,8 @@ export function noticeFor(prev: TaskRow | undefined, next: TaskRow, o: { sibling
   const asks = asking(next) && !(prev && asking(prev));
   const finished = prev?.state === 'running' && next.state !== 'running' && !asking(next);
   if (!asks && !finished) return null;
+  // a factory's station says nothing when it ends: its run tells you when it waits on you, ends or fails (ADR-0114)
+  if (finished && next.factoryStation) return null;
   // a member's job: their name says who's reporting (v1 notify.js); one that left reads as any task
   const name = next.crew ? (next.crew.name ?? (next.crew.id ? o.member?.(next.crew.id) : undefined)) : undefined;
   if (next.crew && name) {

@@ -34,6 +34,8 @@ export interface TaskRow {
   /** the runs of one task started in several places share a group */
   readonly groupId?: string;
   readonly crew?: { readonly id?: string; readonly name?: string };
+  /** a factory run's station (wisp.factory's summary field, ADR-0114): it never notifies on its own */
+  readonly factoryStation?: { readonly run?: string; readonly station?: string };
   readonly goal?: { readonly status: string; readonly round?: number; readonly last?: { readonly why?: string } };
   readonly overlaps?: readonly Overlap[];
 }

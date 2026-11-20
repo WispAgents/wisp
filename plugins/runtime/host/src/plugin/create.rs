@@ -68,11 +68,33 @@ async fn agent_parent(slot: &Slot, call: &Call) -> WireResult<Option<wisp_runtim
     }))
 }
 
-async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, mut a: StartArgs) -> WireResult<c::Created> {
-    // a task an agent starts gets nothing its own task may not have: held here, whichever way it was asked for
+/// The limits a task an agent's token made carries (`ext["wisp.runtime"].heldTo`): what a task made under it is held to,
+/// whoever makes it (a plugin's own call, as a factory's driver makes its stations: review r194 factories #1).
+async fn inherited_parent(slot: &Slot, a: &StartArgs) -> WireResult<Option<wisp_runtime_core::child::Parent>> {
+    let Some(pid) = a.parent_id.as_ref() else { return Ok(None) };
+    let Ok(s) = rt(slot)?.repo.session(pid.as_str()).await else { return Ok(None) };
+    Ok(s.ext.get("wisp.runtime").and_then(|r| r.get(HELD_TO)).and_then(|v| serde_json::from_value(v.clone()).ok()))
+}
+
+/// Whether `a` is work run for an agent's task (review r194 final pass #1): a plugin or the kernel making a step of the
+/// parent's own run (`lineage.workflowRun`: a factory's station, a workflow's step). Never the user's own call (their
+/// page, CLI, harness through `wisp mcp`, a linked channel, an API key: a Side discussion, a rerun on an agent's task
+/// is theirs) and never an agent's (its own token is held to its own task already).
+pub(crate) fn for_the_agents_run(set: &str, a: &StartArgs) -> bool {
+    let plugin_or_kernel = set == "kernel" || set.starts_with("plugin:");
+    plugin_or_kernel && a.parent_id.is_some() && a.lineage.workflow_run.as_ref() == a.parent_id.as_ref().map(|p| &p.0)
+}
+
+/// Where a task an agent's token made keeps that agent's limits.
+const HELD_TO: &str = "heldTo";
+
+/// The limits a task gets before anything is made (review r194 round 2 #2, factories #1): an agent's token is held to
+/// its own task; a task a plugin makes under a task an agent's token made is held to that agent too (a factory run's
+/// stations); either way the task keeps the limits it was held to (`heldTo`), for what is made under it in turn.
+async fn held(slot: &Slot, call: &Call, a: &mut StartArgs) -> WireResult<Option<wisp_runtime_core::child::Parent>> {
     let parent = agent_parent(slot, call).await?;
     if let Some(p) = &parent {
-        wisp_runtime_core::child::hold(&mut a, p).map_err(WireError::forbidden)?;
+        wisp_runtime_core::child::hold(a, p).map_err(WireError::forbidden)?;
         if let Some(f) = &a.formula {
             let why = wisp_resources_api::agent_overlay_problems(f);
             if !why.is_empty() {
@@ -80,6 +102,26 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, mut a: Start
             }
         }
     }
+    let inherited = if parent.is_none() && for_the_agents_run(&call.caller().set, a) { inherited_parent(slot, a).await? } else { None };
+    if let Some(p) = &inherited {
+        wisp_runtime_core::child::inherit(a, p).map_err(WireError::forbidden)?;
+    }
+    let parent = parent.or(inherited);
+    if let Some(p) = &parent {
+        let own = a.ext.entry("wisp.runtime".to_owned()).or_insert_with(|| serde_json::json!({}));
+        if !own.is_object() {
+            *own = serde_json::json!({});
+        }
+        if let (Some(o), Ok(v)) = (own.as_object_mut(), serde_json::to_value(p)) {
+            o.insert(HELD_TO.into(), v);
+        }
+    }
+    Ok(parent)
+}
+
+async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, mut a: StartArgs) -> WireResult<c::Created> {
+    // a task an agent starts (or a plugin makes under one) gets nothing that agent's task may not have
+    let parent = held(slot, call, &mut a).await?;
     // a project by name (a declared task's `project: web`) is its folder before anything reads the folder
     crate::specs::project_by_name(&mut a, Some(kinds)).await?;
     let mut a = ctx.run_hook::<BeforeCreate>(call, a).await?;
@@ -285,5 +327,25 @@ mod tests {
         let mut a = StartArgs::default();
         mark_side(&mut a, None);
         assert!(!a.ext.contains_key("wisp.runtime"), "nothing added to a plain create");
+    }
+
+    /// Review r194 final pass #1: only a plugin's or the kernel's step of the parent's own run inherits its hold.
+    #[test]
+    fn only_a_step_of_the_agents_run_inherits_its_hold() {
+        use wisp_runtime_api::spec::Lineage;
+        let step = StartArgs {
+            parent_id: Some("run".into()),
+            lineage: Lineage { workflow_run: Some("run".into()), ..Lineage::default() },
+            ..StartArgs::default()
+        };
+        assert!(for_the_agents_run("plugin:wisp.factory", &step));
+        assert!(for_the_agents_run("kernel", &step));
+        for user in ["user:full", "user:channel", "apikey:ci"] {
+            assert!(!for_the_agents_run(user, &step), "{user}");
+        }
+        let side = StartArgs { parent_id: Some("run".into()), ..StartArgs::default() };
+        assert!(!for_the_agents_run("plugin:wisp.channels", &side), "a plugin acting for the user (no run step)");
+        let other = StartArgs { lineage: Lineage { workflow_run: Some("x".into()), ..Lineage::default() }, ..step.clone() };
+        assert!(!for_the_agents_run("plugin:wisp.factory", &other), "a step of another run");
     }
 }

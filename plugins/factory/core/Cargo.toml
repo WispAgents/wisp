@@ -1,0 +1,16 @@
+[package]
+name = "wisp-factory-core"
+description = "wisp.factory, sans-IO: the run's machine (an event in, the next step out: what starts, what a station's result means, when to loop back, when to ask or stop), the prompts and the verdicts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+wisp-factory-api.workspace = true
+
+[lints]
+workspace = true

@@ -19,6 +19,10 @@ agent?: string, model?: string, effort?: string, mode?: string,
  */
 cwd?: string, dirs?: Array<string>, base?: Base, worktree?: boolean, goal?: unknown, 
 /**
+ * the factory it ran through (`StartArgs::factory`, ADR-0114): a rerun goes through it again. Additive (2026-11-20).
+ */
+factory?: string, 
+/**
  * the Notes it started with (`StartArgs::notes`, ADR-0097): a rerun starts with them too. Additive (2026-11-18).
  */
 notes?: unknown, crew?: string, team?: unknown, connectors?: Array<string>, schedule?: string, 

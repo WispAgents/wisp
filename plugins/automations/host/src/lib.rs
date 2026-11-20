@@ -153,6 +153,7 @@ pub fn start_args(t: &NamedTask, run: &RunTask, by: &str) -> Result<StartArgs> {
         connectors: d.connectors.clone(),
         worktree: d.worktree,
         goal: goal_arg(d.goal.as_ref()),
+        factory: opt(&d.factory),
         notes: (!d.notes.is_empty()).then(|| serde_json::to_value(&d.notes).ok()).flatten(),
         lineage: Lineage { triggered_by: Some(by.to_owned()), ..Lineage::default() },
         ext: [(wisp_automations_api::PLUGIN_ID.to_owned(), json!({ "task": t.name }))].into_iter().collect(),
@@ -338,7 +339,8 @@ impl Plugin for AutomationsPlugin {
             .names(wisp_resources_api::Names::new("agent", "agent"))
             .names(wisp_resources_api::Names::new("connectors[]", "connector"))
             .names(wisp_resources_api::Names::new("crew", "crew"))
-            .names(wisp_resources_api::Names::new("project", "project"));
+            .names(wisp_resources_api::Names::new("project", "project"))
+            .names(wisp_resources_api::Names::new("factory", "factory"));
         let kind: Arc<dyn ResourceKind> = Arc::new(TaskKind(
             CrudKind::new::<TaskDecl>(
                 info,
@@ -441,5 +443,19 @@ mod tests {
         );
         assert_eq!(a.lineage.triggered_by.as_deref(), Some("hand"));
         assert!(start_args(&t, &RunTask::default(), "hand").is_err(), "a missing param says which");
+    }
+
+    /// ADR-0114: a declared task's `factory` (or `tasks.default`'s) reaches its run; `wisp run <task> --factory` lays one over.
+    #[test]
+    fn a_declared_tasks_factory_reaches_its_run() {
+        let d = TaskDecl { factory: "careful".into(), ..TaskDecl::default() };
+        let t = NamedTask { name: "fix".into(), spec: with_defaults(&TaskDecl { prompt: "fix it".into(), ..TaskDecl::default() }, &d) };
+        let a = start_args(&t, &RunTask { name: "fix".into(), ..RunTask::default() }, "hand").unwrap();
+        assert_eq!(a.factory.as_deref(), Some("careful"), "tasks.default's factory");
+        let r =
+            RunTask { name: "fix".into(), over: [("factory".to_owned(), json!("default"))].into_iter().collect(), ..RunTask::default() };
+        assert_eq!(start_args(&t, &r, "hand").unwrap().factory.as_deref(), Some("default"));
+        let plain = NamedTask { name: "x".into(), spec: TaskDecl { prompt: "x".into(), ..TaskDecl::default() } };
+        assert_eq!(start_args(&plain, &RunTask::default(), "hand").unwrap().factory, None, "none named: one agent");
     }
 }

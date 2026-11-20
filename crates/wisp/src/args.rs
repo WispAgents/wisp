@@ -93,6 +93,7 @@ launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|ant
                 --goal NAME  keep going until a goal declared by name (goals: in a formula) is met
                 --goal-text \"…\"  the same with what done means in words
                 --formula f.yml[,g.yml]  run under these formulas, nothing applied (its agents, skills, connectors…)
+                --factory [NAME]  run it through a software factory (spec, build, checks, review, ship); alone: default
                 --yes  go ahead although it takes a usage window past your Ask near the limit line
 options:        --port N  --browser  --no-open  --json  --version";
 
@@ -167,6 +168,8 @@ pub struct Flags {
     pub goal_text: Option<String>,
     /// `--formula f.yml[,g.yml]`: the launch runs under these formulas, nothing applied (ADR-0111)
     pub formula: Vec<String>,
+    /// `--factory [name]`: the task runs through a software factory ('' : the built-in `default`, ADR-0114)
+    pub factory: Option<String>,
     pub draft: bool,
     pub days: Option<u32>,
     /// `--on <machine>`: the command runs on that peer (ADR-0041)
@@ -218,6 +221,7 @@ impl Flags {
             goal: None,
             goal_text: None,
             formula: Vec::new(),
+            factory: None,
             draft: false,
             days: None,
             on: None,
@@ -369,6 +373,11 @@ pub fn command_of(words: &[String], literal: Literal, home: &Path, cwd: &Path) -
     fits(cmd, words, home, cwd).then_some(*cmd)
 }
 
+/// Whether a word can be a factory's name (letters, digits, - _ .), so `--factory` takes it rather than leaving it a word.
+pub fn factory_name(v: &str) -> bool {
+    !v.is_empty() && v.len() <= 64 && !v.starts_with('-') && v.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c))
+}
+
 /// A flag that needs a value and got none.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0} needs a value — see wisp --help")]
@@ -474,6 +483,13 @@ pub fn parse(input: &[String], env_port: Option<&str>, home: &Path, cwd: &Path) 
             // `wisp ls -a` is --all (QA round 15 #6 said "-a needs a value"); `-a` is --agent everywhere else
             if a == "-a" && matches!(words.first().map(String::as_str), Some("ls" | "list")) {
                 flags.all = true;
+            } else if a == "--factory" {
+                // `--factory` alone is `default`: the next word is its name only when it can be one (no spaces, no flag)
+                let name = argv.get(i + 1).filter(|v| factory_name(v)).cloned();
+                if name.is_some() {
+                    i += 1;
+                }
+                flags.factory = Some(name.unwrap_or_default());
             } else if a == "--on" && verb_owns_on(&words) {
                 // `wisp crew create --on done`: the verb's own `--on` (its wakes), read from argv by the verb; the
                 // machine to run on goes first (`wisp --on laptop crew create …`) (audit B #9)

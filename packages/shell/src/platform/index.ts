@@ -6,13 +6,14 @@ import { androidPlatform } from './android.ts';
 import { browserPlatform } from './browser.ts';
 import { desktopPlatform } from './desktop.ts';
 import { iosPlatform } from './ios.ts';
+import { platformKind } from './kind.ts';
 import type { Platform, PlatformWindow } from './types.ts';
 
 export function detectPlatform(w: PlatformWindow): Platform {
-  if (w.__TAURI_INTERNALS__) return desktopPlatform(w);
-  if (w.Capacitor?.isNativePlatform?.() === true && w.Capacitor.getPlatform?.() === 'ios') return iosPlatform(w);
-  // the app's WebView on a computer's own page has MainActivity's bridge even without Capacitor's
-  if (w.Capacitor?.isNativePlatform?.() === true || w.wispAndroid !== undefined) return androidPlatform(w);
+  const kind = platformKind(w);
+  if (kind === 'desktop') return desktopPlatform(w);
+  if (kind === 'ios') return iosPlatform(w);
+  if (kind === 'android') return androidPlatform(w);
   return browserPlatform(w);
 }
 
@@ -51,4 +52,5 @@ export { androidPlatform, browserPlatform, desktopPlatform, iosPlatform };
 export { applyPlatformLook, platformLook } from './look.ts';
 export { nativeSeams } from './native-seams.ts';
 export { sizeClass } from './web.ts';
+export { loadPlatform } from './load.ts';
 export type * from './types.ts';

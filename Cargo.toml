@@ -72,6 +72,10 @@ wisp-budget-api = { path = "plugins/budget/api" }
 # wisp.resources: wisp as code (ADR-0026)
 wisp-resources-api = { path = "plugins/resources/api" }
 wisp-resources-core = { path = "plugins/resources/core" }
+# wisp.factory: a task through stations, looped back with a limit (ADR-0114)
+wisp-factory-api = { path = "plugins/factory/api" }
+wisp-factory-core = { path = "plugins/factory/core" }
+wisp-factory-tui = { path = "plugins/factory/tui" }
 # wisp.workflows: orchestration as code (ADR-0028)
 wisp-workflows-api = { path = "plugins/workflows/api" }
 wisp-workflows-core = { path = "plugins/workflows/core" }

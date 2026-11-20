@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyPlatformLook, platformLook } from '../src/platform/look.ts';
 import { detectPlatform, nativeSeams, nullPlatform } from '../src/platform/index.ts';
+import { loadPlatform } from '../src/platform/load.ts';
 import type { BackEvent, CapacitorGlobal, PlatformWindow, Rect } from '../src/platform/types.ts';
 
 interface Fake extends PlatformWindow {
@@ -47,6 +48,24 @@ function root(): Element {
   const el = document.createElement('html');
   return el;
 }
+
+// The entry loads the platform it runs on (ADR-0105's first screen): a browser's page carries only the browser's, the
+// desktop app's, Android's and the iPhone's come with an import of their own; each is the one detectPlatform picks
+describe('loadPlatform', () => {
+  it('a_browser_loads_only_its_own_platform_and_the_apps_load_theirs', async () => {
+    const cases: [PlatformWindow, string][] = [
+      [fakeWindow({ width: 1440, ua: 'MacIntel' }), 'browser'],
+      [fakeWindow({ width: 900, ua: 'MacIntel', tauri: true }), 'desktop'],
+      [fakeWindow({ width: 390, coarse: true, cap: native('android') }), 'android'],
+      [fakeWindow({ width: 390, coarse: true, cap: native('ios') }), 'ios'],
+      [{ ...fakeWindow({ width: 390 }), wispAndroid: {} }, 'android'],
+    ];
+    for (const [w, kind] of cases) {
+      expect((await loadPlatform(w)).kind).toBe(kind);
+      expect(detectPlatform(w).kind).toBe(kind);
+    }
+  });
+});
 
 describe('data-platform', () => {
   it('a_browser_never_sets_data_platform', () => {

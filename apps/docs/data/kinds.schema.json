@@ -455,6 +455,10 @@
             "null"
           ]
         },
+        "factory": {
+          "description": "the software factory its own prompt runs through (ADR-0114; a declared `task:` says its own)",
+          "type": "string"
+        },
         "followUp": {
           "description": "or a follow-up to the task the event came from",
           "type": "boolean"
@@ -559,6 +563,234 @@
         },
         "tz": {
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "factory": {
+      "additionalProperties": false,
+      "description": "A software factory (`factories:` in a formula).",
+      "properties": {
+        "budget": {
+          "description": "`{ usd: 20 }`: no new station starts once the run's stations have cost this much"
+        },
+        "description": {
+          "type": "string"
+        },
+        "loop": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/factory.Loop"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stations": {
+          "$ref": "#/$defs/factory.Stations"
+        }
+      },
+      "required": [
+        "stations"
+      ],
+      "title": "FactorySpec",
+      "type": "object"
+    },
+    "factory.BuildStation": {
+      "additionalProperties": false,
+      "description": "Builds it, in a worktree of its own.",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "agents": {
+          "description": "two or more build it side by side, each in its own worktree; the first whose checks pass goes on",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "description": "plan | edits | auto (default: the run's)",
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "worktree": {
+          "description": "a worktree of its own (default: yes, in a project)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "factory.ChecksStation": {
+      "additionalProperties": false,
+      "description": "The gate that is code: commands run in the build's folder, in order; one that exits non-zero fails it.",
+      "properties": {
+        "run": {
+          "description": "each `sh -c` in the build's folder (none: the project's own `test` command)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "description": "minutes each may run (default 10)",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "factory.Loop": {
+      "additionalProperties": false,
+      "description": "Where a failed check or review goes, how many rounds it may take, and what happens past them.",
+      "properties": {
+        "back_to": {
+          "description": "build (the default) | spec",
+          "type": "string"
+        },
+        "max": {
+          "description": "rounds in all (default 3; 0: a failure goes straight to `then`)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "then": {
+          "description": "ask (the default): it asks you whether to keep going | stop: the run ends failed",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "factory.ReviewStation": {
+      "additionalProperties": false,
+      "description": "Reviewers read the build's folder and each says APPROVE or CHANGES: what to fix.",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "agents": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "vote": {
+          "description": "majority (the default) | all | any",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "factory.ShipStation": {
+      "additionalProperties": false,
+      "description": "Opens the PR from the build's worktree, and merges it.",
+      "properties": {
+        "draft": {
+          "type": "boolean"
+        },
+        "merge": {
+          "description": "human (the default): it asks before merging | auto: merges once it's open | none: leaves it open",
+          "type": "string"
+        },
+        "pr": {
+          "description": "open a PR (default: yes)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "factory.SpecStation": {
+      "additionalProperties": false,
+      "description": "Writes the spec: its answer is what every later station is given. Read-only (Plan mode).",
+      "properties": {
+        "agent": {
+          "description": "an agent profile's name or a harness ('' : the task's, else your default)",
+          "type": "string"
+        },
+        "approve": {
+          "description": "`human` (the default): the run waits for your yes on the spec; `none`: it goes on by itself",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "more instructions for it",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "factory.Stations": {
+      "additionalProperties": false,
+      "description": "A factory's stations: the ones it has, always run in this order.",
+      "properties": {
+        "build": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/factory.BuildStation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checks": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/factory.ChecksStation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "review": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/factory.ReviewStation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ship": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/factory.ShipStation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/factory.SpecStation"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "type": "object"
@@ -1379,6 +1611,10 @@
         "effort": {
           "type": "string"
         },
+        "factory": {
+          "description": "the software factory it runs through (ADR-0114): a factory's name (`default` is always there); its stations run\nit instead of one agent",
+          "type": "string"
+        },
         "goal": {
           "description": "the goal judged after each turn: a declared goal's name (`green-build`, from `goals:`), or inline\n(`{ text: tests pass, judges: [reviewer] }`); `{ name: green-build, maxRounds: 3 }` is the declared one with\nits own limit"
         },
@@ -1622,6 +1858,10 @@
             "integer",
             "null"
           ]
+        },
+        "factory": {
+          "description": "the software factory its own prompt runs through (ADR-0114; a declared `task:` says its own)",
+          "type": "string"
         },
         "followUp": {
           "description": "or a follow-up to the task the event came from",
@@ -2192,6 +2432,38 @@
       ],
       "description": "A crew member: who they are, what runs their jobs, when they check in."
     },
+    "factories": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/factory"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/factory"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A software factory (`factories:` in a formula)."
+    },
     "goals": {
       "anyOf": [
         {
@@ -2688,6 +2960,38 @@
               }
             ],
             "description": "A crew member: who they are, what runs their jobs, when they check in."
+          },
+          "factories": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/factory"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/factory"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A software factory (`factories:` in a formula)."
           },
           "goals": {
             "anyOf": [

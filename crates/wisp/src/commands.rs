@@ -91,6 +91,10 @@ async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()
         return Err(CliError::said(no.trim().trim_start_matches("✗ ")));
     }
     let prompt = args.join(" ");
+    // a factory runs its own builders side by side (`stations.build.agents`), its own way (ADR-0114)
+    if f.factory.is_some() && (f.compare.is_some() || !f.tries.is_empty()) {
+        return Err(CliError::said("--factory runs its own stations: compare builders with stations.build.agents in the factory"));
+    }
     if !f.tries.is_empty() {
         // Try it two ways: one harness, run B with what --try names changed (ADR-0056)
         return crate::trial_cli::launch(c, f, &prompt, cwd).await;

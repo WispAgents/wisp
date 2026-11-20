@@ -169,6 +169,14 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   too). A `-f`/`--formula` file reads like `.wisp/`. One task under a formula, nothing applied: `wisp "…" --formula`,
   `wisp run <task> --formula`, a task file's `formula: ./wisp.yml` / `module.x`, `wisp_launch`'s `formula`, New task's
   + → Formula or task file…, all through `resources.overlay`. Audit: docs/qa/refs-audit.md. ADR-0111.
+- **Software factories** (owner, 2026-11-20, owner-list row 65: "add the concept of a factory where the user creates a
+  software factory … when running a task you can pass it through the factory instead of one agent"). A factory
+  (`factories:`, built-in `default`) runs a task through stations in order: spec you approve → build in its own worktree
+  → checks that are commands → review by a vote → ship a PR you merge; a failed check or review goes back to build (a
+  follow-up with the findings) up to `loop.max`, then asks or stops. One row per run, its stations as steps on a band.
+  Reached from `wisp "…" --factory`, `wisp run --factory`, declared tasks, triggers, task files, `wisp_launch` and New
+  task's picker (a Factory row after the harnesses). ADR-0114. **Built 2026-11-20** (uncommitted); review r194 #1-#6 fixed and runs resume after a
+  restart (ADR-0114 rules 7-14); not yet: crew members naming a factory.
 - **Submenus open on hover on desktop; drill-in stays on touch** (owner, 2026-11-17: "in desktop, I don't like that I need
   to click to go to a submenu, they should show up on hover"). With a hovering fine pointer in the browser, a submenu (the
   task row's View ›, Copy ›, Files ›) is a flyout beside its row, the standard cascading menu: it opens on hover after a
@@ -1119,11 +1127,13 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - 0065: phone apps are native shells on the kit
 - 0066: harness detection lands on a topic as it settles
 - 0067: the first page loads only what the first screen draws
+- 0114: a factory runs a task through stations and loops back with a limit
 
 ## 11. Work log (recent rounds)
 
 | Round | What | State |
 |---|---|---|
+| fac | Software factories (row 65, ADR-0114): plugin wisp.factory, CLI/MCP/picker/band/TUI, docs, e2e serve_factory.rs | built, uncommitted |
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
 | 324 | Search follows late/changed/deleted tasks (v1 bug); useDerived; keyed palette rows | committed |

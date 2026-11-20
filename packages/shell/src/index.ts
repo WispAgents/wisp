@@ -23,6 +23,8 @@ export { RunnerPicker } from './frame/RunnerPicker.tsx';
 export { useRunWords, type RunIds } from './frame/use-run-words.ts';
 export type { Runner } from './frame/runner.ts';
 export { detectPlatform, nullPlatform, browserPlatform, desktopPlatform, androidPlatform, iosPlatform } from './platform/index.ts';
+export { loadPlatform } from './platform/load.ts';
+export { platformKind, type PlatformKind } from './platform/kind.ts';
 export type * from './platform/types.ts';
 export { routeOf, routeTip, type RouteSeen } from './frame/auto.ts';
 export { PROJECT_ORDER, movedOrder, projectList, projectOf, type ProjectView } from './frame/rows-view.ts';

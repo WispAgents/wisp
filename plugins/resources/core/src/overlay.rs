@@ -12,13 +12,15 @@ use wisp_resources_api::{Names, Resource, names_in};
 use crate::module::Config;
 
 /// The sections a task reads from its overlay (kind, section); the rest only means something applied.
-pub const SECTIONS: [(&str, &str); 6] = [
+pub const SECTIONS: [(&str, &str); 7] = [
     ("agent", "agents"),
     ("project", "projects"),
     ("harness", "harnesses"),
     ("skill", "skills"),
     ("team", "teams"),
     ("connector", "connectors"),
+    // a factory the task runs through (ADR-0114): wisp.factory reads the overlay's before its own
+    ("factory", "factories"),
 ];
 
 /// `runtime.create`'s overlay from resources: `{agents: [{name, …}], …}`, and what it leaves out (`kind/name`; a declared

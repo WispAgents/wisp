@@ -69,6 +69,10 @@ pub fn launch_args(f: &Flags, prompt: &str, cwd: &str) -> Value {
     } else if let Some(g) = f.goal_text.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
         a["goal"] = json!(g);
     }
+    // through a software factory (ADR-0114): wisp.factory refuses a name no factory has, naming them
+    if let Some(name) = &f.factory {
+        a["factory"] = json!(name.trim());
+    }
     // --yes: go past Ask near the limit's line (the user agreed)
     if f.yes {
         a["confirmLimit"] = json!(true);
@@ -191,7 +195,8 @@ pub async fn show(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Re
     let held =
         last.as_ref().and_then(Value::as_array).and_then(|t| t.last()).map_or_else(String::new, |t| crate::show_words::holding(id, t));
     let goal = crate::show_words::goal_line(&task);
-    let head = format!("◌ {}  [{}{still}]  {id}{family}{goal}", s(&task, "title"), s(&task, "state"));
+    let factory = crate::show_words::factory_line(&task);
+    let head = format!("◌ {}  [{}{still}]  {id}{family}{goal}{factory}", s(&task, "title"), s(&task, "state"));
     say(&show_text(&head, &[&body, &asks, &held]));
     Ok(())
 }
@@ -443,6 +448,38 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.flags.goal.as_deref(), Some("green-build"));
+    }
+
+    /// ADR-0114: `--factory NAME` runs it through that factory, `--factory` alone through `default`; a word that can't be
+    /// a name (it has spaces) stays the prompt, and `wisp run <task> --factory` lays it over the declared task.
+    #[test]
+    fn factory_flag_names_a_factory_and_alone_is_default() {
+        let parse = |a: &[&str]| {
+            crate::args::parse(
+                &a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
+                None,
+                std::path::Path::new("/h"),
+                std::path::Path::new("/w"),
+            )
+            .unwrap()
+        };
+        let p = parse(&["fix it", "--factory", "careful"]);
+        assert_eq!((p.flags.factory.as_deref(), p.words.as_slice()), (Some("careful"), ["fix it".to_owned()].as_slice()));
+        assert_eq!(launch_args(&p.flags, "fix it", "/w")["factory"], json!("careful"));
+        let p = parse(&["fix it", "--factory"]);
+        assert_eq!(p.flags.factory.as_deref(), Some(""), "alone: default");
+        let p = parse(&["--factory", "fix the add bug", "--wait"]);
+        assert_eq!(
+            (p.flags.factory.as_deref(), p.words.as_slice(), p.flags.wait),
+            (Some(""), ["fix the add bug".to_owned()].as_slice(), true)
+        );
+        let p = parse(&["--factory=careful", "x"]);
+        assert_eq!(p.flags.factory.as_deref(), Some("careful"));
+        assert!(launch_args(&Flags::defaults(None), "x", "/w").get("factory").is_none());
+        let o = crate::code::opts(&["release".into(), "--factory".into(), "careful".into()]);
+        assert_eq!(o.over.get("factory"), Some(&json!("careful")));
+        let o = crate::code::opts(&["release".into(), "--factory".into()]);
+        assert_eq!(o.over.get("factory"), Some(&json!("")));
     }
 
     /// perf audit 2026-11-19 #5: `wisp ls` shows the newest 50 (v1's default), `--limit n` that many, `--all` all.

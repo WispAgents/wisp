@@ -18,12 +18,13 @@ pub struct Where {
     pub user_home: PathBuf,
 }
 
-pub const DEFAULT: [&str; 51] = [
+pub const DEFAULT: [&str; 52] = [
     "cli",
     "events",
     "threads",
     "resources",
     "workflows",
+    "factory",
     "share",
     "history",
     "settings",
@@ -234,6 +235,8 @@ fn add(g: PluginGroup, name: &str, at: &Where) -> PluginGroup {
         "resources" => g.add(wisp_resources::ResourcesPlugin),
         #[cfg(feature = "workflows")]
         "workflows" => g.add(wisp_workflows::WorkflowsPlugin),
+        #[cfg(feature = "factory")]
+        "factory" => g.add(wisp_factory::FactoryPlugin),
         #[cfg(feature = "share")]
         "share" => g.add(wisp_share::SharePlugin),
         #[cfg(feature = "telemetry")]
@@ -257,6 +260,7 @@ pub fn in_build(name: &str) -> bool {
         "cli" => cfg!(feature = "cli"),
         "resources" => cfg!(feature = "resources"),
         "workflows" => cfg!(feature = "workflows"),
+        "factory" => cfg!(feature = "factory"),
         "share" => cfg!(feature = "share"),
         "settings" => cfg!(feature = "settings"),
         "runtime" => cfg!(feature = "runtime"),

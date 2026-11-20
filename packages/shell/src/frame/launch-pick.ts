@@ -10,6 +10,14 @@ import { entityKey, type PluginClient } from '@wisp/client';
 
 export const AUTO_SETTING = 'runtime.auto';
 export const LAUNCH_SETTING = 'runtime.launch';
+/** New task's picker row for a software factory (ADR-0114): the pick's `model` is the factory's name. Never kept as the
+ *  launch's harness (`runtime.launch`): a task that names no harness runs on a harness, never a factory. */
+export const FACTORY = 'factory';
+
+/** What a launch sends for a factory pick (`create`'s wire): the factory, no harness, model or account of its own (each
+ *  station runs on its own or your default); an empty name is `default` (wisp.factory reads it so). */
+export const factoryOf = (agent: string, model: string): { agent: ''; factory: string; model: undefined; account: undefined } | undefined =>
+  agent === FACTORY ? { agent: '', factory: model, model: undefined, account: undefined } : undefined;
 
 export interface LaunchPick {
   readonly agent?: string;

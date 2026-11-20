@@ -683,6 +683,7 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
                 cwd: Some(cwd.clone()),
                 agent: opt(&t.spec.agent),
                 model: opt(&t.spec.model),
+                factory: opt(&t.spec.factory),
                 mode,
                 worktree,
                 lineage: Lineage { triggered_by: Some(by.clone()), ..Lineage::default() },

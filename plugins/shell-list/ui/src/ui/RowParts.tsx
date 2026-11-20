@@ -118,11 +118,13 @@ export function RunLine(props: { readonly run: RunView; readonly s: SessionRow; 
   const harnesses = useSignal(env.shell.harnesses());
   /** the harness as its plugin registered it: v1's name ("Claude Code") and logo */
   const harness = (): HarnessUiDef | undefined => harnesses().find((h) => h.id === props.s.agent);
-  const name = (): string => harness()?.name ?? props.run.agentName;
+  // a factory run's line is the factory's words (no harness, no mark: it runs no agent of its own)
+  const factory = (): boolean => props.run.agent === 'factory';
+  const name = (): string => (factory() ? env.shell.t('shell-list.run.factory', { name: props.run.agentName }) : (harness()?.name ?? props.run.agentName));
   return (
     <RowRun
       part="list.row.run card.run"
-      logo={<HarnessMark s={props.s} />}
+      logo={factory() ? undefined : <HarnessMark s={props.s} />}
       name={name()}
       // a trial's runs share a harness: the run's one change leads, so a long model name never cuts it (v1 runVariant)
       model={[...(props.run.variant ?? []).map((v) => say(env.shell.t, v, env.now())), props.run.model].filter(Boolean).join(' · ') || undefined}

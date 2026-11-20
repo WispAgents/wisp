@@ -17,11 +17,12 @@ path = "src/main.rs"
 # scripts that name it.
 default = ["proc", "all-plugins"]
 full = ["default"]
-all-plugins = ["cli", "events", "threads", "resources", "workflows", "share", "history", "settings", "runtime", "claude", "codex", "cursor", "opencode", "copilot", "grok", "antigravity", "accounts", "git", "worktrees", "ship", "review", "issues", "terminal", "lsp", "machine", "machines", "grid-client", "crew", "goal", "later", "budget", "router", "automations", "learn", "channels", "telegram", "slack", "discord", "github", "email", "ntfy", "push", "mcp", "connectors", "stuff", "plugins", "telemetry", "posthog", "update", "termctx", "sandbox"]
+all-plugins = ["cli", "events", "threads", "resources", "workflows", "factory", "share", "history", "settings", "runtime", "claude", "codex", "cursor", "opencode", "copilot", "grok", "antigravity", "accounts", "git", "worktrees", "ship", "review", "issues", "terminal", "lsp", "machine", "machines", "grid-client", "crew", "goal", "later", "budget", "router", "automations", "learn", "channels", "telegram", "slack", "discord", "github", "email", "ntfy", "push", "mcp", "connectors", "stuff", "plugins", "telemetry", "posthog", "update", "termctx", "sandbox"]
 proc = ["dep:wisp-proc"]
 cli = ["dep:wisp-cli"]
 resources = ["dep:wisp-resources"]
 workflows = ["dep:wisp-workflows"]
+factory = ["dep:wisp-factory"]
 share = ["dep:wisp-share"]
 history = ["dep:wisp-history"]
 sandbox = ["dep:wisp-sandbox"]
@@ -81,6 +82,7 @@ wisp-proc = { workspace = true, optional = true }
 wisp-cli = { path = "../../plugins/cli/host", optional = true }
 wisp-resources = { path = "../../plugins/resources/host", optional = true }
 wisp-workflows = { path = "../../plugins/workflows/host", optional = true }
+wisp-factory = { path = "../../plugins/factory/host", optional = true }
 wisp-share = { path = "../../plugins/share/host", optional = true }
 wisp-history = { path = "../../plugins/history/host", optional = true }
 wisp-sandbox = { path = "../../plugins/sandbox/host", optional = true }
@@ -98,6 +100,7 @@ ratatui.workspace = true
 wisp-tui-api.workspace = true
 wisp-history-tui.workspace = true
 wisp-goal-tui.workspace = true
+wisp-factory-tui.workspace = true
 wisp-sync.workspace = true
 wisp-settings = { path = "../../plugins/settings/host", optional = true }
 wisp-runtime = { path = "../../plugins/runtime/host", optional = true }

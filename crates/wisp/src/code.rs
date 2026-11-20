@@ -104,6 +104,11 @@ pub fn opts(argv: &[String]) -> Opts {
             "--their-setup" => o.action = Some("theirs".into()),
             "--import" => o.action = Some("import".into()),
             "--compare" => o.action = Some("compare".into()),
+            // `--factory` alone is the built-in `default` (ADR-0114); a word that can't be a name is the prompt's
+            "--factory" => {
+                let name = inline.clone().or_else(|| it.next_if(|v| crate::args::factory_name(v)).cloned()).unwrap_or_default();
+                o.over.insert("factory".to_owned(), json!(name));
+            }
             "--agent" | "-a" | "--model" | "--effort" | "--mode" | "-m" => {
                 let key = match k.as_str() {
                     "--agent" | "-a" => "agent",

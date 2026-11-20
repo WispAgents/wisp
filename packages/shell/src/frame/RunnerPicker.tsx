@@ -29,7 +29,8 @@ import {
 } from './runner.ts';
 import { AUTO, AUTO_GOALS, firstFocus, goalOf, modelGroups, pickerRows, searchShown, useHarness, varyRows, withModel, withSetting, withVary, type SubLine, type VaryKey } from './picker.ts';
 import { SUBAGENT_NAME, type Variant } from './trial.ts';
-import { AUTO_SETTING, autoEnabled } from './launch-pick.ts';
+import { AUTO_SETTING, FACTORY, autoEnabled } from './launch-pick.ts';
+import { factoryNames, factoryPane, factoryPick, factoryRow, useFactory } from './factory-pick.ts';
 import '../i18n/lazy.ts';
 
 /** v1 effortLabel: "X-High", else the level capitalised */
@@ -58,6 +59,8 @@ export interface RunnerPickerProps {
   readonly onChange: (r: Runner) => void;
   /** Auto is offered first (New task); elsewhere a harness is picked */
   readonly auto?: boolean;
+  /** New task: a Factory row after the harnesses, whose pane lists the factories (ADR-0114) */
+  readonly factories?: boolean;
   /** false: what it's for has no thinking level (a trigger) */ readonly efforts?: boolean;
   /** true: it can pick one of the harness's accounts (New task); elsewhere the run keeps its own */ readonly accounts?: boolean;
   /** where the caret goes once a pick closes it (the prompt) */
@@ -164,7 +167,12 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
     row === 'skills' ? t(o === 'off' ? 'shell.try.offHint' : 'shell.try.onHint') : o ? t('shell.try.subOn', { name: SUBAGENT_NAME[o] ?? o }) : t('shell.try.subTask');
   // the harness whose pane shows: the one in use on open (v1 focusAgent), then wherever you arrow or press
   const [focus, setFocus] = createSignal<string | undefined>();
-  const focused = (): string => focus() ?? firstFocus(rows(), props.value.agent);
+  const focused = (): string => focus() ?? (props.value.agent === FACTORY ? FACTORY : firstFocus(rows(), props.value.agent));
+  // the factories, asked once the picker shows on New task; a wisp without wisp.factory has none (no row)
+  const [factories] = createResource(
+    () => (props.factories === true ? props.peer : false),
+    (peer) => shell.client.commands.run(factoryNames, { peer }).then((v) => (Array.isArray(v) ? v : []), () => []),
+  );
   const offer = (): AgentOffer | undefined => agents().find((a) => a.id === focused());
   const [query, setQuery] = createSignal('');
   const preview = (id: string): void => {
@@ -208,6 +216,14 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
   const current = (): Runner => (focused() === props.value.agent ? props.value : { agent: focused(), model: '', effort: '', account: '' });
   const pane = createMemo((): HarnessPickerPane => {
     const id = focused();
+    if (id === FACTORY)
+      return factoryPane(
+        factories() ?? [],
+        props.value,
+        t as never,
+        (name) => (change(factoryPick(name)), closeBack()),
+        () => (close(), window.open('https://docs.trywisp.dev/concepts/factories/', '_blank', 'noopener')),
+      );
     if (id === AUTO) {
       return {
         label: t('shell.runner.goal'),
@@ -299,9 +315,10 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
         }),
     };
   });
-  const viewRows = createMemo((): HarnessPickerRow[] =>
-    rows().map((r) => ({ id: r.id, name: r.name, auto: r.auto, logo: logoOf(r.id), sub: subText(r.sub), off: r.off })),
-  );
+  const viewRows = createMemo((): HarnessPickerRow[] => [
+    ...rows().map((r) => ({ id: r.id, name: r.name, auto: r.auto, logo: logoOf(r.id), sub: subText(r.sub), off: r.off })),
+    ...((factories()?.length ?? 0) > 0 ? [factoryRow(t('shell.runner.factory'), t('shell.runner.factorySub'))] : []),
+  ]);
   return (
     <HarnessPicker
       anchor={props.anchor}
@@ -314,7 +331,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
       onPreview={preview}
       onUse={(id) => {
         preview(id);
-        change(useHarness(props.value, id, agents()));
+        change(id === FACTORY ? useFactory(props.value) : useHarness(props.value, id, agents()));
       }}
       pane={pane()}
       onClose={close}

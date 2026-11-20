@@ -8,8 +8,10 @@ use wisp_runtime_api::model::Mode;
 
 use crate::agent_task::mode_label;
 
-/// What the asking agent's own task has.
-#[derive(Debug, Clone, Default)]
+/// What the asking agent's own task has. Kept on every task an agent's token makes (`ext["wisp.runtime"].heldTo`), so a
+/// task a plugin later makes under it (a factory's stations, ADR-0114) is held to the same (review r194 factories #1).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct Parent {
     pub id: String,
     pub mode: Mode,
@@ -87,6 +89,25 @@ pub fn hold(a: &mut StartArgs, p: &Parent) -> Result<(), String> {
     Ok(())
 }
 
+/// `a`, made by a plugin under a task an agent started (its stations, a workflow's steps), held to that agent's limits
+/// `p` by the very check [`hold`] runs (ADR-0114, review r194 factories #1). Only what the plugin itself sets on its own
+/// task is left to it: its `ext`, the parent it names and a worktree key; the mode, connectors, crew, account, team and
+/// machines are the agent's.
+///
+/// # Errors
+/// As [`hold`].
+pub fn inherit(a: &mut StartArgs, p: &Parent) -> Result<(), String> {
+    let ext = std::mem::take(&mut a.ext);
+    let parent = a.parent_id.take();
+    let (key, tidy) = (a.worktree_key.take(), std::mem::take(&mut a.worktree_tidy));
+    let held = hold(a, p);
+    a.ext = ext;
+    a.parent_id = parent;
+    a.worktree_key = key;
+    a.worktree_tidy = tidy;
+    held
+}
+
 /// An agent's follow-up to its own task: never above the task's own mode or cap, never past Ask near the limit.
 ///
 /// # Errors
@@ -156,5 +177,30 @@ mod tests {
         let mut capped = StartArgs::default();
         hold(&mut capped, &Parent { cap: Some(Mode::Edits), mode: Mode::Edits, ..parent() }).unwrap();
         assert_eq!(capped.cap, Some(Mode::Edits), "the cap travels");
+    }
+
+    /// Review r194 factories #1: a station a plugin makes under an agent's run gets nothing the agent may not have, while
+    /// the plugin's own fields (its ext, its parent, a worktree key) stay.
+    #[test]
+    fn a_task_made_under_an_agents_task_is_held_to_that_agent() {
+        let station = |mode: Option<Mode>| StartArgs {
+            mode,
+            parent_id: Some("run".into()),
+            ext: [("wisp.factory".to_owned(), json!({ "run": "run", "station": "build" }))].into(),
+            ..StartArgs::default()
+        };
+        assert!(inherit(&mut station(Some(Mode::Auto)), &parent()).unwrap_err().contains("above this task's Plan"));
+        let mut ok = station(Some(Mode::Plan));
+        inherit(&mut ok, &parent()).unwrap();
+        assert_eq!(
+            (ok.ext.len(), ok.parent_id.as_ref().map(|p| p.as_str().to_owned())),
+            (1, Some("run".to_owned())),
+            "the plugin's own fields stay"
+        );
+        assert!(inherit(&mut StartArgs { connectors: vec!["jira".into()], ..station(None) }, &parent()).is_err());
+        assert_eq!(held_mode(station(None).mode, &parent()), Mode::Plan, "no mode asked: the parent's, never Full auto");
+        let p = Parent { id: "p".into(), mode: Mode::Edits, cap: Some(Mode::Plan), connectors: vec!["a".into()], ..Parent::default() };
+        let back: Parent = serde_json::from_value(serde_json::to_value(&p).unwrap()).unwrap();
+        assert_eq!(back, p, "kept on the task as it was");
     }
 }

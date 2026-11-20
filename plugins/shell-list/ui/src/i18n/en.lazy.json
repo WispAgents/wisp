@@ -116,6 +116,7 @@
   "shell-list.pill.capped-plan": "Capped",
   "shell-list.pill.capped-plan-tip": "Capped at Plan: a channel started this task, so it runs at Plan. Open it to lift the cap.",
   "shell-list.run.tip": "{agent} · {model} · on {where}",
+  "shell-list.run.factory": "Factory · {name}",
   "shell-list.run.tip-effort": "{agent} · {model} · {effort} thinking · on {where}",
   "shell-list.run.tip-default": "{agent} · Default model · on {where}",
   "shell-list.run.tip-default-effort": "{agent} · Default model · {effort} thinking · on {where}",

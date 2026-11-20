@@ -13,6 +13,7 @@
 //!   `FAKE_GATE`        directory; a run whose prompt is `gate <name> …` (or has a `\n\ngate <name>` paragraph) waits
 //!                      until the file `<dir>/<name>` exists: the test holds the turn running until it creates it
 //!   `FAKE_GATE_ALL`    a gate name: every run (no prompt prefix needed, e.g. one a Slack message started) waits on it
+//!   `FAKE_SAY`         `needle=>words;;…`: a run whose prompt holds a needle ends its answer with the words
 //!   `FAKE_REPLAY`      claude: print this .jsonl as its stream and exit (a recorded run)
 //!   `FAKE_STREAM`      claude: events a second; a run streams assistant text for `FAKE_STREAM_MS` (5000) after its
 //!                      init, each line `FAKE_STREAM_BYTES` (400) long, its text starting `~stamp:<pid>:<n>:<unix µs>~`
@@ -82,7 +83,22 @@ fn final_text(name: &str, prompt: &str) -> String {
     if let Some(t) = prompt.split_once("TOPIC[").and_then(|(_, r)| r.split_once(']')).map(|(t, _)| t) {
         hero["topic"] = Value::from(t);
     }
-    format!("All done.\n```wisp\n{}\n```", json!({ "blocks": [hero] }))
+    format!("All done.\n{}```wisp\n{}\n```", said(prompt), json!({ "blocks": [hero] }))
+}
+
+/// `FAKE_SAY`: `needle=>words` pairs split by `;;`; a run whose prompt holds a needle ends its answer with its words (before
+/// its wisp block), a line each (a factory's reviewer says APPROVE, ADR-0114).
+fn said(prompt: &str) -> String {
+    env("FAKE_SAY")
+        .unwrap_or_default()
+        .split(";;")
+        .filter_map(|p| p.split_once("=>"))
+        .filter(|(needle, _)| !needle.is_empty() && prompt.contains(needle))
+        .fold(String::new(), |mut out, (_, words)| {
+            out.push_str(words);
+            out.push('\n');
+            out
+        })
 }
 
 /// `--version`, sign-in checks and sign-out: answered without a run.

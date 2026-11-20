@@ -44,6 +44,10 @@ pub struct TaskDecl {
     /// its own limit
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<Value>,
+    /// the software factory it runs through (ADR-0114): a factory's name (`default` is always there); its stations run
+    /// it instead of one agent
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub factory: String,
     /// the Notes it starts with (ADR-0097): `{ goal: …, constraints: [...] }`, kept by wisp.threads
     #[serde(default, skip_serializing_if = "wisp_threads_api::SeedNotes::is_empty")]
     pub notes: wisp_threads_api::SeedNotes,

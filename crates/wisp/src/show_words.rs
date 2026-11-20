@@ -8,6 +8,16 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v.get(k).and_then(Value::as_str).unwrap_or("")
 }
 
+/// A factory run's stations, its round of the limit and why it ended, on one line (ADR-0114; the TUI's header line).
+/// '' for any other task.
+pub fn factory_line(task: &Value) -> String {
+    let Some(run) = task.pointer("/ext/wisp.factory").filter(|r| r.get("stations").is_some()) else { return String::new() };
+    let Some(line) = wisp_factory_tui::line(run) else { return String::new() };
+    let why = run.get("why").and_then(Value::as_str).filter(|w| !w.is_empty()).map_or_else(String::new, |w| format!("  · {w}"));
+    let pr = run.get("pr").and_then(Value::as_str).map_or_else(String::new, |p| format!("  · {p}"));
+    format!("\n▦ {line}{pr}{why}")
+}
+
 /// The task's goal and where its judging stands, on one line (audit D10: only `runtime.get`'s `ext.wisp.goal` had it):
 /// `wisp.goal`'s state over the goal its spec set. '' with no goal.
 pub fn goal_line(task: &Value) -> String {
@@ -94,6 +104,10 @@ mod tests {
         assert_eq!(super::goal_line(&out), "\n◎ Goal: green  · not met after 3 rounds: still failing");
         assert_eq!(super::goal_line(&t(serde_json::json!({ "state": "cleared" }), serde_json::json!({ "goal": "x" }))), "");
         assert_eq!(super::goal_line(&serde_json::json!({ "ext": {} })), "", "no goal: nothing");
+        let run = serde_json::json!({ "ext": { "wisp.factory": { "factory": "default", "state": "failed", "station": "", "round": 3, "max": 3,
+            "why": "Checks still fail after 3 round(s)", "stations": [{ "id": "build", "state": "done" }, { "id": "checks", "state": "failed" }] } } });
+        assert_eq!(super::factory_line(&run), "\n▦ default: ✓ build · ✗ checks  · Checks still fail after 3 round(s)");
+        assert_eq!(super::factory_line(&serde_json::json!({ "ext": {} })), "", "no factory: nothing");
     }
 
     /// Audit D4: a held turn says why, what it would run and the three ways on; a running one says nothing.

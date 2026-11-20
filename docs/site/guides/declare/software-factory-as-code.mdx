@@ -9,8 +9,8 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 import Shot from '@wisp-docs/Shot.astro';
 
 A **software factory** is a set of agents that turn work into pull requests without you starting each one: a
-builder picks up issues, a reviewer reviews what the builder opens, a fixer jumps on red CI, and a nightly job keeps
-the dependencies fresh. In wisp the whole factory is a few files in `.wisp/`, reviewed and changed in pull
+builder picks up issues, a line of stations (spec, build, checks, review, ship) carries each one to a PR, a fixer jumps
+on red CI, and a nightly job keeps the dependencies fresh. In wisp the whole factory is a few files in `.wisp/`, reviewed and changed in pull
 requests like the rest of your code.
 
 Start with `wisp init` in the repo: it makes `.wisp/` with a `wisp.yml`. This guide then builds the factory step by
@@ -123,7 +123,37 @@ wisp goal set <id> green-build
 
 Your own agent does the same with `wisp_launch`'s `goal`. More in [Goals and judges](../../run/goals/).
 
-## 5. A nightly workflow
+## 5. The line every task goes through
+
+A **factory** puts a task through stations instead of one agent: a spec you approve, a build in its own worktree,
+checks that are commands, a review, and a PR you merge. A failed check or review goes back to the build with what
+failed, up to a limit, then asks you. Declare the line once and point tasks at it.
+
+```yaml
+# .wisp/factories.wisp.yml
+factories:
+  default:                                   # replaces the built-in default
+    stations:
+      spec:   { agent: builder, approve: human }
+      build:  { agent: builder, worktree: true }
+      checks: { run: [npm test, npm run lint] }
+      review: { agents: [reviewer], vote: majority }
+      ship:   { pr: true, merge: human }
+    loop: { back_to: build, max: 3, then: ask }
+tasks:
+  default: { factory: default }              # every declared task's run goes through it
+triggers:
+  build-labeled-issues-through-the-line:
+    on: issue.labeled
+    label: factory
+    prompt: "Build {event.summary}"
+    factory: default
+```
+
+Start any task through it with `wisp "…" --factory`, **Factory** in New task's picker, or `wisp_launch`'s `factory`.
+More in [Run a task through a software factory](../../run/software-factory/).
+
+## 6. A nightly workflow
 
 A workflow is steps with dependencies, run by hand (`wisp run nightly`) or by a trigger.
 
@@ -139,7 +169,7 @@ workflows:
       audit: { agent: reviewer, needs: [deps], prompt: "Review the dependency update: ${{ tasks.deps.output }}" }
 ```
 
-## 6. Guardrails
+## 7. Guardrails
 
 ```yaml
 # .wisp/budget.wisp.yml
@@ -148,7 +178,7 @@ budget: { stopAt: "75", taskUsd: 10 }   # automations stop at 75% of a usage win
 
 Settings → Agents → Usage also has *Stop a run silent for*, which stops a run that sits with no output.
 
-## 7. Check it, then turn it on
+## 8. Check it, then turn it on
 
 <Tabs syncKey="way">
 <TabItem label="Desktop app">

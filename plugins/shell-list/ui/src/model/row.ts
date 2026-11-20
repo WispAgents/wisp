@@ -144,6 +144,11 @@ export function subOf(s: SessionRow, c: RowContext): SubView | undefined {
 
 /** Harness, model and where it runs: the machine is always named, this computer too. */
 export function runOf(s: SessionRow, c: RowContext): RunView | undefined {
+  // a factory run runs no agent of its own: its line is the factory, by name (ADR-0114)
+  if (s.factory) {
+    const name = s.factory.name || 'default';
+    return { agent: 'factory', agentName: name, where: c.here, remote: false, title: tx('shell-list.run.factory', { name }) };
+  }
   if (!s.agent || s.agent === 'wisp' || s.kind === 'reminder') return undefined;
   const a = c.agents.get(s.agent);
   // the offer's label, else a Claude id in words (QA r15 #3: never the raw id)
