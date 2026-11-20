@@ -30,6 +30,8 @@ fn a_known_command_word_alone_is_never_a_task() {
     assert!(usage("trigger").contains(&format!("wisp trigger {all}")) && !usage("trigger").contains("needs more"), "{}", usage("trigger"));
     assert!(usage("triggers").contains(&format!("wisp triggers {all}")), "{}", usage("triggers"));
     assert!(own_verb("triggers", "off") && own_verb("triggers", "on"), "the alias takes off and on");
+    let verbs = |c: &str| VERB_PATHS.iter().find(|p| p.cmd == c).map(|p| p.verbs.to_vec()).unwrap();
+    assert_eq!(verbs("trigger"), verbs("triggers"), "the alias takes the same verbs");
     assert!(usage("tui").contains("wisp -- tui"), "a word without a help line still says how to make it a task");
     assert!(usage("list").contains("wisp ls") && usage("list").contains("wisp -- list"), "{}", usage("list"));
     assert!(usage("plugins").contains("wisp plugin new") && usage("plugins").contains("wisp -- plugins"), "{}", usage("plugins"));
@@ -639,5 +641,5 @@ fn a_slip_names_every_close_flag_and_a_bad_mode_is_said_in_words_audit_h_hs3() {
 fn a_run_that_names_nothing_names_each_kind_and_its_list_audit_h11() {
     let said = run_miss("nosuch");
     assert!(said.starts_with("no declared task, recipe or workflow named nosuch"), "{said}");
-    assert!(said.contains("wisp recipes lists the declared tasks") && said.contains("wisp workflows list"), "{said}");
+    assert!(said.ends_with(": `wisp recipes` lists the declared tasks and recipes, `wisp workflows list` the workflows"), "{said}");
 }

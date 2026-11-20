@@ -50,13 +50,20 @@ fn canonical(p: &Path) -> std::path::PathBuf {
 }
 
 fn setup(name: &str) -> (std::path::PathBuf, common::Serve, Api, u16) {
+    setup_with(name, &[])
+}
+
+/// `setup`, with more variables for the server.
+fn setup_with(name: &str, more: &[(&str, &str)]) -> (std::path::PathBuf, common::Serve, Api, u16) {
     let dir = temp(name);
     let rec = dir.join("rec");
     std::fs::create_dir_all(&rec).unwrap();
     std::fs::create_dir_all(dir.join("proj")).unwrap();
     std::fs::create_dir_all(dir.join("elsewhere")).unwrap();
     std::fs::write(dir.join("proj/math.js"), "export const add = (a, b) => a + b;\n").unwrap();
-    let (serve, port) = start_with(&dir, &[("FAKE_RECORD", rec.to_str().unwrap())]);
+    let mut vars = vec![("FAKE_RECORD", rec.to_str().unwrap())];
+    vars.extend_from_slice(more);
+    let (serve, port) = start_with(&dir, &vars);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     (dir, serve, api, port)
 }
@@ -118,7 +125,8 @@ async fn a_trigger_named_by_its_project_runs_in_that_folder_and_an_unknown_name_
         .try_cmd("resources.apply", json!({ "resources": [{ "kind": "trigger", "name": "lost", "spec": { "on": "schedule", "cron": "0 3 * * *", "prompt": "x", "project": "nope" } }] }))
         .await;
     assert_eq!(r["ok"], false, "{r}");
-    assert!(r.to_string().contains("no project is named \\\"nope\\\""), "{r}");
+    // refused at the plan now, before anything is applied (audit H: `wisp validate` says it too)
+    assert!(r.to_string().contains("triggers.lost: no project named nope"), "{r}");
     assert!(r.to_string().contains("proj"), "it says which there are: {r}");
     assert!(!triggers(&api.cmd("automations.trigger.ls", json!({})).await).contains(&"lost".to_owned()));
 }
@@ -179,7 +187,8 @@ async fn a_recipe_run_from_the_cli_refuses_an_unknown_name_waits_and_runs_in_its
     for args in [&["run", "nosuchrecipe"][..], &["run", "nosuchrecipe", "thing=x"], &["run", "nosuchrecipe", "--wait"]] {
         let (code, out, err) = wisp(&dir, &elsewhere, port, args);
         assert_ne!(code, 0, "{args:?}: {out}{err}");
-        assert!(err.contains("no recipe or workflow named nosuchrecipe"), "{args:?}: {out}{err}");
+        // audit H11: each kind `wisp run` looks for, and what lists it
+        assert!(err.contains("no declared task, recipe or workflow named nosuchrecipe: `wisp recipes`"), "{args:?}: {out}{err}");
     }
     assert!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().is_empty(), "nothing was launched");
     // --wait: back once the task needs you, with what it did
@@ -196,8 +205,10 @@ async fn a_recipe_run_from_the_cli_refuses_an_unknown_name_waits_and_runs_in_its
 
 #[tokio::test(flavor = "multi_thread")]
 async fn drop_goal_takes_its_keep_going_question_back_audit_a_tasks_15() {
-    let (dir, _serve, api, _port) = setup("serve-auditA-t15");
-    // the fake never says MET: one round and it stalls, asking whether to keep going
+    // the judge says NOT MET (a judge with no verdict now stops the goal as "can't be judged", audit H3): one round and it
+    // stalls, asking whether to keep going
+    let (dir, _serve, api, _port) =
+        setup_with("serve-auditA-t15", &[("FAKE_SAY", "You judge whether a task met its goal=>NOT MET: add still subtracts")]);
     let made = api
         .cmd(
             "runtime.create",

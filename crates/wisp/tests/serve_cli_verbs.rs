@@ -215,7 +215,7 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
     // prompts (the fake harness: nothing paid): a group's word quoted as one argument, or after `--`; and a plugin's
     // name followed by none of its verbs, plain (review, ship, update, git and learn are all plugins here)
     let catalogue = api.cmd("cli.catalogue", json!({})).await.to_string();
-    let prompts: [&[&str]; 8] = [
+    let prompts: [&[&str]; 7] = [
         &["computer start fails on boot, fix it"],
         &["--", "grid", "start", "is", "slow"],
         &["review", "the", "auth", "module"],
@@ -223,7 +223,6 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
         &["update", "the", "readme"],
         &["git", "rebase", "onto", "main"],
         &["learn", "rust", "properly"],
-        &["review", "the", "auth", "module", "--strict"],
     ];
     for words in prompts {
         if let Some(ns) = words.first().filter(|w| **w != "--" && !w.contains(' ')) {
@@ -233,8 +232,19 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
         let (code, out, err) = wisp(&dir, port, &args);
         assert!(code == 0 && format!("{out}{err}").contains("launched"), "{words:?} → {code}: {out}{err}");
     }
+    // a flag no launch takes after a prompt (audit H2): refused, nothing launched, and the way to say it is `--`
+    let before = api.cmd("runtime.list", json!({})).await.as_array().unwrap().len();
+    let strict = ["--no-open", "review", "the", "auth", "module", "--strict"].map(str::to_owned);
+    let (code, out, err) = wisp(&dir, port, &strict);
+    assert!(code == 1 && err.contains("wisp takes no --strict") && !out.contains("launched"), "{strict:?} → {code}: {out}{err}");
+    assert!(err.contains("A task that says it: wisp \"review the auth module\" -- --strict"), "{err}");
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), before, "nothing was launched");
+    let said = ["--no-open", "review", "the", "auth", "module", "--", "--strict"].map(str::to_owned);
+    let (code, out, err) = wisp(&dir, port, &said);
+    assert!(code == 0 && format!("{out}{err}").contains("launched"), "{said:?} → {code}: {out}{err}");
     let tasks = api.cmd("runtime.list", json!({})).await;
     let made = tasks.to_string();
+    assert!(made.contains("review the auth module --strict"), "after -- the flag is the prompt's: {tasks}");
     for p in [
         "computer start fails on boot, fix it",
         "grid start is slow",
@@ -590,7 +600,7 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
     for (words, said) in [
         // the kinds there are (audit C5), then the way out
         (&["export", "foo"][..], "no kind foo"),
-        (&["run", "foo"], "no recipe or workflow named foo"),
+        (&["run", "foo"], "no declared task, recipe or workflow named foo"),
         // a plugin's group line (B1): its verbs, then `wisp -- "ship foo"`
         (&["ship", "foo"], "wisp ship has no foo"),
         (&["plugin", "foo"], "wisp plugin has no foo"),

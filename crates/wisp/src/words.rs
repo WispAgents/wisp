@@ -356,9 +356,6 @@ const APPLY: &[&str] = &[
     "-w",
 ];
 
-/// `wisp trigger`'s verbs (and its alias `triggers`').
-const TRIGGER_VERBS: &[&str] = &["add", "ls", "list", "rm", "remove", "off", "on", "fire", "test", "log", "resume", "approve", "sources"];
-
 /// Every built-in verb path main.rs routes (its `areas` and `shared_and_cloud` arms), one per line: the e2e
 /// (`tests/serve_cli_verbs.rs`) reads these lines, and `every_verb_main_routes_for_a_built_in_is_in_the_table` keeps
 /// them in step with main.rs. A line starting with one is that command, never a task (QA round 9 #1).
@@ -369,9 +366,10 @@ pub const VERB_PATHS: &[VerbPath] = &[
     vp("sandboxes", &["new", "add", "ls", "list", "rm", "remove", "delete"], &[]),
     vp("team", &["ls", "list", "new", "create", "show", "add", "rm", "remove"], &[]),
     vp("teams", &["ls", "list", "new", "create", "show", "add", "rm", "remove"], &[]),
-    vp("trigger", TRIGGER_VERBS, TRIGGER),
-    // the alias takes the same verbs, `off`/`on` included (audit H HS2: its refusal and completion lacked them)
-    vp("triggers", TRIGGER_VERBS, TRIGGER),
+    vp("trigger", &["add", "ls", "list", "rm", "remove", "off", "on", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
+    // the alias takes the same verbs, `off`/`on` included (audit H HS2: its refusal and completion lacked them); each
+    // list written out, as serve_cli_verbs reads this table from its source (words_tests keeps the two the same)
+    vp("triggers", &["add", "ls", "list", "rm", "remove", "off", "on", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
     vp("crew", &["wake", "graph", "pause", "resume"], TRIGGER),
     vp("hook", &["install", "uninstall", "remove", "status"], &[]),
     vp("events", &["tail", "why", "retry", "parked", "ls"], &["--follow", "-f", "--limit", "--since", "--subject", "--type"]),
@@ -612,9 +610,12 @@ fn near(typed: &str, cmd: &str, d: usize) -> bool {
 }
 
 /// `wisp run <name>` that names nothing (audit H11: it named only recipes, though `wisp run` runs declared tasks and
-/// workflows too): each kind it looked for, and the command that lists it.
+/// workflows too): each kind it looked for, and the command that lists it. `wisp recipes` lists the declared tasks (a
+/// recipe is one with `{params}`), `wisp workflows list` the workflows (wisp.workflows' own verb).
 pub fn run_miss(name: &str) -> String {
-    format!("no declared task, recipe or workflow named {name}: wisp recipes lists the declared tasks, wisp workflows list the workflows")
+    format!(
+        "no declared task, recipe or workflow named {name}: `wisp recipes` lists the declared tasks and recipes, `wisp workflows list` the workflows"
+    )
 }
 
 /// A prompt with a `--word` no launch flag takes (audit H2: `wisp "fix it" --mdoe plan` launched in Full auto with the
