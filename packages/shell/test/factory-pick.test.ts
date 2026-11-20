@@ -7,7 +7,7 @@ import { factoryPane, factoryPick, factoryRow, useFactory, type FactoryRow } fro
 import { FACTORY, factoryOf } from '../src/frame/launch-pick.ts';
 import { create } from '../src/frame/commands.ts';
 import { agentName } from '../src/frame/pickers.ts';
-import { runFactory } from '../src/frame/run-factory.ts';
+import { factoryReply, runFactory } from '../src/frame/run-factory.ts';
 
 const t = (k: string): string => ({ 'shell.runner.factories': 'Factories', 'shell.runner.factoryBuiltin': 'Built in', 'shell.runner.factory': 'Factory', 'wisp.factory.name': 'Factory' })[k] ?? k;
 const rows: FactoryRow[] = [
@@ -55,5 +55,18 @@ describe('a_factory_runs_task_names_the_factory_not_a_harness', () => {
     expect(runFactory({ factoryStation: { run: 'r' } } as { factory?: unknown })).toBeUndefined();
     expect(runFactory({})).toBeUndefined();
     expect(runFactory(undefined)).toBeUndefined();
+  });
+});
+
+// ADR-0114 rule 14: a factory run's reply box has no harness/model chip ("Default"): it says the stations do the work,
+// and offers Stop while the run still goes
+describe('a_factory_runs_reply_box_shows_no_harness_and_offers_stop_while_it_goes', () => {
+  it('reads the run and whether it still goes', () => {
+    expect(factoryReply({ factory: { name: 'careful', state: 'running' } })).toEqual({ name: 'careful', live: true });
+    expect(factoryReply({ factory: { state: 'waiting' } })).toEqual({ name: 'default', live: true });
+    expect(factoryReply({ factory: { name: 'x', state: 'done' } })).toEqual({ name: 'x', live: false });
+    expect(factoryReply({ factory: { name: 'x', state: 'stopped' } })?.live).toBe(false);
+    expect(factoryReply({ factory: { name: 'x' } })?.live).toBe(true);
+    expect(factoryReply({})).toBeUndefined();
   });
 });

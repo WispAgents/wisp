@@ -78,6 +78,8 @@ pub const HELP: &str = "usage:
   wisp <plugin> <verb> …        any command of any plugin, flags from its arguments (wisp crew create --name Ada)
   wisp help [plugin [verb]]     every plugin's commands, a plugin's verbs, a verb's flags
   wisp completions zsh|bash|fish  shell completions from the same catalogue
+  wisp shell-init zsh|bash|fish  a hook for your shell's rc file: wisp then knows each command you ran, its folder and
+                                its exit code (kept 7 days on this machine; eval \"$(wisp shell-init zsh)\" in ~/.zshrc)
   wisp tasks --touching <path>|--tracked   the tracked tasks (.wisp/tasks) behind a path, or all of them   (--json)
   wisp sdk types ts|py [FILE]   typed commands for the SDKs (a .d.ts or a .pyi), from the same catalogue
   wisp -- ls the repo           a task that starts with a command's word; or quote it as one: wisp \"computer start fails\"
@@ -95,6 +97,9 @@ launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|ant
                 --formula f.yml[,g.yml]  run under these formulas, nothing applied (its agents, skills, connectors…)
                 --factory [NAME]  run it through a software factory (spec, build, checks, review, ship); alone: default
                 --yes  go ahead although it takes a usage window past your Ask near the limit line
+terminal context: wisp \"check the error above\" attaches what just happened in this terminal: its last commands, their
+                exit codes, the failing one's output (tmux, WezTerm, kitty, iTerm2, Terminal), the folder and git status,
+                secrets masked; never runs a command again   (--context  --no-context  --show-context  --lines N)
 options:        --port N  --browser  --no-open  --json  --version";
 
 pub const COMMANDS: [&str; 26] = [

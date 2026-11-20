@@ -1,0 +1,110 @@
+---
+title: Ask about what just happened in your terminal
+description: A command failed. Type wisp "check the error above" and the agent gets the command, its exit code, its output and your folder.
+sidebar:
+  order: 13
+---
+
+A command just failed in your terminal. You don't have to copy the error. Type:
+
+```sh
+wisp "check the error above"
+```
+
+wisp looks at what just happened in this terminal and adds it to the task. The agent gets:
+
+- the folder you are in, your shell, the git branch and `git status`;
+- your last commands (up to 10), with their exit codes when wisp knows them;
+- the terminal's last 200 lines of output, when your terminal lets wisp read them.
+
+Before it sends anything, wisp says in one line what it added:
+
+```text
+  ◌ with terminal context: 2 commands, 31 lines from tmux, git status, 1 secret masked  (--show-context to see it, --no-context to leave it out)
+```
+
+## When wisp adds it
+
+wisp adds the context when your words ask about what is above: "check the error above", "fix that error", "why did
+that fail", "what I just ran", "explain the output". Other tasks don't get it.
+
+| Flag | What it does |
+| --- | --- |
+| `--context` | add it, whatever the words say |
+| `--no-context` | leave it out this time |
+| `--show-context` | add it, and print exactly what was added |
+| `--lines N` | how many lines of output to take (200 by default, at most 5000) |
+
+To turn it off for good:
+
+```sh
+wisp settings set termctx.enabled false
+```
+
+## Where the output comes from
+
+wisp asks your terminal for its text. It never runs your command again to see what it printed.
+
+| Terminal | What wisp reads |
+| --- | --- |
+| tmux | this pane (`tmux capture-pane`) |
+| WezTerm | this pane (`wezterm cli get-text`) |
+| kitty | this window, when remote control is on (`allow_remote_control yes` in kitty.conf) |
+| iTerm2 | this session; macOS asks once to let wisp control iTerm2 |
+| Apple Terminal | the front tab; macOS asks once to let wisp control Terminal |
+| VS Code and other terminals | no output: the commands, their exit codes and the folder only |
+
+When wisp can't read the output, the context says so, and the agent works from the commands, their exit codes and the
+folder. Inside tmux, any terminal works, VS Code's included.
+
+## Know every command and its exit code
+
+Without help, wisp reads your last commands from your shell's history file. That file doesn't keep exit codes, so
+wisp can't tell which command failed. Add the shell hook once, and wisp knows each command, its folder, its exit code
+and how long it took:
+
+```sh
+# zsh: add this line to ~/.zshrc
+eval "$(wisp shell-init zsh)"
+
+# bash: add this line to ~/.bashrc
+eval "$(wisp shell-init bash)"
+
+# fish: add this line to ~/.config/fish/config.fish
+wisp shell-init fish | source
+```
+
+The hook writes one line per command to a private file in `~/.wisp/term/` (only you can read it). It stays on this
+computer, it is never synced, and lines older than 7 days are dropped. It records nothing else. To stop, remove the
+line from your rc file.
+
+The hook also lets an automation start when a command fails: the `terminal.failed` trigger
+(see [Triggers](/docs/reference/triggers/)).
+
+## Secrets stay out
+
+Everything goes through the same secret scan as the rest of wisp before it leaves your terminal. API keys, tokens and
+the values of secret environment variables become `<secret>`. The one-line summary says how many were masked.
+
+Here is what `--show-context` printed after a failed `node` command in tmux, with a key printed just before it:
+
+```text
+## Terminal context
+
+Where: `/private/tmp/wisp-tc/proj` (zsh), on branch `main`
+
+Last commands (oldest first):
+- `echo "using key <secret>"`  → exit 0
+- `node -e "require(\"./config.json\")"`  → exit 1
+
+The terminal's last 31 lines (from tmux):
+...
+Error: Cannot find module './config.json'
+...
+```
+
+## In the TUI and the app
+
+`wisp tui` takes the whole terminal, so there is nothing above it to read. Quit it (or use another pane), run
+`wisp "check the error above"` in the shell where the command failed, and the task shows up in the TUI and the app
+like any other.

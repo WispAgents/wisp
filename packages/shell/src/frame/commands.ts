@@ -305,6 +305,10 @@ export const pin = defineCommand<{ id: string; pinned: boolean }>({
 /** Stop: the run ends where it is; queued follow-ups stay, held (v1 /stop). It answers once the run has wound down. */
 export const stopRun = defineCommand<{ id: string }>({ id: 'runtime.stop', owner: (a) => a.id, wire: (a) => ({ id: bare(a.id) }), optimistic: 'none', pending: 'Stopping…' });
 
+/** A factory run's Stop (ADR-0114 rule 10, `factory.stop`): its stations stop with it; the run's task runs no process
+ *  of its own for `runtime.stop` to end. */
+export const stopFactoryRun = defineCommand<{ id: string }>({ id: 'factory.stop', owner: (a) => a.id, wire: (a) => ({ id: bare(a.id) }), optimistic: 'none', pending: 'Stopping…' });
+
 export const archive = defineCommand<{ id: string; archived: boolean }>({
   id: 'runtime.archive',
   owner: (a) => a.id,

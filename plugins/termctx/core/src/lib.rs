@@ -148,6 +148,23 @@ pub fn parse_log(text: &str, now: i64) -> Vec<Cmd> {
     text.lines().filter_map(|l| serde_json::from_str::<Cmd>(l).ok()).filter(|c| !c.cmd.trim().is_empty() && now - c.at <= KEEP_MS).collect()
 }
 
+/// The hook's log without its lines older than 7 days (and its damaged ones), when it has any: what to write back so
+/// the file keeps a week, as the hook promises; `None` when there is nothing to drop. A line is kept as written.
+pub fn prune_log(text: &str, now: i64) -> Option<String> {
+    let mut dropped = false;
+    let mut out = String::with_capacity(text.len());
+    for l in text.lines().filter(|l| !l.trim().is_empty()) {
+        match serde_json::from_str::<Cmd>(l) {
+            Ok(c) if now - c.at <= KEEP_MS => {
+                out.push_str(l);
+                out.push('\n');
+            }
+            _ => dropped = true,
+        }
+    }
+    dropped.then_some(out)
+}
+
 /// The last `n` commands of a shell's own history file.
 pub fn history_tail(shell: &str, text: &str, n: usize) -> Vec<Cmd> {
     #[allow(clippy::match_like_matches_macro, clippy::single_match_else)]
@@ -203,6 +220,7 @@ pub fn wants_context(prompt: &str) -> bool {
         "the output",
         "just failed",
         "it failed",
+        "that fail",
         "failing command",
         "scrollback",
     ]

@@ -80,6 +80,23 @@ fn history_file(shell: &str, home: &Path) -> Option<std::path::PathBuf> {
     })
 }
 
+/// The hook's log rewritten to `kept`, through a private file renamed over it, and only while it is the length it was
+/// read at: a line the shell appends meanwhile is never lost (it waits for the next read's prune instead).
+async fn prune(f: &Path, read: usize, kept: String) {
+    let tmp = f.with_extension("jsonl.prune");
+    let mut o = tokio::fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    o.mode(0o600);
+    let Ok(mut out) = o.open(&tmp).await else { return };
+    let wrote = tokio::io::AsyncWriteExt::write_all(&mut out, kept.as_bytes()).await.is_ok();
+    drop(out);
+    let same = tokio::fs::metadata(f).await.is_ok_and(|m| usize::try_from(m.len()).is_ok_and(|n| n == read));
+    if !(wrote && same && tokio::fs::rename(&tmp, f).await.is_ok()) {
+        let _ = tokio::fs::remove_file(&tmp).await;
+    }
+}
+
 /// Everything there is to read here (unscrubbed).
 pub async fn gather(c: Option<&Client>, cwd: &str, lines: usize, wisp_home: &Path) -> TermContext {
     let env: BTreeMap<String, String> = wisp_termctx_api::ENV_KEYS
@@ -113,7 +130,16 @@ pub async fn gather(c: Option<&Client>, cwd: &str, lines: usize, wisp_home: &Pat
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(0));
     let log = this_tty().map(|t| wisp_home.join("term").join(format!("{t}.jsonl")));
     let from_hook = match log {
-        Some(f) => tokio::fs::read_to_string(&f).await.ok().map(|t| core::parse_log(&t, now)).filter(|v| !v.is_empty()),
+        Some(f) => match tokio::fs::read_to_string(&f).await {
+            Ok(t) => {
+                // the log keeps a week (ADR-0023): its older lines go when it's read
+                if let Some(kept) = core::prune_log(&t, now) {
+                    prune(&f, t.len(), kept).await;
+                }
+                Some(core::parse_log(&t, now)).filter(|v| !v.is_empty())
+            }
+            Err(_) => None,
+        },
         None => None,
     };
     let user_home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
@@ -205,6 +231,26 @@ mod tests {
         assert!(!out.commands[0].cmd.contains("ghp_"), "{}", out.commands[0].cmd);
         assert!(n >= 3, "{n}");
         assert!(out.block().contains("<secret>") || out.block().contains("<env:DB_PASSWORD>"));
+    }
+
+    /// The hook's log keeps a week, and a line the shell appends while it's pruned is never lost (review of row 64).
+    #[tokio::test]
+    async fn the_hook_log_is_pruned_privately_and_never_over_a_line_just_appended() {
+        let dir = std::env::temp_dir().join(format!("wisp-termctx-prune-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("ttys001.jsonl");
+        let old = "{\"cmd\":\"old\",\"at\":1}\n";
+        let new = "{\"cmd\":\"npm test\",\"exit\":1,\"at\":1800000000000}\n";
+        std::fs::write(&f, format!("{old}{new}")).unwrap();
+        // the shell appended after the read: the file is left as it is
+        prune(&f, old.len(), new.to_owned()).await;
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), format!("{old}{new}"));
+        prune(&f, old.len() + new.len(), new.to_owned()).await;
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), new);
+        #[cfg(unix)]
+        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&f).unwrap().permissions()) & 0o777, 0o600);
+        assert!(!f.with_extension("jsonl.prune").exists(), "no leftover");
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

@@ -56,7 +56,7 @@ import { phoneTaskMenu } from './phone-menu.ts';
 import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, projectOfRow, statusOf, trailActs } from './rows-view.ts';
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
-import { runFactory } from './run-factory.ts';
+import { factoryReply, runFactory } from './run-factory.ts';
 import { goalGate, goalWire, type DeclaredGoal } from './goal-gate.ts';
 import { useGoalKit } from './goal-kit.ts';
 import { isFeedback } from './feedback.ts';
@@ -82,6 +82,7 @@ import {
   sideStart,
   setSetting,
   archive,
+  stopFactoryRun,
   stopRun,
   coldOf,
   compactNow,
@@ -1140,6 +1141,16 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // a factory run names its factory where another task names its harness (ADR-0114): it runs no agent of its own
         const factory = (): string | undefined => runFactory(s().summary as { factory?: unknown });
         const factoryWords = (): string => t('shell.task.factory', { name: factory() ?? '' });
+        // its reply box: the stations do the work, and Stop while the run goes (its follow-ups are refused)
+        const factoryRun = (): ReturnType<typeof factoryReply> => factoryReply(s().summary as { factory?: unknown });
+        const factoryHint = (): { long: string; short: string; link?: { label: string; title: string; act: Act } } | undefined => {
+          const f = factoryRun();
+          if (!f) return undefined;
+          const said = t('shell.task.factoryHint');
+          if (!f.live) return { long: said, short: said };
+          const stop: Act = { onClick: () => void run(stopFactoryRun, { id: key }).catch(() => undefined) };
+          return { long: said, short: said, link: { label: t('shell.task.factoryStop'), title: t('shell.task.factoryStopTitle'), act: stop } };
+        };
         const h = (): { name: string; logo?: string } => (factory() ? { name: factoryWords() } : harnessView(replyRun()?.agent ?? s().agent));
         // the run a follow-up takes: the reply box's pick, else the task's own harness, model and thinking (QA desktop r3 #1)
         const shownRun = (): Runner => replyRun() ?? taskRunner(s());
@@ -1690,7 +1701,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                         onWait: () => ((waitUntil = hd.until), send()),
                         onKeep: () => (setHold(undefined), input?.focus()),
                       })(hold())}
-                    placeholder={t(replyPlaceholderKey(row(), row()?.state !== 'running' && !!lastTurn()?.presentation?.blocks?.some((x) => x.type === 'question')), { name: h().name })}
+                    placeholder={
+                      factoryRun()
+                        ? t('shell.task.factoryReply', { name: factoryRun()?.name ?? '' })
+                        : t(replyPlaceholderKey(row(), row()?.state !== 'running' && !!lastTurn()?.presentation?.blocks?.some((x) => x.type === 'question')), { name: h().name })
+                    }
                     value={text()}
                     onInput={(v, e) => {
                       setText(v);
@@ -1723,7 +1738,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       act: { menu: { items: modeItems(), onSelect: (m) => void run(setMode, { id: key, mode: m }).catch(() => undefined) } },
                       cap: capView(),
                     }}
-                    runner={{
+                    // a factory run's reply box has no harness or model chip: its stations do the work (ADR-0114 rule 14)
+                    {...(!factoryRun() && { runner: {
                       title: t('shell.task.runner', { name: runWords(h().name, shownRun(), defaultName(shownRun().agent, t('shell.runner.default'))) }),
                       ...(h().logo && { logo: h().logo }),
                       act: { onClick: () => setPickingRunner(!runnerOpen()) },
@@ -1731,7 +1747,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       // the model it runs on beside the logo (UX 2026-11-18 #3), the phone keeps the bare logo
                       ...(!phone && { model: (shownRun().model ? modelWords(shownRun().model) : '') || defaultName(shownRun().agent, t('shell.runner.default')) }),
                       ...(ring() && { usage: ring() }),
-                    }}
+                    } })}
                     {...(!phone && { plus: ((p: LauncherTool) => ({ label: p.label, title: p.title, act: p.act ?? {} }))(replyPlusNow()), chips: replyChips(), chipsMore: { label: t('shell.home.moreOptions'), title: t('shell.reply.moreChips') } })}
                     team={t('shell.home.delegateTitle')}
                     teamAct={replyTeamAct()}
@@ -1755,7 +1771,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     // a reply sends (v1 composer.js), and a scheduled one says when (QA r11 #1), as New task's Start does
                     send={when() ? t('shell.reply.sendAt', { at: aheadLabel(whenAt(when() ?? 'hour', now()), now()) }) : t('shell.reply.send')}
                     {...(checking() && { sendAct: { pending: true } })}
-                    hint={hint()}
+                    hint={factoryHint() ?? hint()}
                     extras={[
                       ...files().map((f, i) => ({
                         id: `file:${i}:${f.name}`,

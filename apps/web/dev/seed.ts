@@ -699,6 +699,38 @@ function withFarJob(peer: string, now: number, list: Row[], topics: Map<Topic, R
   topics.set(`session:${r.list.id.slice(r.list.id.indexOf(':') + 1)}`, r.own);
 }
 
+/** A factory run (ADR-0114) at its review station, round 2 of 3: the run's task carries wisp.factory's line on its row
+ * (`factory`), so its header and reply box say "Factory · default" and the reply box has no harness chip (rule 14). */
+function withFactory(peer: string, now: number, list: Row[], topics: Map<Topic, Row[]>, at: number): void {
+  const t: Task = {
+    title: 'Rate-limit the signup form',
+    agent: 'claude',
+    state: 'running',
+    ago: 12 * MIN,
+    cwd: '~/code/wisp',
+    prompt: 'Rate-limit the signup form: 5 attempts a minute per IP.',
+    answer: 'Spec approved; build done; review round 2 of 3.',
+    turns: 1,
+  };
+  const r = sessionTopic(peer, at, t, now);
+  const st = (id: string, state: string, round: number, output: string) => ({ id, state, round, tasks: [], output, why: '' });
+  const factory = {
+    name: 'default',
+    state: 'running',
+    station: 'review',
+    round: 2,
+    max: 3,
+    stations: [st('spec', 'done', 1, 'A sliding window per IP.'), st('build', 'done', 2, '3 files changed'), st('checks', 'done', 2, '48 passed'), st('review', 'running', 2, ''), st('ship', 'waiting', 0, '')],
+    why: '',
+  };
+  for (const row of [r.list, ...r.own.filter((x) => x.e === 'session')]) {
+    const v = row.v as { summary: Record<string, unknown> };
+    v.summary = { ...v.summary, factory };
+  }
+  list.push(r.list);
+  topics.set(`session:${r.list.id.slice(r.list.id.indexOf(':') + 1)}`, r.own);
+}
+
 /** Try it two ways (F-comp-31, ADR-0056): one task run twice on Claude Code, run B with Skills off, both done; the
  * rows carry runtime's trial link (group.rs) as the peer sends it, so Compare runs says what differed. */
 function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Row[]>, at: number): void {
@@ -729,7 +761,7 @@ function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Ro
   });
 }
 
-export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean; factory?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -768,6 +800,7 @@ export function seed(o: { peer: string; now: number; extra: number; harnesses?: 
   if (o.crew) withCrew(o.peer, o.now, list, topics, TASKS.length + o.extra + 2, o.setup === true);
   if (o.team) withTeam(o.peer, o.now, list, topics, TASKS.length + o.extra + 8);
   if (o.farJob) withFarJob(o.peer, o.now, list, topics);
+  if (o.factory) withFactory(o.peer, o.now, list, topics, TASKS.length + o.extra + 12);
   topics.set('list', list);
   topics.set('config', [
     { e: 'setting', id: 'shell.theme', v: { key: 'shell.theme', value: 'system', locked_by: null } },

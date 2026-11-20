@@ -75,6 +75,11 @@ fn shell_hook_log_parses_and_drops_week_old_lines() {
     let cmds = parse_log(&log, now);
     assert_eq!(cmds.iter().map(|c| c.cmd.as_str()).collect::<Vec<_>>(), ["cargo test", "echo \"hi\"\nthere"]);
     assert_eq!((cmds[0].exit, cmds[0].ms), (Some(101), Some(4200)));
+    // the file itself keeps a week (owner-list row 64: it only grew): the old line and the damaged one go, the rest as written
+    let kept = prune_log(&log, now).unwrap();
+    assert_eq!(kept.lines().count(), 2);
+    assert!(kept.contains("cargo test") && !kept.contains("\"old\"") && !kept.contains("not json"), "{kept}");
+    assert_eq!(prune_log(&kept, now), None, "nothing to drop: left alone");
 }
 
 #[test]
@@ -92,10 +97,18 @@ fn history_files_of_zsh_bash_fish_read_their_last_commands() {
 
 #[test]
 fn prompt_about_what_is_above_attaches_context() {
-    for p in ["check the error above", "why did what I just ran fail?", "fix that error", "Explain the output"] {
+    // "why did that fail" (tried for real in a tmux pane, owner-list row 64): it asked about what's above and got nothing
+    for p in [
+        "check the error above",
+        "why did what I just ran fail?",
+        "fix that error",
+        "Explain the output",
+        "why did that fail",
+        "that failed again",
+    ] {
         assert!(wants_context(p), "{p}");
     }
-    for p in ["add a dark mode", "review the PR"] {
+    for p in ["add a dark mode", "review the PR", "make the build fail fast on lint"] {
         assert!(!wants_context(p), "{p}");
     }
 }

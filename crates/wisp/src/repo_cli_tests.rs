@@ -8,7 +8,7 @@ use std::process::Command;
 
 use serde_json::Value;
 
-use super::{blame, codex_mcp_table, filtered, parse_bodies, root, tracked};
+use super::{adopt_hook, blame, codex_mcp_table, filtered, parse_bodies, root, tracked};
 
 fn git(dir: &Path, args: &[&str]) {
     let ok = Command::new("git")
@@ -107,5 +107,34 @@ fn the_codex_mcp_table_keeps_a_windows_path() {
         let doc = documents(&text, Format::Toml).unwrap_or_else(|e| panic!("{exe}: {e}\n{text}"));
         assert_eq!(doc[0]["mcp_servers"]["wisp"]["command"], exe, "{text}");
         assert_eq!(doc[0]["mcp_servers"]["wisp"]["args"], serde_json::json!(["mcp"]));
+    }
+}
+
+/// The `SessionEnd` hook's command, run by `sh -c` (macOS, Linux) and PowerShell (Windows): a path with a space and one
+/// with a quote come back as one word, the path as it is. `sh` really runs here; PowerShell's quoting is read back by
+/// its rule (inside '…' only '' is special).
+#[test]
+fn the_adopt_hook_quotes_wisps_path_for_the_shell_that_runs_it() {
+    for exe in ["/Users/John Smith/.local/bin/wisp", "/opt/it's here/wisp", "/usr/local/bin/wisp"] {
+        let h = adopt_hook(exe, false);
+        assert!(h.get("shell").is_none(), "sh -c, Claude Code's default off Windows");
+        let cmd = h["command"].as_str().unwrap();
+        assert!(cmd.ends_with(" adopt --hook"), "{cmd}");
+        // the words sh splits it into: the path whole, then the two arguments
+        let words = cmd.replacen(" adopt --hook", "", 1);
+        let out = Command::new("sh").args(["-c", &format!("printf '%s\\n' {words} adopt --hook")]).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), format!("{exe}\nadopt\n--hook\n"), "{cmd}");
+    }
+    for (exe, want) in [
+        (r"C:\Program Files\wisp\wisp.exe", r"& 'C:\Program Files\wisp\wisp.exe' adopt --hook"),
+        (r"C:\Users\O'Brien\wisp.exe", r"& 'C:\Users\O''Brien\wisp.exe' adopt --hook"),
+        // PowerShell reads the curly quotes as quotes too: each is doubled, or `O’Brien` ended the string
+        (r"C:\Users\O’Brien\wisp.exe", r"& 'C:\Users\O’’Brien\wisp.exe' adopt --hook"),
+    ] {
+        let h = adopt_hook(exe, true);
+        assert_eq!((h["shell"].as_str(), h["command"].as_str()), (Some("powershell"), Some(want)));
+        let inner = want.strip_prefix("& '").and_then(|c| c.strip_suffix("' adopt --hook")).unwrap();
+        let back = ['\'', '‘', '’', '‚', '‛'].iter().fold(inner.to_owned(), |t, q| t.replace(&format!("{q}{q}"), &q.to_string()));
+        assert_eq!(back, exe, "PowerShell reads the path back whole");
     }
 }

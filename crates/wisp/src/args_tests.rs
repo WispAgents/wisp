@@ -211,3 +211,15 @@ fn a_crew_verbs_own_on_is_not_the_machine() {
     assert_eq!(p(&["ls", "--on", "laptop"]).flags.on.as_deref(), Some("laptop"));
     assert_eq!(p(&["runtime", "list", "--on", "laptop"]).flags.on.as_deref(), Some("laptop"));
 }
+
+/// Owner-list row 64: the terminal context (ADR-0023) was built but `wisp --help` never said it was there: its flags,
+/// what it attaches and `wisp shell-init` are in the usage, and each flag the usage names parses.
+#[test]
+fn the_usage_names_the_terminal_context_and_its_flags_parse() {
+    for w in ["--context", "--no-context", "--show-context", "--lines N", "wisp shell-init zsh|bash|fish", "check the error above"] {
+        assert!(HELP.contains(w), "{w}");
+    }
+    let shown = p(&["check", "the", "error", "above", "--show-context", "--lines", "50"]);
+    assert_eq!((shown.flags.context, shown.flags.show_context, shown.flags.lines), (Some(true), true, Some(50)));
+    assert_eq!(p(&["what", "failed", "--no-context"]).flags.context, Some(false));
+}

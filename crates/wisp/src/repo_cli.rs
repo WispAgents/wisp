@@ -628,13 +628,15 @@ pub fn skill_install(argv: &[String], cwd: &Path) -> Result<i32> {
             "claude" => {
                 rw(&root.join(".mcp.json"), &|v| v["mcpServers"]["wisp"] = json!({ "command": exe, "args": ["mcp"] }))?;
                 rw(&root.join(".claude/settings.json"), &|v| {
-                    let hook = json!({ "hooks": [{ "type": "command", "command": format!("{exe} adopt --hook") }] });
-                    let list = v["hooks"]["SessionEnd"].as_array().cloned().unwrap_or_default();
-                    if !list.iter().any(|h| h.to_string().contains("adopt --hook")) {
-                        let mut l = list;
-                        l.push(hook);
-                        v["hooks"]["SessionEnd"] = Value::Array(l);
+                    // wisp's own entry is replaced (one written before the path was quoted broke on a space); the
+                    // user's other SessionEnd hooks stay as they are
+                    let hook = json!({ "hooks": [adopt_hook(&exe, cfg!(windows))] });
+                    let mut list = v["hooks"]["SessionEnd"].as_array().cloned().unwrap_or_default();
+                    match list.iter().position(|h| h.to_string().contains("adopt --hook")) {
+                        Some(i) => list[i] = hook,
+                        None => list.push(hook),
                     }
+                    v["hooks"]["SessionEnd"] = Value::Array(list);
                 })?;
                 let skill = root.join(".claude/skills/wisp/SKILL.md");
                 std::fs::create_dir_all(skill.parent().unwrap_or(&root)).map_err(|e| CliError::said(e.to_string()))?;
@@ -657,6 +659,22 @@ pub fn skill_install(argv: &[String], cwd: &Path) -> Result<i32> {
         }
     }
     Ok(0)
+}
+
+/// Claude Code's `SessionEnd` hook running `wisp adopt --hook`, with wisp's path quoted for the shell that runs it:
+/// `sh -c` on macOS and Linux (single quotes, a `'` as `'\''`), and on Windows PowerShell, named by the hook's own
+/// `shell` (Claude Code would use Git Bash when it's installed and PowerShell when it isn't; PowerShell is always
+/// there): `& '<path>'` with a `'` (and the curly ones PowerShell reads as one) doubled. Unquoted, a path with a space (`C:\Program Files\…`, `/Users/John Smith/…`)
+/// ran `C:\Program` and the hook never adopted anything.
+fn adopt_hook(exe: &str, windows: bool) -> Value {
+    if windows {
+        // PowerShell takes ‘ ’ ‚ ‛ for a single quote too: each is doubled like '
+        let quoted: String =
+            exe.chars().flat_map(|c| if matches!(c, '\'' | '‘' | '’' | '‚' | '‛') { vec![c, c] } else { vec![c] }).collect();
+        json!({ "type": "command", "shell": "powershell", "command": format!("& '{quoted}' adopt --hook") })
+    } else {
+        json!({ "type": "command", "command": format!("'{}' adopt --hook", exe.replace('\'', r"'\''")) })
+    }
 }
 
 /// Codex's `[mcp_servers.wisp]` table for wisp at `exe`. The path is a TOML string quoted as JSON quotes it (`\\` for

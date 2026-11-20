@@ -649,8 +649,9 @@ export interface ReplyBoxProps {
   /** the phone app's mic (v1 .c-mic): listening shows it on, in the accent. Absent: no mic. Additive (2026-11-13). */
   readonly mic?: { readonly label: string; readonly on: boolean; readonly act: Act } | undefined;
   readonly mode: { readonly label: string; readonly title: string; readonly icon?: IconName; readonly act?: Act; readonly cap?: ReplyCap | undefined };
-  /** the reply's harness (v1 composer runner): one press opens the harness picker; `open` while it shows */
-  readonly runner: {
+  /** the reply's harness (v1 composer runner): one press opens the harness picker; `open` while it shows. None where no
+   *  agent of its own runs the reply (a factory run's task, ADR-0114): no harness or model chip at all. */
+  readonly runner?: {
     readonly title: string;
     readonly logo?: string;
     readonly act?: Act;
@@ -930,7 +931,7 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
               <ReplyOptions
                 labels={phoneOpts() as ReplyOptionLabels}
                 mode={{ label: props.mode.label, icon: props.mode.icon, act: props.mode.act }}
-                runner={{ title: props.runner.title, logo: props.runner.logo, model: props.runner.model, act: props.runner.act, open: props.runner.open }}
+                {...(props.runner && { runner: { title: props.runner.title, logo: props.runner.logo, model: props.runner.model, act: props.runner.act, open: props.runner.open } })}
                 rows={[
                   ...(props.plus
                     ? []
@@ -971,8 +972,10 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
               </span>
             )}
           </Show>
+          <Show when={props.runner}>
+            {(r) => (
           <WithAct
-            act={props.runner.act}
+            act={r().act}
             render={(trigger) => (
               <button
                 type="button"
@@ -980,15 +983,15 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
                 data-kit="c-runner"
                 data-part="composer.harness"
                 aria-haspopup="dialog"
-                aria-expanded={props.runner.open ? 'true' : 'false'}
-                title={props.runner.usage ? `${props.runner.title}\n${props.runner.usage.title}` : props.runner.title}
-                aria-label={props.runner.usage ? `${props.runner.title}\n${props.runner.usage.title}` : props.runner.title}
+                aria-expanded={r().open ? 'true' : 'false'}
+                title={r().usage ? `${r().title}\n${r().usage?.title ?? ""}` : r().title}
+                aria-label={r().usage ? `${r().title}\n${r().usage?.title ?? ""}` : r().title}
               >
                 <span data-kit="rb-logo" data-bare="">
-                  <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
-                  <Show when={props.runner.usage}>{(u) => <span data-kit="rb-ring" data-part="composer.harness.usage" data-tone={u().tone} aria-hidden="true" style={{ '--ctx': `${u().pct}%` }} />}</Show>
+                  <Show when={r().logo}>{(src) => <img src={src()} alt="" />}</Show>
+                  <Show when={r().usage}>{(u) => <span data-kit="rb-ring" data-part="composer.harness.usage" data-tone={u().tone} aria-hidden="true" style={{ '--ctx': `${u().pct}%` }} />}</Show>
                 </span>
-                <Show when={props.runner.model}>
+                <Show when={r().model}>
                   {(m) => (
                     <span data-kit="c-model" data-text="control">
                       {m()}
@@ -998,6 +1001,8 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
               </button>
             )}
           />
+            )}
+          </Show>
           <Show when={!props.plus}>
           <WithAct
             act={props.teamAct}

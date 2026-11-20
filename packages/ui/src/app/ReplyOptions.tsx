@@ -28,7 +28,8 @@ export interface ReplyOptionsProps {
     readonly icon?: IconName | undefined;
     readonly act?: Act | undefined;
   };
-  readonly runner: {
+  /** the reply's harness; none where no agent of its own runs the reply (a factory run's task, ADR-0114): no agent row */
+  readonly runner?: {
     readonly title: string;
     readonly logo?: string | undefined;
     readonly model?: string | undefined;
@@ -51,7 +52,7 @@ const items = (es: readonly MenuEntry[]): MenuItem[] =>
   es.flatMap((e): MenuItem[] => (e.kind === 'separator' || e.kind === 'submenu' ? [] : e.kind === 'group' ? [...e.items] : [e]));
 
 /** the harness's name: the runner title's first line ("Codex · gpt-6-sol"), its model beside it when given apart */
-const runnerName = (r: ReplyOptionsProps['runner']): string => [r.title.split('\n')[0] ?? '', r.model].filter(Boolean).join(' · ');
+const runnerName = (r: ReplyOptionsProps['runner']): string => (r ? [r.title.split('\n')[0] ?? '', r.model].filter(Boolean).join(' · ') : '');
 
 export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
   const [open, setOpen] = createSignal(false);
@@ -65,7 +66,7 @@ export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
   let pushed = false;
   const toAgent = (): void => {
     pushed = true;
-    after(props.runner.act);
+    after(props.runner?.act);
   };
   // a row with a panel (Delegate) pushes it as its own sheet (QA r6 phone #7, never the browser's popover over this
   // one): the options give way, and closing it brings them back, as Agent › does. Drawn apart from the options sheet,
@@ -85,7 +86,7 @@ export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
   };
   createEffect(
     on(
-      () => props.runner.open === true,
+      () => props.runner?.open === true,
       (now, was) => {
         if (was && !now && pushed) {
           pushed = false;
@@ -104,7 +105,7 @@ export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
         data-part="composer.harness"
         aria-haspopup="dialog"
         aria-expanded={open() ? 'true' : 'false'}
-        aria-label={`${props.labels.options}: ${props.mode.label} · ${runnerName(props.runner)}`}
+        aria-label={[`${props.labels.options}: ${props.mode.label}`, runnerName(props.runner)].filter(Boolean).join(' · ')}
         title={props.labels.options}
         onClick={() => setOpen(true)}
       >
@@ -112,9 +113,11 @@ export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
         <span data-kit="c-opts-mode" data-text="control">
           {props.mode.label}
         </span>
-        <span data-kit="rb-logo" data-bare="">
-          <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
-        </span>
+        <Show when={props.runner}>
+          <span data-kit="rb-logo" data-bare="">
+            <Show when={props.runner?.logo}>{(src) => <img src={src()} alt="" />}</Show>
+          </span>
+        </Show>
         <Icon name="chevron" size="xs" />
       </button>
       <Sheet title={props.labels.options} open={open()} onOpenChange={setOpen} part="composer.options" detents={['medium', 'large']}>
@@ -177,16 +180,18 @@ function ToolRows(props: ReplyOptionsProps & { readonly after: (act: Act | undef
   const after = props.after;
   return (
     <div data-kit="opts-group">
-      <button type="button" data-kit="opts-row" data-part="composer.options.agent" onClick={() => props.toAgent()}>
-        <span data-kit="rb-logo" data-bare="">
-          <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
-        </span>
-        <span data-kit="opts-text">
-          <span data-text="control">{props.labels.agent}</span>
-          <small>{runnerName(props.runner)}</small>
-        </span>
-        <Icon name="chevron" />
-      </button>
+      <Show when={props.runner}>
+        <button type="button" data-kit="opts-row" data-part="composer.options.agent" onClick={() => props.toAgent()}>
+          <span data-kit="rb-logo" data-bare="">
+            <Show when={props.runner?.logo}>{(src) => <img src={src()} alt="" />}</Show>
+          </span>
+          <span data-kit="opts-text">
+            <span data-text="control">{props.labels.agent}</span>
+            <small>{runnerName(props.runner)}</small>
+          </span>
+          <Icon name="chevron" />
+        </button>
+      </Show>
       <For each={props.rows}>
         {(r) => (
           <WithAct

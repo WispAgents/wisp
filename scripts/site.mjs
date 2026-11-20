@@ -477,7 +477,7 @@ const FAQ = [
   ['Which coding agents does wisp work with?', 'Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity. wisp runs the real CLIs you already installed and signed in to, so each agent keeps its own models, tools and settings.'],
   ['Does my code leave my computer?', 'No. wisp runs on your machines. Your prompts and code go only to the agents you use, under your own accounts, as they would without wisp. wisp sends anonymous usage counts you can turn off, never your code or prompts.'],
   ['Do I need an API key?', 'No. If you already use Claude Code or Codex with a subscription, wisp uses that same sign-in. API keys work too, for agents that take them.'],
-  ['Can I use it from the terminal?', 'Yes. Everything the app does, the CLI does (wisp "fix the flaky test", wisp ls, wisp ship), and wisp tui is a full terminal UI. Your agents can drive wisp too, through its MCP server.'],
+  ['Can I use it from the terminal?', 'Yes. Everything the app does, the CLI does (wisp "fix the flaky test", wisp ls, wisp ship), and wisp tui is a full terminal UI. After a command fails, wisp "check the error above" hands the agent what just happened in that terminal. Your agents can drive wisp too, through its MCP server.'],
   ['Is there a phone app?', 'The phone apps for iPhone and Android are coming. Join the waitlist on the Get the app page and we email you once, when yours is out. Today you can already use wisp from your phone’s browser, from your cloud wisp or a computer you put on the Grid.'],
   ['Does it run on Windows and Linux?', 'Yes. The desktop app runs on macOS, Windows and Linux, and the command line installs with npm on macOS, Windows and Linux, x64 and Arm (Node.js 18 or later).'],
   ['What does “as code” mean here?', 'Your agents, crew, machines, skills, MCP servers and workflows can live as files in your repo’s .wisp/ folder. You review them in a pull request, apply them with wisp apply, and every task the agents ran is kept next to the code it wrote.'],
@@ -800,6 +800,7 @@ function appPage() {
   <section aria-labelledby="cli-h" style="padding-top:56px">
     <h2 id="cli-h">Prefer the terminal?</h2>
     <p class="muted">The <code>wisp</code> command runs everything the app does, and <code>wisp tui</code> is a full terminal UI. It needs Node.js 18 or later.</p>
+    <p class="muted">A command just failed? Type <code>wisp "check the error above"</code>: the agent gets the command, its exit code, its output and your folder, with secrets masked. <a href="/docs/guides/run/terminal-context/">How it works</a>.</p>
     <div class="cta" style="justify-content:flex-start">${install('npm install -g wisp-agents')}</div>
     <p class="small muted" style="margin-top:12px">Also: <code>curl -fsSL https://trywisp.dev/install.sh | bash</code> · <code>brew install wispagents/tap/wisp-agents</code> · try it with <code>npx wisp-agents</code>. <a href="/docs/start/install/">Install guide</a>.</p>
   </section>
