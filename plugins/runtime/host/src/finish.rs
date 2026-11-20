@@ -250,8 +250,10 @@ impl Runtime {
     /// A turn a crash or restart left running never finished: it shows stopped (v1 `restartReason`).
     pub(crate) async fn end_unfinished(self: &Arc<Self>, mut s: Session, mut t: Turn) -> Result<()> {
         // its setup card goes with the run that asked (ADR-0113): nobody is left to read the answer
-        if let Some(ask) = crate::more::ask_id(&s) {
+        // (a plain question stays: only the card goes, so only its id is closed)
+        if let Some(ask) = crate::more::ask_id(&s).filter(|_| crate::more::open_setup(&s).is_some()) {
             self.asks().remove(&ask);
+            self.close_ask(&ask);
         }
         let taken = crate::more::take_setup_card(&mut s).map(|action| {
             format!("wisp restarted while this was running, so its card asking to {action} was taken back: nothing changed. Follow up to pick it back up.")

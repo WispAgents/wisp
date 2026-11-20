@@ -22,9 +22,42 @@ pub(crate) const APPROVAL_DENY: &str = "Deny";
 pub(crate) const SETUP_OPEN: &str = "A change to the user's setup is waiting on their answer: ask again once they've answered it.";
 /// What a setup card's agent reads when the card goes without the user's answer (its turn ended, the task stopped).
 pub(crate) const TAKEN_BACK: &str = "The card was taken back before the user answered it (the task stopped or its turn ended): nothing changed. Ask again if it's still needed.";
+/// What a second answer to a card already answered (or taken back) gets: nothing runs twice.
+pub(crate) const ALREADY: &str = "That card was already answered: nothing ran again.";
+/// How long an answer its agent never reads is kept for `pollAnswer` (an ask's own timeout, v1 `ASK_TIMEOUT_MS`).
+pub(crate) const ANSWER_KEEP_MS: i64 = ASK_TIMEOUT_MS;
+/// How long an answered or taken-back question's id is remembered: far longer than any write in flight.
+pub(crate) const CLOSED_KEEP_MS: i64 = 6 * 60 * 60_000;
 /// An answer to a question that's no longer the open one.
 pub(crate) const NOT_OPEN: &str = "That question was already answered, or a newer one replaced it: nothing was sent.";
 const SIDE_DENIED: &str = "Refused: a side discussion only reads. Ask the main task to do it.";
+
+/// The open question of `row`, as a write is about to store it, settled against the stored one (`stored`): an ask
+/// answered or taken back (`closed`) is never stored again (a stale copy still had it), and an open one (`open`, not
+/// closed) the copy left out is put back. A task whose turn runs keeps its state (a turn started from an older copy
+/// isn't shown Waiting); otherwise it waits on the question again, or stops waiting. True when it changed `row`.
+pub(crate) fn reconcile_ask(row: &mut Session, stored: Option<&Value>, open: impl Fn(&str) -> bool, closed: impl Fn(&str) -> bool) -> bool {
+    if let Some(id) = ask_id(row) {
+        if !closed(&id) {
+            return false;
+        }
+        tracing::warn!(task = %row.id, "a write from an older copy of the task would have brought back an answered question: dropped");
+        with_slot(&mut row.ext, |m| m.remove("ask"));
+        if row.state == SessionState::Waiting {
+            row.state = SessionState::Review;
+        }
+        return true;
+    }
+    let Some(ask) = stored.filter(|a| a.get("id").and_then(Value::as_str).is_some_and(|id| open(id) && !closed(id))) else {
+        return false;
+    };
+    tracing::warn!(task = %row.id, "a write from an older copy of the task would have dropped its open question: kept");
+    with_slot(&mut row.ext, |m| m.insert("ask".into(), ask.clone()));
+    if row.state != SessionState::Running {
+        row.state = SessionState::Waiting;
+    }
+    true
+}
 
 /// The open setup card on a task (ADR-0113), if its open question is one.
 pub(crate) fn open_setup(s: &Session) -> Option<Value> {
@@ -87,6 +120,7 @@ impl Runtime {
             }
             if let Some(old) = ask_id(&s) {
                 self.asks().remove(&old);
+                self.close_ask(&old);
             }
             let ask_id = wisp_kernel::ids::uuid7();
             let question = if question.trim().is_empty() { "The agent has a question.".to_owned() } else { question.trim().to_owned() };
@@ -161,7 +195,8 @@ impl Runtime {
             None => format!("You answered: {text}"),
         };
         self.asks().remove(&ask_id);
-        self.answers().insert(ask_id.clone(), text.to_owned());
+        self.close_ask(&ask_id);
+        self.keep_answer(&ask_id, text);
         s.state =
             if self.run_state(id.as_str()) == wisp_runtime_core::queue::Run::Idle { SessionState::Review } else { SessionState::Running };
         self.persist(&mut s, turns).await?;
@@ -192,7 +227,9 @@ impl Runtime {
     /// `runtime.pollAnswer`: the answer once (then it's gone), pending while the question is on its
     /// task (also after a restart), else cancelled.
     pub fn poll_answer(&self, ask_id: &str) -> PollAnswer {
-        if let Some(answer) = self.answers().remove(ask_id) {
+        let now = self.now();
+        self.answers().retain(|_, (_, at)| now - *at < ANSWER_KEEP_MS);
+        if let Some((answer, _)) = self.answers().remove(ask_id) {
             return PollAnswer::Answered { answer };
         }
         if self.asks().contains_key(ask_id) { PollAnswer::Pending } else { PollAnswer::Cancelled }
@@ -204,8 +241,9 @@ impl Runtime {
         if let Some(ask) = with_slot(&mut s.ext, |m| m.remove("ask")) {
             let id = ask.get("id").and_then(Value::as_str).unwrap_or_default();
             self.asks().remove(id);
+            self.close_ask(id);
             if ask.get("setup").is_some() {
-                self.answers().insert(id.to_owned(), TAKEN_BACK.to_owned());
+                self.keep_answer(id, TAKEN_BACK);
             }
             if s.state == SessionState::Waiting {
                 s.state = SessionState::Review;
@@ -217,21 +255,34 @@ impl Runtime {
     /// question, its card gone while its agent's `pollAnswer` reads pending for good (audit G GS5). Every path that
     /// takes a question back takes it out of `asks` first, so a question `asks` still holds for this task that the
     /// write leaves out is put back from the stored row, with the task still waiting.
+    ///
+    /// This one runs before the write, so its row (the list's) says the same; `reconcile_ask` runs again inside the
+    /// write's transaction, where nothing can come between the read and the write (review r194 of GS5).
     pub(crate) async fn keep_open_ask(&self, s: &mut Session) {
-        if slot(s).is_some_and(|m| m.get("ask").is_some()) {
+        let open_here = self.asks().values().any(|sid| *sid == s.id.0);
+        let has = slot(s).is_some_and(|m| m.get("ask").is_some());
+        if !open_here && !has {
             return;
         }
-        let open = self.asks().iter().find(|(_, sid)| **sid == s.id.0).map(|(a, _)| a.clone());
-        let Some(open) = open else { return };
-        let Ok(stored) = self.repo.session(s.id.as_str()).await else { return };
-        if ask_id(&stored).as_deref() != Some(open.as_str()) {
-            return;
-        }
-        if let Some(ask) = slot(&stored).and_then(|m| m.get("ask")).cloned() {
-            tracing::warn!(task = %s.id, "a write from an older copy of the task would have dropped its open question: kept");
-            with_slot(&mut s.ext, |m| m.insert("ask".into(), ask));
-            s.state = SessionState::Waiting;
-        }
+        let stored = self.repo.session(s.id.as_str()).await.ok();
+        let stored_ask = stored.as_ref().and_then(|x| slot(x)).and_then(|m| m.get("ask")).cloned();
+        reconcile_ask(s, stored_ask.as_ref(), |a| self.asks().contains_key(a), |a| self.closed().contains_key(a));
+    }
+
+    /// The question `id` is answered or taken back: no write brings it back and no second answer runs it again.
+    pub(crate) fn close_ask(&self, id: &str) {
+        let now = self.now();
+        let mut c = self.closed();
+        c.retain(|_, at| now - *at < CLOSED_KEEP_MS);
+        c.insert(id.to_owned(), now);
+    }
+
+    /// `text` kept for the agent's `pollAnswer` on question `id`; one never read goes after [`ANSWER_KEEP_MS`].
+    pub(crate) fn keep_answer(&self, id: &str, text: &str) {
+        let now = self.now();
+        let mut a = self.answers();
+        a.retain(|_, (_, at)| now - *at < ANSWER_KEEP_MS);
+        a.insert(id.to_owned(), (text.to_owned(), now));
     }
 
     /// Waits for the answer on the kernel's clock, at most `ms`.

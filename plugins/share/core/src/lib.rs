@@ -167,7 +167,7 @@ pub fn scrub_text(text: &str, s: &Scrub, at: &str, out: &mut Vec<Redaction>) -> 
 /// Every secret pattern as one set: a string none of them matches (most of a bundle) skips them in one pass.
 fn any_secret() -> Option<&'static regex::RegexSet> {
     static S: OnceLock<Option<regex::RegexSet>> = OnceLock::new();
-    S.get_or_init(|| regex::RegexSet::new(patterns().iter().map(Regex::as_str)).ok()).as_ref()
+    S.get_or_init(|| regex::RegexSet::new(patterns().iter().map(Regex::as_str).chain(assign::shape_patterns())).ok()).as_ref()
 }
 
 /// Perf audit 2026-11-19 #8: a string is copied only when something in it is taken out, and the secret patterns are
@@ -225,7 +225,10 @@ fn secrets(text: &str, at: &str, out: &mut Vec<Redaction>) -> String {
             }));
         }
     }
-    t
+    // the shapes that keep their structure (`user:<secret>@host`, `"password":"<secret>"`, review r194 of GS4)
+    let (shaped, found) = assign::mask_shapes(&t);
+    out.extend(found.iter().map(|f| Redaction { kind: "secret".into(), at: at.into(), was: hint(f), now: "<secret>".into() }));
+    shaped
 }
 
 /// Every string in `v` scrubbed (keys too, for paths).
@@ -311,6 +314,26 @@ mod tests {
         let key = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----";
         assert_eq!(scrub_text(key, &Scrub::default(), "x", &mut Vec::new()), "<secret>");
         assert_eq!(slug("Fix the login: 401s!"), "fix-the-login-401s");
+    }
+
+    /// Review r194 of GS4: a share keeps the sharer's askpass and agent socket paths (they aren't secrets) and takes
+    /// out a URL's credentials, a Basic header and a JSON password with their structure kept.
+    #[test]
+    fn a_share_keeps_paths_named_like_secrets_and_masks_credentials_in_place_review_r194() {
+        let env = secret_env([
+            ("GIT_ASKPASS".to_owned(), "/Applications/Code.app/askpass.sh".to_owned()),
+            ("VSCODE_GIT_ASKPASS_MAIN".to_owned(), "/Applications/Code.app/askpass-main.js".to_owned()),
+            ("SSH_AUTH_SOCK".to_owned(), "/private/tmp/com.apple.launchd.x/Listeners".to_owned()),
+            ("GH_TOKEN".to_owned(), "gho_notashape12345".to_owned()),
+        ]);
+        assert_eq!(env.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["GH_TOKEN"]);
+        let mut r = Vec::new();
+        let t = r#"cloned https://ada:hunter2qa@git.x.dev/r.git; -H "Authorization: Basic YWRhOmh1bnRlcjI=" -d '{"password":"hunter2qa"}'"#;
+        assert_eq!(
+            scrub_text(t, &Scrub::default(), "x", &mut r),
+            r#"cloned https://ada:<secret>@git.x.dev/r.git; -H "Authorization: Basic <secret>" -d '{"password":"<secret>"}'"#
+        );
+        assert_eq!(r.len(), 3, "{r:?}");
     }
 
     /// QA round 12 #3: a task titled "login" made the shared prompt "fix the login bug" read "fix the <task> bug". Other

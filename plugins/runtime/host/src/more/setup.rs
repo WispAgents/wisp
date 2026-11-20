@@ -12,7 +12,7 @@ use wisp_runtime_api::commands::SetupAsked;
 use wisp_runtime_api::model::{SessionState, ToolKind};
 use wisp_runtime_core::setup::{self, Card, Write};
 
-use super::ask::{NOT_OPEN, open_setup};
+use super::ask::{ALREADY, NOT_OPEN, open_setup};
 use super::{slot, str_at, tool_row, with_slot};
 use crate::error::{Result, RuntimeError};
 use crate::runtime::Runtime;
@@ -127,6 +127,9 @@ impl Runtime {
                     ));
                 }
                 Some(want) if want != open_id => return Err(RuntimeError::Conflict(NOT_OPEN.into())),
+                // answered already (a stale write brought it back before this was fixed in the write itself): its
+                // writes never run twice (review r194 of GS5)
+                Some(_) if self.closed().contains_key(&open_id) => return Err(RuntimeError::Conflict(ALREADY.into())),
                 Some(_) => {}
             }
             let action = str_at(&card, "action");
@@ -166,7 +169,8 @@ impl Runtime {
         let mut s = self.repo.session(id.as_str()).await?;
         with_slot(&mut s.ext, |m| m.remove("ask"));
         self.asks().remove(ask_id);
-        self.answers().insert(ask_id.to_owned(), words.to_owned());
+        self.close_ask(ask_id);
+        self.keep_answer(ask_id, words);
         s.state =
             if self.run_state(id.as_str()) == wisp_runtime_core::queue::Run::Idle { SessionState::Review } else { SessionState::Running };
         self.persist(&mut s, Vec::new()).await?;
@@ -213,10 +217,14 @@ mod tests {
     }
 
     async fn rt_with_task() -> Arc<Runtime> {
+        rt_on(Arc::new(wisp_store::SystemClock)).await
+    }
+
+    async fn rt_on(clock: Arc<dyn wisp_kernel::Clock>) -> Arc<Runtime> {
         let store = wisp_store::Store::open(wisp_store::Location::Memory, Arc::new(wisp_store::SystemClock)).unwrap();
         crate::schema::install(&store).unwrap();
         let proc: wisp_proc::Proc = Arc::new(wisp_proc::sim::SimProc::new());
-        let rt = Runtime::new(crate::repo::Repo::new(store), Arc::new(crate::Recorder::default()), proc, Arc::new(wisp_store::SystemClock));
+        let rt = Runtime::new(crate::repo::Repo::new(store), Arc::new(crate::Recorder::default()), proc, clock);
         let mut s = wisp_runtime_api::model::Session {
             id: "t1".into(),
             agent: "fake".into(),
@@ -259,6 +267,86 @@ mod tests {
         rt.stop("t1", false).await.unwrap();
         let row = rt.lock_list().get("t1").cloned().unwrap();
         assert_eq!((row.live.as_str(), row.fields["asks"].clone()), ("", json!(false)), "answered or gone: no question");
+    }
+
+    /// Allow on task t1's open card, counting the writes it runs.
+    async fn allow(rt: &Arc<Runtime>, ask: &str, ran: &Arc<std::sync::atomic::AtomicUsize>) -> Result<Value> {
+        let ran = ran.clone();
+        rt.answer_setup(&"t1".into(), "Allow", Some(ask), move |_cmd, _args| {
+            ran.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async { Ok(json!({ "name": "qa-proj", "path": "/tmp/qa-proj" })) }
+        })
+        .await
+    }
+
+    /// Review r194 of GS5: a write from a copy read while the card was up, landing after the user allowed it, brought
+    /// the answered card back with the same id, and a second Allow ran its writes again. It stays answered, once.
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_answered_card_never_comes_back_and_never_runs_twice() {
+        let rt = rt_with_task().await;
+        let asked = rt.setup_ask(&"t1".into(), "Claude Code", project_write()).await.unwrap();
+        let mut stale = rt.repo.session("t1").await.unwrap();
+        assert!(open_setup(&stale).is_some());
+        let ran = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        allow(&rt, &asked.ask_id, &ran).await.unwrap();
+        stale.title = "renamed from an old copy".into();
+        rt.persist(&mut stale, Vec::new()).await.unwrap();
+        let now = rt.repo.session("t1").await.unwrap();
+        assert!(open_setup(&now).is_none(), "the answered card stays gone: {:?}", now.ext);
+        assert_ne!(now.state, SessionState::Waiting);
+        assert!(allow(&rt, &asked.ask_id, &ran).await.is_err(), "nothing to allow");
+        assert_eq!(ran.load(std::sync::atomic::Ordering::SeqCst), 1, "its writes ran once");
+        // even when the row has it back (one written before this fix), a second Allow on an answered id is refused
+        let mut back = rt.repo.session("t1").await.unwrap();
+        back.ext = stale_ext_with_card(&asked.ask_id);
+        let row = (back.clone(), rt.lock_list().get("t1").cloned().unwrap());
+        rt.repo
+            .store
+            .write(move |w| crate::repo::save_session(w, &row.0, &row.1, None).map_err(|e| wisp_store::StoreError::Internal(e.to_string())))
+            .await
+            .unwrap();
+        let e = allow(&rt, &asked.ask_id, &ran).await.unwrap_err();
+        assert!(e.to_string().contains("already answered"), "{e}");
+        assert_eq!(ran.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    /// The card's ext as it was shown (for the row written behind the store's back above).
+    fn stale_ext_with_card(ask: &str) -> std::collections::BTreeMap<String, Value> {
+        let c = setup::card("Claude Code", &project_write()).unwrap();
+        let stored = json!({ "who": "Claude Code", "writes": project_write(), "card": c, "digest": digest("Claude Code", &project_write(), &c), "action": c.action });
+        [(
+            "wisp.runtime".to_owned(),
+            json!({ "ask": { "id": ask, "question": c.question(), "options": ["Allow", "Deny"], "setup": stored } }),
+        )]
+        .into()
+    }
+
+    /// Review r194 of GS5: a turn started from a copy without the card was shown Waiting while it ran: the card is kept
+    /// on the task, and the task's state is the running turn's.
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_kept_card_leaves_a_running_tasks_state_alone() {
+        let rt = rt_with_task().await;
+        let mut stale = rt.repo.session("t1").await.unwrap();
+        rt.setup_ask(&"t1".into(), "Claude Code", project_write()).await.unwrap();
+        stale.state = SessionState::Running;
+        rt.persist(&mut stale, Vec::new()).await.unwrap();
+        let now = rt.repo.session("t1").await.unwrap();
+        assert!(open_setup(&now).is_some(), "the card is kept");
+        assert_eq!(now.state, SessionState::Running, "the running turn's state, not Waiting");
+    }
+
+    /// Review r194 of GS5: an answer its agent never read (a card taken back while nobody polls) stayed in memory for
+    /// good. It goes after its keep time; one read goes at once.
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_unread_answer_expires() {
+        let clock = wisp_testkit::FakeClock::at(1_700_000_000_000);
+        let rt = rt_on(Arc::new(clock.clone())).await;
+        let asked = rt.setup_ask(&"t1".into(), "Claude Code", project_write()).await.unwrap();
+        rt.stop("t1", false).await.unwrap();
+        assert_eq!(rt.answers().len(), 1, "taken back: its agent may still read it");
+        clock.advance(u64::try_from(super::super::ask::ANSWER_KEEP_MS).unwrap() + 1);
+        assert_eq!(rt.poll_answer(&asked.ask_id), wisp_runtime_api::commands::PollAnswer::Cancelled);
+        assert!(rt.answers().is_empty(), "gone after its keep time");
     }
 
     /// Audit G GS5: a card taken back without the user's answer (its turn ended, the task stopped) tells its agent so:

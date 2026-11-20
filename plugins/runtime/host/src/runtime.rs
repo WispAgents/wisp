@@ -42,9 +42,13 @@ pub struct Runtime {
     pub(crate) stops: Arc<Mutex<std::collections::HashSet<String>>>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// open questions: ask id → its task (rebuilt at start from the tasks that wait on one)
-    asks: Mutex<HashMap<String, String>>,
-    /// answers not read yet by `pollAnswer`: ask id → the answer
-    answers: Mutex<HashMap<String, String>>,
+    asks: Arc<Mutex<HashMap<String, String>>>,
+    /// questions answered or taken back: ask id → when (review r194 of GS5: a write from an older copy never brings one
+    /// back, and a second Allow on one is refused); pruned after `CLOSED_KEEP_MS` (more/ask.rs)
+    closed: Arc<Mutex<HashMap<String, i64>>>,
+    /// answers not read yet by `pollAnswer`: ask id → (the answer, when); one unread after
+    /// `ANSWER_KEEP_MS` (more/ask.rs) goes
+    answers: Mutex<HashMap<String, (String, i64)>>,
     /// each task's next activity seq: a turn's drive and wisp's own rows share it
     seqs: Mutex<HashMap<String, u64>>,
     sign_ins: Mutex<HashMap<String, crate::more::SignIn>>,
@@ -92,7 +96,8 @@ impl Runtime {
             starting: Arc::default(),
             stops: Arc::default(),
             locks: Mutex::default(),
-            asks: Mutex::default(),
+            asks: Arc::default(),
+            closed: Arc::default(),
             answers: Mutex::default(),
             seqs: Mutex::default(),
             sign_ins: Mutex::default(),
@@ -189,8 +194,12 @@ impl Runtime {
         lock(&self.asks)
     }
 
-    pub(crate) fn answers(&self) -> std::sync::MutexGuard<'_, HashMap<String, String>> {
+    pub(crate) fn answers(&self) -> std::sync::MutexGuard<'_, HashMap<String, (String, i64)>> {
         lock(&self.answers)
+    }
+
+    pub(crate) fn closed(&self) -> std::sync::MutexGuard<'_, HashMap<String, i64>> {
+        lock(&self.closed)
     }
 
     /// The next activity seq of task `sid` (read from the store the first time).
@@ -325,8 +334,14 @@ impl Runtime {
         let mut events = vec![Emitted::Changed(SessionChanged { id: s.id.clone() })];
         events.extend(also(&summary));
         let outbox = self.host.outbox(&events);
-        let (row, sum, ts, k) = (s.clone(), summary.clone(), turns, known);
+        let (mut row, sum, ts, k) = (s.clone(), summary.clone(), turns, known);
+        let (asks, closed) = (self.asks.clone(), self.closed.clone());
         let job = move |w: &mut wisp_store::Writer<'_>| {
+            // the open question as the stored row has it, settled in this transaction (review r194 of GS5): an older
+            // copy never drops an open card nor brings back one answered or taken back meanwhile
+            let stored = w.get("session", row.id.as_str())?.and_then(|r| crate::rows::session_of(r, Vec::new()).ok());
+            let stored_ask = stored.as_ref().and_then(|x| x.ext.get("wisp.runtime")).and_then(|r| r.get("ask")).cloned();
+            crate::more::reconcile_ask(&mut row, stored_ask.as_ref(), |a| lock(&asks).contains_key(a), |a| lock(&closed).contains_key(a));
             // the session first: a new task's turns point at it (a fork's, an adopted share's)
             repo::save_session(w, &row, &sum, Some(&hide)).map_err(|e| wisp_store::StoreError::Internal(e.to_string()))?;
             for t in &ts {

@@ -46,3 +46,23 @@ server is stopped.
 - `cargo test --no-fail-fast -p wisp-share-core -p wisp-cli-core -p wisp-runtime-core -p wisp-runtime
   -p wisp-channels-core -p wisp-channels -p wisp-connectors -p wisp-resources-api -p wisp-worktrees -p wisp-grid-client
   -p wisp`: 1049 passed, 0 failed, 3 ignored.
+
+## Review r194 of GS4 and GS5 (after 13b3345b, uncommitted)
+
+Both gaps' tests were seen failing on 13b3345b. The new tests were run against that commit's code, then on the fix.
+
+| # | Test | Before → after |
+|---|---|---|
+| GS4 leaks | `wisp-share-core assign::tests::credentials_in_urls_headers_bodies_and_tools_are_masked_review_r194` (seen failing: `curl -u ada:hunter2qa` as typed) | Masked now, with the structure kept: `curl -u`/`--user user:<secret>`, `https://user:<secret>@host`, `https://<secret>@github.com/…` (a token of 20+ characters as the user, `glpat-`/`ghp_` included), `Authorization: Basic <secret>`, `"password":"<secret>"` (a JSON field whose name is a secret), `.netrc` `machine … password <secret>`, `aws configure set aws_secret_access_key <secret>`, `docker login -p <secret>` and `--password <secret>` (`docker run -p 8080:80` stays: `-p` is a password only under `login`), `MYSQL_PWD=<secret>`, `echo <secret> \| gh auth login --with-token` (`echo $T \| …` stays), `//registry/:_authToken=<secret>`. The text shapes (URL credentials, Basic, JSON fields, netrc, aws, npm, `glpat-…`) also run in the share scrub. `wisp-share-core tests::a_share_keeps_paths_named_like_secrets_and_masks_credentials_in_place_review_r194` checks that, along with the one-pass check that skips strings with nothing to take out |
+| GS4 over-masking | `wisp-share-core assign::tests::what_isnt_a_secret_stays_as_typed_review_r194` (seen failing: `TOKENIZERS_PARALLELISM=<secret>`) | `secret_name` now matches whole name parts (split on `_`, `-`, `.` and camelCase): KEY, APIKEY, TOKEN, SECRET, PASSWORD, PASSWD, PASSPHRASE, PASS, PAT, CREDENTIAL(S), AUTH, AUTHORIZATION, and `PWD` with another part. Or a part that ends in TOKEN/SECRET/PASSWORD/PASSWD/APIKEY/PASS (not BYPASS, COMPASS, ASKPASS). A part saying where, how many or how (URL, HOST, FILE, PATH, SOCK, STDIN, MAX, COUNT, ID, NAME, ASKPASS, PARALLELISM, …) makes the name about a secret, not one. Values that plainly aren't secrets are kept: on/off/true/false, numbers, URLs without credentials, paths. Kept now: `TOKENIZERS_PARALLELISM`, `--max-tokens 4000`, `--sort-keys`, `--recv-keys`, `KEYBOARD_LAYOUT`, `--apple-use-keychain`, `--key ./client.key`, `--private-key ~/.ssh/…`, `--auth-url https://…`, `AUTH=off`, `--password-stdin ghcr.io`, `GIT_ASKPASS`, `VSCODE_GIT_ASKPASS_*`, `SSH_AUTH_SOCK`, `AWS_ACCESS_KEY_ID`. In shares the askpass and socket paths stay visible |
+| GS5 answered card restored | `wisp-runtime more::setup::tests::an_answered_card_never_comes_back_and_never_runs_twice` (seen failing: the card was back after the stale write) | Every answered or taken-back ask id is remembered (`closed`, kept 6 h). The ask is now settled inside the write's own store transaction (`reconcile_ask`), so nothing can come between the read and the write. An open card an older copy left out is put back. An ask id in `closed` is never stored again, even when the older copy still carries it. Allow on a card whose id is closed is refused "That card was already answered: nothing ran again.", even if a row written before this fix still shows it. Its writes ran once |
+| GS5 Waiting while running | `wisp-runtime more::setup::tests::a_kept_card_leaves_a_running_tasks_state_alone` (seen failing: `Waiting`) | A kept card no longer changes a task whose write says Running; otherwise the task waits on it again |
+| GS5 answers kept forever | `wisp-runtime more::setup::tests::an_unread_answer_expires` (seen failing: still answered after 30 min) | `answers` keep when each answer was given. One its agent never reads goes after `ANSWER_KEEP_MS` (30 min, the ask's own timeout), pruned on each new answer and each poll; one that is read goes at once |
+| (found on the way) | — | At a restart, `end_unfinished` took a plain question's id out of `asks` too, though only a setup card leaves the task. Now only a card's id is taken out (and closed) |
+
+Gates:
+- `cargo test -p wisp-share-core -p wisp-runtime`: 234 passed, 0 failed (with the share scrub's tests, including the one-pass reference comparison).
+- `cargo test -p wisp --bin wisp termctx`: 4 passed.
+- `cargo clippy --workspace --all-targets -D warnings`: clean. `--target x86_64-pc-windows-msvc -p wisp-share-core`: clean.
+- `cargo fmt --all --check`: clean.
+- No UI changed, so vitest was not re-run.
