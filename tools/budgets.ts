@@ -21,7 +21,7 @@
 import { brotliCompressSync, constants } from 'node:zlib';
 import { appendFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { firstScreen, LOOKS, type Look, type Loaded } from './first-screen.ts';
+import { firstScreen, FIRST_SCREEN_DEADLINE_MS, LOOKS, type Look, type Loaded } from './first-screen.ts';
 
 /** ADR-0011's initial budgets: the goal for each look's first screen, and the gate on index.html's own files. */
 export const BUDGETS = { initialJsBr: 120 * 1024, initialCssBr: 30 * 1024 } as const;
@@ -223,4 +223,20 @@ async function main(): Promise<void> {
   process.exitCode = over.length > 0 ? 1 : 0;
 }
 
-if (import.meta.filename === process.argv[1]) await main();
+/** The script's own limit, past first-screen's deadline and its cleanup: whatever still runs then, the script says so
+ *  and exits 1 (its exit handler takes Chrome's process group down), so a hang never eats the CI job. */
+export const SCRIPT_DEADLINE_MS = FIRST_SCREEN_DEADLINE_MS + 60_000;
+/** how long the script may still run once it's done: a handle left open (a server, a socket) is a bug, said, not a hang */
+const EXIT_GRACE_MS = 10_000;
+
+if (import.meta.filename === process.argv[1]) {
+  const fail = (why: string): never => {
+    console.error(`${process.env['GITHUB_ACTIONS'] ? '::error title=Bundle budget::' : ''}${why}`);
+    process.exit(1);
+  };
+  const backstop = setTimeout(() => fail(`budgets: not done in ${SCRIPT_DEADLINE_MS / 1000} s: stopped`), SCRIPT_DEADLINE_MS);
+  backstop.unref();
+  await main();
+  clearTimeout(backstop);
+  setTimeout(() => fail(`budgets: still running ${EXIT_GRACE_MS / 1000} s after it finished (something left open): stopped`), EXIT_GRACE_MS).unref();
+}
