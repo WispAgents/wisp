@@ -1483,7 +1483,7 @@ test('a computer added to the grid: reached through its tunnel, signed in like t
     const pre = await browser().go(`${c.url}/api/events`, { method: 'OPTIONS', headers: { origin: 'https://localhost', 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' } });
     assert.equal(pre.status, 204, pre.text);
     assert.equal(pre.headers['access-control-allow-origin'], '*');
-    assert.match(pre.headers['access-control-allow-headers'], /authorization/);
+    for (const h of ['authorization', 'content-type', 'x-wisp-client', 'x-wisp-plugin', 'idempotency-key']) assert.ok(pre.headers['access-control-allow-headers'].split(', ').includes(h), `${h} allowed: the client sends it`);
     assert.equal(seen.at(-1).url, '/api/events', 'the preflight never reaches the computer');
     const cross = await browser().go(`${c.url}/api/hello`, { headers: { ...auth(phone), origin: 'https://localhost' } });
     assert.deepEqual([cross.status, cross.headers['access-control-allow-origin']], [200, '*']);

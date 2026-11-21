@@ -11,6 +11,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   *Offline* in the v2 phone app: the grid answered the app's CORS preflight on the computer's address with 401 and no
   CORS headers, so the WebView refused every request. A computer's and a box's `/api/` now answer it like the grid's
   own device API (open CORS, bearer token, never cookies).
+- **Phone app: a grid computer's tasks open.** The task list showed but a task stayed empty: the app's sync posts carry
+  `x-wisp-client`, which the grid's CORS didn't allow, so no task was ever subscribed. The grid now allows the headers
+  `@wisp/client` sends.
 
 ## [1.0.0-alpha.2] - 2026-11-21
 
