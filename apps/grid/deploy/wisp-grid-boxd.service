@@ -1,0 +1,15 @@
+# wisp Grid's boxd (v2, apps/grid/boxd): the only part that runs docker, as root, on /run/wisp-grid/box.sock
+# (0660 root:wisp). Image wisp-grid-user (apps/grid/deploy/image/Dockerfile), gVisor, network wisp-users.
+[Unit]
+Description=wisp Grid boxd (the users' containers)
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStart=/opt/wisp-grid/bin/wisp-grid-boxd serve --group wisp --data /var/lib/wisp-grid --boxes /var/lib/wisp-grid-boxes
+Restart=on-failure
+RuntimeDirectory=wisp-grid
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

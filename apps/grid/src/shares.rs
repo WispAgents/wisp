@@ -173,8 +173,11 @@ fn rec(r: &rusqlite::Row<'_>) -> rusqlite::Result<Rec> {
     })
 }
 
-fn key_ok(k: &str) -> bool {
-    !k.is_empty() && k.len() <= 64 && k.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
+/// What a share is on the sharer's wisp: a task id, `kind.name`, or the crew's `crew:<id>,<id>` (sorted member ids,
+/// `wisp_crew_core::source::share_key`), so up to 256 bytes and `:` `,` too. Never `/`: it is a path segment in
+/// `grid://<handle>/<key>` and `/api/shares/by/<handle>/<key>`.
+pub(crate) fn key_ok(k: &str) -> bool {
+    !k.is_empty() && k.len() <= 256 && k.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b':' | b','))
 }
 
 /// `v2`, `2` → 2.

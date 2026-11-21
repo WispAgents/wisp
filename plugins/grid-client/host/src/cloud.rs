@@ -48,13 +48,26 @@ impl ShareDestination for Cloud {
                 "body": B64.encode(&out.body), "signer": out.signer, "sig": out.sig,
                 "access": out.access, "expiresAt": out.expires_at, "publish": out.publish,
             });
-            let (status, v) = net::call(&st.http, "POST", &format!("{}/api/shares", a.grid), Some(&token), Some(&body), &[]).await?;
-            if status >= 400 {
-                return Err(net::refused(status, &v));
-            }
-            Ok(v)
+            send_at(&st.http, &a.grid, &token, &body).await
         })
     }
+}
+
+/// A share sent to `grid`. v1's grid (grid.trywisp.dev until v2's is deployed) takes only shared tasks, at
+/// `PUT /api/shares/mine/<key>`, and answers v2's `POST /api/shares` with a bare 404 "not found", which the crew's
+/// Share link toasted as it was: said here as what it is, and what to do instead.
+pub async fn send_at(http: &reqwest::Client, grid: &str, token: &str, body: &Value) -> Result<Value> {
+    let (status, v) = net::call(http, "POST", &format!("{grid}/api/shares"), Some(token), Some(body), &[]).await?;
+    if status == 404 {
+        return Err(WireError::invalid(format!(
+            "{} can't hold this link yet: its grid runs an older wisp. Download or Copy the file instead.",
+            net::host_of(grid)
+        )));
+    }
+    if status >= 400 {
+        return Err(net::refused(status, &v));
+    }
+    Ok(v)
 }
 
 /// My shares on the grid: kind, access, views, imports, versions.
@@ -260,5 +273,16 @@ mod v1_shares_tests {
         let http = Arc::new(crate::net::client(false));
         let v = super::mine_at(&http, &grid, "wgd_d").await.unwrap();
         assert_eq!(v["shares"][0]["id"], "s1", "{v}");
+    }
+
+    /// The crew's Share link toasted "not found": v1's grid has no `POST /api/shares`. The refusal says why and
+    /// what still works, and isn't a `not_found` (nothing the user asked for is missing).
+    #[tokio::test]
+    async fn a_v1_grid_refuses_a_share_in_words() {
+        let grid = v1_grid().await;
+        let http = Arc::new(crate::net::client(false));
+        let e = super::send_at(&http, &grid, "wgd_d", &json!({ "kind": "crew" })).await.unwrap_err();
+        assert_eq!(e.code, wisp_kernel::Code::Invalid, "{e:?}");
+        assert!(e.message.contains("older wisp") && e.message.contains("Download or Copy"), "{}", e.message);
     }
 }

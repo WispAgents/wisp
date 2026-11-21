@@ -1,0 +1,20 @@
+# wisp Grid (v2, apps/grid): the edge, the control plane and hostd, as the unprivileged `wisp` user. Boxes run
+# through wisp-grid-boxd (hostd.container.boxd in grid.json). Binaries in /opt/wisp-grid/bin (root-owned).
+[Unit]
+Description=wisp Grid
+After=network-online.target wisp-grid-boxd.service
+Wants=network-online.target wisp-grid-boxd.service
+
+[Service]
+User=wisp
+Environment=GRID_DATA=/var/lib/wisp-grid
+ExecStartPre=+/opt/wisp-grid/deploy/firewall.sh
+ExecStart=/opt/wisp-grid/bin/wisp-grid serve --data /var/lib/wisp-grid
+Restart=on-failure
+TimeoutStopSec=30
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
