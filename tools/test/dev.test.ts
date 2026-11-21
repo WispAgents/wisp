@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   apiUrl, builtBinary, choosePort, DEFAULT_PORT, DESKTOP_DEV_IDENTIFIER, desktopEnv, DevArgError, isRustChange, parseArgs,
-  portCandidates, resolveHome, serverEnv, viteEnv,
+  portCandidates, resolveHome, serverEnv, viteEnv, webIndex,
 } from '../dev/plan.ts';
 
 test('the_defaults_are_port_4800_vite_5180_the_dev_home_and_watching', () => {
@@ -117,4 +117,15 @@ test('the_built_binary_comes_from_cargos_json_lines', () => {
   ];
   assert.equal(builtBinary(lines), '/t/debug/wisp');
   assert.equal(builtBinary(lines.slice(0, 2)), undefined);
+});
+
+test('the_web_build_dev_checks_is_the_one_a_debug_wisp_serve_falls_back_to', async () => {
+  const { join } = await import('node:path');
+  const { readFile } = await import('node:fs/promises');
+  const root = join(import.meta.dirname, '..', '..');
+  assert.equal(webIndex(root), join(root, 'apps', 'web', 'dist', 'index.html'));
+  // serve.rs's web_dir(): CARGO_MANIFEST_DIR (crates/wisp)/../../apps/web/dist, holding an index.html
+  const serve = await readFile(join(root, 'crates', 'wisp', 'src', 'serve.rs'), 'utf8');
+  assert.match(serve, /join\("\.\.\/\.\.\/apps\/web\/dist"\)/);
+  assert.match(serve, /join\("index\.html"\)/);
 });
