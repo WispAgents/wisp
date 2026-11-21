@@ -62,3 +62,9 @@ test('the wires svg is laid over the stage, never in its flow_flow_wires_absolut
   expect(rule).toMatch(/inset:\s*0/);
   expect(/\[data-kit='rb-flow-stage'\]\s*\{[^}]*position:\s*relative/.test(css)).toBe(true);
 });
+
+test('a still answer draws its wires at once: no animation leaves them hidden_flow_still', () => {
+  const rule = /\[data-still\] \[data-kit='rb-flow-wire'\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+  expect(rule).toMatch(/animation:\s*none/);
+  expect(rule).toMatch(/stroke-dashoffset:\s*0/);
+});

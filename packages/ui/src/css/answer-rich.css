@@ -224,6 +224,9 @@
   [data-kit='rb-flow-node'] { position: relative; padding: 9px var(--space-6); border-radius: var(--radius-sm); background: var(--surface); border: var(--size-hairline) solid var(--line-2); text-align: center; animation: rb-flow-pop 0.4s var(--ease) calc(200ms + var(--k, 0) * 120ms) both; }
   [data-kit='rb-flow-node-label'] { display: block; font-weight: var(--fw-semibold); font-size: var(--fs-md); line-height: 1.3; color: var(--ink); }
   [data-kit='rb-flow-node-note'] { display: block; margin-top: var(--space-1); font-size: var(--fs-sm); line-height: 1.35; color: var(--muted); }
+  /* a still answer (a task's page, answer.css data-still): the cards sit and the wires are drawn already */
+  [data-kit='answer'][data-still] [data-kit='rb-flow-node'] { animation: none; }
+  [data-kit='answer'][data-still] [data-kit='rb-flow-wire'] { animation: none; stroke-dashoffset: 0; }
   @keyframes rb-flow-draw { to { stroke-dashoffset: 0; } }
   @keyframes rb-flow-pop { from { opacity: 0; transform: scale(0.9) translateY(6px); } }
 
