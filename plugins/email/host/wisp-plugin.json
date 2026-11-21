@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.email",
   "name": "Email",
-  "version": "1.0.0-alpha.3",
+  "version": "1.0.0-alpha.4",
   "api": "^1",
   "description": "wisp.email: the email transport for wisp.channels on a grid box (inbound mail, threaded replies)",
   "server": {

@@ -1,7 +1,7 @@
 {
   "name": "wisp-mobile",
   "private": true,
-  "version": "1.0.0-alpha.3",
+  "version": "1.0.0-alpha.4",
   "description": "wisp on Android: the phone app (web/, @wisp/mobile, built into www/) in a Capacitor shell with sshj tunnels and wisp Grid.",
   "type": "module",
   "scripts": {

@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-kernel"
-version = "1.0.0-alpha.3"
+version = "1.0.0-alpha.4"
 dependencies = [
  "futures",
  "serde",
@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-store"
-version = "1.0.0-alpha.3"
+version = "1.0.0-alpha.4"
 dependencies = [
  "blake3",
  "rusqlite",

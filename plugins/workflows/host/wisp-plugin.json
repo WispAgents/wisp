@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.workflows",
   "name": "Workflows",
-  "version": "1.0.0-alpha.3",
+  "version": "1.0.0-alpha.4",
   "api": "^1",
   "description": "orchestration as code: DAGs of task specs with needs, if, matrix, outputs, retries, timeouts, budget and concurrency",
   "kind": "plugin",

@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.budget",
   "name": "budget",
-  "version": "1.0.0-alpha.3",
+  "version": "1.0.0-alpha.4",
   "api": "^1",
   "description": "usage windows, Automations stop at, banked resets, the before:run budget guard, compare metrics",
   "kind": "plugin",
