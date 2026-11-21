@@ -33,7 +33,11 @@ together, and wisp-agents' one trusted publisher covers every tarball: nothing i
      first under `platform-<os>-<arch>`, the launcher last under its channel's tag, each version npm already has skipped), **publish** (the release goes
      public), **homebrew** (the tap points at the `wisp-agents` npm tarball; npm brings the platform package).
    A run that stopped half way is finished by re-running it (Actions → release → Run workflow).
-5. A version with `-` (`2.0.0-beta.1`) is a beta: npm `next`, a prerelease, no Homebrew. Nightlies are
+5. `x.y.z-alpha.N` (`1.0.0-alpha.1`) is the public channel while wisp is in alpha: it ships like a stable release
+   (npm `latest`, the GitHub release marked Latest, Homebrew formula and cask, the updater's default channel) and
+   npm's `alpha` dist-tag also names it (the trusted publisher needs "Allow npm dist-tag" on npmjs.com; without it
+   the npm job warns). Any other `-` (`1.0.0-beta.1`, `-rc.1`) is a beta: npm `next`, a prerelease, no Homebrew.
+   The rule is `npm/scripts/release.mjs` `releaseKind`. Nightlies are
    `<next patch>-nightly.<date>.<time>` on npm `nightly`, stamped into `Cargo.toml` and every npm package.
 6. Try the whole build on a branch without publishing: `gh workflow run release --ref <branch> -f dry_run=true`
    (the tested tarballs are the run's `npm-packages` artifact).

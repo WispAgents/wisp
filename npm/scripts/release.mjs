@@ -3,9 +3,11 @@
 // file that carries it agrees, which runner builds which target, which npm dist-tag a release goes
 // to, and the order the packages are published in. Node built-ins only, so a bare runner can run it.
 //
-//   node npm/scripts/release.mjs check [--tag v2.0.0]   # prints the version, or exits 1 saying what disagrees
+//   node npm/scripts/release.mjs check [--tag v1.0.0]   # prints the version, or exits 1 saying what disagrees
 //   node npm/scripts/release.mjs matrix                 # the binaries job's matrix (JSON, one line)
-//   node npm/scripts/release.mjs npm-tag <version> <stable|nightly>
+//   node npm/scripts/release.mjs npm-tag <version> <stable|nightly>     # the launcher's dist-tag (latest, next, nightly)
+//   node npm/scripts/release.mjs extra-tags <version> <stable|nightly>  # dist-tags it also gets (an alpha's `alpha`), space-separated
+//   node npm/scripts/release.mjs prerelease <version> <stable|nightly>  # true for a GitHub prerelease (beta, nightly)
 //   node npm/scripts/release.mjs packages <dist-dir>    # package dirs in publish order, one per line
 //   node npm/scripts/release.mjs publish-tag <pkg-version> <version> <tag>  # a tarball's dist-tag (a binary's: platform-<target>)
 //   node npm/scripts/release.mjs stamp-cargo <version>  # a nightly's version into Cargo.toml's [workspace.package]
@@ -93,11 +95,41 @@ export function buildMatrix(targets = TARGETS) {
   });
 }
 
-// npm dist-tag: nightlies on `nightly`, a version with a prerelease part on `next`, the rest `latest`.
+// What a stable-channel version's release is. Everything else follows from it:
+//   x.y.z          `stable`: npm `latest`, the GitHub release marked Latest, Homebrew
+//   x.y.z-alpha.N  `alpha`, the public channel while wisp is in alpha: what users get by default, so the same as
+//                  stable (npm `latest`, Latest on GitHub, so /releases/latest and the app's updater see it,
+//                  Homebrew), plus the npm dist-tag `alpha` that names the newest alpha
+//   x.y.z-<other>  `beta` (beta.N, rc.N, …): npm `next`, a GitHub prerelease, no Homebrew
+// Nightlies are their own channel (npm `nightly`, the rolling `nightly` prerelease) and never come here.
+const ALPHA = /^\d+\.\d+\.\d+-alpha\.\d+$/;
+
+export function releaseKind(version) {
+  if (!SEMVER.test(version)) throw new Error(`"${version}" is not a semver version.`);
+  if (!version.includes('-')) return 'stable';
+  return ALPHA.test(version) ? 'alpha' : 'beta';
+}
+
+// A GitHub prerelease (not Latest, no Homebrew): a beta or a nightly, never a stable or an alpha release.
+export function isPrerelease(version, channel) {
+  if (channel === 'nightly') return true;
+  if (channel !== 'stable') throw new Error(`Unknown channel "${channel}" (stable or nightly).`);
+  return releaseKind(version) === 'beta';
+}
+
+// npm dist-tag the launcher is published under: nightlies on `nightly`, a beta on `next`, a stable or alpha
+// release on `latest`.
 export function npmTag(version, channel) {
   if (channel === 'nightly') return 'nightly';
   if (channel !== 'stable') throw new Error(`Unknown channel "${channel}" (stable or nightly).`);
-  return version.includes('-') ? 'next' : 'latest';
+  return releaseKind(version) === 'beta' ? 'next' : 'latest';
+}
+
+// The dist-tags the launcher also gets once it's published (`npm publish` takes one --tag): an alpha's `alpha`.
+export function extraTags(version, channel) {
+  if (channel === 'nightly') return [];
+  if (channel !== 'stable') throw new Error(`Unknown channel "${channel}" (stable or nightly).`);
+  return releaseKind(version) === 'alpha' ? ['alpha'] : [];
 }
 
 // The dist-tag a packed tarball goes out under: the launcher (`version`) under the release's own tag; a target's binary
@@ -148,6 +180,12 @@ function main([cmd, ...args]) {
     case 'npm-tag':
       process.stdout.write(`${npmTag(args[0], args[1])}\n`);
       return 0;
+    case 'extra-tags':
+      process.stdout.write(`${extraTags(args[0], args[1]).join(' ')}\n`);
+      return 0;
+    case 'prerelease':
+      process.stdout.write(`${isPrerelease(args[0], args[1])}\n`);
+      return 0;
     case 'packages': {
       const dist = path.resolve(args[0] ?? path.join(ROOT, 'npm/dist'));
       const dirs = fs.readdirSync(dist).map((n) => path.join(dist, n)).filter((d) => fs.existsSync(path.join(d, 'package.json')));
@@ -161,7 +199,7 @@ function main([cmd, ...args]) {
       fs.writeFileSync(path.join(ROOT, 'Cargo.toml'), stampCargoVersion(read('Cargo.toml'), args[0]));
       return 0;
     default:
-      process.stderr.write('Usage: node npm/scripts/release.mjs check [--tag vX.Y.Z] | matrix | npm-tag <version> <channel> | packages <dist> | stamp-cargo <version>\n');
+      process.stderr.write('Usage: node npm/scripts/release.mjs check [--tag vX.Y.Z] | matrix | npm-tag <version> <channel> | extra-tags <version> <channel> | prerelease <version> <channel> | packages <dist> | stamp-cargo <version>\n');
       return 2;
   }
 }

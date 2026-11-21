@@ -161,8 +161,13 @@ jobs:
           path: dist/tauri/wisp-*
       - name: The AppImage runs v2
         run: |
-          chmod +x dist/tauri/wisp-linux-${{ matrix.arch }}.AppImage
-          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a dbus-run-session -- node qa/desktop-v2.mjs --app dist/tauri/wisp-linux-${{ matrix.arch }}.AppImage
+          # Unpacked first, then its AppRun run itself (no FUSE on the runner): under APPIMAGE_EXTRACT_AND_RUN the runtime
+          # forks the app and waits, so the gate's TERM and KILL reached the runtime, and the shell lived on with its
+          # server (DESK2-04/05, dry run 44857603125). AppRun execs the shell, as a FUSE-mounted AppImage does.
+          app="$PWD/dist/tauri/wisp-linux-${{ matrix.arch }}.AppImage"
+          chmod +x "$app"
+          (cd "$RUNNER_TEMP" && "$app" --appimage-extract > /dev/null)
+          xvfb-run -a dbus-run-session -- node qa/desktop-v2.mjs --app "$RUNNER_TEMP/squashfs-root/AppRun"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
