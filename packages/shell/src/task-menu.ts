@@ -32,7 +32,7 @@ export interface TaskMenuInput {
  *  row's right-click, 4 groups and submenus. `go` is each menu's own head (the row's Open, Changes, PR, Shell; More's
  *  Transcript and Shell; the phone's Details, Ship, Done); then 1 · Rerun, Fork, Open in ›; 2 · Rename, Pin, Mark
  *  unread, Save for later; 3 · Task options › (goal, crew, recipe, side question, Thread, Lean runs ›, View ›, Files ›),
- *  Copy ›, Share…; 4 · Archive, Delete, always last. */
+ *  Copy ›, Share…, Save to repo; 4 · Archive, Delete, always last. */
 type Slot = 'go' | 'run' | 'openin' | 'mark' | 'options' | 'view' | 'files' | 'copy' | 'share' | 'end';
 
 /** the built-ins, by their value, in each slot's order */
@@ -45,7 +45,7 @@ const PLACE: readonly (readonly [string, Slot])[] = [
   ['x:shell.row.side', 'options'], ['x:wisp.crew.rowCrew', 'options'], ['x:wisp.automations.rowRecipe', 'options'], ['x:wisp.threads.menu', 'options'],
   ['compact', 'options'], ['x:wisp.ship.rowShip', 'options'], ['x:wisp.ship.rowMerge', 'options'], ['lean', 'options'],
   ['copy-id', 'copy'], ['x:shell.row.copyResume', 'copy'],
-  ['x:wisp.stuff.rowShare', 'share'],
+  ['x:wisp.stuff.rowShare', 'share'], ['x:wisp.history.rowSave', 'share'],
   ['rollback', 'files'], ['x:wisp.worktrees.rowKeep', 'files'],
   ['archive', 'end'], ['unarchive', 'end'],
 ];

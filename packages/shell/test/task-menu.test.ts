@@ -36,6 +36,7 @@ const builtIns = (): TaskMenuEntry[] => [
   it('copy-id', { sub: 'copy', order: -20 }),
   it('x:shell.row.copyResume', { sub: 'copy', order: -10 }),
   it('x:wisp.automations.rowRecipe', { section: 'keep', order: 90 }),
+  it('x:wisp.history.rowSave', { section: 'keep', order: 95 }),
   it('x:shell.row.editor', { sub: 'files', order: 110 }),
   it('x:wisp.worktrees.rowKeep', { sub: 'files', order: 120 }),
   it('later', { section: 'place', order: -20 }),
@@ -62,10 +63,11 @@ test('one_order_the_heads_own_then_four_groups_with_submenus_and_archive_and_del
     'read',
     'later',
     '|',
-    // 3: its options (one submenu), its copies, Share
+    // 3: its options (one submenu), its copies, Share, Save to repo
     'shell.menu.options[x:wisp.goal.set,x:shell.row.side,x:wisp.crew.rowCrew,x:wisp.automations.rowRecipe,x:wisp.threads.menu,x:wisp.ship.rowShip,x:wisp.ship.rowMerge,group,group,group]',
     'shell.menu.copy[copy-id,x:shell.row.copyResume]',
     'x:wisp.stuff.rowShare',
+    'x:wisp.history.rowSave',
     '|',
     // 4: always last
     'archive',
