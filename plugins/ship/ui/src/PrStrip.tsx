@@ -7,7 +7,7 @@ import { Match, Show, Switch, createEffect, type Accessor, type JSX } from 'soli
 import { CommandError, readonly, type EntityKey, type PluginClient } from '@wisp/client';
 import { mergeRequest } from './merge-request.ts';
 import type { ExtensionProps } from '@wisp/shell/contract';
-import { Button, Card, Icon, IconButton, ListRow, Stack, Toolbar, ToneChip, useSignal, type ToolbarItem } from '@wisp/ui';
+import { Button, Card, Icon, IconButton, ListRow, Stack, Toolbar, ToneChip, useSignal, Wrap, type ToolbarItem } from '@wisp/ui';
 import { fixConflicts, refresh, review } from './commands.ts';
 import { t } from './i18n.ts';
 import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
@@ -158,23 +158,25 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           title={title()}
           sub={prLine(t, lead()?.pr ?? { number: 0, url: '', state: 'OPEN' }, fix())}
           lead={<Icon name={TONE_ICON[tone()]} size="md" tone={TONE[tone()] === 'accent' ? 'accent-ink' : TONE[tone()]} />}
-          pills={
-            <Show when={several()}>
-              {prs()
-                .slice(1)
-                .map((o) => (
-                  <ToneChip
-                    label={`${o.repo ?? ''} #${o.pr.number}`}
-                    tone={TONE[prTone(o.pr)]}
-                    title={`${o.repo ?? ''}: ${t('wisp.ship.pill.title', { n: o.pr.number, line: prLine(t, o.pr) })}`}
-                    onClick={() => ship.shell.platform.openExternal(o.pr.url)}
-                  />
-                ))}
-            </Show>
-          }
           actions={<Icon name="chevron" size="sm" tone="faint" />}
           onOpen={() => ship.openPane()}
         />
+        {/* the other repos' PRs: a Wrap line under the row (v1 .pr-strip wraps), never the row's nowrap pills
+            column, which in a narrow pane pushed the title out and spilled the chips past the card */}
+        <Show when={several()}>
+          <Wrap gap="2" part="pr.strip.also">
+            {prs()
+              .slice(1)
+              .map((o) => (
+                <ToneChip
+                  label={`${o.repo ?? ''} #${o.pr.number}`}
+                  tone={TONE[prTone(o.pr)]}
+                  title={`${o.repo ?? ''}: ${t('wisp.ship.pill.title', { n: o.pr.number, line: prLine(t, o.pr) })}`}
+                  onClick={() => ship.shell.platform.openExternal(o.pr.url)}
+                />
+              ))}
+          </Wrap>
+        </Show>
         <Toolbar aria-label={t('wisp.ship.strip.actions')} items={items()} compact part="pr.strip.bar" />
       </Stack>
     </Card>
