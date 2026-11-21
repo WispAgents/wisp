@@ -207,8 +207,8 @@
       visibility 0s;
   }
 
-  /* TopAppBar (step 3): M3 small (64 dp, title large) and medium (112 dp: the headline-small title on up
-     to two lines under the bar, folding into the bar on scroll) top app bars */
+  /* TopAppBar (step 3): M3 small (64 dp, title large) and medium (112 dp: the headline-small title on
+     one line under the bar, folding into the bar on scroll) top app bars */
   :root[data-platform='android'] [data-kit='app-bar'] {
     flex: none;
     display: flex;
@@ -247,7 +247,7 @@
   :root[data-platform='android'] [data-kit='app-bar-large'] {
     display: flex;
     align-items: flex-end;
-    /* 48 dp under the bar for one line (112 dp in all); a second line grows it (M3 medium flexible) */
+    /* 48 dp under the bar for its one line (112 dp in all) */
     min-height: calc(var(--bar-h-large) - var(--bar-h));
     max-height: var(--bar-h-large);
     padding: var(--space-0) var(--inset) var(--bar-medium-pad-bottom);
@@ -255,12 +255,13 @@
     transition: min-height var(--dur-medium) var(--ease-emph), max-height var(--dur-medium) var(--ease-emph), padding var(--dur-medium) var(--ease-emph), opacity var(--dur-short) var(--ease-standard);
   }
   :root[data-platform='android'] [data-kit='app-bar'][data-collapsed] [data-kit='app-bar-large'] { min-height: 0; max-height: 0; padding-bottom: 0; opacity: 0; }
+  /* one line, an ellipsis past it: a long task title broke onto a second line and pushed the page down (owner 2026-11-21) */
   :root[data-platform='android'] [data-kit='app-bar-large-title'] {
+    min-width: 0;
     font: var(--type-headline-s);
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
     overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   :root[data-platform='android'] [data-kit='app-bar-title-button'] {
     display: inline-flex;

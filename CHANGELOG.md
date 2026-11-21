@@ -15,6 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Phone app: attaching a file works. The app's connection to a computer had no way to call a plugin's own routes, so every attachment failed on send with "can't be reached that way" (and so did the phone's terminal stream); a file now goes up to the computer like on the desktop.
 - Phone browser: a task is one fixed page again. The app was sized to `100vh`, taller than the screen under the browser's URL bar, so the whole page scrolled and took the header and the composer with it; it now fills the visible height, the header and composer stay put and only the conversation scrolls.
+- Phone app (Android): a long task title in the task page's header stays on one line and ends in "…" instead of breaking onto a second line.
 - wisp Cloud: the phone app signs in again. The v2 grid answered no CORS on `/api/`, so the app (another origin) could not ask for a sign-in code or reach an account it had already added; it now answers v1's open CORS there, on the grid, a box and a computer.
 
 ## [1.0.0-alpha.3] - 2026-11-21
