@@ -20,16 +20,21 @@ struct Rt {
     down: Arc<Mutex<bool>>,
     sent: Arc<Mutex<Vec<String>>>,
     notes: Arc<Mutex<Vec<String>>>,
+    ext: Arc<Mutex<serde_json::Map<String, Value>>>,
 }
 
 impl Rt {
     fn set(&self, s: SessionState) {
         *self.state.lock().unwrap() = Some(s);
     }
+    fn later_ext(&self) -> Value {
+        self.ext.lock().unwrap().get("wisp.later").cloned().unwrap_or(Value::Null)
+    }
     fn session(&self) -> Session {
         let state = self.state.lock().unwrap().unwrap_or_default();
+        let ext = self.ext.lock().unwrap().clone();
         serde_json::from_value(json!({ "id": "t1", "title": "Ship it", "agent": "claude", "model": "", "effort": "", "mode": "auto",
-            "cwd": "/repo", "state": state, "createdAt": 0, "updatedAt": 0 }))
+            "cwd": "/repo", "state": state, "createdAt": 0, "updatedAt": 0, "ext": ext }))
         .unwrap()
     }
 }
@@ -63,7 +68,28 @@ impl Plugin for Runtime {
             rt.notes.lock().unwrap().push(a.label);
             async move { Ok(r::Ack::default()) }
         });
-        s.command::<r::SetExt, _, _>(|_, _, _| async move { Ok(r::Ack::default()) });
+        let rt = self.0.clone();
+        s.command::<r::SetExt, _, _>(move |_, call, a: r::SetExtArgs| {
+            let caller = call.caller();
+            let ok = matches!(caller.set.as_str(), "user:full" | "kernel") || caller.plugin.as_deref() == Some(a.plugin.as_str());
+            let out = if ok {
+                let mut ext = rt.ext.lock().unwrap();
+                let cur = ext.get(&a.plugin).unwrap_or(&Value::Null);
+                if a.expect.as_ref().is_some_and(|e| &e.value != cur) {
+                    Err(WireError::conflict("changed meanwhile"))
+                } else {
+                    if a.value.is_null() {
+                        ext.remove(&a.plugin);
+                    } else {
+                        ext.insert(a.plugin, a.value);
+                    }
+                    Ok(r::Ack::default())
+                }
+            } else {
+                Err(WireError::forbidden(format!("{} may not write {}'s slot", caller.set, a.plugin)))
+            };
+            async move { out }
+        });
         Ok(())
     }
 }
@@ -148,4 +174,39 @@ async fn a_reminder_coming_due_notes_its_text_on_the_task() {
     tick(&k).await;
     assert_eq!(rt.notes.lock().unwrap().clone(), ["call the client"], "runtime.note got v1's {{text}} and refused it");
     assert!(rt.sent.lock().unwrap().is_empty(), "a reminder isn't sent to the agent");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_resume_later_mirrors_to_ext_and_clears_on_cancel_and_send_now() {
+    let (rt, clock) = (Rt::default(), FakeClock::at(1_800_000_000_000));
+    rt.set(SessionState::Running);
+    let k = kernel(&rt, &clock).await;
+    let agent = Caller::agent("t1", false);
+    // scheduling as an agent (`agent:session`) must mirror into `ext["wisp.later"]` so the sidebar moves it to Scheduled
+    let out = k
+        .call(agent.clone(), "later.agent.schedule", json!({ "session": "t1", "minutes": 15, "message": "check the release" }))
+        .await
+        .unwrap();
+    assert!(out["text"].as_str().unwrap().starts_with("Scheduled (id "), "{out}");
+    let mirrored = rt.later_ext();
+    let entries = mirrored["later"].as_array().expect("agent resume_later must mirror into ext[\"wisp.later\"]");
+    assert_eq!(entries.len(), 1, "{mirrored}");
+    assert_eq!(entries[0]["text"], "check the release");
+    assert_eq!(entries[0]["by"], "agent");
+    let id = entries[0]["id"].as_str().unwrap().to_owned();
+    // cancelling as an agent clears the mirror
+    let cancelled = k.call(agent.clone(), "later.agent.schedule", json!({ "session": "t1", "cancel": id })).await.unwrap();
+    assert!(cancelled["text"].as_str().unwrap().starts_with("Cancelled "), "{cancelled}");
+    assert!(rt.later_ext().is_object() && rt.later_ext().get("later").is_none(), "{}", rt.later_ext());
+    // scheduling again and sending now (`later.edit` with `now: true`) clears the mirror immediately
+    k.call(agent, "later.agent.schedule", json!({ "session": "t1", "minutes": 15, "message": "deploy the grid" })).await.unwrap();
+    let id = rt.later_ext()["later"][0]["id"].as_str().unwrap().to_owned();
+    rt.set(SessionState::Review);
+    k.call(Caller::user(), "later.edit", json!({ "sessionId": "t1", "item": id, "now": true })).await.unwrap();
+    assert_eq!(rt.sent.lock().unwrap().len(), 1);
+    assert!(
+        rt.later_ext().is_object() && rt.later_ext().get("later").is_none(),
+        "Send now must clear the task's mirror: {}",
+        rt.later_ext()
+    );
 }
