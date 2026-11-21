@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.terminal",
   "name": "Terminal",
-  "version": "1.0.0-alpha.2",
+  "version": "1.0.0-alpha.3",
   "api": "^1",
   "description": "wisp.terminal: the plugin, wired to the kernel, proc and HTTP routes",
   "server": {
