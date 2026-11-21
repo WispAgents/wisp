@@ -101,12 +101,40 @@ export function inspect() {
     return h;
   };
 
+  // Line boxes of the text inside `el`: its text nodes' rects only (a child element's box is not a line: a title's words
+  // span, 20 px tall at line-height 1.55, has its 16 px text 2 px lower, which counted as a second line). A rect starts a
+  // new line when its middle is below the line so far: mixed font sizes on one line start at different tops, and at
+  // line-height 1 a wrapped line's rect overlaps the one above by a few px. Hidden or out-of-flow text (a badge, a
+  // visually hidden hint) is not a line of the label.
+  const inFlow = (from, root) => {
+    if (!from?.checkVisibility({ visibilityProperty: true })) return false;
+    for (let e = from; e && e !== root; e = e.parentElement) if (/^(absolute|fixed)$/.test(getComputedStyle(e).position)) return false;
+    return true;
+  };
+  const textLines = (el) => {
+    const rects = [];
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!n.nodeValue.trim()) continue;
+      if (!inFlow(n.parentElement, el)) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) if (r.width > 0 && r.height > 0) rects.push(r);
+    }
+    rects.sort((a, b) => a.top - b.top);
+    let lines = 0;
+    let bottom = -Infinity;
+    for (const r of rects) {
+      if ((r.top + r.bottom) / 2 >= bottom) lines++, (bottom = r.bottom);
+      else bottom = Math.max(bottom, r.bottom);
+    }
+    return lines;
+  };
+
   for (const el of document.querySelectorAll('[data-text="control"]')) {
     if (!visible(el)) continue;
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    const tops = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top)));
-    if (tops.size > 1) out.push({ rule: 'control-wraps', part: name(el), detail: `"${text(el)}" on ${tops.size} lines` });
+    const lines = textLines(el);
+    if (lines > 1) out.push({ rule: 'control-wraps', part: name(el), detail: `"${text(el)}" on ${lines} lines` });
   }
 
   const root = getComputedStyle(document.documentElement);
