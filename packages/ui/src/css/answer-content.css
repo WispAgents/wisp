@@ -42,6 +42,8 @@
   [data-kit='cb-compare-list'] { list-style: none; margin: 0; padding: 0; }
   [data-kit='cb-compare-list'] > li { display: flex; gap: 9px; padding: var(--space-2) 0; font-size: var(--fs-md); animation: kit-rise 0.5s var(--ease) calc(250ms + var(--k, 0) * 90ms) both; }
   [data-kit='cb-compare-list'] > li > [data-kit='icon'] { margin-top: 3px; flex: none; }
+  /* the text gives way inside the side and a long token (a URL, a path) breaks instead of spilling past the box */
+  [data-kit='cb-compare-list'] > li > span { min-width: 0; overflow-wrap: anywhere; }
   [data-kit='cb-compare-side'][data-side='before'] [data-kit='cb-compare-list'] [data-kit='icon'] { color: var(--bad); }
   [data-kit='cb-compare-side'][data-side='after'] [data-kit='cb-compare-list'] [data-kit='icon'] { color: var(--good); }
   [data-kit='cb-compare-code'] { margin: 0; font: var(--fs-sm) / 1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
