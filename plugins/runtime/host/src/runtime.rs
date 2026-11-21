@@ -437,7 +437,7 @@ impl Runtime {
         Ok(row)
     }
 
-    fn live_label(&self, id: &str) -> Option<String> {
+    pub(crate) fn live_label(&self, id: &str) -> Option<String> {
         lock(&self.live).get(id).and_then(|l| l.label.clone())
     }
 

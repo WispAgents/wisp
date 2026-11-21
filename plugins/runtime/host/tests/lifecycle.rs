@@ -614,3 +614,17 @@ async fn switching_the_runtime_off_ends_a_running_turns_cli_and_drive() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(last_status(&r, id.as_str()).await, Some(TurnStatus::Running));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_tasks_row_says_its_latest_step_not_starting_up() {
+    let r = rig().await;
+    let id = r.rt.create(start("slow work")).await.unwrap().id;
+    // its CLI ran a tool and is still at work: the list row says so (it read Starting up for the whole turn)
+    until("the row to say its step", || async {
+        r.rt.list(&ListArgs::default()).iter().find(|s| s.id == id).is_some_and(|s| s.live == "Run tests")
+    })
+    .await;
+    let s = r.rt.get(id.as_str()).await.unwrap();
+    assert_eq!(s.state, SessionState::Running, "still its turn");
+    r.rt.stop(id.as_str(), true).await.unwrap();
+}
