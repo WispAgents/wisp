@@ -1478,6 +1478,17 @@ test('a computer added to the grid: reached through its tunnel, signed in like t
       http.get({ host: '127.0.0.1', port: u.port, path: '/api/events', headers: { host: u.host, ...auth(phone) } }, (res) => res.once('data', (d) => (resolve(String(d)), res.destroy()))).on('error', reject);
     });
     assert.match(first, /event: ping/);
+    // The phone app is another origin (https://localhost): its WebView asks first, without the token, then reads the
+    // answer only if it carries CORS. A 401 there was every grid computer Offline in the v2 phone app.
+    const pre = await browser().go(`${c.url}/api/events`, { method: 'OPTIONS', headers: { origin: 'https://localhost', 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' } });
+    assert.equal(pre.status, 204, pre.text);
+    assert.equal(pre.headers['access-control-allow-origin'], '*');
+    assert.match(pre.headers['access-control-allow-headers'], /authorization/);
+    assert.equal(seen.at(-1).url, '/api/events', 'the preflight never reaches the computer');
+    const cross = await browser().go(`${c.url}/api/hello`, { headers: { ...auth(phone), origin: 'https://localhost' } });
+    assert.deepEqual([cross.status, cross.headers['access-control-allow-origin']], [200, '*']);
+    const refused = await browser().go(`${c.url}/api/hello`, { headers: { accept: 'application/json', origin: 'https://localhost' } });
+    assert.deepEqual([refused.status, refused.headers['access-control-allow-origin']], [401, '*'], 'the phone can read why');
     // Someone else's token, or none: not in.
     const dee = await deviceToken('dee@example.com', 'Dee’s laptop');
     assert.equal((await browser().go(`${c.url}/api/hello`, { headers: auth(dee) })).status, 401);
