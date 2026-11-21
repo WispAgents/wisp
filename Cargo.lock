@@ -4027,7 +4027,7 @@ dependencies = [
 
 [[package]]
 name = "wisp"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -4125,7 +4125,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-accounts"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -4150,7 +4150,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-accounts-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4160,7 +4160,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-accounts-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4170,7 +4170,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-antigravity"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "rusqlite",
  "serde",
@@ -4187,7 +4187,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-antigravity-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4196,7 +4196,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -4226,7 +4226,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-automations"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "hmac",
  "jiff",
@@ -4254,7 +4254,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-automations-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "rand 0.9.5",
  "regex",
@@ -4268,7 +4268,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-automations-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "rand 0.9.5",
  "serde",
@@ -4280,7 +4280,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-budget"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "jiff",
  "schemars",
@@ -4303,7 +4303,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-budget-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4313,7 +4313,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-budget-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "rand 0.9.5",
  "serde",
@@ -4324,7 +4324,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-channels"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4358,7 +4358,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-channels-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "serde",
@@ -4369,7 +4369,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-channels-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4388,7 +4388,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-claude"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4403,7 +4403,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-claude-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4412,7 +4412,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-cli"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde_json",
  "tokio",
@@ -4423,7 +4423,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-cli-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4433,7 +4433,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-cli-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4444,7 +4444,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-codex"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4459,7 +4459,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-codex-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4468,7 +4468,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-connectors"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -4488,7 +4488,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-connectors-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4498,7 +4498,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-connectors-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "regex",
@@ -4513,7 +4513,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-copilot"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4528,7 +4528,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-copilot-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4537,7 +4537,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-crew"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "reqwest",
  "serde",
@@ -4564,7 +4564,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-crew-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -4576,7 +4576,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-crew-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "rand 0.9.5",
  "regex",
@@ -4589,7 +4589,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-cursor"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4605,7 +4605,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-cursor-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4614,7 +4614,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-discord"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "ed25519-dalek",
@@ -4630,7 +4630,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-discord-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "ed25519-dalek",
  "serde_json",
@@ -4638,7 +4638,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-email"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "serde",
@@ -4653,7 +4653,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-email-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "regex",
@@ -4662,7 +4662,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-envmask"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "regex",
  "serde_json",
@@ -4670,7 +4670,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-events"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "hmac",
  "serde",
@@ -4686,7 +4686,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-events-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4696,7 +4696,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-factory"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4715,7 +4715,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-factory-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -4726,7 +4726,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-factory-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4735,7 +4735,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-factory-tui"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "ratatui",
  "serde_json",
@@ -4744,7 +4744,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-git"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4761,7 +4761,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-git-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4771,7 +4771,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-git-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "wisp-envmask",
  "wisp-git-api",
@@ -4779,7 +4779,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-github"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "serde",
@@ -4797,7 +4797,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-github-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4808,7 +4808,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-goal"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -4831,7 +4831,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-goal-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4841,7 +4841,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-goal-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "rand 0.9.5",
  "serde",
@@ -4849,7 +4849,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-goal-tui"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "ratatui",
  "serde_json",
@@ -4858,7 +4858,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-grid"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -4898,11 +4898,11 @@ dependencies = [
 
 [[package]]
 name = "wisp-grid-boxd"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 
 [[package]]
 name = "wisp-grid-client"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -4934,7 +4934,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-grid-client-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4944,11 +4944,11 @@ dependencies = [
 
 [[package]]
 name = "wisp-grid-client-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 
 [[package]]
 name = "wisp-grok"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4964,7 +4964,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-grok-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4973,7 +4973,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-harness-kit"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "regex",
  "serde",
@@ -4983,7 +4983,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-history"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde-saphyr",
@@ -5002,7 +5002,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-history-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5012,7 +5012,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-history-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde-saphyr",
@@ -5024,7 +5024,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-history-tui"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "ratatui",
  "serde_json",
@@ -5033,7 +5033,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-issues"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde_json",
  "tokio",
@@ -5049,7 +5049,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-issues-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5059,7 +5059,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-issues-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "serde_json",
@@ -5069,7 +5069,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-kernel"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "futures",
  "serde",
@@ -5083,7 +5083,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-later"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "jiff",
  "serde",
@@ -5104,7 +5104,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-later-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5114,7 +5114,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-later-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "rand 0.9.5",
  "serde",
@@ -5125,7 +5125,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-learn"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5143,7 +5143,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-learn-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5153,7 +5153,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-learn-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5163,7 +5163,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-lsp"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5179,7 +5179,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-lsp-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5189,7 +5189,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-lsp-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde_json",
  "wisp-lsp-api",
@@ -5197,7 +5197,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-machine"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -5219,7 +5219,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-machine-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5230,7 +5230,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-machine-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5239,7 +5239,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-machines"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "futures",
  "rand 0.9.5",
@@ -5261,7 +5261,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-machines-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5272,7 +5272,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-machines-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5282,7 +5282,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-mcp"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -5302,7 +5302,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-mcp-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5312,7 +5312,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-mcp-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5323,7 +5323,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-ntfy"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "serde",
@@ -5338,7 +5338,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-ntfy-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5349,7 +5349,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-opencode"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "rusqlite",
  "serde",
@@ -5366,7 +5366,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-opencode-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5375,7 +5375,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-plugins"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -5396,7 +5396,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-plugins-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5406,7 +5406,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-plugins-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "regex",
  "serde",
@@ -5416,7 +5416,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-posthog"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "reqwest",
  "serde_json",
@@ -5427,14 +5427,14 @@ dependencies = [
 
 [[package]]
 name = "wisp-posthog-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "wisp-proc"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "libc",
  "portable-pty",
@@ -5449,7 +5449,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-protocol"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5459,7 +5459,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-push"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "rand 0.9.5",
@@ -5481,7 +5481,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-push-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5492,7 +5492,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-push-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "hpke",
@@ -5507,7 +5507,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-resources"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -5526,7 +5526,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-resources-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -5538,7 +5538,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-resources-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde-saphyr",
@@ -5549,7 +5549,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-review"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5564,7 +5564,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-review-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5574,7 +5574,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-review-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde_json",
  "wisp-git-api",
@@ -5583,7 +5583,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-router"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -5603,7 +5603,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-router-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5613,7 +5613,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-router-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "rand 0.9.5",
  "regex",
@@ -5625,7 +5625,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-runtime"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -5662,7 +5662,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-runtime-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -5673,7 +5673,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-runtime-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "regex",
  "serde",
@@ -5684,7 +5684,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-sandbox"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -5704,7 +5704,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-sandbox-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5714,7 +5714,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-sandbox-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5722,7 +5722,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-settings"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -5735,7 +5735,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-settings-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5745,11 +5745,11 @@ dependencies = [
 
 [[package]]
 name = "wisp-settings-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 
 [[package]]
 name = "wisp-share"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -5770,7 +5770,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-share-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5780,7 +5780,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-share-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "regex",
  "serde",
@@ -5790,7 +5790,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-ship"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "futures",
  "serde",
@@ -5809,7 +5809,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-ship-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5819,7 +5819,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-ship-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5828,7 +5828,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-slack"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "serde",
@@ -5843,7 +5843,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-slack-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "hmac",
  "serde",
@@ -5856,7 +5856,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-store"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "blake3",
  "rusqlite",
@@ -5872,7 +5872,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-stuff"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -5897,7 +5897,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-stuff-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5907,7 +5907,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-stuff-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5917,7 +5917,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-sync"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5928,7 +5928,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-telegram"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "async-trait",
  "serde",
@@ -5943,7 +5943,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-telegram-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5955,7 +5955,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-telemetry"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5973,7 +5973,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-telemetry-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5983,7 +5983,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-telemetry-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5991,7 +5991,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-termctx"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde_json",
  "tokio",
@@ -6004,7 +6004,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-termctx-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6014,7 +6014,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-termctx-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6022,7 +6022,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-terminal"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "brotli",
  "bytes",
@@ -6046,7 +6046,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-terminal-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6057,7 +6057,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-terminal-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6068,7 +6068,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-testkit"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde_json",
  "tokio",
@@ -6077,7 +6077,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-threads"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6095,7 +6095,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-threads-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -6106,7 +6106,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-threads-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6115,7 +6115,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-tui-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "ratatui",
  "serde_json",
@@ -6123,7 +6123,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-update"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6140,11 +6140,11 @@ dependencies = [
 
 [[package]]
 name = "wisp-update-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 
 [[package]]
 name = "wisp-update-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -6154,7 +6154,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-workflows"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6170,7 +6170,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-workflows-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "schemars",
  "serde",
@@ -6181,7 +6181,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-workflows-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6190,7 +6190,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-worktrees"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6214,7 +6214,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-worktrees-api"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6224,7 +6224,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-worktrees-core"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",

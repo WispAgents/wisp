@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.2] - 2026-11-21
+
 ### Added
 
 - **Save to repo in the app.** When a repo on `history: { track: ask }` offers to save a finished task, its last answer
@@ -212,5 +214,6 @@ from your own agent through wisp's MCP tools. It's an alpha: expect rough edges,
 - With Auto off, nothing offers `auto` or the router.
 - Settings → Connectors keeps each connector's last check across a restart.
 
-[Unreleased]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.1...main
+[Unreleased]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.2...main
+[1.0.0-alpha.2]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.1...v1.0.0-alpha.2
 [1.0.0-alpha.1]: https://github.com/WispAgents/wisp/releases/tag/v1.0.0-alpha.1
