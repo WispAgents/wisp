@@ -51,6 +51,8 @@ export function answerContext(h: AnswerHost): BlockContext {
   // be made per read (round 324 review)
   const previews = untracked(shell.previewAddresses?.() ?? (() => [])).map((d) => d.map({ client: d.client, task: key }));
   return {
+    // a task's answers show as they are: no rise, no count-up, every time the task opens (owner, 2026-11-21)
+    reveal: false,
     // a .env file's values in a code or diff block: masked, revealed per task for the tab's life (env-reveal.ts)
     ...(h.env && { env: h.env }),
     get latest() {
