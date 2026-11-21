@@ -24,6 +24,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Android: signing in to wisp Cloud is kept again.** The phone app said *This phone can’t keep your sign-in safely,
+  so it wasn’t kept* on every phone: the app had no sealed store for the page (`secureGet`/`secureSet`/`secureRemove`
+  were missing on the Android side). The device token is now sealed with the Android Keystore key.
+
 - **A running task's row says what the agent is doing.** It read *Starting up* for the whole turn, even after the agent
   had run tools; it now shows the latest step (*Read src/a.ts*, *Run tests*), at most once a second.
 - **A flow diagram in an answer no longer grows without end.** Its cards are laid out as in v1 again, and the arrows

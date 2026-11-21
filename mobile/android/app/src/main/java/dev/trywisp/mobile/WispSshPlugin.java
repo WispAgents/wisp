@@ -332,6 +332,44 @@ public class WispSshPlugin extends Plugin {
         }
     }
 
+    // The page's SecureStore (wisp Cloud's device token): sealed in the vault, never in web storage.
+    // A reject here makes the page answer 'unsupported' and refuse the sign-in, so only reject on a real failure.
+    private Secrets secrets() throws java.security.GeneralSecurityException, java.io.IOException {
+        return new Secrets(KeystoreVault.of(getContext()));
+    }
+
+    @PluginMethod
+    public void secureGet(PluginCall call) {
+        try {
+            String v = secrets().get(call.getString("key", ""));
+            JSObject o = new JSObject();
+            o.put("value", v == null ? JSONObject.NULL : v);
+            call.resolve(o);
+        } catch (Exception e) {
+            call.reject("Couldn’t open the sealed store: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void secureSet(PluginCall call) {
+        try {
+            secrets().set(call.getString("key", ""), call.getString("value", ""));
+            call.resolve(new JSObject().put("set", true));
+        } catch (Exception e) {
+            call.reject("Couldn’t seal it: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void secureRemove(PluginCall call) {
+        try {
+            secrets().remove(call.getString("key", ""));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Couldn’t open the sealed store: " + e.getMessage(), e);
+        }
+    }
+
     // A grid computer's token goes into the vault here; the answer (the saved entry) has none.
     @PluginMethod
     public void saveComputer(PluginCall call) {
