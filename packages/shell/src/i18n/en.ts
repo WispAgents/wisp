@@ -282,6 +282,9 @@ export const SHELL_STRINGS = {
   'shell.task.replyOwn': 'Or answer in your own words…',
   'shell.home.usageRing': '{label} {pct}% used',
   'shell.task.replyDenies': 'Or say what to do instead (denies it)…',
+  // the phone composer's sheets' heads (owner 2026-11-21: every composer picker opens as Delegate's sheet does)
+  'shell.mode.sheet': 'Mode',
+  'shell.home.whereSheet': 'Runs on',
   'shell.mode.plan': 'Plan',
   'shell.mode.plan.hint': 'Reads and plans, changes nothing',
   'shell.mode.edits': 'Edits',

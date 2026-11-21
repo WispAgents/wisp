@@ -1258,7 +1258,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 !replyGoalOn() && { id: 'goal', part: 'composer.goal', icon: 'target', label: t('shell.home.goalRow'), act: replyGoalAct() },
                 team().length === 0 && !replyDelegateOpen() && { id: 'team', part: 'composer.team', icon: 'agent', label: t('shell.home.delegateRow'), act: { onClick: () => setReplyDelegateOpen(true) } },
               ],
-              [!when() && { id: 'later', part: 'composer.sendLater', icon: 'clock', label: t('shell.home.later'), act: { menu: { items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } } }],
+              [!when() && { id: 'later', part: 'composer.sendLater', icon: 'clock', label: t('shell.home.later'), act: { menu: { title: t('shell.home.later'), items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } } }],
             ],
           });
         const plusEntries = (x: LauncherTool): readonly MenuEntry[] => x.act?.menu?.items ?? [];
@@ -1309,7 +1309,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     title: whenTip(whenAt(when() ?? 'hour', now()), now()),
                     text: true,
                     on: true,
-                    act: { menu: { items: whenMenu(t, now()), onSelect: (w: string) => setWhen(w as When) } },
+                    act: { menu: { title: t('shell.home.later'), items: whenMenu(t, now()), onSelect: (w: string) => setWhen(w as When) } },
                     clear: { label: t('shell.when.clear'), act: { onClick: () => setWhen(undefined) } },
                   },
                 ]
@@ -1779,7 +1779,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       label: t(`shell.mode.${mode()}`),
                       title: t('shell.home.fullAutoTitle'),
                       icon: MODE_ICON[mode()],
-                      act: { menu: { items: modeItems(), onSelect: (m) => void run(setMode, { id: key, mode: m }).catch(() => undefined) } },
+                      act: { menu: { title: t('shell.mode.sheet'), items: modeItems(), onSelect: (m) => void run(setMode, { id: key, mode: m }).catch(() => undefined) } },
                       cap: capView(),
                     }}
                     // a factory run's reply box has no harness or model chip: its stations do the work (ADR-0114 rule 14)
@@ -1809,7 +1809,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       },
                     })}
                     later={t('shell.home.later')}
-                    laterAct={{ menu: { items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } }}
+                    laterAct={{ menu: { title: t('shell.home.later'), items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } }}
                     // the phone apps: the bar's options behind one chip and its sheet (UX 2026-11-18 phone #1)
                     {...(phone && { phoneOptions: { options: t('shell.reply.options'), mode: t('shell.reply.permissions'), agent: t('shell.reply.agent'), goal: t('shell.reply.goalShort') } })}
                     // a reply sends (v1 composer.js), and a scheduled one says when (QA r11 #1), as New task's Start does

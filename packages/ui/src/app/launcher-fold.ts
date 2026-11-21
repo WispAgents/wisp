@@ -111,7 +111,7 @@ export function foldTail(tools: readonly LauncherTool[], x: FoldExtras): Launche
     label: x.label,
     title: x.title,
     ...(on && { on: true }),
-    act: { menu: { items: [...entries, ...(entries.length && extras.length ? [{ kind: 'separator' as const }] : []), ...extras], onSelect, ...(x.onWarm && { onWarm: x.onWarm }) } },
+    act: { menu: { title: x.label, items: [...entries, ...(entries.length && extras.length ? [{ kind: 'separator' as const }] : []), ...extras], onSelect, ...(x.onWarm && { onWarm: x.onWarm }) } },
   };
 }
 

@@ -683,6 +683,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // where New task runs (the bar's place button and the Delegate panel's lead): this computer, a machine, a plugin's place
   const whereAct = (): Act => ({
     menu: {
+      title: t('shell.home.whereSheet'),
       items: [
         ...whereItems(
           runOnPeers(),
@@ -814,7 +815,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const laterTool = (): LauncherTool =>
     tool('later', 'launcher.later', 'clock', t('shell.home.later'), t('shell.home.later'), {
       ...(when() && { on: true }),
-      act: { menu: { items: whenMenu(t, now()), onSelect: (v) => setWhen(v as When) } },
+      act: { menu: { title: t('shell.home.later'), items: whenMenu(t, now()), onSelect: (v) => setWhen(v as When) } },
     });
   // UX 2026-11-18 #3 (docs/ux/2026-11-18-desktop.md, decided by the owner's delegate): the desktop's one footer, `+`, the
   // mode, the harness · model, Where and Send; what's on shows as a chip with its ✕. The phone's sheet and the first run
@@ -999,7 +1000,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           el.addEventListener('blur', () => setPromptFocused(false));
           setPromptFocused(document.activeElement === el);
         }}
-        mode={{ label: t(`shell.mode.${mode()}`), title: t('shell.home.fullAutoTitle'), icon: MODE_ICON[mode()], act: { menu: { items: modeMenu(t, mode()), onSelect: (v) => setMode(v as Mode) } } }}
+        mode={{ label: t(`shell.mode.${mode()}`), title: t('shell.home.fullAutoTitle'), icon: MODE_ICON[mode()], act: { menu: { title: t('shell.mode.sheet'), items: modeMenu(t, mode()), onSelect: (v) => setMode(v as Mode) } } }}
         runner={{
           // a picked file's agent and model are what runs (audit H5): the pill says them, never the bar's own pick
           ...((f) =>

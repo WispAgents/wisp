@@ -11,6 +11,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Phone apps: My Stuff's bar sits right under the status bar like Tasks and Crew. The page padded the status bar's height a second time inside the frame, which already starts under it, leaving a blank band above the header.
 - Phone: tapping a suggested follow-up goes to the end of the task. The chip filled the reply box but left the view where the chip was, so the box and what you were about to send sat out of sight; the view now scrolls to the bottom, as sending one with ⌘-click already did.
 - Phone app: Tasks waits for a computer. Its tab is dimmed until you open a computer (or wisp Cloud) and it connects, so the app no longer shows an empty task list for no computer; opening one that is still connecting keeps you on Computers and opens its tasks once it is online, and Back on Computers leaves the app instead of landing on Tasks.
+- Phone app: every picker in New task opens the same way Delegate does. Mode, Runs on, More (⋯) and Start later were
+  anchored dropdowns, and the harness and model picker was a page with a Back row; each now opens as a bottom sheet
+  with a handle, its own title and ✕, on Android and iPhone alike. The picker's "Set up another agent…" chip no longer
+  wraps one word per line.
 
 ## [1.0.0-alpha.4] - 2026-11-21
 

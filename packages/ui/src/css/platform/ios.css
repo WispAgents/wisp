@@ -1139,6 +1139,47 @@
   :root[data-platform='ios'] [data-kit='select-sheet-label'] { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :root[data-platform='ios'] [data-kit='select-sheet-group'] { padding: var(--space-4) var(--inset) var(--space-2); font: var(--type-footnote); color: var(--on-surface-var); }
 
+  /* A composer menu as a sheet (phone.tsx ActionSheet from a button: Mode, Runs on, More; owner 2026-11-21, one sheet
+     for every composer picker, as Delegate's): the actions as an inset grouped list like the Select sheet's, 44 pt rows
+     with inset separators, the icon leading in the tint, a choice's ✓ trailing, a second line in the secondary label. */
+  :root[data-platform='ios'] [data-kit='sheet-menu'] { display: flex; flex-direction: column; overflow: hidden; margin-bottom: var(--space-4); border-radius: var(--radius-md); background: var(--surface-grouped-1); }
+  :root[data-platform='ios'] [data-kit='sheet-item'] {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    width: 100%;
+    min-height: var(--row-h-1);
+    padding: var(--space-2) var(--inset);
+    border: 0;
+    background: transparent;
+    color: var(--on-surface);
+    font: var(--type-body);
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='ios'] [data-kit='sheet-item'] + [data-kit='sheet-item']::before {
+    content: '';
+    position: absolute;
+    top: var(--space-0);
+    left: var(--inset);
+    right: var(--space-0);
+    height: var(--hairline);
+    background: var(--outline);
+  }
+  :root[data-platform='ios'] [data-kit='sheet-item']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='sheet-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='ios'] [data-kit='sheet-item']:disabled { color: var(--on-surface-ter); }
+  :root[data-platform='ios'] [data-kit='sheet-item'][data-danger],
+  :root[data-platform='ios'] [data-kit='sheet-item'][data-danger] > [data-kit='icon'] { color: var(--error); }
+  :root[data-platform='ios'] [data-kit='sheet-item'] > [data-kit='icon'] { flex: none; width: var(--size-icon-lg); height: var(--size-icon-lg); color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='sheet-item'] > [data-kit='sheet-icon-gap'] { flex: none; width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] [data-kit='sheet-item-text'] { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='sheet-item-label'] { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root[data-platform='ios'] [data-kit='sheet-item-hint'] { font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='sheet-separator'] { height: var(--space-3); background: var(--outline); opacity: 0.5; }
+  :root[data-platform='ios'] [data-kit='sheet-label'] { padding: var(--space-4) var(--inset) var(--space-2); font: var(--type-footnote); color: var(--on-surface-var); }
+
   @media (prefers-reduced-motion: reduce) {
     :root[data-platform='ios'] [data-kit='switch'],
     :root[data-platform='ios'] [data-kit='switch-thumb'],
@@ -1591,21 +1632,20 @@
     padding: var(--space-2) var(--inset); background: var(--surface-c1); border-top: var(--hairline) solid var(--outline);
   }
 
-  /* UX 2026-11-18 phone #9: the agent picker is a page of its own (pushed from the reply's options): the screen's width
-     from the bottom, Back over it, its harnesses one row of segments, its models a list, the thinking levels named */
+  /* the agent picker in the composer's bottom sheet, as Delegate's panel is (owner 2026-11-21: one sheet for every
+     composer picker): the card fills the sheet's body, its harnesses one row of segments, its models a list, the
+     thinking levels named */
   :root[data-platform='ios'] [data-kit='picker'] {
-    position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: calc(100% - var(--safe-top) - var(--tap-min));
-    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr);
-    padding-bottom: var(--safe-bottom); border-radius: var(--radius-xl) var(--radius-xl) 0 0; transform: none;
-  }
-  :root[data-platform='ios'] [data-kit='pk-back'] {
-    grid-column: 1 / -1; display: inline-flex; align-items: center; gap: var(--space-2); justify-self: start;
-    min-height: var(--tap-min); padding: var(--space-0) var(--inset); color: var(--primary); font: var(--type-body, var(--type-body-l));
+    position: static; width: auto; height: auto; min-height: 0; max-height: none;
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+    border: 0; border-radius: 0; box-shadow: none; background: transparent; transform: none; animation: none;
   }
   :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-side'] { flex-direction: row; overflow-x: auto; border-right: 0; scrollbar-width: none; }
   :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-side'] > [data-kit='pk-head'],
   :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-h'] > [data-kit='pk-text'] > small { display: none; }
   :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-h'] { width: auto; flex: none; min-height: var(--tap-min); }
+  /* Set up another agent… at the row's end, one line like the chips before it (it was squeezed to a word a line) */
+  :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-side'] > [data-kit='pk-setup'] { flex: none; white-space: nowrap; }
 
   /* UX 2026-11-18 phone #5: New task's setup as a short list under the prompt (HIG's grouped rows, M3 list items): the
      place, the permissions, the harness by name and Delegate, a row each saying what it is; attach and More (…) on the
