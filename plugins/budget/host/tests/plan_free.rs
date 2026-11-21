@@ -155,6 +155,25 @@ async fn held_then_reset_early(k: &Kernel) {
     record(k, "five_hour", 0.02, NOW + 5 * H, 5 * H).await;
 }
 
+/// Start now on a crew run held at the stop line is a yes (ADR-0091 §5): the same run, sent again with `confirmLimit`
+/// (`runtime.release` start), runs. It was held again at once, so Start now seemed to do nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn start_now_runs_a_crew_run_held_at_the_stop_line() {
+    let (seen, clock) = (Seen::default(), FakeClock::at(NOW));
+    let k = kernel(&seen, &clock, false).await;
+    k.call(Caller::user(), "budget.setStop", json!({ "key": "autoStopCodex", "value": "75" })).await.unwrap();
+    record(&k, "five_hour", 0.8, NOW + 3 * H, 5 * H).await;
+    let run = json!({ "sessionId": "t1", "turnId": "u1", "agent": "codex", "model": "", "effort": "",
+        "mode": "auto", "cwd": "/repo", "prompt": "check in", "by": "crew", "kind": "first" });
+    let ctx = k.ctx("wisp.runtime").unwrap();
+    let held = ctx.run_hook::<BeforeRun>(&ctx.root_call(), serde_json::from_value(run.clone()).unwrap()).await.unwrap();
+    assert_eq!(held.hold.as_ref().map(|h| h.kind.as_str()), Some("plan"), "{held:?}");
+    let mut yes = run;
+    yes["confirmLimit"] = json!(true);
+    let c = ctx.run_hook::<BeforeRun>(&ctx.root_call(), serde_json::from_value(yes).unwrap()).await.unwrap();
+    assert!(c.hold.is_none(), "Start now is held again: {c:?}");
+}
+
 /// F-auto-12 with wisp.later off: the held run starts (`runtime.release`) and budget itself tells the phone, in v1's
 /// words; nobody else would.
 #[tokio::test(flavor = "multi_thread")]

@@ -11,6 +11,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Computers, every saved computer connected at once) instead of the old computers screen, as version 1.0.0-alpha.1 on
   internal testing.
 
+### Fixed
+
+- **Start now starts a run held near the usage limit.** A crew check-in or automation held at its account's stop
+  line ("Held before it started … unattended work waits for it to reset") was held again the moment you pressed
+  Start now, so the button seemed to do nothing. Start now is your yes: the run starts.
+
 ## [1.0.0-alpha.1] - 2026-11-21
 
 **First public alpha.** wisp manages the code your agents write. It runs the coding agents you already use (Claude
