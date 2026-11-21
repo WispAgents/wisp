@@ -5,6 +5,13 @@ name: release
 # GitHub prerelease tagged `nightly` that's replaced every night. wisp's updater follows whichever
 # one Settings → General → Updates names.
 #
+# Alpha is the public channel while wisp is in alpha: a version x.y.z-alpha.N ships exactly like a
+# stable one (npm `latest`, the GitHub release marked Latest, so /releases/latest, the site's download
+# links and the app's updater on its default channel all see it, and Homebrew), and npm's `alpha`
+# dist-tag also names it. Only x.y.z-alpha.<number> is an alpha; any other `-` (beta.N, rc.N) is a
+# beta. The rule is npm/scripts/release.mjs releaseKind (tested); the plan job's `prerelease` output,
+# which decides --prerelease, --latest and Homebrew below, comes from it.
+#
 # What ships on npm (npm/README.md, ADR-0013): `wisp-agents`, a dependency-free launcher carrying the
 # web build in web/, and per target the Rust `wisp` binary as a version of wisp-agents itself,
 # `<version>-<os>-<arch>` under the dist-tag platform-<os>-<arch> (ADR-0094); the launcher depends on each through an
@@ -15,8 +22,8 @@ name: release
 # Stable and beta: merge a PR that bumps the version in Cargo.toml's [workspace.package] and
 # npm/wisp-agents/package.json together (with its CHANGELOG section; the release skill). The plan job
 # fails at once if the two (or the launcher's optionalDependencies pins, or a tag the run is on)
-# disagree. A version with a `-` (2.1.0-beta.1) is a beta: npm `next`, a GitHub prerelease, no Homebrew.
-# Either way this:
+# disagree. A version with a `-` (2.1.0-beta.1) is a beta: npm `next`, a GitHub prerelease, no Homebrew;
+# x.y.z-alpha.N is an alpha, which ships as stable does (above). Either way this:
 #   1. builds `wisp` for every target (binaries) and the desktop app on Tauri (tauri-package.yml):
 #      macOS dmg + zip, Windows installer, Linux AppImage + deb, with the install gate on them
 #   2. fills the npm packages with npm/scripts/build.mjs, runs the launcher's tests and installs the
@@ -24,10 +31,11 @@ name: release
 #   3. creates the GitHub release v<version> as a draft with the CHANGELOG notes, the downloads and
 #      SHA256SUMS.txt
 #   4. publishes those exact tarballs to npm with provenance: every binary version first, the launcher last (it
-#      pins them all)
+#      pins them all), then gives the launcher its extra dist-tags (an alpha's `alpha`)
 #   5. publishes the release, so the site's download links and the app's updater see it only once
 #      everything is up
-#   6. bumps the Homebrew tap (WispAgents/homebrew-tap) to the new wisp-agents npm tarball
+#   6. bumps the Homebrew tap (WispAgents/homebrew-tap): the wisp-agents formula to the new npm tarball and
+#      the wisp cask to the release's Mac zips
 # A push only releases a version npm doesn't have yet. Run it by hand (Actions → release → Run
 # workflow) to finish one that stopped half way: every step skips what's already done (each npm
 # package whose version is already on npm is skipped). With "dry run" ticked it builds the binaries,
@@ -50,6 +58,9 @@ name: release
 #
 # Secrets (all optional):
 #   HOMEBREW_TAP_TOKEN          a token that can push to WispAgents/homebrew-tap; without it the tap is skipped
+# Extra dist-tags (`alpha`) go through the same trusted publisher: on npmjs.com, wisp-agents → Settings →
+# trusted publishing, "Allow npm dist-tag" must be on. Without it the release still ships (on `latest`) and
+# the npm job warns with the command to run.
 # The apps aren't signed: the Mac one is signed ad hoc (desktop/scripts/package.mjs, MAC_SIGN_IDENTITY
 # for a Developer ID) and macOS asks to confirm the first open; SmartScreen warns on Windows.
 
@@ -91,6 +102,7 @@ jobs:
       channel: ${{ steps.nightly.outputs.channel || steps.stable.outputs.channel }}
       sha: ${{ steps.nightly.outputs.sha || steps.stable.outputs.sha }}
       tag: ${{ steps.tag.outputs.tag }}
+      extra_tags: ${{ steps.tag.outputs.extra }}
       targets: ${{ steps.versions.outputs.targets }}
     steps:
       # A nightly builds the commit the nightly tests passed on, even if main has moved since.
@@ -155,7 +167,8 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = push ]; then [ $changed = true ] && [ $npm = true ] && [ $published = false ] && go=true
           elif [ $npm = true ] || [ $published = false ]; then go=true; fi
           [ "$DRY" = true ] && go=true
-          case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
+          # a beta is a prerelease; a stable or alpha release isn't (the header, release.mjs releaseKind)
+          prerelease=$(node npm/scripts/release.mjs prerelease "$version" stable)
           echo "version=$version changed=$changed npm-needed=$npm release-published=$published → go=$go"
           { echo "channel=stable"; echo "sha=$GITHUB_SHA"; echo "version=$version"; echo "npm=$npm"; echo "go=$go"; echo "prerelease=$prerelease"; echo "dry=$DRY"; } >> "$GITHUB_OUTPUT"
       - name: CHANGELOG has notes for this version
@@ -167,7 +180,9 @@ jobs:
         env:
           VERSION: ${{ steps.nightly.outputs.version || steps.stable.outputs.version }}
           CHANNEL: ${{ steps.nightly.outputs.channel || steps.stable.outputs.channel }}
-        run: echo "tag=$(node npm/scripts/release.mjs npm-tag "$VERSION" "$CHANNEL")" | tee -a "$GITHUB_OUTPUT"
+        run: |
+          echo "tag=$(node npm/scripts/release.mjs npm-tag "$VERSION" "$CHANNEL")" | tee -a "$GITHUB_OUTPUT"
+          echo "extra=$(node npm/scripts/release.mjs extra-tags "$VERSION" "$CHANNEL")" | tee -a "$GITHUB_OUTPUT"
 
   # `wisp` for every target the launcher knows (npm/wisp-agents/lib/resolve.js TARGETS), on the runner
   # release.mjs picks: Mac and Windows natively, Linux static musl for every arch through cargo-zigbuild.
@@ -407,6 +422,19 @@ jobs:
             if [ -n "$(npm view "$pkg" version 2>/dev/null || true)" ]; then echo "$pkg is already on npm: skipped."; continue; fi
             npm publish "packed/$tgz" --provenance --access public --tag "$tag"
           done 3< packed/order.txt
+      # npm publish takes one --tag: an alpha also gets `alpha` (the trusted publisher needs "Allow npm dist-tag").
+      # Not fatal: the release is out on `latest` either way, and the warning says how to add it.
+      - name: Extra dist-tags
+        if: needs.plan.outputs.extra_tags != ''
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          EXTRA: ${{ needs.plan.outputs.extra_tags }}
+        run: |
+          for t in $EXTRA; do
+            if [ "$(npm view "wisp-agents@$t" version 2>/dev/null || true)" = "$VERSION" ]; then echo "$t is already $VERSION."; continue; fi
+            if npm dist-tag add "wisp-agents@$VERSION" "$t"; then echo "wisp-agents@$t → $VERSION" >> "$GITHUB_STEP_SUMMARY"
+            else echo "::warning::couldn't tag wisp-agents@$VERSION as $t: turn on \"Allow npm dist-tag\" in wisp-agents' trusted publishing settings on npmjs.com, then re-run this job (or run npm dist-tag add wisp-agents@$VERSION $t)."; fi
+          done
 
   publish:
     needs: [plan, release, npm]
@@ -473,8 +501,10 @@ jobs:
           fi
           echo "https://github.com/$GITHUB_REPOSITORY/releases/tag/nightly: $VERSION" >> "$GITHUB_STEP_SUMMARY"
 
-  # Homebrew installs wisp-agents from npm (packaging/homebrew/wisp-agents.rb), as v1 did: npm then
-  # pulls the wisp-agents-darwin-<arch> package for the Mac it runs on, which the npm job published first.
+  # Homebrew installs wisp-agents from npm (packaging/homebrew/wisp-agents.rb): npm then pulls the
+  # wisp-agents-darwin-<arch> package for the Mac it runs on, which the npm job published first. The tap's
+  # cask (Casks/wisp.rb, the app) gets the version and the Mac zips' sha256 from the release's SHA256SUMS.txt.
+  # A stable or alpha release bumps both; a beta or nightly neither.
   homebrew:
     needs: [plan, publish]
     if: ${{ !cancelled() && needs.publish.result == 'success' && needs.plan.outputs.prerelease != 'true' }}
@@ -482,6 +512,7 @@ jobs:
     env:
       TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       VERSION: ${{ needs.plan.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
       - name: Bump WispAgents/homebrew-tap
@@ -493,6 +524,14 @@ jobs:
           sha=$(sha256sum pkg.tgz | cut -d' ' -f1)
           git clone --depth 1 "https://x-access-token:$TOKEN@github.com/WispAgents/homebrew-tap.git" tap
           sed -e "s#^  url \".*\"#  url \"$url\"#" -e "s#^  sha256 \".*\"#  sha256 \"$sha\"#" packaging/homebrew/wisp-agents.rb > tap/Formula/wisp-agents.rb
+          if [ -f tap/Casks/wisp.rb ]; then
+            gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir sums
+            arm=$(awk '$2 == "wisp-mac-arm64.zip" { print $1 }' sums/SHA256SUMS.txt)
+            intel=$(awk '$2 == "wisp-mac-x64.zip" { print $1 }' sums/SHA256SUMS.txt)
+            [ -n "$arm" ] && [ -n "$intel" ] || { echo "::error::SHA256SUMS.txt of v$VERSION has no wisp-mac-arm64.zip or wisp-mac-x64.zip"; exit 1; }
+            sed -i -e "s#^  version \".*\"#  version \"$VERSION\"#" -e "s#^\(  sha256 arm: *\)\"[^\"]*\"#\1\"$arm\"#" -e "s#^\( *intel: *\)\"[^\"]*\"#\1\"$intel\"#" tap/Casks/wisp.rb
+            grep -q "^  version \"$VERSION\"" tap/Casks/wisp.rb && grep -q "$arm" tap/Casks/wisp.rb && grep -q "$intel" tap/Casks/wisp.rb || { echo "::error::Casks/wisp.rb didn't take $VERSION"; exit 1; }
+          fi
           cd tap
           if git diff --quiet; then echo "The tap already has $VERSION."; exit 0; fi
           git config user.name "github-actions[bot]"

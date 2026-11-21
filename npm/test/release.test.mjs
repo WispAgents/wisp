@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, packageName } from '../wisp-agents/lib/resolve.js';
-import { publishTag, buildMatrix, cargoVersion, lockVersion, npmTag, publishOrder, stampCargoVersion, versionProblems } from '../scripts/release.mjs';
+import { publishTag, buildMatrix, cargoVersion, extraTags, isPrerelease, lockVersion, npmTag, publishOrder, releaseKind, stampCargoVersion, versionProblems } from '../scripts/release.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/release.mjs', import.meta.url));
 const CARGO = `[workspace]
@@ -105,8 +105,47 @@ test('the_matrix_builds_every_launcher_target_on_its_own_os', () => {
 test('npm_tag_is_latest_next_or_nightly', () => {
   assert.equal(npmTag('2.1.0', 'stable'), 'latest');
   assert.equal(npmTag('2.1.0-beta.1', 'stable'), 'next');
+  assert.equal(npmTag('2.1.0-rc.1', 'stable'), 'next');
   assert.equal(npmTag('2.1.1-nightly.20261116.930', 'nightly'), 'nightly');
   assert.throws(() => npmTag('2.1.0', 'canary'), /Unknown channel/);
+});
+
+test('an_alpha_is_the_public_channel_latest_on_npm_plus_alpha', () => {
+  // 1.0.0-alpha.1 is what users get by default: npm latest (and alpha), not next
+  assert.equal(releaseKind('1.0.0-alpha.1'), 'alpha');
+  assert.equal(npmTag('1.0.0-alpha.1', 'stable'), 'latest');
+  assert.deepEqual(extraTags('1.0.0-alpha.1', 'stable'), ['alpha']);
+  assert.equal(npmTag('1.0.0-alpha.12', 'stable'), 'latest');
+  // only `alpha.<n>` is: anything else with a `-` stays a beta
+  for (const v of ['1.0.0-alpha', '1.0.0-alpha.1.2', '1.0.0-alphabet.1', '1.0.0-beta.1', '1.0.0-rc.2']) {
+    assert.equal(releaseKind(v), 'beta', v);
+    assert.equal(npmTag(v, 'stable'), 'next', v);
+    assert.deepEqual(extraTags(v, 'stable'), [], v);
+  }
+  assert.equal(releaseKind('1.0.0'), 'stable');
+  assert.deepEqual(extraTags('1.0.0', 'stable'), []);
+  assert.deepEqual(extraTags('1.0.1-nightly.20261121.930', 'nightly'), []);
+  assert.throws(() => releaseKind('nope'), /not a semver/);
+  assert.throws(() => extraTags('1.0.0', 'canary'), /Unknown channel/);
+});
+
+test('only_a_beta_or_a_nightly_is_a_github_prerelease', () => {
+  // the plan job's `prerelease`: --prerelease and --latest=false on the release, and no Homebrew
+  assert.equal(isPrerelease('1.0.0', 'stable'), false);
+  assert.equal(isPrerelease('1.0.0-alpha.1', 'stable'), false);
+  assert.equal(isPrerelease('1.0.0-beta.1', 'stable'), true);
+  assert.equal(isPrerelease('1.0.1-nightly.20261121.930', 'nightly'), true);
+  assert.throws(() => isPrerelease('1.0.0', 'canary'), /Unknown channel/);
+});
+
+test('the_cli_says_an_alphas_tags_and_that_it_is_no_prerelease', () => {
+  const run = (...a) => spawnSync(process.execPath, [SCRIPT, ...a], { encoding: 'utf8' });
+  assert.equal(run('npm-tag', '1.0.0-alpha.1', 'stable').stdout, 'latest\n');
+  assert.equal(run('extra-tags', '1.0.0-alpha.1', 'stable').stdout, 'alpha\n');
+  assert.equal(run('extra-tags', '1.0.0', 'stable').stdout, '\n');
+  assert.equal(run('prerelease', '1.0.0-alpha.1', 'stable').stdout, 'false\n');
+  assert.equal(run('prerelease', '1.0.0-beta.1', 'stable').stdout, 'true\n');
+  assert.equal(run('prerelease', '1.0.1-nightly.20261121.930', 'nightly').stdout, 'true\n');
 });
 
 test('every_binary_is_a_version_of_wisp_agents_under_its_alias', () => {

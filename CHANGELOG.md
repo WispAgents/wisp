@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.1] - 2026-11-21
+
 **First public alpha.** wisp manages the code your agents write. It runs the coding agents you already use (Claude
 Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity) with your own plans and keys:
 
@@ -225,4 +227,5 @@ from your own agent through wisp's MCP tools. It's an alpha: expect rough edges,
 - **Audit E (tasks).** Home puts a task asking you first, marked Asking. Open file… hands the keyboard to the file it opens. On a phone, Changes rows keep the file name whole, and Scheduled times line up. Copy path and Copy branch show a check once copied. The PR tab says PR #1. "Remove its worktree?" closes when the task is no longer done. Changes' separators are back.
 
 
-[Unreleased]: https://github.com/WispAgents/wisp/commits/main
+[Unreleased]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.1...main
+[1.0.0-alpha.1]: https://github.com/WispAgents/wisp/releases/tag/v1.0.0-alpha.1

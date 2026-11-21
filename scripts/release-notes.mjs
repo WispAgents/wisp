@@ -18,7 +18,10 @@ export function section(changelog, version) {
   const start = lines.findIndex((l) => l.startsWith(`## [${version}]`));
   if (start < 0) return null;
   const end = lines.findIndex((l, i) => i > start && l.startsWith('## ['));
-  return lines.slice(start + 1, end < 0 ? undefined : end).join('\n').trim() || null;
+  const body = lines.slice(start + 1, end < 0 ? undefined : end);
+  // the last section runs to the end of the file: leave out the compare links Keep a Changelog puts there
+  while (body.length && (!body.at(-1).trim() || /^\[[^\]]+\]: \S+$/.test(body.at(-1)))) body.pop();
+  return body.join('\n').trim() || null;
 }
 
 export function notes(changelog, version) {
