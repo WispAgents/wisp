@@ -806,10 +806,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     toEnd();
     run(followUp, { id: key, text: v, turnId: entityKey(peer, newRowId()), idx: turns().length, at: Date.now() }).catch(() => undefined);
   };
-  /** an answer's chip without ⌘: into the reply box, to read first */
+  /** an answer's chip without ⌘: into the reply box, to read first. The view goes to the end, by the box it fills (on a
+   *  phone the chip sat far above it, behind the keyboard): from the tail, the hold-view keeps it there as the keyboard
+   *  shortens the view */
   const draft = (v: string): void => {
     setText(v);
     input?.focus();
+    toEnd();
   };
   const side = (kind: 'changes' | 'shell'): void => shell.navigate({ t: 'toggleSide', side: { kind, id: key as never } });
   // the panel button and \ open it on the newest thing (UX 2026-11-18 #5): the PR, else Changes with a diff, else Shell
