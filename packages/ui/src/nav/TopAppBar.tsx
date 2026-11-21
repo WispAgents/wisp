@@ -2,8 +2,8 @@
 // picks the platform's bar:
 //   root (a destination's list)   Android: M3 small top app bar, one-line title.
 //                                 iOS: navigation bar with a large title that collapses to the inline title.
-//   page (a pushed task, setting) Android: M3 medium top app bar, the title on up to two lines under the
-//                                 bar, collapsing into the bar on scroll.
+//   page (a pushed task, setting) Android: M3 medium top app bar, the title on one line (an ellipsis past it)
+//                                 under the bar, collapsing into the bar on scroll.
 //                                 iOS: the inline, centred title; Back carries the previous title.
 //   compose (New task)            Android: the M3 full-screen dialog's bar: Close (×), the title, the confirm
 //                                 action as a text button at the end. iOS: a sheet's bar: Cancel, the centred
