@@ -24,6 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   has no place for v2's shares. wisp Cloud now runs the v2 grid, and it takes the crew's `crew:<id>,<id>` share key
   (it refused "Bad share key."). A grid that still can't hold a link says so and points to Download or Copy.
   Download saved the `.crew.json` without a word in the desktop app; it now says where the file went.
+- **Share page: Open in wisp on this computer works.** The button was a `wisp://open/…` link that no wisp registers, so
+  clicking it did nothing. It now opens your wisp (127.0.0.1:4477) with the link waiting in New task: press Send.
 
 ## [1.0.0-alpha.2] - 2026-11-21
 

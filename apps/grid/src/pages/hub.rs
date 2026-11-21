@@ -39,13 +39,15 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
 
 /// The way in (#8): signed in to this grid, the cloud wisp, its New task holding this link as text (`?share=`, which
 /// the wisp takes only as a share link and never sends: the person presses Send, and the share imports); anywhere, wisp
-/// on this computer (`wisp://open`); and for someone with no wisp at all, where to get it and the command.
+/// on this computer (its page at wisp's default address, New task holding the link the same way); and for someone with
+/// no wisp at all, where to get it and the command. Not `wisp://open/<id>`: no wisp registers that scheme, so the button
+/// did nothing (owner, 2026-11-21).
 fn open_in_wisp(c: &ShareCard, public_url: &str) -> String {
     let link = format!("{public_url}/s/{}", c.id);
     let local = format!(
-        r#"<a class="{} tall" href="wisp://open/{}">Open in wisp on this computer</a>"#,
+        r#"<a class="{} tall" href="{}">Open in wisp on this computer</a>"#,
         if c.signed_in { "ghost line" } else { "primary" },
-        esc(&c.id)
+        esc(&local_wisp_at(&link))
     );
     let (cloud, then) = if c.signed_in {
         let to = super::home::wisp_at(&format!("/?share={}", crate::http::encode_component(&link)));
@@ -60,6 +62,12 @@ fn open_in_wisp(c: &ShareCard, public_url: &str) -> String {
         r#"<div class="hub-open"><div class="hub-acts">{cloud}{local}</div><p class="hub-alt">{then}No wisp? <a href="https://trywisp.dev" target="_blank" rel="noopener">Get wisp</a> · or run <code>wisp open {link}</code></p></div>"#,
         link = esc(&link)
     )
+}
+
+/// wisp on the reader's computer, at its default address (`wisp serve`, the desktop app: 127.0.0.1:4477), with New
+/// task holding `link` (`?share=`, packages/client nav-url.ts `shareLinkOf`): pressing Send imports it.
+fn local_wisp_at(link: &str) -> String {
+    format!("http://127.0.0.1:4477/?share={}", crate::http::encode_component(link))
 }
 
 /// `grid://<wbr>handle/<wbr>key`: the reference may wrap after `://` and each `/`, and nowhere else (QA round 6 #16).
@@ -259,7 +267,9 @@ mod tests {
             ShareCard { id: "abc".into(), kind: "task".into(), title: "T".into(), access: "password".into(), ..ShareCard::default() };
         let out = share_page(&cfg(), &c, &json!({}), None);
         // signed out: wisp on this computer is the way, with where to get wisp
-        assert!(out.contains(r#"<a class="primary tall" href="wisp://open/abc">Open in wisp on this computer</a>"#));
+        let here = "http://127.0.0.1:4477/?share=http%3A%2F%2Fwisp.localhost%3A8080%2Fs%2Fabc";
+        assert!(out.contains(&format!(r#"<a class="primary tall" href="{}">Open in wisp on this computer</a>"#, esc(here))), "{out}");
+        assert!(!out.contains("wisp://"), "no wisp registers wisp://: the button did nothing");
         assert!(out.contains("No wisp? <a href=\"https://trywisp.dev\"") && out.contains("with its passkey"));
         assert!(!out.contains("Open in your cloud wisp"));
         // signed in to the grid: the cloud wisp first, New task there filled with this link (never sent), this computer second
@@ -271,7 +281,7 @@ mod tests {
             to
         );
         assert!(inn.contains(&format!(r#"<a class="primary tall" href="{}">Open in your cloud wisp</a>"#, esc(to))), "{inn}");
-        assert!(inn.contains(r#"<a class="ghost line tall" href="wisp://open/abc">"#) && inn.contains("press Send to import it"));
+        assert!(inn.contains(&format!(r#"<a class="ghost line tall" href="{}">"#, esc(here))) && inn.contains("press Send to import it"));
         assert!(!inn.contains("data-copy") && !inn.contains("paste the link"));
     }
 
