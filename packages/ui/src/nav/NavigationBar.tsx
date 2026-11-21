@@ -22,6 +22,9 @@ export interface NavigationItem {
   readonly iconSelected?: IconName;
   /** A count on the icon (the need-you count on Tasks); 0 or absent draws none. */
   readonly badge?: number;
+  /** Not offered yet (the phone's Tasks before a computer is open and connected): drawn dimmed, a press does nothing.
+   *  Additive. */
+  readonly disabled?: boolean;
 }
 
 export interface NavigationBarProps extends KitProps {
@@ -51,8 +54,10 @@ export function NavigationBar(props: NavigationBarProps): JSX.Element {
                 data-part={`${props.part ?? 'ui.nav-bar'}.item`}
                 data-item={item().id}
                 data-selected={flag(on())}
+                data-disabled={flag(item().disabled === true)}
+                disabled={item().disabled === true}
                 aria-current={on() ? 'page' : undefined}
-                onClick={() => props.onSelect(item().id)}
+                onClick={() => item().disabled !== true && props.onSelect(item().id)}
               >
                 <span data-kit="nav-pill">
                   <Icon name={on() ? (item().iconSelected ?? item().icon) : item().icon} />
