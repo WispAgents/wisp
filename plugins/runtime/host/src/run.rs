@@ -507,9 +507,17 @@ impl Runtime {
             env.insert("WISP_TOKEN".into(), token);
         }
         // a repo that keeps its agent history (ADR-0033): its tools (`wisp mcp`: history, blame, task)
-        // (a task with no folder has no repo: `Path::new("")` would find the server's own `.wisp/`)
+        // (a task with no folder has no repo: `Path::new("")` would find the server's own `.wisp/`, and `$HOME/.wisp`
+        // is wisp's own app data directory — never a repo's history folder)
         if let Ok(dir) = wisp_runtime_api::paths::Folder::of(&s.cwd)
-            && let Some(repo) = dir.path().ancestors().find(|d| d.join(".wisp").is_dir())
+            && let Some(repo) = dir.path().ancestors().find(|d| {
+                let w = d.join(".wisp");
+                w.is_dir()
+                    && !w.join("wisp.db").exists()
+                    && !w.join("server.json").exists()
+                    && !w.join("worktrees").is_dir()
+                    && (w.join("wisp.yml").is_file() || w.join("tasks").is_dir())
+            })
             && let Ok(exe) = std::env::current_exe()
         {
             mcp_servers.insert("wisp-history".to_owned(), serde_json::json!({ "type": "stdio", "command": exe.display().to_string(), "args": ["mcp", "--repo", repo.display().to_string()] }));

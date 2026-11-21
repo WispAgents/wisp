@@ -70,6 +70,7 @@
   "wisp.ship.cancel": "Cancel",
   "wisp.ship.dialog.body": "Pull request description",
   "wisp.ship.dialog.draft": "Open as a draft",
+  "wisp.ship.dialog.saveTask": "Save task to repo (.wisp/)",
   "wisp.ship.dialog.message": "Commit message",
   "wisp.ship.dialog.messageTitle": "Title (commit message and PR title)",
   "wisp.ship.dialog.needTitle": "Give it a title first",

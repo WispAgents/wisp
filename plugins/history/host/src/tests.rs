@@ -488,3 +488,41 @@ fn one_logs_records_are_each_commits_message() {
     let got = crate::git::messages_of(text);
     assert_eq!(got, vec![("abc".to_owned(), "first\n\nWisp-Task: t1\n".to_owned()), ("def".to_owned(), "second\n".to_owned())]);
 }
+
+/// Regression: a deleted worktree under `$HOME/.wisp/worktrees/...` must NEVER walk up into `$HOME/.wisp`
+/// (wisp's own app data dir); it falls back to `ext["wisp.worktrees"].root` (the main repo checkout).
+#[tokio::test(flavor = "multi_thread")]
+async fn deleted_worktree_saves_to_main_repo_not_app_home() {
+    let fake_home = std::env::temp_dir().join(format!("wisp-history-home-{}", wisp_kernel::ids::uuid7()));
+    let app_wisp = fake_home.join(".wisp");
+    std::fs::create_dir_all(app_wisp.join("worktrees")).unwrap();
+    std::fs::write(app_wisp.join("wisp.db"), b"").unwrap();
+    let repo = fake_home.join("my-repo");
+    std::fs::create_dir_all(repo.join(".wisp")).unwrap();
+    std::fs::write(repo.join(".wisp/wisp.yml"), "wisp: 1\nhistory: { track: ask }\n").unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+
+    let deleted_wt = app_wisp.join("worktrees/wisp-gone-task");
+    let mut task = wisp_runtime_api::model::Session {
+        id: "01a1bc12ab34cdef0123456789abcdef".into(),
+        cwd: deleted_wt.display().to_string(),
+        ..Default::default()
+    };
+    task.ext.insert(
+        "wisp.worktrees".into(),
+        json!({ "path": deleted_wt.display().to_string(), "root": repo.display().to_string(), "branch": "wisp/x", "baseRef": "main" }),
+    );
+    let k = kernel(&repo, &Arc::new(Mutex::new("Fix".into())), true, &Kept::default()).await;
+    let ctx = k.ctx("wisp.history").unwrap();
+    let p = wisp_proc::local();
+    let resolved = super::config::root_of_task(&ctx, &p, &task).await.unwrap();
+    assert_eq!(resolved, repo, "must resolve to main repo, never fake_home");
+    // even without worktree ext, root_of must never match $HOME/.wisp (the app data dir)
+    let plain = fake_home.join("plain-repo");
+    std::fs::create_dir_all(&plain).unwrap();
+    git(&plain, &["init", "-q", "-b", "main"]);
+    let plain_root = super::config::root_of(&p, Some(&app_wisp), &plain.display().to_string()).await;
+    assert_ne!(plain_root, fake_home, "must never walk up into $HOME/.wisp");
+}

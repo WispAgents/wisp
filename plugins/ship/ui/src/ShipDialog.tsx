@@ -63,6 +63,7 @@ export default function ShipDialog(props: { readonly client: PluginClient; reado
   const [title, setTitle] = createSignal('');
   const [body, setBody] = createSignal('');
   const [draft, setDraft] = createSignal(typed?.draft ?? false);
+  const [saveTask, setSaveTask] = createSignal(typed?.saveTask ?? false);
   const scope = props.client.scope.child('ship-dialog');
   onCleanup(() => scope.dispose());
   const close = (): void => props.client.navigate({ t: 'closeOverlay', id: SHIP_VIEW as never });
@@ -123,15 +124,16 @@ export default function ShipDialog(props: { readonly client: PluginClient; reado
   const go = (): void => {
     const i = info();
     if (!i) return;
-    if (i.dirty && !title().trim()) {
+    const dirty = i.dirty > 0 || saveTask();
+    if (dirty && !title().trim()) {
       titleBox?.focus();
       shell.toast.error(t('wisp.ship.dialog.needTitle'));
       return;
     }
     const g = infoGuess(i);
-    const values = { title: title() || i.title, body: g.update ? i.body : body(), draft: !g.update && draft() };
+    const values = { title: title() || i.title, body: g.update ? i.body : body(), draft: !g.update && draft(), ...(saveTask() && { saveTask: true }) };
     close();
-    flows.start({ steps: stepsFor(i.dirty > 0), values, update: g.update });
+    flows.start({ steps: stepsFor(dirty), values, update: g.update });
   };
   return (
     <Stack gap="6" part="ship.dialog">
@@ -140,7 +142,7 @@ export default function ShipDialog(props: { readonly client: PluginClient; reado
           <For each={repos()}>{(r) => <Route r={r} several={several()} />}</For>
         </Show>
       </Stack>
-      <Show when={!info() || info()?.dirty}>
+      <Show when={!info() || info()?.dirty || saveTask()}>
         <Field label={guess().update ? t('wisp.ship.dialog.message') : t('wisp.ship.dialog.messageTitle')}>
           <Show when={info()} fallback={<Skeleton shape="block" height="control-md" width="full" />}>
             <Input value={title()} onInput={setTitle} maxLength={100} spellcheck={false} autofocus ref={(el) => (titleBox = el)} onKeyDown={(e) => e.key === 'Enter' && go()} />
@@ -162,6 +164,9 @@ export default function ShipDialog(props: { readonly client: PluginClient; reado
             </Button>
           </Show>
         </Inline>
+      </Show>
+      <Show when={info()?.hasWisp}>
+        <Checkbox checked={saveTask()} onChange={setSaveTask} label={t('wisp.ship.dialog.saveTask')} disabled={!info()} part="ship.saveTask" />
       </Show>
       <Show when={s()?.overlap}>
         {(o) => (

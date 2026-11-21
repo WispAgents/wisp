@@ -1,7 +1,4 @@
-// Save to repo (ADR-0033): a task written into its repo's `.wisp/` (spec, report, transcript, scrubbed). Two ways in:
-// the offer under the task's last answer (a repo on `track: ask` sets `ext["wisp.history"].offer` when the task is
-// done; Save calls `history.save`), and Save to repo in the task's ⋯ menu for any task (`history.track`). Both share
-// one status per task, so the answer says Saving…, then what was saved, whichever was pressed. DOM-free.
+// Save to repo (ADR-0033): shared save state and `history.track` for the task ⋯ menu (later.ts) and OfferFoot.
 import { defineCommand, readonly, signal, type EntityKey } from '@wisp/client';
 
 /** What the task's `wisp.history` slot holds (wisp_history_api::EXT): offered, and what the last save wrote. */
@@ -32,6 +29,7 @@ export interface TaskRow {
 }
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined);
+const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 
 /** The task's `wisp.history` slot, wherever the row carries `ext` (the synced row's body, or a flat row). */
 export function historyOf(row: TaskRow | undefined): HistoryExt {
@@ -46,7 +44,10 @@ export function saveable(row: TaskRow | undefined): boolean {
 }
 
 /** Where a task's save stands in this window: pressing, done (what it wrote), or refused (the shell's toast says why). */
-export type SaveState = { readonly s: 'saving' } | { readonly s: 'saved'; readonly files: number; readonly repo: string; readonly scrubbed: number } | { readonly s: 'failed' };
+export type SaveState =
+  | { readonly s: 'saving' }
+  | { readonly s: 'saved'; readonly files: number; readonly repo: string; readonly scrubbed: number; readonly at: number }
+  | { readonly s: 'failed' };
 
 const states = signal<Readonly<Record<string, SaveState>>>({});
 
@@ -60,32 +61,60 @@ function setState(key: string, v: SaveState): void {
   states({ ...states(), [key]: v });
 }
 
-/** What the answer shows: the offer (Save to repo), Saving…, Saved, or nothing. */
-export type OfferView = { readonly v: 'offer' } | { readonly v: 'saving' } | { readonly v: 'saved'; readonly files: number; readonly scrubbed: number } | { readonly v: 'none' };
+/** Save to repo from the task's ⋯ menu (any task; again rewrites its files in place). */
+export const trackCmd = defineCommand<{ key: EntityKey }, Tracked>({
+  id: 'history.track',
+  owner: (a) => a.key,
+  wire: (a) => ({ id: bare(a.key) }),
+  optimistic: 'none',
+  pending: 'Saving… under the task’s last answer',
+});
 
-/** The line under the last answer, from the task's slot and this window's save. A save from here shows its result
- *  (with how many files and secrets scrubbed); a refused one offers again if the task is still offered. */
-export function offerView(ext: HistoryExt, state: SaveState | undefined): OfferView {
-  if (state?.s === 'saving') return { v: 'saving' };
-  if (state?.s === 'saved') return { v: 'saved', files: state.files, scrubbed: state.scrubbed };
-  return ext.offer === true ? { v: 'offer' } : { v: 'none' };
+/** Runs a save and keeps its state for the answer to show; a second press while one runs does nothing. */
+export async function runSave(run: (key: EntityKey) => Promise<Tracked>, key: EntityKey): Promise<Tracked | undefined> {
+  if (saveStateOf(key)?.s === 'saving') return undefined;
+  setState(key, { s: 'saving' });
+  try {
+    const t = await run(key);
+    setState(key, { s: 'saved', files: t.files.length, repo: t.repo, scrubbed: t.scrubbed, at: Date.now() });
+    return t;
+  } catch {
+    setState(key, { s: 'failed' });
+    return undefined;
+  }
 }
 
-const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
+/** What the answer shows: the offer (Save to repo), Saving…, Saved, or nothing. */
+export type OfferView =
+  | { readonly v: 'offer' }
+  | { readonly v: 'saving' }
+  | { readonly v: 'saved'; readonly files: number; readonly scrubbed: number; readonly at: number }
+  | { readonly v: 'none' };
+
+/** The line under the last answer, from the task's slot and this window's save. */
+export function offerView(ext: HistoryExt, state: SaveState | undefined): OfferView {
+  if (state?.s === 'saving') return { v: 'saving' };
+  if (state?.s === 'saved') return { v: 'saved', files: state.files, scrubbed: state.scrubbed, at: state.at };
+  return ext.offer === true ? { v: 'offer' } : { v: 'none' };
+}
 
 interface TurnLike {
   readonly id?: string;
   readonly idx?: number;
+  readonly session_id?: string;
   readonly sessionId?: string;
-  readonly body?: { readonly id?: string; readonly idx?: number; readonly sessionId?: string };
+  readonly body?: { readonly id?: string; readonly idx?: number; readonly session_id?: string; readonly sessionId?: string };
 }
 
-/** The bare id of the task's last turn (highest idx) among the turn rows. */
-export function lastTurnOf(rows: readonly unknown[], session: string): string | undefined {
+/** The bare id of the task's last turn (highest idx) among the turn rows, matching camelCase (`body.sessionId`)
+ *  or snake_case (`session_id`) and scoped to `peer` when given. */
+export function lastTurnOf(rows: readonly unknown[], session: string, peer?: string): string | undefined {
   let best: { id: string; idx: number } | undefined;
+  const target = bare(session);
   for (const r of rows as readonly TurnLike[]) {
-    const sid = r.body?.sessionId ?? r.sessionId;
-    if (sid !== session) continue;
+    if (peer && r.id && r.id.includes(':') && r.id.slice(0, r.id.indexOf(':')) !== peer) continue;
+    const rawSid = r.body?.sessionId ?? r.body?.session_id ?? r.session_id ?? r.sessionId;
+    if (!rawSid || bare(rawSid) !== target) continue;
     const id = r.body?.id ?? r.id ?? '';
     const idx = r.body?.idx ?? r.idx ?? 0;
     if (!best || idx > best.idx) best = { id: bare(id), idx };
@@ -101,25 +130,3 @@ export const saveCmd = defineCommand<{ key: EntityKey }, Tracked>({
   optimistic: 'none',
   pending: 'Save to repo, then the line under the answer',
 });
-
-/** Save to repo from the task's ⋯ menu (any task; again rewrites its files in place). */
-export const trackCmd = defineCommand<{ key: EntityKey }, Tracked>({
-  id: 'history.track',
-  owner: (a) => a.key,
-  wire: (a) => ({ id: bare(a.key) }),
-  optimistic: 'none',
-  pending: 'Saving… under the task’s last answer',
-});
-
-/** Runs a save and keeps its state for the answer to show; a second press while one runs does nothing. */
-export async function runSave(run: (key: EntityKey) => Promise<Tracked>, key: EntityKey): Promise<void> {
-  if (saveStateOf(key)?.s === 'saving') return;
-  setState(key, { s: 'saving' });
-  try {
-    const t = await run(key);
-    setState(key, { s: 'saved', files: t.files.length, repo: t.repo, scrubbed: t.scrubbed });
-  } catch {
-    // refused: the shell's onError toasts why; the offer (if any) comes back
-    setState(key, { s: 'failed' });
-  }
-}

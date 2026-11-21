@@ -1,8 +1,10 @@
 // Under the task's last answer (`shell.turn:foot`, the turn's key as its id): Save to repo when the repo offers it
 // (`track: ask`, the task done), then Saving… and what was saved, whichever way it was saved (the answer's button or
-// the ⋯ menu). Nothing on other turns, nor on a task nobody offered or saved here.
-import { Match, Show, Switch, createMemo, type JSX } from 'solid-js';
+// the ⋯ menu). Also toasts once per save so mobile users tapping ⋮ → Save to repo see immediate confirmation even when
+// scrolled away from the bottom of the turn.
+import { Match, Show, Switch, createEffect, createMemo, type JSX } from 'solid-js';
 import { entityKey, ownerOf, type EntityKey } from '@wisp/client';
+import { useShell } from '@wisp/shell';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { Button, Icon, Inline, Text, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
@@ -10,18 +12,30 @@ import './i18n/lazy.ts';
 import { historyOf, lastTurnOf, offerView, runSave, saveCmd, saveStates, type TaskRow } from './save.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
+const toasted = new Set<string>();
 
 export default function OfferFoot(props: ExtensionProps): JSX.Element {
   const c = props.client;
+  const shell = useShell();
   const turnKey = (): string => props.id ?? '';
+  const peer = (): string => ownerOf(turnKey() as EntityKey);
   const task = (): (TaskRow & { id: string }) | undefined => props.session?.() as (TaskRow & { id: string }) | undefined;
   const taskKey = (): EntityKey => entityKey(ownerOf(turnKey() as EntityKey), bare(String(task()?.id ?? ''))) as EntityKey;
   const turns = useSignal(c.entities.list<unknown>('turn'));
-  const last = createMemo(() => lastTurnOf(turns() as readonly unknown[], bare(String(task()?.id ?? ''))) === bare(turnKey()));
+  const last = createMemo(() => lastTurnOf(turns() as readonly unknown[], bare(String(task()?.id ?? '')), peer()) === bare(turnKey()));
   // this window's saves (a client signal, bridged so the line follows Saving… → Saved)
   const states = useSignal(saveStates);
   const view = createMemo(() => offerView(historyOf(task()), states()[taskKey()]));
   const save = (): void => void runSave((key) => c.run(saveCmd, { key }), taskKey());
+  createEffect(() => {
+    const v = view();
+    if (!last() || v.v !== 'saved') return;
+    const stamp = `${taskKey()}:${v.at}`;
+    if (toasted.has(stamp)) return;
+    toasted.add(stamp);
+    const msg = v.scrubbed > 0 ? t('history.saved.scrubbed', { count: v.files, scrubbed: v.scrubbed }) : t('history.saved', { count: v.files });
+    shell.toast.success(msg);
+  });
   return (
     <Show when={last() && view().v !== 'none'}>
       <Inline gap="2" align="center" part="history.offer">

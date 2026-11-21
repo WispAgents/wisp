@@ -28,7 +28,7 @@ test('the_answer_offers_then_says_saving_then_what_was_saved', () => {
   expect(offerView({ offer: false, tracked: { files: [] } }, undefined)).toEqual({ v: 'none' });
   expect(offerView({ offer: true }, { s: 'saving' })).toEqual({ v: 'saving' });
   // the server clears the offer as it saves: the answer keeps saying what was saved
-  expect(offerView({ offer: false }, { s: 'saved', files: 3, repo: '/r', scrubbed: 1 })).toEqual({ v: 'saved', files: 3, scrubbed: 1 });
+  expect(offerView({ offer: false }, { s: 'saved', files: 3, repo: '/r', scrubbed: 1, at: 42 })).toEqual({ v: 'saved', files: 3, scrubbed: 1, at: 42 });
   // refused: offered again while the task still is
   expect(offerView({ offer: true }, { s: 'failed' })).toEqual({ v: 'offer' });
   expect(offerView({}, { s: 'failed' })).toEqual({ v: 'none' });
@@ -40,8 +40,10 @@ test('only_the_tasks_last_turn_shows_the_offer', () => {
     { id: 'p:t3', body: { id: 't3', idx: 2, sessionId: 's1' } },
     { id: 'p:t2', body: { id: 't2', idx: 1, sessionId: 's1' } },
     { id: 'p:u9', body: { id: 'u9', idx: 9, sessionId: 's2' } },
+    { id: 'other:t9', session_id: 's1', idx: 99 },
   ];
-  expect(lastTurnOf(rows, 's1')).toBe('t3');
+  expect(lastTurnOf(rows, 's1', 'p')).toBe('t3');
+  expect(lastTurnOf([{ id: 'p:x', idx: 4, session_id: 'p:s3' }], 's3', 'p')).toBe('x');
   expect(lastTurnOf([{ id: 'x', idx: 4, sessionId: 's3' }], 's3')).toBe('x');
   expect(lastTurnOf(rows, 'none')).toBeUndefined();
 });
@@ -60,7 +62,7 @@ test('a_save_keeps_its_state_and_a_second_press_while_saving_does_nothing', asyn
   expect(calls).toBe(1);
   finish(tracked(4, 2));
   await first;
-  expect(saveStateOf(key)).toEqual({ s: 'saved', files: 4, repo: '/r', scrubbed: 2 });
+  expect(saveStateOf(key)).toMatchObject({ s: 'saved', files: 4, repo: '/r', scrubbed: 2 });
   await runSave(() => Promise.reject(new Error('no')), 'local:b2' as EntityKey);
   expect(saveStateOf('local:b2')).toEqual({ s: 'failed' });
 });

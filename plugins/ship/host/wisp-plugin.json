@@ -24,6 +24,7 @@
     "runtime:setExt",
     "runtime:followUp",
     "review:maybe",
+    "history:track",
     "git:repo",
     "git:status",
     "git:read",

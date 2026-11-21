@@ -4,7 +4,24 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { defineCommand, entityKey, type PeerId, type PluginClient } from '@wisp/client';
 import { PROJECT_ORDER, projectList, useShell } from '@wisp/shell';
-import { Button, EmptyState, Icon, Input, ListRow, Markdown, SelectSetting, SettingsGroup, Stack, Text, englishT, timeLabel, useSignal } from '@wisp/ui';
+import {
+  Button,
+  EmptyState,
+  Icon,
+  IconButton,
+  Inline,
+  Input,
+  ListRow,
+  Markdown,
+  PageShell,
+  SelectSetting,
+  SettingsGroup,
+  Stack,
+  Text,
+  englishT,
+  timeLabel,
+  useSignal,
+} from '@wisp/ui';
 import { t } from './i18n.ts';
 import { byMonth, repoLine, resumePrompt, type RepoTask } from './model.ts';
 import './i18n/lazy.ts';
@@ -13,6 +30,7 @@ interface Project {
   readonly id: string;
   readonly name: string;
   readonly path: string;
+  readonly peer?: string;
 }
 interface Report {
   readonly task: RepoTask;
@@ -52,16 +70,23 @@ const filterOf = (q: string): { grep?: string; path?: string } => {
 export default function Repo(props: { readonly client: PluginClient; readonly params: { project?: string } }): JSX.Element {
   const c = props.client;
   const shell = useShell();
+  const nav = useSignal(shell.nav);
+  const phoneBar = (): boolean => shell.platform.phone || nav().layout === 'stack';
   // the agent by its harness's name, never its id (QA r15 #3)
   const harnesses = useSignal(shell.harnesses());
   const harnessName = (id: string): string => harnesses().find((h) => h.id === id)?.name ?? id;
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
-  // the projects as every screen reads them (wisp.runtime's `project` rows on `config`), in your order
+  // the projects as every screen reads them (wisp.runtime's `project` rows on `config`), with keys so multi-peer mobile
+  // routes `history.*` commands to the computer that actually owns the repo
   const projectRows = useSignal(c.entities.list<unknown>('project'));
+  const projectKeys = useSignal(c.entities.keys('project'));
   const settings = useSignal(c.entities.list<{ key: string; value: unknown }>('setting'));
-  const projects = createMemo((): Project[] => projectList(projectRows(), settings().find((r) => r.key === PROJECT_ORDER)?.value).filter((p) => !!p.path));
+  const projects = createMemo((): Project[] =>
+    projectList(projectRows(), settings().find((r) => r.key === PROJECT_ORDER)?.value, projectKeys()).filter((p) => !!p.path),
+  );
   const [picked, setPicked] = createSignal(props.params.project ?? '');
   const project = createMemo(() => projects().find((p) => p.id === picked()) ?? projects()[0]);
+  const peer = (): PeerId => ((project()?.peer || c.home) as PeerId);
   // the first project once they arrive, so the picker shows which one this is
   createEffect(() => {
     const first = projects()[0];
@@ -77,22 +102,23 @@ export default function Repo(props: { readonly client: PluginClient; readonly pa
     cancel?.();
     cancel = scope.timeout(250, () => setAsked(v));
   };
-  const [rows] = createResource(
-    () => (project() ? [project()?.path ?? '', asked()] : undefined),
-    ([repo, words]) => c.run(list, { peer: c.home, repo: repo as string, ...filterOf(words as string) }).catch((): RepoTask[] => []),
+  const [rows, { refetch: refetchRows }] = createResource(
+    () => (project() ? ([peer(), project()?.path ?? '', asked()] as const) : undefined),
+    ([p, repo, words]) => c.run(list, { peer: p, repo, ...filterOf(words) }).catch((): RepoTask[] => []),
   );
   const [open, setOpen] = createSignal<string | undefined>(undefined);
   const [shown] = createResource(
-    () => (open() && project() ? [project()?.path ?? '', open() ?? ''] : undefined),
-    ([repo, id]) => c.run(report, { peer: c.home, repo: repo as string, id: id as string }).catch(() => undefined),
+    () => (open() && project() ? ([peer(), project()?.path ?? '', open() ?? ''] as const) : undefined),
+    ([p, repo, id]) => c.run(report, { peer: p, repo, id }).catch(() => undefined),
   );
   const month = (at: number): string => new Date(at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   const goResume = (r: Report): void => {
     const p = project();
     if (!p) return;
+    const target = peer();
     void c
       .run(resume, {
-        peer: c.home,
+        peer: target,
         prompt: resumePrompt(r.task.title, r.prompt, r.report),
         title: say('history.report.resumed', { title: r.task.title }),
         cwd: p.path,
@@ -100,20 +126,41 @@ export default function Repo(props: { readonly client: PluginClient; readonly pa
         forkOf: r.task.id,
       })
       .then(
-        (out) => shell.navigate({ t: 'openTask', id: entityKey(c.home, out.id) as never }),
+        (out) => shell.navigate({ t: 'openTask', id: entityKey(target, out.id) as never }),
         () => undefined,
       );
   };
+  const refresh = (): void => {
+    void refetchRows();
+  };
+  const projectLabel = (p: Project): string => {
+    const multi = new Set(projects().map((x) => x.peer).filter(Boolean)).size > 1;
+    return multi && p.peer ? `${p.name} · ${c.peers.name(p.peer as PeerId)}` : p.name;
+  };
+  let bodyEl: HTMLDivElement | undefined;
+  createEffect(() => {
+    open();
+    if (bodyEl) bodyEl.scrollTop = 0;
+  });
+  const back = () => {
+    if (open()) return { label: t('history.report.back'), onBack: () => setOpen(undefined) };
+    if (phoneBar()) return { label: t('history.repo.back'), onBack: () => shell.navigate({ t: 'back' }) };
+    return undefined;
+  };
   return (
-    <Stack gap="4" pad="4" part="history.repo">
-      <Stack gap="1">
-        <Text weight="semibold" size="lg">
-          {t('history.repo.title')}
-        </Text>
-        <Text size="sm" tone="muted">
-          {t('history.repo.lede')}
-        </Text>
-      </Stack>
+    <PageShell
+      part="history.repo"
+      icon="branch"
+      title={open() ? (shown()?.task.title ?? t('history.repo.title')) : t('history.repo.title')}
+      subtitle={open() ? undefined : t('history.repo.lede')}
+      back={back()}
+      bodyRef={(el) => (bodyEl = el)}
+      trailing={
+        <Show when={!open()}>
+          <IconButton icon="replay" variant="ghost" size="sm" label={t('history.repo.refresh')} onClick={refresh} part="history.repo.refresh" />
+        </Show>
+      }
+    >
       <Show
         when={open()}
         fallback={
@@ -123,7 +170,7 @@ export default function Repo(props: { readonly client: PluginClient; readonly pa
                 part="history.repo.project"
                 title={t('history.repo.project')}
                 source={{ value: () => project()?.id ?? '', set: setPicked }}
-                items={projects().map((p) => ({ value: p.id, label: p.name }))}
+                items={projects().map((p) => ({ value: p.id, label: projectLabel(p) }))}
               />
             </SettingsGroup>
             <Input type="search" icon="search" size="sm" value={q()} placeholder={t('history.repo.filter')} aria-label={t('history.repo.filter')} onInput={typed} part="history.repo.filter" />
@@ -136,9 +183,14 @@ export default function Repo(props: { readonly client: PluginClient; readonly pa
               }
             >
               <Show when={(rows() ?? []).length > 0} fallback={<EmptyState icon="branch" compact title={project() ? t('history.repo.none') : t('history.repo.pick')} part="history.repo.empty" />}>
+                <Inline justify="between" align="center" part="history.repo.summary">
+                  <Text size="xs" tone="faint" weight="medium">
+                    {say('history.repo.count', { count: (rows() ?? []).length })}
+                  </Text>
+                </Inline>
                 <For each={byMonth(rows() ?? [], month)}>
                   {(g) => (
-                    <Stack gap="0" part="history.repo.month">
+                    <Stack gap="1" part="history.repo.month">
                       <Text size="xs" tone="faint" weight="medium">
                         {g.label}
                       </Text>
@@ -166,12 +218,7 @@ export default function Repo(props: { readonly client: PluginClient; readonly pa
           </>
         }
       >
-        <Stack gap="3" part="history.report">
-          <span>
-            <Button size="sm" variant="ghost" icon="back" onClick={() => setOpen(undefined)}>
-              {t('history.report.back')}
-            </Button>
-          </span>
+        <Stack gap="4" part="history.report">
           <Show
             when={shown()}
             fallback={
@@ -183,38 +230,44 @@ export default function Repo(props: { readonly client: PluginClient; readonly pa
             {(r) => (
               <>
                 <Stack gap="1">
-                  <Text weight="semibold">{r().task.title}</Text>
+                  <Text weight="semibold" size="lg">
+                    {r().task.title}
+                  </Text>
                   <Text size="sm" tone="muted">
                     {repoLine(r().task, say, harnessName)}
                   </Text>
                 </Stack>
-                <Text size="xs" tone="faint" weight="medium">
-                  {t('history.report.asked')}
-                </Text>
-                <Text size="sm">{r().prompt}</Text>
-                <Text size="xs" tone="faint" weight="medium">
-                  {t('history.report.report')}
-                </Text>
-                <Show
-                  when={r().report.trim()}
-                  fallback={
-                    <Text size="sm" tone="muted">
-                      {t('history.report.none')}
-                    </Text>
-                  }
-                >
-                  <Markdown source={r().report} />
-                </Show>
-                <span>
+                <Stack gap="1">
+                  <Text size="xs" tone="faint" weight="medium">
+                    {t('history.report.asked')}
+                  </Text>
+                  <Text size="sm">{r().prompt}</Text>
+                </Stack>
+                <Stack gap="1">
+                  <Text size="xs" tone="faint" weight="medium">
+                    {t('history.report.report')}
+                  </Text>
+                  <Show
+                    when={r().report.trim()}
+                    fallback={
+                      <Text size="sm" tone="muted">
+                        {t('history.report.none')}
+                      </Text>
+                    }
+                  >
+                    <Markdown source={r().report} />
+                  </Show>
+                </Stack>
+                <Inline gap="2">
                   <Button size="sm" variant="primary" icon="rerun" title={t('history.report.resumeTitle')} onClick={() => goResume(r())}>
                     {t('history.report.resume')}
                   </Button>
-                </span>
+                </Inline>
               </>
             )}
           </Show>
         </Stack>
       </Show>
-    </Stack>
+    </PageShell>
   );
 }
