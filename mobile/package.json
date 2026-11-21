@@ -1,15 +1,14 @@
 {
   "name": "wisp-mobile",
   "private": true,
-  "version": "0.5.0",
-  "description": "wisp on Android: SSH to a machine, start wisp there and use its page through a tunnel.",
+  "version": "1.0.0-alpha.1",
+  "description": "wisp on Android: the phone app (web/, @wisp/mobile, built into www/) in a Capacitor shell with sshj tunnels and wisp Grid.",
   "type": "module",
   "scripts": {
-    "shared": "node scripts/shared.mjs",
-    "sync": "node scripts/shared.mjs && cap sync android",
+    "web": "cd web && vite build",
+    "sync": "npm run web && cap sync android",
     "open": "cap open android",
-    "build": "node scripts/shared.mjs && cap sync android && cd android && ./gradlew assembleDebug",
-    "preview": "node scripts/shared.mjs && node scripts/preview.mjs"
+    "build": "npm run sync && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
     "@capacitor/android": "8.5.3",

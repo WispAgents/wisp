@@ -9,14 +9,14 @@ Copy this into your notes and tick it off. A UI change isn't verified until it h
 - [ ] In **light and dark**.
 - [ ] In split view **side by side and stacked** (under 900px: the list, the task's page, Back; and
   home, if you touched the launcher or Needs you).
-- [ ] In the **phone app's** page if it shows there (`node qa/mobile.mjs`, or `body.wisp-mobile` with
-      the `wispMobile` user agent).
+- [ ] In the **phone app's** page if it shows there (`node qa/platform.mjs`, `qa/layout.mjs --phone`,
+      `qa/feedback.mjs --phone`; `cd mobile/web && npm run dev` for a look).
 - [ ] A screenshot of the result goes in the reply / PR.
 - [ ] `node qa/ui-audit.mjs` (every view, five sizes, light and dark) and `QUICK=1 node qa/buttons.mjs`
       pass: no axe violation, ≤ 5 font sizes, no cut short label, 44px in the app.
 
 Use the QA runners rather than your own wisp: they start an isolated wisp with fake agents
-(`node qa/web.mjs`, `qa/mobile.mjs`, `qa/desktop.mjs`; see `qa/README.md`). For a one-off check,
+(`node qa/web.mjs`, `qa/platform.mjs`, `qa/desktop.mjs`; see `qa/README.md`). For a one-off check,
 install `playwright-core` in `/tmp` (not the repo) and launch the system Chrome with
 `executablePath`. Look at the screenshots, not only the exit code: layout regressions at phone width
 or in dark mode don't throw.

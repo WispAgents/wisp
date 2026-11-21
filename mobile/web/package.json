@@ -1,6 +1,6 @@
 {
   "name": "@wisp/mobile",
-  "version": "2.0.0",
+  "version": "1.0.0-alpha.1",
   "private": true,
   "type": "module",
   "description": "The phone apps' side of the bundle (plan \u00a77.3, ADR-0065): its own entry (src/main.tsx: the shell on the launched computer, the Computers destination), reaching every saved computer through the native bridge (sshj tunnels, wisp Grid) over the sync protocol.",

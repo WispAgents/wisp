@@ -424,7 +424,7 @@ narrow browser's under the media query (the reply box's mode button is icon-only
 - Keep `server/machines/bootstrap.js` and `server/shq.js` free of Node imports: the app runs them.
 - The page is cached for good by content hash: a new module or stylesheet needs nothing extra, but
   test that a stale cached page reloads onto the new build.
-- Check it with `node qa/mobile.mjs` (the app's WebView as a page) and the `MOB-*` scenarios in
+- Check it with `node qa/platform.mjs` (the phone app's page, qa/phone.mjs) and the `MOB-*` scenarios in
   `qa/scenarios/mobile.md`.
 
 ## B: The iPhone Home Screen app (wisp Grid)

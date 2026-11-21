@@ -3,7 +3,7 @@
 // a "file://" prefix onto a path (`D:\a\x`) is no URL at all, so a script's "am I the entry?" guard against
 // process.argv[1] never matches and a page.goto() opens nothing. node:url converts both ways for every OS:
 // fileURLToPath(new URL(rel, import.meta.url)) (or import.meta.dirname) for a path, pathToFileURL(p).href for
-// a URL. Checked in every scanned file (packages, plugins, apps, tools) and in qa/ and mobile/scripts, the
+// a URL. Checked in every scanned file (packages, plugins, apps, tools) and in qa/, the
 // harnesses CI runs on Windows too.
 
 import { readdirSync } from 'node:fs';
@@ -12,7 +12,7 @@ import { finding } from '../core/report.ts';
 import type { Ctx, Finding, Rule } from '../core/types.ts';
 
 const ID = 'file-urls';
-const EXTRA = ['qa', 'mobile/scripts'];
+const EXTRA = ['qa'];
 const SCRIPT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 const CHECKS: readonly [RegExp, string][] = [
   [/import\.meta\.url\s*\)\s*\.pathname\b/, "a URL's .pathname used as a path is /D:/... on Windows: use fileURLToPath(new URL(…, import.meta.url))"],

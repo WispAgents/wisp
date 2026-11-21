@@ -9,24 +9,16 @@ to the list, to switch to another one or add one.
 *Computers* is the app's word for what it connects to; *Machines* stays the desktop feature that
 reaches other computers over SSH (it isn't shown in the app).
 
-It reuses wisp's code instead of copying it:
-
-- **The page is wisp's own.** The phone forwards `127.0.0.1:<port>` over SSH to wisp on the
-  machine, and the WebView loads `http://127.0.0.1:<port>/` from there. Every feature, spell and
-  fix in `web/` shows up on the phone, matched to the wisp version running on that machine.
-- **wisp starts with the desktop's own script.** `server/machines/bootstrap.js` is the script
-  that desktop *Machines* sends over `ssh … sh -s`. It finds Node 20+ (or
-  installs it into `~/.wisp/node`), starts `npx -y wisp-agents` (or reuses a running wisp) and reports each `STEPS` entry back as an
-  `@@wisp …` line. `npm run shared` copies it into `www/shared/`.
-- **`web/` knows when it runs in the app.** The WebView adds `wispMobile` to its user agent.
-  `MOBILE` in `web/js/core/state.js` then hides what a phone can't do (Take over in a terminal,
-  opening an editor, keyboard hints, Machines), turns the Machines button into **Computers**
-  (back to the app's list) and calls the computer by its name instead of *This computer*
-  (`COMPUTER`, passed by the app as `?m=`).
+The page is the phone app, `web/` (`@wisp/mobile`, ADR-0065): wisp's own shell and every plugin's UI, with the
+Computers destination, reaching each saved computer through the native bridge (`WispSshPlugin`: sshj tunnels, wisp
+Grid) over the sync protocol. `npm run web` builds it with vite into `www/` (Capacitor's `webDir`, gitignored), and
+`cap sync` copies that into the APK's `assets/public/`. wisp starts on an SSH computer with the desktop's own script:
+`app/build.gradle` copies `plugins/machines/core/bootstrap.sh` into the APK's assets with the wisp version filled in
+(`Bootstrap.java`).
 
 ```
-www/                 the computers screen (vanilla JS, no build), mock.js for the browser preview
-scripts/shared.mjs   copies server/shq.js, server/machines/bootstrap.js, web/css/tokens.css
+web/                 the phone app (@wisp/mobile): npm run dev there for a browser preview with mock computers
+www/                 its build (npm run web), what Capacitor ships: never edited by hand
 android/app/src/main/java/dev/trywisp/mobile/
   Tunnel.java        SSH (sshj), runs the script, forwards the port, reconnects (plain Java)
   Keys.java          the phone's keys: Ed25519 made here, or imported OpenSSH/PEM/PuTTY
@@ -92,11 +84,11 @@ Needs Node 20+, a JDK 21 (Android Studio's bundled one works) and the Android SD
 
 ```sh
 cd mobile
-npm install
-npm run build        # shared files → cap sync → ./gradlew assembleDebug
+npm install          # here, and once at the repo root (the workspaces web/ builds from)
+npm run build        # vite build of web/ → www → cap sync → ./gradlew assembleDebug
 # → android/app/build/outputs/apk/debug/app-debug.apk
 npm run open         # or open it in Android Studio
-npm run preview      # the machines screen in a desktop browser, with a fake plugin
+cd web && npm run dev   # the app in a desktop browser with mock computers: http://127.0.0.1:5190/?platform=android
 ```
 
 Without `JAVA_HOME` set: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"`.
@@ -128,7 +120,8 @@ themed icon). The store art is in `store/`: `icon.png` (512×512) and `feature-g
    With a `PLAY_SERVICE_ACCOUNT_JSON` secret it then publishes (`scripts/play.mjs`), as npm
    releases do: every build goes to *Internal testing*, and the build that bumps `package.json`'s
    version also goes to *Production* (or the track in the `PLAY_PROMOTE_TRACK` repo variable, e.g.
-   `alpha` for closed testing while production is locked). *What's new* is `whatsnew.txt` when it
+   `alpha` for closed testing while production is locked). A prerelease version (`1.0.0-alpha.1`:
+   one with a `-`) is never promoted: it stays on *Internal testing*. *What's new* is `whatsnew.txt` when it
    has text, else the CHANGELOG headlines about the phone app (`node scripts/play.mjs notes`).
    The key, once: in Google Cloud turn on the *Google Play Android Developer API*, make a service
    account and a JSON key for it, then in Play Console → *Users and permissions* invite its email

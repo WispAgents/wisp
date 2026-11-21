@@ -1,14 +1,14 @@
 # Android app scenarios
 
-The app (`mobile/`) is a Capacitor shell: its own *computers* screen (`mobile/www`), then wisp's
+The app (`mobile/`) is a Capacitor shell: its own page, the phone app (`mobile/web`, built into `mobile/www`), then wisp's
 own page from the computer it connects to, with `wispMobile` in the user agent (`MOBILE` and
 `COMPUTER` in `web/js/core/state.js`). So most of it can be checked in Chrome with a phone
 viewport; the native parts need Gradle or the emulator.
 
 **How each one runs**
 
-- `qa/mobile.mjs`: Chrome with a phone viewport, touch and the app's user agent, against an
-  isolated wisp with fake agents (`node qa/mobile.mjs`, after `npm install` in `mobile/`).
+- `qa/platform.mjs`: Chrome with a phone viewport, touch and the fake Capacitor bridge (qa/phone.mjs),
+  against an isolated wisp with fake agents.
 - `Gradle`: `cd mobile && npm run build`, then `cd android && ./gradlew testDebugUnitTest`
   (`JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"`).
 - `Emulator`: the debug APK on an emulator (`emulator -avd <avd> -no-window -no-audio`), a dev grid
