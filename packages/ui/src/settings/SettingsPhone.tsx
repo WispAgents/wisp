@@ -1,5 +1,5 @@
 // Settings in the phone apps (ADR-0065 step 14, design/mobile.md §A.2 Settings): SettingsFrame's phone half, the same
-// props drawn as the platform's pushed pages. The list of panes is a page under the platform's bar (Android's M3 medium
+// props drawn as the platform's pushed pages. The list of panes is a page under the platform's bar (Android's M3 small
 // top app bar with Back; iOS's navigation bar, Back titled with the screen under it): Android an M3 settings list (each
 // group's header in the primary colour, one-line items with their icon, no cards), iOS an inset grouped table (rows
 // with a disclosure chevron). A pane is pushed over it: its own bar, Back to Settings (onUp), then the pane as it is,

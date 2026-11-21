@@ -297,7 +297,7 @@ export function PhoneCompose(props: { readonly onClose: () => void; readonly onS
   );
 }
 
-// The task page's head (ADR-0065 step 13, design/mobile.md §A.1, §A.2 Task page): the kit's page TopAppBar (M3 medium
+// The task page's head (ADR-0065 step 13, design/mobile.md §A.1, §A.2 Task page): the kit's page TopAppBar (M3 small
 // top app bar; the iOS navigation bar with Back titled Tasks) in place of v1's split head. Its actions are what plugins
 // put in the head (`shell.task:head`) and the task's menu (⋮ / ⋯): the one menu model (TaskView's `more()`,
 // task-menu.ts) with what the browser's details bar holds (Transcript, Rerun, Open in, Changes, Shell, Ship it, Mark

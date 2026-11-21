@@ -35,9 +35,9 @@ Rules that hold on both:
 ### Android (Material 3)
 
 - **Top app bar** on every screen. The list: a *small* bar with the computer filter (*All* or a computer's name) as
-  its title button, search and the me avatar at the end. A pushed page (a task, a setting): a *medium* bar whose
-  title takes two lines expanded and collapses to one line on scroll, Back at the start, the page's actions at the
-  end, folding label → icon → ⋮ by priority (`Toolbar`'s rules).
+  its title button, search and the me avatar at the end. A pushed page (a task, a setting): a *small* bar, Back at the start with the
+  page's one-line title right beside it on every page (owner 2026-11-21: never the medium bar's title under the arrow),
+  the page's actions at the end, folding label → icon → ⋮ by priority (`Toolbar`'s rules).
 - **Navigation bar** at the bottom on phones (< 600 dp): **Tasks · Crew · Stuff · Computers**. **Navigation rail**
   from 600 dp; from 840 dp the list and the open task sit side by side (M3 list-detail), as the browser's split.
   Settings is in the me avatar's menu (v1's me menu), not a destination.

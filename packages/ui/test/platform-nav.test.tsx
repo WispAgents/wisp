@@ -247,13 +247,14 @@ describe('give way (v1 fab.js)', () => {
 });
 
 describe('TopAppBar', () => {
-  it('android_page_is_the_medium_bar_with_its_large_title_row', () => {
+  it('android_page_is_the_small_bar_its_title_beside_back', () => {
     as('android', () => <TopAppBar kind="page" title="Fix the flaky test" back={{ label: 'Tasks', onBack: noop }} />);
     const bar = q('header[data-kit="app-bar"]');
     expect(bar?.dataset['kind']).toBe('page');
-    expect(bar?.hasAttribute('data-large')).toBe(true);
-    expect(q('[data-kit="app-bar-large"] [data-kit="app-bar-large-title"]')?.textContent).toBe('Fix the flaky test');
-    expect(q('h1[data-kit="app-bar-title"]')?.textContent).toBe('Fix the flaky test');
+    // no medium bar: its inline title is hidden until the page scrolls, so the title would sit under the arrow
+    expect(bar?.hasAttribute('data-large')).toBe(false);
+    expect(q('[data-kit="app-bar-large"]')).toBeNull();
+    expect(q('[data-kit="app-bar-row"] > [data-kit="icon-button"] + h1[data-kit="app-bar-title"]')?.textContent).toBe('Fix the flaky test');
     // Android's Back is an icon button named after where it goes
     expect(q('[data-kit="app-bar-row"] > [data-kit="icon-button"]')?.getAttribute('aria-label')).toBe('Tasks');
   });

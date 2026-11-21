@@ -2,8 +2,8 @@
 // picks the platform's bar:
 //   root (a destination's list)   Android: M3 small top app bar, one-line title.
 //                                 iOS: navigation bar with a large title that collapses to the inline title.
-//   page (a pushed task, setting) Android: M3 medium top app bar, the title on one line (an ellipsis past it)
-//                                 under the bar, collapsing into the bar on scroll.
+//   page (a pushed task, setting) Android: M3 small top app bar, the one-line title beside Back (never the
+//                                 medium bar's title under it: owner 2026-11-21).
 //                                 iOS: the inline, centred title; Back carries the previous title.
 //   compose (New task)            Android: the M3 full-screen dialog's bar: Close (×), the title, the confirm
 //                                 action as a text button at the end. iOS: a sheet's bar: Cancel, the centred
@@ -286,8 +286,9 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
     const s = select();
     return s ? (props.actions ?? []).filter((a) => a.id !== s.action) : (props.actions ?? []);
   };
-  // M3 medium on a pushed page; the iOS large title on a destination's root; a compose bar is one line on both
-  const large = (): boolean => (ios() ? kind() === 'root' : kind() === 'page');
+  // the iOS large title on a destination's root only: a pushed page is one line on both, its title beside Back from the
+  // first frame (owner 2026-11-21: Android's M3 medium bar hid the title under the arrow until the page scrolled)
+  const large = (): boolean => ios() && kind() === 'root';
   const host = useComposeHost();
   claimCompose(host, ios() && kind() === 'root');
   const [collapsed, setCollapsed] = createSignal(false);
