@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.4] - 2026-11-21
+
 ### Fixed
 
 - Phone browser: a task is one fixed page again. The app was sized to `100vh`, taller than the screen under the browser's URL bar, so the whole page scrolled and took the header and the composer with it; it now fills the visible height, the header and composer stay put and only the conversation scrolls.
@@ -254,7 +256,8 @@ from your own agent through wisp's MCP tools. It's an alpha: expect rough edges,
 - With Auto off, nothing offers `auto` or the router.
 - Settings → Connectors keeps each connector's last check across a restart.
 
-[Unreleased]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.3...main
+[Unreleased]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.4...main
+[1.0.0-alpha.4]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.3...v1.0.0-alpha.4
 [1.0.0-alpha.3]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.2...v1.0.0-alpha.3
 [1.0.0-alpha.2]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.1...v1.0.0-alpha.2
 [1.0.0-alpha.1]: https://github.com/WispAgents/wisp/releases/tag/v1.0.0-alpha.1
