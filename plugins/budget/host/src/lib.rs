@@ -310,7 +310,10 @@ fn guard(ctx: &Ctx, st: &State, mut c: BeforeRunCtx) -> Verdict<BeforeRunCtx> {
     lock(&st.starting).insert(c.turn_id.0.clone(), (c.agent.clone(), account_of(c.account.as_deref().unwrap_or(""))));
     let subject = wisp_budget_core::subject_of(&c.agent, c.account.as_deref(), c.by.as_deref());
     let at = now(ctx);
-    let Some(h) = wisp_budget_core::decide(&subject, |g, a| st.hold(g, a, at)) else { return st.ask(ctx, c).unwrap_or(Verdict::Continue) };
+    // a yes (Start now on the held card, the CLI's --yes: ADR-0091 §5) goes past the stop line too; without it a held
+    // crew run's Start now was held again at once, as the same turn, and nothing seemed to happen
+    let hold = if c.confirm_limit { None } else { wisp_budget_core::decide(&subject, |g, a| st.hold(g, a, at)) };
+    let Some(h) = hold else { return st.ask(ctx, c).unwrap_or(Verdict::Continue) };
     let why = format!("{} is past {:.0}% of its {} window: unattended work waits for it to reset.", c.agent, h.stop * 100.0, h.label);
     lock(&st.held).entry((h.agent.clone(), h.account.clone())).or_default().push((c.session_id.0.clone(), c.turn_id.0.clone()));
     c.hold = Some(Held { by: PLUGIN_ID.into(), kind: HOLD_KIND.into(), until: Some(h.until), data: json!({ "hold": h, "why": why }) });
