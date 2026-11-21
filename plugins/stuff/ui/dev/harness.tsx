@@ -31,7 +31,7 @@ export interface DevPlugin {
 export const DEV_PEER = peerId('laptop');
 
 export function devInfo(plugin: string, topics: readonly string[], commands: readonly string[]): PeerInfo {
-  return { peer: 'laptop', name: 'MacBook Pro', build: 'dev', version: '2.0.0', proto_min: 2, proto_max: 2, plugins: [{ id: plugin, version: '2.0.0', commands: [...commands], topics: [...topics], blocks: [] }] };
+  return { peer: 'laptop', name: 'MacBook Pro', build: 'dev', version: '1.0.0-alpha.1', proto_min: 2, proto_max: 2, plugins: [{ id: plugin, version: '1.0.0-alpha.1', commands: [...commands], topics: [...topics], blocks: [] }] };
 }
 
 export async function startDev(o: { plugin: DevPlugin; info: PeerInfo; seed: readonly SeedRow[]; handle: Handler; topics: readonly Topic[]; delayMs?: number }): Promise<{ client: Client; root: HTMLElement }> {

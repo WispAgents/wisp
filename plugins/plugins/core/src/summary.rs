@@ -117,7 +117,7 @@ mod tests {
             "contributes": { "ui": [{ "id": "user.theme.pane", "attachTo": { "id": "shell.settings", "input": "pane" }, "component": "./ui.js#default", "title": "Theme" }] }
         }))
         .unwrap();
-        let own = Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.plugins", "name": "Plugins", "version": "2.0.0", "api": "^1", "description": "The plugin manager" })).unwrap();
+        let own = Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.plugins", "name": "Plugins", "version": "1.0.0-alpha.1", "api": "^1", "description": "The plugin manager" })).unwrap();
         let t = text(&[have("wisp.plugins", "active", true), have("user.theme", "off", false)], &[own, mine], &|id| {
             format!("/h/plugins/{}", crate::slug(id))
         });

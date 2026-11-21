@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.review",
   "name": "review",
-  "version": "2.0.0",
+  "version": "1.0.0-alpha.1",
   "api": "^1",
   "description": "review by another harness: a task's PR head read by a harness other than the author, the tests run again on it",
   "kind": "plugin",
@@ -11,7 +11,7 @@
   },
   "requires": {
     "git.service": "^1",
-    "wisp.runtime": "^2"
+    "wisp.runtime": "^1.0.0-0"
   },
   "provides": {},
   "permissions": [

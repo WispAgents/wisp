@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, packageName } from '../wisp-agents/lib/resolve.js';
-import { publishTag, buildMatrix, cargoVersion, extraTags, isPrerelease, lockVersion, npmTag, publishOrder, releaseKind, stampCargoVersion, versionProblems } from '../scripts/release.mjs';
+import { publishTag, buildMatrix, cargoVersion, extraTags, isPrerelease, lockVersion, npmTag, publishOrder, releaseKind, stampCargoVersion, stampManifestVersion, versionProblems } from '../scripts/release.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/release.mjs', import.meta.url));
 const CARGO = `[workspace]
@@ -196,4 +196,22 @@ test('the_matrix_command_prints_one_line_of_json', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout.trim().split('\n').length, 1);
   assert.deepEqual(JSON.parse(r.stdout), buildMatrix());
+});
+
+test('a built-in plugin manifest that does not say the release version is a problem that names the fix', () => {
+  const ok = { 'plugins/runtime/host/wisp-plugin.json': '1.0.0-alpha.2', 'plugins/git/host/wisp-plugin.json': '1.0.0-alpha.2' };
+  assert.deepEqual(versionProblems({ cargo: '1.0.0-alpha.2', launcher: launcher('1.0.0-alpha.2'), manifests: ok }), []);
+  const [p, ...rest] = versionProblems({ cargo: '1.0.0-alpha.2', launcher: launcher('1.0.0-alpha.2'), manifests: { ...ok, 'plugins/git/host/wisp-plugin.json': '1.0.0-alpha.1' } });
+  assert.deepEqual(rest, []);
+  assert.match(p, /1 built-in plugin manifest \(plugins\/git\/host\/wisp-plugin.json: 1.0.0-alpha.1\)/);
+  assert.match(p, /set-plugins 1.0.0-alpha.2/);
+});
+
+test('set-plugins stamps only the top-level version, not a service it provides', () => {
+  const json = '{\n  "wispPlugin": 1,\n  "id": "wisp.history",\n  "version": "1.0.0-alpha.1",\n  "provides": { "history.store": { "version": "1.0.0" } }\n}\n';
+  const out = stampManifestVersion(json, '1.0.0');
+  assert.match(out, /^ {2}"version": "1.0.0",$/m);
+  assert.match(out, /"history.store": \{ "version": "1.0.0" \}/);
+  assert.equal(out.replace('"version": "1.0.0",', '"version": "1.0.0-alpha.1",'), json);
+  assert.throws(() => stampManifestVersion(json, 'next'), /not a semver/);
 });

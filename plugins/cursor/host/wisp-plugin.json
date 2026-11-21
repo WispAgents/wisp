@@ -2,14 +2,14 @@
   "wispPlugin": 1,
   "id": "wisp.cursor",
   "name": "Cursor",
-  "version": "2.0.0",
+  "version": "1.0.0-alpha.1",
   "api": "^1",
   "description": "wisp.cursor host: Cursor as a runtime.harness@1 contribution (detect, setup, launch, resume, trust)",
   "server": {
     "builtin": "wisp-cursor"
   },
   "requires": {
-    "wisp.runtime": "^2"
+    "wisp.runtime": "^1.0.0-0"
   },
   "permissions": [],
   "activation": [

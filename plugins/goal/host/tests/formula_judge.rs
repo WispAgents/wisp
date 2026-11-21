@@ -33,7 +33,7 @@ struct Rt {
 struct Runtime(Rt);
 impl Plugin for Runtime {
     fn manifest(&self) -> Manifest {
-        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "2.0.0", "api": "^1" })).unwrap()
+        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "1.0.0-alpha.1", "api": "^1" })).unwrap()
     }
     fn setup(&self, s: &mut Setup) -> Result<()> {
         let rt = self.0.clone();

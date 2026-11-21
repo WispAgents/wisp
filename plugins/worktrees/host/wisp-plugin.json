@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.worktrees",
   "name": "Worktrees",
-  "version": "2.0.0",
+  "version": "1.0.0-alpha.1",
   "api": "1",
   "description": "A checkout per session: made from the fresh base, prepared (.worktreeinclude, setup steps), brought back, removed only when nothing would be lost; Settings → Worktrees and the hourly sweep; Done's folders; project trust, a before:run guard that holds a turn until the repo's own programs are trusted.",
   "kind": "plugin",

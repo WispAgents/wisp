@@ -2,14 +2,14 @@
   "wispPlugin": 1,
   "id": "wisp.codex",
   "name": "Codex",
-  "version": "2.0.0",
+  "version": "1.0.0-alpha.1",
   "api": "^1",
   "description": "wisp.codex host: Codex as a runtime.harness@1 contribution (detect, setup, launch, resume, trust)",
   "server": {
     "builtin": "wisp-codex"
   },
   "requires": {
-    "wisp.runtime": "^2"
+    "wisp.runtime": "^1.0.0-0"
   },
   "permissions": [],
   "activation": [

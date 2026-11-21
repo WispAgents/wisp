@@ -18,7 +18,7 @@ fn peer() -> PeerInfo {
         peer: "laptop".into(),
         name: "laptop".into(),
         build: "test".into(),
-        version: "2.0.0".into(),
+        version: "1.0.0-alpha.1".into(),
         proto_min: 2,
         proto_max: 2,
         plugins: vec![],

@@ -29,7 +29,7 @@ struct Seen {
 }
 
 fn manifest(id: &str) -> Manifest {
-    Manifest::from_value(json!({ "wispPlugin": 1, "id": id, "version": "2.0.0", "api": "^1" })).unwrap()
+    Manifest::from_value(json!({ "wispPlugin": 1, "id": id, "version": "1.0.0-alpha.1", "api": "^1" })).unwrap()
 }
 
 /// wisp.runtime as far as the watch asks it: the task's title, and Stop.

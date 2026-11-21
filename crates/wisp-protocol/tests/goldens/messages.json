@@ -71,7 +71,7 @@
         "plugins": [],
         "proto_max": 2,
         "proto_min": 2,
-        "version": "2.0.0"
+        "version": "1.0.0-alpha.1"
       },
       "proto": 2,
       "resume": true,

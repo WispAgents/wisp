@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.goal",
   "name": "goal",
-  "version": "2.0.0",
+  "version": "1.0.0-alpha.1",
   "api": "^1",
   "description": "goals: rounds, verdicts, judges, stalls",
   "kind": "plugin",

@@ -11,6 +11,7 @@
 //   node npm/scripts/release.mjs packages <dist-dir>    # package dirs in publish order, one per line
 //   node npm/scripts/release.mjs publish-tag <pkg-version> <version> <tag>  # a tarball's dist-tag (a binary's: platform-<target>)
 //   node npm/scripts/release.mjs stamp-cargo <version>  # a nightly's version into Cargo.toml's [workspace.package]
+//   node npm/scripts/release.mjs set-plugins <version>  # a release's version into every built-in plugin's manifest
 //                                                       # (then `cargo update --workspace` moves Cargo.lock with it)
 
 import fs from 'node:fs';
@@ -46,9 +47,31 @@ export function stampCargoVersion(cargoToml, version) {
   return `${text.slice(0, end - m[1].length - 1)}${version}"${text.slice(end)}`;
 }
 
+// Every built-in plugin's manifest version, as { file: version }: they carry the product's version, so Settings →
+// Plugins says the version you installed (bumped with it, by hand or `set-plugins <version>`).
+export function manifestVersions(root = ROOT) {
+  const out = {};
+  for (const p of fs.readdirSync(path.join(root, 'plugins'))) {
+    const file = path.join('plugins', p, 'host', 'wisp-plugin.json');
+    if (!fs.existsSync(path.join(root, file))) continue;
+    out[file] = JSON.parse(fs.readFileSync(path.join(root, file), 'utf8')).version ?? null;
+  }
+  return out;
+}
+
+// A manifest with its top-level "version" set (the first "version" key at two-space indent: a `provides` entry's
+// own version is deeper and stays).
+export function stampManifestVersion(json, version) {
+  if (!SEMVER.test(version)) throw new Error(`"${version}" is not a semver version.`);
+  const text = json.replace(/\r\n/g, '\n');
+  if (!/^ {2}"version": "[^"]*"/m.test(text)) throw new Error('the manifest has no top-level "version".');
+  return text.replace(/^( {2}"version": ")[^"]*(")/m, `$1${version}$2`);
+}
+
 // Every problem with the versions, as sentences that say what to fix; [] when they agree.
 // tag: the git tag being released (v1.2.3), when the run is for one.
-export function versionProblems({ cargo, lock, launcher, tag }) {
+// manifests: the built-in plugins' versions ({ file: version }), when checked.
+export function versionProblems({ cargo, lock, launcher, tag, manifests }) {
   const problems = [];
   const npm = launcher?.version;
   if (!cargo) problems.push('Cargo.toml has no `version = "x.y.z"` under [workspace.package].');
@@ -59,6 +82,12 @@ export function versionProblems({ cargo, lock, launcher, tag }) {
   }
   if (cargo && lock !== undefined && lock !== cargo) {
     problems.push(`Cargo.lock has wisp ${lock ?? '(none)'} but Cargo.toml says ${cargo}: run \`cargo update --workspace\` and commit Cargo.lock.`);
+  }
+  const behind = Object.entries(manifests ?? {}).filter(([, v]) => cargo && v !== cargo);
+  if (behind.length) {
+    problems.push(
+      `${behind.length} built-in plugin manifest${behind.length === 1 ? '' : 's'} (${behind.map(([f, v]) => `${f}: ${v}`).slice(0, 3).join(', ')}${behind.length > 3 ? ', …' : ''}) don't say ${cargo}: run \`node npm/scripts/release.mjs set-plugins ${cargo}\` (the release skill).`,
+    );
   }
   if (tag && npm && tag.replace(/^v/, '') !== npm) {
     problems.push(`The tag ${tag} does not match the version ${npm} in npm/wisp-agents/package.json and Cargo.toml: tag v${npm}, or bump the version.`);
@@ -166,7 +195,7 @@ function main([cmd, ...args]) {
       const i = args.indexOf('--tag');
       const tag = i >= 0 ? args[i + 1] : undefined;
       const launcher = JSON.parse(read('npm/wisp-agents/package.json'));
-      const problems = versionProblems({ cargo: cargoVersion(read('Cargo.toml')), lock: lockVersion(read('Cargo.lock')), launcher, tag });
+      const problems = versionProblems({ cargo: cargoVersion(read('Cargo.toml')), lock: lockVersion(read('Cargo.lock')), launcher, tag, manifests: manifestVersions() });
       if (problems.length) {
         for (const p of problems) process.stderr.write(`::error::${p}\n`);
         return 1;
@@ -195,11 +224,16 @@ function main([cmd, ...args]) {
     case 'publish-tag':
       process.stdout.write(`${publishTag(args[0], args[1], args[2])}\n`);
       return 0;
+    case 'set-plugins':
+      // a release bump: every built-in plugin's manifest says the new version (never a nightly's: built-ins require
+      // each other with ranges a nightly pre-release of another patch wouldn't satisfy)
+      for (const file of Object.keys(manifestVersions())) fs.writeFileSync(path.join(ROOT, file), stampManifestVersion(read(file), args[0]));
+      return 0;
     case 'stamp-cargo':
       fs.writeFileSync(path.join(ROOT, 'Cargo.toml'), stampCargoVersion(read('Cargo.toml'), args[0]));
       return 0;
     default:
-      process.stderr.write('Usage: node npm/scripts/release.mjs check [--tag vX.Y.Z] | matrix | npm-tag <version> <channel> | extra-tags <version> <channel> | prerelease <version> <channel> | packages <dist> | stamp-cargo <version>\n');
+      process.stderr.write('Usage: node npm/scripts/release.mjs check [--tag vX.Y.Z] | matrix | npm-tag <version> <channel> | extra-tags <version> <channel> | prerelease <version> <channel> | packages <dist> | stamp-cargo <version> | set-plugins <version>\n');
       return 2;
   }
 }

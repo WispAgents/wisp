@@ -45,8 +45,10 @@ struct Slot {
 struct Runtime(PathBuf, Arc<Mutex<String>>, Arc<Mutex<Slot>>);
 impl Plugin for Runtime {
     fn manifest(&self) -> Manifest {
-        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "2.0.0", "api": "^1", "activation": ["onStartup"] }))
-            .unwrap()
+        Manifest::from_value(
+            json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"] }),
+        )
+        .unwrap()
     }
     fn setup(&self, s: &mut Setup) -> Result<()> {
         let (dir, title, slot) = (self.0.display().to_string(), self.1.clone(), self.2.clone());
@@ -93,8 +95,10 @@ impl Plugin for Runtime {
 struct Share(Arc<Mutex<String>>);
 impl Plugin for Share {
     fn manifest(&self) -> Manifest {
-        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.share", "version": "2.0.0", "api": "^1", "activation": ["onStartup"] }))
-            .unwrap()
+        Manifest::from_value(
+            json!({ "wispPlugin": 1, "id": "wisp.share", "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"] }),
+        )
+        .unwrap()
     }
     fn setup(&self, s: &mut Setup) -> Result<()> {
         let title = self.0.clone();

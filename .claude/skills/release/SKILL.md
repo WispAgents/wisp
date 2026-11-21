@@ -15,7 +15,11 @@ together, and wisp-agents' one trusted publisher covers every tarball: nothing i
    `wisp --version` prints; then `cargo update --workspace` so `Cargo.lock` follows) and
    `npm/wisp-agents/package.json` (`version` and every `npm:wisp-agents@<version>-<os>-<arch>` pin in `optionalDependencies`).
    `node npm/scripts/release.mjs check` says whether they (and `Cargo.lock`) agree (release.yml's plan job runs
-   it first and fails with the file to fix). Also bump the strings that show it: `README.md`, `docs/index.html`,
+   it first and fails with the file to fix). Every built-in plugin's manifest carries the same version (Settings →
+   Plugins shows it): `node npm/scripts/release.mjs set-plugins <version>` sets all of `plugins/*/host/wisp-plugin.json`,
+   and `check` (and `crates/wisp/tests/builtin_versions.rs`) refuse a mismatch. Built-ins require each other with
+   `^1.0.0-0`, which takes every 1.0.0 pre-release and every 1.x; a pre-release of another x.y.z (`1.1.0-beta.1`)
+   needs those ranges moved to `^1.1.0-0` in the same PR (the test says which). Also bump the strings that show it: `README.md`, `docs/index.html`,
    `docs/install.sh`, `scripts/guides.mjs`.
 2. Move CHANGELOG's *Unreleased* into `## [x.y.z] - YYYY-MM-DD`: `scripts/release-notes.mjs` drafts the GitHub
    release from that section (the plan job fails without it).

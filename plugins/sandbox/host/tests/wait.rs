@@ -66,7 +66,7 @@ impl Box_ {
 struct Machines(Box_);
 impl Plugin for Machines {
     fn manifest(&self) -> Manifest {
-        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.machines", "version": "2.0.0", "api": "^1" })).unwrap()
+        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.machines", "version": "1.0.0-alpha.1", "api": "^1" })).unwrap()
     }
     fn setup(&self, s: &mut Setup) -> Result<()> {
         let b = self.0.clone();

@@ -137,7 +137,8 @@ async fn boot_follows_from_one_list_and_one_slots_read_never_a_get_per_task() {
     struct Runtime(Arc<AtomicUsize>, serde_json::Value);
     impl Plugin for Runtime {
         fn manifest(&self) -> Manifest {
-            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "2.0.0", "api": "^1" })).unwrap_or_default()
+            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "1.0.0-alpha.1", "api": "^1" }))
+                .unwrap_or_default()
         }
         fn setup(&self, s: &mut Setup) -> Result<()> {
             s.command::<List, _, _>(|_, _, _| async {
@@ -167,7 +168,7 @@ async fn boot_follows_from_one_list_and_one_slots_read_never_a_get_per_task() {
     let tree = json!({ "path": w.path, "cwd": w.path, "branch": w.branch, "base": "main", "baseRef": "origin/main", "remote": "origin", "root": w.root, "createdAt": 1 });
     let gets = Arc::new(AtomicUsize::new(0));
     let me = Declarative(
-        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.ship", "version": "2.0.0", "api": "^1", "permissions": ["runtime:list", "runtime:slots", "runtime:get"] }))
+        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.ship", "version": "1.0.0-alpha.1", "api": "^1", "permissions": ["runtime:list", "runtime:slots", "runtime:get"] }))
             .unwrap_or_default(),
     );
     let k = App::new().plugins(PluginGroup::new().add(Runtime(gets.clone(), tree)).add(me)).start().await.unwrap_or_else(|e| panic!("{e}"));

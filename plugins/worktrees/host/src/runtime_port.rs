@@ -288,7 +288,7 @@ mod reads_tests {
     struct Runtime(Arc<AtomicUsize>);
     impl Plugin for Runtime {
         fn manifest(&self) -> Manifest {
-            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "2.0.0", "api": "^1" })).unwrap()
+            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "1.0.0-alpha.1", "api": "^1" })).unwrap()
         }
         fn setup(&self, s: &mut Setup) -> Result<()> {
             s.command::<List, _, _>(|_, _, _| async {
@@ -339,7 +339,7 @@ mod reads_tests {
     async fn the_pane_reads_every_task_in_two_reads_and_no_get() {
         let gets = Arc::new(AtomicUsize::new(0));
         let caller = Declarative(
-            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.worktrees", "version": "2.0.0", "api": "^1", "permissions": ["runtime:list", "runtime:slots", "runtime:get"] }))
+            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.worktrees", "version": "1.0.0-alpha.1", "api": "^1", "permissions": ["runtime:list", "runtime:slots", "runtime:get"] }))
                 .unwrap(),
         );
         let k = App::new().plugins(PluginGroup::new().add(Runtime(gets.clone())).add(caller)).start().await.unwrap();
@@ -404,7 +404,7 @@ mod tests {
         impl Plugin for Rt {
             fn manifest(&self) -> Manifest {
                 Manifest::from_value(
-                    json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "2.0.0", "api": "^1", "activation": ["onStartup"] }),
+                    json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"] }),
                 )
                 .unwrap()
             }
@@ -428,7 +428,7 @@ mod tests {
         struct Me;
         impl Plugin for Me {
             fn manifest(&self) -> Manifest {
-                Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.worktrees", "version": "2.0.0", "api": "^1", "activation": ["onStartup"], "permissions": ["runtime:list", "runtime:slots"] })).unwrap()
+                Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.worktrees", "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"], "permissions": ["runtime:list", "runtime:slots"] })).unwrap()
             }
             fn setup(&self, _s: &mut Setup) -> Result<()> {
                 Ok(())

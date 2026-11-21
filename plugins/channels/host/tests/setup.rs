@@ -209,7 +209,7 @@ impl TransportDef for PairedDef {
 struct Extra;
 impl Plugin for Extra {
     fn manifest(&self) -> Manifest {
-        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.threaded", "version": "2.0.0", "api": "^1" })).unwrap()
+        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.threaded", "version": "1.0.0-alpha.1", "api": "^1" })).unwrap()
     }
     fn setup(&self, s: &mut Setup) -> Result<()> {
         s.contribute(&TRANSPORTS, Arc::new(ThreadedDef) as Arc<dyn TransportDef>);

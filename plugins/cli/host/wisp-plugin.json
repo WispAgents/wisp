@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.cli",
   "name": "Command line",
-  "version": "2.0.0",
+  "version": "1.0.0-alpha.1",
   "api": "^1",
   "description": "the command-line frontend: verbs generated from the command catalogue, terminal block renderers, live attach",
   "kind": "plugin",

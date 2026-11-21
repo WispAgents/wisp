@@ -322,7 +322,7 @@ mod tests {
     impl wisp_kernel::Plugin for FakeGrid {
         fn manifest(&self) -> wisp_kernel::Manifest {
             wisp_kernel::Manifest::from_value(
-                json!({ "wispPlugin": 1, "id": "wisp.grid-client", "version": "2.0.0", "api": "^1", "activation": ["onStartup"] }),
+                json!({ "wispPlugin": 1, "id": "wisp.grid-client", "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"] }),
             )
             .unwrap()
         }
@@ -351,7 +351,7 @@ mod tests {
     /// The share plugin (its runtime and grid permissions) over `rt` and `grid`.
     async fn app(rt: impl wisp_kernel::Plugin + 'static, grid: FakeGrid) -> wisp_kernel::Kernel {
         let me = wisp_kernel::Declarative(
-            wisp_kernel::Manifest::from_value(json!({ "wispPlugin": 1, "id": PLUGIN_ID, "version": "2.0.0", "api": "^1", "activation": ["onStartup"], "permissions": ["runtime:get", "runtime:setExt", "grid-client:revoke"] })).unwrap(),
+            wisp_kernel::Manifest::from_value(json!({ "wispPlugin": 1, "id": PLUGIN_ID, "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"], "permissions": ["runtime:get", "runtime:setExt", "grid-client:revoke"] })).unwrap(),
         );
         wisp_testkit::TestApp::new().with(rt).with(grid).with(me).start().await
     }
@@ -415,7 +415,7 @@ mod tests {
     impl wisp_kernel::Plugin for Unwritable {
         fn manifest(&self) -> wisp_kernel::Manifest {
             wisp_kernel::Manifest::from_value(
-                json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "2.0.0", "api": "^1", "activation": ["onStartup"] }),
+                json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"] }),
             )
             .unwrap()
         }

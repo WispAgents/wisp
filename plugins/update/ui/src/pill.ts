@@ -13,7 +13,7 @@ export interface PillView {
   readonly text: string;
   /** its accessible name: Update to 2.1.0, Updating…, Restarting… */
   readonly label: string;
-  /** v1 title: wisp 2.0.0 → 2.1.0: install and restart */
+  /** its title: wisp 1.0.0 → 1.1.0: install and restart */
   readonly title: string;
   /** installing or restarting: dimmed, not pressable */
   readonly busy: boolean;

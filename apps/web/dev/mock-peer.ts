@@ -121,7 +121,7 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
     peer,
     name: o.name ?? 'Mac mini (mock)',
     build: 'mock',
-    version: '2.0.0-mock',
+    version: '1.0.0-alpha.1-mock',
     proto_min: PROTO_MIN,
     proto_max: PROTO,
     plugins: data.plugins,

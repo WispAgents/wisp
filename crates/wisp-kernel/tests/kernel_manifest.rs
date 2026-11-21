@@ -21,8 +21,8 @@ fn errors(v: &Value) -> Vec<(String, String)> {
 
 fn ok() -> Value {
     json!({
-        "wispPlugin": 1, "id": "wisp.claude", "version": "2.0.0", "api": "^1", "kind": "module", "extends": "wisp.runtime",
-        "requires": { "wisp.git": { "version": "^2", "optional": true }, "git.service": "^1" },
+        "wispPlugin": 1, "id": "wisp.claude", "version": "1.0.0-alpha.1", "api": "^1", "kind": "module", "extends": "wisp.runtime",
+        "requires": { "wisp.git": { "version": "^1.0.0-0", "optional": true }, "git.service": "^1" },
         "permissions": ["proc:spawn{bin:claude}", "fs:read{scope:workspace}", "net:none", "secrets:read{key:claude.*}"],
         "server": { "builtin": "wisp_claude" },
         "activation": ["onCommand:runtime.start{harness:claude}", "onTopic:session:*", "onRoute:GET /api/claude/*"],

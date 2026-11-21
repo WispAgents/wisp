@@ -85,7 +85,7 @@ impl SlotRuntime {
 
 impl Plugin for SlotRuntime {
     fn manifest(&self) -> Manifest {
-        manifest(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "2.0.0", "api": "^1", "activation": ["onStartup"] }))
+        manifest(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"] }))
     }
     fn setup(&self, s: &mut Setup) -> Result<()> {
         self.register(s);
@@ -98,7 +98,7 @@ impl Plugin for SlotRuntime {
 #[must_use]
 pub fn caller(id: &str) -> Declarative {
     Declarative(manifest(json!({
-        "wispPlugin": 1, "id": id, "version": "2.0.0", "api": "^1", "activation": ["onStartup"],
+        "wispPlugin": 1, "id": id, "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"],
         "permissions": ["runtime:get", "runtime:setExt"]
     })))
 }

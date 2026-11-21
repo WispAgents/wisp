@@ -18,6 +18,6 @@ test('a_plugin_of_yours_says_its_name_its_trust_and_what_it_asks_for_audit_a_f19
   const trusted = rowAbout({ ...mine, trusted: true, permissions: [] }, say);
   expect(trusted.lines[1]).toBe('Trusted: it runs as its own process with your environment, and its styles apply.');
   expect(trusted.trust).toEqual({ label: 'Untrust', next: false });
-  const builtin = rowAbout({ id: 'wisp.claude', version: '2.0.0', state: 'active', enabled: true, builtin: true }, say);
-  expect([builtin.title, builtin.lines, builtin.trust]).toEqual(['claude', ['Version 2.0.0'], undefined]);
+  const builtin = rowAbout({ id: 'wisp.claude', version: '1.0.0-alpha.1', state: 'active', enabled: true, builtin: true }, say);
+  expect([builtin.title, builtin.lines, builtin.trust]).toEqual(['claude', ['Version 1.0.0-alpha.1'], undefined]);
 });

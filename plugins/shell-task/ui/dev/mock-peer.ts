@@ -53,7 +53,7 @@ export interface MockPeer {
   pushRaw(ops: readonly EntityOp[]): void;
 }
 
-const info = (peer: string, name: string): PeerInfo => ({ peer, name, build: 'mock', version: '2.0.0', proto_min: 2, proto_max: 2, plugins: [] });
+const info = (peer: string, name: string): PeerInfo => ({ peer, name, build: 'mock', version: '1.0.0-alpha.1', proto_min: 2, proto_max: 2, plugins: [] });
 
 // size-ok: a factory; small closures over the mock's shared state
 export function mockPeer(o: MockPeerOptions): MockPeer {

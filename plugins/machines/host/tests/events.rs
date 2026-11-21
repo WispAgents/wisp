@@ -24,7 +24,7 @@ impl Command for Heard {
 struct Ear(Arc<Mutex<Vec<String>>>);
 impl Plugin for Ear {
     fn manifest(&self) -> Manifest {
-        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.ear", "version": "2.0.0", "api": "^1" })).unwrap()
+        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.ear", "version": "1.0.0-alpha.1", "api": "^1" })).unwrap()
     }
     fn setup(&self, s: &mut Setup) -> Result<()> {
         let got = self.0.clone();
@@ -80,7 +80,7 @@ struct Lister(Arc<Mutex<Vec<Vec<String>>>>);
 impl Plugin for Lister {
     fn manifest(&self) -> Manifest {
         Manifest::from_value(
-            json!({ "wispPlugin": 1, "id": "wisp.lister", "version": "2.0.0", "api": "^1", "permissions": ["machines:list"] }),
+            json!({ "wispPlugin": 1, "id": "wisp.lister", "version": "1.0.0-alpha.1", "api": "^1", "permissions": ["machines:list"] }),
         )
         .unwrap()
     }

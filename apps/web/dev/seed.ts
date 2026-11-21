@@ -332,7 +332,7 @@ export const PRESENTATION = {
 const PLUGINS: PeerInfo['plugins'] = [
   {
     id: 'wisp.runtime',
-    version: '2.0.0',
+    version: '1.0.0-alpha.1',
     commands: [
       'runtime.create',
       'runtime.followUp',
@@ -354,11 +354,11 @@ const PLUGINS: PeerInfo['plugins'] = [
     topics: ['list', 'session:*'],
     blocks: ['hero', 'steps', 'diff', 'tests', 'files', 'callout', 'actions'],
   },
-  { id: 'wisp.settings', version: '2.0.0', commands: ['settings.set'], topics: ['config'], blocks: [] },
-  { id: 'wisp.threads', version: '2.0.0', commands: ['threads.notes', 'threads.notesUpdate', 'threads.revisions', 'threads.health', 'threads.freshBrief', 'threads.fresh'], topics: [], blocks: [] },
-  { id: 'wisp.crew', version: '2.0.0', commands: [], topics: ['crew'], blocks: [] },
-  { id: 'wisp.machines', version: '2.0.0', commands: [], topics: ['machines'], blocks: [] },
-  { id: 'wisp.stuff', version: '2.0.0', commands: ['stuff.delete', 'stuff.remove'], topics: ['stuff'], blocks: [] },
+  { id: 'wisp.settings', version: '1.0.0-alpha.1', commands: ['settings.set'], topics: ['config'], blocks: [] },
+  { id: 'wisp.threads', version: '1.0.0-alpha.1', commands: ['threads.notes', 'threads.notesUpdate', 'threads.revisions', 'threads.health', 'threads.freshBrief', 'threads.fresh'], topics: [], blocks: [] },
+  { id: 'wisp.crew', version: '1.0.0-alpha.1', commands: [], topics: ['crew'], blocks: [] },
+  { id: 'wisp.machines', version: '1.0.0-alpha.1', commands: [], topics: ['machines'], blocks: [] },
+  { id: 'wisp.stuff', version: '1.0.0-alpha.1', commands: ['stuff.delete', 'stuff.remove'], topics: ['stuff'], blocks: [] },
 ];
 
 const MODEL: Record<Task['agent'], string> = { claude: 'claude-opus-5-5', codex: 'gpt-5.5-codex', gemini: 'gemini-3-pro' };
@@ -484,7 +484,7 @@ const MACHINES = [
     attempt: 0,
     projects: 3,
     working: 1,
-    remote: { version: '2.0.0', platform: 'darwin', agents: [] },
+    remote: { version: '1.0.0-alpha.1', platform: 'darwin', agents: [] },
     outdated: null,
     log: [],
   },
@@ -526,7 +526,7 @@ const MACHINES = [
     projects: 0,
     working: 0,
     remote: null,
-    outdated: '2.0.0',
+    outdated: '1.0.0-alpha.0',
     log: [],
   },
 ];
@@ -828,7 +828,7 @@ export function seed(o: { peer: string; now: number; extra: number; harnesses?: 
     ]);
   // MOCK_UPDATE=2.1.0: a newer wisp is out (the top bar's Update pill, Settings → Updates); no release feed is read
   const latest = typeof process === 'undefined' ? undefined : process.env['MOCK_UPDATE'];
-  if (latest) topics.set('plugin:wisp.update:state', [{ e: 'update.state', id: 'update', v: { id: 'update', body: { current: '2.0.0', latest, available: true, method: 'global', channel: 'stable', status: 'idle', error: null, enabled: true, command: 'npm install -g wisp-agents@latest', checked_at: o.now, checking: false, running: 1 } } }]); // as the store syncs it: the state under `body` (B6)
+  if (latest) topics.set('plugin:wisp.update:state', [{ e: 'update.state', id: 'update', v: { id: 'update', body: { current: '1.0.0-alpha.1', latest, available: true, method: 'global', channel: 'stable', status: 'idle', error: null, enabled: true, command: 'npm install -g wisp-agents@latest', checked_at: o.now, checking: false, running: 1 } } }]); // as the store syncs it: the state under `body` (B6)
   topics.set(
     'crew',
     // joined in the seed's order (the rail and the crew list keep joining order: createdAt)

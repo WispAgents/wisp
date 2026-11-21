@@ -10,7 +10,7 @@
     "author": "Who wrote it.",
     "kind": "Leave it out (\"module\" is for wisp's own built-ins).",
     "extends": "Another plugin's id this one adds to (rare).",
-    "requires": "{ \"<plugin id>\": \"<version range>\" }: plugins it needs on.",
+    "requires": "{ \"<plugin id>\": \"<version range>\" }: plugins it needs on. A built-in plugin carries wisp's version: \"^1.0.0-0\" takes this alpha and every 1.x (a plain \"^1\" waits for 1.0.0).",
     "provides": "{ \"<contract>\": { \"version\": \"1.0.0\" } }: a contract it implements (rare).",
     "permissions": "What it may do, as permissions (\"plugins:read\", \"runtime:list\"). Its UI's wisp.call runs as the plugin and is checked against these, never the user's. Each command's permission is in the list of commands below. Switching it on is the user's consent to them.",
     "server": "{ \"exec\": [\"<program>\", …args] }: a process of its own, started in its folder with an emptied environment, speaking JSON-RPC. Leave it out for a plugin that is only UI and settings. (\"builtin\" is wisp's own crates only.)",

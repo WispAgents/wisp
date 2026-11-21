@@ -109,7 +109,7 @@ export function agentsOf(s: StatusLike | undefined): { kind: 'ready'; names: str
 /** A wisp 0.x is v1 (QA desktop r2 #22: the owner's v1 install read like a second v2 machine). */
 const isV1 = (version: string): boolean => /^v?0\./.test(version);
 
-/** The version line: "wisp 2.0.0", or "wisp v1 (0.58.0)" for a v1 install. */
+/** The version line: "wisp 1.0.0-alpha.1", or "wisp v1 (0.58.0)" for a v1 install. */
 export function versionLine(version: string, say: Say): string {
   return isV1(version) ? say('machines.version.v1', { version }) : say('machines.version', { version });
 }
