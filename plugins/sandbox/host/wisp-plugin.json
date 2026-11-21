@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.sandbox",
   "name": "Sandboxes",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "api": "^1",
   "description": "Sandboxes on your wisp Grid: a task's (/sandbox), a delegate's, a crew job's or member's, a goal's judges'; seeded with the project, deleted with their owner (ADR-0047)",
   "kind": "plugin",

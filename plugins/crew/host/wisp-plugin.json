@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.crew",
   "name": "crew",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "api": "^1",
   "description": "crew members: schedules, check-ins, jobs, mentions, notebooks, sharing",
   "kind": "plugin",

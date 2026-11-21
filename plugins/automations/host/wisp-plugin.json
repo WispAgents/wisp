@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.automations",
   "name": "automations",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "api": "^1",
   "description": "triggers, watchers, recipes, cron schedules, inbound webhooks",
   "kind": "plugin",

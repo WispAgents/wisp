@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.factory",
   "name": "Factories",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "api": "^1",
   "description": "software factories: a task through stations (spec you approve, build, checks that are commands, review by a vote, ship a PR you merge), looped back to build with a limit (ADR-0114)",
   "kind": "plugin",
