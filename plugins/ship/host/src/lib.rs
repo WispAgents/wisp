@@ -125,7 +125,11 @@ fn commands(s: &mut Setup, slot: &Slot) {
     s.command::<api::ShipIt, _, _>(move |ctx, call, a| {
         let sl = sl.clone();
         async move {
-            let out = match get(&sl)?.ship_all(&call, &a.session, &a.title, &a.body, a.draft).await {
+            let ship = get(&sl)?;
+            if a.save_task {
+                save_task_before_ship(&ctx, &call, &ship, &a.session).await;
+            }
+            let out = match ship.ship_all(&call, &a.session, &a.title, &a.body, a.draft).await {
                 Ok(o) => o,
                 Err(e) => return Err(why(&ctx, &call, &a.session, e).await),
             };
@@ -274,4 +278,37 @@ fn track(ctx: &wisp_kernel::Ctx, event: &'static str, props: serde_json::Value) 
     ctx.spawn(async move {
         let _ = c.run_json(&c.root_call(), "telemetry.track", serde_json::json!({ "event": event, "props": props })).await;
     });
+}
+
+/// When the user ticked "Save task to repo (.wisp/)" in Ship it, write the task files into each shipped repo's
+/// worktree that has `.wisp/` right before committing so they land in the PR commit.
+async fn save_task_before_ship(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call, ship: &Ship, session: &str) {
+    let Ok(task) = ship.task(session) else { return };
+    if task.repos.is_empty() {
+        return;
+    }
+    let repos: Vec<String> = if task.repos.len() == 1 {
+        task.repos
+            .iter()
+            .filter(|r| flow::repo_has_wisp(&r.worktree.path) || flow::repo_has_wisp(&r.worktree.root))
+            .map(|r| r.worktree.path.clone())
+            .collect()
+    } else {
+        let statuses = ship.statuses(call, &task).await;
+        task.repos
+            .iter()
+            .zip(statuses)
+            .filter(|(r, st)| {
+                (st.dirty > 0 || st.ahead > 0 || st.unpushed > 0)
+                    && (flow::repo_has_wisp(&r.worktree.path) || flow::repo_has_wisp(&r.worktree.root))
+            })
+            .map(|(r, _)| r.worktree.path.clone())
+            .collect()
+    };
+    for repo in repos {
+        let args = wisp_history_api::TrackArgs { id: session.to_owned(), level: None, repo: Some(repo) };
+        if let Err(e) = ctx.run::<wisp_history_api::Track>(call, args).await {
+            tracing::warn!(task = session, error = %e.message, "ship: history.track before commit failed");
+        }
+    }
 }

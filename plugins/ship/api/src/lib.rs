@@ -83,6 +83,10 @@ pub struct ShipArgs {
     pub body: String,
     #[serde(default)]
     pub draft: bool,
+    /// save the task into the repo's `.wisp/` before committing (when ticked in Ship it). Additive (2026-11-21).
+    #[serde(default, rename = "saveTask", skip_serializing_if = "std::ops::Not::not")]
+    #[ts(rename = "saveTask", type = "boolean | undefined")]
+    pub save_task: bool,
 }
 
 /// Refreshes the task's PRs from GitHub (POST /sessions/:id/pr).

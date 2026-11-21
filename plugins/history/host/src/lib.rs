@@ -9,6 +9,7 @@
 //! `history:` section, read where they apply)
 
 mod calls;
+mod config;
 mod git;
 mod stores;
 
@@ -24,36 +25,14 @@ use wisp_proc::Proc;
 use wisp_runtime_api::model::{Session, SessionState};
 use wisp_runtime_api::paths::Folder;
 
+pub(crate) use config::setting;
+
 #[derive(Debug, Default)]
 pub struct HistoryPlugin;
-
-/// The repo a folder belongs to: the nearest folder up with `.wisp/`, else git's top, else the folder.
-async fn root_of(proc: &Proc, cwd: &str) -> PathBuf {
-    let start = Path::new(cwd);
-    for d in start.ancestors() {
-        if tokio::fs::metadata(d.join(".wisp")).await.is_ok_and(|m| m.is_dir()) {
-            return d.to_owned();
-        }
-    }
-    git::run(proc, "git", start, &["rev-parse", "--show-toplevel"]).await.map_or_else(|| start.to_owned(), |t| PathBuf::from(t.trim()))
-}
-
-/// The repo of a task's folder. A task with no folder (or a relative one) has no repo: never the server's own folder.
-async fn root_of_task(proc: &Proc, task: &Session) -> Result<PathBuf> {
-    let dir =
-        Folder::of(&task.cwd).map_err(|e| WireError::invalid(format!("task {} has {e}, so no repo: name one (repo)", task.id.as_str())))?;
-    Ok(root_of(proc, &dir.to_string()).await)
-}
 
 /// A repo named in a command's args: `""` or a relative path would be the server's own folder's `.wisp/`.
 pub(crate) fn named_repo(repo: &str) -> Result<PathBuf> {
     Folder::of(repo).map(Folder::into_path).map_err(|e| WireError::invalid(format!("repo: {e} (name the repo's full path)")))
-}
-
-/// A `history:` setting of the repo (`.wisp/wisp.yml`).
-async fn setting(root: &Path, key: &str, default: &str) -> String {
-    let text = tokio::fs::read_to_string(root.join(".wisp/wisp.yml")).await.unwrap_or_default();
-    repo::history_setting(&text, key, default)
 }
 
 fn store_for(ctx: &Ctx, id: &str) -> Result<Arc<dyn HistoryStore>> {
@@ -151,7 +130,7 @@ async fn track(ctx: &Ctx, call: &Call, a: &api::TrackArgs) -> Result<Tracked> {
     let p = proc(ctx)?;
     let root = match &a.repo {
         Some(r) => named_repo(r)?,
-        None => root_of_task(&p, &task).await?,
+        None => config::root_of_task(ctx, &p, &task).await?,
     };
     // counted before the read it saves: a turn ending meanwhile stays unseen (offered or saved next time)
     let turns = calls::turn_count(ctx, call, &id).await;
@@ -200,7 +179,7 @@ async fn untrack(ctx: &Ctx, call: &Call, a: &api::UntrackArgs) -> Result<api::Go
         let task = calls::task(ctx, call, &a.id)
             .await
             .map_err(|e| WireError::not_found(format!("{} isn't a task here ({}): name its repo", a.id, e.message)))?;
-        root_of_task(&p, &task).await?
+        config::root_of_task(ctx, &p, &task).await?
     };
     let all = docs(&root).await;
     let id = wisp_history_core::find(&all, &a.id).map_or_else(|| a.id.clone(), |d| d.id().to_owned());
@@ -238,7 +217,7 @@ async fn on_done(ctx: &Ctx, id: &str) {
         return;
     }
     let Ok(p) = proc(ctx) else { return };
-    let Ok(root) = root_of_task(&p, &task).await else { return };
+    let Ok(root) = config::root_of_task(ctx, &p, &task).await else { return };
     if tokio::fs::metadata(root.join(".wisp/wisp.yml")).await.is_err() {
         return;
     }
@@ -326,11 +305,12 @@ fn hooks(s: &mut Setup) {
         move |ctx, _call, c| {
             let (known, roots) = (known.clone(), roots.clone());
             async move {
-                // a run with no folder has no repo (never the server's own folder)
+                // a run with no folder has no repo (never the server's own folder or ~/.wisp)
                 if let Ok(p) = proc(&ctx)
                     && Folder::of(&c.cwd).is_ok()
                 {
-                    let root = root_of(&p, &c.cwd).await;
+                    let home = config::wisp_home(&ctx);
+                    let root = config::root_of(&p, home.as_deref(), &c.cwd).await;
                     let on = setting(&root, "inject", "false").await == "true";
                     let all = if on { docs(&root).await } else { Vec::new() };
                     let key = root.display().to_string();

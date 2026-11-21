@@ -201,12 +201,15 @@ export interface ShipInfo extends ShipRepo {
   readonly repos?: readonly ShipRepo[];
   readonly title: string;
   readonly body: string;
+  /** at least one repo has a `.wisp/` folder: offer to save the task into `.wisp/` with the commit */
+  readonly hasWisp?: boolean;
 }
 
 export interface ShipValues {
   readonly title: string;
   readonly body: string;
   readonly draft: boolean;
+  readonly saveTask?: boolean;
 }
 
 export interface ShipResult extends Partial<PrSummary> {

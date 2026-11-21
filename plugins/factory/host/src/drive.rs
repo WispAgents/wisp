@@ -205,7 +205,7 @@ async fn drive(ctx: &Ctx, st: &Arc<State>, id: &str, mut m: Run, input_v: &Value
                 None => checks(ctx, &call, st, id, &task, &commands, minutes).await,
             },
             Next::Ship { task, title, body, draft } => {
-                let a = wisp_ship_api::ShipArgs { session: task, title, body, draft };
+                let a = wisp_ship_api::ShipArgs { session: task, title, body, draft, save_task: false };
                 match ctx.run::<wisp_ship_api::ShipIt>(&call, a).await {
                     Ok(s) => Event::Shipped { ok: !s.pr.url.is_empty(), pr: s.pr.url.clone(), why: "no PR came back".into() },
                     Err(e) => Event::Shipped { ok: false, pr: String::new(), why: e.message },

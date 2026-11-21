@@ -229,6 +229,7 @@ impl Ship {
         }
         v["title"] = json!(draft.title);
         v["body"] = json!(draft.body);
+        v["hasWisp"] = json!(task.repos.iter().any(|r| repo_has_wisp(&r.worktree.path) || repo_has_wisp(&r.worktree.root)));
         Ok(v)
     }
 
@@ -243,11 +244,43 @@ impl Ship {
     }
 }
 
+/// Whether `dir` has a project `.wisp/` folder (excluding wisp's own app data directory).
+pub(crate) fn repo_has_wisp(dir: &str) -> bool {
+    if dir.is_empty() {
+        return false;
+    }
+    let dot = std::path::Path::new(dir).join(".wisp");
+    dot.is_dir() && !dot.join("wisp.db").exists() && !dot.join("server.json").exists() && !dot.join("worktrees").is_dir()
+}
+
 /// Puts a fresh copy of `prev` wherever the task holds it.
 pub(crate) fn set_pr(task: &mut ShipTask, prev: &PrSummary, pr: PrSummary) {
     if let Some(r) = task.repos.iter_mut().find(|r| r.pr.as_ref().is_some_and(|p| p.url == prev.url && p.number == prev.number)) {
         r.pr = Some(pr);
     } else if let Some(x) = task.prs.iter_mut().find(|x| x.pr.url == prev.url) {
         x.pr = pr;
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod wisp_tests {
+    use super::repo_has_wisp;
+
+    #[test]
+    fn repo_has_wisp_matches_project_dot_wisp_and_ignores_app_home() {
+        let base = std::env::temp_dir().join(format!("wisp-ship-haswisp-{}", wisp_kernel::ids::uuid7()));
+        let plain = base.join("plain");
+        let with_wisp = base.join("with_wisp");
+        let app_home = base.join("fake_home");
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::create_dir_all(with_wisp.join(".wisp")).unwrap();
+        std::fs::create_dir_all(app_home.join(".wisp")).unwrap();
+        std::fs::write(app_home.join(".wisp/wisp.db"), b"").unwrap();
+        assert!(!repo_has_wisp(""));
+        assert!(!repo_has_wisp(plain.to_str().unwrap()));
+        assert!(repo_has_wisp(with_wisp.to_str().unwrap()));
+        assert!(!repo_has_wisp(app_home.to_str().unwrap()));
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

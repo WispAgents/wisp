@@ -31,6 +31,8 @@ export interface ShipArgs extends Task {
   readonly title: string;
   readonly body: string;
   readonly draft: boolean;
+  /** save the task into `.wisp/` before committing (when ticked in Ship it) */
+  readonly saveTask?: boolean;
   /** the dialog's view: it pushes to open PRs (no new one) */
   readonly update: boolean;
   /** the first stage, so the row's track starts there at once */
