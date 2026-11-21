@@ -11,6 +11,38 @@ use crate::http::{Resp, full, is_loopback, json, respond};
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Peer(pub std::net::IpAddr);
 
+/// v1's `DEVICE_CORS` (grid/server.js): the phone app's webview is another origin (`https://localhost`) and calls the
+/// grid's `/api/` (device sign-in, `/api/me`, computers) and a box's or computer's `/api/` with its device token. Any
+/// origin, never credentials: with `*` a browser sends no cookie, so a signed-in page elsewhere still can't read them.
+const API_CORS: [(&str, &str); 4] = [
+    ("access-control-allow-origin", "*"),
+    (
+        "access-control-allow-headers",
+        "authorization, content-type, x-wisp-passkey, x-wisp-client, x-wisp-plugin, idempotency-key, last-event-id",
+    ),
+    ("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS"),
+    ("access-control-max-age", "600"),
+];
+
+/// Whether a request gets [`API_CORS`]: `/api/` on the grid itself, a user's box or a computer (v1 had it on all three).
+pub(super) fn api_cors(kind: &HostKind, path: &str) -> bool {
+    path.starts_with("/api/") && matches!(kind, HostKind::Root | HostKind::Edge { .. } | HostKind::Computer(_))
+}
+
+/// The preflight for [`api_cors`] requests: answered here, never routed (a stopped box isn't woken for it).
+pub(super) fn api_preflight() -> Resp {
+    with_api_cors(respond(204, "", crate::http::empty(), &[]))
+}
+
+/// Puts [`API_CORS`] on a response, replacing any the box or computer sent (two `allow-origin` values are refused).
+pub(super) fn with_api_cors(mut r: Resp) -> Resp {
+    let h = r.headers_mut();
+    for (k, v) in API_CORS {
+        h.insert(k, http::HeaderValue::from_static(v));
+    }
+    r
+}
+
 const ROBOTS_ROOT: &str = "User-agent: *\nDisallow: /api/\nDisallow: /auth/\nDisallow: /activate\nDisallow: /go\n";
 
 impl Grid {
