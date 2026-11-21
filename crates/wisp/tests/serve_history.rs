@@ -100,11 +100,12 @@ async fn track_blame_log_resume_mcp_and_auto_track() {
         .await;
     let id = made["id"].as_str().unwrap().to_owned();
     api.until(&id, "the turn ends", |t| t.last().is_some_and(ended)).await;
-    let argv = common::record_text(&rec.join("claude.jsonl"));
+    // its MCP servers come in a launch file, never on argv (ADR-0116): read the recorded config
+    let runs = common::records(&rec.join("claude.jsonl"));
+    let history = runs.iter().find_map(|r| common::mcp_config(r)["mcpServers"].get("wisp-history").cloned());
     assert!(
-        argv.contains("wisp-history") && argv.contains("\\\"mcp\\\""),
-        "a run in the repo gets wisp mcp: {}",
-        &argv[..argv.len().min(400)]
+        history.as_ref().is_some_and(|h| h["args"].as_array().is_some_and(|a| a.iter().any(|v| v == "mcp"))),
+        "a run in the repo gets wisp mcp: {history:?}"
     );
     let (code, out, err) = wisp(&dir, &repo, port, &["track", &id], None);
     assert_eq!(code, 0, "{out}{err}");
