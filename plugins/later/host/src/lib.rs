@@ -126,7 +126,7 @@ impl State {
     }
 
     /// The task's ext slot, so its list row shows what is scheduled.
-    async fn mirror(&self, ctx: &Ctx, call: &Call, id: &str) {
+    async fn mirror(&self, ctx: &Ctx, id: &str) {
         let now = || match serde_json::to_value(self.meta(id).ext(&self.of_task(id))) {
             Ok(v) => Some(v),
             Err(e) => {
@@ -134,7 +134,7 @@ impl State {
                 None
             }
         };
-        calls::mirror(ctx, call, id, now).await;
+        calls::mirror(ctx, id, now).await;
     }
 
     async fn add(&self, ctx: &Ctx, call: &Call, a: &c::AddArgs) -> Result<LaterEntry> {
@@ -153,7 +153,7 @@ impl State {
             .map_err(wire)?;
         lock(&self.entries).push(l.clone());
         self.write(store::Ops { entries: vec![l.clone()], ..store::Ops::default() }).await?;
-        self.mirror(ctx, call, &a.session_id).await;
+        self.mirror(ctx, &a.session_id).await;
         Ok(l)
     }
 
@@ -222,7 +222,7 @@ impl State {
             let touched: BTreeSet<String> = moved.iter().map(|l| l.session_id.clone()).collect();
             logged(self.write(store::Ops { entries: moved, ..store::Ops::default() }).await, "an early reset");
             for id in &touched {
-                self.mirror(ctx, &call, id).await;
+                self.mirror(ctx, id).await;
             }
             self.tick(ctx, &call).await;
         }
@@ -343,7 +343,7 @@ impl State {
         touched.sort();
         touched.dedup();
         for id in touched {
-            self.mirror(ctx, call, &id).await;
+            self.mirror(ctx, &id).await;
         }
         fired
     }
@@ -379,7 +379,9 @@ fn commands(s: &mut Setup, slot: &Slot) {
             .ok_or_else(|| WireError::not_found("Nothing scheduled with that id."))?;
         if a.now {
             st.take(std::slice::from_ref(&l.id));
-            let sent = st.fire(&ctx, &call, &l, false).await?;
+            let res = st.fire(&ctx, &call, &l, false).await;
+            st.mirror(&ctx, &a.session_id).await;
+            let sent = res?;
             return serde_json::to_value(sent).map(c::Edited::Sent).map_err(|e| WireError::internal(e.to_string()));
         }
         let next = rules::edit_entry(&l, &a, now(&ctx), st.tz(now(&ctx))).map_err(wire)?;
@@ -387,7 +389,7 @@ fn commands(s: &mut Setup, slot: &Slot) {
             *x = next.clone();
         }
         st.write(store::Ops { entries: vec![next.clone()], ..store::Ops::default() }).await?;
-        st.mirror(&ctx, &call, &a.session_id).await;
+        st.mirror(&ctx, &a.session_id).await;
         Ok(c::Edited::Entry(next))
     });
     on!(s, slot, c::Cancel, |st, ctx, call, a| {
@@ -413,7 +415,7 @@ fn commands(s: &mut Setup, slot: &Slot) {
         }
         let gone = st.take(&ids);
         st.write(store::Ops { drop_entries: ids, ..store::Ops::default() }).await?;
-        st.mirror(&ctx, &call, &a.session_id).await;
+        st.mirror(&ctx, &a.session_id).await;
         dropped(&ctx, &call, &a.session_id, &gone, "cancelled");
         Ok(c::Cancelled { ok: true, entry: gone.into_iter().next() })
     });
@@ -423,7 +425,7 @@ fn commands(s: &mut Setup, slot: &Slot) {
         let taken = st.take(&ids);
         st.write(store::Ops { drop_entries: ids, ..store::Ops::default() }).await?;
         let _ = keep;
-        st.mirror(&ctx, &call, &a.session_id).await;
+        st.mirror(&ctx, &a.session_id).await;
         dropped(&ctx, &call, &a.session_id, &taken, "done");
         Ok(c::Empty {})
     });
@@ -526,7 +528,7 @@ fn commands(s: &mut Setup, slot: &Slot) {
             }
             st.take(&ids);
             st.write(store::Ops { drop_entries: ids, ..store::Ops::default() }).await?;
-            st.mirror(&ctx, &call, &a.session).await;
+            st.mirror(&ctx, &a.session).await;
             return Ok(c::ScheduleOut { text: Some(format!("Cancelled {id}.")), error: None });
         }
         if let Some(at) = a.at.as_deref()
