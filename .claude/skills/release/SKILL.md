@@ -12,7 +12,7 @@ the dist-tag `platform-<os>-<arch>` (`npm/README.md`). The launcher installs eac
 together, and wisp-agents' one trusted publisher covers every tarball: nothing is ever published by hand.
 
 1. Releasing is merging a PR that bumps the version in **both** `Cargo.toml` (`[workspace.package] version`: what
-   `wisp --version` prints; then `cargo update --workspace` so `Cargo.lock` follows) and
+   `wisp --version` prints; then `cargo update --workspace` so `Cargo.lock` follows; the spikes keep their own locks: `for s in events server-budgets sync-bench-rs; do cargo metadata --format-version 1 --manifest-path spikes/$s/Cargo.toml >/dev/null; done`, or CI's suite fails on `main` with "spikes/…/Cargo.lock is stale") and
    `npm/wisp-agents/package.json` (`version` and every `npm:wisp-agents@<version>-<os>-<arch>` pin in `optionalDependencies`).
    `node npm/scripts/release.mjs check` says whether they (and `Cargo.lock`) agree (release.yml's plan job runs
    it first and fails with the file to fix). Every built-in plugin's manifest carries the same version (Settings →
