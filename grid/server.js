@@ -68,8 +68,9 @@ const webLook = () =>
     const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
     return { styles: [...html.matchAll(/<link rel="stylesheet" href="(\/css\/[\w.-]+\.css)">/g)].map((m) => m[1]), sprite: /<svg width="0" height="0"[\s\S]*?<\/svg>\n/.exec(html)?.[0] || '' };
   })());
-// the device API's CORS (the phone app is another origin and signs in with a bearer token, never a cookie)
-const DEVICE_CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type, x-wisp-passkey', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'access-control-max-age': '600' };
+// the device API's CORS (the phone app is another origin and signs in with a bearer token, never a cookie); the
+// headers are what @wisp/client sends a computer (x-wisp-client on every sync post: without it no task opens)
+const DEVICE_CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type, x-wisp-passkey, x-wisp-client, x-wisp-plugin, idempotency-key, last-event-id', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'access-control-max-age': '600' };
 const HOP = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'te', 'trailer']);
 
 // --- small HTTP helpers --------------------------------------------------------------------
