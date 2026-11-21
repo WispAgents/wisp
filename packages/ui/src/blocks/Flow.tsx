@@ -91,7 +91,17 @@ function useFlowLayout(graph: () => FlowGraph): FlowLayout {
   };
   onMount(() => {
     if (!stage || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => {
+    // A new width re-plans. Height-only resizes at one width are capped: the nodes are static, so a
+    // stage that keeps growing at the same width is our own wires feeding back (an svg in the flow
+    // whose viewBox is the stage's size), and measuring again would grow it without end.
+    let lastW = -1;
+    let sameW = 0;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      if (w !== lastW) {
+        lastW = w;
+        sameW = 0;
+      } else if (sameW++ >= MAX_PASSES) return;
       passes = 0;
       frame(measure);
     });

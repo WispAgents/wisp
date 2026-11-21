@@ -202,6 +202,31 @@
     [data-kit='rb-pv-stage'] { padding: 14px; }
   }
 
+  /* flow (v1 .b-flow): cards in layers, wires drawn over them. The svg is absolute so it never adds to
+     the stage's height: in flow, its viewBox (the stage's size) grew the stage every measure, without end. */
+  [data-kit='rb-flow'] { padding: var(--space-7) 18px 20px; }
+  [data-kit='rb-flow-stage'] { position: relative; padding: max(4px, var(--k-pad-t, 0px)) max(2px, var(--k-pad-r, 0px)) max(4px, var(--k-pad-b, 0px)) 2px; }
+  [data-kit='rb-flow-wires'] { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  [data-kit='rb-flow-wire'] { fill: none; stroke: var(--line-2); stroke-width: 1.5; stroke-dasharray: 1; stroke-dashoffset: 1; animation: rb-flow-draw 0.9s var(--ease) calc(500ms + var(--k, 0) * 180ms) forwards; }
+  /* The dash is of a pathLength of 100: WebKit draws nothing for 0.012 of one of 1. */
+  [data-kit='rb-flow-wire'][data-back] { stroke: var(--faint); stroke-dasharray: 1.2 1.2; stroke-dashoffset: 0; animation: kit-fade 0.6s calc(900ms + var(--k, 0) * 180ms) both; }
+  [data-kit='rb-flow-spark'] { fill: var(--accent); }
+  [data-kit='rb-flow-spark'][data-back] { fill: var(--muted); }
+  [data-kit='rb-flow-label'] { font: var(--fw-medium) var(--fs-xs) var(--sans); fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; }
+  [data-kit='rb-flow-cols'] { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--k-flow-gap); }
+  [data-kit='rb-flow-col'] { flex: 1; display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; max-width: 220px; }
+  [data-kit='rb-flow-cols'][data-mode='snake'] { display: grid; grid-template-columns: repeat(var(--k-per-row), minmax(0, 1fr)); column-gap: var(--k-flow-gap); row-gap: var(--k-flow-row-gap); }
+  [data-kit='rb-flow-cols'][data-mode='snake'] > [data-kit='rb-flow-col'] { grid-row: var(--k-row); grid-column: var(--k-col); width: 100%; justify-self: center; }
+  /* Under FLOW_VERTICAL_W the layers stack, each layer's nodes side by side (v1 responsive.css). */
+  [data-kit='rb-flow-cols'][data-mode='vertical'] { flex-direction: column; align-items: stretch; gap: 30px; }
+  [data-kit='rb-flow-cols'][data-mode='vertical'] > [data-kit='rb-flow-col'] { max-width: none; flex-direction: row; justify-content: center; }
+  [data-kit='rb-flow-cols'][data-mode='vertical'] [data-kit='rb-flow-node'] { flex: 1; max-width: 260px; }
+  [data-kit='rb-flow-node'] { position: relative; padding: 9px var(--space-6); border-radius: var(--radius-sm); background: var(--surface); border: var(--size-hairline) solid var(--line-2); text-align: center; animation: rb-flow-pop 0.4s var(--ease) calc(200ms + var(--k, 0) * 120ms) both; }
+  [data-kit='rb-flow-node-label'] { display: block; font-weight: var(--fw-semibold); font-size: var(--fs-md); line-height: 1.3; color: var(--ink); }
+  [data-kit='rb-flow-node-note'] { display: block; margin-top: var(--space-1); font-size: var(--fs-sm); line-height: 1.35; color: var(--muted); }
+  @keyframes rb-flow-draw { to { stroke-dashoffset: 0; } }
+  @keyframes rb-flow-pop { from { opacity: 0; transform: scale(0.9) translateY(6px); } }
+
   /* graph (v1 .b-graph): lanes per branch, the merge target on top */
   [data-kit='rb-graph'] { --g-base: var(--faint); --g-1: var(--pc-sky); --g-2: var(--pc-teal); --g-3: var(--pc-violet); --g-4: var(--pc-rose); --g-merged: var(--pc-violet); padding: 14px var(--space-7) var(--space-6); container-type: inline-size; }
   [data-kit='rb-g-head'] { display: flex; align-items: baseline; gap: var(--space-6); margin-bottom: var(--space-4); }
