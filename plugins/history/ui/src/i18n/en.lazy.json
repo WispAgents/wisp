@@ -3,7 +3,7 @@
   "history.repo.project": "Project",
   "history.repo.pick": "Pick a project",
   "history.repo.filter": "Filter: words, path/, or an agent",
-  "history.repo.none": "No tracked tasks here yet. Track a task from its ⋯ menu, or set history: { track: auto } in .wisp/wisp.yml.",
+  "history.repo.none": "No tracked tasks here yet. Save a task with Save to repo in its ⋯ menu, or set history: { track: auto } in .wisp/wisp.yml.",
   "history.repo.loading": "Reading the repo's history…",
   "history.commits.one": "1 commit",
   "history.commits.other": "{count} commits",
@@ -13,5 +13,13 @@
   "history.report.resume": "Resume",
   "history.report.resumeTitle": "A new task that carries on from here, on today's code",
   "history.report.back": "Repo history",
-  "history.report.resumed": "{title} (resumed)"
+  "history.report.resumed": "{title} (resumed)",
+  "history.offer.text": "Save this task to the repo?",
+  "history.offer.tip": "Its spec, report and transcript go in .wisp/, scrubbed of keys and private paths, for you to commit with the code",
+  "history.saved.one": "Saved to the repo: 1 file in .wisp/, to commit with the code",
+  "history.saved.other": "Saved to the repo: {count} files in .wisp/, to commit with the code",
+  "history.saved.scrubbed.one": "Saved to the repo: 1 file in .wisp/ ({scrubbed} scrubbed: keys, tokens, private paths)",
+  "history.saved.scrubbed.other": "Saved to the repo: {count} files in .wisp/ ({scrubbed} scrubbed: keys, tokens, private paths)",
+  "history.save": "Save to repo",
+  "history.saveAgain": "Save to repo again"
 }

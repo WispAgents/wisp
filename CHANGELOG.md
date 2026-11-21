@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Save to repo in the app.** When a repo on `history: { track: ask }` offers to save a finished task, its last answer
+  shows **Save to repo**; any task can be saved from its **⋯** menu (beside Share…). The answer says what was written to
+  `.wisp/` and how many secrets were scrubbed.
+
 ### Changed
 
 - **The Android app is the new phone app.** The Play build now ships wisp's own phone app (Tasks, Crew, Stuff and

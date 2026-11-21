@@ -8,6 +8,8 @@ import { REPO_VIEW } from './views.ts';
 export default definePluginUi({
   id: 'wisp.history',
   catalogue,
+  // Save to repo in a task's ⋯ menu and under its last answer: with `later`, loaded as the first screen draws
+  later: () => import('./later.ts'),
   palette: [
     definePalette({
       id: 'history.palette',
