@@ -91,6 +91,15 @@ test('publish uploads to internal testing, then promotes the same build in its o
   assert.deepEqual(log, ['Internal testing: 120 (0.2.0)', 'production: 120 (0.2.0)']);
 });
 
+test('a prerelease goes to internal testing only, never to the promote track', async (t) => {
+  const g = await fakeGoogle(t);
+  const log = [];
+  await publish({ ...g, versionCode: 120, versionName: '1.0.0-alpha.1', notes: 'n', promote: 'production', log: (l) => log.push(l) });
+  const v = '/androidpublisher/v3/edits';
+  assert.deepEqual(g.calls.filter((c) => typeof c === 'string'), [`POST ${v}`, `POST /upload${v}/e1/bundles`, `PUT ${v}/e1/tracks/internal`, `POST ${v}/e1:commit`]);
+  assert.deepEqual(log, ['Internal testing: 120 (1.0.0-alpha.1)', '1.0.0-alpha.1 is a prerelease: not promoted to production']);
+});
+
 test('a refused promotion fails with Play\'s message after internal testing is committed', async (t) => {
   const g = await fakeGoogle(t, { refuse: '/tracks/production' });
   await assert.rejects(

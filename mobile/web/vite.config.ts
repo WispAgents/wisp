@@ -1,7 +1,8 @@
 // @wisp/mobile's bundle: the phone apps' own entry (index.html → src/main.tsx), built apart from the browser's
 // (apps/web) so the browser's first download never changes for it (ADR-0011). `npm run dev` here serves it with
 // apps/web's mock peers (two computers: MOCK_COMPUTERS=1) and a stand-in native side (dev/preview-bridge.ts):
-// http://127.0.0.1:5190/?platform=android | ios. `npm run build` writes dist/, which the Capacitor apps ship.
+// http://127.0.0.1:5190/?platform=android | ios. `npm run build` writes ../www (mobile/www, Capacitor's webDir),
+// which `cap sync` copies into the apps (android: app/src/main/assets/public): the bundle the stores ship.
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import solid from 'vite-plugin-solid';
@@ -16,7 +17,7 @@ export default defineConfig(({ command }) => ({
   define: { __WISP_BUILD__: JSON.stringify(process.env['WISP_BUILD'] ?? `phone-${Date.now().toString(36)}`) },
   server: { port: Number(process.env['PORT'] ?? 5190), strictPort: false, host: '127.0.0.1' },
   build: {
-    outDir: 'dist',
+    outDir: '../www',
     emptyOutDir: true,
     target: 'es2022',
     modulePreload: { polyfill: false },

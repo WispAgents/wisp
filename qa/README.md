@@ -12,7 +12,7 @@ after a change that touches more than one surface.
 | Desktop app (Windows) | [scenarios/desktop.md](scenarios/desktop.md) (`TAURI-W*`) | `node qa/desktop-tauri-win.mjs` | the installer built with `--features qa` on windows-latest (`tauri-windows.yml`, CI only: it replaces the machine's wisp): the page through WebView2's CDP, the rest by real mouse, keys and Win32 (`qa/win32.ps1`); `--web` runs `qa/web.mjs` in its WebView2 |
 | Desktop app (Linux) | [scenarios/desktop.md](scenarios/desktop.md) (`TAURI-L*`) | `xvfb-run -a dbus-run-session -- node qa/desktop-tauri-linux.mjs` | builds `desktop/src-tauri --features qa` and drives it through a local socket (`src/qa_linux.rs`): Preview frames and the page's way out on WebKitGTK; ubuntu-latest in `tauri.yml` |
 | Install paths | [scenarios/install.md](scenarios/install.md) (`INST-*`) | `node qa/install.mjs` | npm, npx, `install.sh`, the Homebrew steps, and the Tauri downloads from `desktop/scripts/package.mjs`: every way in, from real artefacts, published nowhere |
-| Android app | [scenarios/mobile.md](scenarios/mobile.md) (`MOB-*`) | `node qa/mobile.mjs` | the computers screen and wisp's page as the app's WebView sees it; APK, Gradle and emulator steps are in the scenarios |
+| Android app | [scenarios/mobile.md](scenarios/mobile.md) (`MOB-*`) | `node qa/platform.mjs` | the phone app (mobile/web) as the app's WebView sees it (qa/phone.mjs); APK, Gradle and emulator steps are in the scenarios |
 
 Each scenario says how it's covered: **Automated** (the script), **Suite** (`npm test`),
 **Gradle** / **Emulator** (Android steps in the scenario), or **Manual**.

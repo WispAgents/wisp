@@ -1,10 +1,14 @@
 name: android
 
 # Builds the Android app's Play bundle (mobile/, see mobile/README.md → Google Play): a signed
-# wisp-android-<versionName>-<versionCode>.aab, kept as the run's artifact. On main (a push that
-# touches the app, or by hand: `gh workflow run android`) it then publishes it, as npm releases do:
-# every build goes to Play's internal testing, and a build that bumps mobile/package.json's version
-# also goes to the PLAY_PROMOTE_TRACK variable's track (production by default). Notes: scripts/play.mjs.
+# wisp-android-<versionName>-<versionCode>.aab, kept as the run's artifact. The page it ships is the new
+# phone app, mobile/web (@wisp/mobile, ADR-0065): `npm run sync` builds it with vite into mobile/www
+# (Capacitor's webDir), which `cap sync` copies to the bundle's base/assets/public/. On main (a push that
+# touches the app or what it's built from, or by hand: `gh workflow run android`) it then publishes it,
+# as npm releases do: every build goes to Play's internal testing, and a build that bumps
+# mobile/package.json's version also goes to the PLAY_PROMOTE_TRACK variable's track (production by
+# default). A prerelease version (one with a `-`, e.g. 1.0.0-alpha.1) is never promoted: it stays on
+# internal testing whatever PLAY_PROMOTE_TRACK says. Notes: scripts/play.mjs.
 #
 # versionCode is 100 + the run number, so each build can go to Play after the last (builds made by
 # hand went up to 20). versionName is mobile/package.json's version: bump it there for a release.
@@ -20,9 +24,29 @@ name: android
 on:
   push:
     branches: [main]
-    paths: [mobile/**, server/shq.js, server/machines/bootstrap.js, web/css/tokens.css, .github/workflows/android.yml]
+    # what the bundle is built from: mobile/web imports packages/* and plugins/*/ui, its vite config
+    # apps/web; gradle copies plugins/machines/core/bootstrap.sh with Cargo.toml's wisp version
+    paths:
+      - mobile/**
+      - packages/**
+      - plugins/*/ui/**
+      - apps/web/**
+      - plugins/machines/core/bootstrap.sh
+      - Cargo.toml
+      - package.json
+      - package-lock.json
+      - .github/workflows/android.yml
   pull_request:
-    paths: [mobile/**, server/shq.js, server/machines/bootstrap.js, web/css/tokens.css, .github/workflows/android.yml]
+    paths:
+      - mobile/**
+      - packages/**
+      - plugins/*/ui/**
+      - apps/web/**
+      - plugins/machines/core/bootstrap.sh
+      - Cargo.toml
+      - package.json
+      - package-lock.json
+      - .github/workflows/android.yml
   workflow_dispatch:
 
 concurrency:
@@ -51,8 +75,11 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-      - run: npm ci --no-audit --no-fund
-      - run: npm run sync
+      - name: Install
+        run: |
+          (cd .. && npm ci --no-audit --no-fund) # the workspaces mobile/web builds from (vite, solid, @wisp/*)
+          npm ci --no-audit --no-fund
+      - run: npm run sync # vite build of mobile/web → www, then cap sync android
       - name: Upload key
         if: github.event_name != 'pull_request'
         env:
@@ -90,7 +117,10 @@ jobs:
           if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then echo "::notice::No PLAY_SERVICE_ACCOUNT_JSON secret: not published."; exit 0; fi
           if [ -z "$SIGNED" ]; then echo "::error::The bundle is unsigned: Play won't take it."; exit 1; fi
           before=$(git show HEAD^:mobile/package.json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version)}catch{}})")
+          name="${{ steps.build.outputs.name }}"
           promote=""
-          if [ -n "$before" ] && [ "$before" != "${{ steps.build.outputs.name }}" ]; then promote=$PROMOTE_TRACK; fi
+          if [ -n "$before" ] && [ "$before" != "$name" ]; then promote=$PROMOTE_TRACK; fi
+          # a prerelease (1.0.0-alpha.1) never leaves internal testing
+          case "$name" in *-*) if [ -n "$promote" ]; then echo "::notice::$name is a prerelease: internal testing only, not promoted to $promote."; fi; promote="" ;; esac
           node ../scripts/play.mjs notes >> "$GITHUB_STEP_SUMMARY"
           node ../scripts/play.mjs upload "${{ steps.build.outputs.out }}" "${{ steps.build.outputs.code }}" "${{ steps.build.outputs.name }}" $promote | tee -a "$GITHUB_STEP_SUMMARY"

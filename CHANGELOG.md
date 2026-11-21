@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **The Android app is the new phone app.** The Play build now ships wisp's own phone app (Tasks, Crew, Stuff and
+  Computers, every saved computer connected at once) instead of the old computers screen, as version 1.0.0-alpha.1 on
+  internal testing.
+
 ## [1.0.0-alpha.1] - 2026-11-21
 
 **First public alpha.** wisp manages the code your agents write. It runs the coding agents you already use (Claude

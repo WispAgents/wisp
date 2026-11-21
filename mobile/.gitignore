@@ -1,2 +1,3 @@
 node_modules/
-www/shared/
+# the built phone app (web/ → npm run web), Capacitor webDir
+www/

@@ -4,7 +4,7 @@
 // process for a third-party action.
 //   node scripts/play.mjs notes                                  # the "What's new" text
 //   PLAY_SERVICE_ACCOUNT_JSON='{…}' node scripts/play.mjs upload <aab> <versionCode> <versionName> [promoteTrack]
-// upload puts the bundle on internal testing; with promoteTrack (a version bump) it also puts the
+// upload puts the bundle on internal testing; with promoteTrack (a version bump, not a prerelease) it also puts the
 // same build on that track, in a second edit so a refused promotion (a personal account's
 // production gate) still leaves the internal release out.
 
@@ -104,6 +104,8 @@ export async function publish({ key, aab, versionCode, versionName, notes, promo
   });
   log(`Internal testing: ${rel.name}`);
   if (!promote) return;
+  // a prerelease (1.0.0-alpha.1) stays with the testers: never promoted, whatever the track
+  if (String(versionName).includes('-')) return log(`${versionName} is a prerelease: not promoted to ${promote}`);
   await play.edit((e) => e.setTrack(promote, rel));
   log(`${promote}: ${rel.name}`);
 }
