@@ -22,6 +22,8 @@ export interface Act {
     readonly onWarm?: () => void;
     /** as a submenu (the composer's `+`), the box that narrows its rows (MenuSubmenu.filter). Additive (2026-11-20). */
     readonly filter?: MenuFilter;
+    /** its sheet's head where it opens as one (SheetMenus: the phone composer's). Additive (2026-11-21). */
+    readonly title?: string;
   };
   /** its command is in flight */
   readonly pending?: boolean;
@@ -120,7 +122,7 @@ function WithMenu(props: { readonly act?: Act | undefined; readonly render: (tri
   return (
     <Show when={props.act?.menu} fallback={props.render(press)}>
       {(m) => (
-        <MenuOn items={m().items} onSelect={(v) => m().onSelect(v)} onWarm={() => m().onWarm?.()} onOpenChange={(o) => o && m().onWarm?.()} part="ui.menu">
+        <MenuOn items={m().items} title={m().title} onSelect={(v) => m().onSelect(v)} onWarm={() => m().onWarm?.()} onOpenChange={(o) => o && m().onWarm?.()} part="ui.menu">
           {(trigger) => props.render(() => ({ ...trigger(), ...actAttrs(props.act) }))}
         </MenuOn>
       )}

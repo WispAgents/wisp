@@ -57,6 +57,9 @@ export interface PhoneMenuProps {
   readonly onSelectMode?: (() => void) | undefined;
   /** the Android sheet's title when it isn't the pressed row's (a page's ⋮: the task's name). Additive. */
   readonly title?: string | undefined;
+  /** opened from a menu's button, not a long-press: iOS too draws the sheet (a context menu's preview is a row's).
+   *  Additive (2026-11-21). */
+  readonly button?: boolean | undefined;
 }
 
 /** what a long-press lifts as the iOS preview: the pressed row */
@@ -127,6 +130,8 @@ export function MenuMachine(props: MenuMachineProps): JSX.Element {
           x={p().x}
           part={props.part}
           onSelectMode={(props.base as ContextMenuProps).onSelectMode}
+          title={props.base.title}
+          button={props.at !== 'pointer'}
         />
       )}
     </Show>
@@ -160,7 +165,7 @@ export function swallowOpeningLift(): () => void {
 export function PhoneMenu(props: PhoneMenuProps): JSX.Element {
   onCleanup(swallowOpeningLift());
   return (
-    <Show when={props.look === 'ios'} fallback={<ActionSheet {...props} />}>
+    <Show when={props.look === 'ios' && !props.button} fallback={<ActionSheet {...props} />}>
       <ContextPreview {...props} />
     </Show>
   );

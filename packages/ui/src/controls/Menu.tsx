@@ -9,7 +9,7 @@
 // The browser on a touch-first or narrow screen (a coarse pointer, or under the phone breakpoint; owner 2026-11-19): every
 // menu opens as a bottom sheet instead, a submenu drilling in place under a back row (./phone.tsx's PhoneMenu in the web
 // look, the same chunk, so a desktop's first page never loads it). Side flyouts stay for a fine pointer on a wide screen.
-import { createEffect, createSignal, on, Show, untrack, type Accessor, type JSX } from 'solid-js';
+import { createContext, createEffect, createSignal, on, Show, untrack, useContext, type Accessor, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -62,7 +62,16 @@ export interface MenuBaseProps extends KitProps {
   /** the pointer or the focus reached its trigger before its machine was there, and each time it opens: what its rows
    *  need, fetched then (Goal…'s code and goals). Additive (2026-11-20). */
   readonly onWarm?: () => void;
+  /** the head of the sheet it opens as (SheetMenus): what the choice is about ("Mode"), not the button's current value.
+   *  Additive (2026-11-21). */
+  readonly title?: string | undefined;
 }
+
+/** Inside it, a menu from a button opens in the phone apps as the bottom sheet the composer's Delegate panel opens as
+ *  (its handle, its title and ✕), not as the platform's anchored dropdown: the composer's pickers read as one family
+ *  (owner 2026-11-21: "the best one is Delegate, use the same for all"). The browser keeps its own rule (a sheet on a
+ *  sheet screen). Provided by the launcher and the reply box. */
+export const SheetMenus = createContext(false);
 
 export interface MenuProps extends MenuBaseProps {
   readonly trigger: MenuTrigger;
@@ -89,8 +98,10 @@ export type MenuPlace = Pick<MenuProps, 'placement' | 'below' | 'from'>;
  * a ContextMenu in the phone apps binds the phone chunk's stand-in (the same props) instead of Zag's. */
 function useLazyMenu(props: MenuBaseProps & MenuPlace, part: () => PartName, at?: 'pointer', phone?: boolean) {
   const look = usePlatform();
-  // the phone chunk's machine: a phone's long-press menu, or any menu of the browser's on a sheet screen
-  const lazy = (): typeof machine | typeof phoneOverlays => (phone || (look() === 'web' && onSheetScreen()) ? phoneOverlays : machine);
+  const sheets = useContext(SheetMenus);
+  // the phone chunk's machine: a phone's long-press menu, a composer's menu in the phone apps (SheetMenus), or any menu
+  // of the browser's on a sheet screen
+  const lazy = (): typeof machine | typeof phoneOverlays => (phone || (sheets && look() !== 'web') || (look() === 'web' && onSheetScreen()) ? phoneOverlays : machine);
   const [bound, setBound] = createSignal<Accessor<Record<string, unknown>>>();
   const [pending, setPending] = createSignal<Replay>();
   // a window resized across the line: the trigger is the other machine's from now on (unbound until it's there)

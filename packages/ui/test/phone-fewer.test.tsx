@@ -283,8 +283,8 @@ test('an_answers_actions_are_a_menu_on_a_phone_the_latest_keeping_its_icons_and_
 });
 
 
-// #9: the agent's page is pushed from the reply's options: Agent closes the sheet and opens the picker; the picker's
-// Back (a phone draws it) closes it, and the sheet comes back
+// #9: the agent's page is pushed from the reply's options: Agent closes the sheet and opens the picker; the picker is a
+// sheet of its own on a phone (owner 2026-11-21, as Delegate's), its ✕ closes it, and the options come back
 test('the_agent_page_is_pushed_from_the_options_and_back_pops_to_them', async () => {
   const [pickerOpen, setPickerOpen] = createSignal(false);
   let closed = 0;
@@ -327,9 +327,8 @@ test('the_agent_page_is_pushed_from_the_options_and_back_pops_to_them', async ()
   document.querySelector<HTMLButtonElement>('[data-part="composer.options.agent"]')?.click();
   await until(() => pickerOpen() && !sheetOpen());
   expect(pickerOpen(), 'the agent page').toBe(true);
-  const back = document.querySelector<HTMLButtonElement>('[data-part="runner.picker.back"]');
-  expect(back?.textContent).toBe('Back');
-  back?.click();
+  expect(document.querySelector('[data-part="runner.picker.sheet"] [data-kit="dialog-title"]')?.textContent, 'in its titled sheet').toBe('Harness and model');
+  document.querySelector<HTMLButtonElement>('[data-part~="runner.picker.sheet.close"]')?.click();
   await until(() => !pickerOpen() && sheetOpen());
   expect(closed).toBe(1);
   expect(sheetOpen(), 'back on the options').toBe(true);

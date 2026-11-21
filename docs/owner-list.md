@@ -97,3 +97,9 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 ## Then
 
 Push, CI green on every OS, merge PR #756, release through release.yml, install the release on this Mac and check it runs.
+
+## Phone app, 2026-11-21
+
+| # | Point | Status |
+|---|---|---|
+| 1 | New task's dropdowns and menus aren't consistent; Delegate's is the best, use it for all | done: in the phone apps Mode, Runs on, More (⋯), Start later and the harness picker open as Delegate's bottom sheet (handle, title, ✕) on Android and iOS (packages/ui/src/controls/Menu.tsx `SheetMenus`, HarnessPicker in a Sheet; packages/ui/test/composer-sheets.test.tsx). The project chip still opens the ⌘P project switcher (shared with the Tasks bar) |

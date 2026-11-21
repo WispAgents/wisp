@@ -9,7 +9,7 @@ import { ActIcon, WithAct, type Act } from './act.tsx';
 import { ReplyOptions, type ReplyOptionLabels } from './ReplyOptions.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { useT } from '../core/i18n.tsx';
-import { Menu } from '../controls/Menu.tsx';
+import { Menu, SheetMenus } from '../controls/Menu.tsx';
 import { useTurnMenu, type TurnPhoneMenu, type TurnTool } from './turn-menu.ts';
 import { holdMedia } from './hold-view.ts';
 import { useBarLabels } from './bar-labels.ts';
@@ -802,7 +802,12 @@ export interface CompactReplyBoxProps {
   readonly part?: string;
 }
 
+/** The reply box. Its menus open as the phone apps' sheet (SheetMenus), as the launcher's do. */
 export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Element {
+  return <SheetMenus.Provider value={true}><ReplyBoxIn {...given} /></SheetMenus.Provider>;
+}
+
+function ReplyBoxIn(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Element {
   // the tools below read the full box's props; a compact box never draws them (`compact` guards each read)
   const props = given as ReplyBoxProps & { readonly compact?: boolean; readonly part?: string };
   // TRY-22: a suggested follow-up behind the caret, where there's a Tab key (a touch screen has the chips)

@@ -13,6 +13,7 @@ import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
 import type { IconName } from '../content/icons.ts';
 import { ActIcon, WithAct, actAttrs, type Act } from './act.tsx';
+import { SheetMenus } from '../controls/Menu.tsx';
 import { foldOrder, foldTail, type LauncherTool } from './launcher-fold.ts';
 import { useTailFold } from './launcher-fold-measure.ts';
 import { useBarLabels } from './bar-labels.ts';
@@ -198,8 +199,12 @@ export interface LauncherProps {
 }
 
 
-/** v1 #launcher: the prompt box on Home. */
+/** v1 #launcher: the prompt box on Home. Its menus open as the phone apps' sheet (SheetMenus). */
 export function Launcher(props: LauncherProps): JSX.Element {
+  return <SheetMenus.Provider value={true}><LauncherBox {...props} /></SheetMenus.Provider>;
+}
+
+function LauncherBox(props: LauncherProps): JSX.Element {
   // Try it two ways (v1 .runners.trial / .l-bar.l-try): one copy of the lead that says its change; the bar folds for it
   const trial = (): boolean => props.runner.compares?.length === 1 && (props.runner.compares[0]?.variant?.length ?? 0) > 0;
   const key = (e: KeyboardEvent): void => {

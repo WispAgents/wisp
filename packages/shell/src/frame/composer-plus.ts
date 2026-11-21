@@ -61,5 +61,5 @@ export function plusTool(x: PlusInput): LauncherTool {
     // after the menu has closed and handed focus back to `+`
     if (owner && x.refocus) setTimeout(x.refocus, 0);
   };
-  return { id: 'plus', part: x.part, icon: 'plus', label: x.label, title: x.title, act: { menu: { items, onSelect, ...(x.onWarm && { onWarm: x.onWarm }) } } };
+  return { id: 'plus', part: x.part, icon: 'plus', label: x.label, title: x.title, act: { menu: { title: x.label, items, onSelect, ...(x.onWarm && { onWarm: x.onWarm }) } } };
 }

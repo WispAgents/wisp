@@ -1562,21 +1562,20 @@
     padding: var(--space-2) var(--inset); background: var(--surface-c1); border-top: var(--hairline) solid var(--outline-var);
   }
 
-  /* UX 2026-11-18 phone #9: the agent picker is a page of its own (pushed from the reply's options): the screen's width
-     from the bottom, Back over it, its harnesses one row of segments, its models a list, the thinking levels named */
+  /* the agent picker in the composer's bottom sheet, as Delegate's panel is (owner 2026-11-21: one sheet for every
+     composer picker): the card fills the sheet's body, its harnesses one row of segments, its models a list, the
+     thinking levels named */
   :root[data-platform='android'] [data-kit='picker'] {
-    position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: calc(100% - var(--safe-top) - var(--tap-min));
-    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr);
-    padding-bottom: var(--safe-bottom); border-radius: var(--radius-xl) var(--radius-xl) 0 0; transform: none;
-  }
-  :root[data-platform='android'] [data-kit='pk-back'] {
-    grid-column: 1 / -1; display: inline-flex; align-items: center; gap: var(--space-2); justify-self: start;
-    min-height: var(--tap-min); padding: var(--space-0) var(--inset); color: var(--primary); font: var(--type-body, var(--type-body-l));
+    position: static; width: auto; height: auto; min-height: 0; max-height: none;
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+    border: 0; border-radius: 0; box-shadow: none; background: transparent; transform: none; animation: none;
   }
   :root[data-platform='android'] [data-kit='picker'] [data-kit='pk-side'] { flex-direction: row; overflow-x: auto; border-right: 0; scrollbar-width: none; }
   :root[data-platform='android'] [data-kit='picker'] [data-kit='pk-side'] > [data-kit='pk-head'],
   :root[data-platform='android'] [data-kit='picker'] [data-kit='pk-h'] > [data-kit='pk-text'] > small { display: none; }
   :root[data-platform='android'] [data-kit='picker'] [data-kit='pk-h'] { width: auto; flex: none; min-height: var(--tap-min); }
+  /* Set up another agent… at the row's end, one line like the chips before it (it was squeezed to a word a line) */
+  :root[data-platform='android'] [data-kit='picker'] [data-kit='pk-side'] > [data-kit='pk-setup'] { flex: none; white-space: nowrap; }
 
   /* UX 2026-11-18 phone #5: New task's setup as a short list under the prompt (HIG's grouped rows, M3 list items): the
      place, the permissions, the harness by name and Delegate, a row each saying what it is; attach and More (…) on the
