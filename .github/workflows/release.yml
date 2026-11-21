@@ -420,7 +420,8 @@ jobs:
             tag=$(node npm/scripts/release.mjs publish-tag "${pkg##*@}" "$VERSION" "$TAG") || exit 1
             # Another run may have published it since the plan looked.
             if [ -n "$(npm view "$pkg" version 2>/dev/null || true)" ]; then echo "$pkg is already on npm: skipped."; continue; fi
-            npm publish "packed/$tgz" --provenance --access public --tag "$tag"
+            # ./ keeps npm from reading packed/<file> as a GitHub user/repo shorthand (EALLOWGIT)
+            npm publish "./packed/$tgz" --provenance --access public --tag "$tag"
           done 3< packed/order.txt
       # npm publish takes one --tag: an alpha also gets `alpha` (the trusted publisher needs "Allow npm dist-tag").
       # Not fatal: the release is out on `latest` either way, and the warning says how to add it.
