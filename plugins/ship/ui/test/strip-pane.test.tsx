@@ -7,7 +7,9 @@ import { render } from 'solid-js/web';
 import { createScope, interpret, realTimers, signal, type Nav } from '@wisp/client';
 import { ShellProvider } from '@wisp/shell';
 import { KitProvider } from '@wisp/ui';
+import { t as shipT } from '../src/i18n.ts';
 import PrStrip from '../src/PrStrip.tsx';
+import '../src/i18n/lazy.ts';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -99,4 +101,94 @@ test('a_failed_review_says_why_and_a_rerun_that_didnt_start_says_so_audit_e5', a
   expect(said).toEqual(['No other harness is set up to review.']);
   stop();
   client.scope.dispose();
+});
+
+function mountStrip(sessionVal: unknown): { host: HTMLDivElement; stop: () => void; dispose: () => void; opened: string[] } {
+  const nav = signal<Nav>({ main: { kind: 'task', id: KEY }, side: { kind: 'none' }, overlays: [], layout: 'split' } as unknown as Nav);
+  const session = signal<unknown>(sessionVal);
+  const none = signal<unknown>(undefined);
+  const opened: string[] = [];
+  const client = {
+    id: 'wisp.ship',
+    home: 'laptop',
+    scope: createScope('test', realTimers),
+    machine: (def: never, ctx: never, owner?: never) => interpret(def, owner ?? client.scope, ctx),
+    entities: { row: (kind: string) => (kind === 'session' ? session : none), list: () => signal([]), peek: () => undefined },
+    run: async () => null,
+    navigate: () => undefined,
+    watch: () => undefined,
+  };
+  const shell = {
+    nav,
+    client: { nav: { nav } },
+    t: shipT,
+    toast: { show: () => undefined, error: () => undefined },
+    platform: { openExternal: (u: string) => opened.push(u), phone: false },
+    navigate: () => undefined,
+  };
+  const host = document.createElement('div');
+  document.body.append(host);
+  const stop = render(
+    () => (
+      <KitProvider t={(k) => k}>
+        <ShellProvider value={shell as never}>
+          <PrStrip client={client as never} config={undefined as never} id={KEY} />
+        </ShellProvider>
+      </KitProvider>
+    ),
+    host,
+  );
+  return { host, stop, dispose: () => client.scope.dispose(), opened };
+}
+
+test('merged_multi_pr_card_hides_empty_toolbar_and_shows_summary_with_all_chips', () => {
+  const p1 = { number: 839, url: 'https://github.com/o/wisp/pull/839', state: 'MERGED' };
+  const p2 = { number: 840, url: 'https://github.com/o/wisp/pull/840', state: 'MERGED' };
+  const { host, stop, dispose, opened } = mountStrip({ id: 's1', state: 'done', project: 'wisp', pr: p1, prs: [{ repo: 'wisp', pr: p2 }] });
+  expect(host.querySelector('[data-part="pr.strip.row.title"]')?.textContent).toBe('2 PRs');
+  expect(host.querySelector('[data-part="pr.strip.row.sub"]')?.textContent).toBe('All merged');
+  expect(host.querySelector('[data-part="pr.strip.bar"]'), 'no empty toolbar void when 0 actions').toBeNull();
+  const chips = [...host.querySelectorAll('[data-part="pr.strip.chip"]')];
+  expect(chips.map((c) => c.textContent?.trim())).toEqual(['wisp #839', 'wisp #840']);
+  expect(host.querySelector('[data-part="pr.strip.more"]')).toBeNull();
+  (chips[1] as HTMLButtonElement).click();
+  expect(opened).toEqual(['https://github.com/o/wisp/pull/840']);
+  stop();
+  dispose();
+});
+
+test('many_attached_prs_collapse_past_five_and_expand_with_worst_hidden_tone', () => {
+  const prs = Array.from({ length: 12 }, (_, i) => ({
+    repo: `repo-${i + 1}`,
+    pr: {
+      number: 100 + i,
+      url: `https://github.com/o/r${i}/pull/${100 + i}`,
+      state: i < 10 ? 'MERGED' : 'OPEN',
+      ...(i === 11 ? { checks: { fail: 2, pending: 0, pass: 1 } } : {}),
+    },
+  }));
+  const { host, stop, dispose } = mountStrip({ id: 's1', state: 'done', project: 'repo-1', pr: prs[0]!.pr, prs: prs.slice(1) });
+  expect(host.querySelector('[data-part="pr.strip.row.title"]')?.textContent).toBe('12 PRs');
+  expect(host.querySelector('[data-part="pr.strip.row.sub"]')?.textContent).toBe('1 failing · 1 open · 10 merged');
+  expect(host.querySelectorAll('[data-part="pr.strip.chip"]').length).toBe(4);
+  const more = host.querySelector('[data-part="pr.strip.more"]') as HTMLButtonElement | null;
+  expect(more?.textContent?.trim()).toBe('+8 more');
+  expect(more?.getAttribute('data-tone'), 'hidden failing PR tints +N more red').toBe('bad');
+  more?.click();
+  expect(host.querySelectorAll('[data-part="pr.strip.chip"]').length).toBe(12);
+  expect(host.querySelector('[data-part="pr.strip.more"]')?.textContent?.trim()).toBe('Show less');
+  (host.querySelector('[data-part="pr.strip.more"]') as HTMLButtonElement).click();
+  expect(host.querySelectorAll('[data-part="pr.strip.chip"]').length).toBe(4);
+  stop();
+  dispose();
+});
+
+test('single_pr_keeps_direct_title_no_chips_and_github_action', () => {
+  const { host, stop, dispose } = mountStrip({ id: 's1', state: 'done', project: 'wisp', pr: { number: 840, url: 'https://github.com/o/wisp/pull/840', state: 'MERGED' } });
+  expect(host.querySelector('[data-part="pr.strip.row.title"]')?.textContent).toBe('PR #840');
+  expect(host.querySelector('[data-part="pr.strip.row.sub"]')?.textContent).toBe('Merged');
+  expect(host.querySelector('[data-part="pr.strip.also"]')).toBeNull();
+  expect(host.querySelector('[data-part="pr.strip.bar"]')).not.toBeNull();
+  stop();
+  dispose();
 });

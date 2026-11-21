@@ -68,9 +68,12 @@ pub(crate) fn held_of(h: &PlanHold) -> LaterHeld {
 
 /// `runtime.setExt`: the task's list row shows what is scheduled (logged when refused). `now()` gives the row's value
 /// from later's entries as they are, asked again if another write landed between the read and the write, so of two
-/// mirrors at once the one computed from older entries never lands last.
-pub(crate) async fn mirror(ctx: &Ctx, call: &Call, id: &str, mut now: impl FnMut() -> Option<Value> + Send) {
-    if let Err(err) = wisp_runtime_api::ext::update_ext(ctx, call, id, PLUGIN_ID, |_, _| Ok(now())).await {
+/// mirrors at once the one computed from older entries never lands last. Speaks as `wisp.later` (`ctx.root_call()`),
+/// since `runtime:setExt` is denied to agent callers (`agent:session`) and `runtime` only lets each plugin write its
+/// own slot.
+pub(crate) async fn mirror(ctx: &Ctx, id: &str, mut now: impl FnMut() -> Option<Value> + Send) {
+    let call = ctx.root_call();
+    if let Err(err) = wisp_runtime_api::ext::update_ext(ctx, &call, id, PLUGIN_ID, |_, _| Ok(now())).await {
         tracing::warn!(error = %err.message, task = id, "later: runtime.setExt");
     }
 }
@@ -228,7 +231,7 @@ mod tests {
         rt.race(PLUGIN_ID, json!({ "count": 2 }));
         // the entries as they are at each ask: one when it first read, two once the other mirror's change landed
         let mut asked = 0;
-        mirror(&ctx, &ctx.root_call(), "t1", || {
+        mirror(&ctx, "t1", || {
             asked += 1;
             Some(json!({ "count": if asked == 1 { 1 } else { 2 } }))
         })
