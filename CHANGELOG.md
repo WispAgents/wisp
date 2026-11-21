@@ -21,6 +21,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A running task's row says what the agent is doing.** It read *Starting up* for the whole turn, even after the agent
+  had run tools; it now shows the latest step (*Read src/a.ts*, *Run tests*), at most once a second.
 - **Start now starts a run held near the usage limit.** A crew check-in or automation held at its account's stop
   line ("Held before it started … unattended work waits for it to reset") was held again the moment you pressed
   Start now, so the button seemed to do nothing. Start now is your yes: the run starts.

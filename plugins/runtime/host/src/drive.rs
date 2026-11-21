@@ -32,6 +32,9 @@ const PUBLISH_EVERY: Duration = Duration::from_millis(100);
 /// The shared coalescer's window (ADR-0083): a line waits at most this long for its commit. With every running
 /// turn in one commit, 10 commits a second keep the bytes written under the 15× budget at any number of tasks.
 pub const ACTIVITY_WINDOW_MS: u64 = 100;
+/// The list row's live line ("Reading src/a.ts") is rewritten at most this often while a turn runs: its first step at
+/// once, then the latest one a second (each is a write of the task's row, so never once per step).
+const ROW_EVERY: Duration = Duration::from_secs(1);
 
 pub(crate) struct Drive {
     pub sid: String,
@@ -46,6 +49,9 @@ pub(crate) struct Drive {
     out: Vec<u8>,
     err: Vec<u8>,
     stderr: String,
+    /// the live line the task's row was last written with, and when: a newer step rewrites it (`ROW_EVERY`)
+    row_label: Option<String>,
+    row_at: Instant,
 }
 
 fn take_lines(buf: &mut Vec<u8>, data: &[u8], last: bool) -> Vec<String> {
@@ -95,6 +101,8 @@ impl Runtime {
             out: Vec::new(),
             err: Vec::new(),
             stderr: String::new(),
+            row_label: None,
+            row_at: Instant::now(),
         };
         let mut linger: Option<Instant> = None;
         loop {
@@ -130,6 +138,11 @@ impl Runtime {
                 },
                 () = tokio::time::sleep_until(linger.unwrap_or_else(Instant::now)), if linger.is_some() => break,
                 () = tokio::time::sleep_until(d.published + PUBLISH_EVERY), if !d.pending.is_empty() => self.publish(&mut d, true),
+                () = tokio::time::sleep_until(d.row_at + ROW_EVERY), if !d.finished && self.row_stale(&d) => self.refresh_row(&mut d),
+            }
+            // the first step shows at once: until then the row says Starting up
+            if d.row_label.is_none() && !d.finished && self.row_stale(&d) {
+                self.refresh_row(&mut d);
             }
         }
         self.wind_down(d, &mut *driver, &handle, &sys).await;
@@ -261,6 +274,31 @@ impl Runtime {
             l.label = Some(hide.get("label").map_or_else(|| label.clone(), |h| wisp_envmask::mask_spans(label, h)));
         }
         step
+    }
+
+    /// The run's live line differs from what its row was last written with.
+    fn row_stale(&self, d: &Drive) -> bool {
+        let l = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&d.sid).and_then(|l| l.label.clone());
+        l.is_some() && l != d.row_label
+    }
+
+    /// Rewrites the task's row with the run's live line (the list says what the agent does, not Starting up for the
+    /// whole turn). Off the drive's loop: it takes the task's lock, and output keeps being read meanwhile.
+    fn refresh_row(self: &Arc<Self>, d: &mut Drive) {
+        d.row_label = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&d.sid).and_then(|l| l.label.clone());
+        d.row_at = Instant::now();
+        let (rt, sid) = (self.clone(), d.sid.clone());
+        tokio::spawn(async move {
+            let _guard = rt.task_lock(&sid).await;
+            // only a task still running: the turn's end writes its own row
+            let Ok(mut s) = rt.repo.session(&sid).await else { return };
+            if s.state != wisp_runtime_api::model::SessionState::Running || rt.live_label(&sid).is_none() {
+                return;
+            }
+            if let Err(e) = rt.persist(&mut s, Vec::new()).await {
+                tracing::warn!(task = %sid, error = %e, "runtime: the row's live line wasn't written");
+            }
+        });
     }
 
     /// Publishes the pending steps when `now`, or when the last batch is old enough.
