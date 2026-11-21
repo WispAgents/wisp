@@ -20,12 +20,15 @@ export interface WorkingPanelProps extends KitProps {
   /** its last steps, newest first (v1 .ticker: five, fading). Additive (2026-11-12). */
   readonly ticker?: readonly { readonly icon: IconName; readonly text: string }[];
   readonly actions?: JSX.Element;
+  /** under an open transcript: no box and no ticker, one live line closing the steps (as a terminal agent shows its
+   * work: the steps themselves are the log). Additive (2026-11-21). */
+  readonly inline?: boolean;
 }
 
 export function WorkingPanel(props: WorkingPanelProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.working';
   return (
-    <div id={props.id} data-kit="working" data-part={part()} data-waiting={flag(props.waiting)} role="status" aria-live="polite">
+    <div id={props.id} data-kit="working" data-part={part()} data-waiting={flag(props.waiting)} data-inline={flag(props.inline)} role="status" aria-live="polite">
       <span data-kit="working-orb">
         <Orb live waiting={props.waiting ?? false} />
       </span>
@@ -52,7 +55,7 @@ export function WorkingPanel(props: WorkingPanelProps): JSX.Element {
           </Show>
         </div>
         {props.children}
-        <Show when={props.ticker?.length}>
+        <Show when={!props.inline && props.ticker?.length}>
           <ul data-kit="working-ticker" data-part={sub(part(), 'ticker')}>
             <For each={props.ticker?.slice(0, 5)}>
               {(a) => (
