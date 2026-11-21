@@ -616,7 +616,7 @@ fn a_file_that_cant_be_read_is_said_in_words_audit_d9() {
     let gone = Path::new("/wisp-no-such-v1-home");
     assert_eq!(
         no_v1_home(gone, &gone.join("config.json"), &Error::from(ErrorKind::NotFound)),
-        "No folder at /wisp-no-such-v1-home (wisp import [v1 home folder])"
+        "No folder at /wisp-no-such-v1-home (wisp import [home folder])"
     );
     let here = std::env::temp_dir();
     let said = no_v1_home(&here, &here.join("config.json"), &Error::from(ErrorKind::NotFound));

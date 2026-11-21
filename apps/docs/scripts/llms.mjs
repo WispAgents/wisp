@@ -71,7 +71,7 @@ for (const p of pages) {
   if (!bySection.has(s)) bySection.set(s, []);
   bySection.get(s).push(p);
 }
-const names = { start: 'Get started', concepts: 'Concepts', guides: 'Guides', integrations: 'Integrations', plugins: 'Build plugins', reference: 'Reference', migrate: 'Import from an earlier wisp' };
+const names = { start: 'Get started', concepts: 'Concepts', guides: 'Guides', integrations: 'Integrations', plugins: 'Build plugins', reference: 'Reference', migrate: 'Import a wisp home' };
 const index = [
   '# wisp',
   '',

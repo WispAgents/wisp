@@ -46,7 +46,7 @@ pub const HELP: &str = "usage:
   wisp fresh [<task>] [--print] [-f brief.md]   a new conversation on the same task, from a brief (--print shows it)
   wisp hook install|uninstall|status   a git hook that adds Wisp-Task: <id> to commits a task's agent makes
   wisp secret set|rm NAME       a secret your formulas reference as ${secret:NAME}: piped in or typed hidden, never an argument
-  wisp import [v1 home]         bring a wisp v1 home (~/.wisp) in: its plan first, then on yes   (--dry-run  --yes)
+  wisp import [home]            bring another wisp home (~/.wisp) in: its plan first, then on yes   (--dry-run  --yes)
   wisp apply -f wisp.yml        your setup as code: plan, diff, confirm   (--dry-run  --yes  --prune  --trust  --profile P)
   wisp diff|validate -f F       what apply would change; schema and checks   (wisp schema: the editor schema)
   wisp export [kinds…]          what's set up here, as a formula   (--include ui,account  --format yaml|json|toml)
@@ -69,7 +69,7 @@ pub const HELP: &str = "usage:
   wisp update [apply]           is there a newer wisp? apply installs it   (wisp help update: check, view)
   wisp usage                    your limits this period and what each task took   (--agent ID: that harness's, by task)
   wisp machines|machine <verb>  your machines and this one: list, add, remove…   (wisp help machines)
-  wisp spell|spells             v1's spells are plugins now: wisp plugin new|install
+  wisp spell|spells             spells are plugins: wisp plugin new|install
   wisp computer on|off|status   this computer on the grid, reachable from your other wisps   (on --grid <url>: signs in there first)
   wisp --on <machine> …         run any command on that machine (wisp ls --on studio, wisp \"task\" --on cloud)
   wisp desktop                  open the wisp app window

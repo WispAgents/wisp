@@ -1,0 +1,33 @@
+---
+// The header's title (Starlight's own) with the alpha badge beside it, as on trywisp.dev (docs/site.css .alpha):
+// the word itself says it, so it reads without colour, and it isn't part of the home link's name.
+import Default from '@astrojs/starlight/components/SiteTitle.astro';
+---
+
+<div class="wisp-title">
+  <Default><slot /></Default>
+  <span class="wisp-alpha" title="wisp is in alpha: expect rough edges">alpha</span>
+</div>
+
+<style>
+  .wisp-title {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+  }
+  .wisp-alpha {
+    flex: none;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.5;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--sl-color-accent-high);
+    background: var(--sl-color-accent-low);
+    border: 1px solid var(--sl-color-accent);
+    border-radius: 999px;
+    padding: 0 0.5rem;
+  }
+</style>

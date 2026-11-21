@@ -385,6 +385,7 @@ ${head}</head>
 <header class="nav">
   <div class="wrap nav-in">
     <a class="brand" href="/" aria-label="wisp, home">${MARK}wisp</a>
+    <span class="alpha" title="wisp is in alpha: expect rough edges">alpha</span>
     <nav class="links" aria-label="Main">
       ${NAV.map(([t, h, c]) => `<a${c ? ` class="${c}"` : ''} href="${h}"${p === h || (h !== '/' && h.length > 1 && p.startsWith(h) && h !== DOCS_URL) ? ' aria-current="page"' : ''}>${t}</a>`).join('\n      ')}
     </nav>
@@ -448,6 +449,8 @@ const deskShot = (name, alt, o) => `<div class="window"><div class="bar" aria-hi
 const phoneShot = (name, alt, o) => `<div class="phone">${shot(name, PHONE, [390, 844], alt, o)}</div>`;
 
 const wayShot = (html, phone = false) => `<div class="way-shot${phone ? ' is-phone' : ''}">${html}</div>`;
+/** Where install is shown: wisp is in alpha, and where to say what broke. */
+const ALPHA_NOTE = `<p class="muted small alpha-note">wisp is in alpha: expect rough edges, and <a href="${REPO}/issues">tell us what breaks</a>.</p>`;
 const install = (cmd = 'npx wisp-agents') =>
   `<div class="install"><span class="dollar" aria-hidden="true">$</span><code>${esc(cmd)}</code><button class="copy" type="button" data-copy="${esc(cmd)}" aria-label="Copy command">${COPY_ICON}</button></div>`;
 
@@ -500,6 +503,7 @@ function landing() {
       <a class="btn ghost" href="/docs/start/install/">Read the docs</a>
     </div>
     <p class="muted small" style="margin-top:14px">Works with Claude Code, Codex, Cursor, opencode, Copilot, Grok and Antigravity, on the plans you already pay for.</p>
+    ${ALPHA_NOTE}
     <div class="stage">
       ${deskShot('desktop-task', 'The wisp desktop app: a list of tasks on the left, and a finished task with its report: what the agent did, the diff and the tests', { eager: true, sizes: '(max-width: 1100px) 100vw, 1080px' })}
       ${phoneShot('ios-task', 'The wisp iPhone app showing the same task’s report', { sizes: '(max-width: 700px) 34vw, 260px' })}
@@ -802,6 +806,7 @@ function appPage() {
     <p class="muted">The <code>wisp</code> command runs everything the app does, and <code>wisp tui</code> is a full terminal UI. It needs Node.js 18 or later.</p>
     <p class="muted">A command just failed? Type <code>wisp "check the error above"</code>: the agent gets the command, its exit code, its output and your folder, with secrets masked. <a href="/docs/guides/run/terminal-context/">How it works</a>.</p>
     <div class="cta" style="justify-content:flex-start">${install('npm install -g wisp-agents')}</div>
+    ${ALPHA_NOTE}
     <p class="small muted" style="margin-top:12px">Also: <code>curl -fsSL https://trywisp.dev/install.sh | bash</code> · <code>brew install wispagents/tap/wisp-agents</code> · try it with <code>npx wisp-agents</code>. <a href="/docs/start/install/">Install guide</a>.</p>
   </section>
 </div>`;
@@ -979,13 +984,20 @@ export function noVersionNames(md) {
 
 function changelogPage() {
   const src = noVersionNames(readText(path.join(ROOT, 'CHANGELOG.md')));
-  // Released versions only: Unreleased describes main, not what `npx wisp-agents` gets.
-  const releases = src.split(/^(?=## \[)/m).filter((s) => /^## \[\d/.test(s));
+  // Released versions only: Unreleased describes main, not what `npx wisp-agents` gets. Before the first release
+  // there are none: the page shows what's coming in it instead, under its own name.
+  const all = src.split(/^(?=## \[)/m);
+  const released = all.filter((s) => /^## \[\d/.test(s));
+  const upcoming = all.find((s) => /^## \[Unreleased\]/.test(s));
+  const releases = released.length || !upcoming ? released : [upcoming.replace(/^## \[Unreleased\][^\n]*/, '## [Coming in the first release]')];
   const section = (r) => {
-    const [, version, date] = r.match(/^## \[([^\]]+)\](?:\s*-\s*(\S+))?/);
-    const rest = r.replace(/^.*\n/, '');
-    return { version, date, html: `<section class="release" id="v${esc(version)}" style="padding:0">
-      <h2><a href="#v${esc(version)}">${esc(version)}</a>${date ? ` <time datetime="${esc(date)}">${esc(date)}</time>` : ''}</h2>
+    const [, version, said] = r.match(/^## \[([^\]]+)\](?:\s*-\s*(\S+))?/);
+    // a date only when it is one (a section can say "- unreleased" until its release day)
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(said ?? '') ? said : undefined;
+    const rest = r.replace(/^.*\n/, '').replace(/^\[[^\]]+\]: \S+[ \t]*$/gm, '');
+    const id = `${/^\d/.test(version) ? 'v' : ''}${version.toLowerCase().replace(/[^a-z0-9.-]+/g, '-')}`;
+    return { version, date, html: `<section class="release" id="${esc(id)}" style="padding:0">
+      <h2><a href="#${esc(id)}">${esc(version)}</a>${date ? ` <time datetime="${esc(date)}">${esc(date)}</time>` : ''}</h2>
       ${markdown(rest)}
     </section>` };
   };
@@ -997,7 +1009,7 @@ function changelogPage() {
     if (weeks.at(-1)?.key !== key) weeks.push({ key, d, list: [] });
     weeks.at(-1).list.push(r);
   }
-  const weekName = (d) => (d ? `Week of ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}` : 'Earlier');
+  const weekName = (d) => (d ? `Week of ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}` : 'Not released yet');
   const list = weeks.map((w, i) => {
     const span = w.list.length > 1 ? `${w.list.at(-1).version} – ${w.list[0].version}` : w.list[0].version;
     return `<details class="rel-week"${i === 0 ? ' open' : ''}>
@@ -1005,7 +1017,7 @@ function changelogPage() {
       ${w.list.map((r) => r.html).join('\n')}
     </details>`;
   }).join('\n');
-  const latest = releases[0]?.match(/^## \[([^\]]+)\]/)?.[1];
+  const latest = released[0]?.match(/^## \[([^\]]+)\]/)?.[1];
   return page({
     path: '/changelog.html',
     title: 'wisp changelog: what’s new in each release',
@@ -1016,7 +1028,7 @@ function changelogPage() {
   <header class="doc-head">
     <p class="eyebrow">Changelog</p>
     <h1>What’s new in wisp</h1>
-    <p class="lede">Every release of <code>wisp-agents</code>, a week at a time, newest first. Update with <code>npm install -g wisp-agents@latest</code>, or let the app update itself.</p>
+    <p class="lede">Every release of <code>wisp-agents</code>, a week at a time, newest first. Update with <code>npm install -g wisp-agents</code>, or let the app update itself.</p>
   </header>
   <article class="prose">${list}</article>
 </div>

@@ -32,6 +32,10 @@ brew install --cask wispagents/tap/wisp           # Homebrew: the desktop app (m
 
 Or try it without installing: `npx wisp-agents`.
 
+:::note
+wisp is in alpha: expect rough edges, and [tell us what breaks](https://github.com/WispAgents/wisp/issues).
+:::
+
 The desktop app for macOS, Windows and Linux is on the [latest release](https://github.com/WispAgents/wisp/releases/latest),
 with `SHA256SUMS.txt`. The app updates itself: when a new version is out, its top bar says *Update to …*.
 

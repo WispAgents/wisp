@@ -1,14 +1,14 @@
 ---
-title: Import from an earlier wisp
-description: Bring your projects, recipes, crew, automations, machines and task history from an earlier wisp (1.x) with one command.
+title: Import a wisp home
+description: Bring projects, recipes, crew, automations, machines and task history from another wisp home (~/.wisp) with one command.
 sidebar:
   order: 1
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Used an earlier wisp (1.x)? Your setup and your task history come with you in one command. It shows its plan first
-and changes nothing until you say yes.
+Have a wisp home from another install, or a `~/.wisp` folder copied from another computer? Its setup and its task
+history come in with one command. It shows its plan first and changes nothing until you say yes.
 
 ## Import
 
@@ -28,7 +28,7 @@ Quit the TUI (**q**), run the CLI command, then `wisp tui` again.
 wisp import --dry-run              # the plan only
 wisp import                        # the plan, then "Import it? [y/N]"
 wisp import --yes                  # no question (for scripts)
-wisp import /path/to/old/home      # another folder than ~/.wisp
+wisp import /path/to/other/home    # another folder than ~/.wisp
 ```
 Outside a terminal, `wisp import` needs `--yes`.
 </TabItem>
@@ -36,9 +36,9 @@ Outside a terminal, `wisp import` needs `--yes`.
 
 ## What comes over
 
-It reads the old home's `config.json` and its `sessions` folder, and brings in:
+It reads the home's `config.json` and its `sessions` folder, and brings in:
 
-- **Projects.** A project whose folder isn't on this computer anymore is left out, and the plan says so.
+- **Projects.** A project whose folder isn't on this computer is left out, and the plan says so.
 - **Defaults**, as settings: your default harness, model and effort among them.
 - **Recipes**, as declared tasks.
 - **Automations and schedules**, as triggers.
@@ -47,7 +47,9 @@ It reads the old home's `config.json` and its `sessions` folder, and brings in:
 - **Task history:** every task with its transcript and its changes per turn. Tasks are history, so they are
   imported, never planned. A task already imported is skipped, so you can run the import again.
 
-The plan shows each change as `wisp apply` would. Notes under it name anything that didn't carry over.
+The plan shows each change as `wisp apply` would. Notes under it name anything that didn't carry over: a spell, for
+one, isn't imported; [Make wisp your own](../../plugins/make-wisp-your-own/) shows how to build it as a
+[plugin](../../concepts/plugins/), or ask an agent to.
 
 ## Secrets
 
@@ -57,16 +59,6 @@ has becomes a `${secret:NAME}` reference. Any other is named in the plan's notes
 ```sh
 wisp secret set NAME       # typed hidden, or piped: echo "$TOKEN" | wisp secret set NAME
 ```
-
-## What changed
-
-| Before | Now |
-| --- | --- |
-| Spells | [Plugins](../../concepts/plugins/). A spell isn't imported: [Make wisp your own](../../plugins/make-wisp-your-own/) shows how to rebuild one, or ask an agent to. |
-| Settings only in the app | The same settings, plus a formula in your repo (`.wisp/*.wisp.yml`) with `wisp plan` and `wisp apply`. |
-| Task history only on your machine | Optionally kept in the repo (`.wisp/`), so the team sees why the code is the way it is. |
-
-Everything you did in the app before is in the same place now, and looks the same.
 
 ## Keep your setup in the repo
 

@@ -58,7 +58,7 @@ brew install wispagents/tap/wisp-agents            # Homebrew: the command line
 brew install --cask wispagents/tap/wisp            # Homebrew: the desktop app (macOS 13.3+)
 ```
 
-`install.sh` honours `WISP_VERSION` on the shell side: `curl -fsSL https://trywisp.dev/install.sh | WISP_VERSION=next bash`.
+wisp is in alpha: expect rough edges, and [tell us what breaks](https://github.com/WispAgents/wisp/issues).
 
 Next: [your first task](https://trywisp.dev/docs/start/first-task/) · [give your repo a `.wisp/` folder](https://trywisp.dev/docs/start/your-repo/).
 
@@ -107,7 +107,7 @@ this repo (`--agent codex`, `--agent all`). See [MCP from your harness](https://
 - **Declare:** [build a software factory as code](https://trywisp.dev/docs/guides/declare/software-factory-as-code/) · [share skills, AGENTS.md files and MCP servers with your team](https://trywisp.dev/docs/guides/declare/share-skills-and-mcps/)
 - **Run:** [run and follow up](https://trywisp.dev/docs/guides/run/run-and-follow-up/) · [compare and try it two ways](https://trywisp.dev/docs/guides/run/compare-and-try/) · [worktrees and shipping](https://trywisp.dev/docs/guides/run/worktrees-and-shipping/) · [goals and judges](https://trywisp.dev/docs/guides/run/goals/) · [review by another agent](https://trywisp.dev/docs/guides/run/review-by-another-agent/) · [crew and check-ins](https://trywisp.dev/docs/guides/run/crew-and-check-ins/) · [automations and triggers](https://trywisp.dev/docs/guides/run/schedules-and-triggers/) · [Slack, Linear, Telegram and more](https://trywisp.dev/docs/guides/run/from-slack-and-linear/) · [long threads](https://trywisp.dev/docs/guides/run/long-threads/) · [machines, the Grid and wisp Cloud](https://trywisp.dev/docs/guides/run/machines/) · [budgets and usage](https://trywisp.dev/docs/guides/run/budgets-and-usage/)
 - **Track:** [track your agents' work beside your code](https://trywisp.dev/docs/guides/track/track-agent-work/)
-- **Make it yours:** [plugins](https://trywisp.dev/docs/plugins/make-wisp-your-own/) · [import from an earlier wisp](https://trywisp.dev/docs/migrate/import/)
+- **Make it yours:** [plugins](https://trywisp.dev/docs/plugins/make-wisp-your-own/) · [import a wisp home](https://trywisp.dev/docs/migrate/import/)
 - **Reference:** [every CLI command](https://trywisp.dev/docs/reference/cli/), setting, MCP tool and resource kind, generated from the code.
 
 ## wisp Cloud

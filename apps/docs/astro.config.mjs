@@ -53,6 +53,8 @@ export default defineConfig({
       editLink: { baseUrl: 'https://github.com/WispAgents/wisp/edit/main/docs/site/' },
       lastUpdated: true,
       customCss: ['./src/styles/wisp.css'],
+      // the alpha badge beside the title, on every page (as the site's header has it)
+      components: { SiteTitle: './src/components/SiteTitle.astro' },
       sidebar: [
         { label: 'Get started', items: pages('start') },
         { label: 'Concepts', items: pages('concepts') },
@@ -70,7 +72,7 @@ export default defineConfig({
         { label: 'Integrations', items: pages('integrations') },
         { label: 'Build plugins', items: pages('plugins') },
         { label: 'Reference', items: pages('reference') },
-        { label: 'Import from an earlier wisp', items: pages('migrate') },
+        { label: 'Import a wisp home', items: pages('migrate') },
       ],
     }),
   ],

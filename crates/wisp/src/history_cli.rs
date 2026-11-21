@@ -375,7 +375,7 @@ pub async fn import(c: &Client, o: &Opts, home: &Path, cwd: &Path) -> Result<i32
     // the secrets the import brings aren't missing: they're set just before the apply
     plan.missing_secrets.retain(|m| !bring.iter().any(|(n, _)| n == m));
     let args = json!({ "resources": resources, "prune": false });
-    say(&format!("{} {}", paint(&st, BOLD, "Import plan"), paint(&st, DIM, &format!("(v1 home {})", v1.display()))));
+    say(&format!("{} {}", paint(&st, BOLD, "Import plan"), paint(&st, DIM, &format!("(from {})", v1.display()))));
     crate::code::show_plan(&plan, &st);
     for n in &notes {
         say(&format!("  {} {n}", paint(&st, DIM, "·")));

@@ -195,7 +195,7 @@
       },
       {
         "id": "runtime.import",
-        "title": "Import v1's tasks"
+        "title": "Import tasks from another wisp home"
       },
       {
         "id": "runtime.ask",

@@ -948,11 +948,11 @@ pub fn unreadable(path: &std::path::Path, e: &std::io::Error) -> String {
 
 /// `wisp import`'s v1 home without a `config.json` it can read (audit D9), in words.
 pub fn no_v1_home(v1: &std::path::Path, file: &std::path::Path, e: &std::io::Error) -> String {
-    let how = "(wisp import [v1 home folder])";
+    let how = "(wisp import [home folder])";
     if !v1.is_dir() {
         format!("No folder at {} {how}", v1.display())
     } else if e.kind() == std::io::ErrorKind::NotFound {
-        format!("{} has no config.json: is it wisp v1's home (~/.wisp)? {how}", v1.display())
+        format!("{} has no config.json: is it a wisp home (~/.wisp)? {how}", v1.display())
     } else {
         format!("{} {how}", unreadable(file, e))
     }
