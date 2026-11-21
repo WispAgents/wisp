@@ -59,6 +59,16 @@ export function bridgeTransport(bridge: NativeBridge, computer: Pick<Computer, '
     post(m: ClientMessage, signal) {
       return open ? open.post(m, signal) : Promise.reject(new PeerDown('unreachable', 'not connected'));
     },
+    // a plugin's own routes (an attached file's POST /uploads, a terminal's stream): where the stream went, or
+    // reached afresh when it isn't open. Without these PeerHttp refused every route on the phone ("can't be reached")
+    async request(r, signal) {
+      const http = open ?? httpFor(await reach(), o.fetch);
+      return http.request ? http.request(r, signal) : Promise.reject(new PeerDown('unreachable', 'no routes'));
+    },
+    async *events(path, signal) {
+      const http = open ?? httpFor(await reach(), o.fetch);
+      if (http.events) yield* http.events(path, signal);
+    },
   };
   if (computer.kind !== 'grid') return transport;
   return { ...transport, wake: (signal) => wakeGrid(reach, o.fetch, signal) };
