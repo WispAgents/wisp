@@ -7,7 +7,10 @@
     --panel-w: var(--size-panel-w);
     --rail-w: var(--size-rail-w);
     --pc: var(--pc-slate);
-    position: relative; height: 100vh; overflow: hidden;
+    /* 100dvh, not 100vh: a phone browser's 100vh is the height with its URL bar hidden, so the page was taller
+       than the screen and scrolled as a whole, carrying the header and the composer away. dvh is the visible
+       height: the header and composer stay put and only the feed scrolls (100vh stays for older engines). */
+    position: relative; height: 100vh; height: 100dvh; overflow: hidden;
     display: grid; grid-template-columns: calc(var(--side-w) + var(--rail-w)) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
     background: var(--sunk);
   }
