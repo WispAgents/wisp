@@ -12,10 +12,11 @@
   :root [data-kit='dialog'][data-size='full']:not([data-place]) > [data-kit='dialog-body'] { display: flex; flex-direction: column; overflow: hidden; color: var(--ink); }
 
   /* a page: its bar, then one scroll box (the bar's collapse follows it) */
-  [data-kit='phone-page'] {
-    flex: 1 1 auto; min-height: 0; height: 100%; display: flex; flex-direction: column;
-    padding-top: env(safe-area-inset-top, 0px);
-  }
+  [data-kit='phone-page'] { flex: 1 1 auto; min-height: 0; height: 100%; display: flex; flex-direction: column; }
+  /* under the status bar only over the whole screen (Settings, a launched app): a destination (My Stuff) sits in the
+     frame's body, which already starts under it (platform/<look>.css: frame-body's --safe-top), so padding it again
+     put a status bar's height of blank above My Stuff's bar that Tasks and Crew don't have */
+  [data-kit='dialog'] [data-kit='phone-page'] { padding-top: env(safe-area-inset-top, 0px); }
   [data-kit='phone-page-body'] {
     flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
     padding-bottom: calc(var(--space-7) + env(safe-area-inset-bottom, 0px));
