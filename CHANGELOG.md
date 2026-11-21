@@ -20,6 +20,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A task with several PRs: the PR card holds them.** The other repos' PR chips sat on the card's one row, which never
   wraps, so in the side column they pushed the PR's title out and ran past the card's edge. They now sit on their own
   line under it and wrap.
+- **Crew: Share link and Download work.** Share link toasted a bare "not found": wisp Cloud still ran v1's grid, which
+  has no place for v2's shares. wisp Cloud now runs the v2 grid, and it takes the crew's `crew:<id>,<id>` share key
+  (it refused "Bad share key."). A grid that still can't hold a link says so and points to Download or Copy.
+  Download saved the `.crew.json` without a word in the desktop app; it now says where the file went.
 
 ## [1.0.0-alpha.2] - 2026-11-21
 

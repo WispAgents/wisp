@@ -52,6 +52,23 @@ fn a_share_must_be_signed_by_its_sharer() {
     assert!(verify(&c.signer, &c.sig, &c.body));
 }
 
+/// Crew's Share link was refused "Bad share key.": the crew keys a share `crew:<id>,<id>` (sorted member ids), and
+/// the grid took only `[A-Za-z0-9_.-]`, 64 at most.
+#[test]
+fn a_crew_share_key_is_taken() {
+    let t = t();
+    let ada = t.a.dev_user("ada").unwrap();
+    let k = SigningKey::from_bytes(&[1; 32]);
+    let five = format!("crew:{}", ["62cbf4c243be"; 5].join(","));
+    for key in ["crew", "crew:62cbf4c243be", five.as_str()] {
+        let p = Put { kind: "crew".into(), ..put(&k, key, "{\"members\":[]}") };
+        assert_eq!(t.s.put(&ada, &p).unwrap()["version"], json!(1), "{key}");
+    }
+    for bad in ["", "a/b", "a b", &"x".repeat(257)] {
+        assert!(!key_ok(bad), "{bad:?}");
+    }
+}
+
 #[test]
 fn sharing_again_is_a_new_version_and_ref_pins_one() {
     let t = t();

@@ -233,6 +233,7 @@
   "wisp.crew.share.notebookNone": "Notebook · empty",
   "wisp.crew.share.team": "Who they delegate to · {names} stay here unless ticked",
   "wisp.crew.share.download": "Download",
+  "wisp.crew.share.downloaded": "Saved {file} to Downloads. They open it in Import crew members… (⌘K)",
   "wisp.crew.share.copy": "Copy",
   "wisp.crew.share.copied": "Copied {name}. They paste it in Import crew members… (⌘K)",
   "wisp.crew.share.copyFailed": "Couldn’t copy: the browser refused the clipboard.",

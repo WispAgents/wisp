@@ -408,6 +408,11 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 ### 4.7 Cutover
 
 - [ ] Turn on `.wisp/` tracking for this repo once our own tasks run on v2
+- [x] **wisp Cloud (grid.trywisp.dev) runs the v2 grid** (2026-11-21, owner: "remove the v1 grid and make it only v2"):
+  `wisp-grid` + `wisp-grid-boxd` built on the arm64 box from main, v1's `grid.db` migrated in place (schema 11 → 15, 18
+  users, device tokens kept), boxes on `wisp-grid-user` with v2 `wisp` (`apps/grid/deploy/image/Dockerfile`), every
+  box started once on it. Deploy assets in `apps/grid/deploy/`. v1 clients can no longer share or import there, and v1
+  task links (`/s/<id>` made by v1) no longer open. v1 code and data as they were: `/var/lib/wisp-grid/backups/v1-*`.
 - [ ] Delete v1 (`server/`, `web/`, v1 `grid/`, v1 `desktop/` packaging, v1 tests and workflows)
 - [ ] CI workflows for v2 only; fewer test binaries (one integration-test binary per crate)
 - [ ] Budgets: binary ≤ 15 MB

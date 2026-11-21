@@ -110,6 +110,8 @@ export default function ShareCrew(props: { readonly client: PluginClient; readon
     if (!r) return;
     download(c, r.file, bundleText(r.bundle));
     close();
+    // the desktop app saves it to Downloads without a word (no browser download bar): say where it went
+    shell.toast.success(say('wisp.crew.share.downloaded', { file: r.file }));
   };
   const makeLink = (): void => {
     if (!out()?.r || linking()) return;
