@@ -250,6 +250,10 @@ impl Grid {
         let host = req.headers().get("host").and_then(|h| h.to_str().ok()).unwrap_or_default().to_owned();
         let kind = host_kind(&host, self.as_ref());
         let asker = self.asker(req.method(), req.headers());
+        let cors = common::api_cors(&kind, req.uri().path());
+        if cors && req.method() == http::Method::OPTIONS {
+            return common::api_preflight();
+        }
         if let Some(r) = self.common(&req, &kind) {
             return r;
         }
@@ -269,7 +273,8 @@ impl Grid {
             HostKind::Site(site) => Ok(self.site_reach(&req, site.as_ref())),
             HostKind::Unknown => Ok(json(421, &json!({ "error": "This grid doesn't serve that address." }))),
         };
-        out.unwrap_or_else(|e| self.failed(asker, &e))
+        let out = out.unwrap_or_else(|e| self.failed(asker, &e));
+        if cors { common::with_api_cors(out) } else { out }
     }
 
     // --- <domain> -------------------------------------------------------------------------------------

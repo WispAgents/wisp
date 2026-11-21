@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- wisp Cloud: the phone app signs in again. The v2 grid answered no CORS on `/api/`, so the app (another origin) could not ask for a sign-in code or reach an account it had already added; it now answers v1's open CORS there, on the grid, a box and a computer.
+
 ## [1.0.0-alpha.3] - 2026-11-21
 
 ### Fixed
