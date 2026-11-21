@@ -1413,6 +1413,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
             (made ??= runWithOwner(owner, () => (
               <WorkingPanel
                 part="task.working"
+                // with Transcript on, the steps above are the log (owner, 2026-11-21): the panel becomes their live last line
+                inline={stepsOpen()}
                 waiting={s().state === 'waiting'}
                 status={
                   (b as { by?: string }).by === 'compact'

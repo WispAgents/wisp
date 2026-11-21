@@ -119,6 +119,16 @@
     border-radius: var(--radius); background: var(--surface); border: var(--size-hairline) solid var(--line);
     animation: kit-rise var(--dur-slow) var(--ease) both;
   }
+  /* inline under an open transcript (the steps are the log): no box, one line at the timeline's end, Stop at its end */
+  [data-kit='working'][data-inline] { gap: var(--space-6); padding: var(--space-3) var(--space-1); border: 0; border-radius: 0; background: none; animation: none; }
+  [data-kit='working'][data-inline] [data-kit='working-body'] { flex-direction: row; align-items: center; gap: var(--space-6); }
+  [data-kit='working'][data-inline] [data-kit='working-status'] { flex: 1 1 0; }
+  [data-kit='working'][data-inline] [data-kit='working-actions'] { flex: none; }
+  /* the orb at the timeline's icon size (14 px: 3 × 4 px dots, hairline gaps), centred in the icon column */
+  [data-kit='working'][data-inline] [data-kit='working-orb'] { justify-content: center; width: var(--size-avatar-sm); }
+  [data-kit='working'][data-inline] [data-kit='orb']:not([data-waiting]) { grid-template-columns: repeat(3, var(--space-2)); gap: var(--size-hairline); }
+  [data-kit='working'][data-inline] [data-kit='orb-dot'] { width: var(--space-2); height: var(--space-2); }
+  [data-kit='working'][data-inline] [data-kit='working-title'] { font-weight: var(--fw-medium); }
   [data-kit='working'][data-waiting] { border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
   /* the orb sits on the status line (v1 .tx-panel .w-orb): both are one line box tall, the orb centred in it */
   [data-kit='working-orb'] { display: flex; align-items: center; flex: none; height: var(--size-control-xs); }

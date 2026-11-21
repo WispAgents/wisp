@@ -7,6 +7,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Transcript on a working task reads like an agent's log.** With Transcript on, a running turn showed its steps
+  and then the boxed working panel under them, repeating its last five steps. The steps are now the log, closed by one
+  live line (the orb, who is working, how long, how many actions, Stop), as Claude Code and Codex show their work.
 - **A follow-up sent goes to the end.** Sending a follow-up (typed, or a chip, question option or action reply) while
   scrolled up left the page where it was, so the new turn and its working panel came in out of sight. The task now
   scrolls to its end and shows the new turn whole.

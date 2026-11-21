@@ -117,6 +117,7 @@ export function TurnTranscript(props: {
   return (
     <Timeline
       part="turn.transcript"
+      live={props.status === 'running' || props.status === 'starting'}
       head={
         <>
           <Icon name="transcript" size="sm" />
