@@ -132,3 +132,21 @@ test('an_older_wisp_says_update', async () => {
   assert.equal(srv.streams.length, 1, 'no retry loop against a wisp it cannot speak to');
   client.dispose();
 });
+
+test('a route call (an attached file’s POST /uploads) goes to the computer with its token, connected or not', async () => {
+  const bridge = fakeBridge();
+  bridge.answers = [{ kind: 'ssh', port: 5001, token: 'wlt_secret', name: 'Studio' }];
+  const srv = fakeServer();
+  srv.reply = (r) => (r.url.includes('/api/uploads') ? { status: 200, body: '{"id":"u1","name":"a.png","mime":"image/png","size":3}' } : undefined);
+  const t = bridgeTransport(bridge, { id: 'studio', kind: 'ssh' }, { fetch: srv.fetch });
+  assert.ok(t.request && t.events, 'the phone reaches plugin routes');
+  const res = await t.request({ method: 'POST', path: '/uploads?name=a.png&type=image%2Fpng', body: 'abc', contentType: 'application/octet-stream' }, new AbortController().signal);
+  assert.equal(res.status, 200);
+  assert.equal(JSON.parse(res.text).id, 'u1');
+  const up = srv.requests.at(-1);
+  assert.equal(up?.method, 'POST');
+  assert.equal(up?.url, 'http://127.0.0.1:5001/api/uploads?name=a.png&type=image%2Fpng');
+  assert.equal(up?.headers['authorization'], 'Bearer wlt_secret');
+  assert.equal(up?.headers['content-type'], 'application/octet-stream');
+  assert.deepEqual(bridge.connects, ['studio']);
+});
