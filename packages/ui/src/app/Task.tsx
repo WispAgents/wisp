@@ -223,6 +223,11 @@ export interface TaskDetailsProps {
   /** its usage, its subagents' in, and how full its context is (v1 #785): the wide pane's lines. Additive. */
   readonly usage?: TaskUsageProps;
   readonly actions: readonly TaskAction[];
+  /**
+   * what plugins pin to the column (`shell.task:details`: wisp.ship's PR card), last in it so it stays in sight while the
+   * turns scroll; a full row under the narrow pane's bar. Additive.
+   */
+  readonly extra?: JSX.Element;
 }
 
 /** v1 .it-bar: the harness and project, the branch, then the task's actions. */
@@ -293,6 +298,11 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
             </span>
           </div>
         )}
+      </Show>
+      <Show when={props.extra}>
+        <div data-kit="it-extra" data-part="split.extra">
+          {props.extra}
+        </div>
       </Show>
       {/* the actions moved to the head (TaskHead `bar`); a host that still hands them gets them here */}
       <Show when={props.actions.length > 0}>

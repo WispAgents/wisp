@@ -151,6 +151,14 @@
     margin: 0 -8px;
     background: var(--bg);
   }
+  /* what plugins pin to the details (the PR card): a full row under the narrow pane's bar, last in the wide column */
+  [data-kit='it-extra'] {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  [data-kit='it-extra']:empty {
+    display: none;
+  }
   [data-kit='it-props'] {
     display: flex;
     align-items: center;
