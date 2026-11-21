@@ -103,6 +103,20 @@ impl wisp_kernel::scope::TaskTree for Tree {
     }
 }
 
+/// `machine.runs@1`: the runs going now, each by the pid of the CLI wisp spawned. This computer places a run's
+/// process tree from it on every OS (Windows has no `ps`, and a CLI's environment isn't read there), from its spawn,
+/// before the CLI says anything (audit I IS12). A lock and a copy, as the point asks.
+pub(super) struct Runs(pub(super) Slot);
+
+impl wisp_machine_api::this_mac::LiveRuns for Runs {
+    fn live(&self) -> Vec<wisp_machine_api::this_mac::LiveRun> {
+        rt(&self.0).map_or_else(
+            |_| Vec::new(),
+            |r| r.live_pids().into_iter().map(|(task, pid)| wisp_machine_api::this_mac::LiveRun { task, pid }).collect(),
+        )
+    }
+}
+
 /// One runtime event, typed, on its way to a call (`emit`) or a write's outbox (ADR-0074).
 enum Out<'a> {
     Created(&'a wisp_runtime_api::events::SessionCreated),

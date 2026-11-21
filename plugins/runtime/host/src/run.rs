@@ -34,6 +34,9 @@ pub(crate) enum Ctl {
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)] // v1's live/stopping/interrupting sets, one per flag
 pub(crate) struct Live {
+    /// the harness CLI wisp spawned: the root of the run's process tree (This computer lists it from here, on every OS,
+    /// before the CLI says anything: audit I IS12)
+    pub pid: u32,
     pub resumable: bool,
     /// the turn has its result; the CLI is only on its way out
     pub finished: bool,
@@ -584,6 +587,7 @@ impl Runtime {
         // after (it finds `Live` and stops the run there)
         let spawned = claim.unless_cancelled(|| -> Result<_> {
             let child = self.proc.spawn(&launch.program, &args, opts)?;
+            let pid = child.pid();
             let (handle, rx) = child.split();
             let (ctl, ctl_rx) = mpsc::unbounded_channel();
             let (ended_tx, ended) = tokio::sync::watch::channel(());
@@ -594,6 +598,7 @@ impl Runtime {
                 let _ = ctl.send(Ctl::Stop);
             }
             let live = Live {
+                pid,
                 resumable: s.resume_id.is_some(),
                 finished: false,
                 stopping,
@@ -633,6 +638,12 @@ impl Runtime {
             drop(ended_tx);
         }));
         Ok(true)
+    }
+
+    /// Each run going now (finishing ones too: their CLI is still alive) as `(task, pid of the CLI wisp spawned)`.
+    pub fn live_pids(&self) -> Vec<(String, u32)> {
+        let live = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        live.iter().map(|(id, l)| (id.clone(), l.pid)).collect()
     }
 
     pub(crate) fn send(&self, id: &str, c: Ctl) -> bool {

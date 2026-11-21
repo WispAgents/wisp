@@ -5644,6 +5644,7 @@ dependencies = [
  "wisp-issues-api",
  "wisp-kernel",
  "wisp-later-api",
+ "wisp-machine-api",
  "wisp-machines-api",
  "wisp-proc",
  "wisp-resources-api",

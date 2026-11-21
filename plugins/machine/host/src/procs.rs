@@ -101,6 +101,14 @@ pub fn live_runs(
     out
 }
 
+/// Windows' table as `ps` would give it, without what Toolhelp doesn't say (memory, CPU, start, command): pids and parents.
+fn windows_table(t: &[wisp_proc::ProcInfo]) -> Vec<parse::Proc> {
+    t.iter()
+        .filter(|p| !p.zombie)
+        .map(|p| parse::Proc { pid: p.pid, ppid: p.ppid, rss: 0, cpu: 0.0, since: 0, command: String::new(), task: None, time: 0 })
+        .collect()
+}
+
 impl Procs {
     fn new(home: &str) -> Self {
         Self {
@@ -142,8 +150,14 @@ impl Procs {
                 .await
                 .map(|t| parse::parse_ps(&t, now, false))
                 .unwrap_or_default(),
-            // Win32_Process through PowerShell is v1's; not sampled here yet (the page shows the guard only)
-            Platform::Windows => Vec::new(),
+            // no `ps`: the process table's pids and parents (Toolhelp, through wisp-proc), so a run's tree is placed from
+            // the pid wisp spawned (audit I IS12); memory and CPU aren't read here yet (v1's Win32_Process)
+            Platform::Windows => tokio::task::spawn_blocking(wisp_proc::processes)
+                .await
+                .ok()
+                .and_then(std::result::Result::ok)
+                .map(|t| windows_table(&t))
+                .unwrap_or_default(),
         }
     }
 
@@ -477,6 +491,30 @@ mod tests {
         let env = |pid: u32| (pid == 200).then(|| "t1".to_owned()).or_else(|| (pid == 300).then(|| "t2".to_owned()));
         assert_eq!(live_runs(Vec::new(), &procs, me, &running, &env), vec![LiveRun { task: "t1".into(), pid: 200 }]);
         assert!(live_runs(Vec::new(), &procs, me, &running, &|_| None).is_empty(), "before: none");
+    }
+
+    /// Audit I IS12, every OS: a run is placed by the pid wisp spawned (runtime's `machine.runs@1`), so it's listed from
+    /// its spawn, before its CLI says anything and with no tag read from its environment: its whole tree where the table
+    /// holds it, its root alone where there's no table (Windows before a read) or the CLI started after the read.
+    #[test]
+    fn a_run_wisp_spawned_is_listed_by_its_pid_on_every_os_audit_i_is12() {
+        let me = 100;
+        let runs = live_runs(vec![LiveRun { task: "t1".into(), pid: 200 }], &[], me, &HashSet::new(), &|_| None);
+        let known = |t: &str| t == "t1";
+        let mut a = Attributor::new(Platform::Windows, me, "C:\\Users\\u\\.wisp");
+        let table = windows_table(&[
+            wisp_proc::ProcInfo { pid: 200, ppid: me, pgid: 0, zombie: false, start: 0 },
+            wisp_proc::ProcInfo { pid: 201, ppid: 200, pgid: 0, zombie: false, start: 0 },
+            wisp_proc::ProcInfo { pid: 300, ppid: me, pgid: 0, zombie: false, start: 0 },
+        ]);
+        let placed = a.place(table, &runs, &known);
+        assert_eq!(placed.trees.get("t1"), Some(&HashSet::from([200, 201])), "its tree, untagged");
+        assert_eq!(view::rows(&placed).get("t1").map(|u| u.procs), Some(2));
+        let placed = a.place(Vec::new(), &runs, &known);
+        assert_eq!(placed.trees.get("t1"), Some(&HashSet::from([200])), "no table: its root");
+        assert!(view::rows(&placed).contains_key("t1"), "listed all the same");
+        let none = a.place(Vec::new(), &[LiveRun { task: "t1".into(), pid: 0 }], &known);
+        assert!(none.trees.is_empty(), "a CLI not spawned yet (pid 0) has no process to list");
     }
 
     /// Stop takes only what the last sample placed as a task's (a leftover, a run's tree): never wisp,

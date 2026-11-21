@@ -55,7 +55,7 @@ mod specs;
 mod task_files;
 mod trial;
 
-use ctx_host::{CtxHost, Tree};
+use ctx_host::{CtxHost, Runs, Tree};
 
 /// A catalogue event for the fact this plugin owns (ADR-0021); never fails the command that caused it.
 pub(crate) async fn track(ctx: &wisp_kernel::Ctx, event: &str, props: serde_json::Value) {
@@ -107,6 +107,8 @@ impl Plugin for RuntimePlugin {
         task_files::provide(s, &slot);
         // who is under whom, for the kernel's agent-token scope (v1 edge case HTTP #3)
         s.contribute(&wisp_kernel::scope::TASKS, Arc::new(Tree(slot.clone())) as Arc<dyn wisp_kernel::scope::TaskTree>);
+        // This computer's runs: each by the pid wisp spawned (audit I IS12)
+        s.contribute(&wisp_machine_api::this_mac::RUNS, Arc::new(Runs(slot.clone())) as Arc<dyn wisp_machine_api::this_mac::LiveRuns>);
         s.on_start(move |ctx| async move {
             let store = ctx.service::<Store>()?;
             let proc = ctx.service::<Proc>()?;

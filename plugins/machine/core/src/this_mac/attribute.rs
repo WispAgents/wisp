@@ -164,7 +164,13 @@ impl Attributor {
         self.tags.retain(|pid, t| same(*pid, t.since));
         self.environ.retain(|pid, (since, _)| same(*pid, *since));
         let mut trees: BTreeMap<String, HashSet<u32>> = BTreeMap::new();
-        for r in runs.iter().filter(|r| r.pid != 0 && index.contains_key(&r.pid)) {
+        for r in runs.iter().filter(|r| r.pid != 0) {
+            // a run wisp spawned whose pid the table doesn't hold (no table: Windows without one; a CLI started since
+            // the read) is listed all the same, by its root, from its spawn (audit I IS12)
+            if !index.contains_key(&r.pid) {
+                trees.entry(r.task.clone()).or_default().insert(r.pid);
+                continue;
+            }
             let set = descendants(r.pid, &kids);
             for pid in &set {
                 if let Some(p) = get(*pid) {

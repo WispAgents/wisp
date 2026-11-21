@@ -20,6 +20,7 @@ wisp-budget-api.workspace = true
 wisp-later-api.workspace = true
 wisp-stuff-api.workspace = true
 wisp-machines-api.workspace = true
+wisp-machine-api.workspace = true
 wisp-sandbox-api.workspace = true
 wisp-crew-api.workspace = true
 wisp-telemetry-api.workspace = true
