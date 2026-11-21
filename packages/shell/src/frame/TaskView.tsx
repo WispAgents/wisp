@@ -521,6 +521,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const keepShown = (el: HTMLElement): void => {
     if (keepFrom() === undefined && el.scrollHeight - el.scrollTop - el.clientHeight >= 2) setKeepFrom(fold().shown[0]?.id);
   };
+  // a follow-up sent goes to the end: the new turn shows whole and the view follows it from there, even
+  // when the reader had scrolled up (the hold-view then keeps the tail, as for any reader at the end). A frame later, so
+  // the optimistic turn is in the page
+  const toEnd = (): void => {
+    setKeepFrom(undefined);
+    requestAnimationFrame(() => {
+      if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+    });
+  };
   const onBodyScroll = (e: Event): void => {
     kept = false;
     keepShown(e.currentTarget as HTMLElement);
@@ -767,6 +776,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const sentTeam = teamChanged() ? (picked() ?? []) : undefined;
     if (sentTeam !== undefined) setTeamChanged(false);
     const go = (attachments: readonly Attachment[]): void => {
+      toEnd();
       run(followUp, {
         id: key,
         text: extra ? extra.text : v,
@@ -793,6 +803,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   };
   /** an answer's `next` chip, `question` option, `actions` reply: sent as a follow-up */
   const reply = (v: string): void => {
+    toEnd();
     run(followUp, { id: key, text: v, turnId: entityKey(peer, newRowId()), idx: turns().length, at: Date.now() }).catch(() => undefined);
   };
   /** an answer's chip without ⌘: into the reply box, to read first */

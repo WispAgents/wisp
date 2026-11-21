@@ -7,6 +7,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A follow-up sent goes to the end.** Sending a follow-up (typed, or a chip, question option or action reply) while
+  scrolled up left the page where it was, so the new turn and its working panel came in out of sight. The task now
+  scrolls to its end and shows the new turn whole.
 - **Phone app: grid computers connect.** A computer reached through wisp Cloud stayed on its loading skeleton and
   *Offline* in the v2 phone app: the grid answered the app's CORS preflight on the computer's address with 401 and no
   CORS headers, so the WebView refused every request. A computer's and a box's `/api/` now answer it like the grid's
