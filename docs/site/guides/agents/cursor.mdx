@@ -1,0 +1,95 @@
+---
+title: Start with Cursor
+description: Run the Cursor CLI (cursor-agent) in wisp on your own Cursor plan or key, pick its model, and open a task back in Cursor.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
+
+wisp runs the Cursor CLI, `cursor-agent`, in the background, one worktree per task, on your own Cursor account.
+
+## What you need
+
+The Cursor CLI. The Cursor editor doesn't include it.
+
+```sh
+curl https://cursor.com/install -fsS | bash      # macOS and Linux
+```
+
+On Windows, follow [cursor.com/cli](https://cursor.com/cli).
+
+## Sign in
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Open **Settings** (the person button in the top bar, or **⌘K** → Settings) → **Agents** → **Sign in** next to Cursor, then **Open the sign-in page**. Or press **Keys**
+and paste a Cursor API key.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-agents" alt="Settings → Agents: each harness with its accounts and sign-in state, and an Add key button" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → **Agents** → **Sign in** next to Cursor, then
+**Open the sign-in page**. Or tap **Keys** and paste a Cursor API key.
+</TabItem>
+<TabItem label="TUI">
+Send `/accounts login start cursor default` and open the link it gives.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp accounts login start cursor default
+wisp accounts login status cursor default
+```
+Or run `cursor-agent login` yourself, or set `CURSOR_API_KEY`.
+</TabItem>
+</Tabs>
+
+## Pick it and its model
+
+wisp reads the models from `cursor-agent --list-models`. Cursor has no effort setting.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Click the harness chip in the New task footer (**N**), pick **Cursor**, then a model. On a running task, the same chip in the reply box changes it for the next follow-up.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task** (on iPhone, the compose button at the top right), then the harness chip under the box. Pick **Cursor**, then a model. On a running task, tap the options chip in the reply bar, then the agent.
+</TabItem>
+<TabItem label="TUI">
+Send `/runtime set-agent --agent cursor` to move the open task to Cursor.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "rename the config loader" --agent cursor --model <id>
+```
+</TabItem>
+</Tabs>
+
+Modes: **Plan**, **Edits**, **Full auto** (`--mode plan|edits|auto`).
+
+## What's different with Cursor
+
+`cursor-agent` takes no MCP server by flag. So it has no wisp tools in a task: when it needs you, it ends its
+answer with a question block, and you answer in the reply box. It can't start other wisp tasks either.
+
+## Open in Cursor
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Open the task's **⋯** at its top right → **Open in › Open in Cursor** (key **T**). Cursor opens in a terminal in the side panel.
+</TabItem>
+<TabItem label="Phone app">
+Open the task, then **⋯** (iPhone) or **⋮** (Android) → **This task › Open in Cursor**. Cursor's own screen opens in a terminal on the phone.
+</TabItem>
+<TabItem label="TUI">
+Press **o** in the open task.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp runtime resume-command <id>
+```
+</TabItem>
+</Tabs>

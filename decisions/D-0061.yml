@@ -1,0 +1,17 @@
+id: D-0061
+decision: 'Drop v1 back-compat: no v1 routes, events, spells, dual writes or peers; keep only v1''s look as the spec and a one-time import.'
+reason: Owner 2026-11-08 (ADR-0031).
+scope:
+- crates/**
+- plugins/**
+- packages/**
+- apps/**
+- mobile/**
+- tools/**
+- spikes/**
+category: architecture
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

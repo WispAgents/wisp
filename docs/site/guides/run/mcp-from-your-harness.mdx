@@ -1,0 +1,109 @@
+---
+title: MCP from your harness
+description: Give Claude Code, Codex, opencode or any MCP client wisp's tools with `wisp mcp`, so your agent can start wisp tasks, wait for them and follow up.
+sidebar:
+  order: 12
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+You don't have to leave the agent you already use. `wisp mcp` serves wisp's tools over MCP, so Claude Code, Codex,
+opencode or any MCP client can hand work to wisp: start a task in the background, wait for it, read its report and
+follow up.
+
+## Add wisp to your harness
+
+One command, in your repo, does it for Claude Code and Codex:
+
+```sh
+wisp skill install --agent claude      # .mcp.json, a SessionEnd hook, .claude/skills/wisp
+wisp skill install --agent codex       # [mcp_servers.wisp] in ~/.codex/config.toml
+wisp skill install --agent all         # Claude Code, Codex and opencode
+```
+
+- **Claude Code:** `.mcp.json` gets wisp's MCP server (`wisp mcp`), `.claude/settings.json` a `SessionEnd` hook
+  (each session you end is brought into wisp with `wisp adopt --hook`), and `.claude/skills/wisp/SKILL.md` tells
+  it when to use wisp. Commit them and your team has it too.
+- **Codex:** `~/.codex/config.toml` gets `[mcp_servers.wisp]`. Codex has no end-of-session hook: bring its
+  sessions in with `wisp adopt --all --since 1d`.
+- **opencode:** the skill goes in place; add the server by hand in `opencode.json`:
+
+```json
+{ "mcp": { "wisp": { "type": "local", "command": ["wisp", "mcp"] } } }
+```
+
+**Cursor** (`.cursor/mcp.json`) **and any other MCP client:** point it at `wisp mcp` on stdio.
+
+```json
+{ "mcpServers": { "wisp": { "command": "wisp", "args": ["mcp"] } } }
+```
+
+No global `wisp`? Use `npx -y wisp-agents mcp` in its place. Tasks start in the folder the client started
+`wisp mcp` in, usually your project.
+
+## The skill on its own
+
+The wisp skill tells an agent when to hand work to wisp, how to brief it, how to wait, and to pass a waiting
+agent's question on to you instead of answering it.
+
+```sh
+wisp skill                                    # print it, to read first
+wisp skill install --agent codex --project    # .codex/skills/wisp in this repo
+```
+
+`--agent` takes `claude`, `codex`, `opencode` or `all`. `--project` writes into the repo, to commit for your team.
+
+## The tools
+
+| Tool | What it does |
+| --- | --- |
+| `wisp_launch` | Start a task on any harness, model, effort, mode or machine. Returns its id at once; `wait` blocks. |
+| `wisp_list` | Tasks, newest first, with their state and a one-line summary. |
+| `wisp_get` | A task's state and latest report as markdown, and any question it is waiting on. |
+| `wisp_wait` | Block until a task finishes or asks something. |
+| `wisp_reply` | Follow up, or answer its question. Can switch harness, model, effort or mode. |
+| `wisp_stop` | Stop a running task. |
+| `wisp_agents` | The harnesses installed, with their models and thinking levels, and your machines. |
+
+An agent running *inside* a wisp task gets more: `ask_user`, `wisp_pr`, `wisp_watch`, the crew and connectors,
+and `resume_later`. Every tool is in [MCP tools](../../../reference/mcp-tools/).
+
+## What to ask your agent
+
+- "Send the flaky-test fix to wisp on Codex and keep going on the UI."
+- "Start three wisp tasks, one per failing package, and tell me when they're done."
+- "Ask wisp what my last task changed."
+- "Start a wisp task to fix the login bug, with the goal *the e2e suite passes*." (See [Goals](../goals/).)
+
+## Follow what it started
+
+Tasks your agent starts are ordinary wisp tasks.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+They show in your task list like any other. Open one to read it, answer it or follow up. **J** and **K** move
+between them.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+They show in **Tasks** like any other. Tap one to read it, answer it or follow up from the reply bar.
+</TabItem>
+<TabItem label="TUI">
+They show in the Tasks zone. **Enter** opens one; **i** replies.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp ls --watch
+wisp attach <id>
+```
+</TabItem>
+</Tabs>
+
+## Sessions you run outside wisp
+
+Work you did in your harness without wisp can come in too, so it's in your history:
+
+```sh
+wisp adopt --all --since 7d
+```

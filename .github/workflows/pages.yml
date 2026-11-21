@@ -8,8 +8,17 @@ on:
       - 'CHANGELOG.md'
       - 'scripts/site.mjs'
       - 'scripts/guides.mjs'
+      - 'scripts/stage-site.sh'
       - 'server/adapters/**'
       - 'web/js/spirit.js'
+      # trywisp.dev/docs (ADR-0039): its pages and the code its reference is generated from
+      - 'apps/docs/**'
+      - 'crates/wisp/src/args.rs'
+      - 'plugins/*/host/wisp-plugin.json'
+      - 'plugins/mcp/core/defs/**'
+      - 'plugins/plugins/core/data/**'
+      - 'plugins/runtime/core/tests/goldens/system-prompt.txt'
+      - 'packages/shell/src/remote/kit.json'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -34,12 +43,17 @@ jobs:
           fetch-depth: 0 # sitemap lastmod comes from each page's last commit
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: node scripts/site.mjs
+          node-version: 24
+      # the docs site (apps/docs, from docs/site), served at trywisp.dev/docs
+      - run: npm ci --workspace apps/docs --include-workspace-root=false --ignore-scripts
+      - run: npm run build --workspace apps/docs
+      # only the built site goes up: the generated pages, their assets and root files, and the docs under /docs.
+      # docs/ also holds the plan, ADRs, QA notes and research, which are never published
+      - run: bash scripts/stage-site.sh _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: docs
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
       # Tell Bing, Yandex and the other IndexNow engines what's new (Google reads the sitemap).
@@ -47,6 +61,6 @@ jobs:
         if: github.event_name == 'push'
         continue-on-error: true
         run: |
-          urls=$(grep -o '<loc>[^<]*' docs/sitemap.xml | sed 's/<loc>//' | jq -R . | jq -sc .)
+          urls=$(grep -o '<loc>[^<]*' _site/sitemap.xml | sed 's/<loc>//' | jq -R . | jq -sc .)
           curl -fsS -X POST https://api.indexnow.org/indexnow -H 'Content-Type: application/json; charset=utf-8' \
             -d "{\"host\":\"trywisp.dev\",\"key\":\"c74d7dc2f8b011de1d62484d8507a500\",\"keyLocation\":\"https://trywisp.dev/c74d7dc2f8b011de1d62484d8507a500.txt\",\"urlList\":$urls}"

@@ -1,0 +1,17 @@
+id: D-0054
+decision: 'Port v1''s intent, not its bugs: look for v1''s bugs in the area, fix them with a test that fails on v1, and list them in docs/v1-bugs-fixed.md.'
+reason: Owner 2026-11-08.
+scope:
+- crates/**
+- plugins/**
+- packages/**
+- apps/**
+- mobile/**
+- tools/**
+- spikes/**
+category: convention
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

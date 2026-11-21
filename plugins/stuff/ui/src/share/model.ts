@@ -1,0 +1,167 @@
+// What Share… and the pasted link's card say, in words (v1 features/share.js), DOM-free: the dialog's
+// chips for what goes with the share, the card's facts, and the import body New task sends.
+
+import type { IconName } from '@wisp/ui';
+import { withoutLink } from './link.ts';
+import type { ImportArgs, RunHere, ShareCardInfo, SharePreview, ShareWork } from './types.ts';
+import '../i18n/lazy.ts';
+
+export type T = (key: string, vars?: Readonly<Record<string, string | number>>) => string;
+
+export interface Chip {
+  readonly icon: IconName;
+  readonly text: string;
+}
+
+/** What goes with the share, as chips: turns, branch, delegates, crew, connectors, skills. */
+export function carryChips(t: T, p: SharePreview, turns: number): Chip[] {
+  const out: Chip[] = [];
+  if (turns) out.push({ icon: 'comment', text: t('stuff.share.turns', { count: turns }) });
+  if (p.work?.kind === 'git' && p.work.branch) out.push({ icon: 'branch', text: p.work.branch });
+  if (p.delegates) out.push({ icon: 'agent', text: t('stuff.share.delegated', { count: p.delegates }) });
+  if (p.crew?.length) out.push({ icon: 'crew', text: p.crew.join(', ') });
+  if (p.connectors?.length) out.push({ icon: 'plug', text: t('stuff.share.connectors', { count: p.connectors.length }) });
+  if (p.skills?.length) out.push({ icon: 'read', text: t('stuff.share.skills', { count: p.skills.length }) });
+  return out.length ? out : [{ icon: 'comment', text: t('stuff.share.conversation') }];
+}
+
+/** The chips' tooltip: the connectors' and skills' names (connectors never with their keys). */
+export function carryTip(t: T, p: SharePreview): string {
+  const lines: string[] = [];
+  if (p.connectors?.length) lines.push(t('stuff.share.connectorsTip', { names: p.connectors.join(', ') }));
+  if (p.skills?.length) lines.push(t('stuff.share.skillsTip', { names: p.skills.join(', ') }));
+  return lines.join('\n');
+}
+
+/** The dialog's note under its choices once the preview is in: where the link goes, or to sign in first. */
+export function previewNote(t: T, p: SharePreview): { readonly text: string; readonly tone: 'info' | 'bad' } {
+  const to = p.targets?.[0];
+  return to ? { text: t('stuff.share.where', { host: to.host }), tone: 'info' } : { text: t('stuff.share.signIn'), tone: 'bad' };
+}
+
+/** Share can go: the preview is in and a destination is ready (QA round 13 #1: it read `targets` the server didn't
+ *  answer, and threw). */
+export const canShare = (p: SharePreview | undefined): boolean => (p?.targets?.length ?? 0) > 0;
+
+/** What a share carries, read from the preview's bundle: the ask, its later steps, and with its work the answers and
+ *  the files it changed (the report "Its work" sends; QA round 14 #5). */
+export interface WhatGoes {
+  readonly ask: string;
+  readonly steps: number;
+  readonly answers: number;
+  readonly files: readonly string[];
+}
+
+const obj = (v: unknown): Readonly<Record<string, unknown>> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+const arr = (v: unknown): readonly unknown[] => (Array.isArray(v) ? v : []);
+
+export function whatGoes(p: SharePreview, work: boolean): WhatGoes {
+  const b = obj(p.bundle);
+  const spec = obj(b['spec']);
+  const report = work ? obj(b['report']) : {};
+  return {
+    ask: typeof spec['prompt'] === 'string' ? spec['prompt'] : '',
+    steps: arr(spec['steps']).length,
+    answers: arr(report['answers']).length,
+    files: arr(report['files']).filter((f): f is string => typeof f === 'string'),
+  };
+}
+
+/** "2 more steps · 3 answers · 2 files changed" ('' when only the ask goes). */
+export function goesFacts(t: T, w: WhatGoes): string {
+  return [
+    w.steps ? t('stuff.share.goes.steps', { count: w.steps }) : '',
+    w.answers ? t('stuff.share.goes.answers', { count: w.answers }) : '',
+    w.files.length ? t('stuff.share.goes.files', { count: w.files.length }) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** One kind of thing taken out before it goes: what it was (shortened by the server), what it becomes, how often. */
+export interface Hidden {
+  readonly kind: string;
+  readonly label: string;
+  readonly was: string;
+  readonly now: string;
+  readonly n: number;
+}
+
+/** The preview's redactions as lines: the same one in several places is one line with its count; the report's only
+ *  when its work goes; the first `max`, and how many more. */
+export function hiddenLines(t: T, p: SharePreview, work: boolean, max = 4): { readonly lines: readonly Hidden[]; readonly more: number } {
+  const all: Hidden[] = [];
+  for (const raw of p.redactions ?? []) {
+    const r = obj(raw);
+    const at = typeof r['at'] === 'string' ? r['at'] : '';
+    if (!work && (at.startsWith('report') || at.startsWith('history'))) continue;
+    const [kind, was, now] = [r['kind'], r['was'], r['now']].map((x) => (typeof x === 'string' ? x : '')) as [string, string, string];
+    const same = all.findIndex((h) => h.kind === kind && h.was === was && h.now === now);
+    if (same >= 0) {
+      const h = all[same];
+      if (h) all[same] = { ...h, n: h.n + 1 };
+    } else {
+      all.push({ kind, label: t(`stuff.share.hidden.${['secret', 'env', 'path', 'name'].includes(kind) ? kind : 'other'}`), was, now, n: 1 });
+    }
+  }
+  return { lines: all.slice(0, max), more: Math.max(0, all.length - max) };
+}
+
+/** The "Its work" checkbox: whether it can go, and the line under it. */
+export function workOption(t: T, work: ShareWork | null | undefined): { readonly can: boolean; readonly hint: string } {
+  if (!work) return { can: false, hint: t('stuff.share.work.none') };
+  if (work.kind === 'files') return { can: true, hint: t('stuff.share.work.files') };
+  const branch = work.branch ? t('stuff.share.work.branch', { branch: work.branch }) : t('stuff.share.work.itsBranch');
+  return { can: true, hint: work.repo ? t('stuff.share.work.git', { branch }) : t('stuff.share.work.gitNoRemote', { branch }) };
+}
+
+/** The card's one line of facts: "3 turns · 1 delegated task · branch fix-add · 2 connectors". */
+export function cardFacts(t: T, c: ShareCardInfo): string {
+  const work = c.work?.kind === 'git' && c.work.branch ? t('stuff.share.work.branch', { branch: c.work.branch }) : c.work?.kind === 'files' ? t('stuff.share.card.itsFiles') : !c.work ? t('stuff.share.card.noWork') : '';
+  return [
+    t('stuff.share.turns', { count: c.turns ?? 0 }),
+    c.delegates ? t('stuff.share.delegated', { count: c.delegates }) : '',
+    work,
+    c.connectors?.length ? t('stuff.share.connectors', { count: c.connectors.length }) : '',
+    c.skills?.length ? t('stuff.share.skills', { count: c.skills.length }) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** Who shared it, by name, then handle. */
+export const whoOf = (t: T, c: Pick<ShareCardInfo, 'from'> | undefined): string => c?.from?.name || c?.from?.handle || t('stuff.share.card.someone');
+
+export interface CardChoice {
+  readonly passkey: string;
+  /** a harness or model picked on the card, over the one the card suggests */
+  readonly run: RunHere | null;
+  readonly connectors: boolean;
+  readonly crew: boolean;
+}
+
+/** Why the import can't go yet, as a key, or the body to send. */
+export type Take = { readonly why: string; readonly tone: 'info' | 'bad'; readonly focus?: 'passkey' } | { readonly body: ImportArgs };
+
+/** What Enter in New task sends for the box's text with a share link in it (v1 shareCard.take). */
+export function takeImport(state: 'loading' | 'open' | 'locked' | 'error', card: ShareCardInfo | undefined, error: string, link: string, text: string, choice: CardChoice): Take {
+  if (state === 'loading') return { why: 'stuff.share.card.stillReading', tone: 'info' };
+  if (state === 'locked') return { why: '', tone: 'info', focus: 'passkey' };
+  if (state === 'error' || !card) return { why: error, tone: 'bad' };
+  const r = choice.run ?? card.run;
+  if (!r) return { why: 'stuff.share.card.noAgent', tone: 'bad' };
+  return {
+    body: {
+      url: link,
+      ...(choice.passkey && { passkey: choice.passkey }),
+      prompt: withoutLink(text, link),
+      agent: r.agent,
+      model: r.model,
+      effort: r.effort,
+      connectors: choice.connectors,
+      crew: choice.crew,
+      ...(card.title !== undefined && { title: card.title }),
+      from: card.from,
+    },
+  };
+}

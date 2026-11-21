@@ -1,0 +1,59 @@
+//! The pages' inline scripts, as v1 `grid/pages.js` wrote them (PENDING now covers every page link) (the CSP allows inline script on grid pages).
+
+/// Every form and every link that loads another page (feedback within 100 ms, design/feedback.md; audit B #10): a form's
+/// button and a button-like link (`.primary`, `.ghost`) spin at once while the next page loads, any other link dims
+/// (`.going`), and a second press does nothing. A link with `data-wake` (the cloud wisp's Open while it's asleep) also
+/// says so on its row's status line, since waking it takes a second or two before the next page starts. Not a new
+/// tab, a download, a modified click, or a link within this page. Back from the browser cache clears it all. Script
+/// that sends a form itself cancels the submit first: then it's not pending here.
+pub(super) const PENDING: &str = r"<script>(()=>{const go=(b)=>{if(b)setTimeout(()=>{b.classList.add('wait');b.setAttribute('aria-busy','true')})},back=[];document.addEventListener('submit',(e)=>{if(e.defaultPrevented)return;const b=e.submitter||e.target.querySelector('button');if(b&&b.classList.contains('wait'))return e.preventDefault();go(b)});
+document.addEventListener('click',(e)=>{if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;const a=e.target.closest('a[href]');if(!a||(a.target&&a.target!=='_self')||a.hasAttribute('download'))return;const u=new URL(a.href,location.href);if(!/^https?:$/.test(u.protocol)||(u.origin===location.origin&&u.pathname===location.pathname&&u.search===location.search))return;if(a.classList.contains('wait')||a.classList.contains('going'))return e.preventDefault();
+const w=a.dataset.wake,st=w&&a.closest('.mrow')?.querySelector('.st');if(st&&!back.some(([s])=>s===st)){back.push([st,[...st.childNodes]]);const d=st.querySelector('.dot')?.cloneNode();st.textContent=w;if(d){d.className='dot starting';st.prepend(d)}}if(a.matches('.primary,.ghost'))go(a);else{a.classList.add('going');a.setAttribute('aria-busy','true')}});
+addEventListener('pageshow',()=>{document.querySelectorAll('.wait,.going').forEach((b)=>{b.classList.remove('wait','going');b.removeAttribute('aria-busy')});back.splice(0).forEach(([s,n])=>s.replaceChildren(...n))})})()</script>";
+
+/// `PostHog`'s loader stub, for the hosted grid's sign-in page only.
+pub(super) const POSTHOG_STUB: &str = r#"!function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}p||((p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",p.onerror=function(){p=null},(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r));var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],Object.defineProperty(u,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e}}),Object.defineProperty(u.people,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(){return u.toString(1)+".people (stub)"}}),o="vu pu gu mu init Gu Qu Hu Wu Xu il Vu Yu ju oc ac lc uc cc hc capture getExtension Zu hu gc calculateEventProperties vc register register_once register_for_session unregister unregister_for_session zu mc getFeatureFlag getFeatureFlagPayload getFeatureFlagResult getAllFeatureFlags isFeatureEnabled reloadFeatureFlags updateFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys onActiveMatchingSurveysChanged renderSurvey displaySurvey cancelPendingSurvey canRenderSurvey canRenderSurveyAsync wc identify setPersonProperties unsetPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset kc shutdown setIdentity clearIdentity get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException addExceptionStep captureLog startExceptionAutocapture stopExceptionAutocapture loadToolbar get_property getSessionProperty yc nc createPersonProfile setInternalOrTestUser bc xu ku opt_in_capturing opt_out_capturing Su has_opted_in_capturing has_opted_out_capturing get_explicit_consent_status is_capturing clear_opt_in_out_capturing tc debug nl Os getPageViewId captureTraceFeedback captureTraceMetric Du".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);"#;
+
+/// In an app's own browser: Copy falls back to execCommand (older web views refuse the clipboard API), then to the link shown selected. Email: says saved at once, and takes it back if the grid refuses.
+pub(super) const INAPP_JS: &str = r"<script>(()=>{const box=document.getElementById('inapp');if(!box)return;const app=box.dataset.app,url=box.dataset.url,ph=(e,p)=>window.posthog&&posthog.capture(e,Object.assign({app,page:'grid'},p||{}),{transport:'sendBeacon'});ph('inapp_seen');
+const copy=async()=>{try{await navigator.clipboard.writeText(url);return true}catch{const t=document.createElement('textarea');t.value=url;t.setAttribute('readonly','');t.style.cssText='position:fixed;opacity:0';document.body.append(t);t.select();let ok=false;try{ok=document.execCommand('copy')}catch{}t.remove();return ok}};
+box.addEventListener('click',async(e)=>{const a=e.target.closest('[data-inapp]');if(!a)return;if(a.dataset.inapp==='open')return ph('inapp_open_clicked');ph('inapp_copy_clicked');const s=a.querySelector('span');if(await copy()){s.textContent='Copied';setTimeout(()=>{s.textContent='Copy link'},1500)}else{const l=box.querySelector('.link');l.hidden=false;l.focus();l.select()}});
+const f=document.getElementById('inappMail');f.addEventListener('submit',async(e)=>{e.preventDefault();const row=f.querySelector('div'),label=f.querySelector('label'),err=f.querySelector('.err'),ok=f.querySelector('.sent'),email=f.email.value.trim();err.hidden=true;if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){err.textContent='An email address, please.';err.hidden=false;f.email.focus();return}
+ok.querySelector('span').textContent='Saved. We’ll send the link to '+email+'.';row.hidden=true;label.hidden=true;ok.hidden=false;
+try{const r=await fetch('/api/waitlist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,source:'in-app'})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'That didn’t go through. Try again.');ph('inapp_email_sent')}catch(x){ok.hidden=true;row.hidden=false;label.hidden=false;err.textContent=x instanceof TypeError?'No connection. Try again.':x.message;err.hidden=false}})})()</script>";
+
+/// Keeps a signed-in page current without a reload: on GET /events saying something changed, the page fetches itself and swaps only the [data-live] parts that differ, so an open "Add a computer" or a half-typed field stays. Not once a form is on its way: its own answer is the next page.
+pub(super) const LIVE: &str = r#"<script>(()=>{let t=0,opened=false,leaving=false;
+const morph=(cur,next)=>{const a=[...cur.children],b=[...next.children];if(!b.length&&!a.length){if(cur.innerHTML!==next.innerHTML)cur.innerHTML=next.innerHTML;return}
+b.forEach((n,i)=>{const o=a[i];if(!o)return cur.append(n);if(o.tagName==='DETAILS'&&n.tagName==='DETAILS')n.open=o.open;if(o.outerHTML!==n.outerHTML)o.replaceWith(n)});a.slice(b.length).forEach((o)=>o.remove())};
+const sync=async()=>{try{const r=await fetch(location.pathname,{cache:'no-store',headers:{accept:'text/html'}});if(!r.ok||leaving)return;const doc=new DOMParser().parseFromString(await r.text(),'text/html');const fresh=doc.querySelectorAll('[data-live]');if(!fresh.length)return location.reload();
+fresh.forEach((n)=>{const cur=document.querySelector('[data-live="'+n.dataset.live+'"]');if(cur)morph(cur,n)})}catch{}};
+const soon=()=>{clearTimeout(t);t=setTimeout(sync,150)};
+const es=new EventSource('/events');es.addEventListener('change',soon);es.onopen=()=>{if(opened)soon();opened=true};
+addEventListener('submit',(e)=>{if(!e.defaultPrevented)leaving=true});
+addEventListener('pageshow',(e)=>{if(e.persisted){leaving=false;soon()}})})()</script>"#;
+
+/// Copy buttons ([data-copy]) say Copied for a moment.
+pub(super) const COPY_JS: &str = r"<script>document.addEventListener('click',async(e)=>{const b=e.target.closest('[data-copy]');if(!b)return;try{await navigator.clipboard.writeText(b.dataset.copy);const s=b.querySelector('span'),t=s.dataset.was||s.textContent;s.dataset.was=t;s.textContent='Copied';setTimeout(()=>s.textContent=t,1200)}catch{}})</script>";
+
+/// Home's few behaviours: `[data-add]` unfolds Add a computer (and `[data-add-close]` folds it); a row's ⋯ and + Add
+/// (`details.pop`) close on a choice (not a Copy, which says Copied there, nor a Remove that asks first), a click
+/// elsewhere or Escape, one open at a time; Getting started's Continue and ×
+/// remember the step in the page's own cookie (`wisp_start`, read back by the grid), × hiding the row at once. An old
+/// link to the account's Delete lands on its new page.
+pub(super) const HOME_JS: &str = r"<script>(()=>{if(location.hash==='#delete')location.replace('/account#delete');
+const pops=()=>document.querySelectorAll('details.pop[open]'),shut=(but)=>pops().forEach((p)=>{if(p!==but)p.open=false});
+const step=(k)=>{const was=(document.cookie.match(/(?:^|; )wisp_start=([^;]*)/)||[])[1]||'',set=new Set(decodeURIComponent(was).split(',').filter(Boolean));set.add(k);document.cookie='wisp_start='+encodeURIComponent([...set].join(','))+'; Path=/; Max-Age=31536000; SameSite=Lax'};
+document.addEventListener('click',(e)=>{const t=e.target;
+if(t.closest('[data-add]')){shut();const d=document.getElementById('add');d.open=true;const h=document.getElementById('addHow');h.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});h.querySelector('.seg label')?.focus?.({preventScroll:true});return}
+if(t.closest('[data-add-close]')){document.getElementById('add').open=false;return}
+const s=t.closest('[data-step]');if(s){step(s.dataset.step);if(s.dataset.step==='x')s.closest('.start')?.remove()}
+const own=t.closest('details.pop');if(!own){shut();return}shut(own);const it=t.closest('.menu a,.menu button');if(it&&!it.closest('[data-copy],form[data-confirm]'))own.open=false});
+document.addEventListener('keydown',(e)=>{if(e.key==='Escape'&&pops().length){shut();e.preventDefault()}})})()</script>";
+
+/// A form with `data-confirm` asks once before it goes: the first press turns its button into the question (in the
+/// danger colour), the second sends it; it turns back after a few seconds, or on Escape or a click elsewhere. Capture
+/// phase, so it runs before [`PENDING`] marks the button busy. Without script the form just sends.
+pub(super) const CONFIRM: &str = r"<script>(()=>{let armed=null,t=0;const reset=()=>{if(!armed)return;const b=armed.querySelector('button');b.textContent=b.dataset.was;b.classList.remove('armed');armed=null;clearTimeout(t)};
+document.addEventListener('submit',(e)=>{const f=e.target;if(!f.dataset||!f.dataset.confirm)return;if(armed===f)return reset();e.preventDefault();e.stopImmediatePropagation();reset();const b=f.querySelector('button');b.dataset.was=b.textContent;b.textContent=f.dataset.confirm;b.classList.add('armed');armed=f;t=setTimeout(reset,4000)},true);
+document.addEventListener('click',(e)=>{if(armed&&!armed.contains(e.target))reset()});document.addEventListener('keydown',(e)=>{if(e.key==='Escape')reset()})})()</script>";

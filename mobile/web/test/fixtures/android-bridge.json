@@ -1,0 +1,54 @@
+{
+  "about": "WispSsh's answers on Android, step by step (mobile/android Computers.java). Replayed by mobile/web/test/bridge-contract.test.ts and checked against the Java by ComputersTest.theRecordedBridgeIsComputersOwn: change both on purpose.",
+  "steps": [
+    {
+      "method": "saveComputer",
+      "args": { "computer": { "id": "g1", "kind": "grid", "name": "wisp Cloud", "url": "https://mo.grid.test", "grid": "https://grid.test", "token": "wlt_dev_7Q2x" } },
+      "answer": { "id": "g1", "kind": "grid", "name": "wisp Cloud", "url": "https://mo.grid.test", "grid": "https://grid.test" }
+    },
+    {
+      "method": "saveComputer",
+      "args": { "computer": { "id": "s1", "kind": "ssh", "name": "Studio", "target": "me@studio", "fingerprint": "SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU", "password": "hunter2" } },
+      "answer": { "id": "s1", "kind": "ssh", "name": "Studio", "target": "me@studio", "fingerprint": "SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU" }
+    },
+    {
+      "method": "list",
+      "args": {},
+      "answer": {
+        "computers": [
+          { "id": "g1", "kind": "grid", "name": "wisp Cloud", "url": "https://mo.grid.test", "grid": "https://grid.test" },
+          { "id": "s1", "kind": "ssh", "name": "Studio", "target": "me@studio", "fingerprint": "SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU" }
+        ]
+      }
+    },
+    {
+      "method": "connect",
+      "args": { "id": "g1" },
+      "answer": { "kind": "grid", "base": "https://mo.grid.test", "token": "wlt_dev_7Q2x", "name": "wisp Cloud" }
+    },
+    {
+      "method": "saveComputer",
+      "args": { "computer": { "id": "g1", "token": "wlt_dev_8R3y", "peer": "mo-box", "push": true } },
+      "answer": { "id": "g1", "kind": "grid", "name": "wisp Cloud", "url": "https://mo.grid.test", "grid": "https://grid.test", "peer": "mo-box", "push": true }
+    },
+    {
+      "method": "connect",
+      "args": { "id": "g1" },
+      "answer": { "kind": "grid", "base": "https://mo.grid.test", "token": "wlt_dev_8R3y", "name": "wisp Cloud", "peer": "mo-box" }
+    },
+    {
+      "method": "forgetComputer",
+      "args": { "id": "g1" },
+      "answer": {}
+    },
+    {
+      "method": "list",
+      "args": {},
+      "answer": {
+        "computers": [
+          { "id": "s1", "kind": "ssh", "name": "Studio", "target": "me@studio", "fingerprint": "SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU" }
+        ]
+      }
+    }
+  ]
+}

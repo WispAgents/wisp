@@ -1,0 +1,1678 @@
+/* The iPhone app's stylesheet (ADR-0065 §5, design/mobile.md §A.7–A.8). Loaded only in the app
+   (src/platform/styles.ts), never by the browser. The layer order is index.css's: these rules join the
+   tokens and kit layers that sheet declared. Kit variants (HIG) go here, each under
+   :root[data-platform='ios'] in @layer kit (build steps 3–6). Numbers come from the platform tokens;
+   the only px here are @media conditions (the iPad's regular width, the browser's split at 900). */
+@layer reset, tokens, kit, plugins;
+@import '@wisp/tokens/platform-ios.css';
+
+@layer kit {
+  /* Frame (step 3): the navigation bar under the status bar and the Dynamic Island, the panes, the tab bar
+     over the home indicator; on iPad widths the sidebar beside them. */
+  :root[data-platform='ios'] [data-kit='frame'] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'top' 'body' 'nav';
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-top'] {
+    grid-area: top;
+    height: auto;
+    min-height: calc(var(--bar-h) + var(--safe-top));
+    padding: var(--safe-top) var(--space-0) var(--space-0);
+    gap: var(--bar-button-gap);
+    border-bottom: 0;
+    background: var(--surface-c0);
+    font: var(--type-headline);
+  }
+  /* the screen's TopAppBar is the frame's top bar: it fills it and draws its own material and hairline */
+  :root[data-platform='ios'] [data-kit='frame-top'] > [data-kit='app-bar'] { flex: 1 1 auto; align-self: stretch; }
+  :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-body'] { grid-area: body; }
+  :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-nav'] { grid-area: nav; min-width: 0; }
+
+  /* The app's frame (steps 8, 13): the list's head is the Tasks screen's TopAppBar (the frame's top itself); a pushed
+     page (a task, a view) draws its own head, so the frame's top steps aside there and the page starts under the
+     status bar. */
+  :root[data-platform='ios'] [data-kit='frame'][data-layout='stack']:not([data-page='list']) > [data-kit='frame-top'] { display: none; }
+  :root[data-platform='ios'] [data-kit='frame'][data-layout='stack']:not([data-page='list']) > [data-kit='frame-body'] { padding-top: var(--safe-top); }
+  :root[data-platform='ios'] [data-kit='frame'] [data-kit='frame-pane'],
+  :root[data-platform='ios'] [data-kit='frame'] [data-kit='frame-pane'][data-pane='list'] {
+    background: var(--surface-c0);
+    border-color: var(--outline);
+    border-width: var(--hairline);
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-layout='stack'] [data-kit='frame-pane'][data-pane='list'] { background: var(--surface-c0); }
+  :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-body']:last-child { padding-bottom: var(--safe-bottom); }
+  /* a pushed page (a task, its side pane; UX 2026-11-18 phone #2): the destinations give way, as HIG's
+     hidesBottomBarWhenPushed and an M3 detail screen; the page's own bottom (the reply box) sits on the safe area */
+  :root[data-platform='ios'] [data-kit='frame'][data-pushed] > [data-kit='frame-nav'] { display: none; }
+  :root[data-platform='ios'] [data-kit='frame'][data-pushed] > [data-kit='frame-body'] { padding-bottom: var(--safe-bottom); }
+
+  /* NavigationBar (step 3): the tab bar, 49 pt over the home indicator, glyph over a 10 pt title; the
+     selected tab in the tint with its filled glyph, the others in system gray */
+  :root[data-platform='ios'] [data-kit='nav-bar'] {
+    display: flex;
+    align-items: stretch;
+    height: calc(var(--nav-h) + var(--safe-bottom));
+    padding: var(--space-0) var(--safe-right) var(--safe-bottom) var(--safe-left);
+    border-top: var(--hairline) solid var(--outline);
+    background: var(--chrome);
+  }
+  :root[data-platform='ios'] [data-kit='nav-item'] {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--tab-gap);
+    padding: var(--tab-pad-top) var(--space-1) var(--space-0);
+    border: 0;
+    background: transparent;
+    color: var(--tab-inactive);
+    font: var(--type-tab);
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    transition: opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='nav-item']:active { opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='nav-item'][data-selected] { color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='nav-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--space-1) * -1); }
+  :root[data-platform='ios'] [data-kit='nav-pill'] { position: relative; flex: none; display: grid; place-items: center; }
+  :root[data-platform='ios'] [data-kit='nav-pill'] > [data-kit='icon'] { width: var(--tab-icon); height: var(--tab-icon); }
+  :root[data-platform='ios'] [data-kit='nav-label'] { max-width: 100%; }
+  /* the tab bar badge: a red capsule at the glyph's top end, caption 2 */
+  :root[data-platform='ios'] [data-kit='nav-badge'] {
+    position: absolute;
+    top: calc(var(--space-1) * -1);
+    left: 60%;
+    min-width: var(--space-7);
+    height: var(--space-7);
+    padding: var(--space-0) var(--space-2);
+    border-radius: var(--radius-pill);
+    background: var(--error);
+    color: var(--on-primary);
+    font: var(--type-caption);
+    line-height: var(--space-7);
+    text-align: center;
+  }
+
+  /* iPad (regular width): the sidebar, 320 pt, icon and title on one row, the selected row filled */
+  @media (min-width: 900px) {
+    :root[data-platform='ios'] [data-kit='frame'] {
+      grid-template-columns: var(--nav-rail-w) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: 'nav top' 'nav body';
+      padding-left: 0;
+    }
+    :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-body'] { padding-bottom: var(--safe-bottom); }
+    :root[data-platform='ios'] [data-kit='nav-bar'] {
+      flex-direction: column;
+      gap: var(--space-1);
+      height: 100%;
+      padding: calc(var(--safe-top) + var(--bar-h)) var(--space-6) var(--safe-bottom) calc(var(--safe-left) + var(--space-6));
+      border-top: 0;
+      border-right: var(--hairline) solid var(--outline);
+      background: var(--surface-c1);
+    }
+    :root[data-platform='ios'] [data-kit='nav-item'] {
+      flex: none;
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: var(--space-6);
+      height: var(--row-h-1);
+      padding: var(--space-0) var(--space-6);
+      border-radius: var(--radius-md);
+      color: var(--on-surface);
+      font: var(--type-body);
+    }
+    :root[data-platform='ios'] [data-kit='nav-item'] [data-kit='nav-pill'] { color: var(--primary); }
+    :root[data-platform='ios'] [data-kit='nav-item'][data-selected] { background: var(--primary); color: var(--on-primary); }
+    :root[data-platform='ios'] [data-kit='nav-item'][data-selected] [data-kit='nav-pill'] { color: var(--on-primary); }
+  }
+
+  /* Fab (step 3): not drawn on iOS (Fab.tsx hands its action to the compose button); nothing to style */
+
+  /* TopAppBar (step 3): the navigation bar, 44 pt. A destination's root has the large title (34/41) under
+     it, which folds into the centred inline title once the page scrolls; a pushed page has only the
+     inline title, Back carrying the previous one. The bar's material shows once content is under it. */
+  :root[data-platform='ios'] [data-kit='app-bar'] {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    border-bottom: var(--hairline) solid transparent;
+    transition: background-color var(--dur-short) var(--ease-standard), border-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed],
+  :root[data-platform='ios'] [data-kit='app-bar'][data-kind='page'] { background: var(--chrome); border-bottom-color: var(--outline); }
+  /* three columns, so the inline title is centred on the bar while Back and the actions keep their room:
+     a long title shrinks to its ellipsis and the actions fold into ⋯ before anything overlaps */
+  :root[data-platform='ios'] [data-kit='app-bar-row'] {
+    display: grid;
+    grid-template-columns: minmax(auto, 1fr) minmax(0, max-content) minmax(var(--tap-min), 1fr);
+    align-items: center;
+    column-gap: var(--bar-button-gap);
+    height: var(--bar-h);
+    min-width: 0;
+    padding: var(--space-0) var(--bar-pad);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'] [data-kit='app-bar-row'] > [data-kit='button'] { grid-column: 1; justify-self: start; min-width: max-content; }
+  :root[data-platform='ios'] [data-kit='app-bar-title'] {
+    grid-column: 2;
+    min-width: 0;
+    margin: var(--space-0);
+    font: var(--type-headline);
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition: opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-large] [data-kit='app-bar-title'] { opacity: 0; pointer-events: none; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-large][data-collapsed] [data-kit='app-bar-title'] { opacity: 1; pointer-events: auto; }
+  :root[data-platform='ios'] [data-kit='app-bar-actions'] {
+    grid-column: 3;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--bar-button-gap);
+    min-width: 0;
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-actions'] > [data-kit='toolbar'] { height: var(--bar-h); }
+  /* bar buttons: plain, in the tint, 44 pt targets, dimmed while pressed (no background) */
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='icon-button'],
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button'],
+  :root[data-platform='ios'] [data-kit='frame-top'] [data-kit='icon-button'] {
+    min-width: var(--tap-min);
+    height: var(--tap-min);
+    padding: var(--space-0) var(--space-2);
+    border: 0;
+    background: transparent;
+    color: var(--primary);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='icon-button'] [data-kit='icon'],
+  :root[data-platform='ios'] [data-kit='frame-top'] [data-kit='icon-button'] [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button'] { padding-left: 0; }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button'] [data-kit='button-content'] { gap: var(--space-1); }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button'] [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='icon-button']:active,
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button']:active,
+  :root[data-platform='ios'] [data-kit='frame-top'] [data-kit='icon-button']:active { transform: none; background: transparent; opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='app-bar-large'] {
+    display: flex;
+    align-items: flex-end;
+    height: calc(var(--bar-h-large) - var(--bar-h));
+    padding: var(--space-0) var(--inset) var(--large-title-pad-bottom);
+    overflow: hidden;
+    transition: height var(--dur-medium) var(--ease-standard), padding var(--dur-medium) var(--ease-standard), opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed] [data-kit='app-bar-large'] { height: 0; padding-bottom: 0; opacity: 0; }
+  :root[data-platform='ios'] [data-kit='app-bar-large-title'] {
+    font: var(--type-large-title);
+    font-weight: var(--fw-semibold);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-title-button'] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    padding: var(--space-0);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-title-button'] > [data-kit='icon'] { flex: none; color: var(--primary); transform: rotate(90deg); }
+  :root[data-platform='ios'] [data-kit='app-bar-title-button'] > [data-text='control'] { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  /* audit-B #8: a root bar's folded title (Tasks' "All projects ▾") beside its actions (search, ⋯, new): the actions keep
+     their width, so the title gives way, ending in its ellipsis and keeping ▾ a gap before the search button */
+  :root[data-platform='ios'] [data-kit='app-bar'][data-large][data-collapsed] [data-kit='app-bar-row'] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, max-content) minmax(max-content, 1fr);
+  }
+
+  /* the project selector in the Tasks bar (owner, 2026-11-15): a pull-down button, tinted text and its chevron, no box */
+  :root[data-platform='ios'] [data-kit='p-select'][data-where='bar'] {
+    height: var(--tap-min); max-width: 40vw; padding: var(--space-0) var(--space-2); border: 0; background: transparent; color: var(--primary); font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='p-select'][data-where='bar']:hover { background: transparent; }
+  :root[data-platform='ios'] [data-kit='p-select'][data-where='bar'] > [data-kit='icon']:last-child { color: var(--primary); }
+  /* a root bar under its large title has no Back and an empty inline title: its actions may use the whole row (the
+     selector's name needs the room); once the title folds into the bar, the selector keeps its dot and chevron */
+  :root[data-platform='ios'] [data-kit='app-bar'][data-large]:not([data-collapsed]) [data-kit='app-bar-actions'] { grid-column: 1 / 4; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed] [data-kit='p-select'][data-where='bar'] > [data-kit='p-name'],
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed] [data-kit='p-select'][data-where='bar'] > [data-kit='p-need'] { display: none; }
+
+  /* ListRow (step 4): an iOS table cell. 44 pt min; the title in body (headline when it wants you), the
+     sub line in subheadline secondary, the time trailing in footnote; inset separators from the text's
+     start; a disclosure chevron where opening the row pushes a page (Mail's rows have none). */
+  :root[data-platform='ios'] [data-kit='list-row'] {
+    min-height: var(--row-h-1);
+    padding: var(--row-pad-y) var(--inset);
+    border-radius: 0;
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='ios'] [data-kit='list-row'][data-row-lines='2'] { min-height: var(--row-h-2); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-row-lines='3'] { min-height: var(--row-h-3); align-items: start; }
+  :root[data-platform='ios'] [data-kit='list-row']::before {
+    content: '';
+    position: absolute;
+    right: var(--space-0);
+    bottom: var(--space-0);
+    left: var(--inset);
+    height: var(--hairline);
+    background: var(--outline);
+    pointer-events: none;
+  }
+  :root[data-platform='ios'] [data-kit='list-row'][data-lead]::before { left: calc(var(--inset) + var(--row-lead) + var(--row-lead-gap)); }
+  /* no separator under a list's last row; a row alone in its Swipe or virtual row is :last-child there, so those
+     count by their wrapper */
+  :root[data-platform='ios'] [data-kit='virtual-row']:last-child [data-kit='list-row']::before,
+  :root[data-platform='ios'] [data-kit='swipe']:last-child [data-kit='list-row']::before,
+  :root[data-platform='ios'] :not([data-kit='swipe-row']):not([data-kit='virtual-row']) > [data-kit='list-row']:last-child::before { display: none; }
+  :root[data-platform='ios'] [data-kit='list-row'][data-lead] > [data-kit='list-row-lead'] { justify-content: center; width: var(--row-lead); margin-inline-end: var(--row-lead-gap); color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='list-row-lead'] > [data-kit='avatar'] { width: var(--row-lead); height: var(--row-lead); }
+  :root[data-platform='ios'] [data-kit='list-row-title'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-title'] { font: var(--type-body); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-row-lines='2'] [data-kit='list-row-title'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-row-lines='3'] [data-kit='list-row-title'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-strong] [data-kit='list-row-title'] { font: var(--type-headline); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-quiet] [data-kit='list-row-title'] { color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='list-row-sub'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-sub'] { font: var(--type-subhead); color: var(--on-surface-var); }
+  /* the third line (a 3-line row's foot) runs under the text, one line */
+  :root[data-platform='ios'] [data-kit='list-row-foot'] {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font: var(--type-subhead);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='ios'] [data-kit='list-row-time'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-part~='list.row.time'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='time'] { font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-time] > [data-kit='list-row-time'] { align-self: start; }
+  /* a feed row (the Tasks list): the trailing column holds the time on the title's line and the pills on the next,
+     each on its own line, right-aligned, so the time never sits on a pill (r285); the title stops at that column */
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-title'] { grid-column: 2; padding-right: var(--space-0); }
+  /* the feed row's leading column is one fixed width, the crew face's (20): the dot, a reminder's or origin's icon and
+     a crew member's face sit centred in it, so every title starts at one x (r291; the browser's 10-pixel column let the
+     face run into the title); Mark done's touch column (composites.css) stays the fourth */
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] { grid-template-columns: var(--size-avatar-sm) minmax(0, 1fr) auto var(--k-feed-done,); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='dot'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='face'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='icon'][data-part~='list.row.mark'] { grid-column: 1; grid-row: 1; justify-self: center; }
+  /* audit E #11: a task's time ahead (Scheduled: "18:37") is a Text with the time's part, not a Time: the same column,
+     right-aligned with every other time (it sat 25 px left, drawn at its box's start) */
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-part~='list.row.time'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='time'] { grid-column: 3; grid-row: 1; justify-self: end; align-self: center; text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'][data-time] > [data-kit='list-row-pills'],
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'][data-time][data-row-lines] > [data-kit='list-row-pills'] { grid-column: 3; grid-row: 2; align-self: center; justify-content: flex-end; }
+  :root[data-platform='ios'] [data-kit='list-row'][data-interactive]:not([data-selected]):not([data-picked]):hover { background: transparent; }
+  :root[data-platform='ios'] [data-kit='list-row'][data-interactive]:not([data-selected]):not([data-picked]):active { background: var(--surface-c3); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-current] { background: var(--surface-c3); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-selected] { background: color-mix(in srgb, var(--primary) 15%, var(--surface-c0)); }
+  :root[data-platform='ios'] [data-kit='list-row-actions'] { opacity: 1; pointer-events: auto; }
+  :root[data-platform='ios'] [data-kit='list-row-actions'] > [data-kit='icon-button'] { width: var(--tap-min); height: var(--tap-min); margin: calc(var(--space-6) * -1) var(--space-0); }
+  :root[data-platform='ios'] [data-kit='list-row-chevron'] {
+    grid-column: 6;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    padding-inline-start: var(--space-4);
+    color: var(--on-surface-ter);
+    pointer-events: none;
+  }
+  :root[data-platform='ios'] [data-kit='list-row-chevron'] > [data-kit='icon'] { width: var(--chevron); height: var(--chevron); }
+  :root[data-platform='ios'] [data-kit='list-row']:not([data-layout='feed']) { grid-template-columns: auto minmax(0, 1fr) auto var(--k-time-w) auto auto; }
+  :root[data-platform='ios'] [data-kit='list-row'][data-time] { --k-time-w: auto; }
+
+  /* Swipe (step 4): Mail's swipe actions. The action is a solid button revealed from the edge the pull
+     starts at, as wide as the revealed part (at least 74 pt); a short pull rests open on it, a pull past
+     half the row (the line) runs it, its words sliding to the row's edge as it fills. */
+  :root[data-platform='ios'] [data-kit='swipe'][data-phase='drag'] > [data-kit='swipe-row'],
+  :root[data-platform='ios'] [data-kit='swipe'][data-phase='open'] > [data-kit='swipe-row'],
+  :root[data-platform='ios'] [data-kit='swipe'][data-phase='gone'] > [data-kit='swipe-row'] { background: var(--surface-c0); }
+  :root[data-platform='ios'] [data-kit='swipe-row'] { transition: transform var(--dur-medium) var(--spring-smooth); }
+  /* while the finger drags, the row tracks it: the base sheet's `transition: none` would lose to the line above */
+  :root[data-platform='ios'] [data-kit='swipe'][data-phase='drag'] > [data-kit='swipe-row'] { transition: none; }
+  :root[data-platform='ios'] [data-kit='swipe-band'] {
+    justify-content: flex-start;
+    padding: var(--space-0);
+    background: transparent;
+  }
+  :root[data-platform='ios'] [data-kit='swipe'][data-dir='left'] > [data-kit='swipe-band'] { justify-content: flex-end; }
+  :root[data-platform='ios'] [data-kit='swipe-action'] {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    width: var(--k-sw-w, var(--swipe-action-w));
+    min-width: var(--space-0);
+    height: 100%;
+    padding: var(--space-0) var(--space-4);
+    border: 0;
+    background: color-mix(in srgb, var(--k-tone) calc(70% + min(var(--k-sw-p, 0), 1) * 30%), var(--surface-c0));
+    color: var(--on-primary);
+    font: var(--type-footnote);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='swipe-action'] > [data-kit='icon'] { width: var(--tab-icon); height: var(--tab-icon); }
+  :root[data-platform='ios'] [data-kit='swipe-action']:active { background: color-mix(in srgb, var(--k-tone) 80%, var(--on-surface)); }
+  :root[data-platform='ios'] [data-kit='swipe'][data-armed] [data-kit='swipe-action'] { background: var(--k-tone); align-items: flex-start; }
+  :root[data-platform='ios'] [data-kit='swipe'][data-armed][data-dir='left'] [data-kit='swipe-action'] { align-items: flex-end; }
+  :root[data-platform='ios'] [data-kit='swipe-action'] > [data-kit='swipe-label'] { max-width: 100%; }
+
+  /* Section and SettingsGroup (step 4): inset grouped. The header in footnote secondary caps over the
+     box, the rows in a rounded secondary-grouped box 16 pt in from the edges, the help text as the
+     footer under it. */
+  :root[data-platform='ios'] [data-kit='section'],
+  :root[data-platform='ios'] [data-kit='settings-group'] { display: flex; flex-direction: column; gap: var(--space-0); margin: var(--space-0) var(--inset); }
+  :root[data-platform='ios'] [data-kit='section-head'],
+  :root[data-platform='ios'] [data-kit='settings-group-head'] {
+    align-items: flex-end;
+    margin: var(--space-0);
+    padding: var(--space-0) var(--inset) var(--group-head-pad);
+  }
+  :root[data-platform='ios'] [data-kit='section-head'] [data-kit='heading'],
+  :root[data-platform='ios'] [data-kit='settings-group-title'] { font: var(--type-footnote); text-transform: uppercase; color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='section-body'],
+  :root[data-platform='ios'] [data-kit='settings-group-body'],
+  :root[data-platform='ios'] [data-kit='settings-group']:not([data-head]) {
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--surface-grouped-1);
+    overflow: hidden;
+  }
+  :root[data-platform='ios'] [data-kit='settings-group']:not([data-head]) > [data-kit='settings-group-body'] { border-radius: 0; background: transparent; }
+  /* a sheet's body already keeps the screen's inset: a group in it sits on that edge (a pushed page, Settings, keeps
+     the grouped inset), as the cards beside it do (QA
+     round 2 #14: This computer, in Machines, sat 16 pt in from the Cloud card under it) */
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-body'] [data-kit='settings-group'] { margin-left: var(--space-0); margin-right: var(--space-0); }
+  /* a pane's note between groups reads as a group footer: on the footer's inset, not wider than the boxes (#14) */
+  :root[data-platform='ios'] [data-kit='settings-note']:not([data-boxed]) {
+    margin: var(--group-head-pad) var(--space-0) var(--space-0);
+    padding: var(--space-0) calc(var(--inset) * 2);
+    font: var(--type-footnote);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='ios'] [data-kit='section-footer'],
+  :root[data-platform='ios'] [data-kit='settings-group-footer'] {
+    margin: var(--space-0);
+    padding: var(--group-head-pad) var(--inset) var(--space-0);
+    font: var(--type-footnote);
+    color: var(--on-surface-var);
+  }
+  /* the separator starts at the text, as a table's inset separator */
+  :root[data-platform='ios'] [data-kit='settings-group-body'] > [data-kit='settings-row'] {
+    min-height: var(--row-h-1);
+    padding: var(--row-pad-y) var(--inset);
+    border: 0;
+    background: linear-gradient(var(--outline), var(--outline)) right bottom / calc(100% - var(--inset)) var(--hairline) no-repeat;
+  }
+  :root[data-platform='ios'] [data-kit='settings-group-body'] > [data-kit='settings-row']:last-child { background: none; }
+  :root[data-platform='ios'] [data-kit='settings-row-title'] { font: var(--type-body); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='settings-row-description'] { font: var(--type-subhead); color: var(--on-surface-var); }
+
+  /* Card (step 4): a grouped box with 12 pt continuous corners; outlined adds the hairline, filled is the
+     tertiary grouped fill; a pressed card dims and settles a little (HIG) */
+  :root[data-platform='ios'] [data-kit='card'] {
+    border: 0;
+    border-radius: var(--radius-lg);
+    corner-shape: squircle;
+    background: var(--surface-grouped-1);
+    color: var(--on-surface);
+    box-shadow: none;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--dur-short) var(--spring-snappy), opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='card'][data-variant='outlined'] { border: var(--hairline) solid var(--outline); }
+  :root[data-platform='ios'] [data-kit='card'][data-variant='filled'] { background: var(--surface-c1); }
+  :root[data-platform='ios'] [data-kit='card'][data-tone] { border-color: color-mix(in srgb, var(--k-tone) 40%, var(--outline)); }
+  :root[data-platform='ios'] [data-kit='card'][data-interactive]:hover { box-shadow: none; }
+  :root[data-platform='ios'] [data-kit='card'][data-interactive]:active { opacity: calc(1 - var(--state-pressed)); transform: scale(0.98); }
+  :root[data-platform='ios'] [data-kit='card-header'],
+  :root[data-platform='ios'] [data-kit='card-body'],
+  :root[data-platform='ios'] [data-kit='card-footer'] { padding: var(--card-pad); }
+  :root[data-platform='ios'] [data-kit='card-header'] { border-bottom: var(--hairline) solid var(--outline); font: var(--type-headline); }
+  :root[data-platform='ios'] [data-kit='card-footer'] { border-top: var(--hairline) solid var(--outline); font: var(--type-footnote); color: var(--on-surface-var); }
+
+  /* Banner (step 4): an inline banner row in the list's header: an inset grouped row, the tone's glyph
+     in the tint, subheadline text, its action as a plain tinted button */
+  :root[data-platform='ios'] [data-kit='banner'] {
+    align-items: center;
+    gap: var(--row-lead-gap);
+    min-height: var(--row-h-1);
+    margin: var(--space-4) var(--inset);
+    padding: var(--space-4) var(--banner-pad);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--surface-c1);
+    color: var(--on-surface);
+    font: var(--type-subhead);
+  }
+  :root[data-platform='ios'] [data-kit='banner'] [data-kit='notice-icon'] { color: var(--k-tone); }
+  :root[data-platform='ios'] [data-kit='banner'] [data-kit='notice-title'] { font: var(--type-headline); }
+  :root[data-platform='ios'] [data-kit='banner'] [data-kit='notice-action'] [data-kit='button'] {
+    min-height: var(--tap-min);
+    padding: var(--space-0) var(--space-4);
+    border: 0;
+    background: transparent;
+    color: var(--primary);
+    font: var(--type-subhead);
+    font-weight: var(--fw-semibold);
+  }
+  /* a banner's own row of buttons under its text (the held run's Trust and start · Skip this run): thumb-sized as its
+     side action's are, 44 pt (HIG); sm made them 28 (audit F tasks #4) */
+  :root[data-platform='ios'] [data-kit='banner'] [data-kit='wrap'] > [data-kit='button'] {
+    min-height: var(--tap-min);
+  }
+  /* a question's, a setup card's and a factory's answers (Allow · Deny · Show all, Approve · Stop, an option) are thumb
+     targets like the held card's, 44 pt (HIG); sm made them 28 / 32 (audit G tasks #4) */
+  :root[data-platform='ios'] [data-part~='task.ask'] [data-kit='wrap'] > [data-kit='button'] {
+    min-height: var(--tap-min);
+  }
+  /* the working panel's Stop, on every running or asking task, is a thumb target too: 44 pt (HIG); sm made it 28 / 32
+     (audit H tasks: G #4 partly fixed) */
+  :root[data-platform='ios'] [data-kit='button'][data-part~='task.stop'] {
+    min-height: var(--tap-min);
+  }
+  /* a compare task's card sits inside the list's margins like its rows, never against the screen's edges; its vs
+     Compare ends in the rows' time column (no ghost padding after its words) (audit F tasks #5) */
+  :root[data-platform='ios'] [data-kit='virtual-group'][data-part~='list.compare'] {
+    left: var(--space-4);
+    right: var(--space-4);
+  }
+  :root[data-platform='ios'] [data-kit='list-row-pills'] > [data-kit='button'][data-variant='ghost'] {
+    padding-inline-end: 0;
+  }
+  :root[data-platform='ios'] [data-kit='banner'] > [data-kit='icon-button'] { width: var(--tap-min); height: var(--tap-min); color: var(--on-surface-var); }
+
+  /* Pill (step 4): capsule tags in footnote; a state is its tone's tinted capsule, a tag the gray fill */
+  :root[data-platform='ios'] [data-kit='pill'] {
+    gap: var(--space-2);
+    height: var(--chip-h);
+    padding: var(--space-0) var(--chip-pad);
+    border: 0;
+    border-radius: var(--radius-pill);
+    font: var(--type-footnote);
+    color: var(--k-tone);
+    background: color-mix(in srgb, var(--k-tone) 15%, transparent);
+  }
+  :root[data-platform='ios'] [data-kit='pill'] > [data-kit='icon'] { width: var(--chip-icon); height: var(--chip-icon); }
+  :root[data-platform='ios'] [data-kit='pill'][data-variant='outline'] { padding: var(--space-0) var(--chip-pad); border: 0; border-radius: var(--radius-pill); background: var(--fill); color: var(--on-surface-var); font: var(--type-footnote); }
+  :root[data-platform='ios'] [data-kit='pill'][data-variant='outline'][data-tone='accent'] { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='pill'][data-variant='plain'] { height: auto; padding: var(--space-0); background: transparent; color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='pill'][data-size='sm'] { height: var(--chip-h); font: var(--type-caption); }
+
+  /* Skeleton (step 4): redacted placeholders, the gray fill with the text's corners, still */
+  :root[data-platform='ios'] [data-kit='skeleton'] { background: var(--fill); animation: none; }
+  :root[data-platform='ios'] [data-kit='skeleton'][data-shape='line'] { height: var(--k-h, var(--space-7)); border-radius: var(--radius-xs); }
+  :root[data-platform='ios'] [data-kit='skeleton'][data-shape='block'] { border-radius: var(--radius-lg); }
+
+  /* EmptyState (step 4): ContentUnavailableView. The glyph in secondary, the title in title 2, the body
+     in callout secondary, the step as a filled button */
+  :root[data-platform='ios'] [data-kit='empty-state'] { gap: var(--space-6); padding: var(--space-9) var(--inset-grouped); color: var(--on-surface-var); font: var(--type-callout); }
+  :root[data-platform='ios'] [data-kit='empty-state-icon'] { color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='empty-state-icon'] > [data-kit='icon'] { width: var(--empty-icon); height: var(--empty-icon); }
+  :root[data-platform='ios'] [data-kit='empty-state-title'] { font: var(--type-title2); font-weight: var(--fw-semibold); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='empty-state'][data-compact] [data-kit='empty-state-title'] { font: var(--type-headline); }
+  :root[data-platform='ios'] [data-kit='empty-state-action'] [data-kit='button'] {
+    height: var(--button-h-sm);
+    padding: var(--space-0) var(--button-pad);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--primary);
+    color: var(--on-primary);
+    font: var(--type-subhead);
+    font-weight: var(--fw-semibold);
+  }
+
+  /* PullRefresh (step 4): the refresh control. The activity indicator's 8 ticks appear one by one with
+     the pull, centred in the 60 pt area above the list; at the line they are all there, then they spin. */
+  :root[data-platform='ios'] [data-kit='pull-refresh'] {
+    position: sticky;
+    top: var(--space-0);
+    z-index: var(--z-raised);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--space-0);
+    overflow: visible;
+    pointer-events: none;
+  }
+  :root[data-platform='ios'] [data-kit='pull-spinner'] {
+    position: relative;
+    width: var(--refresh-spinner);
+    height: var(--refresh-spinner);
+    color: var(--on-surface-var);
+    transform: translateY(calc(min(var(--k-pull), 1) * var(--refresh-h) / 2));
+  }
+  :root[data-platform='ios'] [data-kit='pull-tick'] {
+    position: absolute;
+    top: var(--space-0);
+    left: calc(50% - var(--space-1) / 2 - var(--hairline));
+    width: calc(var(--space-1) + var(--hairline) * 2);
+    height: calc(var(--refresh-spinner) / 2 - var(--space-1));
+    border-radius: var(--radius-pill);
+    background: currentColor;
+    transform-origin: 50% calc(var(--refresh-spinner) / 2);
+    transform: rotate(calc(var(--k-i) * 45deg));
+    opacity: clamp(0, calc(var(--k-pull) * 8 - var(--k-i)), 1);
+  }
+  :root[data-platform='ios'] [data-kit='pull-refresh'][data-refreshing] [data-kit='pull-tick'] { opacity: calc(1 - var(--k-i) * 0.1); }
+  :root[data-platform='ios'] [data-kit='pull-refresh'][data-refreshing] [data-kit='pull-spinner'] { animation: k-ios-spin var(--dur-long) steps(8) infinite; }
+  @keyframes k-ios-spin { from { transform: translateY(calc(var(--refresh-h) / 2)) rotate(0deg); } to { transform: translateY(calc(var(--refresh-h) / 2)) rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='ios'] [data-kit='pull-refresh'][data-refreshing] [data-kit='pull-spinner'] { animation: none; }
+  }
+
+  /* Gestures (step 7, design/mobile.md §A.4): a sideways gesture on a task page keeps the vertical scroll the
+     browser's; a long-pressed follow-up lifts and follows the finger (bind.ts sets --k-drag-y), the others stay. */
+  :root[data-platform='ios'] [data-gesture~='task.head-swipe'],
+  :root[data-platform='ios'] [data-gesture~='task.body-swipe'] { touch-action: pan-y; }
+  :root[data-platform='ios'] [data-gesture~='queue.drag'] > * { -webkit-touch-callout: none; user-select: none; }
+  :root[data-platform='ios'] [data-gesture~='queue.drag'] [data-dragging] {
+    position: relative;
+    z-index: 1;
+    transform: translateY(var(--k-drag-y, 0));
+    box-shadow: var(--elev-2);
+    background: var(--surface-c1);
+  }
+  :root[data-platform='ios'] [data-gesture~='list.pull'] { overscroll-behavior-y: contain; }
+
+  /* Overlays (step 5, design/mobile.md §A.7). A confirm (data-alert) is the alert: 270 pt, 14 pt corners, the
+     material behind it, title and message centred, the actions full-width rows under a hairline, side by side; the
+     destructive one red, Cancel (the secondary) bold, no ×. */
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] {
+    width: min(var(--alert-w), 100%);
+    padding: var(--space-0);
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-dialog);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    box-shadow: none;
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+    text-align: center;
+    animation: k-ios-alert var(--spring-snappy-dur) var(--spring-snappy);
+  }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-head'] { justify-content: center; margin: var(--space-0); padding: var(--alert-pad-top) var(--alert-pad) var(--space-1); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] [data-kit='dialog-title'] { font: var(--type-headline); letter-spacing: normal; color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-head'] > [data-kit='icon-button'] { display: none; }
+  /* a sheet's or dialog's ✕ is a finger's target, 44 pt (HIG hit targets); its glyph keeps its size (QA r15 #5: it was 28) */
+  :root[data-platform='ios'] [data-kit='dialog'] > [data-kit='dialog-head'] > [data-kit='icon-button'],
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-head'] > [data-kit='icon-button'] { flex: none; min-width: var(--tap-min); min-height: var(--tap-min); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-description'],
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-body'] { margin: var(--space-0); padding: var(--space-0) var(--alert-pad); font: var(--type-footnote); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-body']:empty { display: none; }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] { gap: var(--space-0); margin: var(--alert-pad-top) var(--space-0) var(--space-0); border-top: var(--hairline) solid var(--outline); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'] {
+    flex: 1 1 0;
+    min-width: 0;
+    height: var(--alert-button-h);
+    padding: var(--space-0) var(--space-4);
+    border: 0;
+    border-radius: var(--space-0);
+    background: transparent;
+    color: var(--primary);
+    box-shadow: none;
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'] + [data-kit='button'] { border-left: var(--hairline) solid var(--outline); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'][data-variant='secondary'],
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'][data-variant='ghost'] { font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'][data-variant='danger'] { color: var(--error); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button']:active { background: var(--fill); }
+  @keyframes k-ios-alert { from { opacity: 0; transform: scale(1.1); } }
+
+  /* Sheet (and every dialog that isn't a confirm): the iOS sheet. Medium (half the screen) or large (10 pt under the
+     safe area), the 36 × 5 grabber (a tap steps the detents), 10 pt top corners; it follows a drag (--k-sheet-dy) and
+     springs between the detents. */
+  :root[data-platform='ios'] [data-kit='dialog-positioner'][data-sheet] { place-items: end stretch; padding: calc(var(--safe-top) + var(--sheet-top-gap)) var(--space-0) var(--space-0); }
+  :root[data-platform='ios'] [data-kit='sheet'] {
+    width: 100%;
+    height: calc(100dvh - var(--safe-top) - var(--sheet-top-gap));
+    max-height: none;
+    padding: var(--space-0) var(--space-0) var(--safe-bottom);
+    border: 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) var(--space-0) var(--space-0);
+    background: var(--surface-grouped-1);
+    color: var(--on-surface);
+    box-shadow: var(--elev-3);
+    font-family: var(--font-ui);
+    transform: translateY(var(--k-sheet-dy, 0));
+    transition: height var(--spring-smooth-dur) var(--ease-standard), transform var(--spring-smooth-dur) var(--ease-standard);
+    animation: k-ios-sheet var(--dur-medium) var(--ease-emph-out);
+  }
+  :root[data-platform='ios'] [data-kit='sheet'][data-detent='medium'] { height: var(--sheet-medium); }
+  :root[data-platform='ios'] [data-kit='sheet'][data-dragging] { transition: none; }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='sheet-handle'] {
+    display: block;
+    flex: none;
+    align-self: center;
+    width: var(--grabber-w);
+    height: var(--grabber-h);
+    margin: var(--grabber-h) var(--space-0) var(--space-0);
+    border-radius: var(--radius-pill);
+    background: var(--on-surface-ter);
+  }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-head'] { min-height: var(--bar-h); margin: var(--space-0); padding: var(--space-0) var(--bar-pad) var(--space-0) var(--inset); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='dialog-title'] { font: var(--type-headline); letter-spacing: normal; color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-description'] { margin: var(--space-0); padding: var(--space-0) var(--inset) var(--space-4); font: var(--type-subhead); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-body'] { padding: var(--space-0) var(--inset); font: var(--type-body); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-foot'] { margin: var(--space-0); padding: var(--space-4) var(--inset); gap: var(--bar-button-gap); }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-foot'] > [data-kit='button'] { flex: 1 1 0; }
+  :root[data-platform='ios'] [data-kit='dialog-positioner'][data-sheet][data-size='xl'] { padding: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='sheet'][data-size='xl'] { height: 100dvh; border-radius: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='sheet'][data-size='xl'] > [data-kit='sheet-handle'] { display: none; }
+  /* the grabber is a button named Close (QA r7 #1): the same pill, its press area the margin around it, a ring when
+     focused from a keyboard */
+  :root[data-platform='ios'] [data-kit='sheet'] > button[data-kit='sheet-handle'] { position: relative; padding: var(--space-0); border: 0; appearance: none; cursor: grab; -webkit-tap-highlight-color: transparent; }
+  :root[data-platform='ios'] [data-kit='sheet'] > button[data-kit='sheet-handle']::after { content: ''; position: absolute; inset: calc(var(--grabber-h) * -1) calc(var(--space-8) * -1); }
+  :root[data-platform='ios'] [data-kit='sheet'] > button[data-kit='sheet-handle']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-2); }
+  @keyframes k-ios-sheet { from { transform: translateY(100%); } }
+
+  /* A long-press's menu (phone.tsx): the context menu. The page blurs, the pressed row lifts in place as the preview,
+     the 250 pt menu (13 pt corners, the thick material) opens under it or over it; rows 44 pt, the icon trailing, a
+     destructive one red; a group's gap is 8 pt. */
+  :root[data-platform='ios'] [data-kit='context-backdrop'] {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    background: color-mix(in srgb, var(--surface-c0) 30%, transparent);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    animation: k-ios-fade var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='context-preview'] {
+    position: fixed;
+    top: var(--k-cx-top);
+    left: var(--k-cx-left);
+    z-index: var(--z-overlay);
+    width: var(--k-cx-w);
+    height: var(--k-cx-h);
+    overflow: hidden;
+    border-radius: var(--ctx-radius);
+    background: var(--surface-c0);
+    box-shadow: var(--elev-2);
+    animation: k-ios-lift var(--spring-snappy-dur) var(--spring-snappy);
+  }
+  :root[data-platform='ios'] [data-kit='context-preview'] > * { pointer-events: none; }
+  :root[data-platform='ios'] [data-kit='context-menu'] {
+    position: fixed;
+    top: var(--k-cx-mtop);
+    left: var(--k-cx-mleft);
+    z-index: var(--z-overlay);
+    display: flex;
+    flex-direction: column;
+    width: min(var(--ctx-w), calc(100vw - var(--space-4) * 2));
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
+    overflow-y: auto;
+    border-radius: var(--ctx-radius);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+    transform-origin: bottom left;
+    animation: k-ios-menu var(--spring-snappy-dur) var(--spring-snappy);
+  }
+  :root[data-platform='ios'] [data-kit='context-menu'][data-below] { transform-origin: top left; }
+  :root[data-platform='ios'] [data-kit='context-item'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    width: 100%;
+    min-height: var(--ctx-row-h);
+    padding: var(--space-0) var(--inset);
+    border: 0;
+    border-top: var(--hairline) solid var(--outline);
+    background: transparent;
+    color: var(--on-surface);
+    font: var(--type-body);
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='ios'] [data-kit='context-item']:first-child,
+  :root[data-platform='ios'] [data-kit='context-separator'] + [data-kit='context-item'],
+  :root[data-platform='ios'] [data-kit='context-label'] + [data-kit='context-item'] { border-top: 0; }
+  :root[data-platform='ios'] [data-kit='context-item'] > [data-kit='icon'] { order: 2; flex: none; }
+  /* a choice's ✓ leads, UIKit's checked action, every row indented by its column once any row is a choice (QA r7 #7) */
+  :root[data-platform='ios'] [data-kit='context-item'] > [data-kit='icon'][data-icon='check']:first-child { order: 0; }
+  :root[data-platform='ios'] [data-kit='context-item'] > [data-kit='context-icon-gap'] { flex: none; width: var(--size-icon-md); height: var(--size-icon-md); }
+  :root[data-platform='ios'] [data-kit='context-item']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='context-item'][data-danger] { color: var(--error); }
+  :root[data-platform='ios'] [data-kit='context-item']:disabled { color: var(--on-surface-ter); }
+  :root[data-platform='ios'] [data-kit='context-item'][data-back] { font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] [data-kit='context-item-text'] { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='context-item-label'] { flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='context-item-hint'] { font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='context-separator'] { flex: none; height: var(--ctx-gap); background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='context-label'] { padding: var(--space-3) var(--inset); font: var(--type-footnote); color: var(--on-surface-var); }
+  @keyframes k-ios-lift { from { transform: scale(0.96); } }
+  @keyframes k-ios-menu { from { opacity: 0; transform: scale(0.6); } }
+  @keyframes k-ios-fade { from { opacity: 0; } }
+
+  /* Menu from a button: the pull-down menu, the context menu's shape at the button. */
+  :root[data-platform='ios'] [data-kit='menu'] {
+    min-width: min(var(--ctx-w), calc(100vw - var(--space-4) * 2));
+    padding: var(--space-0);
+    border: 0;
+    border-radius: var(--ctx-radius);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='ios'] [data-kit='menu-item'] {
+    min-height: var(--ctx-row-h);
+    padding: var(--space-0) var(--inset);
+    border-radius: var(--space-0);
+    border-top: var(--hairline) solid var(--outline);
+    color: var(--on-surface);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='menu-item']:first-child,
+  :root[data-platform='ios'] [data-kit='menu-separator'] + [data-kit='menu-item'] { border-top: 0; }
+  :root[data-platform='ios'] [data-kit='menu-item'] > [data-kit='icon'] { order: 2; color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='menu-item'][data-highlighted] { background: var(--fill); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='menu-item'][data-danger],
+  :root[data-platform='ios'] [data-kit='menu-item'][data-danger] > [data-kit='icon'],
+  :root[data-platform='ios'] [data-kit='menu-item'][data-danger][data-highlighted] { color: var(--error); }
+  :root[data-platform='ios'] [data-kit='menu-separator'] { height: var(--ctx-gap); margin: var(--space-0); background: var(--fill); }
+  /* the iPad's popover: the same material and corners */
+  :root[data-platform='ios'] [data-kit='popover'] { border: 0; border-radius: var(--ctx-radius); background: var(--chrome); -webkit-backdrop-filter: blur(var(--ctx-blur)); backdrop-filter: blur(var(--ctx-blur)); box-shadow: var(--elev-2); }
+
+  /* Toast: iOS has none; the least surprising stand-in is a compact capsule banner 8 pt above the tab bar
+     (body[data-nav-bar]) with Undo, the material behind it. */
+  :root[data-platform='ios'] body { --toast-bottom: var(--capsule-gap); }
+  :root[data-platform='ios'] body[data-nav-bar] { --toast-bottom: calc(var(--nav-h) + var(--capsule-gap)); }
+  :root[data-platform='ios'] [data-kit='toast'] {
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    color: var(--on-surface);
+    box-shadow: var(--elev-2);
+    font: var(--type-subhead);
+  }
+  :root[data-platform='ios'] [data-kit='toast-in'] { min-height: var(--capsule-h); gap: var(--space-3); padding: var(--space-0) var(--space-3) var(--space-0) var(--inset); }
+  :root[data-platform='ios'] [data-kit='toast-glyph'] { background: transparent; }
+  :root[data-platform='ios'] [data-kit='toast-description'] { font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='toast-action'] { height: var(--button-h-sm); margin: var(--space-0); padding: var(--space-0) var(--space-4); background: transparent; color: var(--primary); font: var(--type-headline); }
+  :root[data-platform='ios'] [data-kit='toast-action']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='toast-close'] { color: var(--on-surface-var); }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='ios'] [data-kit='dialog'][data-alert],
+    :root[data-platform='ios'] [data-kit='sheet'],
+    :root[data-platform='ios'] [data-kit='context-preview'],
+    :root[data-platform='ios'] [data-kit='context-menu'] { animation: none; }
+  }
+
+  /* Controls (step 6, design/mobile.md §A.5–§A.7). Generic rules keep the specificity of one look and one kit name
+     (variants and sizes in :where()), so a control placed in a bar, an alert, a banner or an empty state keeps the
+     rule written for it there (steps 3–5). A press answers as the finger goes down: the highlight (the control dims)
+     with no scale; 44 pt touch targets round a smaller visible control (::before); the focus ring in the tint;
+     disabled at the tertiary label's 30 %. */
+
+  /* Button: HIG buttons. primary = filled, accent = tinted, secondary = gray, ghost and link = plain, danger = filled
+     in red, chip = a gray capsule (selected: tinted). Sizes: lg the 50 pt large button (12 pt corners, headline), md
+     34 pt (8 pt), xs and sm 28 pt (6 pt, footnote). */
+  :root[data-platform='ios'] [data-kit='button'] {
+    gap: var(--space-3);
+    height: var(--button-h-sm);
+    padding: var(--space-0) var(--space-6);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--fill);
+    color: var(--primary);
+    box-shadow: none;
+    font: var(--type-subhead);
+    font-weight: var(--fw-semibold);
+    transition: opacity var(--dur-short) ease-out, background-color var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='button'] > [data-kit='button-content'] { gap: var(--space-3); }
+  :root[data-platform='ios'] [data-kit='button'] [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] :where([data-size='xs'])[data-kit='button'],
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='button'] { height: var(--button-h-xs); padding: var(--space-0) var(--space-5); border-radius: var(--radius-xs); font: var(--type-footnote); font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] :where([data-size='lg'])[data-kit='button'] { height: var(--button-h); padding: var(--space-0) var(--button-pad); border-radius: var(--radius-lg); font: var(--type-headline); }
+  :root[data-platform='ios'] :where([data-variant='primary'])[data-kit='button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='ios'] :where([data-variant='danger'])[data-kit='button'] { background: var(--error); color: var(--on-primary); }
+  :root[data-platform='ios'] :where([data-variant='accent'])[data-kit='button'] { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+  :root[data-platform='ios'] :where([data-variant='ghost'])[data-kit='button'] { padding: var(--space-0) var(--space-4); background: transparent; font-weight: var(--fw-regular); }
+  :root[data-platform='ios'] :where([data-variant='ghost'][data-tone='good'])[data-kit='button'] { color: var(--good); }
+  :root[data-platform='ios'] :where([data-variant='ghost'][data-tone='bad'])[data-kit='button'] { color: var(--error); }
+  :root[data-platform='ios'] :where([data-variant='chip'])[data-kit='button'] { height: var(--button-h-xs); padding: var(--space-0) var(--chip-pad); border-radius: var(--radius-pill); color: var(--on-surface); font: var(--type-footnote); }
+  :root[data-platform='ios'] :where([data-variant='chip'][aria-pressed='true'])[data-kit='button'] { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+  :root[data-platform='ios'] :where([data-variant='link'])[data-kit='button'] { height: auto; padding: var(--space-0); border-radius: var(--space-0); background: none; color: var(--primary); font: inherit; }
+  :root[data-platform='ios'] :where([data-fill])[data-kit='button'] { width: 100%; }
+
+  /* IconButton: a plain bar button, the glyph in the tint in a 44 pt target (xs and sm draw 28 pt and grow their hit
+     area); primary = a filled circle, secondary = a gray one (the sheets' close button). */
+  :root[data-platform='ios'] [data-kit='icon-button'] {
+    width: var(--tap-min);
+    height: var(--tap-min);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--primary);
+    transition: opacity var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='icon-button'] [data-kit='icon'] { width: var(--bar-glyph); height: var(--bar-glyph); }
+  :root[data-platform='ios'] :where([data-size='xs'])[data-kit='icon-button'],
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='icon-button'] { width: var(--button-h-xs); height: var(--button-h-xs); }
+  :root[data-platform='ios'] [data-kit='icon-button']:where([data-size='xs']) [data-kit='icon'],
+  :root[data-platform='ios'] [data-kit='icon-button']:where([data-size='sm']) [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] :where([data-variant='primary'])[data-kit='icon-button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='ios'] :where([data-variant='secondary'])[data-kit='icon-button'] { background: var(--fill); color: var(--on-surface-var); }
+  :root[data-platform='ios'] :where([data-tone='bad'])[data-kit='icon-button'] { color: var(--error); }
+  :root[data-platform='ios'] :where([data-tone='good'])[data-kit='icon-button'] { color: var(--good); }
+
+  :root[data-platform='ios'] [data-kit='button']:not([data-variant='link'])::before,
+  :root[data-platform='ios'] [data-kit='icon-button']::before {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2));
+  }
+  @media (hover: hover) {
+    :root[data-platform='ios'] [data-kit='button']:hover,
+    :root[data-platform='ios'] [data-kit='icon-button']:hover { opacity: calc(1 - var(--state-pressed)); }
+  }
+  :root[data-platform='ios'] [data-kit='button']:active,
+  :root[data-platform='ios'] [data-kit='icon-button']:active { transform: none; opacity: calc(1 - var(--state-pressed) * 2); transition: none; }
+  /* an alert's actions show their press as the fill (step 5), not dimmed as well */
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button']:active { opacity: 1; }
+  :root[data-platform='ios'] [data-kit='button']:focus-visible,
+  :root[data-platform='ios'] [data-kit='icon-button']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='ios'] [data-kit='button']:disabled,
+  :root[data-platform='ios'] [data-kit='icon-button']:disabled { opacity: var(--state-disabled); cursor: not-allowed; }
+  /* the busy ring is the activity indicator, the glyph's size */
+  :root[data-platform='ios'] [data-kit='button'] > [data-kit='spinner'],
+  :root[data-platform='ios'] [data-kit='icon-button'] > [data-kit='spinner'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+
+  /* Switch: UISwitch, 51 × 31, the off track secondarySystemFill, on the tint; the 27 pt white thumb 2 pt in, which
+     stretches to 34 pt while held (towards the middle); the hit area grown to 44 pt. */
+  :root[data-platform='ios'] [data-kit='switch'] {
+    width: var(--switch-w);
+    height: var(--switch-h);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--switch-off);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='switch'][data-state='checked'] { background: var(--primary); }
+  :root[data-platform='ios'] [data-kit='switch']::after {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2)) var(--space-0);
+  }
+  :root[data-platform='ios'] [data-kit='switch-thumb'] {
+    top: var(--switch-pad);
+    left: var(--switch-pad);
+    width: var(--switch-thumb);
+    height: var(--switch-thumb);
+    border-radius: var(--radius-pill);
+    background: var(--switch-knob);
+    box-shadow: var(--elev-2);
+    transform: none;
+    transition: left var(--spring-snappy-dur) var(--spring-snappy), width var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='switch-thumb'][data-state='checked'] { left: calc(var(--switch-w) - var(--switch-thumb) - var(--switch-pad)); transform: none; }
+  :root[data-platform='ios'] [data-kit='switch']:active [data-kit='switch-thumb'] { width: var(--switch-thumb-press); }
+  :root[data-platform='ios'] [data-kit='switch'][data-state='checked']:active [data-kit='switch-thumb'] { left: calc(var(--switch-w) - var(--switch-thumb-press) - var(--switch-pad)); }
+  :root[data-platform='ios'] [data-kit='switch']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='ios'] [data-kit='switch'][data-disabled] { opacity: var(--state-disabled); }
+  :root[data-platform='ios'] [data-kit='switch-field'] { gap: var(--space-6); color: var(--on-surface); font: var(--type-body); }
+
+  /* Tabs: every variant is UISegmentedControl. A 32 pt track in the fill, 9 pt corners, the selected segment raised
+     (7 pt corners, 2 pt in, a shadow), footnote, semibold when selected; hairlines between unselected segments; the
+     hit area grown to 44 pt (::after). */
+  :root[data-platform='ios'] [data-kit='tabs'] > [data-kit='tab-list'] {
+    gap: var(--space-0);
+    height: var(--seg-h);
+    margin: var(--space-0);
+    padding: var(--seg-pad);
+    overflow: visible;
+    border: 0;
+    border-radius: var(--seg-radius);
+    background: var(--fill);
+  }
+  :root[data-platform='ios'] [data-kit='tabs'] > [data-kit='tab-list'][data-fill] { align-self: stretch; }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'] {
+    flex: 1 1 0;
+    justify-content: center;
+    gap: var(--space-2);
+    min-width: max-content;
+    height: 100%;
+    min-height: var(--space-0);
+    padding: var(--space-0) var(--space-6);
+    border-radius: var(--seg-thumb-radius);
+    background: transparent;
+    box-shadow: none;
+    color: var(--on-surface);
+    font: var(--type-footnote);
+    font-weight: var(--fw-medium);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--dur-short) ease-out, box-shadow var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'] > [data-kit='icon'] { width: var(--size-icon-md); height: var(--size-icon-md); margin: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab-count'] { margin: var(--space-0); font: inherit; color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-selected] { background: var(--seg-thumb); box-shadow: var(--elev-1); color: var(--on-surface); font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab']::after,
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-selected]::after {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2)) var(--space-0);
+    height: auto;
+    border-radius: var(--space-0);
+    background: none;
+  }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'] + [data-kit='tab']::before {
+    content: '';
+    position: absolute;
+    top: var(--space-4);
+    bottom: var(--space-4);
+    left: var(--space-0);
+    width: var(--hairline);
+    background: var(--outline-var);
+  }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-selected]::before,
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-selected] + [data-kit='tab']::before { background: transparent; }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab']:active { opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-disabled] { opacity: var(--state-disabled); }
+
+  /* Input, TextArea, Select's button: the rounded field. 44 pt (sm 34), 10 pt corners, the fill, no edge, body;
+     placeholders in the tertiary label; focus is a ring in the tint (iPad keyboards; a tap shows the caret too). */
+  :root[data-platform='ios'] [data-kit='input'],
+  :root[data-platform='ios'] [data-kit='field-box'],
+  :root[data-platform='ios'] [data-kit='textarea'],
+  :root[data-platform='ios'] [data-kit='select-trigger'] {
+    height: var(--field-h);
+    padding: var(--space-0) var(--field-pad);
+    border: 0;
+    border-radius: var(--radius-md);
+    background-color: var(--fill);
+    box-shadow: none;
+    color: var(--on-surface);
+    font: var(--type-body);
+    transition: box-shadow var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='input'],
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='field-box'],
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='select-trigger'] { height: var(--button-h-sm); font: var(--type-subhead); }
+  :root[data-platform='ios'] [data-kit='textarea'] { height: auto; min-height: var(--field-h); padding: var(--space-5) var(--field-pad); line-height: inherit; }
+  :root[data-platform='ios'] [data-kit='field-box'] { gap: var(--space-3); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='field-box'] > [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] [data-kit='field-prefix'] { color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='field-input'] { color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='input'][data-mono],
+  :root[data-platform='ios'] [data-kit='textarea'][data-mono],
+  :root[data-platform='ios'] [data-kit='field-box'][data-mono],
+  :root[data-platform='ios'] [data-kit='select-trigger'][data-mono] { font-family: var(--mono); }
+  :root[data-platform='ios'] [data-kit='input']::placeholder,
+  :root[data-platform='ios'] [data-kit='textarea']::placeholder,
+  :root[data-platform='ios'] [data-kit='field-input']::placeholder { color: var(--on-surface-ter); }
+  :root[data-platform='ios'] [data-kit='input']:hover,
+  :root[data-platform='ios'] [data-kit='field-box']:hover,
+  :root[data-platform='ios'] [data-kit='textarea']:hover,
+  :root[data-platform='ios'] [data-kit='select-trigger']:hover { border-color: transparent; }
+  :root[data-platform='ios'] [data-kit='input']:focus,
+  :root[data-platform='ios'] [data-kit='textarea']:focus,
+  :root[data-platform='ios'] [data-kit='field-box']:focus-within,
+  :root[data-platform='ios'] [data-kit='select-trigger']:focus-visible {
+    background-color: var(--fill);
+    box-shadow: inset 0 0 0 var(--size-ring) color-mix(in srgb, var(--primary) 60%, transparent);
+  }
+  :root[data-platform='ios'] [data-kit='input'][aria-invalid='true'],
+  :root[data-platform='ios'] [data-kit='textarea'][aria-invalid='true'],
+  :root[data-platform='ios'] [data-kit='field-box'][data-invalid],
+  :root[data-platform='ios'] [data-kit='select-trigger'][data-invalid] { box-shadow: inset 0 0 0 var(--size-ring) var(--error); }
+  :root[data-platform='ios'] [data-kit='input']:disabled,
+  :root[data-platform='ios'] [data-kit='textarea']:disabled,
+  :root[data-platform='ios'] [data-kit='field-box'][data-disabled],
+  :root[data-platform='ios'] [data-kit='select-trigger']:disabled { opacity: var(--state-disabled); }
+  /* Select: a pop-up button in the field's shape, the up-down mark in the tint; it dims while held. Its list is the
+     pull-down menu (the context menu's material and rows, a check on the picked one). */
+  :root[data-platform='ios'] [data-kit='select'] { display: flex; }
+  :root[data-platform='ios'] [data-kit='select-trigger'] { width: 100%; gap: var(--space-4); }
+  :root[data-platform='ios'] [data-kit='select-trigger'][aria-expanded='true'],
+  :root[data-platform='ios'] [data-kit='select-trigger']:active { box-shadow: none; opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='select-trigger'][data-invalid][aria-expanded='true'] { box-shadow: inset 0 0 0 var(--size-ring) var(--error); }
+  :root[data-platform='ios'] [data-kit='select-trigger'][data-placeholder] [data-kit='select-value'] { color: var(--on-surface-ter); }
+  :root[data-platform='ios'] [data-kit='select-trigger'] > [data-kit='icon'] { width: var(--size-icon-md); height: var(--size-icon-md); color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='listbox'] {
+    min-width: min(var(--ctx-w), calc(100vw - var(--space-4) * 2));
+    padding: var(--space-0);
+    border: 0;
+    border-radius: var(--ctx-radius);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='ios'] [data-kit='option'] {
+    min-height: var(--ctx-row-h);
+    padding: var(--space-0) var(--inset);
+    border-radius: var(--space-0);
+    border-top: var(--hairline) solid var(--outline);
+    color: var(--on-surface);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='option']:first-child,
+  :root[data-platform='ios'] [data-kit='option-group'] + [data-kit='option'] { border-top: 0; }
+  :root[data-platform='ios'] [data-kit='option'][data-highlighted] { background: var(--fill); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='option'] > [data-kit='icon'] { color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='option'][data-disabled] { color: var(--on-surface-ter); opacity: 1; }
+  :root[data-platform='ios'] [data-kit='option-group'] { padding: var(--space-3) var(--inset); font: var(--type-footnote); color: var(--on-surface-var); }
+
+  /* Field: the label over the rounded field (footnote, the secondary label, in line with the text), the error and
+     the hint under it the same way. */
+  :root[data-platform='ios'] [data-kit='field'] { gap: var(--space-3); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='field-label'] { padding: var(--space-0) var(--field-pad); color: var(--on-surface-var); font: var(--type-footnote); }
+  :root[data-platform='ios'] [data-kit='field-hint'],
+  :root[data-platform='ios'] [data-kit='field-error'] { padding: var(--space-0) var(--field-pad); font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='field-error'] { color: var(--error); }
+
+  /* A Select's long list (phone.tsx SelectSheet): the choices as an inset grouped checkmark list, 44 pt rows with
+     inset separators, the check trailing in the tint. */
+  :root[data-platform='ios'] [data-kit='select-sheet'] { display: flex; flex-direction: column; overflow: hidden; margin-bottom: var(--space-4); border-radius: var(--radius-md); background: var(--surface-grouped-1); }
+  :root[data-platform='ios'] [data-kit='select-sheet-item'] {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    width: 100%;
+    min-height: var(--row-h-1);
+    padding: var(--space-0) var(--inset);
+    border: 0;
+    background: transparent;
+    color: var(--on-surface);
+    font: var(--type-body);
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='ios'] [data-kit='select-sheet-item'] + [data-kit='select-sheet-item']::before {
+    content: '';
+    position: absolute;
+    top: var(--space-0);
+    left: var(--inset);
+    right: var(--space-0);
+    height: var(--hairline);
+    background: var(--outline);
+  }
+  :root[data-platform='ios'] [data-kit='select-sheet-item']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='select-sheet-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='ios'] [data-kit='select-sheet-item']:disabled { color: var(--on-surface-ter); }
+  :root[data-platform='ios'] [data-kit='select-sheet-item'] > [data-kit='icon'] { flex: none; width: var(--size-icon-lg); height: var(--size-icon-lg); color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='select-sheet-label'] { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root[data-platform='ios'] [data-kit='select-sheet-group'] { padding: var(--space-4) var(--inset) var(--space-2); font: var(--type-footnote); color: var(--on-surface-var); }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='ios'] [data-kit='switch'],
+    :root[data-platform='ios'] [data-kit='switch-thumb'],
+    :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'] { transition: none; }
+  }
+
+  /* Step 13: the task page, New task and Search (design/mobile.md §A.2). A pushed page's navigation bar sits at its
+     pane's top, over the page's scroller (the browser's split head is laid out there by `order`, so is this). */
+  :root[data-platform='ios'] [data-kit='frame-pane'] > [data-kit='app-bar'] { order: -1; }
+  /* the task page's status pills under its bar, before the page (QA round 6 phone #14: they followed the reply box) */
+  :root[data-platform='ios'] [data-kit='frame-pane'] > [data-kit='page-status'] { order: -1; }
+  /* a menu's key hints: no keyboard on a phone (design/mobile.md §A.2: keyboard-only things are hidden) */
+  :root[data-platform='ios'] [data-kit='menu-item'] > [data-kit='kbd'] { display: none; }
+  /* the search field under the large title (the list's root), folding away with it; the bar's magnifier takes over
+     once it has (and is the only search on a page without the field) */
+  :root[data-platform='ios'] [data-kit='app-bar-search'] {
+    padding: var(--space-0) var(--inset) var(--space-4);
+    overflow: hidden;
+    transition: max-height var(--dur-medium) var(--ease-standard), padding var(--dur-medium) var(--ease-standard), opacity var(--dur-short) var(--ease-standard);
+    max-height: calc(var(--field-h) + var(--space-4));
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed] [data-kit='app-bar-search'] { max-height: 0; padding-bottom: 0; opacity: 0; }
+  :root[data-platform='ios'] [data-kit='app-bar-search-field'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    height: var(--field-h);
+    padding: var(--space-0) var(--space-4);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--fill);
+    color: var(--on-surface-var);
+    font: var(--type-body);
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-search-field']:active { opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='app-bar-search-field'] > [data-text='control'] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-kind='root']:not([data-collapsed]) [data-kit='app-bar-search-icon'] { display: none; }
+  :root[data-platform='ios'] [data-kit='app-bar-search-icon'] { display: contents; }
+  /* the page's ⋯ and a compose bar's Send: bar buttons in the tint; Send (the sheet's confirm) in semibold */
+  :root[data-platform='ios'] [data-kit='app-bar-confirm'] { display: flex; flex: none; }
+  :root[data-platform='ios'] [data-kit='app-bar-confirm'] > [data-kit='button'] { padding-right: var(--space-0); font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] [data-kit='app-bar-confirm'] > [data-kit='button']:disabled { color: var(--on-surface-ter); opacity: 1; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-kind='compose'] { background: var(--surface-c1); }
+  /* New task: a sheet at its large detent over the list, which stays behind it, dimmed; the tab bar gives way */
+  :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] { background: var(--shadow-scrim); }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] > [data-kit='frame-nav'] { display: none; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] > [data-kit='frame-body'] { padding-top: calc(var(--safe-top) + var(--sheet-top-gap)); }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'] {
+    border-radius: var(--radius-sheet) var(--radius-sheet) var(--space-0) var(--space-0);
+    background: var(--surface-c1);
+    box-shadow: var(--elev-3);
+    animation: k-ios-sheet var(--spring-smooth-dur) var(--spring-smooth);
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='split-home'] { padding: var(--space-4) var(--space-4) var(--space-9); }
+  /* the composer on a phone (owner, 2026-11-17): the New task sheet's field runs the screen's width, inset only as far
+     as the sheet's Cancel (8), and its prompt and tool bar scroll with no bar drawn (reset.css styles WebKit's scrollbars,
+     which would draw a classic one inside the field; scrollbar-width alone doesn't hide that one) */
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='prompt'],
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='reply'],
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='l-bar'],
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='c-bar'] { scrollbar-width: none; }
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='prompt']::-webkit-scrollbar,
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='reply']::-webkit-scrollbar,
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='l-bar']::-webkit-scrollbar,
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='c-bar']::-webkit-scrollbar { display: none; }
+  @keyframes k-ios-sheet { from { transform: translateY(100%); } }
+  /* the composer, Messages-like: a rounded field on the page, Send the filled up-arrow circle at its end */
+  :root[data-platform='ios'] [data-kit='reply-box'],
+  :root[data-platform='ios'] [data-kit='launcher'] {
+    border: var(--hairline) solid var(--outline);
+    border-radius: var(--radius-xl);
+    background: var(--surface-c0);
+    box-shadow: none;
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='ios'] [data-kit='launcher']:focus-within,
+  :root[data-platform='ios'] [data-kit='launcher'][data-open] { border-color: var(--outline); box-shadow: none; }
+  /* the bar's tools scroll under Send (pinned at the end) when they don't fit a narrow phone */
+  :root[data-platform='ios'] [data-kit='reply-box'] { padding-left: var(--space-4); }
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='c-bar'],
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='l-bar'] { gap: var(--space-2); overflow-x: auto; scrollbar-width: none; }
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='send'],
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='send'] {
+    position: sticky;
+    right: var(--space-0);
+    /* the touch size as drawn (QA r6 phone #8): the box is --tap-min, its circle the platform's small button inside it */
+    width: var(--tap-min);
+    height: var(--tap-min);
+    padding: calc((var(--tap-min) - var(--button-h-sm)) / 2);
+    border-radius: var(--radius-pill);
+    background: var(--primary);
+    background-clip: content-box;
+    color: var(--on-primary);
+    /* the tools scrolled under it don't show through: the box's colour around the circle, and a ring past it */
+    box-shadow: inset 0 0 0 calc((var(--tap-min) - var(--button-h-sm)) / 2) var(--surface-c0), 0 0 0 var(--space-2) var(--surface-c0);
+  }
+  /* nothing typed yet: Send is off, as the sheet's header Send (QA r2 #12); a solid fill, so the tools under it stay hidden */
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='send']:disabled {
+    background-color: color-mix(in srgb, var(--on-surface) 12%, var(--surface-c0));
+    color: color-mix(in srgb, var(--on-surface) 38%, var(--surface-c0));
+    cursor: default;
+  }
+  /* the task's Details (from its menu): the browser's details column as a list in the sheet: the state, the harness
+     and model, its folders, the branch, its usage; its actions are the menu's */
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-bar'] { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-6); margin: var(--space-0); padding: var(--space-0) var(--space-0) var(--space-6); background: transparent; }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-props'] { flex-direction: column; align-items: flex-start; gap: var(--space-5); font: var(--type-body); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'] {
+    --tone: var(--good);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: color-mix(in srgb, var(--tone) 85%, var(--on-surface));
+  }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'][data-tone='info'],
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'][data-tone='live'] { --tone: var(--primary); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'][data-tone='bad'] { --tone: var(--error); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'][data-tone='warn'] { --tone: var(--warn); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='model-logo'] { align-items: center; gap: var(--space-3); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='ml-name'] { display: inline; }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-meta'] { color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-actions']:empty { display: none; }
+  /* Search: the navigation bar's search field at the top, Cancel at its end, the results in place under it; no
+     keyboard hints */
+  :root[data-platform='ios'] [data-kit='backdrop'][data-place='top'] { background: transparent; }
+  :root[data-platform='ios'] [data-kit='dialog-positioner'][data-place='top'] { place-items: stretch; padding: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-place='top'] {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: var(--space-0);
+    padding: var(--safe-top) var(--space-0) var(--space-0);
+    border: 0;
+    border-radius: var(--space-0);
+    background: var(--surface-c0);
+    box-shadow: none;
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+    animation: k-ios-search var(--dur-short) var(--ease-standard);
+  }
+  @keyframes k-ios-search { from { opacity: 0; } }
+  :root[data-platform='ios'] [data-kit='pal-input'] { height: var(--bar-h); gap: var(--space-0); padding: var(--space-0) var(--space-0) var(--space-0) var(--inset); border-bottom: var(--hairline) solid var(--outline); }
+  :root[data-platform='ios'] [data-kit='pal-input'] > [data-kit='icon'] {
+    box-sizing: content-box;
+    height: var(--field-h);
+    padding: var(--space-0) var(--space-2) var(--space-0) var(--space-4);
+    border-radius: var(--radius-md) var(--space-0) var(--space-0) var(--radius-md);
+    background: var(--fill);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='ios'] [data-kit='pal-input'] > input {
+    height: var(--field-h);
+    padding-right: var(--space-4);
+    border-radius: var(--space-0) var(--radius-md) var(--radius-md) var(--space-0);
+    background: var(--fill);
+    font: var(--type-body);
+    color: var(--on-surface);
+  }
+  :root[data-platform='ios'] [data-kit='pal-input'] > input::placeholder { color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='pal-input'] > [data-kit='button'] {
+    flex: none;
+    min-width: var(--tap-min);
+    height: var(--tap-min);
+    padding: var(--space-0) var(--inset) var(--space-0) var(--space-4);
+    border: 0;
+    background: transparent;
+    color: var(--primary);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='pal-list'] { padding: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='pal-group'] { padding: var(--space-6) var(--inset) var(--space-2); font: var(--type-footnote); text-transform: uppercase; color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='pal-row'] {
+    height: var(--row-h-1);
+    padding: var(--space-0) var(--inset);
+    border-radius: var(--space-0);
+    box-shadow: inset var(--inset) calc(var(--hairline) * -1) var(--surface-c0), inset var(--space-0) calc(var(--hairline) * -1) var(--outline);
+    color: var(--on-surface);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='pal-row'][data-on] { background: transparent; }
+  :root[data-platform='ios'] [data-kit='pal-row']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='ios'] [data-kit='pal-sub'] { font: var(--type-subhead); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='pal-kbd'],
+  :root[data-platform='ios'] [data-kit='pal-foot'] { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'],
+    :root[data-platform='ios'] [data-kit='dialog'][data-place='top'] { animation: none; }
+  }
+  /* v1 responsive.css: an empty Recipes list is not worth a phone's screen (Home.tsx sets data-empty on phones only);
+     Start from an issue stays, at the row's end */
+  :root[data-platform='ios'] [data-kit='lr-list'][data-empty] { display: none; }
+  :root[data-platform='ios'] [data-kit='lr-list'][data-empty] ~ [data-part~='launcher.issue'] { margin-inline-start: auto; }
+
+  /* Selection mode (step 13, design/mobile.md §A.4): edit mode. The screen's own bar stays (its large title or its
+     folded title, so the list never moves) with Select All leading and Done trailing, the large title saying how many
+     are picked; the search field dims; the rows lead with the edit circle (a ring, filled in the tint with its
+     checkmark when picked); the bulk actions sit in the toolbar over the tab bar's place; the rows' own quick actions
+     step aside */
+  :root[data-platform='ios'] [data-kit='app-bar'][data-selecting][data-large]:not([data-collapsed]) [data-kit='app-bar-actions'] { grid-column: 3; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-selecting] [data-kit='app-bar-search-field']:disabled { opacity: var(--state-disabled); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='row-pick'] {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-avatar-sm);
+    height: var(--size-avatar-sm);
+    border: var(--size-ring-thin) solid var(--on-surface-ter);
+    border-radius: var(--radius-pill);
+    color: var(--on-primary);
+  }
+  :root[data-platform='ios'] [data-kit='list-row'][data-picked] > [data-kit='row-pick'] { border-color: var(--primary); background: var(--primary); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-picking] > [data-kit='list-row-actions'] { display: none; }
+  :root[data-platform='ios'] [data-kit='select-toolbar'] {
+    position: fixed;
+    inset-inline: var(--space-0);
+    bottom: var(--space-0);
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    height: calc(var(--nav-h) + var(--safe-bottom));
+    padding: var(--space-0) calc(var(--bar-pad) + var(--safe-right)) var(--safe-bottom) calc(var(--bar-pad) + var(--safe-left));
+    border-top: var(--hairline) solid var(--outline);
+    /* the bar material over an opaque page: the tab bar it covers never shows through */
+    background: linear-gradient(var(--chrome), var(--chrome)), var(--surface-c0);
+  }
+  :root[data-platform='ios'] [data-kit='select-toolbar'] > [data-kit='toolbar'] { flex: 1 1 auto; justify-content: space-between; }
+  :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='icon-button'],
+  :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='button'] { border: 0; background: transparent; color: var(--primary); font: var(--type-body); }
+  :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='icon-button']:disabled,
+  :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='button']:disabled { color: var(--on-surface-ter); opacity: 1; }
+
+  /* Step 14 (design/mobile.md §A.2): Settings is an inset grouped table (the grouped background behind its sections,
+     the rows on the section's fill); My Stuff's group headers in headline */
+  :root[data-platform='ios'] [data-kit='phone-page'][data-page='settings'] { background: var(--surface-grouped-0); }
+  :root[data-platform='ios'] [data-kit='settings-group-body'] > [data-kit='list-row'] { background: transparent; }
+  :root[data-platform='ios'] [data-kit='stuff-phone-group-head'] { font: var(--type-headline); color: var(--on-surface); }
+
+  /* tap targets at least 44 pt (HIG: hit targets) (QA r2 #6): a turn's tools and 👍/👎, the story viewer's Pause, More and Close, My
+     Stuff's row More; the icon keeps its size, its box takes the room */
+  :root[data-platform='ios'] [data-kit='trail-bar'] [data-kit='tb-btn'],
+  :root[data-platform='ios'] [data-kit='trail-bar'] [data-kit='rate-btn'],
+  :root[data-platform='ios'] [data-kit='story-head'] [data-kit='icon-button'],
+  :root[data-platform='ios'] [data-part~='stuff.phone.row.menu.trigger'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  /* QA phone r3 A6: the PR card's Check now and a block's Comment on this were 28 and 29 px: a finger's 44pt */
+  :root[data-platform='ios'] [data-part~='side.pr.check'],
+  :root[data-platform='ios'] [data-part~='pr.strip.check'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  :root[data-platform='ios'] [data-kit='cmt-add'] { width: var(--tap-min); height: var(--tap-min); top: calc(var(--tap-min) / -2); right: calc(var(--space-4) * -1); }
+  /* QA phone r3 #3: the goal line says what it's for, as a native form names its field (v1's narrow box gave the label's
+     room to the condition; the hint now gives way with "…") */
+  :root[data-platform='ios'] [data-kit='lg-k'] > [data-text='control'] { display: inline; }
+  /* QA phone r4 #1: New task's bar too narrow for its tools (bar-labels.ts measures it): the pill keeps its logo alone, its +
+     (Try another agent, in More too) and its model's words fold, so More never goes under Send */
+  :root[data-platform='ios'] [data-kit='l-bar'][data-tight] [data-kit='vs-btn']:not([data-del]),
+  :root[data-platform='ios'] [data-kit='l-bar'][data-tight] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: none; }
+  :root[data-platform='ios'] [data-kit='l-bar'][data-tight] [data-kit='runner-btn'] > [data-kit='auto-pv'] { display: none; }
+  /* a picked file's agent says its model and thinking after its name when the row has room, as desktop does (audit H
+     tasks note: "critic · Codex" alone); the model gives way first (it shrinks, ending in …) */
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='runner-btn'][data-file] > [data-kit='auto-pv'] { display: flex; flex: 0 10000 auto; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='runner-btn'][data-file] > [data-kit='auto-pv'] > [data-kit='apv-l'] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* The task's side page (Changes, PR, Shell, Preview; QA round 2 #9): a navigation bar, not the browser's pill strip
+     squeezed to icons. The panes as a segmented control of names across the bar, Close at its trailing edge; the bar
+     is the nav bar's height, under the status bar (the frame body's inset), its hairline under it. */
+  :root[data-platform='ios'] [data-pane='side'] [data-part~='side.head'] {
+    height: auto;
+    min-height: var(--bar-h);
+    gap: var(--space-4);
+    padding: var(--space-0) var(--space-2) var(--space-0) var(--space-6);
+    border-bottom: var(--hairline) solid var(--outline);
+  }
+  :root[data-platform='ios'] [data-pane='side'] [data-part~='side.head'] > [data-kit='box'] { display: none; }
+  :root[data-platform='ios'] [data-pane='side'] [data-part~='side.head'] > [data-kit='icon-button'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: var(--space-0);
+    padding: var(--space-0);
+    border: 0;
+    background: transparent;
+  }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { flex: 1 1 auto; }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] {
+    /* by its name's width, the room left shared out: a short name (PR) never takes a long one's room */
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    padding: var(--space-0) var(--space-1);
+  }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] > [data-kit='icon'] { display: none; }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { display: inline; overflow: hidden; text-overflow: ellipsis; }
+
+  /* a toast sits under an open menu or sheet, never over it (QA r2 #5: the error toast was drawn over the task's ⋯),
+     still over the page */
+  :root[data-platform='ios'] [data-kit='toasts'] { z-index: calc(var(--z-menu) - 1); }
+
+  /* New task's bar fits a phone (QA r2 #2; ADR-0012 label → icon): its tail folds into More (HomeView), and the harness
+     pill folds to its logo and chevron in the compact size class (v1 hid the name at 520 px; the tooltip names it) */
+  @media (not (min-width: 600px)) {
+    :root[data-platform='ios'] [data-kit='launcher'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: none; }
+  }
+}
+
+@layer kit {
+  /* an Org card's role on a phone card (~150 px at 360): one line with an ellipsis, never "Crew / member" on two (QA
+     phone r3 #2; v1's two-line role is the desktop's) */
+  :root[data-platform='ios'] [data-kit='org-who'] > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Settings' search on a phone (HIG: the search field keeps the list's 16 pt inset), as the list under it; it stood on the screen's edge (QA round 4 #4) */
+  :root[data-platform='ios'] [data-kit='settings-nav-search'] { padding: var(--space-0) var(--inset) var(--space-4); }
+
+  /* UX 2026-11-18 phone #4: every composer control has the platform's touch target (HIG 44 pt, M3 48 dp); the icon
+     keeps its size, its box takes the room. Send keeps its filled circle and gets the room as an invisible hit slop. */
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='c-bar'] > button:not([data-kit='send']),
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='c-bar'] [data-kit='c-chips'] > button,
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='l-bar'] > button:not([data-kit='send']) { min-width: var(--tap-min); min-height: var(--tap-min); }
+  /* the harness pill (its logo, its ▾, Run on another agent too) keeps its shape, centred in the bar's touch height */
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='l-bar'] > [data-kit='runners'] { align-self: center; }
+  /* UX 2026-11-18 phone #7: a menu and a popover read over any page: the material on an opaque base (the thick material's
+     effect where backdrop-filter isn't drawn), its separators included */
+  :root[data-platform='ios'] [data-kit='menu'],
+  :root[data-platform='ios'] [data-kit='popover'] { background: linear-gradient(var(--chrome), var(--chrome)), var(--surface-c1); }
+
+  /* UX 2026-11-18 phone #10: a task row says only what differs: the place goes when it is this computer (a row from
+     another computer or a sandbox still names it), and a finished row's title stays ink (its dot says it's done) */
+  :root[data-platform='ios'] [data-kit='row-run'][data-local] > [data-kit='ir-w'] { display: none; }
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'][data-quiet] [data-kit='list-row-title'] { color: var(--on-surface); }
+
+  /* UX 2026-11-18 phone #13: the Shell's key row is the pane's bottom edge, right over the keyboard (an input accessory,
+     as Termius and Prompt keep it); the shell's name and End shell go to the top, under the sheet's tabs */
+  :root[data-platform='ios'] [data-part~='side.shell.foot'] { order: -1; padding: var(--space-2) var(--inset); }
+  :root[data-platform='ios'] [data-part~='side.shell.screen'] [data-kit='term-keys'] { padding-bottom: var(--space-2); }
+
+  /* UX 2026-11-18 phone #1: the reply bar's options chip (an a bordered capsule button: the mode, its harness's logo, ▾) and its
+     sheet's rows (a grouped inset list: icon, label and its supporting line, the check of the one in use) */
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='c-opts'] {
+    display: inline-flex; align-items: center; gap: var(--space-3); flex: 0 1 auto; min-width: 0; min-height: var(--tap-min);
+    padding: var(--space-0) var(--space-5); border: var(--hairline) solid var(--outline-var); border-radius: var(--radius-pill);
+    background: transparent; color: var(--on-surface); font: var(--type-subhead);
+  }
+  :root[data-platform='ios'] [data-kit='c-opts'] > [data-kit='icon']:last-child { transform: rotate(90deg); }
+  :root[data-platform='ios'] [data-kit='c-opts'] > [data-kit='c-opts-mode'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* too tight for the mode's words: the chip folds to its icons, never cutting a word (QA r9 #3; ReplyOptions.tsx) */
+  :root[data-platform='ios'] [data-kit='c-opts'][data-folded] { flex-shrink: 0; }
+  :root[data-platform='ios'] [data-kit='c-opts'][data-folded] > [data-kit='c-opts-mode'] { display: none; }
+  :root[data-platform='ios'] [data-kit='c-opts'] > [data-kit='icon'] { flex: none; color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='c-opts']:active { background: var(--fill); }
+  /* QA r14 #3: a choice is a table, not radio buttons (iOS has none): an inset grouped list, each option a row (its
+     label and hint at the start, an inset separator under it), the chosen one's ✓ at its end in the tint. The radio
+     stays for keyboards and screen readers, out of sight; a keyboard's focus rings the row. */
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] { gap: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio-legend'] { padding: var(--space-0) var(--inset) var(--space-3); font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio'] {
+    position: relative; display: flex; align-items: center; gap: var(--space-5); min-height: var(--tap-min); padding: var(--row-pad-y) var(--inset);
+    background: linear-gradient(var(--outline), var(--outline)) right bottom / calc(100% - var(--inset)) var(--hairline) no-repeat, var(--surface-grouped-2);
+    font: var(--type-body); color: var(--on-surface); text-align: start;
+  }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio-legend'] + [data-kit='radio'] { border-radius: var(--radius-md) var(--radius-md) var(--space-0) var(--space-0); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio']:last-child { border-radius: var(--space-0) var(--space-0) var(--radius-md) var(--radius-md); background: var(--surface-grouped-2); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio-legend'] + [data-kit='radio']:last-child { border-radius: var(--radius-md); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='radio'] > [data-kit='radio-input'] { position: absolute; opacity: 0; pointer-events: none; }
+  :root[data-platform='ios'] [data-kit='radio']:focus-within { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='ios'] [data-kit='radio'] > [data-kit='radio-text'] { flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='radio'] [data-kit='radio-hint'] { font: var(--type-subhead); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='radio-check'] { flex: none; display: inline-flex; color: var(--primary); visibility: hidden; }
+  :root[data-platform='ios'] [data-kit='radio'][data-checked] > [data-kit='radio-check'] { visibility: visible; }
+  :root[data-platform='ios'] [data-kit='opts-list'] { display: flex; flex-direction: column; gap: var(--space-4); padding-bottom: var(--space-6); }
+  :root[data-platform='ios'] [data-kit='opts-group'] { display: flex; flex-direction: column; }
+  :root[data-platform='ios'] [data-kit='opts-head'] { padding: var(--space-4) var(--inset); font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='opts-row'] {
+    display: grid; grid-template-columns: var(--size-icon-lg) minmax(0, 1fr) auto; align-items: center; gap: var(--space-7);
+    min-height: var(--tap-min); padding: var(--space-4) var(--inset); text-align: start; color: var(--on-surface); font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='opts-row'] > [data-kit='icon'] { color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='opts-row'][aria-checked='true'],
+  :root[data-platform='ios'] [data-kit='opts-row'][data-on] { color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='opts-row']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='opts-text'] { display: flex; flex-direction: column; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='opts-text'] > small { font: var(--type-footnote); color: var(--on-surface-var); }
+
+  /* UX 2026-11-18 phone #3: the task page's status pills under its bar (capsule buttons in a 44 pt target), one
+     line that scrolls sideways; a pill whose pane is open is selected */
+  :root[data-platform='ios'] [data-kit='page-status'] {
+    display: flex; flex-wrap: nowrap; gap: var(--space-4); overflow-x: auto; scrollbar-width: none;
+    padding: var(--space-0) var(--inset) var(--space-4); background: var(--chrome);
+  }
+  :root[data-platform='ios'] [data-kit='page-status']::-webkit-scrollbar { display: none; }
+  :root[data-platform='ios'] [data-kit='page-pill'] {
+    display: inline-flex; flex: none; align-items: center; gap: var(--space-3); min-height: var(--tap-min);
+    padding: var(--space-0) var(--space-6); border: var(--hairline) solid var(--outline-var); border-radius: var(--radius-pill);
+    background-clip: content-box; color: var(--on-surface); font: var(--type-subhead);
+  }
+  :root[data-platform='ios'] [data-kit='page-pill'] > [data-kit='icon'] { color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='page-pill'][aria-pressed='true'] { background-color: var(--fill); color: var(--primary); border-color: transparent; }
+
+  /* UX 2026-11-18 phone #5: New task has one primary action, the bar's Start (the sheet's / full-screen dialog's
+     confirm); the box's round Send and the harness's + (Run on another agent too, in More) give way to it */
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='launcher'] [data-kit='l-bar'] [data-kit='send'],
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='launcher'] [data-kit='l-bar'] [data-kit='vs-btn']:not([data-del]) { display: none; }
+
+  /* UX 2026-11-18 phone #8: an older answer's icons wait behind its ⋯ (the latest answer's stay out); the ⋯ has the
+     platform's touch target, as the icons it opens */
+  /* the answer's menu is the one overlay: the selection's Comment bubble and a block's Comment button wait under it
+     (QA r10 #5; turn-menu.ts marks the page while it is open) */
+  :root[data-platform='ios'] [data-answer-menu] [data-kit='cmt-bubble'],
+  :root[data-platform='ios'] [data-answer-menu] [data-kit='cmt-add']:not([data-on]) { visibility: hidden; }
+  /* an older answer's icons fold into its ⋯, which ends the row (QA r10 #6) */
+  :root[data-platform='ios'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools'] > [data-kit='tb-btn'],
+  :root[data-platform='ios'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools'] > [data-kit='rate'] { display: none; }
+  :root[data-platform='ios'] [data-kit='tb-more'] { display: inline-flex; }
+  :root[data-platform='ios'] [data-kit='tb-more'] button { min-width: var(--tap-min); min-height: var(--tap-min); color: var(--on-surface-var); }
+
+  /* UX 2026-11-18 phone #9: the thinking levels named under the track (each a tap target the width of its stop) */
+  :root[data-platform='ios'] [data-kit='think-labels'] { position: relative; display: block; height: var(--tap-min); margin-top: var(--space-2); }
+  :root[data-platform='ios'] [data-kit='think-label'] {
+    position: absolute; top: 0; left: calc(var(--at) * 100%); transform: translateX(-50%);
+    min-width: var(--tap-min); max-width: calc(100% / 6); height: var(--tap-min); padding: var(--space-0);
+    color: var(--on-surface-var); font: var(--type-label-s, var(--type-footnote)); text-align: center;
+  }
+  :root[data-platform='ios'] [data-kit='think-label']:first-child { transform: none; left: 0; text-align: start; }
+  :root[data-platform='ios'] [data-kit='think-label']:last-child { transform: none; left: auto; right: 0; text-align: end; }
+  :root[data-platform='ios'] [data-kit='think-label'][data-on] { color: var(--primary); font-weight: var(--fw-semibold); }
+
+  /* UX 2026-11-18 phone #14: an empty state that explains itself in a sentence (Thread's Notes) reads as body text,
+     not a 30-word title */
+  :root[data-platform='ios'] [data-kit='empty-state'][data-part~='threads.empty'] [data-kit='empty-state-title'] { font: var(--type-body, var(--type-body-l)); color: var(--on-surface-var); text-wrap: pretty; }
+
+  /* the side panel as the phone's sheet (#3): the sheet is its edge, so the panel's own left rule (the browser's divider
+     beside the task) goes */
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.panel'] { border-left: 0; }
+  /* QA round 6 phone #1: the sheet's body is a block, so the panel's grow gave the Shell no height (an 8 px bar): the
+     panel takes the body's height, as on Android. With the keyboard up (body[data-kb], --k-kb: terminal/accessory.ts) the
+     sheet is large and keeps the keyboard and the key row riding on it out of the terminal's way */
+  :root[data-platform='ios'] [data-kit='sheet'][data-part~='phone.side.sheet'] [data-part~='side.panel'] { height: 100%; }
+  :root[data-platform='ios'] [data-kb] [data-kit='sheet'][data-part~='phone.side.sheet'] {
+    height: calc(100dvh - var(--safe-top) - var(--sheet-top-gap));
+    padding-bottom: calc(var(--k-kb, var(--space-0)) + var(--tap-min) + 2 * var(--space-2));
+  }
+
+  /* UX 2026-11-18 phone #13: with the keyboard up the Shell's key row rides on it (an input accessory, as Termius and
+     Prompt), the keyboard's height from the visual viewport (terminal/accessory.ts) */
+  :root[data-platform='ios'] [data-kit='term-keys'][data-accessory] {
+    position: fixed; left: 0; right: 0; bottom: var(--k-kb, var(--space-0)); z-index: var(--z-toast);
+    padding: var(--space-2) var(--inset); background: var(--surface-c1); border-top: var(--hairline) solid var(--outline);
+  }
+
+  /* UX 2026-11-18 phone #9: the agent picker is a page of its own (pushed from the reply's options): the screen's width
+     from the bottom, Back over it, its harnesses one row of segments, its models a list, the thinking levels named */
+  :root[data-platform='ios'] [data-kit='picker'] {
+    position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: calc(100% - var(--safe-top) - var(--tap-min));
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr);
+    padding-bottom: var(--safe-bottom); border-radius: var(--radius-xl) var(--radius-xl) 0 0; transform: none;
+  }
+  :root[data-platform='ios'] [data-kit='pk-back'] {
+    grid-column: 1 / -1; display: inline-flex; align-items: center; gap: var(--space-2); justify-self: start;
+    min-height: var(--tap-min); padding: var(--space-0) var(--inset); color: var(--primary); font: var(--type-body, var(--type-body-l));
+  }
+  :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-side'] { flex-direction: row; overflow-x: auto; border-right: 0; scrollbar-width: none; }
+  :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-side'] > [data-kit='pk-head'],
+  :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-h'] > [data-kit='pk-text'] > small { display: none; }
+  :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-h'] { width: auto; flex: none; min-height: var(--tap-min); }
+
+  /* UX 2026-11-18 phone #5: New task's setup as a short list under the prompt (HIG's grouped rows, M3 list items): the
+     place, the permissions, the harness by name and Delegate, a row each saying what it is; attach and More (…) on the
+     last line; Start is the bar's (the box's own Send gave way) */
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='launcher'] [data-kit='l-bar'] {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-0); overflow: visible;
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where'],
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='mode-btn'],
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'],
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='team'] {
+    grid-column: 1 / -1; display: flex; justify-content: flex-start; align-items: center; gap: var(--space-5); width: 100%;
+    min-height: var(--tap-min); padding: var(--space-0) var(--space-2); border-bottom: var(--hairline) solid var(--outline); border-radius: 0; background: transparent;
+    font: var(--type-body); color: var(--on-surface);
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where']::after,
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='team']::after {
+    content: attr(aria-label); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where'] > [data-text='control'] { display: none; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'],
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: inline; }
+  /* the harness row is a whole row to tap, as tall as the rows above and below it (QA r6 phone #8) */
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] {
+    flex: 1; justify-content: flex-start; gap: var(--space-5); min-height: var(--tap-min); padding: var(--space-0); border: 0; border-radius: 0;
+    background: transparent; font: var(--type-body); color: var(--on-surface);
+  }
+  /* its words at the list's size, its mark like the rows' icons (no chip behind it): it reads as a row like its siblings (QA r7 phone #8) */
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] [data-text='control'] { font: inherit; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] > [data-kit='rb-logo'] { width: var(--size-icon); height: var(--size-icon); margin-right: var(--space-0); background: transparent; }
+  /* a control's panel as a sheet (Delegate, QA r6 phone #7): the sheet's width, not the popover card's */
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='team-pop'] { width: auto; max-height: none; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='attach'] { grid-column: 1; order: 1; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='grow'] { grid-column: 2; order: 1; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='more'] { grid-column: 3; order: 1; }
+
+  /* QA r6 #5: the side sheet's tabs say their names (Changes · PR · Shell · Preview · Thread): one UISegmentedControl
+     of text segments (its 32 pt track, the hit area grown to 44 pt by the kit's ::after), each as wide as its name with
+     the room left shared out, the browser's pill frame gone. The sheet closes by its grabber and the dimmed task above
+     it, so no ✕ (nor the spacer before it) takes the five segments' room on a 360 pt phone. */
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] { flex: 1 1 auto; min-width: 0; margin-left: var(--space-0); padding: calc((var(--tap-min) - var(--seg-h)) / 2) var(--space-0); border-width: 0; background: none; overflow-x: auto; scrollbar-width: none; }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { flex: none; width: max-content; min-width: 100%; }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] { flex: 1 0 auto; width: auto; min-width: var(--tap-min); padding: var(--space-0) var(--space-2); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] { padding-left: var(--space-0); padding-right: var(--space-0); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] > [data-kit='icon'] { display: none; }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { display: inline; }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-kit='icon-button']:last-child,
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-kit='box'] { display: none; }
+  /* QA r7 #5: when the five don't fit (a count beside Changes, a larger text size) the row scrolls, its open tab kept in
+     view, and the end it can still scroll to fades out (the kit marks it: Tabs.tsx markEnds): no name is cut hard */
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'][data-scroll-end] { -webkit-mask-image: linear-gradient(90deg, var(--on-surface) calc(100% - var(--space-8)), transparent); mask-image: linear-gradient(90deg, var(--on-surface) calc(100% - var(--space-8)), transparent); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'][data-scroll-start] { -webkit-mask-image: linear-gradient(270deg, var(--on-surface) calc(100% - var(--space-8)), transparent); mask-image: linear-gradient(270deg, var(--on-surface) calc(100% - var(--space-8)), transparent); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'][data-scroll-start][data-scroll-end] {
+    -webkit-mask-image: linear-gradient(90deg, transparent, var(--on-surface) var(--space-8), var(--on-surface) calc(100% - var(--space-8)), transparent);
+    mask-image: linear-gradient(90deg, transparent, var(--on-surface) var(--space-8), var(--on-surface) calc(100% - var(--space-8)), transparent);
+  }
+  /* QA r8 #1: the tabs have the whole row, so no name is cut at 320 px: the panel's ⋯ (where the work is: copy it, open
+     it elsewhere) sits at the sheet's top corner, in its grabber's row, grown to 44 pt for it */
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-part='panel.place.more.trigger'] { position: absolute; top: var(--space-0); right: var(--space-2); }
+  :root[data-platform='ios'] [data-kit='sheet'][data-part~='phone.side.sheet'] > [data-kit='sheet-handle'] { margin-bottom: calc(var(--tap-min) - var(--grabber-h) * 2); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] [data-kit='icon-button'],
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] button[aria-haspopup] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  /* audit E #3: a phone's changed file (v1 panel.css .side-panel.stacked): the name alone on its line, whole, and
+     (two rows of one column, nothing wrapping) Stage · Viewed · ⋯ with the counts last on the line under it, from under the name. On one line the actions took 285
+     of 328 px and the name read "ex." under the +1. */
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='cx-head'] { display: grid; grid-template-columns: minmax(0, 1fr); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] { min-height: var(--space-0); padding-left: calc(var(--space-8) + var(--space-2)); margin-left: var(--space-0); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-stage'][data-none] { width: var(--space-0); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-n'] { order: 1; }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-n']:first-child { margin-left: auto; }
+}

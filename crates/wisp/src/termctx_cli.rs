@@ -1,0 +1,392 @@
+//! Terminal context from the CLI (ADR-0023): `wisp "check the error above"` attaches what just happened in this
+//! terminal, gathered here, where the terminal is.
+//!
+//! - **When:** the prompt asks about what's above (`wisp_termctx_core::wants_context`), or `--context`;
+//!   `--no-context` and the `termctx.enabled` setting (off) win. `--show-context` prints the block; `--lines N`.
+//! - **What:** the terminal's own read command (`termctx.sources`, the first that answers; never the user's
+//!   command), the opt-in shell hook's log (`wisp shell-init zsh|bash|fish`) or else the shell's history file, the
+//!   folder, the shell, the git branch and status.
+//! - **Privacy:** everything goes through the share scrub (secret shapes, secret env values) before it leaves.
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::time::Duration;
+
+use serde_json::{Value, json};
+use wisp_termctx_core::{self as core, Cmd, TermContext};
+
+use crate::args::Parsed;
+use crate::client::Client;
+
+/// How many recent commands the context lists.
+const COMMANDS: usize = 10;
+
+/// `wisp shell-init zsh|bash|fish`: the hook to add to the shell's rc file.
+pub fn shell_init(shell: &str) -> Result<String, String> {
+    core::hook_script(shell)
+        .map(str::to_owned)
+        .ok_or_else(|| format!("wisp shell-init zsh, bash or fish (not {shell}). Add `eval \"$(wisp shell-init zsh)\"` to ~/.zshrc"))
+}
+
+/// Whether to gather: the flags first, then the prompt.
+pub fn wanted(p: &Parsed, prompt: &str) -> bool {
+    if std::env::var_os("WISP_NO_CONTEXT").is_some() {
+        return false;
+    }
+    p.flags.context.unwrap_or_else(|| core::wants_context(prompt))
+}
+
+async fn run(argv: &[String], cwd: &str) -> Option<String> {
+    let (prog, rest) = argv.split_first()?;
+    let out = tokio::time::timeout(
+        Duration::from_secs(3),
+        tokio::process::Command::new(prog)
+            .args(rest)
+            .current_dir(cwd)
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .stdin(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned()).filter(|s| !s.trim().is_empty())
+}
+
+/// This process's ancestors' pids, nearest first (the shell, past the npm launcher's node): at most 4. Off Unix there
+/// are none to read, so nothing is awaited there.
+#[cfg_attr(not(unix), allow(clippy::unused_async))]
+async fn ancestors() -> Vec<u32> {
+    #[cfg(unix)]
+    {
+        let mut out = vec![std::os::unix::process::parent_id()];
+        while out.len() < 4 {
+            let Some(&last) = out.last().filter(|p| **p > 1) else { break };
+            let o = tokio::process::Command::new("ps").args(["-o", "ppid=", "-p", &last.to_string()]).output().await;
+            let Some(p) = o.ok().and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u32>().ok()).filter(|p| *p > 1) else {
+                break;
+            };
+            out.push(p);
+        }
+        out
+    }
+    #[cfg(not(unix))]
+    {
+        Vec::new()
+    }
+}
+
+fn this_tty() -> Option<String> {
+    std::env::var("TTY")
+        .ok()
+        .filter(|t| !t.is_empty())
+        .or_else(|| {
+            std::process::Command::new("tty")
+                .stdin(std::process::Stdio::inherit())
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        })
+        .map(|t| t.rsplit('/').next().unwrap_or(&t).to_owned())
+}
+
+fn history_file(shell: &str, home: &Path) -> Option<std::path::PathBuf> {
+    if let Some(h) = std::env::var_os("HISTFILE").filter(|h| !h.is_empty()) {
+        return Some(h.into());
+    }
+    Some(match shell {
+        "zsh" => home.join(".zsh_history"),
+        "bash" => home.join(".bash_history"),
+        "fish" => home.join(".local/share/fish/fish_history"),
+        _ => return None,
+    })
+}
+
+/// The hook's log rewritten to `kept`, through a private file renamed over it, and only while it is the length it was
+/// read at: a line the shell appends meanwhile is never lost (it waits for the next read's prune instead).
+async fn prune(f: &Path, read: usize, kept: String) {
+    let tmp = f.with_extension("jsonl.prune");
+    let mut o = tokio::fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    o.mode(0o600);
+    let Ok(mut out) = o.open(&tmp).await else { return };
+    let wrote = tokio::io::AsyncWriteExt::write_all(&mut out, kept.as_bytes()).await.is_ok();
+    drop(out);
+    let same = tokio::fs::metadata(f).await.is_ok_and(|m| usize::try_from(m.len()).is_ok_and(|n| n == read));
+    if !(wrote && same && tokio::fs::rename(&tmp, f).await.is_ok()) {
+        let _ = tokio::fs::remove_file(&tmp).await;
+    }
+}
+
+/// Everything there is to read here (unscrubbed).
+pub async fn gather(c: Option<&Client>, cwd: &str, lines: usize, wisp_home: &Path) -> TermContext {
+    let env: BTreeMap<String, String> = wisp_termctx_api::ENV_KEYS
+        .iter()
+        .filter_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()).map(|v| ((*k).to_owned(), v)))
+        .collect();
+    let readers: Vec<(String, Vec<String>)> = match c {
+        Some(c) => {
+            c.cmd("termctx.sources", json!({ "env": env, "lines": lines })).await.ok().and_then(|v| v.as_array().cloned()).map(|a| {
+                a.iter()
+                    .filter_map(|r| Some((r.get("id")?.as_str()?.to_owned(), serde_json::from_value(r.get("argv")?.clone()).ok()?)))
+                    .collect()
+            })
+        }
+        None => None,
+    }
+    .unwrap_or_else(|| {
+        let m: std::collections::HashMap<String, String> = env.clone().into_iter().collect();
+        core::SOURCES.iter().filter_map(|s| core::read_argv(s.id, &m, lines).map(|a| (s.id.to_owned(), a))).collect()
+    });
+    let mut ctx = TermContext { cwd: cwd.to_owned(), ..TermContext::default() };
+    for (id, argv) in readers {
+        if let Some(out) = run(&argv, cwd).await {
+            ctx.output = core::tail(&out, lines);
+            ctx.source = id;
+            break;
+        }
+    }
+    let shell = std::env::var("SHELL").ok().and_then(|s| s.rsplit('/').next().map(str::to_owned)).unwrap_or_default();
+    ctx.shell.clone_from(&shell);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(0));
+    let log = this_tty().map(|t| wisp_home.join("term").join(format!("{t}.jsonl")));
+    let from_hook = match log {
+        Some(f) => match tokio::fs::read_to_string(&f).await {
+            Ok(t) => {
+                // the log keeps a week (ADR-0023): its older lines go when it's read
+                if let Some(kept) = core::prune_log(&t, now) {
+                    prune(&f, t.len(), kept).await;
+                }
+                // only this shell's: a closed pane's tty name is reused by the next pane (audit G19)
+                Some(core::of_shell(core::parse_log(&t, now), &ancestors().await)).filter(|v| !v.is_empty())
+            }
+            Err(_) => None,
+        },
+        None => None,
+    };
+    let user_home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+    let (cmds, from): (Vec<Cmd>, &str) = match from_hook {
+        Some(v) => (v, "hook"),
+        None => match history_file(&shell, &user_home) {
+            Some(f) => (
+                tokio::fs::read(&f).await.map(|b| core::history_tail(&shell, &String::from_utf8_lossy(&b), COMMANDS)).unwrap_or_default(),
+                "history",
+            ),
+            None => (Vec::new(), ""),
+        },
+    };
+    let skip = cmds.len().saturating_sub(COMMANDS);
+    ctx.commands = cmds.into_iter().skip(skip).collect();
+    if !ctx.commands.is_empty() {
+        ctx.commands_from = from.into();
+    }
+    ctx.branch = run(&["git".into(), "rev-parse".into(), "--abbrev-ref".into(), "HEAD".into()], cwd)
+        .await
+        .map(|s| s.trim().to_owned())
+        .unwrap_or_default();
+    ctx.git_status = run(&["git".into(), "status".into(), "--short".into()], cwd)
+        .await
+        .map(|s| s.lines().take(50).collect::<Vec<_>>().join("\n"))
+        .unwrap_or_default();
+    ctx
+}
+
+/// The context with secrets taken out: secrets typed inline in a command or printed as `NAME=value`, secret shapes,
+/// and the values of secret-looking env vars.
+pub fn scrub(mut ctx: TermContext, env: Vec<(String, String)>) -> (TermContext, usize) {
+    let s = wisp_share_core::Scrub { env: wisp_share_core::secret_env(env), ..wisp_share_core::Scrub::default() };
+    let mut found = Vec::new();
+    // a secret typed inline (`DB_PASSWORD=… npm run migrate`, `--password …`) first: the shapes don't know it (GS4)
+    let (output, mut inline) = wisp_share_core::mask_inline(&ctx.output, false);
+    ctx.output = wisp_share_core::scrub_text(&output, &s, "output", &mut found);
+    ctx.git_status = wisp_share_core::scrub_text(&ctx.git_status, &s, "git", &mut found);
+    for c in &mut ctx.commands {
+        let (cmd, n) = wisp_share_core::mask_inline(&c.cmd, true);
+        inline += n;
+        c.cmd = wisp_share_core::scrub_text(&cmd, &s, "command", &mut found);
+    }
+    (ctx, found.len() + inline)
+}
+
+/// Adds the context to a task's `runtime.create` args, when it's wanted; says what it attached.
+pub async fn attach(c: &Client, p: &Parsed, args: &mut Value, prompt: &str, cwd: &str, wisp_home: &Path) {
+    if !wanted(p, prompt) {
+        return;
+    }
+    if c.cmd("settings.get", json!({ "key": wisp_termctx_api::ENABLED }))
+        .await
+        .is_ok_and(|v| v == json!(false) || v.get("value") == Some(&json!(false)))
+    {
+        return;
+    }
+    let lines = p.flags.lines.unwrap_or(core::LINES).clamp(1, 5_000);
+    let raw = gather(Some(c), cwd, lines, wisp_home).await;
+    let (ctx, hidden) = scrub(raw, std::env::vars().collect());
+    let block = ctx.block();
+    args["prompt"] = json!(format!("{prompt}\n\n{block}"));
+    args["ext"]["wisp.termctx"] =
+        json!({ "source": ctx.source, "commands": ctx.commands.len(), "lines": ctx.output.lines().count(), "from": ctx.commands_from });
+    let masked = if hidden > 0 { format!(", {hidden} secret{} masked", if hidden == 1 { "" } else { "s" }) } else { String::new() };
+    eprintln!("  ◌ with terminal context: {}{masked}  (--show-context to see it, --no-context to leave it out)", ctx.summary());
+    if p.flags.show_context {
+        eprintln!("{block}");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn secrets_in_scrollback_are_masked_before_they_leave() {
+        let ctx = TermContext {
+            cwd: "/w".into(),
+            output: "$ deploy\nusing key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123\nDB=postgres://u:hunter2hunter2@db/x\nerror: boom"
+                .into(),
+            commands: vec![Cmd {
+                cmd: "export GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789".into(),
+                exit: Some(0),
+                ..Cmd::default()
+            }],
+            source: "tmux".into(),
+            ..TermContext::default()
+        };
+        let (out, n) = scrub(ctx, vec![("DB_PASSWORD".into(), "hunter2hunter2".into()), ("EDITOR".into(), "vim-is-not-a-secret".into())]);
+        assert!(!out.output.contains("sk-ant-api03") && !out.output.contains("hunter2hunter2"), "{}", out.output);
+        assert!(out.output.contains("error: boom"), "the rest stays");
+        assert!(!out.commands[0].cmd.contains("ghp_"), "{}", out.commands[0].cmd);
+        assert!(n >= 3, "{n}");
+        assert!(out.block().contains("<secret>") || out.block().contains("<env:DB_PASSWORD>"));
+    }
+
+    /// Audit G GS4: `DB_PASSWORD=hunter2qa npm run migrate` went into the prompt as typed.
+    #[test]
+    fn a_secret_typed_inline_in_a_command_is_masked() {
+        let ctx = TermContext {
+            cwd: "/w".into(),
+            output: "$ env\nDB_PASSWORD=hunter2qa\nerror: migrate failed".into(),
+            commands: vec![
+                Cmd { cmd: "DB_PASSWORD=hunter2qa npm run migrate".into(), exit: Some(3), ..Cmd::default() },
+                Cmd { cmd: "mysql -u root -phunter2qa shop".into(), exit: Some(1), ..Cmd::default() },
+                Cmd { cmd: "psql --password hunter2qa".into(), exit: Some(2), ..Cmd::default() },
+            ],
+            source: "hook".into(),
+            ..TermContext::default()
+        };
+        let (out, n) = scrub(ctx, Vec::new());
+        assert!(!out.block().contains("hunter2qa"), "{}", out.block());
+        assert_eq!(out.commands[0].cmd, "DB_PASSWORD=<secret> npm run migrate");
+        assert!(out.output.contains("DB_PASSWORD=<secret>") && out.output.contains("error: migrate failed"), "{}", out.output);
+        assert_eq!(n, 4);
+    }
+
+    /// Audit H HS9: npm's, yarn's and openssl's forms went into the prompt as typed; `<<<`, a header's name and a
+    /// closing quote were eaten.
+    #[test]
+    fn package_manager_tokens_and_openssl_passwords_are_masked_audit_h_hs9() {
+        let typed = [
+            "npm config set //registry.npmjs.org/:_authToken npm_Ab3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5z",
+            "yarn config set npmAuthToken s3cr3tvalue123456",
+            "openssl enc -aes-256-cbc -k hunter2qa -in a.txt",
+            "openssl rsa -passin pass:hunter2qa -in k.pem",
+            "gh auth login --with-token <<< ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            r#"curl -H "X-Api-Key: abcd1234efgh5678" https://x.dev"#,
+            r#"echo "//registry.npmjs.org/:_authToken=s3cr3tvalue123456" >> ~/.npmrc"#,
+        ];
+        let ctx = TermContext {
+            cwd: "/w".into(),
+            commands: typed.iter().map(|c| Cmd { cmd: (*c).into(), exit: Some(1), ..Cmd::default() }).collect(),
+            source: "hook".into(),
+            ..TermContext::default()
+        };
+        let (out, _) = scrub(ctx, Vec::new());
+        let block = out.block();
+        for leak in ["npm_Ab3d", "s3cr3tvalue", "hunter2qa", "ghp_", "abcd1234"] {
+            assert!(!block.contains(leak), "{leak} went out: {block}");
+        }
+        let got: Vec<&str> = out.commands.iter().map(|c| c.cmd.as_str()).collect();
+        assert_eq!(
+            got,
+            [
+                "npm config set //registry.npmjs.org/:_authToken <secret>",
+                "yarn config set npmAuthToken <secret>",
+                "openssl enc -aes-256-cbc -k <secret> -in a.txt",
+                "openssl rsa -passin pass:<secret> -in k.pem",
+                "gh auth login --with-token <<< <secret>",
+                r#"curl -H "X-Api-Key: <secret>" https://x.dev"#,
+                r#"echo "//registry.npmjs.org/:_authToken=<secret>" >> ~/.npmrc"#,
+            ]
+        );
+    }
+
+    /// The hook's log keeps a week, and a line the shell appends while it's pruned is never lost (review of row 64).
+    #[tokio::test]
+    async fn the_hook_log_is_pruned_privately_and_never_over_a_line_just_appended() {
+        let dir = std::env::temp_dir().join(format!("wisp-termctx-prune-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("ttys001.jsonl");
+        let old = "{\"cmd\":\"old\",\"at\":1}\n";
+        let new = "{\"cmd\":\"npm test\",\"exit\":1,\"at\":1800000000000}\n";
+        std::fs::write(&f, format!("{old}{new}")).unwrap();
+        // the shell appended after the read: the file is left as it is
+        prune(&f, old.len(), new.to_owned()).await;
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), format!("{old}{new}"));
+        prune(&f, old.len() + new.len(), new.to_owned()).await;
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), new);
+        #[cfg(unix)]
+        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&f).unwrap().permissions()) & 0o777, 0o600);
+        assert!(!f.with_extension("jsonl.prune").exists(), "no leftover");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn shell_init_knows_three_shells() {
+        assert!(shell_init("zsh").unwrap().contains("add-zsh-hook"));
+        assert!(shell_init("fish").unwrap().contains("fish_postexec"));
+        assert!(shell_init("tcsh").unwrap_err().contains("zsh, bash or fish"));
+    }
+
+    /// Audit I IS7: `az login -p`, a Vault token after `vault login` (and Vault's token shapes anywhere) and `htpasswd -b`'s
+    /// password went into the prompt as typed; a token in a URL's userinfo took the host and path with it.
+    #[test]
+    fn az_vault_and_htpasswd_secrets_are_masked_and_a_urls_host_stays_audit_i_is7() {
+        let typed = [
+            "az login -u ada@x.invalid -p hunter2qa",
+            "az login --service-principal -u app --password hunter2qa --tenant t1",
+            "vault login s.AbCdEfGhIjKlMnOpQrStUvWx",
+            "vault login -method=token hvs.CAESIAbCdEfGhIjKlMnOpQrStUvWxYz0123",
+            "htpasswd -b .htpasswd ada hunter2qa",
+            "htpasswd -nbB ada hunter2qa",
+            "git remote set-url origin https://x-access-token:ghs_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@github.invalid/o/r.git",
+        ];
+        let ctx = TermContext {
+            cwd: "/w".into(),
+            output: "Success! token: hvs.CAESIAbCdEfGhIjKlMnOpQrStUvWxYz0123\nlegacy s.AbCdEfGhIjKlMnOpQrStUvWx ok".into(),
+            commands: typed.iter().map(|c| Cmd { cmd: (*c).into(), exit: Some(1), ..Cmd::default() }).collect(),
+            source: "hook".into(),
+            ..TermContext::default()
+        };
+        let (out, _) = scrub(ctx, Vec::new());
+        let block = out.block();
+        for leak in ["hunter2qa", "AbCdEfGhIjKlMnOpQrStUvWx", "CAESIAbCd", "ghs_AbCd"] {
+            assert!(!block.contains(leak), "{leak} went out: {block}");
+        }
+        let got: Vec<&str> = out.commands.iter().map(|c| c.cmd.as_str()).collect();
+        assert_eq!(
+            got,
+            [
+                "az login -u ada@x.invalid -p <secret>",
+                "az login --service-principal -u app --password <secret> --tenant t1",
+                "vault login <secret>",
+                "vault login -method=token <secret>",
+                "htpasswd -b .htpasswd ada <secret>",
+                "htpasswd -nbB ada <secret>",
+                "git remote set-url origin https://x-access-token:<secret>@github.invalid/o/r.git",
+            ]
+        );
+        assert!(out.output.contains("Success! token: <secret>") && out.output.contains("legacy <secret> ok"), "{}", out.output);
+    }
+}

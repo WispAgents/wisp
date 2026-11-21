@@ -47,6 +47,30 @@ android {
     }
 }
 
+// v2's remote bootstrap, the same file desktop wisp sends (plugins/machines/core/bootstrap.sh), with
+// the wisp version to install and where it downloads from filled in as bootstrap.rs does. Bootstrap.java
+// fills the rest per computer.
+def wispRoot = file('../../..')
+def wispVersion = { ->
+    def m = (new File(wispRoot, 'Cargo.toml').text =~ /(?ms)^\[workspace\.package\].*?^version\s*=\s*"([^"]+)"/)
+    m.find() ? m.group(1) : '0.0.0'
+}
+def wispAssets = layout.buildDirectory.dir('generated/wisp-assets').get().asFile
+def wispBootstrap = tasks.register('wispBootstrap') {
+    def from = new File(wispRoot, 'plugins/machines/core/bootstrap.sh')
+    inputs.file(from)
+    inputs.file(new File(wispRoot, 'Cargo.toml'))
+    outputs.dir(wispAssets)
+    doLast {
+        def v = wispVersion()
+        def to = new File(wispAssets, 'wisp/bootstrap.sh')
+        to.parentFile.mkdirs()
+        to.text = from.text.replace('__VERSION__', "'${v}'").replace('__DIST__', "'https://github.com/WispAgents/wisp/releases/download/v${v}'")
+    }
+}
+android.sourceSets.main.assets.srcDir(wispAssets)
+preBuild.dependsOn(wispBootstrap)
+
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
@@ -64,6 +88,10 @@ dependencies {
     implementation "org.bouncycastle:bcprov-jdk18on:1.84" // registered first: Android's own BC lacks Ed25519
     implementation "org.slf4j:slf4j-nop:2.0.17"
     testImplementation "junit:junit:$junitVersion"
+    // Tests only, never in the APK: an in-process sshd for TunnelTest's edge cases (host keys, the
+    // password once, wisp stopped there), and the real org.json for Computers (android.jar's is a stub).
+    testImplementation "org.apache.sshd:sshd-core:2.16.0"
+    testImplementation "org.json:json:20250517"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

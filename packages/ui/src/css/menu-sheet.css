@@ -1,0 +1,52 @@
+/* A menu as a bottom sheet in the browser on a touch-first or narrow screen (owner 2026-11-19; Menu.tsx SHEET_SCREEN,
+   ./controls/phone.tsx ActionSheet in the web look). Loaded with the phone chunk, never with the first page. The rows
+   are the browser menu's (menu.css) at touch height; a submenu's items take the list's place under a back row. A long
+   second line (a declared goal's description) wraps to two lines here rather than being cut at the screen's edge. */
+@layer kit {
+  [data-kit='dialog-positioner'][data-sheet][data-size='menu'] { place-items: end center; padding: 0; }
+  [data-kit='sheet'][data-size='menu'] {
+    width: min(100%, var(--size-dialog-sm)); max-height: 85dvh;
+    padding: var(--space-4) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0; border-bottom: 0; animation: kit-sheet var(--dur-slower) var(--ease);
+  }
+  [data-kit='sheet'][data-size='menu'] > [data-kit='sheet-handle'] {
+    display: block; align-self: center; flex: none; width: var(--size-control-lg); height: var(--space-2); margin-bottom: var(--space-4);
+    border-radius: var(--radius-pill); background: var(--line-2);
+  }
+  [data-kit='sheet'][data-size='menu'] > [data-kit='dialog-head'] { margin: 0 var(--space-5) var(--space-3); }
+  [data-kit='sheet'][data-size='menu'] [data-kit='dialog-title'] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-lg); }
+  [data-kit='sheet'][data-size='menu'] > [data-kit='dialog-body'] { overflow-x: hidden; }
+
+  [data-kit='sheet-menu'][data-look='web'] { display: flex; flex-direction: column; }
+  [data-look='web'] > [data-kit='sheet-item'] {
+    display: flex; align-items: center; gap: var(--space-5); width: 100%; min-height: var(--size-touch);
+    padding: var(--space-3) var(--space-5); border: 0; border-radius: var(--radius-md); background: none;
+    font: inherit; font-size: var(--fs-md); text-align: start; color: var(--ink-2); cursor: pointer; user-select: none; outline: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  [data-look='web'] > [data-kit='sheet-item'] > [data-kit='icon'] { flex: none; color: var(--muted); }
+  [data-look='web'] > [data-kit='sheet-item']:active,
+  [data-look='web'] > [data-kit='sheet-item']:focus-visible { background: var(--bg-2); color: var(--ink); }
+  [data-look='web'] > [data-kit='sheet-item']:focus-visible { box-shadow: inset 0 0 0 var(--size-ring) var(--accent-soft); }
+  [data-look='web'] > [data-kit='sheet-item'][data-danger] { color: var(--bad); }
+  [data-look='web'] > [data-kit='sheet-item'][data-danger] > [data-kit='icon'] { color: var(--bad); }
+  [data-look='web'] > [data-kit='sheet-item']:disabled { opacity: 0.5; cursor: not-allowed; }
+  [data-look='web'] [data-kit='sheet-icon-gap'] { flex: none; width: var(--size-icon-md); height: var(--size-icon-md); }
+  [data-look='web'] [data-kit='sheet-item-text'] { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  [data-look='web'] [data-kit='sheet-item-label'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-look='web'] > [data-kit='sheet-item'] > [data-kit='sheet-item-label'] { flex: 1; }
+  [data-look='web'] [data-kit='sheet-item-hint'] {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+    font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--muted); overflow-wrap: anywhere;
+  }
+  [data-look='web'] > [data-kit='sheet-item'][data-sub] > [data-kit='icon']:last-child { margin-left: auto; color: var(--faint); }
+  [data-look='web'] > [data-kit='sheet-item'][data-back] {
+    margin-bottom: var(--space-2); border-bottom: var(--size-hairline) solid var(--line); border-radius: var(--radius-md) var(--radius-md) 0 0;
+    font-weight: var(--fw-medium); color: var(--ink);
+  }
+  [data-look='web'] > [data-kit='sheet-item'][data-back] > [data-kit='icon'] { color: var(--ink); }
+  [data-look='web'] > [data-kit='sheet-separator'] { height: var(--size-hairline); margin: var(--space-2) var(--space-3); background: var(--line); }
+  [data-look='web'] > [data-kit='sheet-label'] { padding: var(--space-5) var(--space-5) var(--space-2); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--faint); }
+  /* a submenu's filter box (menu-filter.css, owner-list #63) at the sheet's touch height */
+  [data-kit='sheet-menu'] > [data-kit='menu-filter'] { min-height: var(--size-touch); }
+}

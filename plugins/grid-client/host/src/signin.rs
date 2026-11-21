@@ -1,0 +1,235 @@
+//! Signing in to a grid (v1 server/services/cloud.js): the device flow, RFC 8628. wisp asks the grid for a
+//! code, you approve it in your browser (signed in to the grid), and the grid hands this computer a
+//! device token. The token goes to secrets (keyed by grid and account); the cloud box shows up as a machine
+//! (transport `grid`). Signing in again adds the account beside the current one, which stays current; only the first
+//! account, or a sign-in made to put this computer on that grid, becomes current (ADR-0109, superseding ADR-0061 §2).
+//!
+//! Polling follows the grid's interval, plus 5 s for each `slow_down`; a network blip keeps it going until
+//! the code expires; `access_denied` and `expired_token` end it in words.
+use std::sync::Arc;
+use std::time::Duration;
+
+use serde_json::{Value, json};
+use wisp_grid_client_api::{DEFAULT_GRID, SignIn, SignInArgs};
+use wisp_grid_client_core::{grid_url, label_host, next_interval};
+use wisp_kernel::{Result, WireError};
+
+use crate::net;
+use crate::state::{Account, St, key_of, lock, token_key};
+
+/// What this computer calls itself to the grid.
+pub async fn device_name(st: &St) -> String {
+    format!("{} (wisp)", label_of(host_name(st).await.as_deref()))
+}
+
+/// This computer's host name, as the OS says it (`hostname`; v1 `os.hostname()`). `$HOSTNAME` is the shell's own and
+/// never reaches a server started from the app, so every Mac registered as "this computer" (QA r1 #22).
+pub async fn host_name(st: &St) -> Option<String> {
+    let proc = st.ctx.service::<wisp_proc::Proc>().ok()?;
+    let opts = wisp_proc::ExecOpts {
+        timeout: Some(Duration::from_secs(3)),
+        max_output: 4096,
+        scope: Some(st.ctx.scope().clone()),
+        ..wisp_proc::ExecOpts::default()
+    };
+    let r = proc.exec("hostname", &[], opts).await.ok()?;
+    (r.exit.success() && !r.timed_out).then(|| r.stdout_text()).filter(|h| !h.trim().is_empty())
+}
+
+/// The name a computer registers under: its host name without `.local`, else "this computer".
+pub fn label_of(host: Option<&str>) -> String {
+    host.map(str::trim).filter(|h| !h.is_empty()).map_or_else(|| "this computer".to_owned(), |h| h.trim_end_matches(".local").to_owned())
+}
+
+fn now(st: &St) -> i64 {
+    st.ctx.clock().map_or(0, |c| c.now_ms())
+}
+
+pub async fn start(st: &Arc<St>, a: &SignInArgs) -> Result<SignIn> {
+    // no grid named: where this wisp was last signed in to, wisp Cloud only before the first sign-in (QA round 10 #4)
+    let last = st.accounts().default_grid().map(str::to_owned);
+    let grid = grid_url(a.grid.as_deref().or(last.as_deref()).unwrap_or(DEFAULT_GRID))
+        .ok_or_else(|| WireError::invalid("that isn't a grid's address"))?;
+    let (status, b) =
+        net::call(&st.http, "POST", &format!("{grid}/api/device/code"), None, Some(&json!({ "name": device_name(st).await })), &[])
+            .await
+            .map_err(|e| WireError::invalid(format!("Couldn’t reach {}: {}", net::host_of(&grid), e.message)))?;
+    let code = b.get("device_code").and_then(Value::as_str).unwrap_or_default().to_owned();
+    if status >= 400 || code.is_empty() {
+        return Err(WireError::invalid(format!("{} isn’t a wisp Grid (HTTP {status})", net::host_of(&grid))));
+    }
+    let s = |k: &str| b.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
+    let interval = b.get("interval").and_then(Value::as_u64).unwrap_or(5).max(1);
+    let expires_in = b.get("expires_in").and_then(Value::as_i64).unwrap_or(600);
+    let verify = if s("verification_uri_complete").is_empty() { s("verification_uri") } else { s("verification_uri_complete") };
+    let flow = SignIn {
+        id: St::new_flow_id(),
+        grid: grid.clone(),
+        state: "waiting".into(),
+        user_code: s("user_code"),
+        verify_url: verify,
+        expires_at: now(st) + expires_in * 1000,
+        ..SignIn::default()
+    };
+    lock(&st.flows).insert(flow.id.clone(), flow.clone());
+    let (st2, id, add) = (st.clone(), flow.id.clone(), a.add_computer);
+    st.ctx.spawn(async move { poll(st2, id, code, interval, add).await });
+    Ok(flow)
+}
+
+/// How long an ended sign-in's line stays on Settings → Cloud (declined, expired, failed): then it's forgotten, so the
+/// pane opened minutes later doesn't still say "Sign-in was declined in the browser." (audit H). None: it stays (one
+/// under way, or done).
+pub fn forgotten_after(state: &str) -> Option<u64> {
+    matches!(state, "denied" | "expired" | "failed" | "cancelled").then_some(60_000)
+}
+
+fn finish(st: &Arc<St>, id: &str, state: &str, error: &str) {
+    if let Some(f) = lock(&st.flows).get_mut(id) {
+        f.state = state.into();
+        f.error = error.into();
+    }
+    crate::view::publish(st);
+    if let Some(ms) = forgotten_after(state) {
+        let (st2, id, state) = (st.clone(), id.to_owned(), state.to_owned());
+        st.ctx.spawn(async move {
+            if let Ok(c) = st2.ctx.clock() {
+                c.sleep(ms).await;
+            }
+            // still that ended one (a new sign-in is another flow): forgotten, and the pane said again
+            let gone = {
+                let mut flows = lock(&st2.flows);
+                flows.get(&id).is_some_and(|f| f.state == state) && flows.remove(&id).is_some()
+            };
+            if gone {
+                crate::view::publish(&st2);
+            }
+        });
+    }
+}
+
+async fn poll(st: Arc<St>, id: String, code: String, mut interval: u64, add_computer: bool) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(interval)).await;
+        let Some(f) = lock(&st.flows).get(&id).cloned() else { return };
+        if f.state != "waiting" {
+            return;
+        }
+        if now(&st) > f.expires_at {
+            return finish(&st, &id, "expired", "The code expired. Start again.");
+        }
+        let Ok((status, b)) =
+            net::call(&st.http, "POST", &format!("{}/api/device/token", f.grid), None, Some(&json!({ "device_code": code })), &[]).await
+        else {
+            continue;
+        };
+        let e = b.get("error").and_then(Value::as_str).unwrap_or_default();
+        match e {
+            "authorization_pending" | "slow_down" => interval = next_interval(interval, e),
+            "access_denied" => return finish(&st, &id, "denied", "Sign-in was declined in the browser."),
+            "expired_token" => return finish(&st, &id, "expired", "The code expired. Start again."),
+            _ if !e.is_empty() || status >= 400 => {
+                return finish(
+                    &st,
+                    &id,
+                    "failed",
+                    &format!("The grid said {}.", if e.is_empty() { status.to_string() } else { e.to_owned() }),
+                );
+            }
+            _ => {
+                match done(&st, &f, &b, add_computer).await {
+                    Ok((handle, machine)) => {
+                        if let Some(f) = lock(&st.flows).get_mut(&id) {
+                            (f.state, f.handle, f.machine) = ("done".into(), handle, machine);
+                        }
+                        crate::view::publish(&st);
+                    }
+                    Err(err) => finish(&st, &id, "failed", &err.message),
+                }
+                return;
+            }
+        }
+    }
+}
+
+/// Signed in: the token kept under its account, the account added (or renewed), its cloud box added as a machine
+/// (or its token renewed). It becomes current when there's none yet or this computer was to go on it; a second one
+/// is added beside the current one (ADR-0109, which supersedes ADR-0061's "makes it current").
+async fn done(st: &Arc<St>, f: &SignIn, b: &Value, add_computer: bool) -> Result<(String, String)> {
+    let token = b.get("token").and_then(Value::as_str).unwrap_or_default();
+    let handle = b.pointer("/user/handle").and_then(Value::as_str).unwrap_or_default().to_owned();
+    if token.is_empty() || handle.is_empty() || handle.contains('#') {
+        return Err(WireError::invalid("The grid's answer had no token or handle."));
+    }
+    let url = b.pointer("/instance/url").and_then(Value::as_str).map_or_else(
+        || label_host(&f.grid, &handle).map(|h| format!("{}://{h}", f.grid.split("://").next().unwrap_or("https"))).unwrap_or_default(),
+        str::to_owned,
+    );
+    let key = key_of(&f.grid, &handle);
+    let prev = st.accounts().get(&key).map(|a| a.machine.clone()).unwrap_or_default();
+    let machine = crate::peers::cloud_box(st, &prev, &f.grid, &handle, &url, token).await?;
+    let was = st.accounts().current;
+    // a second account is added beside the current one, which keeps this computer on its grid; one added to put this
+    // computer on (Sign in and add it) is the one it goes on
+    let switch = was.is_empty() || add_computer;
+    // the account as it is now (a sign-out or a computer change may have landed while the box was added), then its
+    // token: written last, so a sign-out racing this one can't leave the account without it, nor a failed box a
+    // token no account owns
+    let (grid, who, added, m) = (f.grid.clone(), handle.clone(), now(st), machine.clone());
+    st.change(move |x| {
+        let mut a = x.get(&key_of(&grid, &who)).cloned().unwrap_or_else(|| Account { grid, handle: who, added, ..Account::default() });
+        a.machine = m;
+        if switch { x.add(a) } else { x.add_beside(a) }
+    })
+    .await?;
+    wisp_kernel::services::secrets(&st.ctx)?.set(&token_key(&key), token).await?;
+    if switch && was != key {
+        crate::computer::follow_current(st).await;
+    }
+    if add_computer {
+        crate::calls::warn("this computer on the grid", crate::computer::set(st, true, None).await);
+    }
+    crate::calls::warn("the account's computers", crate::peers::sync_computers(st).await);
+    // reachable now, perhaps: the sign-outs it missed, told without holding up this sign-in's answer
+    let st2 = st.clone();
+    st.ctx.spawn(async move { crate::calls::warn("telling the grid of a sign-out", crate::accounts::tell_pending(&st2).await) });
+    Ok((handle, machine))
+}
+
+pub fn get(st: &St, id: &str) -> Result<SignIn> {
+    lock(&st.flows).get(id).cloned().ok_or_else(|| WireError::not_found("No such sign-in."))
+}
+
+pub fn cancel(st: &St, id: &str) -> Result<SignIn> {
+    let mut flows = lock(&st.flows);
+    let f = flows.get_mut(id).ok_or_else(|| WireError::not_found("No such sign-in."))?;
+    if f.state == "waiting" {
+        f.state = "cancelled".into();
+    }
+    Ok(f.clone())
+}
+
+/// Signed out of the current account (`wisp cloud signout`): `accounts::remove` on it.
+pub async fn sign_out(st: &Arc<St>) -> Result<()> {
+    let key = st.accounts().current;
+    if key.is_empty() {
+        return Ok(());
+    }
+    crate::accounts::remove(st, &key).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::forgotten_after;
+
+    /// Audit H (a smaller note): the Add an account section still said "Sign-in was declined in the browser." when
+    /// opened minutes after a decline. An ended sign-in is forgotten after a minute; one under way or done stays.
+    #[test]
+    fn an_ended_sign_in_is_forgotten_after_a_minute_one_under_way_stays_audit_h() {
+        for ended in ["denied", "expired", "failed", "cancelled"] {
+            assert_eq!(forgotten_after(ended), Some(60_000), "{ended}");
+        }
+        assert_eq!(forgotten_after("waiting"), None);
+        assert_eq!(forgotten_after("done"), None);
+    }
+}

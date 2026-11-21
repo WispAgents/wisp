@@ -1,0 +1,49 @@
+/* The docs look like wisp: its tokens (packages/tokens/tokens/color.json, font.json) on Starlight's variables. */
+:root {
+  --sl-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --sl-font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+/* dark (Starlight's default theme) */
+:root {
+  --sl-color-accent-low: #1c2550;
+  --sl-color-accent: #6d8dff;
+  --sl-color-accent-high: #94adff;
+  --sl-color-white: #ededed;
+  --sl-color-gray-1: #c7c7c7;
+  --sl-color-gray-2: #a3a3a3;
+  --sl-color-gray-3: #858585;
+  --sl-color-gray-4: #333333;
+  --sl-color-gray-5: #262626;
+  --sl-color-gray-6: #171717;
+  --sl-color-black: #111111;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #dfe6fc;
+  --sl-color-accent: #2f5bea;
+  --sl-color-accent-high: #2149cc;
+  --sl-color-white: #171717;
+  --sl-color-gray-1: #3d3d3d;
+  --sl-color-gray-2: #575757;
+  --sl-color-gray-3: #6e6e6e;
+  --sl-color-gray-4: #dcdcda;
+  --sl-color-gray-5: #ebebea;
+  --sl-color-gray-6: #f7f7f6;
+  --sl-color-gray-7: #f9f9f8;
+  --sl-color-black: #ffffff;
+}
+
+/* Shot.astro: the desktop app as the reader's theme is (the other picture never loads: it's lazy and hidden) */
+.wisp-shot { margin: 1rem 0 0; }
+.wisp-shot picture, .wisp-shot img { display: block; width: 100%; height: auto; }
+.wisp-shot img { border: 1px solid var(--sl-color-gray-5); border-radius: 0.6rem; box-shadow: 0 8px 28px -14px rgb(0 0 0 / 0.35); }
+:root[data-theme='light'] .wisp-shot-dark, :root:not([data-theme='light']) .wisp-shot-light { display: none; }
+/* only while Desktop app is the tab shown (the head's script keeps html[data-way]): a phone never fetches them */
+:root[data-way]:not([data-way='desktop']) .wisp-shot { display: none; }
+.wisp-shot figcaption { font-size: var(--sl-text-sm); color: var(--sl-color-gray-3); margin-top: 0.4rem; }
+
+/* how-to tabs: a tab's name stays on one line; on a narrow screen the row scrolls rather than wrap (design/layout.md) */
+starlight-tabs [role='tab'] { white-space: nowrap; }
+starlight-tabs .tablist-wrapper { overflow-x: auto; scrollbar-width: none; }
+@media (max-width: 30rem) { starlight-tabs [role='tab'] { padding-inline: 0.7rem; } }

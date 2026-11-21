@@ -1,0 +1,15 @@
+id: D-0062
+decision: 'Answer every UI action within one frame: optimistic result, immediate navigation, the new thing appearing, or the control''s pending state; roll back with a toast on refusal.'
+reason: Owner 2026-11-08 (ADR-0017).
+scope:
+- packages/ui/**
+- packages/shell/**
+- plugins/*/ui/**
+- apps/web/**
+- mobile/web/**
+category: constraint
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

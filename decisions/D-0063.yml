@@ -1,0 +1,15 @@
+id: D-0063
+decision: Removing the only picked project in New task switches it to No folder.
+reason: Owner 2026-11-15.
+scope:
+- packages/ui/**
+- packages/shell/**
+- plugins/*/ui/**
+- apps/web/**
+- mobile/web/**
+category: convention
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

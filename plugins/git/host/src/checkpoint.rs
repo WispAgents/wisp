@@ -1,0 +1,125 @@
+//! A turn's rollback (v1's per-turn checkpoint): just before a turn runs, the folder as it is is kept
+//! (`snapshot`, or HEAD when nothing is changed) on the turn as `ext["wisp.git"].checkpoint = {to, head}`;
+//! `git.restoreTurn` puts the folder and the branch back there. Nothing of the user's is touched to keep it:
+//! the snapshot is a commit no branch points at, made through a temporary index.
+
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use wisp_git_api::GitService;
+use wisp_kernel::{BoxFuture, Command, Ctx, Setup, WireError};
+use wisp_runtime_api::SessionId;
+use wisp_runtime_api::commands as rt;
+use wisp_runtime_api::model::{Ext, Session};
+use wisp_runtime_api::points::{RUN, RunPart};
+
+use crate::service::{GitServiceImpl, Service};
+
+pub const EXT: &str = "wisp.git";
+
+/// Where a turn's rollback goes: the folder (`to`) and the branch (`head`) as they were.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Checkpoint {
+    pub to: String,
+    pub head: String,
+}
+
+/// The checkpoint a turn keeps, from its ext.
+pub fn of_turn(ext: &Ext) -> Option<Checkpoint> {
+    serde_json::from_value(ext.get(EXT)?.get("checkpoint")?.clone()).ok()
+}
+
+struct Keep {
+    ctx: Ctx,
+    svc: Service,
+}
+
+impl RunPart for Keep {
+    fn id(&self) -> &str {
+        EXT
+    }
+    fn before_turn(&self, session: &Session) -> BoxFuture<'static, Option<(String, Value)>> {
+        let (ctx, svc, cwd) = (self.ctx.clone(), self.svc.clone(), session.cwd.clone());
+        Box::pin(async move {
+            let call = ctx.root_call();
+            let repo = svc.repo(&call, ctx.scope(), &cwd).await.ok()?;
+            let head = repo.rev_parse(&call, "HEAD").await.ok().flatten()?;
+            let to = repo.snapshot(&call).await.ok().flatten().unwrap_or_else(|| head.clone());
+            Some((EXT.to_owned(), json!({ "checkpoint": Checkpoint { to, head } })))
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestoreTurnArgs {
+    /// the task
+    pub id: String,
+    pub turn: String,
+    /// put the folder back as it was just before that restore (its answer's `undo`), not to the turn's checkpoint.
+    /// Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo: Option<Checkpoint>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Restored {
+    pub restored: bool,
+    /// the folder as it was just before this restore: send it back as `undo` to undo it. Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo: Option<Checkpoint>,
+}
+
+/// `git.restoreTurn`: the task's folder back as it was just before `turn` ran.
+#[derive(Debug)]
+pub struct RestoreTurn;
+impl Command for RestoreTurn {
+    const ID: &'static str = "git.restoreTurn";
+    type Args = RestoreTurnArgs;
+    type Out = Restored;
+}
+
+async fn restore(ctx: &Ctx, svc: &Service, a: RestoreTurnArgs) -> Result<Restored, WireError> {
+    let call = ctx.root_call();
+    let task = ctx.run::<rt::Get>(&call, rt::IdArgs { id: SessionId(a.id.clone()) }).await?;
+    let turns = ctx.run::<rt::Turns>(&call, rt::TurnsArgs { id: SessionId(a.id.clone()), before: None, limit: None, masked: None }).await?;
+    let turn = turns.iter().find(|t| t.id.as_str() == a.turn.as_str()).ok_or_else(|| WireError::not_found("No such turn on this task."))?;
+    let cp = match a.undo {
+        Some(back) => back,
+        None => of_turn(&turn.ext)
+            .ok_or_else(|| WireError::invalid("This turn ran before checkpoints were kept: there's nothing to go back to."))?,
+    };
+    // the task's own folder, and only it (the repo resolved from it works in its checkout, a worktree's own)
+    let repo = svc.repo(&call, ctx.scope(), &task.cwd).await?;
+    // the folder as it is now, kept as a commit no branch points at: the restore can be undone
+    let head = repo.rev_parse(&call, "HEAD").await?.unwrap_or_default();
+    let now = repo.snapshot(&call).await?.unwrap_or_else(|| head.clone());
+    repo.restore(&call, &cp.to, &cp.head).await?;
+    if let Err(err) = repo.touch(&call, "restore") {
+        tracing::warn!(error = %err.message, task = %a.id, "git: touch after a restore");
+    }
+    Ok(Restored { restored: true, undo: (!head.is_empty()).then_some(Checkpoint { to: now, head }) })
+}
+
+pub(crate) fn register(s: &mut Setup, svc: &Arc<GitServiceImpl>) {
+    let part: Arc<dyn RunPart> = Arc::new(Keep { ctx: s.ctx(), svc: Service(svc.clone()) });
+    s.contribute(&RUN, part);
+    let sv = Service(svc.clone());
+    s.command::<RestoreTurn, _, _>(move |ctx, _call, a| {
+        let sv = sv.clone();
+        async move { restore(&ctx, &sv, a).await }
+    });
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_turns_checkpoint_is_read_from_its_ext() {
+        let ext: Ext = serde_json::from_value(json!({ "wisp.git": { "checkpoint": { "to": "abc", "head": "def" } }, "other": 1 })).unwrap();
+        assert_eq!(of_turn(&ext).unwrap(), Checkpoint { to: "abc".into(), head: "def".into() });
+        assert!(of_turn(&Ext::new()).is_none(), "a turn from before checkpoints");
+    }
+}

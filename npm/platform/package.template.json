@@ -1,0 +1,15 @@
+{
+  "name": "wisp-agents",
+  "version": "${version}-${os}-${arch}",
+  "description": "The wisp binary for ${os}-${arch} (${triple}). A version of wisp-agents that only holds the binary; wisp-agents installs it for you (as wisp-agents-${os}-${arch}).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WispAgents/wisp.git",
+    "directory": "npm/platform"
+  },
+  "os": ["${os}"],
+  "cpu": ["${arch}"],
+  "files": ["bin"],
+  "preferUnplugged": true
+}

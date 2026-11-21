@@ -1,0 +1,56 @@
+Platform branch (ADR-0065 §5): only the kit and the shell's platform module read the platform's look.
+=== packages/ui/package.json
+{ "name": "@wisp/ui", "exports": { ".": "./src/index.ts" } }
+=== packages/ui/src/index.ts
+export const look = document.documentElement.getAttribute('data-platform');
+export const ios = (p: { kind: string }): boolean => p.kind === 'ios';
+=== packages/ui/src/css/row.css
+:root[data-platform='ios'] [data-part='row'] { min-height: var(--row-h-1); }
+=== packages/tokens/package.json
+{ "name": "@wisp/tokens", "exports": { ".": "./src/index.ts" } }
+=== packages/tokens/src/index.ts
+export const SELECTOR = ":root[data-platform='android']";
+=== packages/shell/package.json
+{ "name": "@wisp/shell", "exports": { ".": "./src/index.ts" } }
+=== packages/shell/src/platform/look.ts
+export function apply(root: Element, kind: string): void {
+  if (kind === 'android' || kind === 'ios') root.setAttribute('data-platform', kind);
+}
+=== packages/shell/src/index.ts
+export const desktop = (platform: { kind: string }): boolean => platform.kind === 'desktop';
+=== packages/shell/src/frame/answer.ts
+export const reveal = (shell: { platform: { kind: string } }): boolean => shell.platform.kind !== 'android';
+=== packages/shell/test/look.test.ts
+export const probe = (root: Element): string | null => root.getAttribute('data-platform');
+=== plugins/list/ui/package.json
+{ "name": "@wisp-plugin/list-ui", "exports": { ".": "./src/index.ts" } }
+=== plugins/list/ui/src/index.ts
+export const swipes = (shell: { platform: { kind: string } }): boolean => 'ios' == shell.platform.kind;
+export const look = (): string | undefined => document.documentElement.dataset.platform;
+export function icon(platform: { kind: string }): string {
+  switch (platform.kind) {
+    case 'browser':
+      return 'web';
+    case 'android':
+      return 'm3';
+    default:
+      return 'none';
+  }
+}
+export const sel = `:root[data-platform="ios"] .x`;
+=== plugins/list/ui/src/more.tsx
+import { Button, usePlatform as look } from '@wisp/ui';
+export const a = (shell: { platform: { kind: string } }): boolean => ['android', 'ios'].includes(shell.platform.kind);
+export function b(shell: { platform: { kind: string } }): boolean {
+  const { kind } = shell.platform;
+  return kind === 'ios';
+}
+export const c = <div data-platform="ios" />;
+export const d = [Button, look];
+export const e = (row: { kind: string }): boolean => row.kind === 'task' && ['open'].includes(row.kind);
+=== plugins/list/ui/src/machine.ts
+export const mac = (load: { os: string }): boolean => load.os === 'ios';
+=== apps/web/package.json
+{ "name": "@wisp/web", "exports": { ".": "./src/main.ts" } }
+=== apps/web/src/phone.css
+html[data-platform=android] body { padding: 0; }

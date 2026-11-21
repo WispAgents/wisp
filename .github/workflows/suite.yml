@@ -1,9 +1,10 @@
 name: suite
 
-# The test suite on a matrix, called by pr.yml (fast), main.yml (every OS) and nightly.yml
-# (every OS and Node, several times over). Adapters, process launching, terminals and the full
-# ask_user loop, against fake CLIs that speak each harness's real output format. No network,
-# no accounts, and no install step: wisp has no runtime dependencies.
+# The v2 suite on a matrix, called by pr.yml (Linux, Node 22 + 24), main.yml (every OS) and
+# nightly.yml (every OS, Node latest too, three times over). Structure rules, types, the tools' own
+# tests, the Rust workspace through cargo (once), then every other package's checks, each once (ADR-0001,
+# ADR-0069, ADR-0072: tools/ci-verify.ts). No network beyond the installs, no accounts: tests use fakes. Each job
+# uploads the JSON result (cargo test's failing crates included) for gate G14 (tools/g14.ts).
 on:
   workflow_call:
     inputs:
@@ -14,19 +15,23 @@ on:
       node:
         description: JSON list of Node versions
         type: string
-        default: '["22"]'
+        default: '["22", "24"]'
       repeat:
-        description: Runs of the whole suite per job; more than one surfaces flaky tests
+        description: Runs of the test suites per job (cargo test --workspace and the monoflow pass); more than one surfaces flaky tests
         type: number
         default: 1
+      artifact:
+        description: Prefix of the uploaded verify-all artifacts (unique per caller in one workflow run)
+        type: string
+        default: verify-all
       timeout:
-        description: Minutes a job may take; a repeat needs a run's worth each (~11 min on Windows and macOS)
+        description: Minutes a job may take; one run is ~30 min cold (setup and clippy ~7, cargo test ~11-25, the other packages ~3-8, ADR-0072), a repeat adds its tests' worth
         type: number
-        default: 30
+        default: 60
 
 jobs:
-  test:
-    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+  suite:
+    name: suite (${{ matrix.os }}, node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ inputs.timeout }}
     strategy:
@@ -39,15 +44,148 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      # Every run, even after a failing one, so a nightly says how flaky a test is (2 of 3).
-      - name: npm test (${{ inputs.repeat }}×)
+          cache: npm
+
+      # monoflow: built once per OS and pin (the pin lives in tools/setup-monoflow.ts, so editing it
+      # busts the cache), never `monoflow init` (no hooks, no git shim: plan §9.4.3).
+      - id: monoflow-cache
+        uses: actions/cache@v4
+        with:
+          path: .agents/bin
+          key: monoflow-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/setup-monoflow.ts') }}
+      - if: steps.monoflow-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - run: node tools/setup-monoflow.ts --build
+
+      # The Rust workspace (ADR-0013): rustfmt (rustfmt.toml), clippy pedantic with -D warnings, every
+      # crate's tests, and cargo deny (licences, advisories, bans, sources: deny.toml). Builds share one cached target dir.
+      # the version pinned in rust-toolchain.toml (bump both together)
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - id: install
+        run: npm ci --no-audit --no-fund
+      - run: npm run check
+      - name: typecheck
+        # its output is the verify step's typecheck of every npm package whose own tsc -p it already covers (ADR-0072)
         shell: bash
+        run: npm run typecheck 2>&1 | tee "$RUNNER_TEMP/typecheck.log"
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      # Each spike is its own Cargo workspace over the workspace's crates, so a dependency added to one of those crates
+      # leaves the spike's Cargo.lock stale while the workspace's lock is fine; `--locked` then refuses the spike, and
+      # the server budgets gate measured nothing for hours (perf audit 2026-11-18 #2). Fails at once, on every runner,
+      # naming the spike and the fix.
+      - name: spike locks are current
+        shell: bash
+        run: |
+          stale=0
+          for lock in spikes/*/Cargo.lock; do
+            dir=$(dirname "$lock")
+            if ! cargo metadata --locked --format-version 1 --manifest-path "$dir/Cargo.toml" > /dev/null; then
+              echo "::error file=$lock::$lock is stale: run cargo metadata --format-version 1 --manifest-path $dir/Cargo.toml > /dev/null and commit the lock"
+              stale=1
+            fi
+          done
+          exit $stale
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: cargo test
+        # every failing test in one run, not just the first failing binary's; its log names the failing crates for the
+        # verify step's result (G14). The workspace's tests run here only: the monoflow pass below leaves its crates out.
+        shell: bash
+        run: cargo test --workspace --locked --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/cargo-test-1.log"
+      # a container action: Linux runners only (licences and advisories don't vary by OS)
+      - name: cargo deny
+        if: runner.os == 'Linux'
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+      - name: tools tests
+        run: node --test --test-reporter=dot "tools/**/*.test.ts"
+
+      # The Python SDK (sdk/python) is a monoflow package whose tests run under pytest: a pinned one, on a
+      # setup-python interpreter (the runner's system python is externally managed, PEP 668).
+      # (after a failing Rust step too: the verify step below still runs sdk/python's tests)
+      - uses: actions/setup-python@v5
+        if: (success() || failure()) && steps.install.outcome == 'success'
+        with:
+          python-version: '3.12'
+      - name: pytest for sdk/python
+        if: (success() || failure()) && steps.install.outcome == 'success'
+        run: python -m pip install --disable-pip-version-check pytest==8.3.5
+
+      # Every package monoflow knows but the Cargo workspace's members, which the steps above check once (verify --all
+      # re-ran their check, clippy and tests crate by crate and took macOS past its limit; ADR-0069). Each check once
+      # (ADR-0072): the typecheck step's programs stand for each npm package's own tsc -p they cover, every plain
+      # vitest package's tests run in one vitest process, the rest (sdk/python, the spikes, node --test) through monoflow. Runs after a failing Rust step too, so a red job still says which packages fail, and the
+      # result gets the cargo test step's failing crates (G14). Every run, even after a failing one, so a nightly says
+      # how flaky a package is (2 of 3); a repeat runs cargo test --workspace again too. The spikes' own workspaces build
+      # into the job's target dir and reuse what the workspace built.
+      - name: monoflow verify, every other package (${{ inputs.repeat }}×)
+        if: (success() || failure()) && steps.install.outcome == 'success'
+        shell: bash
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
           failed=0
           for i in $(seq 1 ${{ inputs.repeat }}); do
             echo "::group::run $i of ${{ inputs.repeat }}"
-            npm test || { failed=$((failed + 1)); echo "::error::run $i of ${{ inputs.repeat }} failed"; }
+            if [ "$i" -gt 1 ]; then
+              cargo test --workspace --locked --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/cargo-test-$i.log" || { failed=$((failed + 1)); echo "::error::cargo test --workspace: run $i of ${{ inputs.repeat }} failed"; }
+            fi
+            node tools/ci-verify.ts --no-cache --out="verify-all-$i.json" --cargo-log="$RUNNER_TEMP/cargo-test-$i.log" --typecheck-log="$RUNNER_TEMP/typecheck.log" || { failed=$((failed + 1)); echo "::error::monoflow verify: run $i of ${{ inputs.repeat }} failed"; }
+            node tools/monoflow-report.ts "verify-all-$i.json" --title="verify, run $i (${{ matrix.os }}, node ${{ matrix.node }})"
             echo "::endgroup::"
           done
+          cp verify-all-1.json verify-all.json
           [ "$failed" = 0 ]
-      - run: npm run prepublishOnly
+
+      # ADR-0011, ADR-0080, ADR-0082: the server's budgets on a real `wisp serve` with 5 000 tasks (cold start ≤ 150 ms, idle
+      # RSS ≤ 120 MB, the task list ≤ 5 ms, patch p99 ≤ 150 ms with 10 tasks streaming to 4 clients, append ≥ 20k events/s,
+      # write amplification ≤ 15×: tools/budgets.ts SERVER_BUDGETS), `wisp` and the fake agent the running tasks stream
+      # through built in the `budgets` profile (release, thin
+      # LTO: fat LTO's link would add minutes) into the job's target dir, the spike reusing the dependencies it shares with `wisp`. A miss fails
+      # the job and the table goes to the job summary. The timed budgets are medians of rounds bracketed by a calibration of
+      # the runner (ADR-0089): a run too noisy to judge fails too (exit 3, its own annotation), never passes. Once per run:
+      # Linux, the first Node of the matrix.
+      - name: server budgets
+        if: (success() || failure()) && steps.install.outcome == 'success' && runner.os == 'Linux' && matrix.node == fromJSON(inputs.node)[0]
+        shell: bash
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: |
+          cargo build --locked --profile budgets -p wisp -p wisp-testkit
+          cargo run --locked --profile budgets --manifest-path spikes/server-budgets/Cargo.toml
+
+      # ADR-0011, ADR-0105: the web bundle's budgets on the production build: each look's first screen (desktop and
+      # phone, measured in the runner's Chrome: tools/first-screen.ts) at its ratchet toward 120 / 30 KB br
+      # (tools/budgets.ts FIRST_SCREEN_BUDGETS), index.html's own files at 120 / 30. A miss fails the job, and the
+      # numbers go to the job summary. Runs even after an earlier
+      # step failed, so every PR shows where the bundle stands. Once per run: Linux, the first Node of the matrix (the
+      # bundle doesn't vary by OS or Node).
+      - name: web build
+        id: web-build
+        if: (success() || failure()) && steps.install.outcome == 'success' && runner.os == 'Linux' && matrix.node == fromJSON(inputs.node)[0]
+        run: npm run build --workspace @wisp/web
+      - name: bundle budgets
+        if: (success() || failure()) && steps.web-build.outcome == 'success'
+        run: npm run budgets
+
+      # The published bundle still builds (v1 ran prepublishOnly here), once tools/bundle.ts exists.
+      - if: hashFiles('tools/bundle.ts') != ''
+        run: npm run build
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}-${{ matrix.os }}-node${{ matrix.node }}
+          path: verify-all*.json
+          if-no-files-found: ignore
+          retention-days: 90

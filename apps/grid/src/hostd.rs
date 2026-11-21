@@ -1,0 +1,336 @@
+//! hostd (v1 grid/hostd.js): one `wisp serve` per user, in box mode (`WISP_BOX=1`: the `box` set, `BoxPlugins`)
+//! and trusted-proxy mode (a random secret per start that only the edge sends). Two drivers:
+//!
+//! - **process** (`boxd: None`): a process on this machine with its own `WISP_HOME` and `HOME`. For development
+//!   and one trusted team: the users share an OS user, so it is not isolation between them.
+//! - **container** (`boxd: Some(socket)`): boxd (`apps/grid/boxd`, root) runs it as a container (gVisor, no
+//!   capabilities, its own network, its home in boxd's folder); the grid asks over boxd's socket.
+//!
+//! - **Use:** `ensure` (unless `wake`) and a `begin(…, true)` guard count as use; a passive request never
+//!   gets here (the edge answers it asleep), so watching a box never wakes or keeps it up.
+//! - **Idle:** every `checkMs`, a running box with no request open, nothing going on (its `/api/status`:
+//!   no turn, side question, terminal or channel at work) and no use for `idleMs` is stopped. Its home stays.
+//! - **One start:** several callers waiting on a stopped box share one start.
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
+
+use tokio::sync::broadcast;
+
+use crate::boxhost::{BoxChange, BoxHost, BoxState, BoxUserWire, Busy, Running};
+use crate::clock::SharedClock;
+use crate::error::{Result, bad};
+use crate::rows::BoxUser;
+
+#[path = "hostd_spawn.rs"]
+mod spawn;
+#[path = "hostd_wake.rs"]
+mod wake;
+use spawn::BoxProc;
+
+#[derive(Clone)]
+pub struct ProcessOptions {
+    /// the wisp binary
+    pub bin: PathBuf,
+    /// homes go under `<data>/users/<id>/`
+    pub data: PathBuf,
+    pub idle_ms: i64,
+    pub check_ms: i64,
+    pub start_ms: i64,
+    pub max_running: usize,
+    /// more environment for every box (the operator's choice: a harness's path, a test's fakes)
+    pub env: Vec<(String, String)>,
+    /// `<handle>` → the box's public URL (`WISP_PUBLIC_URL`)
+    pub url_of: Arc<dyn Fn(&str) -> String + Send + Sync>,
+    /// the container driver (boxd's socket and the limits); None runs boxes as processes here
+    pub boxd: Option<crate::boxd::Driver>,
+    /// pages in boxes show at `p<port>--<handle>` (config `hostd.previews`): each box is told its template
+    pub previews: bool,
+}
+
+/// `https://ada.grid.example` → `https://p{port}--ada.grid.example`: a box's preview addresses (`{port}` literal).
+pub fn preview_template(public: &str) -> String {
+    match public.split_once("://") {
+        Some((scheme, rest)) => format!("{scheme}://p{{port}}--{}", rest.trim_end_matches('/')),
+        None => String::new(),
+    }
+}
+
+impl std::fmt::Debug for ProcessOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProcessOptions").field("bin", &self.bin).field("data", &self.data).finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Default)]
+struct Inst {
+    /// who it runs for (set on a start or a restore): what a scheduled wake starts, and what change events name
+    user: Option<BoxUser>,
+    state: BoxState,
+    port: Option<u16>,
+    secret: String,
+    child: Option<BoxProc>,
+    last_touch: i64,
+    inflight: usize,
+    started_at: Option<i64>,
+    stopped_at: Option<i64>,
+    /// its next scheduled task, as its `/api/status` last said (v1 hostd.js `nextWakeAt`)
+    next_wake_at: Option<i64>,
+    /// its own last activity, from `/api/status`, or the last use the edge saw
+    last_active_at: Option<i64>,
+    /// the timer that wakes it for `next_wake_at` while it sleeps
+    wake: Option<tokio::task::AbortHandle>,
+}
+
+#[derive(Debug)]
+pub struct ProcessHost {
+    o: ProcessOptions,
+    clock: SharedClock,
+    inst: Arc<Mutex<HashMap<String, Inst>>>,
+    starts: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    tx: broadcast::Sender<BoxChange>,
+    peak: Mutex<(usize, usize)>,
+    http: reqwest::Client,
+    env_for: EnvSlot,
+    /// itself, for the wake timers it starts
+    me: std::sync::Weak<Self>,
+    /// the grid is stopping: nothing starts, and a start under way gives up
+    closed: std::sync::atomic::AtomicBool,
+}
+
+/// More environment for one box (a sandbox's owner's env and sign-ins).
+pub type EnvFor = Arc<dyn Fn(&BoxUser) -> Vec<(String, String)> + Send + Sync>;
+
+#[derive(Default)]
+struct EnvSlot(Mutex<Option<EnvFor>>);
+
+impl std::fmt::Debug for EnvSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if lock(&self.0).is_some() { "EnvSlot(set)" } else { "EnvSlot(none)" })
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// A port nobody listens on, now. Only for boxd's containers, which bind it through boxd: a box this host starts as a
+/// process binds a port of its own (`WISP_PORT=0`) and says which in its `server.json` (`hostd_spawn::bound_port`). A
+/// port read here and closed is anyone's until the box binds it: on macOS CI another bind took it in that window and
+/// the box stopped as it started, exit 101 (`tests/box_lifetimes.rs`).
+fn free_port() -> Result<u16> {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| bad(format!("no free port: {e}"), 503))?;
+    Ok(l.local_addr().map_err(|e| bad(e.to_string(), 503))?.port())
+}
+
+impl ProcessHost {
+    pub fn new(o: ProcessOptions, clock: SharedClock) -> Arc<Self> {
+        let (tx, _) = broadcast::channel(64);
+        let http = reqwest::Client::builder().no_proxy().connect_timeout(Duration::from_secs(2)).build().unwrap_or_default();
+        let h = Arc::new_cyclic(|me| Self {
+            o,
+            clock,
+            inst: Arc::new(Mutex::new(HashMap::new())),
+            starts: Mutex::new(HashMap::new()),
+            tx,
+            peak: Mutex::new((0, 0)),
+            http,
+            env_for: EnvSlot::default(),
+            me: me.clone(),
+            closed: std::sync::atomic::AtomicBool::new(false),
+        });
+        let me = Arc::downgrade(&h);
+        let every = Duration::from_millis(u64::try_from(h.o.check_ms.max(200)).unwrap_or(5000));
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(every).await;
+                let Some(h) = me.upgrade() else { return };
+                h.tick().await;
+            }
+        });
+        h
+    }
+
+    /// Sets the hook that gives a box more environment (the grid's sandboxes).
+    pub fn set_env_for(&self, f: EnvFor) {
+        *lock(&self.env_for.0) = Some(f);
+    }
+
+    /// Stop every box (the grid is stopping).
+    pub async fn close_all(&self) {
+        BoxHost::close(self).await;
+    }
+
+    /// The secret the edge sends this box as `x-wisp-proxy-secret` (none while it's stopped).
+    pub fn secret(&self, user_id: &str) -> Option<String> {
+        lock(&self.inst).get(user_id).filter(|i| i.state == BoxState::Running).map(|i| i.secret.clone())
+    }
+
+    fn change(&self, user: &BoxUser, state: BoxState, event: &str) {
+        let (who, started_at, stopped_at, next, last) = lock(&self.inst).get(&user.id).map_or_else(
+            || (user.clone(), None, None, None, None),
+            |i| {
+                let last = i.last_active_at.max(Some(i.last_touch)).filter(|t| *t > 0);
+                (i.user.clone().unwrap_or_else(|| user.clone()), i.started_at, i.stopped_at, i.next_wake_at, last)
+            },
+        );
+        let _ = self.tx.send(BoxChange {
+            user: BoxUserWire::from(&who),
+            state,
+            event: event.into(),
+            started_at,
+            stopped_at,
+            next_wake_at: next,
+            last_active_at: last,
+            error: String::new(),
+        });
+    }
+
+    async fn start(&self, user: &BoxUser) -> Result<Running> {
+        if self.is_closed() {
+            return Err(bad("The grid is shutting down.", 503));
+        }
+        let running = lock(&self.inst).values().filter(|i| i.state == BoxState::Running).count();
+        if running >= self.o.max_running {
+            let mut p = lock(&self.peak);
+            p.1 += 1;
+            return Err(bad("This grid is full right now. Try again in a few minutes.", 503));
+        }
+        // a process box binds its own port and says which (`WISP_PORT=0`): none is read here and handed over
+        let port = if self.o.boxd.is_some() { free_port()? } else { 0 };
+        let secret = crate::accounts::token("");
+        {
+            let mut m = lock(&self.inst);
+            let i = m.entry(user.id.clone()).or_default();
+            i.state = BoxState::Starting;
+            i.user = Some(user.clone());
+            // awake now: its schedule is its own again until it next sleeps (v1)
+            i.next_wake_at = None;
+            if let Some(w) = i.wake.take() {
+                w.abort();
+            }
+        }
+        self.change(user, BoxState::Starting, "starting");
+        let child = match self.spawn(user, port, &secret).await {
+            Ok(c) => c,
+            Err(e) => {
+                lock(&self.inst).entry(user.id.clone()).or_default().state = BoxState::Stopped;
+                self.change(user, BoxState::Stopped, "failed");
+                return Err(e);
+            }
+        };
+        let (child, port) = self.healthy(user, port, child).await?;
+        let now = self.clock.now_ms();
+        {
+            let mut m = lock(&self.inst);
+            let i = m.entry(user.id.clone()).or_default();
+            (i.state, i.port, i.secret, i.child, i.started_at, i.last_touch) =
+                (BoxState::Running, Some(port), secret, Some(child), Some(now), now);
+            let up = m.values().filter(|i| i.state == BoxState::Running).count();
+            let mut p = lock(&self.peak);
+            p.0 = p.0.max(up);
+        }
+        self.change(user, BoxState::Running, "woke");
+        Ok(Running { port })
+    }
+}
+
+#[async_trait::async_trait]
+impl BoxHost for ProcessHost {
+    fn state(&self, user_id: &str) -> BoxState {
+        lock(&self.inst).get(user_id).map_or(BoxState::Stopped, |i| i.state)
+    }
+    fn port(&self, user_id: &str) -> Option<u16> {
+        lock(&self.inst).get(user_id).filter(|i| i.state == BoxState::Running).and_then(|i| i.port)
+    }
+    fn touch(&self, user_id: &str) {
+        let now = self.clock.now_ms();
+        if let Some(i) = lock(&self.inst).get_mut(user_id) {
+            i.last_touch = i.last_touch.max(now);
+        }
+    }
+    fn begin(&self, user_id: &str, touch: bool) -> Busy {
+        match lock(&self.inst).get_mut(user_id) {
+            Some(i) => i.inflight += 1,
+            None => return Busy::none(),
+        }
+        // the guard finds the box again by id when the request ends
+        let (inst, id, clock) = (self.inst.clone(), user_id.to_owned(), self.clock.clone());
+        Busy::new(move || {
+            if let Some(i) = lock(&inst).get_mut(&id) {
+                i.inflight = i.inflight.saturating_sub(1);
+                if touch {
+                    i.last_touch = i.last_touch.max(clock.now_ms());
+                }
+            }
+        })
+    }
+    async fn ensure(&self, user: &BoxUser, wake: bool) -> Result<Running> {
+        let gate = lock(&self.starts).entry(user.id.clone()).or_default().clone();
+        let _one = gate.lock().await;
+        if let Some(port) = self.port(&user.id) {
+            if !wake {
+                self.touch(&user.id);
+            }
+            return Ok(Running { port });
+        }
+        self.start(user).await
+    }
+    async fn stop(&self, user_id: &str, reason: &str) -> Result<bool> {
+        let child = {
+            let mut m = lock(&self.inst);
+            let Some(i) = m.get_mut(user_id).filter(|i| i.state == BoxState::Running) else { return Ok(false) };
+            i.state = BoxState::Stopping;
+            i.child.take()
+        };
+        if let Some(c) = child {
+            c.stop().await;
+        }
+        let now = self.clock.now_ms();
+        {
+            let mut m = lock(&self.inst);
+            if let Some(i) = m.get_mut(user_id) {
+                (i.state, i.port, i.stopped_at) = (BoxState::Stopped, None, Some(now));
+                i.secret.clear();
+            }
+        }
+        let user = BoxUser { id: user_id.to_owned(), handle: String::new(), sandbox: None, owner: None };
+        self.change(&user, BoxState::Stopped, reason);
+        // asleep with a task scheduled: it wakes for it (v1 hostd.js `#scheduleWake`)
+        self.schedule_wake(user_id);
+        Ok(true)
+    }
+    async fn remove(&self, user: &BoxUser) -> Result<()> {
+        self.stop(&user.id, "deleted").await?;
+        match &self.o.boxd {
+            // the container, then its folder (home, logins and all): boxd's to delete
+            Some(d) => {
+                crate::boxd::call(&d.socket, &serde_json::json!({ "op": "remove", "id": user.id })).await?;
+            }
+            None => {
+                let _ = tokio::fs::remove_dir_all(self.o.data.join("users").join(&user.id)).await;
+            }
+        }
+        lock(&self.inst).remove(&user.id);
+        Ok(())
+    }
+    fn restore(&self, user: &BoxUser, next_wake_at: Option<i64>) {
+        self.restore_wake(user, next_wake_at);
+    }
+    fn capacity(&self) -> usize {
+        self.o.max_running
+    }
+    fn take_peak(&self) -> (usize, usize) {
+        std::mem::take(&mut *lock(&self.peak))
+    }
+    fn changes(&self) -> broadcast::Receiver<BoxChange> {
+        self.tx.subscribe()
+    }
+    fn previews(&self) -> bool {
+        self.o.previews
+    }
+    async fn close(&self) {
+        self.close_boxes().await;
+    }
+}

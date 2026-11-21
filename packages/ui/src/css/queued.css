@@ -1,0 +1,226 @@
+/* The follow-ups queued for after the run, inside the reply box over its text (v1 composer.css `.c-queued`, `.cq`,
+   `.cq-tag`, `.cq-text`, `.cq-acts`, `.cq-now`, `.cq-grip`, `.att-x`, `.cq.editing`, `.cq-edit`, `.cq-keys`). Loads with
+   QueuedList.tsx. */
+@layer kit {
+  [data-kit='cq-list'] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  [data-kit='cq-row'] {
+    --cq-bg: transparent;
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-4);
+    min-width: 0;
+    padding: var(--space-3) 30px var(--space-3) var(--space-5);
+    border-radius: var(--radius-md);
+    border: var(--size-hairline) dashed var(--line-2);
+    font-size: var(--fs-sm);
+    transition: background 0.12s;
+    animation: kit-cq-pop 0.35s var(--ease);
+  }
+  @keyframes kit-cq-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.9) translateY(6px);
+    }
+  }
+  [data-kit='cq-row']:hover:not([data-editing]):not([data-dragged]),
+  [data-kit='cq-row']:focus-within:not([data-editing]):not([data-dragged]) {
+    --cq-bg: var(--bg-2);
+    background: var(--cq-bg);
+  }
+  [data-kit='cq-tag'] {
+    flex: none;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--accent-ink);
+  }
+  [data-kit='cq-row'][data-held] [data-kit='cq-tag'] {
+    color: var(--ink-2);
+  }
+  [data-kit='cq-text'] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+  }
+  /* over the end of the text, on the row's hover fill, so nothing in the row moves */
+  [data-kit='cq-acts'] {
+    position: absolute;
+    right: 28px;
+    top: 50%;
+    translate: 0 -50%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding-left: var(--space-8);
+    background: linear-gradient(90deg, transparent, var(--cq-bg) 20px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s;
+  }
+  [data-kit='cq-row']:hover [data-kit='cq-acts'],
+  [data-kit='cq-row']:focus-within [data-kit='cq-acts'] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  [data-kit='cq-list'][data-sorting] [data-kit='cq-acts'] {
+    opacity: 0;
+  }
+  [data-kit='cq-act'] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    height: 20px;
+    min-width: 20px;
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+  }
+  [data-kit='cq-act']:hover {
+    background: var(--line);
+    color: var(--ink);
+  }
+  [data-kit='cq-act'] > [data-kit='icon'] {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  [data-kit='cq-act'][data-text] {
+    padding: 0 var(--space-3);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+  [data-kit='cq-act'][data-text]:hover {
+    color: var(--ink);
+  }
+  [data-kit='cq-x'] {
+    position: absolute;
+    right: var(--space-3);
+    top: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+  }
+  [data-kit='cq-x']:hover {
+    background: var(--bg-2);
+    color: var(--bad);
+  }
+  [data-kit='cq-x'] > [data-kit='icon'] {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  /* two or more: a grip in the left padding, there whether or not you hover, so nothing moves */
+  [data-kit='cq-row'][data-sortable] {
+    padding-left: var(--space-8);
+  }
+  [data-kit='cq-grip'] {
+    position: absolute;
+    left: var(--space-2);
+    top: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 20px;
+    color: var(--faint);
+    cursor: grab;
+    touch-action: none;
+  }
+  [data-kit='cq-grip'] > [data-kit='icon'] {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  [data-kit='cq-row']:hover [data-kit='cq-grip'] {
+    color: var(--muted);
+  }
+  [data-kit='cq-list'][data-sorting],
+  [data-kit='cq-list'][data-sorting] * {
+    cursor: grabbing;
+    user-select: none;
+  }
+  [data-kit='cq-list'][data-sorting] [data-kit='cq-row']:not([data-dragged]) {
+    transition: translate 0.15s var(--ease);
+  }
+  [data-kit='cq-row'][data-dragged] {
+    z-index: 1;
+    background: var(--surface);
+    border-style: solid;
+    box-shadow: var(--shadow-1);
+  }
+  /* editing in place: the text becomes a box, the row grows with it */
+  [data-kit='cq-row'][data-editing] {
+    align-items: flex-start;
+  }
+  [data-kit='cq-row'][data-editing] [data-kit='cq-x'] {
+    top: var(--space-4);
+    translate: none;
+  }
+  [data-kit='cq-editbox'] {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  /* v1 .cq-edit: a plain box, no field ring and no hover change (the kit field's own rules are beaten here) */
+  [data-kit='cq-editbox'] > [data-kit='textarea'][data-part] {
+    width: 100%;
+    height: auto;
+    min-height: 24px;
+    margin: -3px 0 0;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-sm);
+    border: var(--size-hairline) solid var(--line-2);
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--fs-sm);
+    line-height: 1.45;
+    resize: none;
+    transition: none;
+  }
+  [data-kit='cq-editbox'] > [data-kit='textarea'][data-part]:hover {
+    border-color: var(--line-2);
+  }
+  [data-kit='cq-editbox'] > [data-kit='textarea'][data-part]:focus {
+    outline: none;
+    box-shadow: none;
+    background: var(--surface);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2));
+  }
+  [data-kit='cq-keys'] {
+    font-size: var(--fs-xs);
+    color: var(--faint);
+  }
+  @media (hover: none) {
+    [data-kit='cq-acts'],
+    [data-kit='cq-keys'] {
+      display: none;
+    }
+    [data-kit='cq-row'] {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* a long queue scrolls in its own area, so the reply box's mode, harness, Queue and Send stay on screen (audit A
+       orch #23: nine follow-ups pushed them off a 390 px phone) */
+    [data-kit='cq-list'] {
+      max-height: 30vh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+  }
+  @media (pointer: coarse) {
+    [data-kit='cq-editbox'] > [data-kit='textarea'][data-part] {
+      font-size: 16px;
+    }
+  }
+}

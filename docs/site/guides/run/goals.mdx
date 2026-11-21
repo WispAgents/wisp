@@ -1,0 +1,174 @@
+---
+title: Goals and judges
+description: Give a task a goal and judges. wisp sends the agent back after each turn until the judges agree the goal is met.
+sidebar:
+  order: 4
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
+
+Agents often stop before the work is done. A **goal** fixes that. After each turn, one or more **judges** read the
+code and the answer, and vote. If the goal isn't met, the task gets another turn with what is missing.
+
+## Set a goal
+
+Write what *done* means, in one line you could check yourself: "all tests pass and the build is green".
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+- **New task** (**N**): type `/goal all tests pass` in the box and press **Enter**. A *Done when* line holds the
+  goal; the task keeps going until it holds.
+- **A task that is already running:** type `/goal all tests pass` in its reply box, or open **⋯** at the top right of
+  the task, then **Task options › Set goal…**.
+- The **Goal** band at the top of the task shows the round, each judge's vote and why.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="task-options" alt="The task's ⋯ menu open on Task options, with Set goal… at the top of the submenu" />
+</TabItem>
+<TabItem label="Phone app">
+- **A new task:** tap **New task**, write `/goal all tests pass`, and send.
+- **A running task:** open it, type `/goal all tests pass` in the reply bar, or tap the options chip in the reply bar
+  and choose **Goal**.
+- **⋯** (iPhone) or **⋮** (Android) in the task's top bar → **This task › Set goal…** works too.
+</TabItem>
+<TabItem label="TUI">
+Run `wisp tui`, open the task (**Enter**), press **i** to write, and send `/goal set --text "all tests pass"`.
+The goal shows in the task's header, in its colour: working, checking, met or stopped.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp goal set <id> "all tests pass"
+wisp goal set <id> "all tests pass" --kick     # judge it now if the task isn't running
+```
+`<id>` is the task's id (`wisp ls` lists them). An empty goal clears it.
+</TabItem>
+</Tabs>
+
+## Pick the judges
+
+By default the task's own agent checks its work. For a second opinion, add judges: other harnesses, other models,
+or crew members. A judge on a different harness doesn't share the agent's blind spots.
+
+How their votes count:
+
+- **Majority:** most judges agree.
+- **All:** every judge agrees.
+- **Any:** one is enough.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+On **New task**, **Judges** sits at the end of the *Done when* line. On a running task, open **⋯ → Task options ›
+Goal checks…**, then **Judges** → **Add judge**, and pick how they vote. Your choice is kept for your next goals.
+</TabItem>
+<TabItem label="Phone app">
+Open the task, then **⋯** / **⋮** → **This task › Goal checks…** → **Judges** → **Add judge**, and pick how they vote.
+</TabItem>
+<TabItem label="TUI">
+With the task open, press **i** and send:
+
+```text
+/goal set --text "all tests pass" --judges codex,claude/opus/high --vote all
+```
+Any `wisp` command works this way in the TUI's reply box; the open task is the one it acts on.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp goal set <id> "all tests pass" --judges codex,claude/opus/high --vote all
+```
+A judge is a harness (`codex`), a harness with its model and effort (`claude/opus/high`), or a crew member by name.
+`--judges ""` means no judges: wisp's own quick check decides.
+</TabItem>
+</Tabs>
+
+In a formula, `goals.default` holds every goal's judges, vote and round limit (see below).
+
+## Declare goals by name
+
+Write a goal once and use it by name: from a task in a formula, from the command line, from your agent, or from the
+app. `goals.default` is what every goal takes when it doesn't say (its judges, how they vote, its round limit); a
+goal's own fields win.
+
+```yaml
+# .wisp/goals.wisp.yml
+agents:
+  reviewer: { harness: codex, effort: high, mode: plan }   # judges are agents by name, or harnesses
+goals:
+  default: { judges: [reviewer], vote: majority, maxRounds: 6 }   # every goal's defaults
+  green-build: { text: "npm test passes and the build is green", judges: [reviewer, codex] }
+  docs-clean: { text: "the docs build with no broken links" }
+tasks:
+  fix-build: { prompt: Make the build pass, goal: green-build }   # a goal by name
+  tidy: { prompt: Tidy up the code, goal: { text: "the linter is quiet" } }   # or inline
+```
+
+`wisp validate` names a goal that isn't declared (`tasks.fix-build: no goal named green-buld: goals has docs-clean,
+green-build`), before anything runs. `default` is never a goal of its own, and has no text. A task gets the goal as
+it is declared when the task starts.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+On **New task**, open **+** → **Goal…**: the declared goals are listed by name, each with what done means, then
+**New goal…** to write your own. A declared goal fills the *Done when* line and the chip says its name
+(**Goal: green-build**); change the words and it's your own goal instead. In a task's reply box, **+** → **Goal…**
+sets one on the task the same way.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task**, then **+** → **Goal…** and pick a declared goal by name, or **New goal…**. In a task, the reply
+bar's **+** → **Goal…** does the same.
+</TabItem>
+<TabItem label="TUI">
+Start a task with a declared goal by sending `wisp "Make the build pass" --goal green-build` from any reply box
+(**i**). On the open task, send `/goal set green-build`: a declared goal's name is that goal.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "Make the build pass" --goal green-build       # a declared goal, by name
+wisp "Fix the flaky test" --goal-text "the test passes 50 times in a row"   # or in words
+wisp goal set <id> green-build                      # on a task already started
+wisp goal declared                                  # the goals declared here
+```
+`--goal` with a name no goal has is refused, and says which goals there are.
+</TabItem>
+</Tabs>
+
+## While it runs
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+The task's **Goal** band has **Pause goal**, **Resume goal**, **Edit goal…** and **Drop goal**. **Why** shows
+what each judge said.
+</TabItem>
+<TabItem label="Phone app">
+Tap the **Goal** band at the top of the task for **Pause goal**, **Resume goal**, **Edit goal…** and **Drop goal**.
+</TabItem>
+<TabItem label="TUI">
+With the task open, send `/goal pause`, `/goal resume`, `/goal check` or `/goal drop`. **Ctrl-K** finds any of
+them by name.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp goal check <id>     # judge now, on the last answer
+wisp goal pause <id>
+wisp goal resume <id>
+wisp goal drop <id>
+```
+</TabItem>
+</Tabs>
+
+When the goal runs out of rounds without being met, the task stops and asks you what to do. A judge can also say
+the goal **can't be done**, with why, so you don't burn rounds on it.
+
+## Act on the result
+
+`goal.met` and `goal.failed` are events. A [trigger](../schedules-and-triggers/) can act on them: ship the pull
+request when the goal is met, or tell a crew member when it isn't.
+
+## From your own agent
+
+Your harness can set goals too, through wisp's MCP tools (see [MCP from your harness](../mcp-from-your-harness/)).
+Ask it: "start a wisp task to fix the flaky test, with the goal *the test passes 50 times in a row*", or "… with the
+goal green-build": `wisp_launch`'s `goal` takes a declared goal's name or words.

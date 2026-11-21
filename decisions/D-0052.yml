@@ -1,0 +1,13 @@
+id: D-0052
+decision: 'Build the phone apps native: Material 3 on Android, Apple HIG on iPhone, from the kit and tokens, keeping every v1 feature; crew on phones are stories you can reply to (direction C).'
+reason: Owner 2026-11-13, 2026-11-15 (ADR-0065).
+scope:
+- mobile/**
+- packages/ui/**
+- plugins/*/ui/**
+category: constraint
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

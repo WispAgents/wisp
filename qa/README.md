@@ -70,6 +70,15 @@ heights, a label clipped without `…`, and buttons that overlap. Every measurem
 `qa/out/buttons.json`, and a contact sheet per view (each button at rest, hovered, focused) to
 `qa/out/buttons/`. `QUICK=1` measures at rest only; `WIDTHS=390 THEMES=dark` narrows it.
 
+## Nothing appears and goes
+
+`node qa/flicker.mjs` starts apps/web's mock (or `FLICKER_URL=` a running one) and does 37 actions at 1440 and
+390 px (open a task, Transcript, Mark done, a follow-up, New task, the palette, Settings and a pane, the crew rail
+and editor, My Stuff, archive, Done). In the page, every element added is watched; one seen on screen and gone
+within 1 s fails (a node made again: hover, focus and entry animation lost; or something that showed and went), and
+so does an action that changed nothing (no DOM change, no focus move). Results in `qa/out/flicker/summary.json`.
+`--widths=390 --only=follow-up` narrows it.
+
 ## Every view, every size: the scorecard's numbers
 
 `node qa/views.mjs` opens every view at 1440 and 390px, light and dark, in one engine, and fails on

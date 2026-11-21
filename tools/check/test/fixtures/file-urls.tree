@@ -1,0 +1,18 @@
+=== packages/a/package.json
+{ "name": "@wisp/a", "type": "module" }
+=== packages/a/test/bad.test.ts
+import { readFileSync } from 'node:fs';
+const pub = (f: string): string => new URL(`../public/${f}`, import.meta.url).pathname;
+export const html = readFileSync(new URL('../index.html', import.meta.url).pathname, 'utf8');
+=== packages/a/test/good.test.ts
+import { fileURLToPath } from 'node:url';
+const pub = (f: string): string => fileURLToPath(new URL(`../public/${f}`, import.meta.url));
+const page = new URL(location.href).pathname;
+const evil = 'file:///etc/passwd';
+=== qa/run.mjs
+if (import.meta.url === `file://${process.argv[1]}`) main();
+await page.goto('file://' + path.join(ROOT, 'docs/index.html'));
+const half = `file:///${p}`;
+=== qa/ok.mjs
+import { pathToFileURL } from 'node:url';
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) main();

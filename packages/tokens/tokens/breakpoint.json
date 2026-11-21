@@ -1,0 +1,21 @@
+{
+  "$doc": "Layout widths (design/ui.md). split is SPLIT_MIN_WIDTH: at or over it the list and the open task sit side by side; under it they stack. CSS media queries can't read variables, so the kit's lint allows these px values in @media and @container conditions only. box-narrow is a container width, not the window's: v1's prompt box folds its toolbar to icons under it (@container launcher). box-tight, box-roomy and box-wide are the prompt box's other folds (v1 launcher.css), pane-wide the main pane's width from which the task's details sit in a column beside it (v1 split.js DETAILS_PANE). pane-xs: under it a task's details put the branch on its own line. box-xs: under it the prompt box's location row folds No folder to its icon. bar-cold: under it the reply bar's cold-cache line takes its short form (v1 composer.css @container cold). box-many: under it a prompt box comparing three or four runs shows their logos only (v1 launcher.css @container launcher 600px). picker-stack: under it the harness picker puts its harnesses in one row of chips over the pane (v1 picker @media 560px). box-try, box-try-mode and box-try-tight: Try it two ways folds the launcher under them: the lead's harness name and Default, then the mode's and Goal's words (Delegate's go at box-roomy), then the lead's thinking level (v1 launcher.css .runners.trial / .l-bar.l-try 1099px, 780px, 700px).",
+  "box-narrow": "400px",
+  "narrow": "520px",
+  "compact": "640px",
+  "phone": "720px",
+  "split": "900px",
+  "wide": "1180px",
+  "box-tight": "480px",
+  "box-roomy": "800px",
+  "box-wide": "960px",
+  "pane-wide": "860px",
+  "pane-xs": "375px",
+  "box-xs": "290px",
+  "bar-cold": "326px",
+  "box-many": "600px",
+  "picker-stack": "560px",
+  "box-try": "1099px",
+  "box-try-mode": "780px",
+  "box-try-tight": "700px"
+}

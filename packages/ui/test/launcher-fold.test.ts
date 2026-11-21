@@ -1,0 +1,161 @@
+// The prompt box's toolbar on a narrow box (QA desktop r2 #4, design/layout.md §2): at 900 and 1024 px Start later sat
+// half behind Send or past the bar's edge with no More holding it. The tail's last tools fold into More, as many as the
+// measured widths need, never clipped, and at the edge it never flaps.
+import { describe, expect, test } from 'vitest';
+import { barPlan, foldOrder, foldTail, tailFold, type LauncherTool } from '../src/app/launcher-fold.ts';
+import { sumBar } from '../src/app/launcher-fold-measure.ts';
+
+// Goal 60, Worktree 90, Start later 40, gaps of 4, More 30: all three need 300 + 64 + 94 + 44 = 502
+const bar = (available: number): number => tailFold({ available, others: 300, tail: [60, 90, 40], gap: 4, more: 30 });
+
+describe('the tail folds into More by measured width_qa_desktop_r2_4', () => {
+  test('room for every tool: nothing folds', () => {
+    expect(bar(502)).toBe(0);
+    expect(bar(1000)).toBe(0);
+  });
+
+  test('one pixel short: the last tool (Start later) goes into More, never clipped', () => {
+    expect(bar(501)).toBe(1); // 300 + 64 + 94 + More 34 = 492
+    expect(bar(492)).toBe(1);
+  });
+
+  test('narrower: Worktree follows, then Goal; with no room at all everything is in More', () => {
+    expect(bar(491)).toBe(2); // 300 + 64 + 34 = 398
+    expect(bar(398)).toBe(2);
+    expect(bar(397)).toBe(3); // 300 + 34
+    expect(bar(100)).toBe(3);
+  });
+
+  test('folding a tool no wider than More saves nothing, so it goes with the next', () => {
+    expect(tailFold({ available: 491, others: 300, tail: [60, 90, 30], gap: 4, more: 30 })).toBe(2);
+  });
+
+  test('a width maps to one count, so a bar at the edge never flaps (the widths are the tools own, folded or not)', () => {
+    for (let w = 250; w < 600; w++) expect(bar(w)).toBe(bar(w));
+    // and the count never rises as the bar widens
+    let last = 3;
+    for (let w = 250; w < 600; w++) {
+      const k = bar(w);
+      expect(k).toBeLessThanOrEqual(last);
+      last = k;
+    }
+  });
+
+  test('no tail: nothing to fold', () => {
+    expect(tailFold({ available: 10, others: 300, tail: [], gap: 4, more: 30 })).toBe(0);
+  });
+});
+
+// QA desktop r3 #3 #4: at 1024 px WebKit's 520 px box took every label with 97 px to spare (v1's rule by width), and
+// Chrome's kept them all and cut the model to "D…". The bar's labels go to their icons one step at a time, by what
+// fits, before any tool goes into More, and the pick never truncates while a label can still go.
+describe('the bar steps its labels to icons by measure, then folds_qa_desktop_r3_3_4', () => {
+  const ids = ['goal', 'worktree', 'later'];
+  const form = (others: number, tail: number[]) => ({ others, gap: 2, tail: new Map(ids.map((id, i) => [id, tail[i] ?? 30])) });
+  // others with every label: 420 (the pick 222 in full); Goal's label off: 420; the mode's off too: 369; v1's form: 300
+  const forms = [form(420, [61, 30, 30]), form(420, [30, 30, 30]), form(369, [30, 30, 30]), form(300, [30, 30, 30])];
+
+  test('room for every label: none goes', () => {
+    expect(barPlan({ available: 600, ids, forms, more: 30 })).toEqual({ level: 0, fold: 0 });
+  });
+
+  test('a little short: Goal goes to its icon first, then the mode, every tool still on the bar', () => {
+    expect(barPlan({ available: 520, ids, forms, more: 30 })).toEqual({ level: 1, fold: 0 }); // 420 + 32 + 32 + 32 = 516
+    expect(barPlan({ available: 500, ids, forms, more: 30 })).toEqual({ level: 2, fold: 0 }); // 369 + 96 = 465
+  });
+
+  test('narrower: v1’s narrow form, then the tail into More, the last first', () => {
+    expect(barPlan({ available: 400, ids, forms, more: 30 })).toEqual({ level: 3, fold: 0 }); // 300 + 96 = 396
+    expect(barPlan({ available: 380, ids, forms, more: 30 })).toEqual({ level: 3, fold: 2 }); // 300 + 32 + 32 = 364
+    expect(barPlan({ available: 200, ids, forms, more: 30 })).toEqual({ level: 3, fold: 3 });
+  });
+
+  test('a level not measured yet is the next one tried, so the next measure knows it', () => {
+    expect(barPlan({ available: 500, ids, forms: [forms[0]], more: 30 })).toEqual({ level: 1, fold: 0 });
+    expect(barPlan({ available: 500, ids, forms: [], more: 30 })).toEqual({ level: 0, fold: 0 });
+  });
+
+  test('one width, one plan; and the plan never loosens as the bar narrows', () => {
+    let last = { level: 0, fold: 0 };
+    for (let w = 700; w > 150; w--) {
+      const p = barPlan({ available: w, ids, forms, more: 30 });
+      expect(p).toEqual(barPlan({ available: w, ids, forms, more: 30 }));
+      expect(p.level * 10 + p.fold).toBeGreaterThanOrEqual(last.level * 10 + last.fold);
+      last = p;
+    }
+  });
+});
+
+// UX 2026-11-18 #3: a chip turned on squeezed a wide bar to its icons: the grow spacer (whatever's left) was counted at
+// its stretched width, so the items always "filled" the bar to the pixel and rounding tipped it over
+test('the grow spacer counts for its gaps, never its width', () => {
+  const bar = document.createElement('div');
+  const kid = (kit: string, w: number, a?: string): void => {
+    const el = document.createElement('span');
+    el.setAttribute('data-kit', kit);
+    if (a) el.setAttribute('data-a', a);
+    Object.defineProperty(el, 'offsetWidth', { value: w });
+    el.getClientRects = () => [{}] as unknown as DOMRectList;
+    bar.append(el);
+  };
+  kid('icon-btn', 30, 'plus');
+  kid('grow', 437);
+  kid('send', 30);
+  const r = sumBar(bar, new Set(), new Map(), false);
+  expect(r).toEqual({ others: 60, count: 3, more: 30 });
+});
+
+// UX 2026-11-18 #3: the one footer has no tail until a feature is on, and at 900 px it ran 127 px past its box: with
+// nothing to fold, the bar still steps its labels to icons
+test('a bar with no tail still steps its labels to icons until it fits', () => {
+  const f = (others: number) => ({ others, gap: 2, tail: new Map<string, number>() });
+  const forms = [f(533), f(533), f(480), f(380)];
+  expect(barPlan({ available: 600, ids: [], forms, more: 30 })).toEqual({ level: 0, fold: 0 });
+  expect(barPlan({ available: 406, ids: [], forms, more: 30 })).toEqual({ level: 3, fold: 0 });
+  expect(barPlan({ available: 500, ids: [], forms, more: 30 })).toEqual({ level: 2, fold: 0 });
+  // not measured yet at a level: that level is tried next
+  expect(barPlan({ available: 406, ids: [], forms: [f(533)], more: 30 })).toEqual({ level: 1, fold: 0 });
+});
+
+// QA r10 desktop #1: at 900 with Goal on, + → Delegate… opened its chip and the fold took it straight into More (the
+// last tool folds first), so its panel had nothing to open on; and Start later folded showed only its times, its ✕
+// gone. A tool whose panel is open never folds (the others go first); a folded chip keeps its clear; a folded panel's
+// item opens it (and so it comes back to the bar)
+describe('what folds keeps what it does_qa_r10_1', () => {
+  const tool = (id: string, extra: Partial<LauncherTool> = {}): LauncherTool => ({ id, part: `launcher.${id}`, icon: 'target', label: id, title: id, ...extra });
+  test('a tool with its panel open is folded last: the fold order puts it first', () => {
+    const delegate = tool('team', { act: { panel: { label: 'Delegate', part: 'composer.team.panel', content: () => null, open: true } } });
+    expect(foldOrder([tool('goal'), delegate, tool('later')]).map((t) => t.id)).toEqual(['team', 'goal', 'later']);
+    // nothing open: the bar's order
+    expect(foldOrder([tool('goal'), tool('team'), tool('later')]).map((t) => t.id)).toEqual(['goal', 'team', 'later']);
+  });
+  test('a folded chip keeps its clear beside its own choices', () => {
+    const cleared: string[] = [];
+    const picked: string[] = [];
+    const later = tool('later', {
+      label: 'Starts at 13:08',
+      act: { menu: { items: [{ value: '10m', label: 'In 10 min' }], onSelect: (v) => picked.push(v) } },
+      clear: { label: 'Start now instead', act: { onClick: () => cleared.push('later') } },
+    });
+    const goal = tool('goal', { label: 'Goal: tests pass', act: { onClick: () => picked.push('goal') }, clear: { label: 'Remove the goal', act: { onClick: () => cleared.push('goal') } } });
+    const more = foldTail([goal, later], { label: 'More', title: 'More' });
+    const entries = more.act?.menu?.items ?? [];
+    const sub = (id: string) => entries.find((e) => e.kind === 'submenu' && e.value === `tool:${id}`) as { items: { value: string; label: string }[] } | undefined;
+    expect(sub('later')?.items.map((i) => i.label)).toEqual(['In 10 min', 'Start now instead']);
+    expect(sub('goal')?.items.map((i) => i.label)).toEqual(['Goal: tests pass', 'Remove the goal']);
+    const pick = (v: string): void => more.act?.menu?.onSelect(v);
+    pick(sub('later')?.items[1]?.value ?? '');
+    pick(sub('goal')?.items[1]?.value ?? '');
+    pick(sub('later')?.items[0]?.value ?? '');
+    pick(sub('goal')?.items[0]?.value ?? '');
+    expect(cleared).toEqual(['later', 'goal']);
+    expect(picked).toEqual(['10m', 'goal']);
+  });
+  test('a folded panel tool opens its panel when picked', () => {
+    const opened: boolean[] = [];
+    const delegate = tool('team', { act: { panel: { label: 'Delegate', part: 'composer.team.panel', content: () => null, open: false, onOpenChange: (o) => opened.push(o) } } });
+    const more = foldTail([delegate], { label: 'More', title: 'More' });
+    more.act?.menu?.onSelect('tool:team');
+    expect(opened).toEqual([true]);
+  });
+});

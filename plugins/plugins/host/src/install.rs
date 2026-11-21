@@ -1,0 +1,432 @@
+//! ADR-0046: a user's plugin installed while wisp runs, from a folder or a git URL, into `~/.wisp/plugins/<slug>`,
+//! and the ones already there loaded at start. A plugin's id starts with `user.`; it is validated before anything
+//! is kept, and it starts off: switching it on (`plugins.setEnabled`) is the consent to the permissions it asks for.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use wisp_kernel::{Ctx, Declarative, ExecOptions, ExecPlugin, Manifest, Plugin, Result, Setup, WireError};
+use wisp_proc::{ExecOpts, Proc};
+
+use crate::swap;
+
+pub const MANIFEST: &str = "wisp-plugin.json";
+
+/// A user's plugin as the kernel runs it: a child process (an `exec` server) rooted at its folder, or its manifest
+/// alone (a theme, settings, contributions).
+#[derive(Debug, Clone)]
+pub enum UserPlugin {
+    Exec(ExecPlugin),
+    Declarative(Declarative),
+}
+
+impl Plugin for UserPlugin {
+    fn manifest(&self) -> Manifest {
+        match self {
+            Self::Exec(p) => p.manifest(),
+            Self::Declarative(p) => p.manifest(),
+        }
+    }
+    fn setup(&self, s: &mut Setup) -> Result<()> {
+        match self {
+            Self::Exec(p) => p.setup(s),
+            Self::Declarative(p) => p.setup(s),
+        }
+    }
+}
+
+/// The mark a plugin you trusted keeps beside its manifest (ADR-0048).
+pub const TRUSTED: &str = ".wisp-trusted";
+
+/// The plugin in `dir` (its `wisp-plugin.json`), checked: a `user.` id and a valid manifest. Untrusted whatever the
+/// manifest says (ADR-0048), unless you trusted it (`trusted`: its mark is there).
+pub fn read(dir: &Path, text: &str, trusted: bool) -> Result<UserPlugin> {
+    let mut m = Manifest::parse(text)?;
+    m.trust = Some(if trusted { "trusted" } else { "untrusted" }.to_owned());
+    if !m.id.starts_with("user.") {
+        return Err(WireError::invalid(format!(
+            "{} isn't a user plugin's id: a plugin you install is named user.<something> (built-in ids are wisp's own)",
+            m.id
+        )));
+    }
+    m.validate()?;
+    Ok(if m.exec().is_some() {
+        // its child starts on the PATH wisp finds programs on (the desktop app's handed-over one, ADR-0057), and it and
+        // everything it starts end with wisp however wisp ends (ADR-0063)
+        let opts = ExecOptions { search_path: wisp_proc::search_path, contain: Some(Arc::new(ProcContain)), ..ExecOptions::default() };
+        UserPlugin::Exec(ExecPlugin::new(m, Some(dir.to_owned())).with_options(opts))
+    } else {
+        UserPlugin::Declarative(Declarative(m))
+    })
+}
+
+/// wisp-proc's guard (Unix) and Job Objects (Windows) for an exec plugin's child (ADR-0063).
+#[derive(Debug)]
+struct ProcContain;
+
+struct Held(wisp_proc::contain::Contained);
+
+impl wisp_kernel::Contained for Held {
+    fn end(&self) {
+        self.0.end();
+    }
+}
+
+impl wisp_kernel::Contain for ProcContain {
+    fn prepare(&self, cmd: &mut tokio::process::Command) {
+        wisp_proc::contain::prepare(cmd);
+    }
+    fn adopt(&self, pid: u32) -> std::io::Result<Box<dyn wisp_kernel::Contained>> {
+        Ok(Box::new(Held(wisp_proc::contain::adopt(pid)?)))
+    }
+}
+
+/// The folder a plugin goes in: `user.my-tool` → `my-tool`.
+pub use wisp_plugins_core::slug;
+
+/// Every plugin under `<home>/plugins` (startup: blocking reads are fine there). A folder that doesn't read as a
+/// plugin is skipped with a warning; it never stops wisp starting.
+pub fn at_start(plugins: &Path) -> Vec<UserPlugin> {
+    let mut out = Vec::new();
+    swap::tidy_blocking(plugins);
+    let Ok(rd) = std::fs::read_dir(plugins) else { return out };
+    let mut dirs: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && !p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')))
+        .collect();
+    dirs.sort();
+    for d in dirs {
+        let Ok(text) = std::fs::read_to_string(d.join(MANIFEST)) else { continue };
+        match read(&d, &text, d.join(TRUSTED).is_file()) {
+            Ok(p) => out.push(p),
+            Err(e) => tracing::warn!(folder = %d.display(), "a plugin there isn't loaded: {}", e.message),
+        }
+    }
+    out
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstallArgs {
+    /// a folder on this computer, or a git URL
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Installed {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    /// what it asks for: switching it on gives it these
+    pub permissions: Vec<String>,
+    pub folder: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UninstallArgs {
+    pub id: String,
+}
+
+const IS_URL: [&str; 4] = ["https://", "http://", "git@", "ssh://"];
+
+/// Copies `from` into `to` (no `.git`, `node_modules` or `target`).
+async fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut stack = vec![(from.to_owned(), to.to_owned())];
+    while let Some((src, dst)) = stack.pop() {
+        tokio::fs::create_dir_all(&dst).await?;
+        let mut rd = tokio::fs::read_dir(&src).await?;
+        while let Some(e) = rd.next_entry().await? {
+            let name = e.file_name();
+            if [".git", "node_modules", "target"].iter().any(|x| name == *x) {
+                continue;
+            }
+            let p = e.path();
+            if e.file_type().await?.is_dir() {
+                stack.push((p, dst.join(&name)));
+            } else {
+                tokio::fs::copy(&p, dst.join(&name)).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A folder as typed: `~/code/my-plugin` is under your home (the box's own example; the folder picker's suggestions
+/// keep the `~` you typed). Anything else as it is.
+pub fn local_path(source: &str, home: Option<&Path>) -> PathBuf {
+    match (source.strip_prefix('~'), home) {
+        (Some(rest), Some(h)) if rest.is_empty() || rest.starts_with(['/', '\\']) => h.join(rest.trim_start_matches(['/', '\\'])),
+        _ => PathBuf::from(source),
+    }
+}
+
+/// What a failed `git clone` of `url` says, in one plain sentence (audit C9: the toast was git's whole output, with
+/// wisp's staging folder in it): an unknown host, no repository there, a sign-in git doesn't have, else git's own
+/// `fatal:` line without any path of wisp's.
+pub fn clone_error(stderr: &str, url: &str) -> String {
+    let fatal = stderr
+        .lines()
+        .rev()
+        .find_map(|l| l.trim().strip_prefix("fatal: "))
+        .unwrap_or_else(|| stderr.trim().lines().last().unwrap_or_default());
+    if let Some(host) = fatal.split("Could not resolve host: ").nth(1) {
+        return format!("Couldn't reach {} to clone {url}", host.trim());
+    }
+    if let Some(host) = fatal.split("Failed to connect to ").nth(1).and_then(|r| r.split_whitespace().next()) {
+        return format!("Couldn't reach {host} to clone {url}");
+    }
+    if fatal.contains("not found") || stderr.contains("Repository not found") || fatal.contains("does not appear to be a git repository") {
+        return format!("No git repository at {url}");
+    }
+    if fatal.contains("could not read Username") || fatal.contains("Authentication failed") || fatal.contains("Permission denied") {
+        return format!("{url} needs a sign-in git doesn't have");
+    }
+    let plain: Vec<&str> = fatal.split_whitespace().filter(|w| !w.contains(".incoming-")).collect();
+    format!("Couldn't clone {url}: {}", plain.join(" ").trim_end_matches([':', '.']))
+}
+
+/// `plugins.install`: the source fetched into a staging folder, checked, then moved into place and added (off).
+pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
+    let home = ctx.service::<wisp_kernel::services::Paths>()?;
+    let root = home.join("plugins");
+    let source = a.source.trim();
+    if source.is_empty() {
+        return Err(WireError::invalid("say where the plugin is: a folder or a git URL"));
+    }
+    let staging = root.join(format!(".incoming-{}", wisp_kernel::ids::uuid7()));
+    let from_url = IS_URL.iter().any(|p| source.starts_with(p));
+    let fetched: std::result::Result<(), String> = if from_url {
+        let proc = ctx.service::<Proc>()?;
+        let opts =
+            ExecOpts { cwd: Some(root.clone()), timeout: Some(Duration::from_secs(120)), max_output: 1 << 20, ..ExecOpts::default() };
+        let _ = tokio::fs::create_dir_all(&root).await;
+        // wisp's own copy: byte for byte as committed (a CRLF checkout would break its scripts' shebangs on Windows)
+        let args: Vec<String> = ["clone", "--depth", "1", "-c", "core.autocrlf=false", "--", source, &staging.display().to_string()]
+            .iter()
+            .map(|x| (*x).to_owned())
+            .collect();
+        match proc.exec("git", &args, opts).await {
+            Ok(r) if r.exit.success() => Ok(()),
+            Ok(r) => Err(clone_error(&r.stderr_text(), source)),
+            Err(e) => Err(format!("git couldn't run: {e}")),
+        }
+    } else {
+        let user = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
+        let from = local_path(source, user.as_deref());
+        // as Projects says it (audit C9): a word that's no path, a folder that isn't there, then one with no manifest
+        if !from.is_absolute() {
+            Err(format!("{source} isn't a full path: type the plugin folder's full path, like ~/code/my-plugin, or a git URL"))
+        } else if !tokio::fs::metadata(&from).await.is_ok_and(|m| m.is_dir()) {
+            Err(format!("No folder at {source}"))
+        } else if tokio::fs::metadata(from.join(MANIFEST)).await.is_ok_and(|m| m.is_file()) {
+            copy_dir(&from, &staging).await.map_err(|e| format!("couldn't copy it: {e}"))
+        } else {
+            Err(format!("{source} has no {MANIFEST}"))
+        }
+    };
+    let gone = |why: String| {
+        let staging = staging.clone();
+        async move {
+            let _ = wisp_proc::remove_tree(&staging).await;
+            Err(WireError::invalid(why))
+        }
+    };
+    if let Err(why) = fetched {
+        return gone(why).await;
+    }
+    let text = tokio::fs::read_to_string(staging.join(MANIFEST)).await.unwrap_or_default();
+    let m = match Manifest::parse(&text).and_then(|m| read(&staging, &text, false).map(|_| m)) {
+        Ok(m) => m,
+        Err(e) => return gone(e.message).await,
+    };
+    // the same plugin again replaces the one here, once the new one checked out: stopped first (and its process
+    // gone: on Windows a running program's folder can't be moved), then the folders swapped
+    let dir = root.join(slug(&m.id));
+    // `user.a.b` and `user.a-b` share a folder: never replace another plugin's
+    let here = tokio::fs::read_to_string(dir.join(MANIFEST)).await.ok().and_then(|t| Manifest::parse(&t).ok()).map(|h| h.id);
+    if let Some(other) = here.filter(|h| *h != m.id) {
+        return gone(format!("{} would go in {}, which {other} already uses: uninstall {other} first", m.id, dir.display())).await;
+    }
+    let was = ctx.plugins()?.into_iter().find(|p| p.id == m.id);
+    if was.is_some()
+        && let Err(e) = ctx.uninstall_plugin(&m.id).await
+    {
+        let _ = wisp_proc::remove_tree(&staging).await;
+        return Err(e);
+    }
+    if let Err(why) = swap::swap(&root, &staging, &dir).await {
+        let _ = wisp_proc::remove_tree(&staging).await;
+        return Err(swap::not_replaced(ctx, &dir, was, &m, &why).await);
+    }
+    let text = tokio::fs::read_to_string(dir.join(MANIFEST)).await.unwrap_or_default();
+    // what's installed starts untrusted, a reinstall too: trusting it again is your call
+    ctx.install_plugin(Arc::new(read(&dir, &text, false)?)).await?;
+    track(ctx, "spell_installed", installed_props(from_url, m.server.as_ref())).await;
+    Ok(Installed {
+        id: m.id.clone(),
+        name: m.name.clone().unwrap_or_else(|| m.id.clone()),
+        version: m.version.clone(),
+        permissions: m.permissions.clone(),
+        folder: dir.display().to_string(),
+    })
+}
+
+/// A `user.*` plugin this wisp hasn't loaded whose folder is in `~/.wisp/plugins` (`wisp plugin new`, or a
+/// folder copied there while wisp runs): loaded as at start, off. Switching it on is the consent, as for an install.
+pub async fn load_from_its_folder(ctx: &Ctx, id: &str) -> Result<()> {
+    if !id.starts_with("user.") || ctx.plugins()?.iter().any(|p| p.id == id) {
+        return Ok(());
+    }
+    let dir = ctx.service::<wisp_kernel::services::Paths>()?.join("plugins").join(slug(id));
+    let Ok(text) = tokio::fs::read_to_string(dir.join(MANIFEST)).await else { return Ok(()) };
+    let m = Manifest::parse(&text)?;
+    if m.id != id {
+        return Err(WireError::invalid(format!("{} holds {}, not {id}", dir.display(), m.id)));
+    }
+    ctx.install_plugin(Arc::new(read(&dir, &text, dir.join(TRUSTED).is_file())?)).await
+}
+
+/// v1's `spell_installed` (plugins replace spells, ADR-0031): where it came from (`url` or `local`), that it's off
+/// (an install always is), and its kind (`exec` or `declarative`): never its id, name or source.
+pub fn installed_props(from_url: bool, server: Option<&serde_json::Value>) -> serde_json::Value {
+    let exec = server.and_then(|s| s.get("exec")).is_some_and(|e| !e.is_null());
+    serde_json::json!({ "source": if from_url { "url" } else { "local" }, "enabled": false, "kind": if exec { "exec" } else { "declarative" } })
+}
+
+/// A usage event this plugin owns (wisp.telemetry's catalogue); a refusal is only logged.
+async fn track(ctx: &Ctx, event: &str, props: serde_json::Value) {
+    let props = props.as_object().cloned().unwrap_or_default();
+    let a = wisp_telemetry_api::TrackArgs { event: event.into(), props };
+    if let Err(err) = ctx.run::<wisp_telemetry_api::Track>(&ctx.root_call(), a).await {
+        tracing::warn!(error = %err.message, event, "plugins: telemetry.track");
+    }
+}
+
+/// `plugins.uninstall`: off, out of the kernel, and its folder deleted. A folder that can't be moved out (in use, on
+/// Windows) puts the plugin back as it was, with the error: it would load again at the next start anyway.
+pub async fn uninstall(ctx: &Ctx, a: &UninstallArgs) -> Result<serde_json::Value> {
+    let on = ctx.plugins()?.iter().any(|p| p.id == a.id && swap::is_on(&p.state));
+    ctx.uninstall_plugin(&a.id).await?;
+    let home = ctx.service::<wisp_kernel::services::Paths>()?;
+    let root = home.join("plugins");
+    let dir = root.join(slug(&a.id));
+    match swap::set_aside(&root, &dir).await {
+        Ok(aside) => swap::discard(aside).await,
+        Err(e) => {
+            let kept = match swap::restore(ctx, &dir, &a.id, on).await {
+                Ok(()) => "it's still installed".to_owned(),
+                Err(r) => format!("it's still in that folder but didn't load again: {}", r.message),
+            };
+            return Err(WireError::unavailable(format!(
+                "Couldn't remove {}: its folder {} couldn't be moved ({e}); {kept}. Close what is using it and try again.",
+                a.id,
+                dir.display()
+            )));
+        }
+    }
+    Ok(serde_json::json!({ "ok": true, "id": a.id }))
+}
+
+/// A plugin of yours as its folder has it: trusted or not, what it asks for, its name.
+pub struct About {
+    pub trusted: bool,
+    pub permissions: Vec<String>,
+    pub name: Option<String>,
+}
+
+/// Read from `~/.wisp/plugins/<slug>`; None when it has no folder (or no readable manifest) there.
+pub async fn about(ctx: &Ctx, id: &str) -> Option<About> {
+    let dir = ctx.service::<wisp_kernel::services::Paths>().ok()?.join("plugins").join(slug(id));
+    let text = tokio::fs::read_to_string(dir.join(MANIFEST)).await.ok()?;
+    let m = Manifest::parse(&text).ok()?;
+    let trusted = tokio::fs::metadata(dir.join(TRUSTED)).await.is_ok_and(|x| x.is_file());
+    Some(About { trusted, permissions: m.permissions.clone(), name: m.name.clone() })
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrustArgs {
+    pub id: String,
+    pub trusted: bool,
+}
+
+/// `plugins.trust` (ADR-0048): a plugin of yours trusted (its own process with your environment) or back to
+/// untrusted; it reloads, and is on again if it was.
+pub async fn trust(ctx: &Ctx, a: &TrustArgs) -> Result<serde_json::Value> {
+    if !a.id.starts_with("user.") {
+        return Err(WireError::invalid("Only a plugin you installed has a trust to change."));
+    }
+    let home = ctx.service::<wisp_kernel::services::Paths>()?;
+    let dir = home.join("plugins").join(slug(&a.id));
+    let text =
+        tokio::fs::read_to_string(dir.join(MANIFEST)).await.map_err(|_| WireError::not_found(format!("{} isn't installed.", a.id)))?;
+    let was_on = ctx.plugins()?.iter().any(|p| p.id == a.id && p.state != "off");
+    if a.trusted {
+        tokio::fs::write(dir.join(TRUSTED), b"").await.map_err(|e| WireError::internal(e.to_string()))?;
+    } else {
+        let _ = tokio::fs::remove_file(dir.join(TRUSTED)).await;
+    }
+    ctx.uninstall_plugin(&a.id).await?;
+    ctx.install_plugin(Arc::new(read(&dir, &text, a.trusted)?)).await?;
+    if was_on {
+        ctx.set_plugin_enabled(&a.id, true).await?;
+    }
+    Ok(serde_json::json!({ "id": a.id, "trusted": a.trusted }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Audit C9: a bad git URL's toast was git's whole output, with the staging folder in it ("Cloning into
+    /// '…/plugins/.incoming-01a1…'… fatal: …"). It's one plain sentence naming the URL.
+    #[test]
+    fn a_failed_clone_says_one_plain_sentence() {
+        let url = "https://example.invalid/me/p.git";
+        let raw = "Cloning into '/h/plugins/.incoming-01a1f3'...\nfatal: unable to access 'https://example.invalid/me/p.git/': Could not resolve host: example.invalid\n";
+        assert_eq!(clone_error(raw, url), "Couldn't reach example.invalid to clone https://example.invalid/me/p.git");
+        let raw = "Cloning into '/h/plugins/.incoming-9'...\nfatal: unable to access 'https://127.0.0.1:9/none.git/': Failed to connect to 127.0.0.1 port 9 after 0 ms: Couldn't connect to server\n";
+        assert_eq!(clone_error(raw, "https://127.0.0.1:9/none.git"), "Couldn't reach 127.0.0.1 to clone https://127.0.0.1:9/none.git");
+        let raw = "Cloning into '/h/plugins/.incoming-9'...\nremote: Repository not found.\nfatal: repository 'https://github.com/me/nope/' not found\n";
+        assert_eq!(clone_error(raw, "https://github.com/me/nope"), "No git repository at https://github.com/me/nope");
+        let raw = "Cloning into '/h/plugins/.incoming-9'...\nfatal: could not read Username for 'https://github.com': terminal prompts disabled\n";
+        assert_eq!(clone_error(raw, "https://github.com/me/private"), "https://github.com/me/private needs a sign-in git doesn't have");
+        let raw = "Cloning into '/h/plugins/.incoming-9'...\nfatal: something odd at /h/plugins/.incoming-9\n";
+        let e = clone_error(raw, "https://x/y");
+        assert!(!e.contains(".incoming") && !e.contains('\n') && e.starts_with("Couldn't clone https://x/y: "), "{e}");
+    }
+
+    /// v1's `spell_installed`, for a plugin: where from and what kind, as fixed values (an install is always off).
+    #[test]
+    fn an_install_counts_as_spell_installed_with_fixed_values_only() {
+        let exec = serde_json::json!({ "exec": ["node", "main.js"] });
+        assert_eq!(installed_props(true, Some(&exec)), serde_json::json!({ "source": "url", "enabled": false, "kind": "exec" }));
+        assert_eq!(installed_props(false, None), serde_json::json!({ "source": "local", "enabled": false, "kind": "declarative" }));
+    }
+
+    /// The box says "~/code/my-plugin": that is a folder under your home, not a folder named `~` (it was refused as
+    /// "has no wisp-plugin.json"). `~bob` and plain paths stay as typed.
+    #[test]
+    fn a_folder_typed_from_home_is_found_under_home() {
+        let h = Path::new("/home/ada");
+        assert_eq!(local_path("~/code/my-plugin", Some(h)), Path::new("/home/ada/code/my-plugin"));
+        assert_eq!(local_path("~", Some(h)), Path::new("/home/ada"));
+        assert_eq!(local_path("~bob/x", Some(h)), Path::new("~bob/x"));
+        assert_eq!(local_path("/opt/p", Some(h)), Path::new("/opt/p"));
+        assert_eq!(local_path("~/x", None), Path::new("~/x"));
+    }
+
+    /// ADR-0057: an installed plugin's child starts on the PATH the desktop app handed over, not the inherited one.
+    #[cfg(unix)]
+    #[test]
+    #[allow(clippy::panic, reason = "a test: failing loudly is the point")]
+    fn an_installed_exec_plugin_starts_on_the_handed_over_path() {
+        let text = r#"{"wispPlugin":1,"id":"user.pathy","name":"Pathy","version":"0.1.0","api":"^1","permissions":[],"activation":[],"contributes":{},"server":{"exec":["node","main.js"]}}"#;
+        let got = read(Path::new("/tmp/pathy"), text, false);
+        let Ok(UserPlugin::Exec(p)) = got else { panic!("an exec plugin: {got:?}") };
+        let handed = format!("/wisp-handed-install/bin:{}", std::env::var("PATH").unwrap_or_default());
+        wisp_proc::set_path(&handed);
+        assert_eq!((p.options().search_path)(), Some(handed.into()));
+    }
+}

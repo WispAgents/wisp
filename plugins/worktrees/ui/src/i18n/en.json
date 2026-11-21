@@ -1,0 +1,9 @@
+{
+  "worktrees.pane.worktrees": "Worktrees",
+  "worktrees.pane.worktrees.lede": "Each task’s own copy of your repo, and how long it stays on this computer.",
+  "worktrees.keep": "Keep worktree",
+  "worktrees.folders.ask.one": "Remove its worktree?",
+  "worktrees.folders.ask.other": "Remove its {count} worktrees?",
+  "worktrees.folders.holds.one": "This worktree holds work",
+  "worktrees.folders.holds.other": "These worktrees hold work"
+}

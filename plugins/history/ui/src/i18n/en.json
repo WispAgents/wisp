@@ -1,0 +1,7 @@
+{
+  "history.tab.tasks": "Tasks",
+  "history.tab.repo": "Repo",
+  "history.tab.label": "Your tasks, or this repo's history",
+  "history.repo.title": "Repo history",
+  "history.repo.untracked": "This repo has no .wisp/ yet. Run wisp init in it to track its agent work."
+}

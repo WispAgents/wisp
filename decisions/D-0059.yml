@@ -1,0 +1,17 @@
+id: D-0059
+decision: Make every feature work inside wisp and from where users already work (their harness via MCP/skill, git, CI, chat); never require a flow change.
+reason: Owner 2026-11-09 (ADR-0040).
+scope:
+- crates/**
+- plugins/**
+- packages/**
+- apps/**
+- mobile/**
+- tools/**
+- spikes/**
+category: constraint
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

@@ -1,0 +1,667 @@
+//! Arguments and answers of the task, queue and read commands.
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use ts_rs::TS;
+
+use crate::model::{Attachment, Ext, Mode, QueueItem, SessionState, Step};
+use crate::{SessionId, TurnId};
+
+/// `{}`: a command that answers nothing but success.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct Ack {}
+
+/// `runtime.setMode`: the mode the task's next turns run in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct SetModeArgs {
+    pub id: SessionId,
+    pub mode: Mode,
+}
+
+/// `runtime.setLean`: this task's runs lean or not ('on' | 'off'), or none to follow `runtime.leanRuns` (v1 PATCH
+/// /sessions/:id `lean`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct SetLeanArgs {
+    pub id: SessionId,
+    #[serde(default)]
+    #[ts(optional)]
+    pub lean: Option<String>,
+}
+
+/// `runtime.setAgent`: the harness the task's next turns run on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct SetAgentArgs {
+    pub id: SessionId,
+    pub agent: String,
+}
+
+/// `runtime.forLater`: saved for later (the list's For later), or not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct ForLaterArgs {
+    pub id: SessionId,
+    pub for_later: bool,
+    /// when it was saved (Undo puts the old time back); now when unset
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub at: Option<i64>,
+}
+
+/// `runtime.pin`: pinned in the list (its Pinned pill), or not. Additive (2026-11-17).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct PinArgs {
+    pub id: SessionId,
+    pub pinned: bool,
+}
+
+/// `runtime.queue.order`: the queued follow-ups in this order (ids the queue doesn't have are skipped).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct QueueOrderArgs {
+    pub id: SessionId,
+    pub order: Vec<String>,
+}
+
+/// `runtime.terminal`: open (or resume) a terminal task's CLI in its terminal.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct TerminalArgs {
+    pub id: SessionId,
+    /// a follow-up to start it on, once the last terminal ended
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cols: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub rows: Option<f64>,
+}
+
+/// `runtime.held`: the task's held turn started anyway, or skipped (the held turn found here).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct HeldArgs {
+    pub id: SessionId,
+    pub action: ReleaseAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct IdArgs {
+    pub id: SessionId,
+}
+
+/// `runtime.resumeCommand` (v1 GET /sessions/:id/takeover, More → Copy resume command): the line that resumes the
+/// task's conversation in its harness's own CLI, from its folder, to paste in a terminal of your own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct ResumeLine {
+    pub command: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct TurnArgs {
+    pub id: SessionId,
+    pub turn_id: TurnId,
+}
+
+/// Which harness, model and effort a run uses (each one left out keeps the task's).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct RunPick {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub effort: Option<String>,
+}
+
+/// `runtime.create`: creates a task and starts its first turn. `agent: "auto"` lets wisp.router pick.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+#[allow(clippy::struct_excessive_bools)] // a wire shape: each flag is its own optional field callers send
+pub struct StartArgs {
+    /// the id the client already shows the new task under (its row and page appear at once): 32 lowercase hex
+    /// (a `UUIDv7` without dashes, as wisp makes its own), never one a task has. None: wisp makes one. Additive (2026-11-14).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub id: Option<SessionId>,
+    pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mode: Option<Mode>,
+    /// the most this task's turns may ever run at (a channel starts its tasks at Edits), kept on the task as a crew
+    /// job's cap is; a follow-up or a mode switch above it is refused unless the user asks in wisp, which lifts it.
+    /// Full auto is no cap.
+    /// Additive (2026-11-14).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cap: Option<Mode>,
+    /// the model its subagents run on, over `runtime.subagentModel` (v1 `session.subagentModel`, Try it two ways):
+    /// '' is the task's own model, `haiku` or `sonnet`. Kept on the task for every turn; a harness that can't run
+    /// its subagents on another model is refused. Additive (2026-11-14).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub subagent_model: Option<String>,
+    /// `off`: without its skills and slash commands (v1 `skills: 'off'`); `on` or none: as usual. Kept and refused
+    /// like `subagent_model`. Additive (2026-11-14).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub skills: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub dirs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<Attachment>>", optional)]
+    pub attachments: Vec<Attachment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub parent_id: Option<SessionId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub account: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub by: Option<String>,
+    /// you said yes to going past Ask near the limit's line (v1 `confirmLimit`; the CLI's --yes). Additive (2026-11-11).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub confirm_limit: bool,
+    /// start it held in the queue rather than running it now (a scheduled task)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub hold: bool,
+    /// a terminal task (v1 services/tui.js, Settings → General → Terminal sessions): the harness's own CLI in a
+    /// terminal in wisp, started on the prompt, instead of wisp's headless run; follow-ups are typed into it and
+    /// its turns are read back from the CLI's own session. Additive (2026-11-11).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub terminal: bool,
+    /// namespaced extras the caller's plugin stores on the new task (`ext[callerPluginId]`)
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(as = "Option<Ext>", optional)]
+    pub ext: Ext,
+    // ---- the task spec (ADR-0027); all additive ----
+    /// prompts after the first, sent in order as each turn ends
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub steps: Vec<String>,
+    /// an agent profile given inline (else `agent` may name a stored one)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub profile: Option<crate::spec::AgentSpec>,
+    /// start from this commit (a rerun from the same code): a detached worktree when it isn't HEAD
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub base: Option<crate::spec::Base>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub worktree: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "unknown", optional)]
+    pub goal: Option<Value>,
+    /// the software factory it runs through (ADR-0114): a factory's name (`default` is always there); wisp.factory makes
+    /// the task its run (held, its stations its children) instead of one agent running it. Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub factory: Option<String>,
+    /// the Notes it starts with (`{ goal, constraints: [...] }`): kept in its spec, read by the plugin that
+    /// keeps Notes (wisp.threads) when the task is made. Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "unknown", optional)]
+    pub notes: Option<Value>,
+    /// the crew member it works for
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub crew: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "unknown", optional)]
+    pub team: Option<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub connectors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub schedule: Option<String>,
+    /// the formula overlay it runs under: formula sections (`agents`, …) recorded in its snapshot
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "unknown", optional)]
+    pub formula: Option<Value>,
+    #[serde(default, skip_serializing_if = "crate::spec::Lineage::is_empty")]
+    #[ts(as = "Option<crate::spec::Lineage>", optional)]
+    pub lineage: crate::spec::Lineage,
+    /// a harness you picked after Auto's preview showed another (v1 `autoOverride`): Auto learns from it
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub auto_override: Option<AutoOverride>,
+    /// a recurring run's worktree key (a crew member's check-ins, a trigger's runs): its runs reuse one
+    /// worktree per project (`wisp/<key>`) instead of one each. Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub worktree_key: Option<String>,
+    /// a run started for you (a crew job, a check-in, a trigger's run): its worktree goes when a turn ends with
+    /// nothing changed. Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub worktree_tidy: bool,
+}
+
+/// The pick Auto's preview showed before you chose your own (`key`: its arm, `type`: the kind of task).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct AutoOverride {
+    pub key: String,
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    #[ts(optional, rename = "type")]
+    pub kind: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct Created {
+    pub id: SessionId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_id: Option<TurnId>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct FollowUpArgs {
+    pub id: SessionId,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<Attachment>>", optional)]
+    pub attachments: Vec<Attachment>,
+    /// true: wait in the queue if a turn is running; false (the default): interrupt the
+    /// running turn once its harness session is known, and send now
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub queue: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mode: Option<Mode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub run: Option<RunPick>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub by: Option<String>,
+    /// you said yes to going past Ask near the limit's line (v1 `confirmLimit`; the CLI's --yes). Additive (2026-11-11).
+    /// `confirmLimit` too, as `runtime.create` names it and the UI sends it (B35: the reply box's yes was dropped).
+    #[serde(default, alias = "confirmLimit", skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub confirm_limit: bool,
+    /// the id the client drew for the turn (its queue item while it waits): kept when it's in wisp's shape and no turn
+    /// has it, so the card the client shows at once is the turn the server makes (B35). Additive (2026-11-16).
+    #[serde(default, alias = "turnId", skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_id: Option<TurnId>,
+    /// Delegate's team from this follow-up on (v1 `subagents`, the same rows as `StartArgs.team`'s list); `[]` removes
+    /// it, absent keeps the task's. Additive (2026-11-17).
+    #[serde(default, alias = "subagents", skip_serializing_if = "Option::is_none")]
+    #[ts(type = "unknown", optional)]
+    pub team: Option<serde_json::Value>,
+    /// a new conversation on the same task (a long thread's Fresh thread): its turn resumes nothing, hears
+    /// nothing of the turns before it, and is marked as fresh with the conversation it left, so the old
+    /// conversation stays linked. Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub fresh: bool,
+}
+
+/// Where a follow-up went: a new turn, or a place in the queue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct FollowedUp {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_id: Option<TurnId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub queued: Option<String>,
+    /// it interrupts the running turn (the follow-up setting's interrupt), rather than waiting behind it: the CLI says
+    /// so (audit I3: "✓ queued" was printed either way). Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub interrupts: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct RenameArgs {
+    pub id: SessionId,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct ArchiveArgs {
+    pub id: SessionId,
+    pub archived: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct MarkReadArgs {
+    pub id: SessionId,
+    pub unread: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct SetStateArgs {
+    pub id: SessionId,
+    pub state: SessionState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct StopArgs {
+    pub id: SessionId,
+    /// v1 `{ queue: 'hold' }` is the default: a Stop never discards queued follow-ups, it holds them
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub clear_queue: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct QueueEditArgs {
+    pub id: SessionId,
+    /// the queue in this order, with your edited texts: `[{"id": "<item id>", "text": "<its text>"}, …]` (only `id` and
+    /// `text` are read). Items left out keep their place at the end (one queued meanwhile is never lost); unknown ids
+    /// are skipped; wisp's own items keep their text.
+    pub items: Vec<QueueItem>,
+    /// items to take out of the queue
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub remove: Vec<String>,
+    /// set or clear the queue's hold (v1 `PATCH /queue { held }`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub held: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct QueueItemArgs {
+    pub id: SessionId,
+    pub item_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct QueueTextArgs {
+    pub id: SessionId,
+    pub item_id: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct QueueMergeArgs {
+    pub id: SessionId,
+    pub ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "runtime/")]
+pub enum ReleaseAction {
+    /// Start now (Trust and start on a hold that asks for trust: a yes to what it listed)
+    Start,
+    /// Skip this run: the turn stops before it started, saying what held it
+    Skip,
+    /// Run without them (a hold for a repo's own programs): it runs without the repo's hooks, MCP servers and setup,
+    /// and trusts nothing (v1 hold.js `without`). Additive (2026-11-19).
+    Without,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct ReleaseArgs {
+    pub id: SessionId,
+    pub turn_id: TurnId,
+    pub action: ReleaseAction,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct ListArgs {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub archived: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct TurnsArgs {
+    pub id: SessionId,
+    /// turns with idx below this one (paging back through a long task)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub before: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limit: Option<u32>,
+    /// true: .env values masked even with Hide .env values off (a share). Additive (2026-11-13).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub masked: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct ActivityArgs {
+    pub id: SessionId,
+    pub turn_id: TurnId,
+    /// only events after this per-session seq (resume a stream)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub since_seq: Option<u64>,
+    /// true: .env values masked even with Hide .env values off (a share). Additive (2026-11-13).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub masked: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct ActivityPage {
+    /// the last seq returned (pass it back as `sinceSeq`)
+    pub seq: u64,
+    pub items: Vec<Step>,
+}
+
+/// A plugin writes its own ext slot only: the kernel's caller says which plugin speaks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct SetExtArgs {
+    pub id: SessionId,
+    pub plugin: String,
+    pub value: Value,
+    /// written only if the slot still holds this (compared in the write's own transaction; refused with
+    /// `conflict` otherwise): a read-then-write that a later write must win over. Additive (2026-11-14).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub expect: Option<ExtExpect>,
+}
+
+/// What `runtime.setExt`'s slot must hold for the write to go (`value: null`: the slot is empty).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct ExtExpect {
+    pub value: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct TurnExtArgs {
+    pub id: SessionId,
+    pub turn_id: TurnId,
+    pub plugin: String,
+    pub value: Value,
+}
+
+/// A one-click command from an `actions` block, run in the task's folder. Only your click runs it: a task's agent can't
+/// (ADR-0115). Additive (2026-11-10).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct ExecArgs {
+    pub id: SessionId,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct ExecOut {
+    pub code: i32,
+    /// stdout then stderr, cut to the last 64 KB
+    pub output: String,
+}
+
+/// An app block's state, kept on its turn: what the app saved, read back when it opens again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct AppStateArgs {
+    pub id: SessionId,
+    pub turn_id: TurnId,
+    pub block: String,
+    pub state: Value,
+}
+
+/// `runtime.unask`: the open question on task `id` taken back, unanswered, when it is still `question` (so a question
+/// asked since, by its agent or anyone, stays): the task stops waiting (audit A tasks #15: after Drop goal its
+/// "Keep going?" stayed and the task stayed Asking).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct UnaskArgs {
+    pub id: SessionId,
+    pub question: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct AnswerArgs {
+    /// the task that asks
+    pub id: SessionId,
+    /// your answer: one of its options, or your own words (on a setup card, Allow; anything else is a no, with your words)
+    pub text: String,
+    /// the question this answers (its `ask.id`): an answer to one that's no longer open is refused. A setup card
+    /// (ADR-0113) is answered only with it. Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub ask_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct AskArgs {
+    pub id: SessionId,
+    pub question: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub options: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub details: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct Asked {
+    pub ask_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct PollAnswerArgs {
+    pub ask_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "state", rename_all = "lowercase")]
+#[ts(export, export_to = "runtime/")]
+pub enum PollAnswer {
+    Answered { answer: String },
+    Pending,
+    Cancelled,
+}
+
+/// Worktree per task, wisp.worktrees' switch (`on` unless `off`): New task reads it, and so do the launches that
+/// leave `worktree` unset for the user (a crew job, a trigger, a recipe run).
+pub const WORKTREE_SETTING: &str = "worktrees.worktree";
+
+/// v1 launch.js `wantTree`, every launch's rule: a task in a project folder runs in a worktree of its own unless it
+/// plans, or Worktree per task (`setting`, [`WORKTREE_SETTING`]) is off. Additive (2026-11-19, audit B #7: crew jobs,
+/// check-ins and triggers ran in the user's checkout, side by side).
+#[must_use]
+pub fn worktree_by_default(setting: Option<&Value>, plans: bool) -> bool {
+    !plans && !matches!(setting, Some(Value::Bool(false))) && setting.and_then(Value::as_str) != Some("off")
+}
+
+#[cfg(test)]
+mod worktree_default_tests {
+    use serde_json::json;
+
+    use super::worktree_by_default;
+
+    /// Audit B #7 (v1 launch.js `wantTree`): crew jobs and triggers left `worktree` unset and ran in the user's checkout.
+    #[test]
+    fn a_launch_that_doesnt_say_gets_a_worktree_unless_it_plans_or_the_switch_is_off() {
+        assert!(worktree_by_default(None, false));
+        assert!(worktree_by_default(Some(&json!("on")), false));
+        assert!(!worktree_by_default(Some(&json!("off")), false));
+        assert!(!worktree_by_default(Some(&json!(false)), false));
+        assert!(!worktree_by_default(Some(&json!("on")), true), "Plan reads, it never needs its own folder");
+    }
+}

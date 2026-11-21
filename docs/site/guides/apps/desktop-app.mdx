@@ -1,0 +1,97 @@
+---
+title: The desktop app
+description: wisp as an app on macOS, Windows and Linux. Install it, open it, keep it up to date, and what the window adds over a browser tab.
+sidebar:
+  order: 1
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
+
+The desktop app is wisp in its own window. It is the same wisp as in the browser and on your phone: one small
+local server, `wisp serve`, and one UI. The window adds what a browser tab can't do well.
+
+## Install it
+
+Pick the line for your computer.
+
+| Computer | Get it |
+| --- | --- |
+| macOS 13.3 or later | `brew install --cask wispagents/tap/wisp`, or `curl -fsSL https://trywisp.dev/install.sh \| bash -s -- --app` |
+| Windows | `wisp-windows-<arch>-setup.exe` from the [latest release](https://github.com/WispAgents/wisp/releases/latest) |
+| Linux | the `.AppImage` or the `.deb` from the [latest release](https://github.com/WispAgents/wisp/releases/latest) (glibc 2.35 or later) |
+
+The release also has `SHA256SUMS.txt`, to check what you downloaded. On macOS, `--app` checks it for you and puts
+wisp in your Applications folder.
+
+Installed wisp with npm? You don't need a separate download on macOS or Windows: `wisp desktop` fetches the small
+window once, checks it against the release, and opens it. On Linux it opens a browser tab for now.
+
+## Open it
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Open **wisp** from your Applications folder, Start menu or app launcher. It starts its server and shows your tasks.
+Open it again and you get the same window: there is only ever one. **⌘K** (Ctrl-K on Windows and Linux) finds any
+task, command or setting.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="palette" alt="The ⌘K search and commands box open over the desktop app, listing tasks and commands" />
+</TabItem>
+<TabItem label="Phone app">
+The phone app doesn't start wisp on a computer. Open the **Computers** tab and tap a computer that is on: you see
+its tasks, live.
+</TabItem>
+<TabItem label="TUI">
+The TUI talks to the same server. With the app open, `wisp tui` in any terminal shows the same tasks, live.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp              # opens the app (a browser tab when there's no app)
+wisp desktop      # always the app window
+wisp --browser    # a browser tab instead: http://localhost:4477
+```
+</TabItem>
+</Tabs>
+
+## What the window adds
+
+- **A badge** on the Dock or taskbar icon with how many tasks need you.
+- **System notifications** when a task finishes or asks. Click one to go straight to that task.
+- **Your shell's `PATH`.** Started from the Dock or Finder, the app still finds `claude`, `codex` and the rest.
+- **Links open in your browser**, and the window keeps wisp.
+- **Menus and keys:** Reload (**Cmd/Ctrl-R**), zoom (**Cmd/Ctrl-=**, **-**, **0**), full screen.
+- **Closing the window:** on macOS your agents keep running and the app stays in the Dock. On Windows and Linux,
+  closing the window quits wisp and stops its server.
+
+## Updates
+
+The app updates itself. When a new version is out, its top bar shows **Update to …**.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Press **Update to …** in the top bar, or open the person button → **Settings** → **Updates**: pick a channel
+(**Stable**, **Beta** or **Nightly**), **Check now**, then **Update now**. wisp restarts; running tasks are stopped,
+and it says how many first.
+</TabItem>
+<TabItem label="Phone app">
+Updating wisp on a computer is done on that computer: see the Desktop app tab.
+</TabItem>
+<TabItem label="TUI">
+Send `/update check`, then `/update install`.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp update            # is there a newer wisp?
+wisp update apply      # install it
+```
+A Homebrew install follows stable releases only; update it with `brew upgrade`.
+</TabItem>
+</Tabs>
+
+## Next
+
+- [The terminal UI](../tui/)
+- [The phone app](../phone-app/)
+- [Run your first task](../../../start/first-task/)

@@ -1,0 +1,17 @@
+id: D-0048
+decision: Build every feature as a plugin that talks to others only through their api package; built-ins get no private API.
+reason: 'Owner 2026-11-08/09: everything is a plugin and swappable (ADR-0003).'
+scope:
+- crates/**
+- plugins/**
+- packages/**
+- apps/**
+- mobile/**
+- tools/**
+- spikes/**
+category: architecture
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

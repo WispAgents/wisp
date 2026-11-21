@@ -1,0 +1,76 @@
+Fixed-count timer loops in a UI test: a loop that only awaits setTimeout hops (inline, a local helper, an imported one, node:timers/promises; guards that break allowed) with a count in its condition (a comparison, a step, !== N, a for-of over Array(N)) fails; clock deadlines, plain conditions, stepping loops, setImmediate/microtask loops, allow comments with a reason and non-test files pass.
+=== packages/ui/package.json
+{ "name": "@wisp/ui", "exports": { ".": "./src/index.ts" } }
+=== packages/ui/src/index.ts
+export async function flush(): Promise<void> {
+  for (let i = 0; i < 30; i++) await new Promise((r) => setTimeout(r, 0));
+}
+=== packages/ui/test/helpers.ts
+export const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
+export async function settle(n = 8): Promise<void> {
+  for (let i = 0; i < n; i++) await tick();
+}
+export async function until(ok: () => boolean, ms = 4000): Promise<void> {
+  const end = performance.now() + ms;
+  while (!ok() && performance.now() < end) await tick();
+}
+=== packages/ui/test/bad.test.ts
+import { test } from 'vitest';
+import { tick as hop } from './helpers.ts';
+const flush = async (n = 30): Promise<void> => {
+  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
+};
+function wait(ms: number): Promise<void> {
+  return new Promise((r) => globalThis.setTimeout(r, ms));
+}
+test('fixed counts', async () => {
+  for (let i = 0; i < 300 && !document.body.firstChild; i++) await wait(10);
+  let n = 5;
+  while (n-- > 0) await hop();
+  do {
+    await hop();
+    await hop();
+  } while (--n > 0);
+  // check:allow timer-loop-in-test
+  for (let i = 0; i < 3; i++) await hop();
+  await flush();
+});
+=== packages/ui/test/more.test.ts
+import { setTimeout as sleep } from 'node:timers/promises';
+import { tick } from './helpers.ts';
+export async function more(ok: () => boolean): Promise<void> {
+  let n = 30;
+  while (n--) await tick();
+  for (let i = 0; i !== 30; i++) await tick();
+  for (let i = 0; i < 100; i++) {
+    if (ok()) break;
+    await tick(10);
+  }
+  for (const _ of Array.from({ length: 30 })) await tick();
+  for (const _ of new Array(30)) await sleep(10);
+  for (let i = 0; i < 3; i++) await tick(); // check:allow timer-loop-in-test a reason, on the loop's own line
+}
+=== packages/ui/test/good.test.ts
+import { test, vi } from 'vitest';
+import { tick, until } from './helpers.ts';
+const immediate = (): Promise<void> => new Promise((r) => setImmediate(r));
+test('waits on conditions and clocks', async () => {
+  await until(() => true);
+  for (const end = Date.now() + 1000; !document.body.firstChild && Date.now() < end; ) await tick(10);
+  while (!document.body.firstChild) await tick();
+  for (let i = 0; i < 5; i++) await immediate();
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  for (let i = 0; i < 4; i++) {
+    vi.advanceTimersByTime(1000);
+    await tick();
+  }
+  // check:allow timer-loop-in-test the animation runs exactly three real frames of 16 ms
+  for (let i = 0; i < 3; i++) await tick(16);
+  for (let i = 0; i < 3; i++) await vi.advanceTimersByTimeAsync(10);
+  for (const s of ['a', 'b']) await tick();
+  for (let i = 0; i < 30 && Date.now() < 1; i++) await tick();
+  for (let i = 0; i < 5; i++) {
+    if (i > 2) document.body.append('x');
+    await tick();
+  }
+});

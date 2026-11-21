@@ -1,0 +1,74 @@
+// The task header's status pill (frame/rows-view.ts statusOf).
+import { describe, expect, it, test } from 'vitest';
+import { nextNeedsYou, statusOf, duration, changeFigures, folded, trailActs } from '../src/frame/rows-view.ts';
+import { isHeld } from '../src/pure.ts';
+import type { SessionRow } from '../src/rows.ts';
+
+const t = (key: string): string => key;
+const row = (state: string, status: string): SessionRow => ({ id: 'x', state, summary: { status } }) as unknown as SessionRow;
+
+test('a task waiting on a question says Asking as v1 (turns.js STATE_WORD), whatever its last turn said (a stalled goal asks after a done turn)', () => {
+  expect(statusOf(row('waiting', 'done'), t)).toEqual({ label: 'shell.status.asking', tone: 'warn' });
+  expect(statusOf({ id: 'x', state: 'waiting', summary: { approval: true } } as unknown as SessionRow, t).label).toBe('shell.status.approval');
+  expect(statusOf(row('review', 'done'), t).label).toBe('shell.status.finished');
+  expect(statusOf(row('running', 'done'), t).tone).toBe('live');
+});
+
+test('a blocked run says why it stopped, else Blocked, as v1 statusKey and the list do (B9: a run refused before it started read Failed)', () => {
+  const blocked = (halt?: string): SessionRow => ({ id: 'x', state: 'review', summary: { status: 'blocked', ...(halt && { halt }) } }) as unknown as SessionRow;
+  expect(statusOf(blocked(), t)).toEqual({ label: 'shell.status.blocked', tone: 'warn' });
+  expect(statusOf(blocked('failed'), t)).toEqual({ label: 'shell.status.failed', tone: 'bad' });
+  expect(statusOf(blocked('limit'), t).label).toBe('shell.status.limit');
+  expect(statusOf(blocked('refused'), t).label).toBe('shell.status.refused');
+  expect(statusOf(row('review', 'partial'), t).label).toBe('shell.status.partial');
+});
+
+describe('turn figures', () => {
+  it('a_turns_time_and_its_lines_read_as_v1_shows_them_and_older_turns_fold', async () => {
+    expect([duration(369), duration(12_400), duration(184_000), duration(3_720_000)]).toEqual(['369ms', '12s', '3m 4s', '1h 2m']);
+    const f = changeFigures([
+      { file: 'a.ts', edits: [{ before: 'x\ny', after: 'x\ny\nz' }] },
+      { file: 'a.ts', edits: [{ before: '', after: 'new\n' }] },
+      { file: 'b.ts', edits: [] },
+    ]);
+    expect(f).toEqual({ files: 2, plus: 4, minus: 2 });
+    expect(folded([1, 2, 3, 4], false)).toEqual({ hidden: 0, shown: [1, 2, 3, 4] });
+    expect(folded([1, 2, 3, 4, 5, 6], false)).toEqual({ hidden: 3, shown: [4, 5, 6] });
+    expect(folded([1, 2, 3, 4, 5, 6], true).hidden).toBe(0);
+  });
+});
+
+test('leaving_a_task_opens_the_next_that_needs_you_else_new_task', () => {
+  const row = (id: string, state: string, at: number, more: Record<string, unknown> = {}) =>
+    ({ id, title: id, state, agent: 'claude', archived: false, unread: false, created_at: 0, updated_at: at, summary: {}, ...more }) as never;
+  const rows = [
+    row('local:a', 'review', 10),
+    row('local:b', 'review', 30),
+    row('local:c', 'running', 50),
+    row('local:d', 'review', 40, { archived: true }),
+    row('local:e', 'waiting', 20, { parent_id: 'local:b' }),
+    row('local:f', 'done', 60),
+  ];
+  expect(nextNeedsYou(rows, 'local:b')).toBe('local:a'); // the newest left in Needs you, not the one just done
+  expect(nextNeedsYou(rows, 'b')).toBe('local:a'); // a bare id is the same task
+  expect(nextNeedsYou(rows, 'local:x')).toBe('local:b');
+  expect(nextNeedsYou([row('local:a', 'review', 1)], 'local:a')).toBeUndefined(); // nothing else: New task
+});
+
+test("a finished turn's trail shows only the kinds it did; none when it never ran (B9: it showed 0 · 0 · 0)", () => {
+  expect(trailActs(0, { read: 0, edit: 0, run: 0 }, t)).toEqual([]);
+  expect(trailActs(3, { read: 2, edit: 0, run: 1 }, t).map((a) => a.icon)).toEqual(['read', 'terminal']);
+  expect(trailActs(1, { read: 0, edit: 0, run: 0 }, t)).toEqual([{ text: 'shell.task.activityLabel' }]);
+});
+
+// TRY-17 #28: a held task read Finished on Home's Needs you and the phone task header while the list said Held. One
+// helper (`isHeld`) decides it for all three.
+test('a_held_task_says_held_on_home_the_task_header_and_the_list_alike', () => {
+  const held = { id: 'x', state: 'review', summary: { status: 'held', held: { kind: 'harness-changed', by: 'wisp.accounts', data: {} } } } as unknown as SessionRow;
+  expect(statusOf(held, t)).toEqual({ label: 'shell.status.held', tone: 'warn' });
+  expect(isHeld(held.state, held.summary)).toBe(true);
+  // the status alone (an older row without the held turn) is held too; a running or done task never is
+  expect(isHeld('review', { status: 'held' })).toBe(true);
+  expect(isHeld('running', { status: 'held' })).toBe(false);
+  expect(isHeld('review', { status: 'done' })).toBe(false);
+});

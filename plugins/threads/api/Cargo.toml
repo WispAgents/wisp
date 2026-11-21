@@ -1,0 +1,18 @@
+[package]
+name = "wisp-threads-api"
+description = "the contract of wisp.threads (ADR-0079): a task's Notes (its state, kept outside the conversation), their revisions, and the thread's health"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+wisp-kernel.workspace = true
+
+[lints]
+workspace = true

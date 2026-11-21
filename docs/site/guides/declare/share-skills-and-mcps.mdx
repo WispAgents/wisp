@@ -1,0 +1,150 @@
+---
+title: Share skills, AGENTS.md and MCP servers with your team
+description: Give every agent on your team the same rules, skills and MCP servers, on every harness, in one repo or across many.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Your team wants every agent, on every harness, on every laptop, to know the same things: how you test, how you name
+things, which MCP servers to use. wisp keeps that in your repo, so it's reviewed like code and everyone gets it with
+`git pull`. There are three parts: **rules** (`AGENTS.md` and instructions), **skills**, and **MCP servers**.
+
+## Rules: AGENTS.md
+
+Claude Code, Codex, Cursor, opencode and the others read `AGENTS.md` at the root of the repo. Keep your house rules
+there and commit it. Claude Code reads `CLAUDE.md` instead: make it one line, `@AGENTS.md`, so both read the same
+file. A folder deeper in the repo can have its own `AGENTS.md` for the rules of that part.
+
+`wisp init` adds one short section to `AGENTS.md` (and to `CLAUDE.md` when there is one): it tells agents how to read
+the tasks behind the code (`wisp tasks --touching <path>`). It adds it once, and only beside `.wisp/`.
+
+Rules that only some agents follow go on the agent profile, or on the project:
+
+```yaml
+agents:
+  reviewer: { harness: codex, mode: plan, instructions: "Review only. Never change files. Correctness first." }
+projects:
+  api: { path: https://github.com/acme/api, instructions: "Every endpoint gets a test in tests/api." }
+```
+
+A crew member has its own `AGENTS.md` in its kit, followed on every job. See
+[Crew and check-ins](../../run/crew-and-check-ins/).
+
+## Skills
+
+A **skill** is a how-to an agent picks up when it needs it: "how we write migrations", "how to release". Write it as
+a markdown file, or a folder with a `SKILL.md`, then declare it and give it to the agents that need it.
+
+```yaml
+# .wisp/skills.wisp.yml
+wisp: 1
+skills:
+  migrations: { description: How we write and test database migrations, path: docs/skills/migrations.md }
+  release: { description: How to cut a release, path: .wisp/skills/release }
+agents:
+  builder: { harness: claude, skills: [migrations, release] }
+  helper: { harness: codex, skills: [migrations] }
+```
+
+A relative `path` is the repo's. The `description` is what an agent reads to decide whether to use a skill, so say
+what it's for. A short skill can be inline, with `body:` instead of `path:`. Each task records which skills it had
+and which it used. To see whether a skill helps, run the task with and without it:
+[Try it two ways](../../run/compare-and-try/).
+
+## MCP servers
+
+Declare an MCP server once as a **connector**. Every agent that should have it gets it, on every harness.
+
+```yaml
+# .wisp/connectors.wisp.yml
+wisp: 1
+connectors:
+  linear: { url: "https://mcp.linear.app/sse", oauth: true }
+  postgres:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-postgres"]
+    env: { DATABASE_URL: "${secret:DB_URL}" }
+    agents: [builder]          # only these agent profiles get it
+    modes: [plan, edits]       # and only in these modes
+```
+
+**Secrets never go in the file.** `${secret:NAME}` names one; each person sets the value on their own computer:
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → Agents → **Connectors**. A connector that needs a key or a sign-in says so; **Sign in**
+opens the server's page for an `oauth: true` server. The token stays in your secrets file.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → Agents → **Connectors**. A connector that needs a
+sign-in says so; **Sign in** opens the server's page. A key is easier to paste from the Desktop app tab.
+</TabItem>
+<TabItem label="TUI">
+Secrets are typed hidden, so set them from a terminal (CLI tab). Then check the server:
+
+```text
+/connectors list
+```
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp secret set DB_URL                     # typed, not shown
+printf %s "$DB_URL" | wisp secret set DB_URL
+wisp validate                              # says which secrets aren't set here yet
+```
+</TabItem>
+</Tabs>
+
+## Already have MCP servers?
+
+The MCP servers in Claude Code's or Codex's own config can come in as connectors, so every harness gets them.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → Agents → **Connectors** → **Found in your harnesses** → **Review**, tick them, and **Add**.
+</TabItem>
+<TabItem label="Phone app">
+Person button → **Settings** → Agents → **Connectors** → **Found in your harnesses** → **Review**, tick them, and
+**Add**.
+</TabItem>
+<TabItem label="TUI">
+```text
+/connectors import --names linear,sentry
+```
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp connectors list                       # yours, and the ones found in your harnesses
+wisp connectors import --names linear,sentry
+wisp export connectors > .wisp/connectors.wisp.yml   # as a formula to commit
+```
+</TabItem>
+</Tabs>
+
+## Many repos: modules
+
+Put the shared setup in its own repo (`acme/wisp-setup`) and use it everywhere as a module:
+
+```yml
+# .wisp/team.wisp.yml in each repo
+modules:
+  team: { source: "git::https://github.com/acme/wisp-setup//team?ref=v3" }
+```
+
+`wisp init` fetches it and pins it in `.wisp/lock.yml`. Moving to `?ref=v4` is one pull request per repo, reviewed
+like any other change. See [Formulas](../../../concepts/formulas/).
+
+## Without git: share through wisp Cloud
+
+```sh
+wisp share skill.migrations                # a link: the skill and what it references
+wisp share connector.linear --access people:ana,ben
+wisp open <link>                           # the other side: see what it adds, then import it
+```
+
+A shared setup never carries a secret: it names the ones it needs, and whoever imports it sets their own. In the
+app, Settings → Advanced → **Setup** → **Share setup** makes the same formula to copy.

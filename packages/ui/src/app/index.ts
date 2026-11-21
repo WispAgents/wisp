@@ -1,0 +1,85 @@
+// The app's frame and its pieces as v1 draws them (design/foundation.md): the stage, the crew rail,
+// the sidebar's head, New task, the list's sections and rows, Home and the open task.
+export {
+  CrewRail,
+  Feed,
+  FeedItem,
+  FeedSection,
+  SidebarHead,
+  SplitTop,
+  Stage,
+  type CrewRailProps,
+  type FeedSectionProps,
+  type ProjectChip,
+  type RailMember,
+  type SidebarHeadProps,
+  type MeFace,
+  type SplitTopProps,
+  type StagePage,
+  type StageProps,
+} from './Stage.tsx';
+export { GoalPill, OverlapPill, RowPill, TaskCard, type CardStatus, type TaskCardProps } from './Card.tsx';
+export {
+  KeysHint,
+  FeedbackLine,
+  Launcher,
+  NextList,
+  SplitHome,
+  Tips,
+  type LauncherCompare,
+  type LauncherProps,
+  type LauncherRecipe,
+  type LauncherTool,
+  type NextRow,
+  type PlainTip,
+  type SetupTip,
+  type SplitHomeProps,
+} from './Home.tsx';
+export { foldTail, tailFold, type FoldExtras, type FoldInput } from './launcher-fold.ts';
+export { LauncherSetup, type LauncherSetupProps } from './LauncherSetup.tsx';
+export { TeamCopies, TeamCrew, TeamFields, TeamLead, TeamPop, TeamRow, TeamSave, TeamWhere, type TeamPlaceLook, type TeamPopProps, type TeamVote } from './TeamPop.tsx';
+export {
+  OverlapNote,
+  ReplyBox,
+  TaskBody,
+  TaskDetails,
+  TaskHead,
+  TurnView,
+  type OverlapNoteProps,
+  type ReplyBoxProps,
+  type CompactReplyBoxProps,
+  type ReplyCap,
+  type TaskAction,
+  type HeadAction,
+  type TaskDetailsProps,
+  type TaskPlaceChip,
+  type TaskHeadProps,
+  type TrailItem,
+  type TurnViewProps,
+} from './Task.tsx';
+export { WithAct, ActIcon, type Act } from './act.tsx';
+export { HomePanes, PaneCard, PaneOff, PaneRow, PaneRows, PaneView, type HomePanesProps, type PaneCardProps, type PaneRowProps, type PaneSeg, type PaneViewProps } from './Panes.tsx';
+export { ChangesList, firstLine, hunkKey, hunkRuns, rowKey, type ChangeFile, type ChangeRow, type ChangesLabels, type ChangesListProps, type StageState } from './Changes.tsx';
+export { PickStrip, type PickStripChip, type PickStripProps } from './PickStrip.tsx';
+export { ProjectSelect, type ProjectSelectProps } from './ProjectSelect.tsx';
+export { PaletteSheet, paletteRowId, type PaletteRow, type PaletteSheetProps } from './Palette.tsx';
+export { StuffFrame, type StuffFrameProps } from './StuffFrame.tsx';
+export { StuffCard, StuffGroup, StuffKind, StuffNone, type StuffCardProps, type StuffThumb, type StuffTool } from './StuffCard.tsx';
+export { AppWindow, DocReader, type AppWindowProps, type DocReaderProps } from './StuffWindows.tsx';
+export { RunPreview, type RunPreviewLabels, type RunPreviewProps } from './RunPreview.tsx';
+export { CommentCard, CommentTray, type CommentCardProps, type CommentTrayProps } from './Comments.tsx';
+export { SpareCards, type SpareCard, type SpareCardsProps } from './Spare.tsx';
+export { HomeUsage, type HomeUsageGroup, type HomeUsageProps, type HomeUsageWindow } from './HomeUsage.tsx';
+export { RailCardBody, headingForCard, stepRow, type RailCardBodyProps, type RailCardRow } from './RailCard.tsx';
+export { AutoPop } from './auto-pop-lazy.ts';
+export type { AutoPopProps, AutoPopRow } from './AutoPop.tsx';
+export { HarnessPicker, pickerPlace, type HarnessPickerProps, type HarnessPickerRow, type HarnessPickerOption, type HarnessPickerPane } from './HarnessPicker.tsx';
+export { ProjectsSheet, type ProjectsSheetProps, type ProjectsRow, type ProjectsPlace } from './ProjectsSheet.tsx';
+export { BtwList, type BtwItem } from './Btw.tsx';
+export { RateButtons, WhyForm, type Rating, type RateProps, type WhyFormProps } from './Rate.tsx';
+export { CompareRuns, type CompareRunsProps, type CompareRowView, type CompareRunView, type CompareCellView } from './Compare.tsx';
+export { AutomationsBody, AutoRunner, AutoList, TriggerKinds, AutoRow, AutoPresets, AutoNote, AutoFoot, type AutomationsTab, type AutoItem, type TriggerKind, type Rich } from './Automations.tsx';
+export { TaskUsage, type TaskUsageProps, type TaskUsageRow, type TaskUsageSection } from './TaskUsage.tsx';
+export { Ledger, type LedgerProps, type LedgerString } from './Ledger.tsx';
+export { loadPhoneStage } from './phone-stage-load.ts';
+export { StuffPhone, StuffPhoneApp, type StuffPhoneProps, type StuffPhoneAppProps, type StuffPhoneItem, type StuffPhoneGroup, type StuffPhoneKind } from './StuffPhone.tsx';

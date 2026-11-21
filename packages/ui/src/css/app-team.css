@@ -1,0 +1,469 @@
+/* v1 subagents.css .team-pop and goal.css .judges-pop: a panel of people or runs that work together (the goal's
+   judges): a head with what it is, a row of how they decide, a row per member, and a foot to add one, the count and
+   Clear. It sits in a bare Popover, the card (and dialog) around it. */
+@layer kit {
+  [data-kit='team-pop'] {
+    display: flex;
+    flex-direction: column;
+    width: calc(min(480px, 100vw - 24px) - 2 * var(--size-hairline)); /* the card's border goes around it: v1's 480 in all */
+    max-height: min(520px, 76vh);
+    overflow: hidden;
+    border-radius: inherit; /* the card's corners: the popover doesn't clip, so a picker opened inside it isn't cut */
+    /* v1 drew it on the page's own type, not a popover body's */
+    font-size: var(--fs-lg);
+    line-height: var(--lh-base);
+    color: var(--ink);
+  }
+  /* Delegate (v1 subagents.css .team-pop): 560 in all */
+  [data-kit='team-pop'][data-wide] {
+    width: calc(min(var(--size-team-w), 100vw - 2 * var(--space-6)) - 2 * var(--size-hairline));
+  }
+  [data-kit='tp-head'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    padding: 14px 14px var(--space-5);
+  }
+  /* v1 .tp-mempty: Presets with none yet, said in the panel under its head (QA desktop r4 #1: as a bubble it lay over
+     the panel's words, then the launcher's bar, then the lead's row) */
+  [data-kit='tp-note'] {
+    margin: 0;
+    padding: 0 14px var(--space-5);
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+  [data-kit='tp-title'] {
+    flex: 1;
+    display: grid;
+    gap: var(--space-1);
+  }
+  [data-kit='tp-title'] > b {
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-lg);
+    color: var(--ink);
+  }
+  [data-kit='tp-title'] > small {
+    font-size: var(--fs-sm);
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  /* goal.css .jp-vote: Met when, All · Majority · Any, and the rule in words */
+  [data-kit='tp-vote'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3) var(--space-5);
+    min-width: 0;
+    margin: 0 14px var(--space-5);
+  }
+  [data-kit='tp-vote-k'] {
+    flex: none;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  [data-kit='tp-vote-rule'] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+  /* v1 .pk-seg */
+  [data-kit='tp-seg'] {
+    flex: none;
+    display: flex;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border-radius: var(--radius-control);
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+  }
+  [data-kit='tp-seg'] > button {
+    padding: var(--space-2) 7px;
+    border-radius: 7px;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+    white-space: nowrap;
+    outline: 0;
+    transition:
+      background 0.12s,
+      color 0.12s;
+  }
+  [data-kit='tp-seg'] > button:hover {
+    color: var(--ink);
+  }
+  [data-kit='tp-seg'] > button:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  [data-kit='tp-seg'] > button[aria-checked='true'] {
+    background: var(--surface);
+    color: var(--accent-ink);
+    font-weight: var(--fw-medium);
+    box-shadow: var(--shadow-1);
+  }
+  /* goal.css .jp-vote.off: fewer than two judges, nothing to vote on yet */
+  [data-kit='tp-vote'][data-off] > [data-kit='tp-seg'] {
+    opacity: 0.5;
+  }
+  [data-kit='tp-vote'][data-off] > [data-kit='tp-seg'] > button {
+    cursor: default;
+  }
+  [data-kit='tp-list'] {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: 0 14px var(--space-6);
+  }
+  [data-kit='tp-row'] {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border-radius: 11px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  [data-kit='tp-top'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  [data-kit='tp-row'][data-crew] > [data-kit='tp-top'] {
+    gap: var(--space-5);
+  }
+  [data-kit='tp-top'] > [data-kit='grow'] {
+    flex: 1;
+  }
+  /* copies and Remove at the row's end, together (v1 .tp-copies + .tp-del) */
+  [data-kit='tp-end'] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: none;
+  }
+  /* a delegate's second line (v1 .tp-bottom): its @name, then what it's for */
+  [data-kit='tp-bottom'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  [data-kit='tp-row'] [data-kit='field-box'] {
+    background: var(--surface); /* v1 .tp-row --field-bg */
+  }
+  [data-kit='tp-name'] {
+    flex: 0 1 var(--size-team-name);
+    min-width: var(--size-team-name-min);
+  }
+  [data-kit='tp-use'] {
+    flex: 1 1 var(--size-team-use);
+    min-width: 0;
+  }
+  [data-kit='tp-name'] > [data-kit='field-box'],
+  [data-kit='tp-use'] > [data-kit='field-box'] {
+    width: 100%;
+  }
+  /* "@claude": the @ against the name (v1 .tp-name gap 0) */
+  [data-kit='tp-name'] > [data-kit='field-box'] {
+    gap: 0;
+  }
+  [data-kit='tp-name'] [data-kit='field-prefix'] {
+    margin-right: 0;
+    color: var(--faint);
+  }
+  [data-kit='tp-use'] [data-kit='field-prefix'] {
+    flex: none;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  /* the lead (v1 .tp-lead): LEAD, its logo on a disc, harness · model, "on", where it runs */
+  [data-kit='tp-lead'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-width: 0;
+    margin: 0 14px var(--space-5);
+    padding: 7px var(--space-4) 7px 9px;
+    border-radius: 11px;
+    border: var(--size-hairline) solid var(--line);
+    background: var(--bg-2);
+    font-size: var(--fs-md);
+  }
+  [data-kit='tp-tag'] {
+    flex: none;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+  }
+  [data-kit='tp-lead-logo'] {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--size-team-face);
+    height: var(--size-team-face);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    box-shadow: 0 0 0 var(--size-hairline) var(--line);
+    color: var(--ink);
+  }
+  [data-kit='tp-lead-logo'] > * {
+    display: block;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  [data-kit='tp-lead-run'] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-2);
+  }
+  [data-kit='tp-on'] {
+    flex: none;
+    color: var(--faint);
+  }
+  /* where it runs (v1 .tp-place): a chip with its menu, dashed when it only says */
+  [data-kit='tp-place'] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: none;
+    max-width: var(--size-team-place-max);
+    height: var(--size-control-sm);
+    padding: 0 var(--space-4) 0 9px;
+    border-radius: var(--radius-control);
+    border: var(--size-hairline) solid var(--line-2);
+    background: var(--surface);
+    color: var(--ink-2);
+    font-size: var(--fs-sm);
+    white-space: nowrap;
+  }
+  [data-kit='tp-lead'] > [data-kit='tp-place'] {
+    height: calc(var(--size-control-xs) + var(--space-1));
+  }
+  [data-kit='tp-place'] > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  [data-kit='tp-place'] > [data-kit='icon']:first-child {
+    flex: none;
+    width: calc(var(--size-icon-sm) + var(--size-hairline));
+    height: calc(var(--size-icon-sm) + var(--size-hairline));
+    color: var(--muted);
+  }
+  [data-kit='tp-place'] > [data-kit='icon']:last-child:not(:first-child) {
+    flex: none;
+    width: var(--space-5);
+    height: var(--space-5);
+    color: var(--faint);
+    transform: rotate(90deg);
+  }
+  button[data-kit='tp-place']:hover {
+    border-color: var(--line-2);
+    background: var(--bg-2);
+    color: var(--ink);
+  }
+  button[data-kit='tp-place'][aria-expanded='true'] {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  }
+  [data-kit='tp-place'][data-away] {
+    color: var(--ink);
+  }
+  [data-kit='tp-place'][data-away] > [data-kit='icon']:first-child {
+    color: var(--accent);
+  }
+  [data-kit='tp-place'][data-off] > span {
+    color: var(--muted);
+  }
+  [data-kit='tp-place'][data-static] {
+    border-style: dashed;
+    background: none;
+  }
+  /* copies (v1 .tp-copies): − ×n + in one box */
+  [data-kit='tp-copies'] {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    height: var(--size-control-sm);
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-control);
+    border: var(--size-hairline) solid var(--line-2);
+    background: var(--surface);
+  }
+  [data-kit='tp-copies'] > b {
+    min-width: var(--size-pill);
+    text-align: center;
+    font: var(--fw-medium) var(--fs-sm) var(--mono);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  [data-kit='tp-copies'][data-on] {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  }
+  [data-kit='tp-copies'][data-on] > b {
+    color: var(--accent-ink);
+  }
+  [data-kit='tp-copies'] > button {
+    display: grid;
+    place-items: center;
+    width: var(--size-control-xs);
+    height: var(--size-control-xs);
+    border-radius: 7px;
+    color: var(--muted);
+  }
+  [data-kit='tp-copies'] > button:hover:not(:disabled) {
+    background: var(--bg-2);
+    color: var(--ink);
+  }
+  [data-kit='tp-copies'] > button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  [data-kit='tp-copies'] > button:focus-visible {
+    outline: 0;
+    box-shadow: inset 0 0 0 var(--size-hairline) var(--accent);
+  }
+  [data-kit='tp-copies'] [data-kit='icon'] {
+    width: var(--size-icon-xs);
+    height: var(--size-icon-xs);
+  }
+  [data-kit='tp-crew'] {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+  }
+  [data-kit='tp-crew'] > b,
+  [data-kit='tp-crew'] > small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-kit='tp-crew'] > b {
+    font-weight: var(--fw-medium);
+    font-size: var(--fs-md);
+    color: var(--ink);
+  }
+  [data-kit='tp-crew'] > small {
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+  [data-kit='tp-empty'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-7);
+    border-radius: 11px;
+    border: 1px dashed var(--line-2);
+    color: var(--muted);
+    font-size: var(--fs-md);
+  }
+  [data-kit='tp-empty'] > [data-kit='icon'] {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    color: var(--faint);
+  }
+  [data-kit='tp-empty'] > p {
+    margin: 0;
+    line-height: 1.4;
+  }
+  [data-kit='tp-foot'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-5) 14px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  /* Save as preset's name (v1 .tp-saveform): the field takes the room, then Save and Cancel */
+  [data-kit='tp-saveform'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    flex: 1;
+    min-width: 0;
+  }
+  [data-kit='tp-saveform'] > [data-kit='input'] {
+    flex: 1;
+    min-width: 0;
+  }
+  /* Delegate's head: what it is, Presets at its end, both from the top (v1 .tp-head) */
+  [data-kit='team-pop'][data-wide] > [data-kit='tp-head'] {
+    align-items: flex-start;
+  }
+  [data-kit='tp-head'] > :not([data-kit='tp-title']) {
+    flex: none;
+  }
+  [data-kit='tp-count'] {
+    font-size: var(--fs-sm);
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  [data-kit='tp-foot'] > [data-kit='grow'] {
+    flex: 1;
+  }
+  /* phones: the count steps aside so Add and Clear keep their room (v1 subagents.css ≤520px), and the rule goes under
+     Met when on a line of its own (v1 .jp-vote wraps there), one line still */
+  @media (max-width: 520px) {
+    [data-kit='tp-vote'] {
+      display: grid;
+      grid-template-columns: auto auto minmax(0, 1fr);
+    }
+    [data-kit='tp-vote-rule'] {
+      grid-column: 1 / -1;
+    }
+    [data-kit='tp-foot'] {
+      gap: var(--space-3);
+      padding: var(--space-5);
+    }
+    [data-kit='tp-count'] {
+      display: none;
+    }
+    /* Delegate's lead strip and rows go onto two lines instead of squeezing (v1 subagents.css ≤520px wraps them):
+       the lead's place under LEAD and its run; a row's place and harness, then its copies and Remove; the @name and
+       Use for one under the other */
+    [data-kit='tp-lead'] {
+      display: grid;
+      grid-template-columns: auto auto minmax(0, auto) minmax(0, 1fr);
+      row-gap: var(--space-4);
+    }
+    [data-kit='tp-lead'] > [data-kit='tp-on'] {
+      justify-self: start;
+    }
+    [data-kit='tp-lead'] > [data-kit='tp-place'] {
+      grid-column: 1 / -1;
+      justify-self: start;
+    }
+    [data-kit='team-pop'][data-wide] [data-kit='tp-row']:not([data-crew]) > [data-kit='tp-top'] {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      justify-items: start;
+      row-gap: var(--space-3);
+    }
+    [data-kit='team-pop'][data-wide] [data-kit='tp-top'] > [data-kit='grow'] {
+      display: none;
+    }
+    [data-kit='tp-bottom'] {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    [data-kit='tp-name'],
+    [data-kit='tp-use'] {
+      flex: none;
+    }
+  }
+}

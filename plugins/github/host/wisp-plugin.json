@@ -1,0 +1,21 @@
+{
+  "wispPlugin": 1,
+  "id": "wisp.github",
+  "name": "GitHub",
+  "version": "1.0.0-alpha.1",
+  "api": "^1",
+  "description": "wisp.github: CI as a trigger source (gh run list), and the GitHub transport for wisp.channels",
+  "server": {
+    "builtin": "wisp-github"
+  },
+  "requires": {
+    "wisp.channels": "^1.0.0-0"
+  },
+  "permissions": ["proc:exec{bin:gh}"],
+  "activation": [
+    "onStartup"
+  ],
+  "contributes": {
+    "triggerSources": ["ci.failed", "ci.passed"]
+  }
+}

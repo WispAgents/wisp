@@ -1,0 +1,107 @@
+// A session row as the list reads it. The server's row keeps its hot columns at the top (`id`, `title`,
+// `state`, `updated_at`…), the rest in `body`, and the list's own view in `summary` (camelCase: `status`,
+// `preview`, `updatedAt`, `queued`, `held`…). The list's `Session` is that summary, so the three are
+// flattened: body, then the columns, then the summary on top. One flat row per server row, kept while
+// the row is unchanged, so memoised sections and keyed rows stay put.
+
+import type { Held, Plan, SessionRow } from '../types.ts';
+
+const cache = new WeakMap<object, SessionRow>();
+
+const camel = (k: string): string => k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+
+function obj(v: unknown): Record<string, unknown> | undefined {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+}
+
+export function flatSession(raw: SessionRow): SessionRow;
+export function flatSession(raw: SessionRow | undefined): SessionRow | undefined;
+export function flatSession(raw: SessionRow | undefined): SessionRow | undefined {
+  const top = obj(raw);
+  if (!raw || !top) return raw;
+  const body = obj(top['body']);
+  const summary = obj(top['summary']);
+  // a row already flat (the tests' fixtures, an optimistic patch) is its own
+  if (!body && !summary) return raw;
+  const had = cache.get(raw);
+  if (had) return had;
+  const out: Record<string, unknown> = { ...body };
+  for (const [k, v] of Object.entries(top)) if (k !== 'body' && k !== 'summary') out[camel(k)] = v;
+  Object.assign(out, summary);
+  // whose crew job it is: the crew's note in `ext` (CrewExt), read as v1's `crew`
+  const job = obj(obj(out['ext'])?.['wisp.crew']);
+  if (job && typeof job['id'] === 'string' && out['crew'] === undefined) out['crew'] = { id: job['id'], ...(typeof job['job'] === 'string' && { job: job['job'] }) };
+  // what's scheduled on it: wisp.later's mirror in `ext` (LaterExt), read as v1's `later`, so a task waiting on a
+  // follow-up or an agent's check-in sits in Scheduled, not Needs you (v1 0.56.0)
+  const later = obj(out['ext'])?.['wisp.later'];
+  const items = obj(later)?.['later'];
+  // soonest first: the row's line and Scheduled's order read the first (the mirror keeps them in the order they were set)
+  if (Array.isArray(items) && items.length && out['later'] === undefined) out['later'] = [...(items as { at?: number }[])].sort((x, y) => (x.at ?? 0) - (y.at ?? 0));
+  const held = obj(out['held']);
+  if (held && 'data' in held) out['held'] = heldView(held);
+  const flat = out as unknown as SessionRow;
+  cache.set(raw, flat);
+  return flat;
+}
+
+/** The runtime's held turn (`{kind, by, until, data, turnId}`, runtime core summary.rs) read as v1's flat `held` the row
+ *  says: the window and how full it is (Ask near the limit: `data.label`, `data.used`; a stop line: `data.hold`), the
+ *  project's setup, the harness the watch holds it for, or a stop line's wait for the reset. Its `why` when none of
+ *  those (B10: a held check-in read "at 0%"). */
+function heldView(h: Record<string, unknown>): Held {
+  const data = obj(h['data']) ?? {};
+  const stop = obj(data['hold']);
+  const label = data['label'] ?? stop?.['label'];
+  const used = data['used'] ?? stop?.['used'];
+  const kind = String(h['kind'] ?? '');
+  return {
+    kind,
+    ...(typeof h['until'] === 'number' && { until: h['until'] }),
+    ...(typeof label === 'string' && label && { label }),
+    ...(typeof used === 'number' && { used }),
+    ...(typeof data['why'] === 'string' && { why: data['why'] }),
+    ...(kind === 'setup' && { project: { count: 1, setup: true } }),
+    ...(h['by'] === 'wisp.accounts' && typeof data['agent'] === 'string' && { harness: data['agent'] }),
+    // a stop line holds it until the reset, then it runs by itself
+    ...(h['by'] === 'wisp.budget' && kind === 'plan' && { waiting: true }),
+  };
+}
+
+/** wisp.later's topic: its plans (`later_plan`) and the follow-ups on tasks. */
+export const LATER_TOPIC = 'plugin:wisp.later:later';
+
+/** A task or reminder that hasn't started, as wisp.later keeps it (`later_plan` rows: `{id, body}`). */
+interface LaterPlan {
+  readonly id?: string;
+  readonly kind?: string;
+  readonly at?: number | null;
+  readonly setAt?: number;
+  readonly draft?: boolean;
+  readonly title?: string;
+  readonly text?: string;
+  readonly body?: { readonly prompt?: string; readonly agent?: string; readonly cwd?: string; readonly projectId?: string } | null;
+}
+
+/** A `later_plan` row as the list draws it: Scheduled (a time, or after a task) or Drafts. */
+export function listPlan(row: unknown): Plan | undefined {
+  const r = row as { readonly id?: string; readonly body?: LaterPlan } | undefined;
+  const p: LaterPlan | undefined = r?.body && typeof r.body === 'object' && 'kind' in r.body ? r.body : (r as LaterPlan | undefined);
+  const id = p?.id ?? r?.id;
+  if (!p || !id) return undefined;
+  const task = p.kind !== 'reminder';
+  const title = (task ? (p.title ?? (p.body?.prompt ?? '').split('\n')[0]) : p.text) ?? '';
+  const cwd = p.body?.cwd ?? '';
+  const project = cwd.split('/').filter(Boolean).pop();
+  const after = (p as { after?: { title?: string } }).after;
+  return {
+    id,
+    kind: p.draft ? 'draft' : task ? 'task' : 'reminder',
+    title,
+    at: p.at ?? p.setAt ?? 0,
+    ...(p.body?.agent && { agent: p.body.agent }),
+    ...(project && { project }),
+    // in its project, so a project picked on the list still shows it under Scheduled (orch #13)
+    ...(p.body?.projectId && { projectId: p.body.projectId }),
+    ...(after && { after: after.title ?? '' }),
+  };
+}

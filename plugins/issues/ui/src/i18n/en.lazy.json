@@ -1,0 +1,15 @@
+{
+  "issues.loading": "Looking for issues…",
+  "issues.group.others": "Other sources",
+  "issues.foot.navigate": "navigate",
+  "issues.foot.open": "open",
+  "issues.foot.close": "close",
+  "issues.couldnt": "Couldn’t list the issues: {error}",
+  "issues.replaced": "Started from {ref}: your draft was replaced",
+  "issues.undo": "Undo",
+  "issues.search.github": "Search {name}’s open issues…",
+  "issues.search.linear": "Search the Linear issues assigned to you…",
+  "issues.search.jira": "Search the Jira issues assigned to you…",
+  "issues.back": "Back",
+  "issues.cancel": "Cancel"
+}

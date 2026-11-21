@@ -174,9 +174,19 @@ The open task's **More** and a row's right-click menu are one list (`taskMenuHtm
 - A submenu (`web/js/ui/submenu.js`) drills in, like iOS: its items take the menu's place under a
   Back row, at the same spot and width. Escape or ← steps back, → opens one. A group of one item
   stays inline: no submenu with one row in it.
+- v2, where a menu opens (owner 2026-11-17, 2026-11-19): a fine pointer on a wide screen gets a floating menu whose
+  submenus fly out beside their row. The browser on a touch-first or narrow screen (`(pointer: coarse)`, or under the
+  phone breakpoint, 720 px: `SHEET_SCREEN` in `packages/ui/src/controls/Menu.tsx`) gets every menu as a bottom sheet
+  in the web look (`PhoneMenu`'s sheet, `menu-sheet.css`): a submenu replaces the list under a ‹ back row named after
+  it, the sheet's height following; Back, Escape and ← go up one level, a tap outside closes, focus moves into the
+  submenu and back to its row. A row's second line (a goal's description) wraps to two lines there. The phone apps
+  keep their native menus (M3, iOS pull-down and context menu).
 - More doesn't repeat what the open task already shows (Changes on a narrow bar, the Shell card).
 - A new task action goes in the section where it belongs, not at the end. If it's rare, put it in a
   submenu. Keep the menu at about a dozen rows at most.
+- v2: `taskMenu` in `packages/shell/src/task-menu.ts` lays out both menus with the kit's `submenu`
+  entry and `menuSections`; a plugin's `shell.row:menu` entry names its place with `bar.section` or
+  `bar.sub`. Pin and Mark read (v2's own) come after Delete.
 
 ## Keyboard and accessibility
 

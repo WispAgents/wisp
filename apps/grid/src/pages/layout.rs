@@ -1,0 +1,124 @@
+//! The signed-in app's frame: the header (brand, Home/Account tabs, who's signed in) and the page.
+
+use super::app_css::APP_CSS;
+use super::scripts::{CONFIRM, PENDING};
+use super::site::tag;
+use super::{ASSETS, PageCfg, PageUser, esc};
+
+/// The two tabbed pages share a wider header with Home and Account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Tab {
+    None,
+    Home,
+    Account,
+    /// Home and Account in the header, neither of them this page (Activate)
+    Neither,
+}
+
+pub(super) struct AppPage<'a> {
+    pub cfg: &'a PageCfg,
+    pub title: &'a str,
+    pub user: Option<&'a PageUser>,
+    /// With a user and no tab: a Sign out button in the header.
+    pub csrf: &'a str,
+    pub body: &'a str,
+    /// More in `<head>` (a page's own styles).
+    pub head: &'a str,
+    pub narrow: bool,
+    pub tab: Tab,
+    /// Where Home and Account are: "" on the grid's own address; its URL on another (a computer's offline page)
+    pub home: &'a str,
+}
+
+impl<'a> AppPage<'a> {
+    pub fn new(cfg: &'a PageCfg, title: &'a str, body: &'a str) -> Self {
+        Self { cfg, title, user: None, csrf: "", body, head: "", narrow: false, tab: Tab::None, home: "" }
+    }
+
+    /// A page for someone signed in, outside Home and Account (a message, a share): the same header, neither tab on.
+    pub fn signed(mut self, user: Option<&'a PageUser>) -> Self {
+        if user.is_some() {
+            self.user = user;
+            self.tab = Tab::Neither;
+        }
+        self
+    }
+}
+
+/// The round avatar: the picture, or the first letter.
+pub(super) fn avatar(user: &PageUser) -> String {
+    match user.avatar.as_deref().filter(|a| !a.is_empty()) {
+        Some(src) => format!(r#"<span class="av"><img src="{}" alt=""></span>"#, esc(src)),
+        None => format!(r#"<span class="av">{}</span>"#, user.initial()),
+    }
+}
+
+fn me(p: &AppPage<'_>) -> String {
+    let Some(user) = p.user else {
+        return String::new();
+    };
+    let (who, av) = (esc(&user.handle), avatar(user));
+    if p.tab != Tab::None {
+        return format!(
+            r#"<div class="me"><a href="{}/account" title="Your account"><span class="who">{who}</span>{av}</a></div>"#,
+            esc(p.home)
+        );
+    }
+    let out = if p.csrf.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<form class="inline" method="post" action="/signout"><input type="hidden" name="csrf" value="{}"><button class="ghost">Sign out</button></form>"#,
+            esc(p.csrf)
+        )
+    };
+    format!(r#"<div class="me"><span class="who">{who}</span>{av}{out}</div>"#)
+}
+
+pub(super) fn app_page(p: &AppPage<'_>) -> String {
+    let cfg = p.cfg;
+    let tabbed = p.tab != Tab::None;
+    let nav = if tabbed {
+        let cur = |t| if p.tab == t { r#" aria-current="page""# } else { "" };
+        format!(
+            r#"<nav class="navt" aria-label="Your grid"><a href="{h}/"{}>Home</a><a href="{h}/account"{}>Account</a></nav>"#,
+            cur(Tab::Home),
+            cur(Tab::Account),
+            h = esc(p.home),
+        )
+    } else {
+        String::new()
+    };
+    let wide = if tabbed { " wide" } else { "" };
+    // a narrow page (Activate) keeps its narrow column under the wide header
+    // only Home and Account are wide pages; a message or a share keeps its reading width under the wide header
+    let main_wide = if matches!(p.tab, Tab::Home | Tab::Account) && !p.narrow { " wide" } else { "" };
+    let narrow = if p.narrow { " narrow" } else { "" };
+    // "wisp Grid · wisp Grid" says it twice: a page named after the grid is just the grid's name
+    let title = if p.title == cfg.name { esc(&cfg.name) } else { format!("{} · {}", esc(p.title), esc(&cfg.name)) };
+    format!(
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title><meta name="referrer" content="same-origin"><link rel="icon" href="{ASSETS}/icon.svg"><style>{APP_CSS}</style>{head}</head><body>
+<header class="top{wide}"><a class="brand" href="{url}/"><span class="mark"></span>wisp</a><span class="chipx">{tag}</span>
+{nav}
+{me}</header>
+<main class="main{narrow}{main_wide}">{body}</main>{CONFIRM}{PENDING}</body></html>"#,
+        head = p.head,
+        url = esc(&cfg.public_url),
+        tag = esc(&tag(cfg)),
+        me = me(p),
+        body = p.body,
+    )
+}
+
+/// The cloud wisp's state as the page says it.
+pub(super) fn state_label(st: &str) -> Option<&'static str> {
+    Some(match st {
+        "running" => "Running",
+        "queued" => "Waiting for room",
+        "starting" => "Waking up",
+        "stopping" => "Going to sleep",
+        "stopped" => "Asleep",
+        _ => return None,
+    })
+}

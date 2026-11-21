@@ -1,0 +1,24 @@
+[package]
+name = "wisp-push-core"
+description = "wisp.push's pure logic: the paired devices, the note a phone opens, its HPKE seal (RFC 9180), what an answer from a notification does, what the relay's answer means. Sans-IO."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+hpke.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+wisp-channels-api.workspace = true
+wisp-kernel.workspace = true
+wisp-push-api.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
+
+[lints]
+workspace = true

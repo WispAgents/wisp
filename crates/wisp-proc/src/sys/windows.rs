@@ -1,0 +1,352 @@
+//! Job Objects and the process table on Windows.
+//!
+//! Each child goes into its own Job Object. Processes it starts join the job too, so terminating
+//! the job ends the whole tree (what `taskkill /T` did in v1, without its walk-the-tree race), and
+//! `KILL_ON_JOB_CLOSE` ends it if wisp itself dies: the handle closes with the process.
+
+use std::io;
+use std::ptr;
+
+use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation};
+use windows_sys::Win32::Storage::FileSystem::GetLongPathNameW;
+use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetConsoleCtrlHandler};
+use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD, THREADENTRY32,
+    Thread32First, Thread32Next,
+};
+use windows_sys::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
+    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
+};
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, OpenThread, PROCESS_SET_QUOTA, PROCESS_TERMINATE, ResumeThread, THREAD_SUSPEND_RESUME, TerminateProcess,
+};
+
+use super::ProcInfo;
+
+/// Windows has no signals; the protocol maps every kill to `TerminateJobObject`.
+pub const SIGKILL: i32 = 9;
+pub const SIGTERM: i32 = 15;
+pub const SIGHUP: i32 = 1;
+pub const SIGINT: i32 = 2;
+
+pub fn signal_number(name: &str) -> Option<i32> {
+    match name.strip_prefix("SIG").unwrap_or(name) {
+        "KILL" => Some(SIGKILL),
+        "TERM" => Some(SIGTERM),
+        "HUP" => Some(SIGHUP),
+        "INT" => Some(2),
+        _ => None,
+    }
+}
+
+fn check(ok: i32) -> io::Result<()> {
+    if ok == 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
+}
+
+/// An owned handle, closed on drop.
+#[derive(Debug)]
+struct Owned(HANDLE);
+
+impl Drop for Owned {
+    fn drop(&mut self) {
+        // SAFETY: we own this handle (it came from a successful Create*/Open* call) and close it once.
+        #[allow(unsafe_code)]
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
+}
+
+/// A Job Object holding one child's tree. Dropping it terminates every process still in it.
+#[derive(Debug)]
+pub struct Job(Owned);
+
+// SAFETY: a job handle is a kernel object reference; Win32 job calls are thread-safe.
+#[allow(unsafe_code)]
+unsafe impl Send for Job {}
+// SAFETY: as above; no method takes &mut or keeps interior state.
+#[allow(unsafe_code)]
+unsafe impl Sync for Job {}
+
+impl Job {
+    /// A job of one child's tree: everything in it ends when its handle closes.
+    pub fn new() -> io::Result<Job> {
+        Self::with_limits(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+    }
+
+    fn with_limits(flags: u32) -> io::Result<Job> {
+        // SAFETY: null attributes and a null name are documented as "default, unnamed".
+        #[allow(unsafe_code)]
+        let handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
+        if handle.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let job = Job(Owned(handle));
+        // SAFETY: an all-zero JOBOBJECT_EXTENDED_LIMIT_INFORMATION is a valid "no limits" value.
+        #[allow(unsafe_code)]
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        info.BasicLimitInformation.LimitFlags = flags;
+        let size = u32::try_from(size_of_val(&info)).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+        // SAFETY: `info` lives across the call and `size` is its exact size.
+        #[allow(unsafe_code)]
+        let ok = unsafe { SetInformationJobObject(job.0.0, JobObjectExtendedLimitInformation, (&raw const info).cast(), size) };
+        check(ok)?;
+        Ok(job)
+    }
+
+    /// Put process `pid` (a child we just started, so its pid can't have been reused) in the job.
+    pub fn assign(&self, pid: u32) -> io::Result<()> {
+        // SAFETY: OpenProcess takes integers; a failure is a null handle, checked below.
+        #[allow(unsafe_code)]
+        let process = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE, pid) };
+        if process.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let process = Owned(process);
+        // SAFETY: both handles are open and owned by us for the duration of the call.
+        #[allow(unsafe_code)]
+        let ok = unsafe { AssignProcessToJobObject(self.0.0, process.0) };
+        check(ok)
+    }
+
+    /// End every process in the job.
+    pub fn terminate(&self, code: u32) -> io::Result<()> {
+        // SAFETY: the job handle is open and owned by self.
+        #[allow(unsafe_code)]
+        let ok = unsafe { TerminateJobObject(self.0.0, code) };
+        check(ok)
+    }
+
+    /// How many processes in the job are still running.
+    pub fn active(&self) -> io::Result<u32> {
+        // SAFETY: an all-zero accounting struct is a valid out-buffer.
+        #[allow(unsafe_code)]
+        let mut info: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+        let size = u32::try_from(size_of_val(&info)).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+        // SAFETY: `info` is a writable buffer of `size` bytes; the return length pointer may be null.
+        #[allow(unsafe_code)]
+        let ok = unsafe {
+            QueryInformationJobObject(self.0.0, JobObjectBasicAccountingInformation, (&raw mut info).cast(), size, ptr::null_mut())
+        };
+        check(ok)?;
+        Ok(info.ActiveProcesses)
+    }
+}
+
+/// `CreateProcess`'s `CREATE_SUSPENDED`: the child's first thread waits until [`resume`], so it joins its job before
+/// it can start anything (a process started before the assignment would be outside the job, and outlive wisp).
+pub const CREATE_SUSPENDED: u32 = 0x0000_0004;
+
+/// Resume every thread of `pid` (a child started with [`CREATE_SUSPENDED`]: its one, first thread). Ok only when at
+/// least one thread was resumed.
+pub fn resume(pid: u32) -> io::Result<()> {
+    // SAFETY: flags and a pid are plain integers; a failure is INVALID_HANDLE_VALUE, checked below.
+    #[allow(unsafe_code)]
+    let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snap == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    let snap = Owned(snap);
+    // SAFETY: THREADENTRY32 is plain data; all-zero is valid before dwSize is set.
+    #[allow(unsafe_code)]
+    let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+    entry.dwSize = u32::try_from(size_of_val(&entry)).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let mut resumed = 0;
+    // SAFETY: the snapshot handle is open and `entry` is writable with dwSize set.
+    #[allow(unsafe_code)]
+    let mut more = unsafe { Thread32First(snap.0, &raw mut entry) };
+    while more != 0 {
+        if entry.th32OwnerProcessID == pid {
+            // SAFETY: integers only; a failure is a null handle, checked below.
+            #[allow(unsafe_code)]
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, FALSE, entry.th32ThreadID) };
+            if !thread.is_null() {
+                let thread = Owned(thread);
+                // SAFETY: the thread handle is open and owned for the call; u32::MAX is its failure value.
+                #[allow(unsafe_code)]
+                let was = unsafe { ResumeThread(thread.0) };
+                if was != u32::MAX {
+                    resumed += 1;
+                }
+            }
+        }
+        // SAFETY: as for Thread32First.
+        #[allow(unsafe_code)]
+        let next = unsafe { Thread32Next(snap.0, &raw mut entry) };
+        more = next;
+    }
+    if resumed == 0 { Err(io::Error::other(format!("no thread of {pid} to resume"))) } else { Ok(()) }
+}
+
+/// Windows' heap gives freed pages back itself: nothing to do (ADR-0084).
+pub fn trim_heap() -> bool {
+    false
+}
+
+/// Windows' heap has no arenas to cap: nothing to do (ADR-0087).
+pub fn tune_heap(_arenas: i32, _mmap_at: i32) -> bool {
+    false
+}
+
+/// Makes this process's own stdin, stdout and stderr non-inheritable. `CreateProcess` hands a child every inheritable
+/// handle of its parent, whatever its stdio is set to, so a program started detached with null stdio would still hold
+/// the pipes wisp's caller reads (`wisp` run from a script, a test's `Command::output`): the caller then waits for
+/// EOF until that program exits, which for the desktop app or a browser is never. std's `Stdio::inherit` duplicates
+/// the handle for the child it starts, so clearing the flag here takes nothing from children that ask for it.
+pub fn keep_std_handles() {
+    for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: a plain integer in; a missing handle is null or INVALID_HANDLE_VALUE, checked below.
+        #[allow(unsafe_code)]
+        let h = unsafe { GetStdHandle(which) };
+        if h.is_null() || h == INVALID_HANDLE_VALUE {
+            continue;
+        }
+        // SAFETY: `h` is this process's own std handle, open for its lifetime; only its inherit flag changes. A
+        // console handle that refuses is no pipe to leak: the result is ignored.
+        #[allow(unsafe_code)]
+        let _ = unsafe { SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0) };
+    }
+}
+
+/// Whether this process is in any job: its nursery, or one it was started in (the desktop shell's, a CI runner's).
+/// A start meant to outlive wisp has to break away from it, or it ends with that job.
+pub fn in_job() -> bool {
+    // SAFETY: no arguments; it returns a pseudo-handle to this process that needs no close.
+    #[allow(unsafe_code)]
+    let me = unsafe { GetCurrentProcess() };
+    let mut inside = FALSE;
+    // SAFETY: `me` is valid for this process's lifetime, a null job asks about any job, and `inside` outlives the call.
+    #[allow(unsafe_code)]
+    let ok = unsafe { IsProcessInJob(me, ptr::null_mut(), &raw mut inside) };
+    ok != 0 && inside != 0
+}
+
+/// Whether this process was started inside a job that isn't its nursery (the desktop shell's, a CI runner's):
+/// read once, before the nursery is joined (`nursery` asks first), so the nursery itself never counts. A parent that
+/// joins this process to its job only after `CreateProcess` returns (the desktop shell does) says so with
+/// [`crate::PARENT_JOB_ENV`], in case the nursery came first.
+static OUTER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+pub fn in_outer_job() -> bool {
+    *OUTER.get_or_init(|| in_job() || std::env::var_os(crate::PARENT_JOB_ENV).is_some_and(|v| v == "1"))
+}
+
+/// The nursery (ADR-0070): this process's own `KILL_ON_JOB_CLOSE` job, held in a static so the handle closes only
+/// when the process ends. `None` inside: it couldn't be made (the error was returned once, to the first caller).
+static NURSERY: std::sync::OnceLock<Option<Job>> = std::sync::OnceLock::new();
+
+/// Puts this process in a `KILL_ON_JOB_CLOSE | BREAKAWAY_OK` job of its own: every process it starts from now on is
+/// born in it (no window between `CreateProcess` and a job, which a per-child job always has), and ends when this
+/// process ends, however it ends. A start meant to outlive it breaks away (`CREATE_BREAKAWAY_FROM_JOB`). Already in
+/// a job (CI, a service manager): the nursery nests in it (Windows 8+). Idempotent.
+pub fn nursery() -> io::Result<()> {
+    let mut first = Ok(());
+    // the job it was started in, if any, before the nursery makes it "in a job" for good
+    let _ = in_outer_job();
+    NURSERY.get_or_init(|| {
+        let made = Job::with_limits(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK).and_then(|job| {
+            // SAFETY: no arguments; it returns a pseudo-handle to this process that needs no close.
+            #[allow(unsafe_code)]
+            let me = unsafe { GetCurrentProcess() };
+            // SAFETY: the job handle is open and owned by `job`; `me` is valid for this process's lifetime.
+            #[allow(unsafe_code)]
+            let ok = unsafe { AssignProcessToJobObject(job.0.0, me) };
+            check(ok).map(|()| job)
+        });
+        match made {
+            Ok(job) => Some(job),
+            Err(e) => {
+                first = Err(e);
+                None
+            }
+        }
+    });
+    first
+}
+
+/// Whether this process is in its nursery (it was made and joined).
+pub fn in_nursery() -> bool {
+    NURSERY.get().is_some_and(Option::is_some)
+}
+
+/// Turns Ctrl-C processing back on for this process: a parent started with `CREATE_NEW_PROCESS_GROUP` (a CI runner,
+/// some launchers) hands its children "ignore Ctrl-C", and then no handler (tokio's `ctrl_c`) ever hears it.
+pub fn take_ctrl_c() {
+    // SAFETY: a null handler with FALSE only clears this process's ignore-Ctrl-C flag; nothing is borrowed.
+    #[allow(unsafe_code)]
+    let _ = unsafe { SetConsoleCtrlHandler(None, FALSE) };
+}
+
+/// `p` with every 8.3 short name in it spelled out (`C:\Users\RUNNER~1` → `C:\Users\runneradmin`), nothing else
+/// changed (links aren't followed, `\\?\` isn't added). `None` when it doesn't exist (`canon::plain_path` then
+/// spells out the part of it that does).
+pub fn long_path(p: &std::path::Path) -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
+    let wide: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let mut buf = vec![0u16; 512];
+    loop {
+        let cap = u32::try_from(buf.len()).unwrap_or(u32::MAX);
+        // SAFETY: `wide` is NUL-terminated and lives across the call; `buf` is writable for `cap` u16s.
+        #[allow(unsafe_code)]
+        let n = unsafe { GetLongPathNameW(wide.as_ptr(), buf.as_mut_ptr(), cap) };
+        let n = n as usize;
+        if n == 0 {
+            return None;
+        }
+        if n < buf.len() {
+            buf.truncate(n);
+            return Some(std::path::PathBuf::from(std::ffi::OsString::from_wide(&buf)));
+        }
+        // too small: `n` is the size it needs, NUL included
+        buf.resize(n, 0);
+    }
+}
+
+/// End one process (used only when a child couldn't be put in a job).
+pub fn terminate_pid(pid: u32, code: u32) -> io::Result<()> {
+    // SAFETY: integers only; failure is a null handle, checked below.
+    #[allow(unsafe_code)]
+    let process = unsafe { OpenProcess(PROCESS_TERMINATE, FALSE, pid) };
+    if process.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    let process = Owned(process);
+    // SAFETY: the handle is open and owned for the call.
+    #[allow(unsafe_code)]
+    let ok = unsafe { TerminateProcess(process.0, code) };
+    check(ok)
+}
+
+/// The footprint is a macOS reading; Windows callers keep the working set.
+pub fn footprint(_pid: u32) -> Option<u64> {
+    None
+}
+
+/// Every process on the machine (pid and parent), from a Toolhelp snapshot.
+pub fn processes() -> io::Result<Vec<ProcInfo>> {
+    // SAFETY: flags and pid 0 ("all processes") are plain integers.
+    #[allow(unsafe_code)]
+    let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snap == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    let snap = Owned(snap);
+    // SAFETY: PROCESSENTRY32W is plain data; all-zero is valid before dwSize is set.
+    #[allow(unsafe_code)]
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = u32::try_from(size_of_val(&entry)).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let mut out = Vec::new();
+    // SAFETY: the snapshot handle is open and `entry` is writable with dwSize set.
+    #[allow(unsafe_code)]
+    let mut more = unsafe { Process32FirstW(snap.0, &raw mut entry) };
+    while more != 0 {
+        out.push(ProcInfo { pid: entry.th32ProcessID, ppid: entry.th32ParentProcessID, pgid: 0, zombie: false, start: 0 });
+        // SAFETY: as for Process32FirstW.
+        #[allow(unsafe_code)]
+        let next = unsafe { Process32NextW(snap.0, &raw mut entry) };
+        more = next;
+    }
+    Ok(out)
+}

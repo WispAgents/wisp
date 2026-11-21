@@ -1,0 +1,534 @@
+{
+  "$doc": "The iPhone app's tokens (ADR-0065 §5, design/mobile.md §A.8), set under :root[data-platform='ios'] in dist/platform-ios.css. Only the phone app loads that file. Numbers are Apple's Human Interface Guidelines' (developer.apple.com/design/human-interface-guidelines) and UIKit's, each with its spec in `spec`. The neutrals are the HIG system colours (light and dark), the tint and the semantic colours are wisp's (var(--accent), var(--good), …). Springs are rendered to CSS linear() curves from SwiftUI's duration and bounce. Names shared with tokens.css (--radius-xs…xl, --bar-h) override the browser value inside the app only, on purpose; no other name may collide (test/platform.test.ts). The tonal surfaces are --surface-c0…c4 (§A.8's --surface-0…4) and the rail --nav-rail-w, because tokens.css's --surface-2 and the stage's --rail-w already mean something else.",
+  "static": {
+    "tap-min": {
+      "value": "44px",
+      "spec": "HIG Accessibility › Buttons and controls: hit targets at least 44 × 44 pt"
+    },
+    "bar-h": {
+      "value": "44px",
+      "spec": "UIKit UINavigationBar: standard height 44 pt"
+    },
+    "bar-h-large": {
+      "value": "96px",
+      "spec": "UIKit UINavigationBar with prefersLargeTitles: 44 pt bar + 52 pt large title"
+    },
+    "nav-h": {
+      "value": "49px",
+      "spec": "UIKit UITabBar: 49 pt above the home indicator (safe-bottom)"
+    },
+    "nav-rail-w": {
+      "value": "320px",
+      "spec": "UISplitViewController: primary column 320 pt (the iPad sidebar)"
+    },
+    "row-h-1": {
+      "value": "44px",
+      "spec": "HIG Lists and tables / UITableView: default row 44 pt"
+    },
+    "row-h-2": {
+      "value": "60px",
+      "spec": "UIListContentConfiguration.subtitleCell: about 60 pt with body + footnote"
+    },
+    "row-h-3": {
+      "value": "76px",
+      "spec": "a three-line cell (body + two footnote lines) at the large text size"
+    },
+    "inset": {
+      "value": "16px",
+      "spec": "UITableView layout margins: 16 pt on iPhone"
+    },
+    "inset-grouped": {
+      "value": "20px",
+      "spec": "UITableView.Style.insetGrouped: 20 pt side inset"
+    },
+    "hairline": {
+      "value": "0.5px",
+      "spec": "HIG separators: one device pixel (0.5 pt on 2× and 3× screens)"
+    },
+    "radius-xs": {
+      "value": "6px",
+      "spec": "HIG: small controls and tags"
+    },
+    "radius-sm": {
+      "value": "8px",
+      "spec": "HIG: buttons in the small size"
+    },
+    "radius-md": {
+      "value": "10px",
+      "spec": "UITableView insetGrouped section corners 10 pt"
+    },
+    "radius-lg": {
+      "value": "12px",
+      "spec": "HIG Buttons: large button and grouped background corners 12 pt"
+    },
+    "radius-xl": {
+      "value": "18px",
+      "spec": "HIG: large cards and the context menu preview"
+    },
+    "radius-sheet": {
+      "value": "10px",
+      "spec": "UISheetPresentationController: preferredCornerRadius default 10 pt"
+    },
+    "radius-dialog": {
+      "value": "14px",
+      "spec": "UIAlertController: alert corners 14 pt"
+    },
+    "font-ui": {
+      "value": "system-ui, -apple-system, sans-serif",
+      "spec": "HIG Typography: San Francisco (SF Pro), the system font, not shipped"
+    },
+    "type-large-title": {
+      "value": "400 34px/41px var(--font-ui)",
+      "spec": "HIG Typography › Dynamic Type sizes (Large): Large Title 34/41"
+    },
+    "type-title1": {
+      "value": "400 28px/34px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Title 1 28/34"
+    },
+    "type-title2": {
+      "value": "400 22px/28px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Title 2 22/28"
+    },
+    "type-title3": {
+      "value": "400 20px/25px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Title 3 20/25"
+    },
+    "type-headline": {
+      "value": "600 17px/22px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Headline 17/22 semibold"
+    },
+    "type-body": {
+      "value": "400 17px/22px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Body 17/22"
+    },
+    "type-callout": {
+      "value": "400 16px/21px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Callout 16/21"
+    },
+    "type-subhead": {
+      "value": "400 15px/20px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Subheadline 15/20"
+    },
+    "type-footnote": {
+      "value": "400 13px/18px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Footnote 13/18"
+    },
+    "type-caption": {
+      "value": "400 12px/16px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Caption 1 12/16"
+    },
+    "type-caption2": {
+      "value": "400 11px/13px var(--font-ui)",
+      "spec": "HIG Dynamic Type (Large): Caption 2 11/13"
+    },
+    "primary": {
+      "value": "var(--accent)",
+      "spec": "HIG Color: the app's tint = wisp's accent"
+    },
+    "on-primary": {
+      "value": "var(--on-accent)",
+      "spec": "text on a filled (tinted) button"
+    },
+    "error": {
+      "value": "var(--bad)",
+      "spec": "destructive actions in red = wisp's bad"
+    },
+    "state-hover": {
+      "value": "0",
+      "spec": "HIG: no hover on iPhone (the pointer on iPad uses the highlight)"
+    },
+    "state-focus": {
+      "value": "0.1",
+      "spec": "keyboard focus on iPad, same layer as M3 for one kit rule"
+    },
+    "state-pressed": {
+      "value": "0.15",
+      "spec": "UIKit highlighted state: the control dims (design/mobile.md §A.5)"
+    },
+    "state-drag": {
+      "value": "0.16",
+      "spec": "a lifted row while dragging"
+    },
+    "elev-1": {
+      "value": "0 1px 3px rgba(0, 0, 0, 0.12)",
+      "spec": "HIG publishes no shadow numbers: a resting card (UIKit approximation)"
+    },
+    "elev-2": {
+      "value": "0 8px 24px rgba(0, 0, 0, 0.18)",
+      "spec": "UIMenu / UIContextMenu platter shadow (approximation)"
+    },
+    "elev-3": {
+      "value": "0 -2px 30px rgba(0, 0, 0, 0.2)",
+      "spec": "a sheet over the page (approximation)"
+    },
+    "dur-short": {
+      "value": "250ms",
+      "spec": "UIKit: a short transition (keyboard and toggle animations ≈ 0.25 s)"
+    },
+    "dur-medium": {
+      "value": "350ms",
+      "spec": "UIKit: a push or sheet transition ≈ 0.35 s"
+    },
+    "dur-long": {
+      "value": "500ms",
+      "spec": "SwiftUI .smooth / .snappy default duration 0.5 s"
+    },
+    "swipe-line": {
+      "value": "0.5",
+      "spec": "Mail: a full swipe past half the row runs the first action"
+    },
+    "grabber-w": {
+      "value": "36px",
+      "spec": "UISheetPresentationController grabber 36 × 5 pt"
+    },
+    "grabber-h": {
+      "value": "5px",
+      "spec": "UISheetPresentationController grabber 36 × 5 pt"
+    },
+    "safe-top": {
+      "value": "env(safe-area-inset-top, 0px)",
+      "spec": "HIG Layout › Safe areas: the status bar, the notch, the Dynamic Island"
+    },
+    "safe-right": {
+      "value": "env(safe-area-inset-right, 0px)",
+      "spec": "safe area in landscape"
+    },
+    "safe-bottom": {
+      "value": "env(safe-area-inset-bottom, 0px)",
+      "spec": "safe area: the home indicator"
+    },
+    "safe-left": {
+      "value": "env(safe-area-inset-left, 0px)",
+      "spec": "safe area in landscape"
+    },
+    "tab-icon": {
+      "value": "25px",
+      "spec": "UITabBarItem: compact glyph about 25 × 25 pt (SF Symbols in the tab bar)"
+    },
+    "type-tab": {
+      "value": "500 10px/12px var(--font-ui)",
+      "spec": "UITabBar item title: SF 10 pt medium"
+    },
+    "tab-gap": {
+      "value": "2px",
+      "spec": "UITabBar: about 2 pt between the glyph and its title"
+    },
+    "tab-pad-top": {
+      "value": "7px",
+      "spec": "UITabBar: the glyph sits about 7 pt below the bar top on iPhone"
+    },
+    "bar-pad": {
+      "value": "8px",
+      "spec": "UINavigationBar: bar button items 8 pt from the layout margin (16 pt edge with the 8 pt button padding)"
+    },
+    "bar-button-gap": {
+      "value": "6px",
+      "spec": "UINavigationBar: about 6 pt between trailing bar button items"
+    },
+    "large-title-pad-bottom": {
+      "value": "8px",
+      "spec": "UINavigationBar large title: 8 pt below the baseline box"
+    },
+    "tab-inactive": {
+      "value": "#8e8e93",
+      "spec": "UITabBar unselected item tint = UIColor.systemGray"
+    },
+    "row-lead": {
+      "value": "40px",
+      "spec": "HIG Lists and tables / UIListContentConfiguration: a leading image or avatar reserved 40 pt (Messages, Contacts)"
+    },
+    "row-lead-gap": {
+      "value": "12px",
+      "spec": "UIListContentConfiguration.imageToTextPadding: 12 pt from the image to the text"
+    },
+    "row-pad-y": {
+      "value": "11px",
+      "spec": "UITableViewCell default: 11 pt above and below a 22 pt body line (44 pt min)"
+    },
+    "chevron": {
+      "value": "13px",
+      "spec": "UITableViewCell.AccessoryType.disclosureIndicator: the chevron glyph about 8 × 13 pt, drawn at 13 pt"
+    },
+    "chip-h": {
+      "value": "22px",
+      "spec": "HIG capsule tags: footnote (13/18) with 2 pt above and below, a full capsule"
+    },
+    "chip-pad": {
+      "value": "8px",
+      "spec": "HIG capsule tags: 8 pt leading and trailing"
+    },
+    "chip-icon": {
+      "value": "13px",
+      "spec": "HIG capsule tags: an SF Symbol at the footnote size, 13 pt"
+    },
+    "card-pad": {
+      "value": "16px",
+      "spec": "HIG inset grouped: 16 pt content inset inside a grouped box"
+    },
+    "group-head-pad": {
+      "value": "6px",
+      "spec": "UITableView insetGrouped: the header sits 6 pt above its box, footer 6 pt below"
+    },
+    "banner-pad": {
+      "value": "12px",
+      "spec": "HIG inline banner row: 12 pt inside an inset grouped row"
+    },
+    "swipe-action-w": {
+      "value": "74px",
+      "spec": "UIContextualAction (Mail): a swipe action button 74 pt wide when the row rests open"
+    },
+    "refresh-h": {
+      "value": "60px",
+      "spec": "UIRefreshControl: the control's 60 pt pull area above the content"
+    },
+    "refresh-spinner": {
+      "value": "20px",
+      "spec": "UIActivityIndicatorView.Style.medium: 20 pt"
+    },
+    "empty-icon": {
+      "value": "48px",
+      "spec": "UIContentUnavailableConfiguration (ContentUnavailableView): the SF Symbol at 48 pt"
+    },
+    "button-h": {
+      "value": "50px",
+      "spec": "HIG Buttons: large filled button 50 pt, 12 pt corners"
+    },
+    "button-h-sm": {
+      "value": "34px",
+      "spec": "HIG Buttons: small/regular bordered button 34 pt"
+    },
+    "button-pad": {
+      "value": "20px",
+      "spec": "HIG Buttons: 20 pt leading and trailing padding"
+    },
+    "alert-w": {
+      "value": "270px",
+      "spec": "UIAlertController (HIG Alerts): alert width 270 pt"
+    },
+    "alert-pad": {
+      "value": "16px",
+      "spec": "UIAlertController: 16 pt content insets, 20 pt above the title"
+    },
+    "alert-pad-top": {
+      "value": "20px",
+      "spec": "UIAlertController: 20 pt above the title"
+    },
+    "alert-button-h": {
+      "value": "44px",
+      "spec": "UIAlertController: action row height 44 pt"
+    },
+    "sheet-medium": {
+      "value": "50dvh",
+      "spec": "UISheetPresentationController.Detent.medium: about half the screen height"
+    },
+    "sheet-top-gap": {
+      "value": "10px",
+      "spec": "UISheetPresentationController: the large detent leaves 10 pt under the safe area (the page behind shows)"
+    },
+    "ctx-w": {
+      "value": "250px",
+      "spec": "UIContextMenuInteraction / UIMenu: menu width 250 pt"
+    },
+    "ctx-row-h": {
+      "value": "44px",
+      "spec": "UIMenu: action row height 44 pt"
+    },
+    "ctx-radius": {
+      "value": "13px",
+      "spec": "UIContextMenuInteraction: menu corner radius 13 pt"
+    },
+    "ctx-blur": {
+      "value": "24px",
+      "spec": "UIBlurEffect.Style.systemThickMaterial behind a context menu (approximated with backdrop-filter)"
+    },
+    "ctx-gap": {
+      "value": "8px",
+      "spec": "UIContextMenuInteraction: 8 pt between the preview and the menu"
+    },
+    "capsule-h": {
+      "value": "44px",
+      "spec": "HIG Notifications-like banner (iOS has no toast): a 44 pt capsule"
+    },
+    "capsule-gap": {
+      "value": "8px",
+      "spec": "8 pt above the tab bar (HIG layout margin), as Apple Music’s and Maps’ banners"
+    },
+    "button-h-xs": {
+      "value": "28px",
+      "spec": "HIG Buttons: small bordered button 28 pt (the kit's xs and sm), its hit area grown to 44 pt"
+    },
+    "switch-w": {
+      "value": "51px",
+      "spec": "UISwitch: 51 × 31 pt"
+    },
+    "switch-h": {
+      "value": "31px",
+      "spec": "UISwitch: 51 × 31 pt, full radius"
+    },
+    "switch-thumb": {
+      "value": "27px",
+      "spec": "UISwitch: the 27 pt thumb, 2 pt in from the track"
+    },
+    "switch-pad": {
+      "value": "2px",
+      "spec": "UISwitch: the thumb 2 pt in from the track"
+    },
+    "switch-thumb-press": {
+      "value": "34px",
+      "spec": "UISwitch: the thumb stretches to 34 pt while it is held"
+    },
+    "seg-h": {
+      "value": "32px",
+      "spec": "UISegmentedControl: 32 pt tall, its hit area grown to 44 pt"
+    },
+    "seg-pad": {
+      "value": "2px",
+      "spec": "UISegmentedControl: the selected segment 2 pt in from the track"
+    },
+    "seg-radius": {
+      "value": "9px",
+      "spec": "UISegmentedControl: 9 pt track corners"
+    },
+    "seg-thumb-radius": {
+      "value": "7px",
+      "spec": "UISegmentedControl: 7 pt selected segment corners"
+    },
+    "field-h": {
+      "value": "44px",
+      "spec": "HIG Text fields: a form's field at the 44 pt row height"
+    },
+    "field-pad": {
+      "value": "12px",
+      "spec": "HIG Text fields: 12 pt in from the rounded edge"
+    },
+    "state-disabled": {
+      "value": "0.3",
+      "spec": "HIG Color: a disabled control in tertiaryLabel (30 % of the label)"
+    },
+    "switch-knob": {
+      "value": "#ffffff",
+      "spec": "UISwitch: the thumb is white in light and dark"
+    },
+    "bar-glyph": {
+      "value": "22px",
+      "spec": "HIG Toolbars: a plain bar button's SF Symbol at about 22 pt in its 44 pt target"
+    }
+  },
+  "springs": {
+    "spring-snappy": {
+      "duration": 0.5,
+      "bounce": 0.15,
+      "spec": "SwiftUI Animation.snappy: duration 0.5 s, extraBounce 0 (bounce 0.15)"
+    },
+    "spring-smooth": {
+      "duration": 0.5,
+      "bounce": 0,
+      "spec": "SwiftUI Animation.smooth: duration 0.5 s, bounce 0"
+    }
+  },
+  "aliases": {
+    "ease-standard": {
+      "value": "var(--spring-smooth)",
+      "spec": "iOS moves on springs: the kit's one easing name follows SwiftUI .smooth"
+    },
+    "ease-emph": {
+      "value": "var(--spring-snappy)",
+      "spec": "SwiftUI .snappy for emphasised motion"
+    },
+    "ease-emph-in": {
+      "value": "cubic-bezier(0.42, 0, 1, 1)",
+      "spec": "UIView.AnimationCurve.easeIn (CAMediaTimingFunction easeIn)"
+    },
+    "ease-emph-out": {
+      "value": "var(--spring-smooth)",
+      "spec": "an entrance settles on .smooth"
+    }
+  },
+  "themed": {
+    "surface-c0": {
+      "light": "#ffffff",
+      "dark": "#000000",
+      "spec": "UIColor.systemBackground"
+    },
+    "surface-c1": {
+      "light": "#f2f2f7",
+      "dark": "#1c1c1e",
+      "spec": "UIColor.secondarySystemBackground"
+    },
+    "surface-c2": {
+      "light": "#ffffff",
+      "dark": "#2c2c2e",
+      "spec": "UIColor.tertiarySystemBackground"
+    },
+    "surface-c3": {
+      "light": "#e5e5ea",
+      "dark": "#2c2c2e",
+      "spec": "UIColor.systemGray5 (filled controls, the search field)"
+    },
+    "surface-c4": {
+      "light": "#d1d1d6",
+      "dark": "#3a3a3c",
+      "spec": "UIColor.systemGray4"
+    },
+    "surface-grouped-0": {
+      "light": "#f2f2f7",
+      "dark": "#000000",
+      "spec": "UIColor.systemGroupedBackground"
+    },
+    "surface-grouped-1": {
+      "light": "#ffffff",
+      "dark": "#1c1c1e",
+      "spec": "UIColor.secondarySystemGroupedBackground"
+    },
+    "surface-grouped-2": {
+      "light": "#f2f2f7",
+      "dark": "#2c2c2e",
+      "spec": "UIColor.tertiarySystemGroupedBackground"
+    },
+    "on-surface": {
+      "light": "#000000",
+      "dark": "#ffffff",
+      "spec": "UIColor.label"
+    },
+    "on-surface-var": {
+      "light": "rgba(60, 60, 67, 0.6)",
+      "dark": "rgba(235, 235, 245, 0.6)",
+      "spec": "UIColor.secondaryLabel"
+    },
+    "outline": {
+      "light": "rgba(60, 60, 67, 0.29)",
+      "dark": "rgba(84, 84, 88, 0.6)",
+      "spec": "UIColor.separator (drawn as a 0.5 pt hairline)"
+    },
+    "outline-var": {
+      "light": "#c6c6c8",
+      "dark": "#38383a",
+      "spec": "UIColor.opaqueSeparator"
+    },
+    "chrome": {
+      "light": "rgba(249, 249, 249, 0.94)",
+      "dark": "rgba(22, 22, 22, 0.94)",
+      "spec": "UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar"
+    },
+    "on-surface-ter": {
+      "light": "rgba(60, 60, 67, 0.3)",
+      "dark": "rgba(235, 235, 245, 0.3)",
+      "spec": "UIColor.tertiaryLabel (the disclosure chevron, placeholders)"
+    },
+    "fill": {
+      "light": "rgba(118, 118, 128, 0.12)",
+      "dark": "rgba(118, 118, 128, 0.24)",
+      "spec": "UIColor.tertiarySystemFill (redacted placeholders, gray buttons)"
+    },
+    "switch-off": {
+      "light": "rgba(120, 120, 128, 0.16)",
+      "dark": "rgba(120, 120, 128, 0.32)",
+      "spec": "UIColor.secondarySystemFill (UISwitch's off track)"
+    },
+    "seg-thumb": {
+      "light": "#ffffff",
+      "dark": "#636366",
+      "spec": "UISegmentedControl: the selected segment (systemGray in dark)"
+    }
+  }
+}

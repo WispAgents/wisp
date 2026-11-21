@@ -1,0 +1,20 @@
+{
+  "budget.usage.pane": "Usage",
+  "budget.usage.lede": "Spend and outcomes over the last 7 days.",
+  "budget.usage.stop.title": "Automations stop at",
+  "budget.usage.stop.description": "Check-ins, triggers, goal rounds and agents’ own follow-ups wait once an account passes this much of a window, and go on after it resets. What you start always runs",
+  "budget.usage.stop.own": "Its own line. Same follows Automations stop at",
+  "budget.usage.stop.same": "Same",
+  "budget.usage.stop.off": "Off",
+  "budget.usage.stop.50": "50%",
+  "budget.usage.stop.75": "75%",
+  "budget.usage.stop.90": "90%",
+  "budget.usage.pane.lede": "Spend and outcomes over the last 7 days.",
+  "budget.usage.subagents.title": "Subagents run on",
+  "budget.usage.subagents.description": "Claude Code’s own subagents (Explore, Plan, page reads) and workflow agents. They run on the task’s model unless you pick one here; an agent that names its own model keeps it. Where it went shows what they took",
+  "budget.usage.subagents.task": "Same as the task",
+  "budget.usage.subagents.haiku": "Haiku",
+  "budget.usage.subagents.sonnet": "Sonnet",
+  "budget.usage.stop.codex": "Its own line. From December, Plus, Pro and Business plans share one allowance across ChatGPT and Codex: a lower line here leaves room for your chats. With a line set, wisp asks Codex how its windows stand before an automation starts if the last reading is over 15 minutes old (nothing is spent)",
+  "budget.view.title": "Usage"
+}

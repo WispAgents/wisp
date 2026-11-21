@@ -1,0 +1,115 @@
+---
+title: Run a task through a software factory
+description: Spec you approve, build, checks, review and a PR you merge, with failures sent back to build, from the app, the phone, the TUI or the CLI.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A [factory](../../../concepts/factories/) runs a task through stations instead of one agent: a spec you approve, a
+build in its own worktree, checks that are commands, a review, and a PR you merge. A failed check or review goes back
+to the build with what failed, up to a limit. `default` works with no setup.
+
+## 1. Start a task through a factory
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+In **New task** (**N**), open the harness pill under the box. The last row is **Factory**: its pane lists the
+factories by name, **default** first, with their stations. Pick one, write the task and send. Any other row is one
+agent, as before.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task**, then the harness pill. The row of harnesses ends with **Factory**; pick a factory in the list under
+it, write the task and tap Send.
+</TabItem>
+<TabItem label="TUI">
+Run `wisp tui` and start it from any reply box (**i**) as a command: `wisp "Fix the add bug" --factory`. The run's
+task shows its stations in its header: `default: ✓ spec · ● build · ○ checks · ○ review · ○ ship`.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "Fix the add bug" --factory            # the built-in default
+wisp "Fix the add bug" --factory careful    # a factory you declared
+wisp run fix-issue --factory careful        # a declared task, through a factory
+```
+`--factory` with `--compare` is refused: a factory compares builders with `stations.build.agents`.
+</TabItem>
+</Tabs>
+
+Your own agent starts one with `wisp_launch`'s `factory` (in `wisp mcp` and in a task's own MCP server). A run an agent
+starts never runs a station above its own mode and never merges without you.
+
+## 2. Approve the spec
+
+The spec station writes the spec without changing a file, then the run waits on you. The question card under the
+task says **Approve the spec?**: **Approve** builds it, **Stop** ends the run, and anything you type instead is what to
+change. The spec is written again and you're asked again.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Press **Approve** on the card, or type what to change in the reply box. The band over the task shows the spec's first
+lines; **⋯ → Open Spec** opens the spec station's task to read all of it.
+</TabItem>
+<TabItem label="Phone app">
+The run's task shows the band and the card; tap **Approve**. A notification says when the run waits on you.
+</TabItem>
+<TabItem label="TUI">
+Open the task (**Enter**); the question is under it. Answer with **i** and `Approve`, or your words.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp show <id>              # the stations, and the question it asks
+wisp reply <id> Approve     # or what to change
+```
+</TabItem>
+</Tabs>
+
+## 3. Follow the build, the checks and the review
+
+The band shows each station as a step: done, running, waiting on you, failed. When a check fails, the band says which
+command and its last lines, the build gets them as round 2 (**Build · round 2 of 3**), and the checks run again. A
+review that asks for changes goes back the same way. Past the limit the run asks **Keep going?**: **One more round**,
+**Stop**, or your words as what to try next.
+
+The checks run the built code in the build's worktree, without wisp's own variables, tokens, secrets or harness keys,
+and what they print is masked as a task's `.env` values are. If the build didn't run in Full auto (its commands needed
+your yes), the run asks first: **Run `npm test` on the built code?** with **Run**, **Skip** or **Stop**.
+
+**⋯ → Open Build** (or any station) opens that station's task: its transcript, its diff, its worktree. You can't
+follow up the run's own task: it has no agent of its own; follow up a station's task instead. **⋯ → Stop the run**
+stops its stations and kills a check that's running. If wisp restarts meanwhile, the run picks up where it was.
+
+## 4. Merge
+
+The ship station opens the PR from the build's worktree, with the spec, the checks and the review in its body. The run
+asks **Merge it?**: **Merge** squash-merges it, **Leave it open** ends the run with the PR open. `merge: auto` merges
+without asking; `merge: none` never merges.
+
+## 5. Make your own factory
+
+Declare it in a formula (`.wisp/factories.wisp.yml`, or any formula), then `wisp apply`, or run a task under the
+formula without applying it (`wisp "…" --factory careful --formula f.yml`, a task file's `formula:`).
+
+```yaml
+agents:
+  planner: { harness: claude, mode: plan, instructions: "Write the spec: what changes, and how we'll know it works." }
+  reviewer: { harness: codex, mode: plan, instructions: "Correctness first, then tests." }
+  critic: { harness: claude, mode: plan, instructions: "Look for what the others missed." }
+factories:
+  careful:
+    description: Two builders, lint and tests, two reviewers
+    stations:
+      spec:   { agent: planner, approve: human }      # approve: none to skip your yes
+      build:  { agents: [claude, codex] }              # the first whose checks pass goes on
+      checks: { run: [npm test, npm run lint] }        # none: the project's test command
+      review: { agents: [reviewer, critic], vote: all }
+      ship:   { pr: true, merge: human }
+    loop: { back_to: build, max: 3, then: ask }        # back_to: spec revises the spec instead
+    budget: { usd: 20 }                                # no new station once spent
+tasks:
+  default: { factory: careful }                        # every declared task's run goes through it
+```
+
+`wisp validate` names a factory or a station's agent that names nothing, and an unknown station. A goal on the task
+is what the spec and every reviewer judge against; a declared goal's judges review when the review names none.

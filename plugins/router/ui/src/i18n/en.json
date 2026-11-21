@@ -1,0 +1,5 @@
+{
+  "wisp.router.name": "Auto",
+  "wisp.router.pane.title": "Auto",
+  "wisp.router.pane.title.lede": "wisp picks the harness and model for each task, and learns from how it went."
+}

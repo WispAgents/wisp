@@ -1,0 +1,344 @@
+/* The harness picker (v1 launcher.css .picker, .pk-*; auto.css .pk-note): value for value. Loads with HarnessPicker's
+   chunk, never with the first page (ADR-0067). */
+@layer kit {
+  [data-kit='picker'] {
+    position: fixed;
+    left: var(--k-x);
+    top: var(--k-top);
+    bottom: var(--k-bottom);
+    z-index: var(--z-overlay-menu);
+    display: grid;
+    grid-template-columns: var(--size-picker-side) minmax(0, 1fr);
+    width: var(--k-w);
+    height: min(var(--size-picker-h), 70vh);
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-2);
+    color: var(--ink);
+    text-align: left;
+    animation: kit-pop 0.2s var(--ease);
+  }
+  [data-kit='pk-side'] {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    overflow-y: auto;
+    background: var(--surface-2);
+    border-right: 1px solid var(--line);
+  }
+  [data-kit='pk-head'] {
+    padding: 8px 10px 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  [data-kit='pk-h'],
+  [data-kit='pk-m'] {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 9px;
+    border-radius: 9px;
+    text-align: left;
+    outline: 0;
+    color: var(--ink-2);
+    transition: background 0.12s;
+  }
+  [data-kit='pk-h']:hover,
+  [data-kit='pk-m']:hover,
+  [data-kit='pk-m']:focus-visible {
+    background: var(--bg-2);
+  }
+  [data-kit='pk-h']:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--line-2);
+  }
+  /* under the harnesses (UX 2026-11-18 #9): the way to one that isn't installed, Settings → Agents */
+  [data-kit='pk-setup'] {
+    width: 100%;
+    margin-top: var(--space-2);
+    padding: 7px 9px;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    text-align: left;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+  [data-kit='pk-setup']:hover,
+  [data-kit='pk-setup']:focus-visible {
+    color: var(--ink);
+    background: var(--bg-2);
+  }
+  [data-kit='pk-h'][data-on] {
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--line-2), var(--shadow-1);
+  }
+  [data-kit='pk-h'][data-off] > [data-kit='pk-logo'],
+  [data-kit='pk-h'][data-off] > [data-kit='pk-text'] {
+    opacity: 0.5;
+  }
+  [data-kit='pk-h'][data-off][data-on] > [data-kit='pk-logo'],
+  [data-kit='pk-h'][data-off][data-on] > [data-kit='pk-text'] {
+    opacity: 0.8;
+  }
+  [data-kit='pk-logo'] {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+  }
+  [data-kit='pk-h'][data-on] > [data-kit='pk-logo'] {
+    background: var(--bg-2);
+    border-color: transparent;
+  }
+  [data-kit='pk-logo'] > * {
+    display: block;
+    width: 15px;
+    height: 15px;
+  }
+  [data-kit='pk-text'] {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  [data-kit='pk-text'] > b {
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-kit='pk-text'] > small {
+    font-size: 12.5px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-kit='pk-text'] > small:empty {
+    display: none;
+  }
+  [data-kit='pk-text'] > small[data-warn] {
+    color: var(--warn);
+  }
+  [data-kit='pk-dot'] {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  [data-kit='pk-main'] {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  [data-kit='pk-search'] {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    margin: 8px 8px 2px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    color: var(--faint);
+  }
+  [data-kit='pk-search']:focus-within {
+    border-color: var(--line-2);
+  }
+  [data-kit='pk-search'] > [data-kit='icon'] {
+    flex: none;
+    width: 14px;
+    height: 14px;
+  }
+  [data-kit='pk-search'] > input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: none;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  [data-kit='pk-list'] {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px;
+  }
+  [data-kit='pk-group'] + [data-kit='pk-group'] {
+    margin-top: 4px;
+  }
+  [data-kit='pk-m'] > [data-kit='icon'] {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    color: var(--accent);
+    visibility: hidden;
+  }
+  [data-kit='pk-m'][aria-selected='true'] > [data-kit='icon'] {
+    visibility: visible;
+  }
+  [data-kit='pk-m'][aria-selected='true'] > [data-kit='pk-text'] > b {
+    color: var(--accent-ink);
+  }
+  [data-kit='pk-note'] {
+    margin: 8px 10px 4px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  /* a link in a sentence: told apart by more than colour */
+  [data-kit='pk-note'] > a {
+    color: var(--accent-ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  [data-kit='pk-empty'] {
+    padding: 30px 10px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  [data-kit='pk-setup'] {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 8px;
+  }
+  [data-kit='pk-effort'] {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 8px 10px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  [data-kit='pk-effort'] + [data-kit='pk-effort'][data-acct] {
+    border-top: 0;
+    padding-top: 0;
+  }
+  [data-kit='pk-ehead'] {
+    padding: 0 2px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  /* v1 .pk-seg: one row that scrolls sideways, never wraps (design/layout.md §2) */
+  [data-kit='pk-seg'] {
+    display: flex;
+    min-width: 0;
+    gap: 2px;
+    padding: 2px;
+    overflow-x: auto;
+    border-radius: 9px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+  }
+  /* v1 .pk-acct .pk-seg: the account row is a Wrap group (data-layout='wrap': layout.css wraps it, design/layout.md §5);
+     it keeps the segment's own 2px gap and stretched buttons, not the Wrap layout's gap and centring */
+  [data-kit='pk-seg'][data-layout='wrap'] {
+    gap: 2px;
+    align-items: stretch;
+  }
+  [data-kit='pk-seg'] > button {
+    flex: 1 0 auto;
+    padding: 4px 7px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    outline: 0;
+    transition: background 0.12s, color 0.12s;
+  }
+  [data-kit='pk-seg'] > button:hover {
+    color: var(--ink);
+  }
+  [data-kit='pk-seg'] > button:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  [data-kit='pk-seg'] > button[aria-checked='true'] {
+    background: var(--surface);
+    color: var(--accent-ink);
+    font-weight: 500;
+    box-shadow: var(--shadow-1);
+  }
+  [data-kit='pk-seg'] > button[data-off] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* v1 .pk-vary: Try it two ways' What's different under the pane, a row per setting, label then segments */
+  [data-kit='pk-vary'] {
+    flex: none;
+    padding-bottom: 8px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  [data-kit='pk-vary'] > [data-kit='pk-head'] {
+    padding: 8px 10px 6px;
+  }
+  [data-kit='pk-vary'] > [data-kit='pk-effort'] {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    border-top: 0;
+    background: none;
+  }
+  [data-kit='pk-vary'] > [data-kit='pk-effort'] + [data-kit='pk-effort'] {
+    margin-top: 6px;
+  }
+  [data-kit='pk-anote'] {
+    margin: 0;
+    padding: 0 2px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  /* v1 @media (max-width: 560px): the harnesses one row of chips over the pane, names only */
+  @media (max-width: 560px) {
+    [data-kit='picker'] {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    [data-kit='pk-side'] {
+      flex-direction: row;
+      overflow-x: auto;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    [data-kit='pk-side'] > [data-kit='pk-head'],
+    [data-kit='pk-h'] > [data-kit='pk-text'] > small {
+      display: none;
+    }
+    [data-kit='pk-h'] {
+      width: auto;
+      flex: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-kit='picker'] {
+      animation: none;
+    }
+  }
+}

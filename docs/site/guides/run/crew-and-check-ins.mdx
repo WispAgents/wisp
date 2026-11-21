@@ -1,0 +1,156 @@
+---
+title: Crew and check-ins
+description: Add crew members, give them jobs, let them check in on their own, set who hands work to whom, and follow them as stories on your phone.
+sidebar:
+  order: 6
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
+
+A **crew member** is an agent that stays. It has a name, a role, a brief it follows on every job, a kit of skills,
+and a notebook it keeps between jobs. You give it **jobs**; it can also **check in** on its own, on a schedule, and
+wake up when something happens. Each job is a task you can open, follow up and ship.
+
+## Add a member
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Press **Add a crew member** (the **+** in the crew rail, on the far left). Give them a **Name**, a **Role**, and
+under **Their job** what they look after and what they should never do. Pick the **Harness**, the **Mode**, the
+**Project folder**, how often they **Check in**, and **Jobs at once**. Then **Add to your crew**.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Open the **Crew** tab and tap **Add**. Give them a **Name**, a **Role** and **Their job**, pick the harness and how
+often they check in, then **Add to your crew**.
+</TabItem>
+<TabItem label="TUI">
+Press **g** then **c** for the crew view, then **n** for a new member.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp crew create --name Ada --role reviewer --agent codex --mode plan \
+  --brief "Review every PR the crew opens. Never merge." --cron "every weekday at 9"
+wisp crew                     # your crew
+```
+</TabItem>
+</Tabs>
+
+Or declare them, and share them with the repo:
+
+```yaml
+crew:
+  ada:
+    role: reviewer
+    agent: codex
+    mode: plan
+    brief: "Review every PR the crew opens. List what you would fix. Never merge."
+    cron: "every weekday at 9"
+    parallel: 1
+```
+
+## Give a job
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Click the member in the crew rail. Type in **Give Ada a job…** and press **Enter**. In any other task, write
+`@ada …` in the reply box: the job is about that task, and Ada's answer lands under your message.
+
+<Shot name="crew-member" alt="A crew member's page: the Give a job box, their jobs, their kit of skills and their notebook" />
+</TabItem>
+<TabItem label="Phone app">
+Open the **Crew** tab and tap the member. Type in **Give Ada a job…** and send. In any task, write `@ada …` in the
+reply bar: the job is about that task, and Ada's answer lands under your message.
+</TabItem>
+<TabItem label="TUI">
+In the crew view (**g c**), select the member and press **a**. Or, in any task, write `@ada …` in the reply box.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp crew assign ada "update the changelog for the last release"
+wisp crew ask <task-id> ada "can you check this?"   # in a task: the answer lands under your message
+wisp ls --crew ada                                  # Ada's jobs
+```
+</TabItem>
+</Tabs>
+
+## Check-ins
+
+A check-in is a job the member gives itself: it looks at what it looks after and reports, or stays quiet when
+nothing is new. **Checks in** takes *Only when asked*, *Every 30 min*, *Hourly*, *Every morning*, *Weekday
+mornings*, *Mondays*, *On call*, or your own words ("every 2 hours").
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+On the member's page: **Check in now**. **Pause** stops check-ins, triggers and delegations until **Resume**.
+</TabItem>
+<TabItem label="Phone app">
+**Crew** tab → the member: **Check in now**, **Pause** and **Resume** are on their page.
+</TabItem>
+<TabItem label="TUI">
+In the crew view: **c** check in, **w** wake, **p** pause, **u** resume, **x** remove.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp crew checkin ada
+wisp crew update ada --paused
+wisp crew update ada --cron "every 2 hours"
+wisp crew wake ada "the nightly build failed"   # a job because something happened
+```
+</TabItem>
+</Tabs>
+
+Members also wake on events: **Also starts when** on their page, or `wakes:` in a formula
+(`- { on: pr.opened }`). See [Automations, schedules and triggers](../schedules-and-triggers/).
+
+## Org: who hands work to whom
+
+A member's **delegates** are who its jobs can hand work to: other members, or agents on any harness. The **Org**
+page draws them as arrows. A job that was itself delegated works alone, so work never goes round in circles.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Press **Org** at the bottom of the crew rail. Select a member to choose its delegates, or drag from a card's handle
+onto another member. Drag a card to move it; **Reset layout** puts everyone back.
+
+<Shot name="crew-org" alt="The Org page: crew members as cards, with arrows to the members and agents they hand work to" />
+</TabItem>
+<TabItem label="Phone app">
+Open the **Crew** tab and tap **Org**. Tap a member to choose its delegates.
+</TabItem>
+<TabItem label="TUI">
+```text
+/crew graph
+```
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp crew graph                                   # who wakes whom
+wisp crew update ada --team '[{"crew":"linus","why":"release notes"}]'
+```
+</TabItem>
+</Tabs>
+
+## Kit, notebook and track record
+
+- **Skills and instructions:** an `AGENTS.md` they follow on every job, and skills they read when a job needs one.
+  Drop `.md` files on their page. A member can propose additions; you accept them with **Add to their kit**.
+- **Notebook:** what they remember between jobs. Edit it on their page.
+- **Track record:** `wisp crew stats` shows how each member's jobs went.
+
+## Share a crew
+
+```sh
+wisp crew export ada,linus          # a crew file (refused while it holds a secret)
+wisp crew share ada,linus           # a link through wisp Cloud
+wisp crew import --url <link>       # review it; members come in paused
+```
+
+## On your phone
+
+The phone app shows your busy crew as **stories** under the Tasks bar. A ring says who waits on you, who has a new
+report and who works. Tap one to see what they do now and their last report; swipe for the next member, down to
+close. Reply in the box at the bottom (**Message Ada…**), or rate the report **Good** or **Try again**. See
+[Phone app](../../apps/phone-app/).

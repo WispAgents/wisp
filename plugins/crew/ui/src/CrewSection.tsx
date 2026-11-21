@@ -1,0 +1,136 @@
+// The browser's Crew section at the top of the list (v1 #secCrew; see CrewListTop.tsx): its own chunk. It draws with
+// the kit's Org pieces (crew/Org.tsx, org and stuff-frame CSS), which the phone apps (they draw the stories row) never
+// need: imported with CrewListTop it brought them to every phone's first screen (perf r1 #1/#2).
+import { createMemo, createSignal, getOwner, lazy, runWithOwner, Show, type JSX } from 'solid-js';
+import type { ExtensionProps } from '@wisp/shell/contract';
+import { useShell } from '@wisp/shell';
+import { CrewListFewer, CrewListSection, CrewListStrip, ForKeyed, useSignal, type CrewListRow } from '@wisp/ui';
+import { foldedWords, statusLine } from './model.ts';
+import { sectionPlan, type SectionHold } from './fold.ts';
+import { crewData, emptyState } from './data.ts';
+import { memberJobs, NeedsTracker } from './rules/feed.ts';
+import { t } from './i18n.ts';
+import { cadenceText } from './model.ts';
+import type { Member } from './types.ts';
+import { VIEW } from './views.ts';
+import './i18n/lazy.ts';
+
+
+export default function CrewSection(props: ExtensionProps): JSX.Element {
+  const c = props.client;
+  const shell = useShell();
+  const nav = useSignal(shell.nav);
+  const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
+  const members = useSignal(crewData(c).members);
+  const [folded, setFolded] = createSignal(false);
+  // a member's jobs under it: v1's rules (rules/feed.ts) with this page's open task and the list's project
+  const data = crewData(c);
+  const states = useSignal(data.states);
+  const card = useSignal(shell.taskCards?.render ?? (() => undefined));
+  const projectFilter = useSignal(shell.projectFilter?.value ?? (() => 'all'));
+  const needs = new NeedsTracker();
+  // no open set: the list leaves a job out exactly when it doesn't need you (shell-list sections.ts), so the two agree
+  // and a job is always in one of them (v1's sticky Needs you for an open report would drop it from both here)
+  const none: ReadonlySet<string> = new Set();
+  // compact (v1 #secCrew): busy members and two more get a row, the rest fold into faces; Show all for this visit
+  const ranked = useSignal(data.ranked);
+  const [all, setAll] = createSignal(false);
+  const [hold, setHold] = createSignal<SectionHold>({ order: null, full: new Set() });
+  // the member open in the main pane, by id (navigation holds its key, `<peer>:<id>`). A memo: opening a task leaves it
+  // null, so the plan, its rows and each member's job rows aren't built again on every tap (F-phone-8)
+  const crewOpen = createMemo((): string | null => {
+    const m = nav().main as { kind?: string; id?: unknown };
+    return m.kind === 'crew' ? (data.byId(String(m.id ?? ''))?.id ?? null) : null;
+  });
+  const plan = createMemo(() => sectionPlan(ranked() as unknown as readonly Member[], states(), { all: all(), open: none, hold: hold(), crewOpen: crewOpen() }));
+  const onHold = (on: boolean): void => {
+    const p = plan();
+    // pointer in: hold the order and the rows shown, so nothing moves under it; out: fold what went quiet
+    setHold(on ? { order: [...p.rows, ...p.folded].map((m) => m.id), full: new Set(p.rows.map((m) => m.id)) } : { order: null, full: new Set() });
+  };
+  const jobsOf = createMemo(() => {
+    const ids = new Set((members() as readonly { id: string }[]).map((m) => m.id));
+    const ctx = { filter: projectFilter(), pick: null, open: none, has: (id: string) => ids.has(id), needs, crewOpen: null, pinned: none };
+    const p = plan();
+    return new Map((members() as readonly (Member & { paused?: boolean })[]).map((m) => [m.id, memberJobs(m, states().get(m.id) ?? emptyState(!!m.paused), ctx, p.jobsMax(m.id))]));
+  });
+  // a member's job cards by task id, each made once: the jobs are new rows on every change of any task, and a new card
+  // was taken down and put back (its hover lost; flicker hunt, B32)
+  const Jobs = (p: { readonly id: string }): JSX.Element => (
+    <ForKeyed each={jobsOf().get(p.id)?.list ?? []}>
+      {(_s, id) => (
+        <Show when={data.sessionKey(id)}>
+          {(k) => card()?.(k())}
+        </Show>
+      )}
+    </ForKeyed>
+  );
+  // each member's Jobs made once, under this list's owner (made inside `rows` it was made again with every row)
+  const owner = getOwner();
+  const jobsEls = new Map<string, JSX.Element>();
+  const jobsEl = (id: string): JSX.Element => {
+    let el = jobsEls.get(id);
+    if (el === undefined) {
+      el = runWithOwner(owner, () => <Jobs id={id} />);
+      jobsEls.set(id, el);
+    }
+    return el;
+  };
+  const orgOn = (): boolean => nav().main.kind === 'view' && String((nav().main as { id?: unknown }).id) === VIEW.org;
+  const rows = createMemo((): CrewListRow[] =>
+    (plan().rows as unknown as readonly (Member & { key: string })[]).map((m) => ({
+      id: m.key,
+      name: m.name,
+      role: m.role,
+      avatar: m.avatar,
+      color: m.color,
+      sub: m.paused ? t('wisp.crew.org.paused') : cadenceText(m, say as never),
+      paused: m.paused,
+      jobs: card() ? jobsEl(m.id) : undefined,
+      more: () => {
+        const n = jobsOf().get(m.id)?.more ?? 0;
+        return n > 0 ? say('wisp.crew.list.more', { count: n, name: m.name }) : undefined;
+      },
+    })),
+  );
+  return (
+    // only where there's no rail: the phone's stacked list
+    <Show when={nav().layout === 'stack'}>
+      <CrewListSection
+        name={t('wisp.crew.list.name')}
+        count={members().length}
+        collapsed={folded()}
+        onToggle={() => setFolded(!folded())}
+        org={rows().length > 0 ? { label: t('wisp.crew.org.title'), title: t('wisp.crew.list.orgTitle'), on: orgOn(), onClick: () => c.navigate({ t: 'openView', id: VIEW.org as never, params: null }) } : undefined}
+        add={{ label: t('wisp.crew.org.addTitle'), onClick: () => c.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: VIEW.editor as never, params: {} } }) }}
+        rows={rows()}
+        onHold={onHold}
+        foot={
+          <Show
+            when={plan().folded.length > 0}
+            fallback={<Show when={plan().fewer}><CrewListFewer label={t('wisp.crew.list.fewer')} onClick={() => setAll(false)} /></Show>}
+          >
+            <CrewListStrip
+              faces={(plan().faces as unknown as readonly (Member & { key: string })[]).map((m) => ({
+                id: m.key,
+                name: m.name,
+                avatar: m.avatar,
+                color: m.color,
+                on: m.id === crewOpen(),
+                title: `${m.name} · ${statusLine(m, states().get(m.id) ?? emptyState(!!m.paused), { t: say as never, now: c.scope.timers.now(), when: () => '' }).text}`,
+                label: say('wisp.crew.list.open', { name: m.name }),
+              }))}
+              words={foldedWords(plan().folded, say as never)}
+              title={say('wisp.crew.list.all', { n: members().length })}
+              onFace={(id) => c.navigate({ t: 'openCrew', id: id as never })}
+              onExpand={() => setAll(true)}
+            />
+          </Show>
+        }
+        empty={{ title: t('wisp.crew.list.emptyTitle'), sub: t('wisp.crew.list.emptySub') }}
+        openLabel={(name) => say('wisp.crew.list.open', { name })}
+        onOpen={(id) => c.navigate({ t: 'openCrew', id: id as never })}
+      />
+    </Show>
+  );
+}

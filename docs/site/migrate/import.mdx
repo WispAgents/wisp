@@ -1,0 +1,71 @@
+---
+title: Import a wisp home
+description: Bring projects, recipes, crew, automations, machines and task history from another wisp home (~/.wisp) with one command.
+sidebar:
+  order: 1
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Have a wisp home from another install, or a `~/.wisp` folder copied from another computer? Its setup and its task
+history come in with one command. It shows its plan first and changes nothing until you say yes.
+
+## Import
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Importing runs in a terminal. Run the CLI command, then open the desktop app: what came in is already there.
+</TabItem>
+<TabItem label="Phone app">
+Importing runs in a terminal on the computer, so it can't be done from the phone. Run the CLI command there,
+then open that computer in the phone app: what came in is already there.
+</TabItem>
+<TabItem label="TUI">
+Quit the TUI (**q**), run the CLI command, then `wisp tui` again.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp import --dry-run              # the plan only
+wisp import                        # the plan, then "Import it? [y/N]"
+wisp import --yes                  # no question (for scripts)
+wisp import /path/to/other/home    # another folder than ~/.wisp
+```
+Outside a terminal, `wisp import` needs `--yes`.
+</TabItem>
+</Tabs>
+
+## What comes over
+
+It reads the home's `config.json` and its `sessions` folder, and brings in:
+
+- **Projects.** A project whose folder isn't on this computer is left out, and the plan says so.
+- **Defaults**, as settings: your default harness, model and effort among them.
+- **Recipes**, as declared tasks.
+- **Automations and schedules**, as triggers.
+- **Crew members** and **teams**.
+- **Machines** and **connectors**.
+- **Task history:** every task with its transcript and its changes per turn. Tasks are history, so they are
+  imported, never planned. A task already imported is skipped, so you can run the import again.
+
+The plan shows each change as `wisp apply` would. Notes under it name anything that didn't carry over: a spell, for
+one, isn't imported; [Make wisp your own](../../plugins/make-wisp-your-own/) shows how to build it as a
+[plugin](../../concepts/plugins/), or ask an agent to.
+
+## Secrets
+
+Tokens and keys are never written into a plan. A connector's environment or a channel's token that wisp already
+has becomes a `${secret:NAME}` reference. Any other is named in the plan's notes. Set it with:
+
+```sh
+wisp secret set NAME       # typed hidden, or piped: echo "$TOKEN" | wisp secret set NAME
+```
+
+## Keep your setup in the repo
+
+After importing, write it out as a formula you can review and commit:
+
+```sh
+wisp export > .wisp/setup.wisp.yml
+```
+
+See [Formulas](../../concepts/formulas/).

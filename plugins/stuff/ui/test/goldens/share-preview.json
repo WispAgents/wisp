@@ -1,0 +1,75 @@
+{
+  "bundle": {
+    "createdAt": 0,
+    "formula": {},
+    "from": {
+      "key": "",
+      "name": ""
+    },
+    "id": "share-…",
+    "level": "report",
+    "needs": [
+      "harness:claude"
+    ],
+    "redacted": {
+      "path": 1,
+      "secret": 2
+    },
+    "report": {
+      "answers": [
+        {
+          "blocks": [
+            {
+              "status": "done",
+              "summary": "No question asked.",
+              "title": "Fake claude finished",
+              "topic": "Fix add",
+              "type": "hero"
+            }
+          ],
+          "prompt": "fix the add bug, token=<secret> TOPIC[Fix add]",
+          "status": "done",
+          "text": "All done.\n```wisp\n{\"blocks\":[{\"status\":\"done\",\"summary\":\"No question asked.\",\"title\":\"Fake claude finished\",\"topic\":\"Fix add\",\"type\":\"hero\"}]}\n```"
+        }
+      ],
+      "files": [
+        "math.js"
+      ]
+    },
+    "sig": "",
+    "spec": {
+      "agent": "claude",
+      "cwd": "<project>",
+      "formula": "…",
+      "prompt": "fix the add bug, token=<secret> TOPIC[Fix add]"
+    },
+    "title": "Fix add",
+    "version": "…",
+    "wispTask": 1
+  },
+  "redactions": [
+    {
+      "at": "spec/cwd",
+      "kind": "path",
+      "now": "<project>",
+      "was": "/tmp/…/proj"
+    },
+    {
+      "at": "spec/prompt",
+      "kind": "secret",
+      "now": "<secret>",
+      "was": "abcd…efgh"
+    },
+    {
+      "at": "report/answers/0/prompt",
+      "kind": "secret",
+      "now": "<secret>",
+      "was": "abcd…efgh"
+    }
+  ],
+  "shared": null,
+  "targets": [],
+  "work": {
+    "kind": "files"
+  }
+}

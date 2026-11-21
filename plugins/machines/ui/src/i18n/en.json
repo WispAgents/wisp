@@ -1,0 +1,8 @@
+{
+  "machines.pane": "Machines",
+  "machines.title": "Machines",
+  "machines.connect": "Connect",
+  "machines.disconnect": "Disconnect",
+  "machines.remove": "Remove",
+  "machines.pane.lede": "Other computers that run agents for you, over SSH."
+}

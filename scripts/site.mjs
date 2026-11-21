@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// Builds the docs site's generated pages next to the hand-written ones (docs/index.html, cloud.html):
-// a page per harness under agents/, the guides under guides/ (scripts/guides.mjs), integrations.html
-// changelog.html and privacy.html from their markdown, 404.html and sitemap.xml. The Pages workflow runs it before upload; the output is gitignored.
+// Builds trywisp.dev into docs/: the home page, Get the app, wisp Cloud, a page per harness under agents/,
+// changelog and privacy from their markdown, a 404, the old guides' addresses (each sends its readers to
+// the docs, which hold the guides now: ADR-0039), sitemap.xml, robots.txt and llms.txt. Every page is generated here:
+// never edit the HTML in docs/. The look is docs/site.css, inlined into each page. The docs themselves are apps/docs.
+// The Pages workflow runs it before upload.
 //
 //   node scripts/site.mjs [outDir]     default: docs/
 
@@ -9,10 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
-import { guides } from './guides.mjs';
-import { FIGURES } from './figures.mjs';
-import { TEMPLATES } from '../web/js/crew-templates.js';
+import { MOVED_GUIDES } from './guides.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DOCS = path.join(ROOT, 'docs');
@@ -20,16 +19,6 @@ const SITE = 'https://trywisp.dev';
 const REPO = 'https://github.com/WispAgents/wisp';
 // Markdown with \n line ends, whatever the checkout has (Windows checks out CRLF).
 const readText = (f) => fs.readFileSync(f, 'utf8').replace(/\r\n?/g, '\n');
-const INDEX = fs.readFileSync(path.join(DOCS, 'index.html'), 'utf8');
-// Same stylesheet version and analytics as the landing page, so a bump there covers these pages too.
-const CSS_V = INDEX.match(/style\.css\?v=(\d+)/)?.[1] || '1';
-const RELAY_V = INDEX.match(/relay\.js\?v=(\d+)/)?.[1] || '1';
-const SPELLS_V = INDEX.match(/spells\.js\?v=(\d+)/)?.[1] || '1';
-// The guides' own stylesheet and script, named by their content so a change reaches readers at once.
-const stamp = (f) => createHash('sha1').update(fs.readFileSync(path.join(DOCS, f))).digest('hex').slice(0, 8);
-const GUIDE_ASSETS = `<link rel="stylesheet" href="/guide.css?v=${stamp('guide.css')}" />
-  <script>document.documentElement.classList.add('js')</script>`;
-const POSTHOG = INDEX.match(/<script>\s*!function\(t,e\)[\s\S]*?<\/script>/)?.[0] || '';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const slug = (s) => s.toLowerCase().replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/<[^>]+>/g, '').replace(/[`*[\]]/g, '').replace(/[^\w\s.-]/g, '').trim().replace(/[\s.]+/g, '-');
@@ -123,7 +112,7 @@ export function markdown(src, base = `${REPO}/blob/main/`) {
 }
 
 // ---------- the harnesses ----------
-// What wisp actually passes each CLI (server/adapters/*.js). Keep in step when an adapter changes.
+// What wisp passes each CLI (plugins/<id>/host). Keep in step when a runner changes.
 
 const MODES = { plan: 'Plan (read-only)', edits: 'Edits', auto: 'Full auto' };
 
@@ -248,486 +237,770 @@ export const AGENTS = [
 
 // ---------- page shell ----------
 
+const CSS = minifyCss(readText(path.join(DOCS, 'site.css')));
+function minifyCss(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ').replace(/\s*([{};,>])\s*/g, '$1').replace(/:\s+/g, ':').replace(/;}/g, '}').trim();
+}
+
 const GH_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
-
-const COPY_JS = `<script>
-    for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
-      const l = b.querySelector('.copy');
-      try { await navigator.clipboard.writeText(b.dataset.copy); b.classList.add('copied'); if (l) l.textContent = 'Copied'; window.posthog?.capture?.('install_copied', { method: b.dataset.copy.split(' ')[0] }); } catch { if (l) l.textContent = 'Select'; }
-      setTimeout(() => { b.classList.remove('copied'); if (l) l.textContent = 'Copy'; }, 1600);
-    });
-    for (const a of document.querySelectorAll('[data-cloud-cta]')) a.addEventListener('click', () => { window.posthog?.capture?.('cloud_cta_clicked', { where: a.dataset.cloudCta }, { transport: 'sendBeacon' }); });
-    const nav = document.querySelector('.nav');
-    addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 8), { passive: true });
-  </script>`;
-
-const installButton = (cmd = 'npx wisp-agents') =>
-  `<button class="cmd" data-copy="${esc(cmd)}" aria-label="Copy install command"><span class="p">$</span><code>${esc(cmd)}</code><span class="copy">Copy</span></button>`;
-
-// Every way to get wisp, as tabs (the landing page's selector; docs/guide.js switches them):
-// npx, npm, curl, brew, and Download, which shows this OS's app (on a Mac, the curl --app install).
-const WAYS = [
-  ['npx', 'npx wisp-agents', 'macOS · Linux and Windows in beta · Node 20+ · MIT'],
-  ['npm', 'npm install -g wisp-agents', 'Puts the wisp command on your PATH · any OS · Node 20+'],
-  ['curl', 'curl -fsSL https://trywisp.dev/install.sh | bash', 'macOS and Linux · checks for Node 20+, then installs with npm'],
-  ['brew', 'brew install --cask wispagents/tap/wisp', 'Homebrew · the desktop app (macOS 13.3+); brew install wispagents/tap/wisp-agents is the CLI'],
-  ['app', '', 'Free, no Node needed'],
-];
+const COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
 const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>';
-let installN = 0;
-const installTabs = () => {
-  const id = `get${++installN}`;
-  return `<div class="g-install" data-tabs>
-      <div class="hero-tabs" role="tablist" aria-label="How to get wisp">${WAYS.map(([k, cmd, note], i) => `<button class="tab" role="tab" type="button" id="${id}-${k}" aria-controls="${id}-panel" aria-selected="${!i}" tabindex="${i ? -1 : 0}" data-tab="${k}"${cmd ? ` data-cmd="${esc(cmd)}"` : ''} data-note="${esc(note)}">${k === 'app' ? 'Download' : k}</button>`).join('')}</div>
-      <div role="tabpanel" id="${id}-panel" aria-labelledby="${id}-npx">
-        <a class="cmd dl" hidden href="https://github.com/WispAgents/wisp/releases/latest/download/wisp-mac-arm64.dmg" data-tab-dl>${DL_ICON}<span data-dl-label>Download for macOS</span><span class="copy" data-dl-kind>.dmg</span></a>
-        <button class="cmd" type="button" data-copy="npx wisp-agents" data-tab-copy aria-label="Copy install command"><span class="p">$</span><code data-tab-code>npx wisp-agents</code><span class="copy">Copy</span></button>
-      </div>
-      <p class="fine" data-tab-note>${WAYS[0][2]}</p>
-    </div>`;
-};
+const PHONE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>';
+const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+const MARK = '<img src="/assets/favicon-48.png" alt="" width="26" height="26" />';
 
-// path: site path ('/agents/codex.html'); crumbs: [[label, path], …] after Home.
-// scripts: extra <script> tags for the end of <body> (a guide's demo).
-// image: the social preview (Cloud pages get their own).
-// head: extra tags for <head>; main: the <main> class; trail: false hides the breadcrumb (it stays in the schema).
-function page({ path: p, title, description, crumbs = [], body, schema = [], noindex = false, scripts = '', image = '/assets/og.png', head = '', main = 'doc wrap', trail: showTrail = true }) {
-  const url = `${SITE}${p}`;
+const DOCS_URL = '/docs/';
+const DL = 'https://github.com/WispAgents/wisp/releases/latest/download';
+const GRID = 'https://grid.trywisp.dev';
+
+// Usage counts (docs/privacy.md, "This site"): PostHog, loaded on the reader's first scroll, tap or key, or 4 s after the
+// page loaded, so its script never competes with the first paint or the first input (it was all of the home page's
+// blocking time on a slow phone). The waitlist form sends nothing to it.
+const ANALYTICS = `<script>
+(function () { var done = false, evs = ['scroll', 'pointerdown', 'keydown', 'touchstart'];
+function go() { if (done) return; done = true; evs.forEach(function (e) { removeEventListener(e, go); });
+!function(t,e){var o,n,p,r;e.__SV||(window.posthog&&window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}p||((p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",p.onerror=function(){p=null},(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r));var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],o="init capture register register_once identify reset opt_in_capturing opt_out_capturing".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+posthog.init('phc_wowwZkbP8e4zYuwT67JtX6oxdPwkMWL5kKnrUmYYXhcD', { api_host: 'https://us.i.posthog.com', defaults: '2026-05-30', person_profiles: 'identified_only' });
+}
+evs.forEach(function (e) { addEventListener(e, go, { once: true, passive: true }); });
+addEventListener('load', function () { setTimeout(go, 4000); }); })();
+</script>`;
+
+// The page's few behaviours, in one small script at the end: copy buttons, the Desktop app · Phone app · TUI · CLI switch (one choice for
+// the whole site, kept), and the phone app waitlist.
+const PAGE_JS = `<script>
+(function () {
+  var d = document, root = d.documentElement, WAY_KEY = 'starlight-synced-tabs__way';
+  var LABEL = { desktop: 'Desktop app', phone: 'Phone app', tui: 'TUI', cli: 'CLI' };
+  function track(e, p) { try { window.posthog && posthog.capture && posthog.capture(e, p); } catch (x) {} }
+  d.addEventListener('click', function (ev) {
+    var c = ev.target.closest('[data-copy]');
+    if (c) { navigator.clipboard && navigator.clipboard.writeText(c.getAttribute('data-copy')).then(function () { c.setAttribute('data-done', ''); c.setAttribute('aria-label', 'Copied'); setTimeout(function () { c.removeAttribute('data-done'); c.setAttribute('aria-label', 'Copy command'); }, 1600); }); track('site copy', { what: c.getAttribute('data-copy') }); return; }
+    var w = ev.target.closest('[data-way-pick]');
+    if (w) { setWay(w.getAttribute('data-way-pick')); try { localStorage.setItem(WAY_KEY, LABEL[root.dataset.way]); } catch (x) {} return; }
+    var a = ev.target.closest('a[data-dl]');
+    if (a) track('site download', { what: a.getAttribute('data-dl') });
+  });
+  function setWay(k) {
+    root.dataset.way = k;
+    d.querySelectorAll('[data-way-pick]').forEach(function (b) { var on = b.getAttribute('data-way-pick') === k; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
+  }
+  d.addEventListener('keydown', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-way-pick]');
+    if (!b || (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft')) return;
+    var all = [].slice.call(b.parentNode.querySelectorAll('[data-way-pick]')), i = all.indexOf(b);
+    var n = all[(i + (ev.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length]; n.click(); n.focus(); ev.preventDefault();
+  });
+  // the head's script already chose (the reader's pick, else Desktop app, Phone app on a phone): the tabs' state follows
+  setWay(root.dataset.way || 'desktop');
+
+  // the phone app waitlist: the email goes to wisp Cloud's list only (docs/privacy.md)
+  var EMAIL = /^[^@\\s<>"']{1,64}@[^@\\s<>"']+\\.[^@\\s<>"']{2,}$/;
+  d.querySelectorAll('form[data-waitlist]').forEach(function (f) {
+    var input = f.querySelector('input[type=email]'), msg = f.querySelector('.msg'), btn = f.querySelector('button');
+    function say(t, err) { msg.textContent = t; msg.classList.toggle('err', !!err); }
+    input.addEventListener('input', function () { input.removeAttribute('aria-invalid'); say(''); });
+    f.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var email = input.value.trim();
+      if (!EMAIL.test(email) || email.length > 254) { input.setAttribute('aria-invalid', 'true'); say('That doesn’t look like an email address.', true); input.focus(); return; }
+      var pick = f.querySelector('input[name=platform]:checked'), platform = pick ? pick.value : 'both';
+      btn.disabled = true; say('Adding you…');
+      var body = new URLSearchParams({ email: email, kind: 'phone-app', platform: platform, source: 'site' });
+      fetch(f.action, { method: 'POST', body: body }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
+      }).then(function (r) {
+        btn.disabled = false;
+        if (r.ok) {
+          var phone = { ios: 'iPhone', android: 'Android', both: 'iPhone and Android' }[platform];
+          var t = d.createElement('div'); t.className = 'thanks ph-no-capture'; t.setAttribute('role', 'status'); t.tabIndex = -1;
+          t.innerHTML = '<b>You’re on the list.</b> We’ll email <span></span> once, when wisp is out for ' + phone + '. Nothing else.';
+          t.querySelector('span').textContent = email;
+          f.replaceWith(t); t.focus();
+        } else if (r.status === 429) say('Too many tries from here. Wait a minute, then try again.', true);
+        else say((r.j && r.j.error) || 'That didn’t work. Try again in a moment.', true);
+      }, function () { btn.disabled = false; say('Couldn’t reach the list. Try again, or email hello@trywisp.dev.', true); });
+    });
+  });
+})();
+</script>`;
+
+// Before paint (no flash, no shift): which how-to tab every block shows. The reader's last pick, shared with the docs'
+// synced tabs (same key, same labels); else Phone app on a phone (touch and narrow, or a mobile browser), else Desktop
+// app, which is also what the HTML says for a reader without JavaScript.
+const WAY_HEAD = `<script>try{var r=document.documentElement,l=localStorage.getItem('starlight-synced-tabs__way'),k={'Desktop app':'desktop','Phone app':'phone','TUI':'tui','CLI':'cli'}[l];if(!k){var n=navigator,m=n.userAgentData&&n.userAgentData.mobile;k=m||matchMedia('(max-width: 700px) and (pointer: coarse)').matches||/iPhone|iPod|Android.+Mobile/.test(n.userAgent)?'phone':'desktop'}r.dataset.way=k}catch(e){}</script>`;
+
+const NAV = [
+  ['Docs', DOCS_URL, ''],
+  ['Guides', '/docs/guides/', 'opt'],
+  ['Agents', '/agents/', 'opt'],
+  ['Cloud', '/cloud.html', ''],
+  ['Changelog', '/changelog.html', 'opt'],
+];
+
+function page({ path: p, title, description, crumbs = [], body, schema = [], noindex = false, image = '/assets/og.png', imageAlt = 'wisp: manage the code your agents write', head = '', type = 'website', main = 'doc' }) {
+  const url = `${SITE}${p.replace(/index\.html$/, '')}`;
   const trail = [['wisp', '/'], ...crumbs];
   const breadcrumb = {
     '@type': 'BreadcrumbList',
     itemListElement: trail.map(([name, at], i) => ({ '@type': 'ListItem', position: i + 1, name, item: `${SITE}${at}` })),
   };
-  const graph = noindex ? [] : [breadcrumb, ...schema];
+  const graph = noindex ? [] : [...(crumbs.length ? [breadcrumb] : []), ...schema];
   return `<!doctype html>
-<html lang="en">
+<html lang="en" data-way="desktop">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${esc(title)}</title>
-  <meta name="description" content="${esc(description)}" />
-${noindex ? '  <meta name="robots" content="noindex" />' : `  <link rel="canonical" href="${url}" />
-  <meta name="robots" content="index, follow, max-image-preview:large" />`}
-  <meta name="theme-color" content="#f4f3ef" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#0e0e0d" media="(prefers-color-scheme: dark)" />
-  <meta property="og:type" content="article" />
-  <meta property="og:site_name" content="wisp" />
-  <meta property="og:url" content="${url}" />
-  <meta property="og:title" content="${esc(title)}" />
-  <meta property="og:description" content="${esc(description)}" />
-  <meta property="og:image" content="${SITE}${image}" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="${esc(title)}" />
-  <meta name="twitter:description" content="${esc(description)}" />
-  <meta name="twitter:image" content="${SITE}${image}" />
-  <link rel="icon" href="/favicon.ico" sizes="48x48" />
-  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
-  <link rel="icon" href="/assets/favicon-192.png" type="image/png" sizes="192x192" />
-  <link rel="icon" href="/assets/favicon-96.png" type="image/png" sizes="96x96" />
-  <link rel="icon" href="/assets/favicon-48.png" type="image/png" sizes="48x48" />
-  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" sizes="180x180" />
-${graph.length ? `  <script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })}</script>\n` : ''}  <link rel="stylesheet" href="/style.css?v=${CSS_V}" />
-${head ? `  ${head}\n` : ''}  ${POSTHOG}
-</head>
-<body class="docpage">
-  <header class="nav">
-    <div class="wrap nav-in">
-      <a class="brand" href="/" aria-label="wisp home"><span class="mark" aria-hidden="true"></span>wisp</a>
-      <nav class="links" aria-label="Primary">
-        <a href="/agents/"${p.startsWith('/agents/') ? ' aria-current="page"' : ''}>Agents</a>
-        <a href="/guides/"${p.startsWith('/guides/') ? ' aria-current="page"' : ''}>Guides</a>
-        <a href="/integrations.html"${p === '/integrations.html' ? ' aria-current="page"' : ''}>Integrations</a>
-        <a href="/changelog.html"${p === '/changelog.html' ? ' aria-current="page"' : ''}>Changelog</a>
-        <a href="/cloud.html">Cloud</a>
-      </nav>
-      <a class="gh" href="${REPO}" target="_blank" rel="noopener">${GH_ICON}<span>GitHub</span></a>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+${WAY_HEAD}
+<title>${esc(title)}</title>
+<meta name="description" content="${esc(description)}" />
+${noindex ? '<meta name="robots" content="noindex" />' : `<link rel="canonical" href="${url}" />
+<meta name="robots" content="index, follow, max-image-preview:large" />`}
+<meta name="color-scheme" content="light dark" />
+<meta name="theme-color" content="#f7f6f3" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0d0d0f" media="(prefers-color-scheme: dark)" />
+<meta property="og:type" content="${type}" />
+<meta property="og:site_name" content="wisp" />
+<meta property="og:url" content="${url}" />
+<meta property="og:title" content="${esc(title)}" />
+<meta property="og:description" content="${esc(description)}" />
+<meta property="og:image" content="${SITE}${image}" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="${esc(imageAlt)}" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@trywispagents" />
+<meta name="twitter:title" content="${esc(title)}" />
+<meta name="twitter:description" content="${esc(description)}" />
+<meta name="twitter:image" content="${SITE}${image}" />
+<meta name="twitter:image:alt" content="${esc(imageAlt)}" />
+<link rel="icon" href="/favicon.ico" sizes="48x48" />
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" sizes="180x180" />
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
+${graph.length ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })}</script>\n` : ''}<style>${CSS}</style>
+${head}</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/" aria-label="wisp, home">${MARK}wisp</a>
+    <span class="alpha" title="wisp is in alpha: expect rough edges">alpha</span>
+    <nav class="links" aria-label="Main">
+      ${NAV.map(([t, h, c]) => `<a${c ? ` class="${c}"` : ''} href="${h}"${p === h || (h !== '/' && h.length > 1 && p.startsWith(h) && h !== DOCS_URL) ? ' aria-current="page"' : ''}>${t}</a>`).join('\n      ')}
+    </nav>
+    <a class="gh" href="${REPO}" rel="noopener">${GH_ICON}<span>GitHub</span></a>
+    <a class="btn primary" href="/app.html">Get the app</a>
+  </div>
+</header>
+<main id="main" class="${main}">
+${crumbs.length ? `<div class="wrap"><nav class="crumbs" aria-label="Breadcrumb"><ol>${trail.map(([name, at], i) => (i < trail.length - 1 ? `<li><a href="${at}">${esc(name)}</a></li>` : `<li aria-current="page">${esc(name)}</li>`)).join('')}</ol></nav></div>\n` : ''}${body}
+</main>
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div>
+      <a class="brand" href="/">${MARK}wisp</a>
+      <p class="muted small" style="margin-top:10px">Manage the code your agents write.<br />Open source, MIT. Runs on your machines.</p>
     </div>
-  </header>
-
-  <main id="top" class="${main}">
-${crumbs.length && showTrail ? `    <nav class="crumbs" aria-label="Breadcrumb"><ol>${trail.map(([name, at], i) => (i < trail.length - 1 ? `<li><a href="${at}">${esc(name)}</a></li>` : `<li aria-current="page">${esc(name)}</li>`)).join('')}</ol></nav>\n` : ''}${body}
-  </main>
-
-  <footer class="foot wrap">
-    <span class="brand"><span class="mark" aria-hidden="true"></span>wisp</span>
-    <span class="muted">MIT © M0xoo</span>
-    <span class="grow"></span>
-    <a href="/agents/">Agents</a>
-    <a href="/guides/">Guides</a>
-    <a href="/integrations.html">Integrations</a>
-    <a href="/changelog.html">Changelog</a>
-    <a href="/cloud.html">wisp Cloud</a>
-    <a href="/privacy.html">Privacy</a>
-    <a href="https://www.npmjs.com/package/wisp-agents" target="_blank" rel="noopener">npm</a>
-    <a href="${REPO}" target="_blank" rel="noopener">GitHub</a>
-  </footer>
-  ${COPY_JS}${scripts ? `\n  ${scripts}` : ''}
+    <div><h2>Product</h2><ul>
+      <li><a href="/app.html">Desktop and phone apps</a></li>
+      <li><a href="/cloud.html">wisp Cloud and the Grid</a></li>
+      <li><a href="/agents/">Agents</a></li>
+      <li><a href="/changelog.html">Changelog</a></li>
+    </ul></div>
+    <div><h2>Learn</h2><ul>
+      <li><a href="/docs/">Docs</a></li>
+      <li><a href="/docs/guides/">Guides</a></li>
+      <li><a href="/docs/reference/cli/">CLI reference</a></li>
+      <li><a href="/docs/integrations/your-agent/">Integrations</a></li>
+    </ul></div>
+    <div><h2>More</h2><ul>
+      <li><a href="${REPO}" rel="noopener">GitHub</a></li>
+      <li><a href="https://www.npmjs.com/package/wisp-agents" rel="noopener">npm</a></li>
+      <li><a href="https://x.com/trywispagents" rel="noopener">X</a></li>
+      <li><a href="/privacy.html">Privacy</a></li>
+    </ul></div>
+  </div>
+</footer>
+${PAGE_JS}
+${ANALYTICS}
 </body>
 </html>
 `;
 }
 
-const APP = { '@id': `${SITE}/#app` };
-const logo = (a, size = 22) => `<img src="/assets/logos/${a.logo}" alt="" width="${size}" height="${size}"${a.mono ? ' class="mono"' : ''} />`;
-// prefix: 'story-' for the landing page's story shots (story-dark-compare.webp).
-const shot = (name, alt, prefix = '') =>
-  `<figure class="doc-shot"><picture><source srcset="/assets/shots/${prefix}dark-${name}.webp" media="(prefers-color-scheme: dark)" /><img src="/assets/shots/${prefix}light-${name}.webp" alt="${esc(alt)}" loading="lazy" /></picture></figure>`;
+// ---------- pieces ----------
+
+/** A real screenshot from the app, light or dark as the reader's system is, AVIF with WebP for older browsers. */
+function shot(name, widths, ratio, alt, { sizes = '100vw', eager = false } = {}) {
+  const set = (s, ext) => widths.map((w) => `/assets/app/${name}-${s}-${w}.${ext} ${w}w`).join(', ');
+  const [w, h] = ratio;
+  return `<picture>
+  <source media="(prefers-color-scheme: dark)" type="image/avif" srcset="${set('dark', 'avif')}" sizes="${sizes}" />
+  <source media="(prefers-color-scheme: dark)" type="image/webp" srcset="${set('dark', 'webp')}" sizes="${sizes}" />
+  <source type="image/avif" srcset="${set('light', 'avif')}" sizes="${sizes}" />
+  <img src="/assets/app/${name}-light-${widths[1] ?? widths[0]}.webp" srcset="${set('light', 'webp')}" sizes="${sizes}" width="${w}" height="${h}" alt="${esc(alt)}"${eager ? ' fetchpriority="high"' : ' loading="lazy" decoding="async"'} />
+</picture>`;
+}
+const DESK = [640, 960, 1440, 2160];
+const PHONE = [240, 390, 780];
+const DESK_3 = new Set(['desktop-org', 'desktop-new-task', 'desktop-machines']);
+const deskShot = (name, alt, o) => `<div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>${shot(name, DESK_3.has(name) ? [640, 960, 1440] : DESK, [1440, 900], alt, o)}</div>`;
+const phoneShot = (name, alt, o) => `<div class="phone">${shot(name, PHONE, [390, 844], alt, o)}</div>`;
+
+const wayShot = (html, phone = false) => `<div class="way-shot${phone ? ' is-phone' : ''}">${html}</div>`;
+/** Where install is shown: wisp is in alpha, and where to say what broke. */
+const ALPHA_NOTE = `<p class="muted small alpha-note">wisp is in alpha: expect rough edges, and <a href="${REPO}/issues">tell us what breaks</a>.</p>`;
+const install = (cmd = 'npx wisp-agents') =>
+  `<div class="install"><span class="dollar" aria-hidden="true">$</span><code>${esc(cmd)}</code><button class="copy" type="button" data-copy="${esc(cmd)}" aria-label="Copy command">${COPY_ICON}</button></div>`;
+
+/** One task four ways: the desktop app, the phone app, the terminal UI and the command line. `desktop`, `phone`,
+ * `tui`: HTML; `cli`: a shell snippet. The pick is one for the whole site and the docs: WAYS' labels are what
+ * trywisp.dev/docs's synced tabs keep in localStorage (`starlight-synced-tabs__way`), and the head's script draws the
+ * right one before paint (Desktop app with no pick, Phone app on a phone). */
+const WAYS = [['desktop', 'Desktop app'], ['phone', 'Phone app'], ['tui', 'TUI'], ['cli', 'CLI']];
+let waysN = 0;
+function ways({ desktop, phone, tui, cli, label = '' }) {
+  const n = ++waysN;
+  const html = { desktop, phone, tui, cli: `<pre><code>${cli}</code></pre>` };
+  const tab = ([k, t]) => `<button type="button" role="tab" id="w${n}-${k}" aria-controls="w${n}-${k}p" data-way-pick="${k}" aria-selected="${k === 'desktop'}"${k === 'desktop' ? '' : ' tabindex="-1"'}>${t}</button>`;
+  const panel = ([k]) => `<div class="way" data-k="${k}" role="tabpanel" id="w${n}-${k}p" aria-labelledby="w${n}-${k}">${html[k]}</div>`;
+  return `<div class="ways">
+  <div class="ways-tabs" role="tablist" aria-label="Do it from">${WAYS.map(tab).join('')}${label ? `<span class="label">${esc(label)}</span>` : ''}</div>
+  ${WAYS.map(panel).join('\n  ')}
+</div>`;
+}
+// a shell line: the command, then a dim comment
+const sh = (cmd, note = '') => `${esc(cmd)}${note ? `   <span class="muted"># ${esc(note)}</span>` : ''}`;
+
+const LOGO = (a, size = 20) => `<img src="/assets/logos/${a.logo}" alt="" width="${size}" height="${size}"${a.mono ? ' class="mono"' : ''} />`;
+
+const FAQ = [
+  ['Is wisp free?', 'Yes. wisp is open source under the MIT license and runs on your own computers. You use the coding agents you already have, on your own plans and keys, so wisp adds nothing to your bill. wisp Cloud, a hosted wisp on a server, is optional.'],
+  ['Which coding agents does wisp work with?', 'Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity. wisp runs the real CLIs you already installed and signed in to, so each agent keeps its own models, tools and settings.'],
+  ['Does my code leave my computer?', 'No. wisp runs on your machines. Your prompts and code go only to the agents you use, under your own accounts, as they would without wisp. wisp sends anonymous usage counts you can turn off, never your code or prompts.'],
+  ['Do I need an API key?', 'No. If you already use Claude Code or Codex with a subscription, wisp uses that same sign-in. API keys work too, for agents that take them.'],
+  ['Can I use it from the terminal?', 'Yes. Everything the app does, the CLI does (wisp "fix the flaky test", wisp ls, wisp ship), and wisp tui is a full terminal UI. After a command fails, wisp "check the error above" hands the agent what just happened in that terminal. Your agents can drive wisp too, through its MCP server.'],
+  ['Is there a phone app?', 'The phone apps for iPhone and Android are coming. Join the waitlist on the Get the app page and we email you once, when yours is out. Today you can already use wisp from your phone’s browser, from your cloud wisp or a computer you put on the Grid.'],
+  ['Does it run on Windows and Linux?', 'Yes. The desktop app runs on macOS, Windows and Linux, and the command line installs with npm on macOS, Windows and Linux, x64 and Arm (Node.js 18 or later).'],
+  ['What does “as code” mean here?', 'Your agents, crew, machines, skills, MCP servers and workflows can live as files in your repo’s .wisp/ folder. You review them in a pull request, apply them with wisp apply, and every task the agents ran is kept next to the code it wrote.'],
+];
+
+// ---------- the home page ----------
+
+function landing() {
+  waysN = 0;
+  const harnessList = AGENTS.map((a) => `<li><a href="/agents/${a.slug}.html">${LOGO(a)}${esc(a.name)}</a></li>`).join('');
+  const body = `
+<div class="wrap">
+  <section class="hero" aria-labelledby="hero-h">
+    <p class="kicker"><b>Open source</b> · MIT · runs on your machines</p>
+    <h1 id="hero-h">Manage the code your agents write.</h1>
+    <p class="lede"><b>Declare</b> your coding agents as code. <b>Run</b> them anywhere, many at once. <b>Track</b> every line they write, right next to your code. From the desktop app, your phone or the terminal.</p>
+    <div class="cta" id="install">
+      ${install()}
+      <a class="btn primary" href="/app.html" data-dl="hero">${DL_ICON}Get the app</a>
+      <a class="btn ghost" href="/docs/start/install/">Read the docs</a>
+    </div>
+    <p class="muted small" style="margin-top:14px">Works with Claude Code, Codex, Cursor, opencode, Copilot, Grok and Antigravity, on the plans you already pay for.</p>
+    ${ALPHA_NOTE}
+    <div class="stage">
+      ${deskShot('desktop-task', 'The wisp desktop app: a list of tasks on the left, and a finished task with its report: what the agent did, the diff and the tests', { eager: true, sizes: '(max-width: 1100px) 100vw, 1080px' })}
+      ${phoneShot('ios-task', 'The wisp iPhone app showing the same task’s report', { sizes: '(max-width: 700px) 34vw, 260px' })}
+    </div>
+  </section>
+
+  <section aria-labelledby="agents-h" style="padding-top:24px">
+    <h2 id="agents-h" class="lead-h">One place for every coding agent you use</h2>
+    <ul class="logos">${harnessList}</ul>
+  </section>
+
+  <section aria-labelledby="why-h">
+    <div class="sec-head">
+      <p class="eyebrow">Why wisp</p>
+      <h2 id="why-h">The new way to build with agents</h2>
+      <p>Coding agents now write much of the code. The hard part moved: keeping several of them busy, checking their work, and knowing later why a line is there. wisp is built for that part.</p>
+    </div>
+    <div class="why">
+      <div class="card"><span class="num">01</span><h3>Your agents, your plans</h3><p>wisp runs the real Claude Code, Codex and the others, signed in with your own accounts. No new model, no markup, no lock-in.</p></div>
+      <div class="card"><span class="num">02</span><h3>Many at once, nothing collides</h3><p>Each task gets its own git worktree. Run several at once, on this computer, your other ones or the cloud, and ship each as its own pull request.</p></div>
+      <div class="card"><span class="num">03</span><h3>Done means done</h3><p>Give a task a goal and judges on other harnesses. It keeps going until they agree, or tells you why it can’t.</p></div>
+      <div class="card"><span class="num">04</span><h3>Code that remembers why</h3><p>Every task is a file in your repo. <code>wisp blame</code> shows which task wrote a line and what it was asked. Rerun it, resume it, share it.</p></div>
+    </div>
+  </section>
+
+  <section id="declare" aria-labelledby="declare-h">
+    <div class="pillar">
+      <div>
+        <p class="eyebrow">1 · Declare</p>
+        <h2 id="declare-h">Your AI dev team, as code<span class="tag">New</span></h2>
+        <p class="muted">Agents, crew members, machines, skills, MCP servers, rules and workflows live in your repo’s <code>.wisp/</code> folder. Review a change to your team like any other change. Share it with a link.</p>
+        <ul>
+          <li>Variables, references and modules, like infrastructure as code.</li>
+          <li><code>wisp plan</code> shows what will change; <code>wisp apply</code> makes it so.</li>
+          <li>Skills, <code>AGENTS.md</code> notes and MCP servers shared with the whole team.</li>
+        </ul>
+        <p><a href="/docs/guides/declare/software-factory-as-code/">Build a software factory as code ${'→'}</a></p>
+      </div>
+      ${ways({
+        label: 'Set up a team',
+        desktop: `<ol><li>Open the <b>Org</b> page (its button is at the bottom of the rail on the left) and choose <b>Add member</b>: a reviewer, a fixer, a nightly bot.</li><li>Settings (<kbd>⌘K</kbd> → Settings) → <b>Setup</b> → <b>Make the formula</b> writes your whole setup as a file to commit.</li><li>Paste a formula in the same pane to import one: you see what it would change first.</li></ol>${wayShot(deskShot('desktop-org', 'The Org page in the wisp desktop app: the crew, and who hands work to whom', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>Open the <b>Crew</b> tab to see your members and add one.</li><li>Tap a member’s story under the Tasks bar to see what they’re doing, and reply.</li><li>Writing the formula itself is easier on a computer: the Desktop app or the CLI.</li></ol>`,
+        tui: `<ol><li><code>wisp tui</code>, then <kbd>g</kbd> <kbd>c</kbd> for the crew view.</li><li><kbd>n</kbd> adds a member, <kbd>a</kbd> gives one a job, <kbd>c</kbd> checks in.</li><li>Any CLI command runs from the reply box: <code>/crew create --name Ada</code>.</li></ol>`,
+        cli: `<span class="c"># .wisp/wisp.yml</span>
+<span class="k">wisp</span>: 1
+<span class="k">agents</span>:
+  <span class="k">reviewer</span>: { <span class="k">harness</span>: <span class="s">codex</span>, <span class="k">mode</span>: <span class="s">plan</span> }
+  <span class="k">fixer</span>:    { <span class="k">harness</span>: <span class="s">claude</span>, <span class="k">model</span>: <span class="s">opus</span> }
+
+${sh('wisp init', 'a .wisp/ folder in this repo')}
+${sh('wisp plan', 'what applying it would change')}
+${sh('wisp apply -f .wisp/wisp.yml')}`,
+      })}
+    </div>
+
+    <div class="pillar" id="run">
+      <div>
+        <p class="eyebrow">2 · Run</p>
+        <h2>Every harness, any machine, from anywhere</h2>
+        <p class="muted">Start a task in one line. wisp runs the agent in its own worktree, streams what it does, and hands back a short report with the diff and the tests. The full transcript is always one click away.</p>
+        <ul>
+          <li>Follow up, queue the next step, or ask on the side with <code>btw</code> without stopping it.</li>
+          <li><b>Compare</b> two agents on the same task, or <b>try it two ways</b> on one.</li>
+          <li>Run it here, on your other computers over SSH, or in wisp Cloud.</li>
+        </ul>
+        <p><a href="/docs/guides/run/run-and-follow-up/">Run a task and follow up ${'→'}</a></p>
+      </div>
+      ${ways({
+        label: 'Start and ship a task',
+        desktop: `<ol><li>Press <kbd>N</kbd> for <b>New task</b>, pick the agent and model in its footer, type, <kbd>Enter</kbd>.</li><li>Answer its questions on the task page; reply below to follow up. <kbd>]</kbd> opens the side panel: Changes, PR, Shell, Preview.</li><li><b>Ship</b> (<kbd>S</kbd>) commits, pushes and opens the pull request.</li></ol><p class="small muted">In the browser it’s the same window, menus and keys.</p>${wayShot(deskShot('desktop-new-task', 'New task in the wisp desktop app: a prompt typed, with the mode, Claude Code and where it runs under it', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>In <b>Tasks</b>, tap <b>New task</b>, write what you want, send.</li><li>Answer its questions in the task; the reply bar follows up. Swipe a row right to mark it done.</li><li><b>⋯</b> (iPhone) or <b>⋮</b> (Android) → <b>Ship it…</b> opens the pull request.</li></ol>${wayShot(phoneShot('ios-list', 'The task list in the wisp iPhone app: tasks that need you, and tasks still working', { sizes: '200px' }), true)}`,
+        tui: `<ol><li><code>wisp tui</code>, <kbd>n</kbd> for a new task, <kbd>Enter</kbd> to send.</li><li><kbd>1</kbd>–<kbd>9</kbd> answers a question; <kbd>y</kbd> <kbd>a</kbd> <kbd>n</kbd> allow a tool.</li><li><code>/ship ship</code> opens the pull request; <kbd>d</kbd> shows the diff.</li></ol>`,
+        cli: `${sh('wisp "fix the flaky reconnect test"', 'runs in its own worktree')}
+${sh('wisp "add rate limiting to /login" --agent codex --effort high')}
+${sh('wisp "audit the auth flow" --compare claude,codex')}
+${sh('wisp attach last', 'follow it live; reply after')}
+${sh('wisp ship <id>', 'commit, push, open the PR')}`,
+      })}
+    </div>
+
+    <div class="pillar" id="track">
+      <div>
+        <p class="eyebrow">3 · Track</p>
+        <h2>Know why every line exists<span class="tag">New</span></h2>
+        <p class="muted">A repo built by agents should remember how it was built. wisp keeps each task in <code>.wisp/tasks</code>: what was asked, from which commit, what the agent said, the code it wrote.</p>
+        <ul>
+          <li><code>wisp blame</code> on a line, a file or a pull request gives the task and its ask.</li>
+          <li><code>wisp resume</code> picks last month’s task up on today’s code.</li>
+          <li>Tasks you ran in a harness outside wisp come in with <code>wisp adopt</code>.</li>
+        </ul>
+        <p><a href="/docs/guides/track/track-agent-work/">Track your agents’ work beside your code ${'→'}</a></p>
+      </div>
+      ${ways({
+        label: 'Find out why',
+        desktop: `<ol><li><kbd>⌘K</kbd> → <b>Repo history</b>: what agents did in this repo, from everyone who worked on it.</li><li>Open a task to read what was asked and its report; <b>Resume</b> carries it on, on today’s code.</li><li>Keep a task in the repo with <b>Track</b> in its <b>⋯</b> menu.</li></ol>${wayShot(deskShot('desktop-task', 'A task in the wisp desktop app: its turns, what was asked, and the report with the diff and the tests', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>Open a task to read what was asked, its turns and its report.</li><li><b>⋯</b> / <b>⋮</b> → <b>Rerun…</b> asks the same again; <b>Keep and copy ›</b> forks or shares it.</li><li>The repo’s full history is in the Desktop app, the TUI and the CLI.</li></ol>${wayShot(phoneShot('ios-task', 'A task in the wisp iPhone app: its turns, what was asked, and the report', { sizes: '200px' }), true)}`,
+        tui: `<ol><li><code>wisp tui</code>, then <kbd>g</kbd> <kbd>h</kbd> for the repo history view.</li><li><kbd>Enter</kbd> opens a task; <kbd>/</kbd> searches.</li><li>A task’s page says what it was asked and from which commit.</li></ol>`,
+        cli: `${sh('wisp blame src/sync/peers.ts:118', 'the task that wrote it, and what it was asked')}
+${sh("wisp blame '#812'", 'the tasks behind a pull request')}
+${sh('wisp log src/sync', 'the tasks that touched it, newest first')}
+${sh('wisp resume <id>', 'carry on, on today’s code')}
+${sh('wisp adopt --all --since 7d', 'sessions you ran outside wisp')}`,
+      })}
+    </div>
+  </section>
+
+  <section aria-labelledby="more-h">
+    <div class="sec-head">
+      <p class="eyebrow">Everything else</p>
+      <h2 id="more-h">One tool for the whole loop</h2>
+      <p>Every feature works from the desktop app, the phone app, the TUI and the CLI, and from your own agent through wisp’s MCP tools.</p>
+    </div>
+    <div class="grid">
+      ${[
+        ['Worktrees and pull requests', 'Each task on its own branch and worktree. See the changes, fix conflicts, ship and merge from wisp.', 'wisp ship <id> --draft', '/docs/guides/run/worktrees-and-shipping/'],
+        ['Compare and try it two ways', 'The same task on two agents side by side, or twice on one with one setting changed. Keep the better one.', 'wisp "…" --try skills=off', '/docs/guides/run/compare-and-try/'],
+        ['Goals and judges', 'Agents keep going until judges on other harnesses agree the goal is met.', 'wisp goal set <id> "tests pass"', '/docs/guides/run/goals/'],
+        ['Crew and check-ins', 'Named agents with a role, a kit and a schedule. They check in, pick up jobs and hand work to each other.', 'wisp crew assign <id> "review #812"', '/docs/guides/run/crew-and-check-ins/'],
+        ['Automations and triggers', 'Run a task on a schedule, on a GitHub event, when a goal is met, or when anything else happens.', 'wisp automations tasks', '/docs/guides/run/schedules-and-triggers/'],
+        ['Slack, Telegram, Discord, Linear…', 'Start tasks and talk to your crew from Slack, Telegram, Discord, ntfy, GitHub, Linear or email.', 'wisp help channels', '/docs/guides/run/from-slack-and-linear/'],
+        ['Review by another agent', 'Have a second harness read the diff before you do. Blind spots differ; so do the bugs they catch.', 'wisp help review', '/docs/guides/run/review-by-another-agent/'],
+        ['Long threads, fresh threads', 'wisp keeps a task’s Notes: goal, decisions, what failed. Start a fresh conversation from them when one wears out.', 'wisp fresh <id> --print', '/docs/guides/run/long-threads/'],
+        ['Machines, Grid and Cloud', 'Run on your other computers over SSH, put one on the Grid, or get your own wisp in the cloud.', 'wisp "…" --on studio', '/docs/guides/run/machines/'],
+        ['MCP from your harness', 'Your Claude Code or Codex can start wisp tasks, read results and talk to the crew, without leaving its chat.', 'wisp skill install --agent all', '/docs/guides/run/mcp-from-your-harness/'],
+        ['Budgets and usage', 'See your plan’s limits and what each task took. Hold work near the limit instead of hitting it.', 'wisp usage', '/docs/guides/run/budgets-and-usage/'],
+        ['Plugins', 'Everything in wisp is a plugin. Add a command, a pane, a channel or a theme with the same API the built-ins use.', 'wisp plugin new my-plugin', '/docs/plugins/make-wisp-your-own/'],
+      ].map(([t, p, c, h]) => `<div class="card"><h3>${esc(t)}</h3><p>${esc(p)}</p><pre><code>${esc(c)}</code></pre><a class="more" href="${h}">Read the guide <span aria-hidden="true">→</span></a></div>`).join('\n      ')}
+    </div>
+  </section>
+
+  <section id="apps" aria-labelledby="apps-h">
+    <div class="sec-head">
+      <p class="eyebrow">Apps</p>
+      <h2 id="apps-h">On your desk, and in your pocket</h2>
+      <p>The same wisp, everywhere: a fast native window on your computer, and apps for your phone so a question from an agent never waits for you to get back.</p>
+    </div>
+    <div class="apps">
+      <div class="app-card desk">
+        <h3>Desktop app</h3>
+        <p class="muted">For macOS, Windows and Linux. Every task in one window, your shortcuts, notifications when an agent needs you. It updates itself.</p>
+        <div class="dl">
+          <a class="btn primary" href="${DL}/wisp-mac-arm64.dmg" data-dl="mac-arm64">${DL_ICON}macOS</a>
+          <a class="btn ghost" href="${DL}/wisp-windows-x64-setup.exe" data-dl="win-x64">Windows</a>
+          <a class="btn ghost" href="${DL}/wisp-linux-x64.deb" data-dl="linux-deb">Linux</a>
+        </div>
+        <p class="small muted" style="margin:0">Intel Mac, Arm and AppImage builds on the <a href="/app.html#desktop">download page</a>.</p>
+        <div class="app-shots">${deskShot('desktop-org', 'The crew’s Org page in the wisp desktop app: who hands work to whom', { sizes: '(max-width: 880px) 92vw, 540px' })}</div>
+      </div>
+      <div class="app-card" id="phone">
+        <h3>Phone apps <span class="tag">Waitlist</span></h3>
+        <p class="muted">For iPhone and Android, built for each. Answer an agent’s question, check a report, start a task from the train. Join the waitlist and we email you once, when yours is out.</p>
+        ${waitlistForm('home')}
+        <div class="app-shots">
+          ${phoneShot('ios-list', 'The task list in the wisp iPhone app', { sizes: '210px' })}
+          ${phoneShot('android-task', 'A finished task’s report in the wisp Android app', { sizes: '210px' })}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="speed-h">
+    <div class="sec-head">
+      <p class="eyebrow">Speed is a feature</p>
+      <h2 id="speed-h">Fast enough to forget it’s there</h2>
+      <p>One Rust binary runs the server, the CLI, the TUI and the built-in plugins; a small Solid app sits on top. Speed budgets fail the build, so they stay met.</p>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>55 ms</b><span>from a cold start to the first answer, with 5,000 tasks</span></div>
+      <div class="stat"><b>0.95 ms</b><span>to read the first page of a 5,000-task list</span></div>
+      <div class="stat"><b>103 ms</b><span>from an agent’s step reaching every connected app (p99), 10 tasks running</span></div>
+      <div class="stat"><b>102 MB</b><span>of memory at rest, holding 5,000 tasks</span></div>
+    </div>
+    <p class="muted small" style="margin-top:14px">Measured on 19 November 2026 on an Apple M2 (macOS 15.6) with the repo’s <code>spikes/server-budgets</code>: <code>wisp serve</code> in its release build on 5,000 seeded tasks, fake agents, no network; each time the median of 5 rounds (cold start: 5 restarts a round; the stream: 4 clients, 2,400 steps). The same budgets gate every pull request on Linux, where the numbers are higher.</p>
+  </section>
+
+  <section id="cloud" aria-labelledby="cloud-h">
+    <div class="pillar">
+      <div>
+        <p class="eyebrow">wisp Cloud and the Grid</p>
+        <h2 id="cloud-h">Agents that keep working when your laptop sleeps</h2>
+        <p class="muted">wisp Cloud gives you your own wisp on a server, signed in with GitHub or Google. Put your own computers on it too, and reach all of them from any browser or your phone. No SSH, no open ports. Or run a Grid on your own server for your team.</p>
+        <p><a class="btn ghost" href="/cloud.html">About wisp Cloud ${ARROW}</a></p>
+      </div>
+      ${ways({
+        label: 'Reach this computer from anywhere',
+        desktop: `<ol><li>Settings → <b>Machines</b> → <b>Reach this computer from anywhere</b> → <b>Sign in and add it</b> (or Home’s tip → <b>Set up</b>).</li><li>Sign in with GitHub or Google.</li><li>Open your grid address from any browser or phone.</li></ol>${wayShot(deskShot('desktop-machines', 'Settings → Machines in the wisp desktop app: SSH, Tailscale, and Reach this computer from anywhere', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>Open the <b>Computers</b> tab.</li><li><b>Continue with GitHub</b> or <b>Continue with Google</b>.</li><li>Your cloud wisp and the computers on it show there; tap one to open its tasks.</li></ol>`,
+        tui: `<ol><li><kbd>g</kbd> <kbd>m</kbd> for machines; <kbd>c</kbd> connects one.</li><li>From the reply box: <code>/grid-client signin --add-computer</code>.</li></ol>`,
+        cli: `${sh('wisp cloud signin', 'wisp Cloud, or: wisp cloud signin <your grid>')}
+${sh('wisp computer on', 'this computer on the grid')}
+${sh('wisp ls --on cloud')}
+${sh('wisp grid serve', 'run a Grid on your own server')}`,
+      })}
+    </div>
+  </section>
+
+  <section id="faq" aria-labelledby="faq-h">
+    <div class="sec-head center" style="text-align:center"><p class="eyebrow">Questions</p><h2 id="faq-h">Frequently asked</h2></div>
+    <div class="faq">
+      ${FAQ.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('\n      ')}
+    </div>
+  </section>
+
+  <section class="close" aria-labelledby="close-h">
+    <h2 id="close-h">Declare. Run. Track.</h2>
+    <p class="lede">Your agents write the code. wisp keeps them busy, checks their work and remembers why.</p>
+    <div class="cta">${install()}<a class="btn primary" href="/app.html">${DL_ICON}Get the app</a></div>
+  </section>
+</div>`;
+  return page({
+    path: '/',
+    title: 'wisp: manage the code your agents write · Claude Code, Codex and more',
+    description: 'Open-source app, TUI and CLI to run Claude Code, Codex, Cursor and every coding agent in parallel, declare them as code, and track every line they write. Desktop and phone apps.',
+    body,
+    main: '',
+    schema: [
+      { '@type': 'WebSite', '@id': `${SITE}/#website`, url: `${SITE}/`, name: 'wisp', inLanguage: 'en' },
+      { '@type': 'Organization', '@id': `${SITE}/#org`, name: 'wisp', url: `${SITE}/`, logo: `${SITE}/assets/icon.png`, sameAs: [REPO, 'https://x.com/trywispagents', 'https://www.npmjs.com/package/wisp-agents'] },
+      SOFTWARE,
+      { '@type': 'FAQPage', '@id': `${SITE}/#faq`, mainEntity: FAQ.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) },
+    ],
+  });
+}
+
+const SOFTWARE = {
+  '@type': 'SoftwareApplication',
+  '@id': `${SITE}/#app`,
+  name: 'wisp',
+  url: `${SITE}/`,
+  description: 'Run Claude Code, Codex, Cursor and every coding agent in parallel, declare them as code, and track every line they write.',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS, Windows, Linux',
+  license: 'https://opensource.org/licenses/MIT',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  downloadUrl: 'https://github.com/WispAgents/wisp/releases/latest',
+  installUrl: `${SITE}/app.html`,
+  softwareHelp: `${SITE}/docs/`,
+  screenshot: `${SITE}/assets/app/desktop-task-light-1440.webp`,
+  author: { '@id': `${SITE}/#org` },
+};
+
+/** The phone app waitlist: posts to wisp Cloud's list (apps/grid edge_waitlist.rs, kind phone-app). Without JavaScript the
+ * form still posts there. */
+function waitlistForm(where) {
+  const id = `wl-${where}`;
+  return `<form class="wl ph-no-capture" data-waitlist action="${GRID}/api/waitlist" method="post" novalidate>
+  <input type="hidden" name="kind" value="phone-app" /><input type="hidden" name="source" value="site" />
+  <label class="sr" for="${id}">Your email</label>
+  <div class="wl-row">
+    <input id="${id}" type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" maxlength="254" />
+    <button class="btn primary" type="submit">${PHONE_ICON}Join the waitlist</button>
+  </div>
+  <fieldset><legend>For</legend>
+    <label><input type="radio" name="platform" value="ios" /> iPhone</label>
+    <label><input type="radio" name="platform" value="android" /> Android</label>
+    <label><input type="radio" name="platform" value="both" checked /> Both</label>
+  </fieldset>
+  <p class="msg" role="alert" aria-live="polite"></p>
+  <p class="small muted" style="margin:0">One email when the app is out, nothing else. <a href="/privacy.html#the-phone-app-waitlist">What we do with your address</a>.</p>
+</form>`;
+}
+
+// ---------- Get the app ----------
+
+function appPage() {
+  waysN = 0;
+  const row = (os, items) => `<tr><th scope="row">${os}</th><td>${items.map(([t, f]) => `<a href="${DL}/${f}" data-dl="${f}">${t}</a>`).join(' · ')}</td></tr>`;
+  const body = `
+<div class="wrap">
+  <header class="doc-head">
+    <p class="eyebrow">Get the app</p>
+    <h1>wisp on your desk and in your pocket</h1>
+    <p class="lede">The desktop app for macOS, Windows and Linux is ready today. The phone apps for iPhone and Android are next: join the waitlist and we email you once, when yours is out.</p>
+  </header>
+  <div class="apps">
+    <div class="app-card desk" id="desktop">
+      <h2 style="font-size:1.5rem;margin:0">Desktop app</h2>
+      <p class="muted">A native window (Tauri, not Electron). Every task, your shortcuts, notifications when an agent needs you, and updates that install themselves.</p>
+      <div class="scroll-x"><table class="table">
+        ${row('macOS', [['Apple silicon (.dmg)', 'wisp-mac-arm64.dmg'], ['Intel (.dmg)', 'wisp-mac-x64.dmg']])}
+        ${row('Windows', [['x64 installer', 'wisp-windows-x64-setup.exe'], ['Arm installer', 'wisp-windows-arm64-setup.exe']])}
+        ${row('Linux', [['.deb x64', 'wisp-linux-x64.deb'], ['.deb Arm', 'wisp-linux-arm64.deb'], ['AppImage x64', 'wisp-linux-x64.AppImage'], ['AppImage Arm', 'wisp-linux-arm64.AppImage']])}
+      </table></div>
+      <p class="small muted">Or with Homebrew: <code>brew install --cask wispagents/tap/wisp</code>. Checksums are in <code>SHA256SUMS.txt</code> on the <a href="https://github.com/WispAgents/wisp/releases/latest">latest release</a>. The builds aren’t signed yet: on macOS, after the first open, System Settings → Privacy &amp; Security → <b>Open Anyway</b>; on Windows, SmartScreen → <b>More info</b> → <b>Run anyway</b>.</p>
+      <div class="app-shots">${deskShot('desktop-task', 'The wisp desktop app with a finished task and its report', { sizes: '(max-width: 880px) 92vw, 540px' })}</div>
+    </div>
+    <div class="app-card" id="phone">
+      <h2 style="font-size:1.5rem;margin:0">Phone apps <span class="tag">Waitlist</span></h2>
+      <p class="muted">Built for each phone: Material on Android, Apple’s look on iPhone. Your tasks and crew, the answers and their diffs, a reply box, notifications, and your computers over SSH or wisp Cloud.</p>
+      ${waitlistForm('app')}
+      <p class="small muted">Can’t wait? Open your cloud wisp, or a computer you put on the Grid, in your phone’s browser and choose <b>Add to Home Screen</b>: it runs full screen. <a href="/docs/guides/apps/phone-app/">How</a>.</p>
+      <div class="app-shots">
+        ${phoneShot('ios-list', 'The task list in the wisp iPhone app', { sizes: '210px' })}
+        ${phoneShot('android-task', 'A finished task’s report in the wisp Android app', { sizes: '210px' })}
+      </div>
+    </div>
+  </div>
+  <section aria-labelledby="cli-h" style="padding-top:56px">
+    <h2 id="cli-h">Prefer the terminal?</h2>
+    <p class="muted">The <code>wisp</code> command runs everything the app does, and <code>wisp tui</code> is a full terminal UI. It needs Node.js 18 or later.</p>
+    <p class="muted">A command just failed? Type <code>wisp "check the error above"</code>: the agent gets the command, its exit code, its output and your folder, with secrets masked. <a href="/docs/guides/run/terminal-context/">How it works</a>.</p>
+    <div class="cta" style="justify-content:flex-start">${install('npm install -g wisp-agents')}</div>
+    ${ALPHA_NOTE}
+    <p class="small muted" style="margin-top:12px">Also: <code>curl -fsSL https://trywisp.dev/install.sh | bash</code> · <code>brew install wispagents/tap/wisp-agents</code> · try it with <code>npx wisp-agents</code>. <a href="/docs/start/install/">Install guide</a>.</p>
+  </section>
+</div>`;
+  return page({
+    path: '/app.html',
+    title: 'Get the wisp app: desktop for macOS, Windows and Linux; iPhone and Android waitlist',
+    description: 'Download the wisp desktop app for macOS, Windows and Linux, or join the waitlist for the iPhone and Android apps. Run and follow every coding agent from your desk or your phone.',
+    crumbs: [['Get the app', '/app.html']],
+    body,
+    schema: [{ ...SOFTWARE, '@id': `${SITE}/app.html#app` }],
+  });
+}
+
+// ---------- wisp Cloud ----------
+
+function cloudPage() {
+  waysN = 0;
+  const body = `
+<div class="wrap">
+  <header class="doc-head" id="join">
+    <p class="eyebrow">wisp Cloud and the Grid</p>
+    <h1>Your own wisp in the cloud</h1>
+    <p class="lede">wisp Cloud is wisp on a server, yours alone. Your agents keep working when your laptop sleeps, and you reach it, and your own computers, from any browser or your phone.</p>
+    <div class="cta" style="justify-content:flex-start"><a class="btn primary" href="${GRID}">Sign in to wisp Cloud ${ARROW}</a><a class="btn ghost" href="/docs/guides/run/machines/">How it works</a></div>
+  </header>
+  <div class="grid">
+    <div class="card"><h3>Always on</h3><p>Tasks run on your cloud wisp while your computers are off. It sleeps when idle and wakes when you or a trigger need it.</p></div>
+    <div class="card"><h3>Your computers too</h3><p><code>wisp computer on</code> puts a computer on the grid. Open it at your grid address from anywhere: no SSH, no open ports.</p></div>
+    <div class="card"><h3>Your sign-ins</h3><p>Sign in to Claude Code, Codex and the others on your cloud wisp, with your own plans. Secrets are encrypted.</p></div>
+    <div class="card"><h3>Share</h3><p>Share a task, a setup or a crew member with a link, with the access you choose.</p></div>
+    <div class="card"><h3>Run your own Grid</h3><p>The same service on your own server for your team: <code>wisp grid serve</code>, with sign-in through GitHub or Google. <a href="/docs/guides/run/machines/">How</a>.</p></div>
+    <div class="card"><h3>From your phone</h3><p>Open your grid address on your phone and add it to your Home Screen. The phone apps are <a href="/app.html#phone">on the waitlist</a>.</p></div>
+  </div>
+  <section aria-labelledby="how-h" style="padding-top:56px">
+    <h2 id="how-h">Get started</h2>
+    ${ways({
+      label: 'wisp Cloud',
+      desktop: `<ol><li>Settings → <b>Machines</b> → <b>Reach this computer from anywhere</b> → <b>Sign in and add it</b>, or Home’s tip → <b>Set up</b>.</li><li>Continue with GitHub or Google.</li><li>Your cloud wisp and your computers show under <b>Machines</b>.</li></ol>${wayShot(deskShot('desktop-machines', 'Settings → Machines in the wisp desktop app', { sizes: '(max-width: 880px) 90vw, 760px' }))}`,
+      phone: `<ol><li>Open the <b>Computers</b> tab.</li><li><b>Continue with GitHub</b> or <b>Continue with Google</b>.</li><li>Your cloud wisp and the computers on it show there.</li></ol>`,
+      tui: `<ol><li><kbd>g</kbd> <kbd>m</kbd> opens the machines view.</li><li>Send <code>/grid-client signin --add-computer</code> from the reply box.</li></ol>`,
+      cli: `${sh('wisp cloud signin')}
+${sh('wisp cloud status')}
+${sh('wisp computer on', 'reach this computer through the grid')}
+${sh('wisp "nightly dependency check" --on cloud')}`,
+    })}
+  </section>
+</div>`;
+  return page({
+    path: '/cloud.html',
+    title: 'wisp Cloud: your own wisp on a server · run coding agents 24/7',
+    description: 'wisp Cloud is your own wisp on a server: your coding agents keep working when your laptop sleeps, and you reach it and your computers from any browser or phone. Or self-host a wisp Grid.',
+    crumbs: [['wisp Cloud', '/cloud.html']],
+    body,
+    image: '/assets/og.png',
+  });
+}
+
+// ---------- the harnesses ----------
 
 function agentPage(a) {
   const others = AGENTS.filter((x) => x !== a);
   const body = `
-    <header class="doc-head">
-      <p class="eyebrow">Agents · ${esc(a.name)}</p>
-      <h1>${logo(a, 34)}Run ${esc(a.name)} in the background</h1>
-      <p class="doc-lede">${a.lede}</p>
-      <div class="doc-cta">${installButton()}<a class="btn" href="${a.docs}" target="_blank" rel="noopener">${esc(a.name)} docs</a></div>
-      <p class="fine muted">Free and open source · uses your own ${esc(a.vendor)} account · macOS, Linux, Windows (beta) · Node 20+</p>
-    </header>
-
-    ${shot('report', `A wisp report for a task ${a.name} finished: headline, numbers, the diff and the test run`)}
-
-    <section>
-      <h2 id="what-you-get">What wisp adds to ${esc(a.name)}</h2>
-      <ul class="doc-list">
-        <li><b>A worktree per task.</b> Each task gets its own branch from <code>origin/main</code>, so several ${esc(a.name)} runs can work on the same repo at once without colliding.</li>
-        <li><b>A report instead of a transcript.</b> When the run ends you read a headline, the numbers that changed, the real diff from its own edits, the test run and what to do next.</li>
-        <li><b>Questions mid-run.</b> When it needs a decision, the card moves to <em>Needs you</em> and you get a notification, on your desktop or your phone.</li>
-        <li><b>Ship it.</b> One click commits, pushes and opens the pull request; the card follows CI and review, and <b>Merge</b> syncs your local main.</li>
-        <li><b>One board for all of it.</b> ${esc(a.name)} tasks sit beside your other harnesses’ on the <a href="/guides/one-board-for-all-your-coding-agents.html">Agent board</a>, across your accounts and machines.</li>
-        <li><b>Take over any time.</b> Press <kbd>T</kbd> and your terminal opens in the worktree with <code>${esc(a.resume)}</code>.</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2 id="how-wisp-runs-it">How wisp runs ${esc(a.name)}</h2>
-      <p>wisp doesn’t replace or wrap ${esc(a.name)}’s model access: it starts the <code>${esc(a.bin)}</code> CLI you already have installed and signed in, in headless mode, and reads its event stream. Roughly:</p>
-      <pre data-lang="sh"><code>${esc(a.run)}</code></pre>
-      <p>Follow-ups resume the same session, so ${esc(a.name)} keeps its context. Override the binary with <code>WISP_${a.id.toUpperCase()}_BIN</code>.</p>
-    </section>
-
-    <section>
-      <h2 id="permission-modes">Permission modes</h2>
-      <p>Pick a mode per launch in the launcher (<kbd>Shift</kbd><kbd>Tab</kbd> cycles them) or with <code>--mode</code> on the CLI. Here is what each one passes to <code>${esc(a.bin)}</code>:</p>
-      <div class="table"><table>
-        <thead><tr><th>wisp mode</th><th>${esc(a.name)} flag</th></tr></thead>
-        <tbody>${Object.entries(MODES).map(([k, label]) => `<tr><td>${label}</td><td><code>${esc(a.modes[k])}</code></td></tr>`).join('')}</tbody>
-      </table></div>
-      <p>${a.approve}</p>
-    </section>
-
-    <section>
-      <h2 id="questions">Questions, <code>/btw</code> and take over</h2>
-      <dl class="doc-dl">
-        <div><dt>Asking you</dt><dd>${a.ask}</dd></div>
-        <div><dt><code>/btw</code> side questions</dt><dd>Type <code>/btw did you update the docs too?</code> while it works. The question is ${a.btw}; the running task never sees it.</dd></div>
-        <div><dt>Take over</dt><dd>Press <kbd>T</kbd> on the card, or run <code>${esc(a.resume)}</code> yourself in the task’s worktree.</dd></div>
-        <div><dt>Models</dt><dd>${a.models}</dd></div>
-      </dl>
-      <ul class="doc-list">${a.extras.map((x) => `<li>${x}</li>`).join('')}</ul>
-    </section>
-
-    <section>
-      <h2 id="get-started">Get started</h2>
-      <ol class="doc-steps">
-        <li><b>Install ${esc(a.name)} and sign in.</b> Follow <a href="${a.docs}" target="_blank" rel="noopener">${esc(a.vendor)}’s instructions</a> until <code>${esc(a.bin)}</code> runs in your terminal.</li>
-        <li><b>Start wisp.</b> ${installButton()}</li>
-        <li><b>Pick ${esc(a.name)} in the launcher</b>, describe the task and press Enter. From a shell: <code>wisp "fix the flaky auth test" --agent ${a.id}</code>.</li>
-      </ol>
-    </section>
-
-    <section>
-      <h2 id="other-agents">Run it next to other agents</h2>
-      <p>The same queue takes every harness. Compare one task on two of them side by side, or let <b>Auto</b> pick the harness and model per task from what worked before.</p>
-      <ul class="agent-grid">${others.map((x) => `<li><a href="/agents/${x.slug}.html">${logo(x)}<span>${esc(x.name)}</span></a></li>`).join('')}</ul>
-      <p>Guides: ${GUIDES.filter((g) => ['run-claude-code-and-codex-in-parallel', 'run-coding-agents-on-multiple-machines', 'multi-agent-coding'].includes(g.slug)).map((g) => `<a href="/guides/${g.slug}.html">${esc(g.h1)}</a>`).join(' · ')}.</p>
-    </section>
-`;
+<div class="wrap">
+  <header class="doc-head">
+    <div class="agent-head">${LOGO(a, 44)}<p class="eyebrow" style="margin:0">${esc(a.vendor)} · <code>${esc(a.bin)}</code></p></div>
+    <h1>Run ${esc(a.name)} with wisp</h1>
+    <p class="lede">${a.lede}</p>
+    <div class="cta" style="justify-content:flex-start">${install(`wisp "fix the flaky test" --agent ${a.id}`)}<a class="btn ghost" href="/docs/guides/agents/${a.slug}/">Start with ${esc(a.name)} ${ARROW}</a></div>
+  </header>
+  <div class="prose">
+    <h2>How wisp runs it</h2>
+    <pre><code>${esc(a.run)}</code></pre>
+    <div class="scroll-x"><table class="table">
+      <thead><tr><th scope="col">wisp mode</th><th scope="col">What ${esc(a.name)} gets</th></tr></thead>
+      <tbody>${Object.entries(MODES).map(([k, t]) => `<tr><td>${esc(t)}</td><td><code>${esc(a.modes[k])}</code></td></tr>`).join('')}</tbody>
+    </table></div>
+    <h2>Questions and permissions</h2>
+    <p>${a.ask}</p>
+    <p>${a.approve}</p>
+    <h2>Models</h2>
+    <p>${a.models}</p>
+    <h2>Ask on the side, pick it up yourself</h2>
+    <p>A <code>btw</code> question is ${a.btw}. <b>Open in ${esc(a.name)}</b> (<kbd>o</kbd> in the TUI) resumes the same conversation in its own CLI: <code>${esc(a.resume)}</code>.</p>
+    <h2>Also</h2>
+    <ul>${a.extras.map((x) => `<li>${x}</li>`).join('')}</ul>
+    <h2>The other agents</h2>
+    <ul class="logos" style="justify-content:flex-start">${others.map((o) => `<li><a href="/agents/${o.slug}.html">${LOGO(o)}${esc(o.name)}</a></li>`).join('')}</ul>
+  </div>
+</div>`;
   return page({
     path: `/agents/${a.slug}.html`,
-    title: `Run ${a.name} in the background — wisp`,
-    description: `Run ${a.name} (${a.bin}) headless in its own git worktree with wisp: questions mid-run, permission modes, /btw, take over, and a one-screen report with the real diff instead of a transcript.`,
+    title: `Run ${a.name} in parallel, in the background · wisp`,
+    description: `${a.name} with wisp: run it in its own git worktree, many tasks at once, on your own plan. Questions and permission prompts come to you; you get a short report with the diff and the tests.`,
     crumbs: [['Agents', '/agents/'], [a.name, `/agents/${a.slug}.html`]],
     body,
-    schema: [
-      {
-        '@type': 'TechArticle',
-        headline: `Run ${a.name} in the background`,
-        url: `${SITE}/agents/${a.slug}.html`,
-        inLanguage: 'en',
-        author: { '@type': 'Person', name: 'M0xoo', url: 'https://github.com/M0xoo' },
-        about: [APP, { '@type': 'SoftwareApplication', name: a.name, applicationCategory: 'DeveloperApplication', publisher: { '@type': 'Organization', name: a.vendor } }],
-        isPartOf: { '@id': `${SITE}/#website` },
-      },
-    ],
+    type: 'article',
+    schema: [{ '@type': 'TechArticle', headline: `Run ${a.name} with wisp`, url: `${SITE}/agents/${a.slug}.html`, about: { '@id': `${SITE}/#app` }, inLanguage: 'en' }],
   });
 }
 
 function agentsIndex() {
-  const yes = '<span class="yes">Yes</span>';
-  const rows = [
-    ['CLI', (a) => `<code>${esc(a.bin)}</code>`],
-    ['Plan', (a) => `<code>${esc(a.modes.plan)}</code>`],
-    ['Full auto', (a) => `<code>${esc(a.modes.auto)}</code>`],
-    ['Asks you via', (a) => (/MCP tool/.test(a.ask) ? 'MCP tool' : 'question block')],
-    ['/btw on a fork', (a) => (/fork|copy/.test(a.btw) ? yes : 'task record')],
-    ['Take over', (a) => `<code>${esc(a.resume)}</code>`],
-  ];
   const body = `
-    <header class="doc-head">
-      <p class="eyebrow">Agents</p>
-      <h1>Every coding agent CLI, one queue</h1>
-      <p class="doc-lede">wisp runs the agent CLIs you already pay for: Claude Code, Codex, Cursor CLI, opencode, Antigravity CLI, Grok Build and GitHub Copilot CLI. Each runs headless on its own branch, and each hands back the same one-screen report.</p>
-      <div class="doc-cta">${installButton()}</div>
-    </header>
-
-    <ul class="agent-cards">${AGENTS.map((a) => `
-      <li><a href="/agents/${a.slug}.html">
-        <span class="agent-name">${logo(a)}${esc(a.name)}</span>
-        <span class="muted">${esc(a.vendor)} · <code>${esc(a.bin)}</code></span>
-        <span class="agent-more">Run ${esc(a.name)} in the background →</span>
-      </a></li>`).join('')}
-    </ul>
-
-    <section class="wide">
-      <h2 id="compare">How they differ inside wisp</h2>
-      <p>wisp gives every harness the same queue, reports, worktrees and shipping. What differs is what each CLI exposes: the flags behind each permission mode, whether it can load wisp’s MCP tools, and whether it can fork a conversation.</p>
-      <div class="table"><table class="matrix">
-        <thead><tr><th></th>${AGENTS.map((a) => `<th><a href="/agents/${a.slug}.html">${esc(a.name)}</a></th>`).join('')}</tr></thead>
-        <tbody>${rows.map(([label, f]) => `<tr><th scope="row">${label}</th>${AGENTS.map((a) => `<td>${f(a)}</td>`).join('')}</tr>`).join('')}</tbody>
-      </table></div>
-      <p>Adding a harness is one adapter file in <a href="${REPO}/tree/main/server/adapters" target="_blank" rel="noopener"><code>server/adapters/</code></a>.</p>
-    </section>
-
-    ${shot('picker', 'The wisp launcher’s harness and model picker')}
-`;
+<div class="wrap">
+  <header class="doc-head">
+    <p class="eyebrow">Agents</p>
+    <h1>Every coding agent, one place</h1>
+    <p class="lede">wisp runs the real CLIs you already installed and signed in to, on your own plans. Pick one per task, compare two on the same task, or let a crew mix them.</p>
+  </header>
+  <div class="grid">
+    ${AGENTS.map((a) => `<a class="card" style="text-decoration:none;color:inherit" href="/agents/${a.slug}.html"><span class="agent-head" style="margin:0">${LOGO(a, 32)}<h2 style="font-size:1.2rem;margin:0">${esc(a.name)}</h2></span><p>${esc(a.vendor)} · <code>${esc(a.bin)}</code></p><p>${a.models}</p></a>`).join('\n    ')}
+  </div>
+</div>`;
   return page({
     path: '/agents/',
-    title: 'Coding agents wisp runs: Claude Code, Codex, Cursor, opencode, Antigravity, Grok, Copilot',
-    description: 'Run Claude Code, OpenAI Codex, Cursor CLI, opencode, Antigravity CLI, Grok Build and GitHub Copilot CLI in the background with wisp. How each one is driven, its permission flags, questions and take over.',
+    title: 'Coding agents wisp runs: Claude Code, Codex, Cursor, opencode, Copilot, Grok, Antigravity',
+    description: 'wisp runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel, on your own plans, from one app, TUI and CLI.',
     crumbs: [['Agents', '/agents/']],
     body,
-    schema: [{
-      '@type': 'ItemList',
-      name: 'Coding agents wisp runs',
-      itemListElement: AGENTS.map((a, i) => ({ '@type': 'ListItem', position: i + 1, name: a.name, url: `${SITE}/agents/${a.slug}.html` })),
-    }],
   });
 }
 
-// ---------- guides ----------
+// ---------- pages from markdown ----------
 
-const sh = (code) => `<pre data-lang="sh"><code>${esc(code)}</code></pre>`;
-export const GUIDES = guides({ esc, sh, shot, installButton, install: installTabs, agents: AGENTS, fig: FIGURES });
-const guideUrl = (g) => `/guides/${g.slug}.html`;
-// A guide's `demo`: a working copy of the feature in place of its screenshot (docs/relay.js, docs/spells.js).
-// A guide's `figure`: its own diagram (inline SVG) instead of a screenshot.
-const DEMOS = {
-  relay: {
-    html: `<div data-relay id="relay" aria-label="Try it: a task card whose next follow-up you can send to another computer or agent"></div>`,
-    script: `<script src="/relay.js?v=${RELAY_V}" defer></script>`,
-  },
-  spells: {
-    html: `<div data-spells id="spellbook" aria-label="Try it: cast a spell and watch a small wisp window change"></div>`,
-    script: `<script src="/spells.js?v=${SPELLS_V}" defer></script>`,
-  },
-};
-
-// The guides' sections on the index, in this order (each guide's `topic`).
-const TOPICS = [
-  ['agents', 'Agents side by side', 'Several agents on one repo, compared, as a team, or until the tests pass, and one board for all of them.'],
-  ['compare', 'wisp compared', 'wisp next to the other agent apps, from their own docs, with where each is better.'],
-  ['machines', 'Machines and phones', 'Your other computers over SSH or the grid, and your agents from your phone.'],
-  ['cloud', 'wisp Cloud', 'Agents that keep working with every lid shut, on our server or yours.'],
-  ['yours', 'Make it yours', 'Change wisp itself, pin your own panes, bring a second account, share an agent with your team.'],
-];
-const plain = (html) => html.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/g, ' ');
-// Minutes to read the words (figures and code count a little).
-function readMinutes(g) {
-  const words = plain(`${g.lede} ${g.body} ${g.faq.flat().join(' ')}`).split(/\s+/).filter(Boolean).length;
-  return Math.max(2, Math.round(words / 230));
-}
-const readTime = (g) => `${readMinutes(g)} min read`;
-const longDate = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
-const LINK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M6.8 9.2a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-.7.7M9.2 6.8a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l.7-.7"/></svg>';
-const guideCard = (r) => `<li><a href="${guideUrl(r)}"><span class="k">${esc(TOPICS.find(([k]) => k === r.topic)?.[1] || 'Guide')}</span><b>${esc(r.h1)}</b><p>${esc(r.card)}</p><span class="t">${readTime(r)}</span></a></li>`;
-
-function guidePage(g) {
-  const related = g.related.map((r) => GUIDES.find((x) => x.slug === r));
-  const topic = TOPICS.find(([k]) => k === g.topic);
-  const updated = lastmod(['scripts/guides.mjs']);
-  // The contents: every h2 in the body, then the questions.
-  const toc = [...g.body.matchAll(/<h2 id="([^"]+)">([\s\S]*?)<\/h2>/g)].map(([, id, t]) => [id, plain(t).replace(/\s+/g, ' ').trim()]);
-  toc.push(['faq', 'Questions']);
-  const cta = g.cloud
-    ? `<div class="doc-cta"><a class="cmd link" href="https://grid.trywisp.dev" data-cloud-cta="guide-${esc(g.slug)}">Try wisp Cloud</a></div><p class="g-or">or run it on your own computers</p>${installTabs()}`
-    : `${installTabs()}<p class="g-or"><a href="${REPO}" target="_blank" rel="noopener">Source on GitHub</a></p>`;
-  const body = `
-    <div class="g-progress" aria-hidden="true"></div>
-    <article class="g-art">
-      <header class="g-head">
-        <p class="g-kicker"><span><a href="/guides/">Guides</a></span>${topic ? `<span>${esc(topic[1])}</span>` : ''}</p>
-        <h1>${esc(g.h1)}</h1>
-        <p class="g-dek">${esc(g.card)}</p>
-        <div class="g-byline">
-          <span class="g-avatar" aria-hidden="true"><span class="mark"></span></span>
-          <div><b>wisp guides</b><span>Updated <time datetime="${updated}">${longDate(updated)}</time> · ${readTime(g)}</span></div>
-          <span class="grow"></span>
-          <button class="g-share" type="button" data-link aria-label="Copy a link to this guide" title="Copy a link to this guide">${LINK_ICON}<span>Copy link</span></button>
-        </div>
-      </header>
-
-      <div class="g-hero">${DEMOS[g.demo]?.html || g.figure || shot(...g.shot)}${g.caption ? `<p class="g-hero-cap">${g.caption}</p>` : ''}</div>
-
-      <div class="g-body">
-        <aside class="g-toc"><nav aria-label="On this page"><p>On this page</p><ol>${toc.map(([id, t]) => `<li><a href="#${id}">${esc(t)}</a></li>`).join('')}</ol></nav></aside>
-        <section class="g-intro">
-          <p class="g-lede">${g.lede}</p>
-          <div class="g-try-line">${g.cloud ? '<a class="cmd link" href="https://grid.trywisp.dev" data-cloud-cta="guide-intro">Try wisp Cloud</a><span>Free during the preview</span>' : installTabs()}</div>
-        </section>
-${g.body}
-        <section class="g-faq">
-          <h2 id="faq">Questions</h2>
-          <div>${g.faq.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>
-        </section>
-
-        <section class="g-try">
-          <div>
-            <h2 id="try-it">${g.cloud ? 'Try it with the lid shut' : 'Try it on your own repo'}</h2>
-            <p>${g.cloud ? 'Sign in with GitHub and give your own cloud wisp a task. Or run wisp on your own computers: same app, MIT.' : 'One command starts wisp in this folder. It runs the agent CLIs you already have, signed in as you.'}</p>
-            ${cta}
-            <p class="fine">Runs Claude Code, Codex, Cursor CLI, opencode, Antigravity CLI, Grok Build and Copilot CLI</p>
-          </div>
-        </section>
-      </div>
-    </article>
-
-    <section class="g-more" aria-labelledby="related">
-      <div>
-        <h2 id="related">Keep reading</h2>
-        <ul class="g-cards">${related.map(guideCard).join('')}</ul>
-      </div>
-    </section>
-`;
-  return page({
-    path: guideUrl(g),
-    title: g.title,
-    description: g.description,
-    crumbs: [['Guides', '/guides/'], [g.h1, guideUrl(g)]],
-    trail: false,
-    main: 'doc guide',
-    head: GUIDE_ASSETS,
-    body,
-    scripts: `${DEMOS[g.demo]?.script || ''}<script src="/guide.js?v=${stamp('guide.js')}" defer></script>`,
-    image: g.cloud ? '/assets/og-cloud.png' : undefined,
-    schema: [
-      {
-        '@type': 'TechArticle',
-        headline: g.h1,
-        description: g.description,
-        url: `${SITE}${guideUrl(g)}`,
-        image: `${SITE}/assets/${g.cloud ? 'og-cloud' : 'og'}.png`,
-        inLanguage: 'en',
-        dateModified: updated,
-        timeRequired: `PT${readMinutes(g)}M`,
-        author: { '@type': 'Person', name: 'M0xoo', url: 'https://github.com/M0xoo' },
-        about: APP,
-        isPartOf: { '@id': `${SITE}/#website` },
-      },
-      {
-        '@type': 'FAQPage',
-        mainEntity: g.faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
-      },
-    ],
-  });
-}
-
-function guidesIndex() {
-  const lead = GUIDES.find((g) => g.slug === 'run-claude-code-and-codex-in-parallel');
-  const body = `
-    <article class="g-art">
-      <header class="g-head">
-        <p class="g-kicker"><span>Guides</span><span>${GUIDES.length} guides</span></p>
-        <h1>Run coding agents in parallel, anywhere</h1>
-        <p class="g-dek">Claude Code, Codex and the rest side by side on one repo, on several machines, as a team and in the background. Each guide shows the manual way with plain <code>git</code> and <code>ssh</code> first, then how wisp does it.</p>
-      </header>
-      <div class="g-hero">
-        <a class="g-feature" href="${guideUrl(lead)}">
-          <div><span class="g-kicker"><span>Start here</span><span>${readTime(lead)}</span></span><b>${esc(lead.h1)}</b><p>${esc(lead.card)}</p><span class="t">Read the guide →</span></div>
-          ${shot(...lead.shot)}
-        </a>
-      </div>
-    </article>
-${TOPICS.map(([k, name, about]) => `
-    <section class="g-more g-topic" aria-labelledby="t-${k}">
-      <div>
-        <h2 id="t-${k}">${esc(name)} <small>${GUIDES.filter((g) => g.topic === k).length}</small></h2>
-        <p>${esc(about)}</p>
-        <ul class="g-cards">${GUIDES.filter((g) => g.topic === k && g !== lead).map(guideCard).join('')}</ul>
-      </div>
-    </section>`).join('')}
-
-    <section class="g-more g-topic" aria-labelledby="agents">
-      <div>
-        <h2 id="agents">By agent</h2>
-        <p>How wisp runs each CLI: the flags behind each permission mode, how it asks you questions, and the take-over command.</p>
-        <ul class="agent-grid">${AGENTS.map((x) => `<li><a href="/agents/${x.slug}.html">${logo(x)}<span>${esc(x.name)}</span></a></li>`).join('')}</ul>
-      </div>
-    </section>
-`;
-  return page({
-    path: '/guides/',
-    title: 'Guides: run Claude Code, Codex and other coding agents in parallel — wisp',
-    description: 'Guides to running coding agents in parallel: Claude Code and Codex side by side, several Claude Code sessions on one repo, agents on multiple machines over SSH, multi-agent teams and background runs.',
-    crumbs: [['Guides', '/guides/']],
-    trail: false,
-    main: 'doc guide g-index',
-    head: GUIDE_ASSETS,
-    body,
-    schema: [{
-      '@type': 'ItemList',
-      name: 'wisp guides',
-      itemListElement: GUIDES.map((g, i) => ({ '@type': 'ListItem', position: i + 1, name: g.h1, url: `${SITE}${guideUrl(g)}` })),
-    }],
-  });
-}
-
-function integrationsPage() {
-  const src = readText(path.join(DOCS, 'integrations.md'));
-  const title = src.match(/^# (.+)$/m)?.[1] || 'Integrating wisp';
-  const html = markdown(src.replace(/^# .+\n/m, ''), `${REPO}/blob/main/docs/`);
+function mdPage({ path: p, file, title, description, eyebrow, h1, lede = '', base = `${REPO}/blob/main/docs/` }) {
+  const src = readText(file);
+  const html = markdown(src.replace(/^# .+\n/m, ''), base);
   const toc = [...html.matchAll(/<h2 id="([^"]+)">(.*?)<\/h2>/g)].map(([, id, t]) => `<li><a href="#${id}">${t}</a></li>`).join('');
   return page({
-    path: '/integrations.html',
-    title: 'wisp integrations: MCP server, CLI, JS SDK, HTTP API and webhooks',
-    description: 'Hand tasks to wisp from Claude Code, Codex, Cursor, scripts or CI: the wisp MCP server, agent skill, scriptable CLI, JS SDK, OpenAPI HTTP API and webhooks.',
-    crumbs: [['Integrations', '/integrations.html']],
+    path: p,
+    title,
+    description,
+    crumbs: [[h1, p]],
     body: `
-    <header class="doc-head">
-      <p class="eyebrow">Docs</p>
-      <h1>${esc(title)}</h1>
-    </header>
-    <nav class="toc" aria-label="On this page"><p class="eyebrow">On this page</p><ul>${toc}</ul></nav>
-    <article class="prose">${html}</article>
-`,
-    schema: [{ '@type': 'TechArticle', headline: title, url: `${SITE}/integrations.html`, inLanguage: 'en', about: APP, isPartOf: { '@id': `${SITE}/#website` } }],
+<div class="wrap">
+  <header class="doc-head"><p class="eyebrow">${esc(eyebrow)}</p><h1>${esc(h1)}</h1>${lede}</header>
+  <div class="two"><article class="prose">${html}</article><nav class="toc" aria-label="On this page"><ul>${toc}</ul></nav></div>
+</div>`,
   });
+}
+
+const privacyPage = () =>
+  mdPage({
+    path: '/privacy.html',
+    file: path.join(DOCS, 'privacy.md'),
+    title: 'wisp privacy policy',
+    description: 'What wisp, the wisp phone apps, wisp Cloud and trywisp.dev collect, what never leaves your computer, what the phone app waitlist does with your email, and how to delete your account.',
+    eyebrow: 'Legal',
+    h1: 'Privacy policy',
+  });
+
+/** The product has no version in its name on the site: release notes written while it was being rebuilt say "v2" and
+ * "as v1 did"; readers get "now" and "as before". Code (`action@v1`, `ref=v1`) is left alone. */
+export function noVersionNames(md) {
+  const keep = [];
+  const out = md
+    .replace(/`[^`\n]*`/g, (c) => `\u0001${keep.push(c) - 1}\u0001`)
+    .replace(/\*\*v2:\s+(\S)/g, (_, c) => `**${c.toUpperCase()}`)
+    .replace(/\b([Ii])n v2\b,?/g, (_, i) => (i === 'I' ? 'Now' : 'now'))
+    .replace(/\b(?:the )?v2's\s+/g, 'the ')
+    .replace(/\bthe v2\s+/g, 'the ')
+    .replace(/,? as (?:in |for )?v1(?: did)?\b/g, ', as before')
+    .replace(/\(v1 (#\d+)\)/g, '($1)')
+    .replace(/\bv1 (#\d+)/g, '$1')
+    .replace(/\bmatch v1\b/g, 'match the earlier look')
+    .replace(/\bup with v1\b/g, 'up as before')
+    .replace(/\bfrom v1\b/g, 'from an earlier wisp')
+    .replace(/\bv1's\b/g, "the earlier wisp's")
+    .replace(/\b(?:a|the) v1\b/g, 'an earlier wisp')
+    .replace(/\b(for|in|to|on) v2\b/g, '$1 wisp')
+    .replace(/\bv2\b\s*/g, '')
+    .replace(/\bv1\b/g, 'the earlier wisp')
+    .replace(/\u0001(\d+)\u0001/g, (_, i) => keep[i]);
+  return out;
 }
 
 function changelogPage() {
-  const src = readText(path.join(ROOT, 'CHANGELOG.md'));
-  // Released versions only: Unreleased describes main, not what `npx wisp-agents` gets.
-  const releases = src.split(/^(?=## \[)/m).filter((s) => /^## \[\d/.test(s));
+  const src = noVersionNames(readText(path.join(ROOT, 'CHANGELOG.md')));
+  // Released versions only: Unreleased describes main, not what `npx wisp-agents` gets. Before the first release
+  // there are none: the page shows what's coming in it instead, under its own name.
+  const all = src.split(/^(?=## \[)/m);
+  const released = all.filter((s) => /^## \[\d/.test(s));
+  const upcoming = all.find((s) => /^## \[Unreleased\]/.test(s));
+  const releases = released.length || !upcoming ? released : [upcoming.replace(/^## \[Unreleased\][^\n]*/, '## [Coming in the first release]')];
   const section = (r) => {
-    const [, version, date] = r.match(/^## \[([^\]]+)\](?:\s*-\s*(\S+))?/);
-    const rest = r.replace(/^.*\n/, '');
-    return { version, date, html: `<section class="release" id="v${esc(version)}">
-      <h2><a href="#v${esc(version)}">${esc(version)}</a>${date ? ` <time datetime="${esc(date)}">${esc(date)}</time>` : ''}</h2>
+    const [, version, said] = r.match(/^## \[([^\]]+)\](?:\s*-\s*(\S+))?/);
+    // a date only when it is one (a section can say "- unreleased" until its release day)
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(said ?? '') ? said : undefined;
+    const rest = r.replace(/^.*\n/, '').replace(/^\[[^\]]+\]: \S+[ \t]*$/gm, '');
+    const id = `${/^\d/.test(version) ? 'v' : ''}${version.toLowerCase().replace(/[^a-z0-9.-]+/g, '-')}`;
+    return { version, date, html: `<section class="release" id="${esc(id)}" style="padding:0">
+      <h2><a href="#${esc(id)}">${esc(version)}</a>${date ? ` <time datetime="${esc(date)}">${esc(date)}</time>` : ''}</h2>
       ${markdown(rest)}
     </section>` };
   };
-  // A week per group (from Monday), newest open: several releases a day read as one week's work.
   const weeks = [];
   for (const r of releases.map(section)) {
     const d = r.date ? new Date(`${r.date}T00:00:00Z`) : null;
@@ -736,76 +1009,118 @@ function changelogPage() {
     if (weeks.at(-1)?.key !== key) weeks.push({ key, d, list: [] });
     weeks.at(-1).list.push(r);
   }
-  const weekName = (d) => (d ? `Week of ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}` : 'Earlier');
-  const body = weeks.map((w, i) => {
+  const weekName = (d) => (d ? `Week of ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}` : 'Not released yet');
+  const list = weeks.map((w, i) => {
     const span = w.list.length > 1 ? `${w.list.at(-1).version} – ${w.list[0].version}` : w.list[0].version;
     return `<details class="rel-week"${i === 0 ? ' open' : ''}>
       <summary><b>${esc(weekName(w.d))}</b><span class="muted">${esc(span)}</span></summary>
       ${w.list.map((r) => r.html).join('\n')}
     </details>`;
   }).join('\n');
-  const latest = releases[0]?.match(/^## \[([^\]]+)\]/)?.[1];
+  const latest = released[0]?.match(/^## \[([^\]]+)\]/)?.[1];
   return page({
     path: '/changelog.html',
     title: 'wisp changelog: what’s new in each release',
-    description: `Release notes for wisp (wisp-agents on npm)${latest ? `, latest ${latest}` : ''}: new features, changes and fixes for the coding agent launcher.`,
+    description: `Release notes for wisp (wisp-agents on npm)${latest ? `, latest ${latest}` : ''}: new features, changes and fixes.`,
     crumbs: [['Changelog', '/changelog.html']],
     body: `
-    <header class="doc-head">
-      <p class="eyebrow">Changelog</p>
-      <h1>What’s new in wisp</h1>
-      <p class="doc-lede">Every release of <code>wisp-agents</code>, a week at a time, newest first. Update with <code>npm install -g wisp-agents@latest</code>, or let the app update itself.</p>
-      <p>Three channels: <b>stable</b> (<code>npm install -g wisp-agents</code>), <b>beta</b> (<code>wisp-agents@next</code>, previews like <code>0.45.0-beta.1</code>) and <b>nightly</b> (<code>wisp-agents@nightly</code>, or the apps from the <a href="https://github.com/WispAgents/wisp/releases/tag/nightly">nightly release</a>): a build of <code>main</code> every night its full test suite passes. Pick one in Settings → General → Updates and wisp updates along it.</p>
-    </header>
-    <article class="prose">${body}</article>
-`,
-    // A link to a release in a closed week opens that week.
-    scripts: `<script>
-    function openRelease() { const el = location.hash && document.getElementById(location.hash.slice(1)); const wk = el && el.closest('details'); if (wk && !wk.open) { wk.open = true; el.scrollIntoView(); } }
-    addEventListener('hashchange', openRelease); openRelease();
-  </script>`,
-  });
-}
-
-// The privacy policy: the Play listing links to it (and to its #delete-your-wisp-cloud-account).
-function privacyPage() {
-  const src = readText(path.join(DOCS, 'privacy.md'));
-  const html = markdown(src.replace(/^# .+\n/m, ''), `${REPO}/blob/main/docs/`);
-  const toc = [...html.matchAll(/<h2 id="([^"]+)">(.*?)<\/h2>/g)].map(([, id, t]) => `<li><a href="#${id}">${t}</a></li>`).join('');
-  return page({
-    path: '/privacy.html',
-    title: 'wisp privacy policy',
-    description: 'What wisp, the wisp Android app, wisp Cloud and trywisp.dev collect, what never leaves your computer, how to turn usage stats off and how to delete your account.',
-    crumbs: [['Privacy', '/privacy.html']],
-    body: `
-    <header class="doc-head">
-      <p class="eyebrow">Legal</p>
-      <h1>Privacy policy</h1>
-    </header>
-    <nav class="toc" aria-label="On this page"><p class="eyebrow">On this page</p><ul>${toc}</ul></nav>
-    <article class="prose">${html}</article>
-`,
+<div class="wrap">
+  <header class="doc-head">
+    <p class="eyebrow">Changelog</p>
+    <h1>What’s new in wisp</h1>
+    <p class="lede">Every release of <code>wisp-agents</code>, a week at a time, newest first. Update with <code>npm install -g wisp-agents</code>, or let the app update itself.</p>
+  </header>
+  <article class="prose">${list}</article>
+</div>
+<script>
+function openRelease() { var el = location.hash && document.getElementById(location.hash.slice(1)); var wk = el && el.closest('details'); if (wk && !wk.open) { wk.open = true; el.scrollIntoView(); } }
+addEventListener('hashchange', openRelease); openRelease();
+</script>`,
   });
 }
 
 function notFoundPage() {
   return page({
     path: '/404.html',
-    title: 'Page not found — wisp',
-    description: 'This page doesn’t exist. Find the wisp agents, integrations and changelog from here.',
+    title: 'Page not found · wisp',
+    description: 'This page doesn’t exist.',
     noindex: true,
     body: `
-    <header class="doc-head">
-      <p class="eyebrow">404</p>
-      <h1>Nothing here</h1>
-      <p class="doc-lede">That page doesn’t exist, or it moved. Try the <a href="/">home page</a>, the <a href="/agents/">agents</a>, the <a href="/guides/">guides</a>, the <a href="/integrations.html">integrations</a> or the <a href="/changelog.html">changelog</a>.</p>
-      <div class="doc-cta">${installButton()}</div>
-    </header>
-`,
+<div class="wrap">
+  <header class="doc-head">
+    <p class="eyebrow">404</p>
+    <h1>Nothing here</h1>
+    <p class="lede">That page doesn’t exist, or it moved. Try the <a href="/">home page</a>, the <a href="/docs/">docs</a>, the <a href="/docs/guides/">guides</a> or the <a href="/changelog.html">changelog</a>.</p>
+  </header>
+</div>`,
   });
 }
 
-// ---------- sitemap ----------
+/** An old address kept alive: the page says where it went, search engines follow the canonical link. */
+function redirectPage(from, to, title) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>${esc(title)} · wisp</title>
+<meta name="robots" content="noindex, follow" />
+<link rel="canonical" href="${to.startsWith('http') ? to : `${SITE}${to}`}" />
+<meta http-equiv="refresh" content="0; url=${esc(to)}" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>body{font:16px/1.6 system-ui,sans-serif;margin:3rem auto;max-width:36rem;padding:0 1rem}</style>
+</head>
+<body>
+<p>This page moved: <a href="${esc(to)}">${esc(title)}</a>.</p>
+<script>location.replace(${JSON.stringify(to)} + location.hash)</script>
+</body>
+</html>
+`;
+}
+
+// ---------- llms.txt, robots.txt ----------
+
+function llmsTxt() {
+  return `# wisp
+
+> wisp manages the code your agents write: an open-source app, terminal UI and CLI that runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel (each task in its own git worktree, on your own plans), lets you declare agents, crew, machines, skills and MCP servers as code in a repo's .wisp/ folder, and keeps every task next to the code it wrote (wisp blame, wisp resume). Desktop app for macOS, Windows and Linux; phone apps for iPhone and Android on a waitlist; wisp Cloud and self-hosted Grids for always-on agents.
+
+Install: \`npm install -g wisp-agents\` (Node.js 18+), \`brew install --cask wispagents/tap/wisp\` (desktop app), or \`npx wisp-agents\` to try it. Every feature works from the desktop app, the phone app, \`wisp tui\` and the CLI, and from your own agent through \`wisp mcp\`.
+
+## Docs
+
+- [Docs index for agents](${SITE}/docs/llms.txt): every docs page as markdown, with a one-line summary
+- [All docs in one file](${SITE}/docs/llms-full.txt)
+- [Install](${SITE}/docs/start/install.md)
+- [Your first task](${SITE}/docs/start/first-task.md)
+- [CLI reference](${SITE}/docs/reference/cli.md)
+- [MCP tools](${SITE}/docs/reference/mcp-tools.md)
+
+## Pages
+
+- [Home](${SITE}/): what wisp is, Declare · Run · Track
+- [Get the app](${SITE}/app.html): desktop downloads, phone app waitlist
+- [wisp Cloud](${SITE}/cloud.html): your own wisp on a server; self-hosted Grids
+- [Agents](${SITE}/agents/): how wisp runs each coding agent
+${AGENTS.map((a) => `- [${a.name}](${SITE}/agents/${a.slug}.html): flags, modes, models`).join('\n')}
+- [Use wisp from your agent](${SITE}/docs/integrations/your-agent.md): MCP server and skill
+- [Changelog](${SITE}/changelog.html)
+- [Privacy](${SITE}/privacy.html)
+
+## Source
+
+- [GitHub](${REPO}): MIT
+- [npm: wisp-agents](https://www.npmjs.com/package/wisp-agents)
+`;
+}
+
+const ROBOTS = `User-agent: *
+Allow: /
+
+Sitemap: ${SITE}/sitemap.xml
+Sitemap: ${SITE}/docs/sitemap-index.xml
+`;
+
+// ---------- build ----------
 
 function lastmod(files) {
   try {
@@ -818,26 +1133,26 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export function build(out = DOCS) {
   const pages = [
-    { path: '/', file: null, sources: ['docs/index.html'], priority: '1.0' },
-    { path: '/agents/', file: 'agents/index.html', html: agentsIndex(), sources: ['scripts/site.mjs', 'server/adapters'], priority: '0.8' },
-    ...AGENTS.map((a) => ({ path: `/agents/${a.slug}.html`, file: `agents/${a.slug}.html`, html: agentPage(a), sources: ['scripts/site.mjs', `server/adapters/${a.id}.js`], priority: '0.8' })),
-    { path: '/guides/', file: 'guides/index.html', html: guidesIndex(), sources: ['scripts/site.mjs', 'scripts/guides.mjs'], priority: '0.9' },
-    ...GUIDES.map((g) => ({ path: guideUrl(g), file: `guides/${g.slug}.html`, html: guidePage(g), sources: ['scripts/guides.mjs'], priority: '0.9' })),
-    { path: '/integrations.html', file: 'integrations.html', html: integrationsPage(), sources: ['docs/integrations.md'], priority: '0.7' },
-    { path: '/changelog.html', file: 'changelog.html', html: changelogPage(), sources: ['CHANGELOG.md'], priority: '0.6' },
+    { path: '/', file: 'index.html', html: landing(), sources: ['scripts/site.mjs', 'docs/site.css'], priority: '1.0' },
+    { path: '/app.html', file: 'app.html', html: appPage(), sources: ['scripts/site.mjs'], priority: '0.9' },
+    { path: '/cloud.html', file: 'cloud.html', html: cloudPage(), sources: ['scripts/site.mjs'], priority: '0.8' },
+    { path: '/agents/', file: 'agents/index.html', html: agentsIndex(), sources: ['scripts/site.mjs'], priority: '0.8' },
+    ...AGENTS.map((a) => ({ path: `/agents/${a.slug}.html`, file: `agents/${a.slug}.html`, html: agentPage(a), sources: ['scripts/site.mjs', `plugins/${a.id}`], priority: '0.8' })),
+    // integrations live in the docs now (your agent, MCP, the reference); docs/integrations.md describes an older API
+    { path: '/integrations.html', file: 'integrations.html', html: redirectPage('/integrations.html', '/docs/integrations/your-agent/', 'Use wisp from your agent or editor'), noindex: true },
+    { path: '/changelog.html', file: 'changelog.html', html: changelogPage(), sources: ['CHANGELOG.md'], priority: '0.5' },
     { path: '/privacy.html', file: 'privacy.html', html: privacyPage(), sources: ['docs/privacy.md'], priority: '0.3' },
-    { path: '/cloud.html', file: null, sources: ['docs/cloud.html'], priority: '0.6' },
     { path: '/404.html', file: '404.html', html: notFoundPage(), noindex: true },
+    // the old guides now live in the docs: each address sends its readers (and search engines) there
+    { path: '/guides/', file: 'guides/index.html', html: redirectPage('/guides/', '/docs/guides/', 'Guides'), noindex: true },
+    ...MOVED_GUIDES.map(([slug, to, title]) => ({ path: `/guides/${slug}.html`, file: `guides/${slug}.html`, html: redirectPage(`/guides/${slug}.html`, to, title), noindex: true })),
   ];
-  for (const p of pages.filter((x) => x.file)) {
+  for (const p of pages) {
     fs.mkdirSync(path.dirname(path.join(out, p.file)), { recursive: true });
     fs.writeFileSync(path.join(out, p.file), p.html);
   }
-  // The crew templates as files to import (wisp crew import https://trywisp.dev/crew/ci.crew.json).
-  fs.mkdirSync(path.join(out, 'crew'), { recursive: true });
-  for (const t of TEMPLATES) fs.writeFileSync(path.join(out, 'crew', `${t.key}.crew.json`), `${JSON.stringify({ wispCrew: 1, members: [t] }, null, 2)}\n`);
-  // The crew section draws the app's own spirits (docs/crew.js imports it).
-  fs.copyFileSync(path.join(ROOT, 'web/js/spirit.js'), path.join(out, 'spirit.js'));
+  fs.writeFileSync(path.join(out, 'llms.txt'), llmsTxt());
+  fs.writeFileSync(path.join(out, 'robots.txt'), ROBOTS);
   const urls = pages.filter((p) => !p.noindex).map((p) => `  <url>\n    <loc>${SITE}${p.path}</loc>\n    <lastmod>${lastmod(p.sources)}</lastmod>\n    <priority>${p.priority}</priority>\n  </url>`);
   fs.writeFileSync(path.join(out, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`);
   return pages;
@@ -846,5 +1161,5 @@ export function build(out = DOCS) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const out = path.resolve(process.argv[2] || DOCS);
   const pages = build(out);
-  console.log(`site: ${pages.filter((p) => p.file).length} pages + sitemap.xml (${pages.filter((p) => !p.noindex).length} urls) → ${path.relative(process.cwd(), out) || '.'}`);
+  console.log(`site: ${pages.length} pages + sitemap.xml (${pages.filter((p) => !p.noindex).length} urls), llms.txt, robots.txt → ${path.relative(process.cwd(), out) || '.'}`);
 }

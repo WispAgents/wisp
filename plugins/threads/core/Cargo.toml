@@ -1,0 +1,16 @@
+[package]
+name = "wisp-threads-core"
+description = "wisp.threads' pure logic (ADR-0079): Notes sections and their rewrite, the note before a follow-up and the supersession nudge, the thread's health, the Bash output offload's wrap and show. Sans-IO."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+wisp-threads-api.workspace = true
+
+[lints]
+workspace = true

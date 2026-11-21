@@ -1,0 +1,94 @@
+---
+title: Start with GitHub Copilot
+description: Run the GitHub Copilot CLI in wisp on your own Copilot plan. Pick its model and effort, and open a task back in Copilot.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
+
+wisp runs the GitHub Copilot CLI, `copilot`, in the background, one worktree per task. It needs a GitHub Copilot
+plan.
+
+## What you need
+
+```sh
+npm i -g @github/copilot
+```
+
+## Sign in
+
+Copilot signs in with its own login. Run `copilot login` once in a terminal, then tell wisp to look again.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Open **Settings** (the person button in the top bar, or **⌘K** → Settings) → **Agents** → **Re-check**. Copilot shows **Ready** once it's signed in.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-agents" alt="Settings → Agents: each harness with its accounts and sign-in state, and an Add key button" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → **Agents** → **Re-check**. Copilot shows **Ready** once it's
+signed in.
+</TabItem>
+<TabItem label="TUI">
+Send `/accounts recheck`.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp accounts recheck
+```
+</TabItem>
+</Tabs>
+
+## Pick it, its model and its effort
+
+wisp reads Copilot's models from its own config help. Effort: `low`, `medium`, `high`, `xhigh`.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Click the harness chip in the New task footer (**N**), pick **Copilot**, then a model and a thinking level. On a running task, the same chip in the reply box changes it for the next follow-up.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task** (on iPhone, the compose button at the top right), then the harness chip under the box. Pick **Copilot**, then a model and a thinking level. On a running task, tap the options chip in the reply bar, then the agent.
+</TabItem>
+<TabItem label="TUI">
+Send `/runtime set-agent --agent copilot` to move the open task to Copilot.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "update the README badges" --agent copilot --effort medium
+```
+</TabItem>
+</Tabs>
+
+Modes: **Plan**, **Edits**, **Full auto** (`--mode plan|edits|auto`). In Edits, a tool Copilot wasn't allowed to
+use shows on the task as a card with the exact rule to allow it.
+
+## What's different with Copilot
+
+- Copilot bills in premium requests, not dollars. Its turns count in Settings → Usage as turns and outcomes, not
+  spend.
+- wisp gives each new conversation its id up front, so a task and its Copilot session always match.
+- wisp trusts the task's folder for Copilot, so it doesn't stop to ask.
+
+## Open in Copilot
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Open the task's **⋯** at its top right → **Open in › Open in Copilot** (key **T**). Copilot opens in a terminal in the side panel.
+</TabItem>
+<TabItem label="Phone app">
+Open the task, then **⋯** (iPhone) or **⋮** (Android) → **This task › Open in Copilot**. Copilot's own screen opens in a terminal on the phone.
+</TabItem>
+<TabItem label="TUI">
+Press **o** in the open task.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp runtime resume-command <id>
+```
+</TabItem>
+</Tabs>

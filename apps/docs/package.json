@@ -1,0 +1,17 @@
+{
+  "name": "@wisp/docs",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "trywisp.dev/docs (ADR-0039): Astro Starlight over docs/site, with the reference generated from the code. Dev only: none of it ships in wisp.",
+  "devDependencies": {
+    "@astrojs/starlight": "^0.43.1",
+    "astro": "^7.4.12"
+  },
+  "scripts": {
+    "reference": "node scripts/reference.mjs",
+    "dev": "node scripts/reference.mjs && astro dev",
+    "build": "node scripts/reference.mjs && astro build && node scripts/check-sidebar.mjs && node scripts/llms.mjs",
+    "preview": "astro preview"
+  }
+}

@@ -1,0 +1,279 @@
+// The mock peer answers what the UI sends (round 149: `accounts.list` toasted "the mock peer has no …" on Home, in
+// every screenshot and parity shot). Every command a UI package defines (`defineCommand({ id })` in packages/*/src and
+// plugins/*/ui/src, found as tools/check's ui-commands rule finds them: commandsIn there) is answered by dev/mock-commands.ts or listed in
+// dev/mock-reads.ts' NOT_MOCKED with why; what the main screens send on open is always answered.
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { expect, test } from 'vitest';
+import { COMMANDS, type CommandCtx } from '../dev/mock-commands.ts';
+import { NOT_MOCKED } from '../dev/mock-reads.ts';
+import { seed } from '../dev/seed.ts';
+
+const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+
+function walk(dir: string, out: string[] = []): string[] {
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return out;
+  }
+  for (const n of names) {
+    if (n === 'node_modules' || n === 'dist' || n.startsWith('.')) continue;
+    const p = join(dir, n);
+    if (statSync(p).isDirectory()) walk(p, out);
+    else if (/\.tsx?$/.test(n)) out.push(p);
+  }
+  return out;
+}
+
+/** `defineCommand(… id: 'x' …)`: as tools/check/rules/ui-commands.ts reads them (a test can't import tools/). */
+const commandsIn = (text: string): string[] =>
+  [...text.matchAll(/defineCommand\b/g)].flatMap((m) => {
+    const at = (m.index ?? 0) + m[0].length;
+    const id = /id:\s*'([^']+)'/.exec(text.slice(at, at + 400))?.[1];
+    return id ? [id] : [];
+  });
+
+const dirs = (d: string): string[] => readdirSync(join(ROOT, d)).filter((n) => statSync(join(ROOT, d, n)).isDirectory());
+
+/** Every command id the shell and plugin UIs define. */
+const uiCommands = (): Set<string> =>
+  new Set(
+    [...dirs('packages').map((d) => join(ROOT, 'packages', d, 'src')), ...dirs('plugins').map((d) => join(ROOT, 'plugins', d, 'ui', 'src'))]
+      .flatMap((d) => walk(d))
+      .flatMap((f) => commandsIn(readFileSync(f, 'utf8'))),
+  );
+
+/** What Home, a task (its Changes, Shell, Preview sides), crew, My Stuff and every Settings pane send on open, as
+ * the mock in Chrome showed it (/tmp probe over the mock at 1440: every `mutate` the page posted). */
+const ON_OPEN = [
+  'plugins.ui', 'runtime.agents', 'automations.tasks', 'router.preview', 'budget.view', 'accounts.list', 'stuff.launch', // Home
+  'runtime.cold', 'git.changes', 'terminal.shell.info', 'terminal.shell.start', 'terminal.input', 'terminal.run.info', // a task
+  'crew.layout', // crew
+  'terminal.apps', 'machines.reachable', 'learn.view', 'automations.trigger.ls', 'plugins.list', 'runtime.usage', 'budget.compare',
+  'settings.list', 'sandbox.info', 'resources.kinds', 'resources.export', // Settings panes
+];
+
+test('every command the UI defines is answered by the mock or listed as not mocked, with a reason', () => {
+  const ui = uiCommands();
+  expect(ui.size).toBeGreaterThan(100); // the extraction found the UI (not an empty walk)
+  const missing = [...ui].filter((id) => !(id in COMMANDS) && !NOT_MOCKED[id]?.trim()).sort();
+  expect(missing, 'answer these in apps/web/dev/mock-commands.ts, or list them in mock-reads.ts NOT_MOCKED with why').toEqual([]);
+});
+
+test('NOT_MOCKED lists only commands the UI defines and the mock does not answer', () => {
+  const ui = uiCommands();
+  const stale = Object.keys(NOT_MOCKED).filter((id) => !ui.has(id) || id in COMMANDS);
+  expect(stale).toEqual([]);
+});
+
+test('what the main screens send on open is answered, never left to toast', () => {
+  expect(ON_OPEN.filter((id) => !(id in COMMANDS))).toEqual([]);
+  expect(ON_OPEN.filter((id) => id in NOT_MOCKED)).toEqual([]);
+});
+
+test('accounts.list answers AccountsOut: two Claude Code accounts in order, Codex its own, the others the CLI default', () => {
+  const now = 1_700_000_000_000;
+  const data = seed({ peer: 'local', now, extra: 0 });
+  const ctx = { rows: (t: string) => data.topics.get(t as never) ?? [] } as unknown as CommandCtx;
+  const list = (agent: string): { id: string; label: string; default: boolean; state: string }[] =>
+    (COMMANDS['accounts.list']?.({ agent }, ctx).result as { accounts: { id: string; label: string; default: boolean; state: string }[] }).accounts;
+  expect(list('claude').map((a) => [a.id, a.label, a.default, a.state])).toEqual([
+    ['default', 'Personal', true, 'ready'],
+    ['work', 'Work', false, 'limit'],
+  ]);
+  expect(list('codex').map((a) => [a.id, a.default])).toEqual([['default', true]]);
+  expect(list('cursor').map((a) => [a.id, a.label])).toEqual([['default', 'Main']]);
+  // AccountView's fields exactly (plugins/accounts/api/bindings/accounts/AccountView.ts): no row-only agent/ord
+  expect(Object.keys(list('claude')[0] ?? {}).sort()).toEqual(['default', 'email', 'id', 'kind', 'label', 'plan', 'state', 'until', 'why']);
+});
+
+/** A ts-rs binding's top-level field names (`export type X = { a: …, b?: …, }`, doc comments between). */
+function bindingFields(rel: string): string[] {
+  const text = readFileSync(join(ROOT, rel), 'utf8').replace(/\/\*\*[\s\S]*?\*\//g, '');
+  const body = /=\s*\{([\s\S]*)\}\s*;?\s*$/.exec(text)?.[1] ?? '';
+  let depth = 0;
+  let top = '';
+  for (const ch of body) {
+    if (ch === '{' || ch === '<' || ch === '[') depth++;
+    else if (ch === '}' || ch === '>' || ch === ']') depth--;
+    else if (depth === 0) top += ch;
+  }
+  return [...top.matchAll(/(?:^|,)\s*(\w+)\??\s*:/g)].map((m) => m[1] ?? '').sort();
+}
+
+test('the reads answer the fields of the ts-rs bindings: AccountsOut, AccountView, learn View and Lists, ShellStarted, Done', () => {
+  const data = seed({ peer: 'local', now: 1_700_000_000_000, extra: 0 });
+  const ctx = { rows: (t: string) => data.topics.get(t as never) ?? [] } as unknown as CommandCtx;
+  const run = (cmd: string, args: unknown = {}): Record<string, unknown> => COMMANDS[cmd]?.(args, ctx).result as Record<string, unknown>;
+  const keys = (o: unknown): string[] => Object.keys(o as object).sort();
+  const B = 'plugins/%/api/bindings/%';
+  const at = (plugin: string, file: string): string => B.replace('%', plugin).replace('%', `${plugin}/${file}.ts`);
+  const out = run('accounts.list', { agent: 'claude' });
+  expect(keys(out)).toEqual(bindingFields(at('accounts', 'AccountsOut')));
+  for (const a of out['accounts'] as unknown[]) expect(keys(a)).toEqual(bindingFields(at('accounts', 'AccountView')));
+  const view = run('learn.view');
+  expect(keys(view)).toEqual(bindingFields(at('learn', 'View')));
+  expect(keys(view['global'])).toEqual(bindingFields(at('learn', 'Lists')));
+  // optional fields (`dir?`, `gone?`) may be left out
+  const started = keys(run('terminal.shell.start', { id: 'local:s0000' }));
+  expect(bindingFields(at('terminal', 'ShellStarted'))).toEqual(expect.arrayContaining(started));
+  expect(started).toEqual(expect.arrayContaining(['ok', 'started']));
+  expect(keys(run('terminal.input', { id: 'local:s0000', data: 'ls' }))).toEqual(bindingFields(at('terminal', 'Done')));
+  // the row on the topic is AccountView plus the row's agent and ord (plugins/accounts/host/src/view.rs)
+  const row = data.topics.get('plugin:wisp.accounts:harnesses' as never)?.find((r) => r.e === 'accounts.account');
+  expect(keys(row?.v)).toEqual([...bindingFields(at('accounts', 'AccountView')), 'agent', 'ord'].sort());
+});
+
+test('API keys answer Keys, ApiKey and NewKey: a key once, in the create answer only', () => {
+  const ctx = { rows: () => [] } as unknown as CommandCtx;
+  const run = (cmd: string, args: unknown = {}): Record<string, unknown> => COMMANDS[cmd]?.(args, ctx).result as Record<string, unknown>;
+  const keys = (o: unknown): string[] => Object.keys(o as object).sort();
+  const at = (file: string): string => `plugins/grid-client/api/bindings/grid-client/${file}.ts`;
+  const list = run('grid-client.keys');
+  expect(keys(list)).toEqual(bindingFields(at('Keys')));
+  for (const k of list['keys'] as unknown[]) expect(keys(k)).toEqual(bindingFields(at('ApiKey')));
+  const made = run('grid-client.keysCreate', { name: 'ci' });
+  expect(keys(made)).toEqual(bindingFields(at('NewKey')));
+  expect(String(made['key'])).toMatch(/^wgk_[\w-]{43}$/);
+  expect(JSON.stringify(run('grid-client.keys'))).not.toContain('wgk_');
+  expect(run('grid-client.keysRevoke', { id: made['id'] })).toEqual({ ok: true });
+  expect(() => run('grid-client.keysRevoke', { id: made['id'] })).toThrow();
+});
+
+test('Cloud accounts answer Status and AccountInfo: switch and sign out rewrite the cloud row (ADR-0061)', () => {
+  const data = seed({ peer: 'local', now: 1_700_000_000_000, extra: 0, cloud: true });
+  const rows = new Map((data.topics.get('plugin:wisp.grid-client:cloud' as never) ?? []).map((r) => [r.id, r.v]));
+  const ctx = { peer: 'local', row: (_t: string, _e: string, id: string) => rows.get(id), rows: () => [] } as unknown as CommandCtx;
+  const run = (cmd: string, args: unknown = {}): { ops: { id: string; v: unknown }[]; result: Record<string, unknown> } => {
+    const out = COMMANDS[cmd]?.(args, ctx) as { ops: { id: string; v: unknown }[]; result: Record<string, unknown> };
+    for (const op of out.ops) rows.set(op.id, op.v);
+    return out;
+  };
+  const keys = (o: unknown): string[] => Object.keys(o as object).sort();
+  const at = (file: string): string => `plugins/grid-client/api/bindings/grid-client/${file}.ts`;
+  const list = run('grid-client.accounts').result as unknown as Record<string, unknown>[];
+  expect(list.map((a) => [a['handle'], a['current']])).toEqual([['ada', true], ['bo', false]]);
+  for (const a of list) expect(keys(a)).toEqual(bindingFields(at('AccountInfo')));
+  const st = run('grid-client.accountSwitch', { key: 'https://wisp.acme.dev#bo' }).result;
+  expect(keys(st)).toEqual(bindingFields(at('Status')));
+  expect([st['handle'], (rows.get('this') as { handle: string }).handle]).toEqual(['bo', 'bo']);
+  const left = run('grid-client.accountRemove', { key: 'https://wisp.acme.dev#bo' }).result;
+  expect([left['handle'], (left['accounts'] as unknown[]).length]).toEqual(['ada', 1]);
+  expect(() => run('grid-client.accountSwitch', { key: 'https://gone#x' })).toThrow();
+});
+
+test('All settings lists the declared settings with their owners and values (the kernel SettingInfo)', () => {
+  const data = seed({ peer: 'local', now: 1_700_000_000_000, extra: 0 });
+  const ctx = { rows: (t: string) => data.topics.get(t as never) ?? [] } as unknown as CommandCtx;
+  const list = COMMANDS['settings.list']?.({}, ctx).result as { key: string; owner: string; decl: { key: string }; scope: string; value: unknown }[];
+  expect(list.length).toBeGreaterThan(30);
+  const panes = list.find((s) => s.key === 'stuff.panes');
+  expect(panes).toMatchObject({ owner: 'wisp.stuff', scope: 'server', value: 'st2@home,st2@task', decl: { key: 'stuff.panes', type: 'string' } });
+  expect(list.every((s) => s.key === s.decl.key)).toBe(true);
+  // unset: its declared default, as the kernel answers (crates/wisp-kernel/src/settings.rs Inner::get)
+  expect(list.find((s) => s.key === 'crew.tint')?.value).toBe(true);
+});
+
+// the phone's crew stories (ADR-0065 step 13b): an idle member's job and an ask's answer, as the peer answers them
+test('crew_assign_starts_a_running_job_for_the_member_and_runtime_answer_clears_the_ask', () => {
+  const data = seed({ peer: 'local', now: 1_700_000_000_000, extra: 0, crew: true });
+  const ctx = {
+    peer: 'local',
+    now: () => 1_700_000_000_000,
+    row: (t: string, e: string, id: string) => data.topics.get(t as never)?.find((r) => r.e === e && r.id === id)?.v,
+    rows: (t: string) => data.topics.get(t as never) ?? [],
+    stream: () => undefined,
+    later: () => undefined,
+  } as unknown as CommandCtx;
+  const out = COMMANDS['crew.assign']?.({ id: 'crew:turing', prompt: 'Bench the list query' }, ctx);
+  const up = out?.ops.find((o) => o.op === 'upsert' && o.topic === 'list') as { v: { state: string; title: string; body: { ext: Record<string, unknown> } } } | undefined;
+  expect(up?.v).toMatchObject({ state: 'running', title: 'Bench the list query', body: { ext: { 'wisp.crew': { id: 'crew:turing', job: 'task', prompt: 'Bench the list query' } } } });
+  expect(() => COMMANDS['crew.assign']?.({ id: 'crew:nobody', prompt: 'x' }, ctx)).toThrow();
+  // Grace's job asks; the answer clears it and the job runs on
+  const asking = (data.topics.get('list') ?? []).find((r) => (r.v as { state?: string }).state === 'waiting');
+  expect(asking).toBeDefined();
+  const ans = COMMANDS['runtime.answer']?.({ id: asking?.id, text: 'Yes' }, ctx);
+  const ops = (ans?.ops[0] as { ops: { path: string; value: unknown }[] }).ops;
+  expect(ops).toEqual(expect.arrayContaining([{ op: 'replace', path: '/state', value: 'running' }, { op: 'replace', path: '/body/ext/wisp.runtime/ask', value: null }]));
+});
+
+test('a_tasks_row_says_when_its_last_run_started_and_ended_as_runtime_does_for_the_team_tabs_time', () => {
+  // runtime summary.rs: `startedAt` (the last run's start) and, once it's back, `endedAt`; the lead's Team tab reads them
+  const now = 1_700_000_000_000;
+  const data = seed({ peer: 'local', now, extra: 0, crew: true });
+  const ctx = {
+    peer: 'local',
+    now: () => now,
+    row: (t: string, e: string, id: string) => data.topics.get(t as never)?.find((r) => r.e === e && r.id === id)?.v,
+    rows: (t: string) => data.topics.get(t as never) ?? [],
+    stream: () => undefined,
+    later: () => undefined,
+  } as unknown as CommandCtx;
+  const sums = (data.topics.get('list') ?? []).filter((r) => r.e === 'session').map((r) => r.v as { state: string; summary: { startedAt?: number; endedAt?: number } });
+  for (const r of sums) {
+    expect(typeof r.summary.startedAt).toBe('number');
+    expect(r.summary.endedAt === undefined).toBe(r.state === 'running' || r.state === 'waiting');
+  }
+  const job = COMMANDS['crew.assign']?.({ id: 'crew:turing', prompt: 'Bench the list query' }, ctx);
+  const up = job?.ops.find((o) => o.op === 'upsert' && o.topic === 'list') as { id: string; v: { summary: Record<string, unknown> } } | undefined;
+  expect(up?.v.summary['startedAt']).toBe(now);
+  expect(up?.v.summary['endedAt']).toBeUndefined();
+  const running = (data.topics.get('list') ?? []).find((r) => (r.v as { state?: string }).state === 'running');
+  const stop = COMMANDS['runtime.stop']?.({ id: running?.id }, ctx);
+  expect((stop?.ops[0] as { ops: unknown[] }).ops).toEqual(expect.arrayContaining([{ op: 'add', path: '/summary/endedAt', value: now }]));
+});
+
+test('runtime.projectAdd names as the server does (ADR-0077): wisp then wisp-2, the same folder once, a taken name -2', () => {
+  const rows: { e: string; id: string; v: unknown }[] = [];
+  const ctx = { peer: 'local', rows: () => rows } as unknown as CommandCtx;
+  const add = (args: unknown): Record<string, unknown> => {
+    const out = COMMANDS['runtime.projectAdd']?.(args, ctx) as { ops: { e: string; id: string; v: unknown }[]; result: Record<string, unknown> };
+    rows.push(...out.ops);
+    return out.result;
+  };
+  expect(add({ path: '/a/wisp' })).toEqual({ name: 'wisp', path: '/a/wisp', created: true });
+  expect(add({ path: '/b/wisp' })).toEqual({ name: 'wisp-2', path: '/b/wisp', created: true });
+  expect(add({ path: '/a/wisp/.' })).toEqual({ name: 'wisp', path: '/a/wisp', created: false });
+  expect(add({ path: '/c/server', name: 'wisp' })['name']).toBe('wisp-3');
+  expect(Object.keys(add({ path: '/d/My App' })).sort()).toEqual(bindingFields('plugins/runtime/api/bindings/runtime/ProjectAdded.ts'));
+  expect(rows.map((r) => (r.v as { name?: string }).name)).toEqual(['wisp', 'wisp-2', 'wisp-3', 'my-app']);
+  expect(() => add({ path: 'wisp' })).toThrow();
+  expect(() => add({ path: '' })).toThrow();
+});
+
+test('long threads (ADR-0079): the seeded Thread and threads.* answer the api bindings; a rewrite keeps a version', () => {
+  const now = 1_700_000_000_000;
+  const data = seed({ peer: 'local', now, extra: 0 });
+  const rows = (t: string) => data.topics.get(t as never) ?? [];
+  const ctx = { peer: 'local', now: () => now, rows, row: () => undefined } as unknown as CommandCtx;
+  const run = (cmd: string, args: unknown): Record<string, unknown> => COMMANDS[cmd]?.(args, ctx).result as Record<string, unknown>;
+  const keys = (o: unknown): string[] => Object.keys(o as object).sort();
+  const at = (file: string): string => `plugins/threads/api/bindings/threads/${file}.ts`;
+  const id = 'local:s0002';
+  // the seeded task's topic carries its Notes, versions, meta and health, as plugins/threads/host/src/store.rs publishes them
+  expect([...new Set(rows('session:s0002').map((r) => r.e))].filter((e) => e.startsWith('threads_')).sort()).toEqual(['threads_audit', 'threads_health', 'threads_meta', 'threads_notes', 'threads_revisions']);
+  const notes = run('threads.notes', { id });
+  expect(keys(notes)).toEqual(bindingFields(at('Notes')).filter((k) => k !== 'lead'));
+  const sections = notes['sections'] as Record<string, unknown>[];
+  expect(sections.map((s) => s['id'])).toEqual(['goal', 'constraints', 'decisions', 'failed', 'state', 'open', 'files']);
+  expect(keys(sections[0])).toEqual(bindingFields(at('Section')));
+  expect(keys(run('threads.health', { id }))).toEqual(bindingFields(at('Health')));
+  for (const r of run('threads.revisions', { id, section: 'state' }) as unknown as unknown[]) expect(keys(r)).toEqual(bindingFields(at('Revision')));
+  expect(keys(run('threads.freshBrief', { id }))).toEqual(bindingFields(at('Brief')));
+  expect(bindingFields(at('Fresh'))).toEqual(expect.arrayContaining(keys(run('threads.fresh', { id }))));
+  // the compaction audits (ADR-0096): Audit's fields, newest first; the rows on the topic carry them under `body`
+  const audits = run('threads.audits', { id }) as unknown as Record<string, unknown>[];
+  expect(audits.map((x) => [x['kept'], x['total']])).toEqual([[6, 8], [7, 7]]);
+  for (const x of audits) expect(bindingFields(at('Audit'))).toEqual(expect.arrayContaining(keys(x)));
+  expect(keys(audits[0])).toEqual(bindingFields(at('Audit')).filter((k) => k !== 'why'));
+  // a rewrite: the section's row, a version, the Notes' rev; the same text again writes nothing; a bad section is refused
+  const wrote = COMMANDS['threads.notesUpdate']?.({ id, section: 'open', text: '- Redis later?\n- redis later' }, ctx);
+  expect(wrote?.ops.map((o) => [o.e, o.id])).toEqual([['threads_notes', 's0002|open'], ['threads_revisions', 's0002|open|1'], ['threads_meta', 's0002']]);
+  expect((wrote?.ops[0] as { v: { text: string; by: string } }).v).toMatchObject({ text: 'Redis later?', by: 'you' });
+  const goal = sections[0]?.['text'];
+  expect(COMMANDS['threads.notesUpdate']?.({ id, section: 'goal', text: goal }, ctx).ops).toEqual([]);
+  expect(() => COMMANDS['threads.notesUpdate']?.({ id, section: 'mood', text: 'x' }, ctx)).toThrow();
+});

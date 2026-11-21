@@ -1,0 +1,17 @@
+id: D-0050
+decision: Keep 'Ledger' for the task history; call the long-threads state file 'Notes', shown in a 'Thread' tab.
+reason: Owner 2026-11-15.
+scope:
+- crates/**
+- plugins/**
+- packages/**
+- apps/**
+- mobile/**
+- tools/**
+- spikes/**
+category: convention
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

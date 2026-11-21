@@ -1,0 +1,1651 @@
+/* The Android app's stylesheet (ADR-0065 §5, design/mobile.md §A.7–A.8). Loaded only in the app
+   (src/platform/styles.ts), never by the browser. The layer order is index.css's: these rules join the
+   tokens and kit layers that sheet declared. Kit variants (Material 3) go here, each under
+   :root[data-platform='android'] in @layer kit (build steps 3–6). Numbers come from the platform tokens;
+   the window size classes (M3: compact < 600 dp, medium 600–839, expanded ≥ 840) are the only px here,
+   in @media conditions. */
+@layer reset, tokens, kit, plugins;
+@import '@wisp/tokens/platform-android.css';
+
+@layer kit {
+  /* Frame (step 3): edge to edge. The top app bar under the status bar, the panes, the navigation bar
+     over the gesture bar; from 600 dp the rail beside them (M3 window size class medium). */
+  :root[data-platform='android'] [data-kit='frame'] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'top' 'body' 'nav';
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-top'] {
+    grid-area: top;
+    height: auto;
+    min-height: calc(var(--bar-h) + var(--safe-top));
+    padding: var(--safe-top) var(--space-0) var(--space-0);
+    gap: var(--space-0);
+    border-bottom: 0;
+    background: var(--surface-c0);
+    font: var(--type-title-l);
+  }
+  /* the screen's TopAppBar is the frame's top bar: it fills it */
+  :root[data-platform='android'] [data-kit='frame-top'] > [data-kit='app-bar'] { flex: 1 1 auto; align-self: stretch; }
+  :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-body'] { grid-area: body; }
+  :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-nav'] { grid-area: nav; min-width: 0; }
+
+  /* The app's frame (steps 8, 13): the list's head is the Tasks screen's TopAppBar (the frame's top itself); a pushed
+     page (a task, a view) draws its own head, so the frame's top steps aside there and the page starts under the
+     status bar. */
+  :root[data-platform='android'] [data-kit='frame'][data-layout='stack']:not([data-page='list']) > [data-kit='frame-top'] { display: none; }
+  :root[data-platform='android'] [data-kit='frame'][data-layout='stack']:not([data-page='list']) > [data-kit='frame-body'] { padding-top: var(--safe-top); }
+  :root[data-platform='android'] [data-kit='frame'] [data-kit='frame-pane'],
+  :root[data-platform='android'] [data-kit='frame'] [data-kit='frame-pane'][data-pane='list'] {
+    background: var(--surface-c0);
+    border-color: var(--outline-var);
+  }
+  :root[data-platform='android'] [data-kit='frame'][data-layout='stack'] [data-kit='frame-pane'][data-pane='list'] { background: var(--surface-c0); }
+  /* without a navigation bar the bottom pane sits over the gesture bar itself */
+  :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-body']:last-child { padding-bottom: var(--safe-bottom); }
+  /* a pushed page (a task, its side pane; UX 2026-11-18 phone #2): the destinations give way, as HIG's
+     hidesBottomBarWhenPushed and an M3 detail screen; the page's own bottom (the reply box) sits on the safe area */
+  :root[data-platform='android'] [data-kit='frame'][data-pushed] > [data-kit='frame-nav'] { display: none; }
+  :root[data-platform='android'] [data-kit='frame'][data-pushed] > [data-kit='frame-body'] { padding-bottom: var(--safe-bottom); }
+
+  @media (min-width: 600px) {
+    :root[data-platform='android'] [data-kit='frame'] {
+      grid-template-columns: var(--nav-rail-w) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: 'nav top' 'nav body';
+      padding-left: 0;
+    }
+    :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-nav'] { padding-left: var(--safe-left); background: var(--surface-c0); }
+    :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-body'] { padding-bottom: var(--safe-bottom); }
+    /* the rail (a tablet) stays beside a pushed page: it isn't under it */
+    :root[data-platform='android'] [data-kit='frame'][data-pushed] > [data-kit='frame-nav'] { display: block; }
+  }
+
+  /* NavigationBar (step 3): M3 navigation bar, 80 dp; the 64 × 32 active indicator pill behind the icon */
+  :root[data-platform='android'] [data-kit='nav-bar'] {
+    display: flex;
+    align-items: stretch;
+    height: calc(var(--nav-h) + var(--safe-bottom));
+    padding-bottom: var(--safe-bottom);
+    background: var(--surface-c2);
+  }
+  :root[data-platform='android'] [data-kit='nav-item'] {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--nav-gap);
+    padding: var(--nav-pad-top) var(--space-1) var(--nav-pad-bottom);
+    border: 0;
+    background: transparent;
+    color: var(--on-surface-var);
+    font: var(--type-label-m);
+    letter-spacing: var(--track-label-m);
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+  }
+  :root[data-platform='android'] [data-kit='nav-pill'] {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: var(--nav-pill-w);
+    height: var(--nav-pill-h);
+    border-radius: var(--radius-pill);
+    transition: background-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='nav-pill'] > [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); }
+  :root[data-platform='android'] [data-kit='nav-item']:active [data-kit='nav-pill'] {
+    background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent);
+  }
+  :root[data-platform='android'] [data-kit='nav-item'][data-selected] { color: var(--on-surface); font-weight: var(--fw-semibold); }
+  :root[data-platform='android'] [data-kit='nav-item'][data-selected] [data-kit='nav-pill'] { background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='nav-item'][data-selected]:active [data-kit='nav-pill'] {
+    background: color-mix(in srgb, var(--on-primary-container) calc(var(--state-pressed) * 100%), var(--primary-container));
+  }
+  :root[data-platform='android'] [data-kit='nav-item']:focus-visible { outline: none; }
+  :root[data-platform='android'] [data-kit='nav-item']:focus-visible [data-kit='nav-pill'] { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='android'] [data-kit='nav-label'] { max-width: 100%; }
+  /* M3 large badge: 16 dp tall, label small, error colours, over the icon's top end */
+  :root[data-platform='android'] [data-kit='nav-badge'] {
+    position: absolute;
+    top: var(--space-1);
+    left: 50%;
+    min-width: var(--space-7);
+    height: var(--space-7);
+    padding: var(--space-0) var(--space-2);
+    border-radius: var(--radius-pill);
+    background: var(--error);
+    color: var(--on-accent);
+    font: var(--type-label-s);
+    text-align: center;
+  }
+
+  /* the rail from 600 dp: 80 dp wide, destinations from the top, the 56 × 32 indicator */
+  @media (min-width: 600px) {
+    :root[data-platform='android'] [data-kit='nav-bar'] {
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      gap: var(--rail-gap);
+      width: var(--nav-rail-w);
+      height: 100%;
+      padding: calc(var(--safe-top) + var(--rail-pad-top)) var(--space-0) var(--safe-bottom);
+      background: var(--surface-c0);
+    }
+    :root[data-platform='android'] [data-kit='nav-item'] { flex: none; padding: var(--space-0); }
+    :root[data-platform='android'] [data-kit='nav-pill'] { width: var(--rail-pill-w); }
+  }
+
+  /* Fab (step 3): the M3 extended FAB at the pane's bottom end, above the navigation bar; it shrinks to
+     the 56 dp FAB on scroll down (the label folds, the icon stays put) and gives way (v1 fab.js). */
+  :root[data-platform='android'] [data-kit='fab'] {
+    position: absolute;
+    z-index: var(--z-raised);
+    right: var(--fab-margin);
+    bottom: var(--fab-margin);
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-0);
+    width: auto;
+    min-width: var(--fab);
+    height: var(--fab);
+    padding: var(--space-0) calc((var(--fab) - var(--fab-icon)) / 2);
+    border: 0;
+    border-radius: var(--fab-radius);
+    background: var(--primary-container);
+    color: var(--on-primary-container);
+    box-shadow: var(--elev-3);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      padding var(--dur-medium) var(--ease-emph),
+      gap var(--dur-medium) var(--ease-emph),
+      opacity var(--dur-short) var(--ease-emph-in),
+      transform var(--dur-short) var(--ease-emph-in),
+      visibility 0s linear var(--dur-short);
+  }
+  :root[data-platform='android'] [data-kit='fab'] > [data-kit='icon'] { width: var(--fab-icon); height: var(--fab-icon); }
+  :root[data-platform='android'] [data-kit='fab-label'] {
+    display: inline-block;
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition:
+      max-width var(--dur-medium) var(--ease-emph),
+      opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='fab'][data-extended] { gap: var(--fab-ext-gap); padding: var(--space-0) var(--fab-ext-pad); }
+  :root[data-platform='android'] [data-kit='fab'][data-extended] > [data-kit='fab-label'] { max-width: 20em; opacity: 1; }
+  :root[data-platform='android'] [data-kit='fab']:active {
+    transform: none;
+    background: color-mix(in srgb, var(--on-primary-container) calc(var(--state-pressed) * 100%), var(--primary-container));
+  }
+  :root[data-platform='android'] [data-kit='fab']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-2); }
+  :root[data-platform='android'] [data-kit='fab'][data-give-way] {
+    opacity: 0;
+    transform: translateY(var(--space-7));
+    visibility: hidden;
+    pointer-events: none;
+  }
+  :root[data-platform='android'] [data-kit='fab']:not([data-give-way]) {
+    transition:
+      padding var(--dur-medium) var(--ease-emph),
+      gap var(--dur-medium) var(--ease-emph),
+      opacity var(--dur-short) var(--ease-emph-out),
+      transform var(--dur-short) var(--ease-emph-out),
+      visibility 0s;
+  }
+
+  /* TopAppBar (step 3): M3 small (64 dp, title large) and medium (112 dp: the headline-small title on up
+     to two lines under the bar, folding into the bar on scroll) top app bars */
+  :root[data-platform='android'] [data-kit='app-bar'] {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    transition: background-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='app-bar'][data-collapsed] { background: var(--surface-c2); }
+  :root[data-platform='android'] [data-kit='app-bar-row'] {
+    display: flex;
+    align-items: center;
+    gap: var(--bar-title-gap);
+    height: var(--bar-h);
+    min-width: 0;
+    padding: var(--space-0) var(--bar-pad);
+  }
+  :root[data-platform='android'] [data-kit='app-bar-row'] > [data-kit='icon-button'] { width: var(--bar-icon-target); height: var(--bar-icon-target); border-radius: var(--radius-pill); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='app-bar-title'] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: var(--space-0);
+    padding-left: calc(var(--inset) - var(--bar-pad));
+    font: var(--type-title-l);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition: opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='icon-button'] + [data-kit='app-bar-title'] { padding-left: 0; }
+  :root[data-platform='android'] [data-kit='app-bar'][data-large] [data-kit='app-bar-title'] { opacity: 0; pointer-events: none; }
+  :root[data-platform='android'] [data-kit='app-bar'][data-large][data-collapsed] [data-kit='app-bar-title'] { opacity: 1; pointer-events: auto; }
+  :root[data-platform='android'] [data-kit='app-bar-actions'] { flex: 0 1 auto; display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
+  :root[data-platform='android'] [data-kit='app-bar-actions'] > [data-kit='toolbar'] { height: var(--bar-h); }
+  :root[data-platform='android'] [data-kit='app-bar-large'] {
+    display: flex;
+    align-items: flex-end;
+    /* 48 dp under the bar for one line (112 dp in all); a second line grows it (M3 medium flexible) */
+    min-height: calc(var(--bar-h-large) - var(--bar-h));
+    max-height: var(--bar-h-large);
+    padding: var(--space-0) var(--inset) var(--bar-medium-pad-bottom);
+    overflow: hidden;
+    transition: min-height var(--dur-medium) var(--ease-emph), max-height var(--dur-medium) var(--ease-emph), padding var(--dur-medium) var(--ease-emph), opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='app-bar'][data-collapsed] [data-kit='app-bar-large'] { min-height: 0; max-height: 0; padding-bottom: 0; opacity: 0; }
+  :root[data-platform='android'] [data-kit='app-bar-large-title'] {
+    font: var(--type-headline-s);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  :root[data-platform='android'] [data-kit='app-bar-title-button'] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    padding: var(--space-0);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  :root[data-platform='android'] [data-kit='app-bar-title-button'] > [data-kit='icon'] { flex: none; transform: rotate(90deg); }
+  :root[data-platform='android'] [data-kit='app-bar-title-button'] > [data-text='control'] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+  /* the project selector in the Tasks bar (owner, 2026-11-15): an M3 filter chip with its menu arrow, 32 dp, 8 dp corners */
+  :root[data-platform='android'] [data-kit='p-select'][data-where='bar'] {
+    height: var(--chip-h); max-width: 40vw; padding: var(--space-0) var(--space-2) var(--space-0) var(--space-4); border: var(--hairline) solid var(--outline);
+    border-radius: var(--radius-xs); background: transparent; color: var(--on-surface-var); font: var(--type-label-l); letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='p-select'][data-where='bar'] > [data-kit='icon']:last-child { width: var(--size-icon-lg); height: var(--size-icon-lg); color: var(--on-surface-var); }
+  /* Toolbar in a bar (step 3): M3 top app bar actions are 48 dp icon targets; More is ⋮ */
+  :root[data-platform='android'] [data-kit='app-bar'] [data-kit='toolbar'] [data-kit='icon-button'] {
+    width: var(--bar-icon-target);
+    height: var(--bar-icon-target);
+    border-radius: var(--radius-pill);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='frame-top'] [data-kit='icon-button'] { min-width: var(--tap-min); min-height: var(--tap-min); border-radius: var(--radius-pill); }
+
+  /* ListRow (step 4): M3 list items. One/two/three lines are 56/72/88 dp; a 40 dp leading element 16 dp
+     before the text; the time is trailing supporting text (label small) over the pills; dividers off. */
+  :root[data-platform='android'] [data-kit='list-row'] {
+    min-height: var(--row-h-1);
+    padding: var(--row-pad-y) var(--inset);
+    border-radius: 0;
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='list-row'][data-row-lines='2'] { min-height: var(--row-h-2); }
+  :root[data-platform='android'] [data-kit='list-row'][data-row-lines='3'] { min-height: var(--row-h-3); padding-top: var(--row-pad-y-3); padding-bottom: var(--row-pad-y-3); align-items: start; }
+  :root[data-platform='android'] [data-kit='list-row'][data-lead] > [data-kit='list-row-lead'] {
+    justify-content: center;
+    width: var(--row-lead);
+    min-height: var(--row-lead);
+    margin-inline-end: var(--row-lead-gap);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='list-row-lead'] > [data-kit='avatar'] { width: var(--row-lead); height: var(--row-lead); }
+  :root[data-platform='android'] [data-kit='list-row-title'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-title'] { font: var(--type-body-l); letter-spacing: var(--track-body-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='list-row'][data-strong] [data-kit='list-row-title'] { font-weight: var(--fw-semibold); }
+  :root[data-platform='android'] [data-kit='list-row'][data-quiet] [data-kit='list-row-title'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='list-row-sub'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-sub'] { font: var(--type-body-m); letter-spacing: var(--track-body-m); color: var(--on-surface-var); }
+  /* the third line (a 3-line row's foot) runs under the text, one line */
+  :root[data-platform='android'] [data-kit='list-row-foot'] {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font: var(--type-body-m); letter-spacing: var(--track-body-m);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='list-row-time'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-part~='list.row.time'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='time'] { font: var(--type-label-s); letter-spacing: var(--track-label-s); color: var(--on-surface-var); }
+  /* trailing supporting text: the time on the first line's end, the pills under it */
+  :root[data-platform='android'] [data-kit='list-row'][data-time] > [data-kit='list-row-time'] { grid-column: 3 / 5; grid-row: 1; align-self: start; }
+  :root[data-platform='android'] [data-kit='list-row'][data-time] > [data-kit='list-row-pills'] { grid-column: 3 / 5; grid-row: 1; align-self: end; justify-content: flex-end; }
+  :root[data-platform='android'] [data-kit='list-row'][data-time][data-row-lines='1'] > [data-kit='list-row-pills'] { grid-column: 3; align-self: center; }
+  :root[data-platform='android'] [data-kit='list-row'][data-time][data-row-lines='1'] > [data-kit='list-row-time'] { grid-column: 4; align-self: center; }
+  /* a feed row (the Tasks list): the trailing column holds the time on the title's line and the pills on the next,
+     each on its own line, right-aligned, so the time never sits on a pill (r285); the title stops at that column */
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-title'] { grid-column: 2; padding-right: var(--space-0); }
+  /* the feed row's leading column is one fixed width, the crew face's (20): the dot, a reminder's or origin's icon and
+     a crew member's face sit centred in it, so every title starts at one x (r291; the browser's 10-pixel column let the
+     face run into the title); Mark done's touch column (composites.css) stays the fourth */
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] { grid-template-columns: var(--size-avatar-sm) minmax(0, 1fr) auto var(--k-feed-done,); }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='dot'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='face'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='icon'][data-part~='list.row.mark'] { grid-column: 1; grid-row: 1; justify-self: center; }
+  /* audit E #11: a task's time ahead (Scheduled: "18:37") is a Text with the time's part, not a Time: the same column,
+     right-aligned with every other time (it sat 25 px left, drawn at its box's start) */
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-part~='list.row.time'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='time'] { grid-column: 3; grid-row: 1; justify-self: end; align-self: center; text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-time] > [data-kit='list-row-pills'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-time][data-row-lines] > [data-kit='list-row-pills'] { grid-column: 3; grid-row: 2; align-self: center; justify-content: flex-end; }
+  /* pressed while the finger is down; a tap leaves :hover behind, which beat a picked row's tint (audit C #4) */
+  :root[data-platform='android'] [data-kit='list-row'][data-interactive]:not([data-selected]):not([data-picked]):active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  @media (hover: hover) {
+    :root[data-platform='android'] [data-kit='list-row'][data-interactive]:not([data-selected]):not([data-picked]):hover { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  }
+  :root[data-platform='android'] [data-kit='list-row'][data-current] { background: var(--surface-c2); }
+  :root[data-platform='android'] [data-kit='list-row'][data-selected] { background: var(--primary-container); }
+  :root[data-platform='android'] [data-kit='list-row-actions'] { opacity: 1; pointer-events: auto; }
+  :root[data-platform='android'] [data-kit='list-row-actions'] > [data-kit='icon-button'] { width: var(--tap-min); height: var(--tap-min); margin: calc(var(--space-6) * -1) var(--space-0); }
+
+  /* Swipe (step 4): the M3 swipe band, tonal, the icon at the leading edge (where the pull starts), the
+     action's words after it; it warms with the pull (--k-sw-p, 1 on the line) and fills past it */
+  :root[data-platform='android'] [data-kit='swipe'][data-phase='drag'] > [data-kit='swipe-row'],
+  :root[data-platform='android'] [data-kit='swipe'][data-phase='gone'] > [data-kit='swipe-row'] { background: var(--surface-c0); }
+  :root[data-platform='android'] [data-kit='swipe-row'] { transition: transform var(--dur-medium) var(--ease-emph); }
+  /* while the finger drags, the row tracks it: the base sheet's `transition: none` would lose to the line above */
+  :root[data-platform='android'] [data-kit='swipe'][data-phase='drag'] > [data-kit='swipe-row'] { transition: none; }
+  :root[data-platform='android'] [data-kit='swipe-band'] {
+    gap: var(--row-lead-gap);
+    padding: var(--space-0) var(--inset);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+    color: color-mix(in srgb, var(--k-tone) 70%, var(--on-surface));
+    background: color-mix(in srgb, var(--k-tone) calc(12% + var(--k-sw-p, 0) * 18%), var(--surface-c0));
+    transition: background-color var(--dur-short) var(--ease-standard), color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='swipe'][data-dir='left'] > [data-kit='swipe-band'] { flex-direction: row-reverse; justify-content: flex-start; }
+  :root[data-platform='android'] [data-kit='swipe-band'] > [data-kit='icon'] { flex: none; width: var(--swipe-icon); height: var(--swipe-icon); }
+  :root[data-platform='android'] [data-kit='swipe'][data-armed] > [data-kit='swipe-band'] { background: var(--k-tone); color: var(--on-primary); }
+
+  /* Section and SettingsGroup (step 4): the head is an M3 list subheader (48 dp, title small in the
+     primary colour, 16 dp in); the rows sit on the page, no card, no border */
+  :root[data-platform='android'] [data-kit='section-head'],
+  :root[data-platform='android'] [data-kit='settings-group-head'] {
+    align-items: center;
+    min-height: var(--subheader-h);
+    margin: var(--space-0);
+    padding: var(--space-0) var(--inset);
+  }
+  :root[data-platform='android'] [data-kit='section-head'] [data-kit='heading'],
+  :root[data-platform='android'] [data-kit='settings-group-title'] { font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--primary); }
+  :root[data-platform='android'] [data-kit='section-description'],
+  :root[data-platform='android'] [data-kit='settings-group-description'] { font: var(--type-body-m); letter-spacing: var(--track-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='settings-group'],
+  :root[data-platform='android'] [data-kit='settings-group']:not([data-head]),
+  :root[data-platform='android'] [data-kit='settings-group-body'] { border: 0; border-radius: 0; background: transparent; }
+  :root[data-platform='android'] [data-kit='settings-group'][data-head] { gap: var(--space-0); }
+  :root[data-platform='android'] [data-kit='settings-group-body'] > [data-kit='settings-row'] { min-height: var(--row-h-2); padding: var(--row-pad-y) var(--inset); border: 0; }
+  :root[data-platform='android'] [data-kit='settings-row-title'] { font: var(--type-body-l); letter-spacing: var(--track-body-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='settings-row-description'] { font: var(--type-body-m); letter-spacing: var(--track-body-m); color: var(--on-surface-var); }
+
+  /* Card (step 4): M3 outlined (default: the outline variant hairline) and filled (surface container
+     highest, no border) cards, 12 dp corners, 16 dp in; pressed shows the state layer */
+  :root[data-platform='android'] [data-kit='card'] {
+    border: var(--hairline) solid var(--outline-var);
+    border-radius: var(--radius-md);
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    box-shadow: none;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='card'][data-variant='filled'] { border-color: transparent; background: var(--surface-c4); }
+  :root[data-platform='android'] [data-kit='card'][data-tone] { border-color: color-mix(in srgb, var(--k-tone) 40%, var(--outline-var)); }
+  :root[data-platform='android'] [data-kit='card'][data-interactive]:hover { border-color: var(--outline-var); box-shadow: none; }
+  :root[data-platform='android'] [data-kit='card'][data-interactive]:active { background-image: linear-gradient(color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent), color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent)); }
+  :root[data-platform='android'] [data-kit='card-header'],
+  :root[data-platform='android'] [data-kit='card-body'],
+  :root[data-platform='android'] [data-kit='card-footer'] { padding: var(--card-pad); }
+  :root[data-platform='android'] [data-kit='card-header'] { border: 0; padding-bottom: var(--space-0); font: var(--type-title-m); letter-spacing: var(--track-title-m); }
+  :root[data-platform='android'] [data-kit='card-footer'] { border: 0; padding-top: var(--space-0); font: var(--type-body-m); color: var(--on-surface-var); }
+
+  /* Banner (step 4): the M3 banner under the top bar: the tone's icon, body text, its action as a text
+     button at the end, a divider under it; no fill, no border round it */
+  :root[data-platform='android'] [data-kit='banner'] {
+    align-items: center;
+    gap: var(--row-lead-gap);
+    min-height: var(--row-h-1);
+    padding: var(--space-4) var(--space-4) var(--space-4) var(--banner-pad);
+    border: 0;
+    border-bottom: var(--hairline) solid var(--outline-var);
+    border-radius: 0;
+    background: var(--surface-c1);
+    color: var(--on-surface);
+    font: var(--type-body-m);
+    letter-spacing: var(--track-body-m);
+  }
+  :root[data-platform='android'] [data-kit='banner'] [data-kit='notice-icon'] { color: var(--k-tone); }
+  :root[data-platform='android'] [data-kit='banner'] [data-kit='notice-title'] { font: var(--type-title-s); letter-spacing: var(--track-title-s); }
+  :root[data-platform='android'] [data-kit='banner'] [data-kit='notice-action'] [data-kit='button'] {
+    height: var(--button-h);
+    padding: var(--space-0) var(--space-6);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--primary);
+    font: var(--type-label-l);
+  }
+  /* a banner's own row of buttons under its text (the held run's Trust and start · Skip this run): M3's common button,
+     40 dp with its 48 dp target, as the side action's; sm made them the 32 dp extra small one (audit F tasks #4) */
+  :root[data-platform='android'] [data-kit='banner'] [data-kit='wrap'] > [data-kit='button'] {
+    height: var(--button-h);
+    padding: var(--space-0) var(--button-pad);
+  }
+  /* a question's, a setup card's and a factory's answers (Allow · Deny · Show all, Approve · Stop, an option) are thumb
+     targets like the held card's, 48 dp (M3); sm made them 28 / 32 (audit G tasks #4) */
+  :root[data-platform='android'] [data-part~='task.ask'] [data-kit='wrap'] > [data-kit='button'] {
+    min-height: var(--tap-min);
+  }
+  /* the working panel's Stop, on every running or asking task, is a thumb target too: 48 dp (M3); sm made it 28 / 32
+     (audit H tasks: G #4 partly fixed) */
+  :root[data-platform='android'] [data-kit='button'][data-part~='task.stop'] {
+    min-height: var(--tap-min);
+  }
+  /* a compare task's card sits inside the list's margins like its rows, never against the screen's edges; its vs
+     Compare ends in the rows' time column (no ghost padding after its words) (audit F tasks #5) */
+  :root[data-platform='android'] [data-kit='virtual-group'][data-part~='list.compare'] {
+    left: var(--space-4);
+    right: var(--space-4);
+  }
+  :root[data-platform='android'] [data-kit='list-row-pills'] > [data-kit='button'][data-variant='ghost'] {
+    padding-inline-end: 0;
+  }
+  :root[data-platform='android'] [data-kit='banner'] > [data-kit='icon-button'] { width: var(--tap-min); height: var(--tap-min); border-radius: var(--radius-pill); }
+
+  /* Pill (step 4): M3 chips. 32 dp, 8 dp corners, label large; a state (soft) is a tonal chip, a tag
+     (outline) an assist / filter chip with the outline; in a list row's trailing text (sm) 24 dp */
+  :root[data-platform='android'] [data-kit='pill'] {
+    gap: var(--space-4);
+    height: var(--chip-h);
+    padding: var(--space-0) var(--chip-pad);
+    border: var(--hairline) solid transparent;
+    border-radius: var(--radius-sm);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+    color: color-mix(in srgb, var(--k-tone) 70%, var(--on-surface));
+    background: color-mix(in srgb, var(--k-tone) 14%, var(--surface-c0));
+  }
+  :root[data-platform='android'] [data-kit='pill'][data-icon] { padding-inline-start: var(--space-4); }
+  :root[data-platform='android'] [data-kit='pill'] > [data-kit='icon'] { width: var(--chip-icon); height: var(--chip-icon); }
+  :root[data-platform='android'] [data-kit='pill'][data-variant='outline'] {
+    padding: var(--space-0) var(--chip-pad);
+    border-color: var(--outline);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--on-surface-var);
+    font: var(--type-label-l);
+  }
+  :root[data-platform='android'] [data-kit='pill'][data-variant='outline'][data-tone='accent'] { border-color: transparent; background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='pill'][data-variant='plain'] { height: auto; padding: var(--space-0); border: 0; background: transparent; font: var(--type-label-m); }
+  :root[data-platform='android'] [data-kit='pill'][data-size='sm'] { height: var(--chip-h-sm); padding: var(--space-0) var(--space-4); font: var(--type-label-m); letter-spacing: var(--track-label-m); }
+
+  /* Skeleton (step 4): M3 placeholder blocks in the surface container, a slow tonal pulse */
+  :root[data-platform='android'] [data-kit='skeleton'] { background: var(--surface-c3); }
+  :root[data-platform='android'] [data-kit='skeleton'][data-shape='block'] { border-radius: var(--radius-md); }
+  :root[data-platform='android'] [data-kit='skeleton'][data-shape='line'] { height: var(--k-h, var(--space-7)); border-radius: var(--radius-xs); }
+
+  /* EmptyState (step 4): the icon, the title in title large, the body, the step as a tonal button */
+  :root[data-platform='android'] [data-kit='empty-state'] { gap: var(--space-7); padding: var(--space-9) var(--inset); color: var(--on-surface-var); font: var(--type-body-m); }
+  :root[data-platform='android'] [data-kit='empty-state-icon'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='empty-state-icon'] > [data-kit='icon'] { width: var(--empty-icon); height: var(--empty-icon); }
+  :root[data-platform='android'] [data-kit='empty-state-title'] { font: var(--type-title-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='empty-state'][data-compact] [data-kit='empty-state-title'] { font: var(--type-title-m); }
+  :root[data-platform='android'] [data-kit='empty-state-action'] [data-kit='button'] {
+    height: var(--button-h);
+    padding: var(--space-0) var(--button-pad);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--primary-container);
+    color: var(--on-primary-container);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+
+  /* PullRefresh (step 4): the M3 pull-to-refresh indicator. A 40 dp disc in the container colour comes
+     down with the pull, its arc grows to most of a turn at the line, and spins while refreshing. */
+  :root[data-platform='android'] [data-kit='pull-refresh'] {
+    position: sticky;
+    top: var(--space-0);
+    z-index: var(--z-raised);
+    display: flex;
+    justify-content: center;
+    height: var(--space-0);
+    overflow: visible;
+    pointer-events: none;
+  }
+  :root[data-platform='android'] [data-kit='pull-disc'] {
+    display: grid;
+    place-items: center;
+    width: var(--refresh-disc);
+    height: var(--refresh-disc);
+    border-radius: var(--radius-pill);
+    background: var(--surface-c3);
+    color: var(--primary);
+    box-shadow: var(--elev-2);
+    opacity: min(1, calc(var(--k-pull) * 2));
+    transform: translateY(calc(min(var(--k-pull), 1.25) * var(--refresh-travel) - var(--refresh-disc)));
+    transition: transform var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='pull-arc'] { width: var(--refresh-spinner); height: var(--refresh-spinner); transform: rotate(calc(var(--k-pull) * 270deg - 90deg)); }
+  :root[data-platform='android'] [data-kit='pull-arc'] > circle {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: var(--refresh-stroke);
+    stroke-linecap: round;
+    stroke-dasharray: calc(min(var(--k-pull), 1) * 80) 100;
+    opacity: calc(0.4 + min(var(--k-pull), 1) * 0.6);
+  }
+  :root[data-platform='android'] [data-kit='pull-refresh'][data-refreshing] [data-kit='pull-arc'] { animation: k-android-spin var(--dur-long) linear infinite; }
+  @keyframes k-android-spin { to { transform: rotate(270deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='android'] [data-kit='pull-refresh'][data-refreshing] [data-kit='pull-arc'] { animation: none; }
+  }
+
+  /* Gestures (step 7, design/mobile.md §A.4): a sideways gesture on a task page keeps the vertical scroll the
+     browser's; a long-pressed follow-up lifts and follows the finger (bind.ts sets --k-drag-y), the others stay. */
+  :root[data-platform='android'] [data-gesture~='task.head-swipe'],
+  :root[data-platform='android'] [data-gesture~='task.body-swipe'] { touch-action: pan-y; }
+  :root[data-platform='android'] [data-gesture~='queue.drag'] > * { -webkit-touch-callout: none; user-select: none; }
+  :root[data-platform='android'] [data-gesture~='queue.drag'] [data-dragging] {
+    position: relative;
+    z-index: 1;
+    transform: translateY(var(--k-drag-y, 0));
+    box-shadow: var(--elev-2);
+    background: var(--surface-c1);
+  }
+  :root[data-platform='android'] [data-gesture~='list.pull'] { overscroll-behavior-y: contain; }
+
+  /* Overlays (step 5, design/mobile.md §A.7). Dialog: the M3 basic dialog, 280–560 dp, 28 dp corners, surface
+     container high, its actions end-aligned text buttons; a confirm (data-alert) has no ×. Not a window (`size:
+     'window'`: My Stuff's reader, an app): the whole screen, one surface, as on iOS (audit D #5). */
+  :root[data-platform='android'] [data-kit='dialog-positioner']:not([data-size='window']) { padding: var(--dialog-pad); }
+  :root[data-platform='android'] [data-kit='dialog']:not([data-size='window']) {
+    width: min(var(--dialog-max-w), 100%);
+    min-width: min(var(--dialog-min-w), 100%);
+    max-height: calc(100dvh - var(--dialog-pad) * 2);
+    padding: var(--dialog-pad);
+    border: 0;
+    border-radius: var(--radius-dialog);
+    background: var(--surface-c3);
+    color: var(--on-surface);
+    box-shadow: var(--elev-3);
+    font-family: var(--font-ui);
+    animation: k-android-dialog var(--dur-medium) var(--ease-emph-out);
+  }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-head'] { margin-bottom: var(--dialog-gap); }
+  :root[data-platform='android'] [data-kit='dialog'] [data-kit='dialog-title'] { font: var(--type-headline-s); letter-spacing: normal; color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='dialog'][data-alert] > [data-kit='dialog-head'] > [data-kit='icon-button'] { display: none; }
+  /* a sheet's or dialog's ✕ is a finger's target, 48 dp (M3 touch target); its glyph keeps its size (QA r15 #5: it was 40) */
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-head'] > [data-kit='icon-button'],
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-head'] > [data-kit='icon-button'] { flex: none; min-width: var(--tap-min); min-height: var(--tap-min); }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-description'],
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-body'] { margin: var(--space-0); font: var(--type-body-m); letter-spacing: var(--track-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-description'] + [data-kit='dialog-body'] { margin-top: var(--dialog-gap); }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-body']:empty { display: none; }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] { justify-content: flex-end; gap: var(--dialog-actions-gap); margin-top: var(--dialog-pad); }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] > [data-kit='button'] {
+    flex: none;
+    height: var(--button-h);
+    padding: var(--space-0) var(--space-6);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--primary);
+    box-shadow: none;
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] > [data-kit='button'][data-variant='danger'] { color: var(--error); }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] > [data-kit='button']:active { background: color-mix(in srgb, currentColor calc(var(--state-pressed) * 100%), transparent); }
+  @keyframes k-android-dialog { from { opacity: 0; transform: scale(0.9); } }
+
+  /* Sheet: the M3 modal bottom sheet. Up to 640 dp wide, 72 dp under the top at most, 28 dp top corners, the 32 × 4
+     drag handle 22 dp from the top; it follows a drag down (--k-sheet-dy, the phone chunk) and springs back. */
+  :root[data-platform='android'] [data-kit='dialog-positioner'][data-sheet] { place-items: end center; padding: var(--sheet-top-gap) var(--space-0) var(--space-0); }
+  :root[data-platform='android'] [data-kit='sheet'] {
+    width: min(var(--sheet-max-w), 100%);
+    max-height: calc(100dvh - var(--sheet-top-gap));
+    padding: var(--space-0) var(--space-0) var(--safe-bottom);
+    border: 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) var(--space-0) var(--space-0);
+    background: var(--surface-c1);
+    color: var(--on-surface);
+    box-shadow: var(--elev-1);
+    font-family: var(--font-ui);
+    transform: translateY(var(--k-sheet-dy, 0));
+    transition: transform var(--dur-medium) var(--ease-emph-out);
+    animation: k-android-sheet var(--dur-medium) var(--ease-emph-out);
+  }
+  :root[data-platform='android'] [data-kit='sheet'][data-dragging] { transition: none; }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='sheet-handle'] {
+    display: block;
+    flex: none;
+    align-self: center;
+    width: var(--grabber-w);
+    height: var(--grabber-h);
+    margin: var(--sheet-handle-pad) var(--space-0);
+    border-radius: var(--radius-pill);
+    background: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-head'] { margin: var(--space-0); padding: var(--space-0) var(--space-2) var(--space-2) var(--inset); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='dialog-title'] { font: var(--type-title-l); letter-spacing: normal; color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-description'] { margin: var(--space-0); padding: var(--space-0) var(--inset) var(--space-4); font: var(--type-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-body'] { padding: var(--space-0) var(--inset); font: var(--type-body-m); color: var(--on-surface); }
+  /* a sheet with no actions under its body ends with the body's own inset, not flush on the screen's edge (QA round 2
+     #11: Show tasks from stopped right under its last choice) */
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-body']:last-child { padding-bottom: var(--inset); }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-foot'] { margin: var(--space-0); padding: var(--inset); gap: var(--dialog-actions-gap); }
+  :root[data-platform='android'] [data-kit='dialog-positioner'][data-sheet][data-size='xl'] { padding: var(--space-0); }
+  :root[data-platform='android'] [data-kit='sheet'][data-size='xl'] { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: var(--space-0); }
+  :root[data-platform='android'] [data-kit='sheet'][data-size='xl'] > [data-kit='sheet-handle'] { display: none; }
+  /* the grabber is a button named Close (QA r7 #1): the same pill, its press area the margin around it, a ring when
+     focused from a keyboard */
+  :root[data-platform='android'] [data-kit='sheet'] > button[data-kit='sheet-handle'] { position: relative; padding: var(--space-0); border: 0; appearance: none; cursor: grab; -webkit-tap-highlight-color: transparent; }
+  :root[data-platform='android'] [data-kit='sheet'] > button[data-kit='sheet-handle']::after { content: ''; position: absolute; inset: calc(var(--sheet-handle-pad) * -1) calc(var(--space-8) * -1); }
+  :root[data-platform='android'] [data-kit='sheet'] > button[data-kit='sheet-handle']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-2); }
+  @keyframes k-android-sheet { from { transform: translateY(100%); } }
+
+  /* A long-press's menu (phone.tsx): the row's actions in the sheet, Select first; M3 list items, 56 dp, the icon
+     leading in on-surface-variant, a destructive one in error. */
+  :root[data-platform='android'] [data-kit='sheet-menu'] { display: flex; flex-direction: column; margin: var(--space-0) calc(var(--inset) * -1); padding-bottom: var(--space-4); }
+  :root[data-platform='android'] [data-kit='sheet-item'] {
+    display: flex;
+    align-items: center;
+    gap: var(--row-lead-gap);
+    width: 100%;
+    min-height: var(--row-h-1);
+    padding: var(--space-0) var(--inset);
+    border: 0;
+    background: transparent;
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='sheet-item'] > [data-kit='icon'] { flex: none; width: var(--nav-icon); height: var(--nav-icon); color: var(--on-surface-var); }
+  /* a row without an icon keeps the icon column; a choice's ✓ stands in it (QA r7 #7) */
+  :root[data-platform='android'] [data-kit='sheet-item'] > [data-kit='sheet-icon-gap'] { flex: none; width: var(--nav-icon); height: var(--nav-icon); }
+  :root[data-platform='android'] [data-kit='sheet-item']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='sheet-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='android'] [data-kit='sheet-item'][data-danger],
+  :root[data-platform='android'] [data-kit='sheet-item'][data-danger] > [data-kit='icon'] { color: var(--error); }
+  :root[data-platform='android'] [data-kit='sheet-item']:disabled { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='sheet-item-text'] { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='android'] [data-kit='sheet-item-label'] { flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='android'] [data-kit='sheet-item-hint'] { font: var(--type-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='sheet-separator'] { height: var(--hairline); margin: var(--space-4) var(--space-0); background: var(--outline-var); }
+  :root[data-platform='android'] [data-kit='sheet-label'] { padding: var(--space-6) var(--inset) var(--space-2); font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--on-surface-var); }
+
+  /* Menu from a button: the M3 menu. 112–280 dp, 4 dp corners, 8 dp in, 48 dp items; the state layer on the lit one. */
+  :root[data-platform='android'] [data-kit='menu'] {
+    min-width: var(--menu-min-w);
+    max-width: min(var(--menu-max-w), calc(100vw - var(--inset) * 2));
+    padding: var(--menu-pad-y) var(--space-0);
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: var(--surface-c2);
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='android'] [data-kit='menu-item'] {
+    min-height: var(--menu-item-h);
+    gap: var(--menu-item-pad);
+    padding: var(--space-0) var(--menu-item-pad);
+    border-radius: var(--space-0);
+    color: var(--on-surface);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='menu-item'] > [data-kit='icon'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='menu-item'][data-highlighted] { background: color-mix(in srgb, var(--on-surface) calc(var(--state-focus) * 100%), transparent); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='menu-item'][data-danger],
+  :root[data-platform='android'] [data-kit='menu-item'][data-danger] > [data-kit='icon'],
+  :root[data-platform='android'] [data-kit='menu-item'][data-danger][data-highlighted] { color: var(--error); }
+  :root[data-platform='android'] [data-kit='menu-item'][data-disabled] { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='menu-separator'] { height: var(--hairline); margin: var(--menu-pad-y) var(--space-0); background: var(--outline-var); }
+  :root[data-platform='android'] [data-kit='menu-group-label'] { padding: var(--menu-pad-y) var(--menu-item-pad); font: var(--type-title-s); color: var(--on-surface-var); }
+
+  /* Toast: the M3 snackbar. Inverse surface, 4 dp corners, 48 dp, its action (Undo) a text button in inverse
+     primary; 16 dp above the navigation bar and the FAB when they're up (body[data-nav-bar], body[data-fab]). */
+  /* the kit's toast clearance (toast.css: --toast-bottom, the safe area added there) */
+  :root[data-platform='android'] body { --toast-bottom: var(--snack-margin); }
+  :root[data-platform='android'] body[data-nav-bar] { --toast-bottom: calc(var(--nav-h) + var(--snack-margin)); }
+  :root[data-platform='android'] body[data-fab] { --toast-bottom: calc(var(--fab-ext-h) + var(--fab-margin) + var(--snack-margin)); }
+  :root[data-platform='android'] body[data-nav-bar][data-fab] { --toast-bottom: calc(var(--nav-h) + var(--fab-ext-h) + var(--fab-margin) + var(--snack-margin)); }
+  @media (min-width: 600px) {
+    :root[data-platform='android'] body[data-nav-bar] { --toast-bottom: var(--snack-margin); }
+    :root[data-platform='android'] body[data-nav-bar][data-fab] { --toast-bottom: calc(var(--fab-ext-h) + var(--fab-margin) + var(--snack-margin)); }
+  }
+  :root[data-platform='android'] [data-kit='toasts'] { width: min(var(--snack-max-w), calc(100vw - var(--snack-margin) * 2)); }
+  :root[data-platform='android'] [data-kit='toast'] {
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: var(--inverse-surface);
+    color: var(--inverse-on-surface);
+    box-shadow: var(--elev-3);
+    font: var(--type-body-m);
+    letter-spacing: var(--track-body-m);
+  }
+  :root[data-platform='android'] [data-kit='toast-in'] { min-height: var(--snack-h); gap: var(--space-2); padding: var(--space-0) var(--space-2) var(--space-0) var(--inset); }
+  :root[data-platform='android'] [data-kit='toast-glyph'] { display: none; }
+  :root[data-platform='android'] [data-kit='toast-description'] { color: color-mix(in srgb, var(--inverse-on-surface) 80%, transparent); }
+  :root[data-platform='android'] [data-kit='toast-action'] {
+    height: var(--button-h);
+    margin: var(--space-0);
+    padding: var(--space-0) var(--space-6);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--inverse-primary);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='toast-action']:active { background: color-mix(in srgb, var(--inverse-primary) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='toast-close'] { width: var(--button-h); height: var(--button-h); color: var(--inverse-on-surface); }
+
+  /* Tooltip: the M3 plain tooltip, shown by a long-press of its trigger (phone.tsx bindTip): inverse surface, 24 dp,
+     4 dp corners, body small; placed by --k-tip-top / --k-tip-left. */
+  :root[data-platform='android'] [data-kit='plain-tip'] {
+    position: fixed;
+    top: var(--k-tip-top, 0);
+    left: var(--k-tip-left, 0);
+    z-index: var(--z-tooltip);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: var(--tip-max-w);
+    min-height: var(--tip-h);
+    padding: var(--space-1) var(--tip-pad);
+    border-radius: var(--radius-xs);
+    background: var(--inverse-surface);
+    color: var(--inverse-on-surface);
+    font: var(--type-body-s);
+    letter-spacing: var(--track-body-s);
+    pointer-events: none;
+    animation: k-android-fade var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='plain-tip-hint'] { color: color-mix(in srgb, var(--inverse-on-surface) 70%, transparent); }
+  @keyframes k-android-fade { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='android'] [data-kit='dialog'],
+    :root[data-platform='android'] [data-kit='sheet'],
+    :root[data-platform='android'] [data-kit='plain-tip'] { animation: none; }
+  }
+
+  /* Controls (step 6, design/mobile.md §A.5–§A.7). Generic rules keep the specificity of one look and one kit name
+     (variants and sizes in :where()), so a control placed in a bar, a dialog, a banner or an empty state keeps the
+     rule written for it there (steps 3–5). Every press answers as the finger goes down: the state layer and the M3
+     ripple (CSS only: a disc growing from the centre while held; under reduced motion only the layer), 48 dp touch
+     targets round a smaller visible control (::before), the focus ring in primary, disabled content at 38 %. */
+
+  /* Button: M3 common buttons, full radius, label large. primary = filled, secondary and accent = tonal, ghost = text,
+     danger = filled in error, chip = an outlined filter chip (selected: tonal, no edge), link = primary ink in text.
+     Sizes: xs and sm the 32 dp extra small button, md 40 dp, lg the 56 dp medium one. */
+  :root[data-platform='android'] [data-kit='button'] {
+    gap: var(--space-4);
+    height: var(--button-h);
+    padding: var(--space-0) var(--button-pad);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--primary-container);
+    color: var(--on-primary-container);
+    box-shadow: none;
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+    transition: background-color var(--dur-short) var(--ease-standard), color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='button'] > [data-kit='button-content'] { gap: var(--space-4); }
+  :root[data-platform='android'] [data-kit='button'] [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='android'] :where([data-size='xs'])[data-kit='button'],
+  :root[data-platform='android'] :where([data-size='sm'])[data-kit='button'] { height: var(--button-h-sm); padding: var(--space-0) var(--button-pad-sm); }
+  :root[data-platform='android'] :where([data-size='lg'])[data-kit='button'] { height: var(--button-h-lg); font: var(--type-title-m); letter-spacing: var(--track-title-m); }
+  :root[data-platform='android'] :where([data-variant='primary'])[data-kit='button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='android'] :where([data-variant='danger'])[data-kit='button'] { background: var(--error); color: var(--on-primary); }
+  :root[data-platform='android'] :where([data-variant='ghost'])[data-kit='button'] { padding: var(--space-0) var(--button-pad-sm); background: transparent; color: var(--primary); }
+  :root[data-platform='android'] :where([data-variant='ghost'][data-tone='good'])[data-kit='button'] { color: var(--good); }
+  :root[data-platform='android'] :where([data-variant='ghost'][data-tone='bad'])[data-kit='button'] { color: var(--error); }
+  :root[data-platform='android'] :where([data-variant='chip'])[data-kit='button'] {
+    height: var(--chip-h);
+    padding: var(--space-0) var(--chip-pad);
+    border: var(--hairline) solid var(--outline);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] :where([data-variant='chip'][aria-pressed='true'])[data-kit='button'] { border-color: transparent; background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] :where([data-variant='link'])[data-kit='button'] { height: auto; padding: var(--space-0); border-radius: var(--space-0); background: none; color: var(--primary); font: inherit; letter-spacing: inherit; }
+  :root[data-platform='android'] :where([data-fill])[data-kit='button'] { width: 100%; }
+
+  /* IconButton: M3 icon buttons, round. ghost = standard (on-surface-variant, no container), primary = filled,
+     secondary = tonal. 40 dp (xs 32, lg 56), the 24 dp icon, a 48 dp target. */
+  :root[data-platform='android'] [data-kit='icon-button'] {
+    width: var(--icon-button);
+    height: var(--icon-button);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--on-surface-var);
+    transition: background-color var(--dur-short) var(--ease-standard), color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='icon-button'] [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); }
+  :root[data-platform='android'] :where([data-size='xs'])[data-kit='icon-button'] { width: var(--icon-button-sm); height: var(--icon-button-sm); }
+  :root[data-platform='android'] [data-kit='icon-button']:where([data-size='xs']) [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='android'] :where([data-size='lg'])[data-kit='icon-button'] { width: var(--icon-button-lg); height: var(--icon-button-lg); }
+  :root[data-platform='android'] :where([data-variant='primary'])[data-kit='icon-button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='android'] :where([data-variant='secondary'])[data-kit='icon-button'] { background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] :where([aria-pressed='true'])[data-kit='icon-button'] { color: var(--primary); }
+  :root[data-platform='android'] :where([data-tone='bad'])[data-kit='icon-button'] { color: var(--error); }
+  :root[data-platform='android'] :where([data-tone='good'])[data-kit='icon-button'] { color: var(--good); }
+
+  /* the state layer and the ripple (::after), the touch target (::before) */
+  :root[data-platform='android'] [data-kit='button']:not([data-variant='link'])::before,
+  :root[data-platform='android'] [data-kit='icon-button']::before {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2));
+  }
+  :root[data-platform='android'] [data-kit='button']:not([data-variant='link'])::after,
+  :root[data-platform='android'] [data-kit='icon-button']::after,
+  :root[data-platform='android'] [data-kit='tab']::before {
+    content: '';
+    position: absolute;
+    inset: var(--space-0);
+    border-radius: inherit;
+    pointer-events: none;
+    background-color: transparent;
+    background-image: radial-gradient(circle closest-side, color-mix(in srgb, currentColor calc(var(--state-pressed) * 100%), transparent) 99%, transparent 100%);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 0% 0%;
+    transition: background-color var(--dur-short) var(--ease-standard), background-size 0s;
+  }
+  @media (hover: hover) {
+    :root[data-platform='android'] [data-kit='button']:not([data-variant='link']):hover::after,
+    :root[data-platform='android'] [data-kit='icon-button']:hover::after,
+    :root[data-platform='android'] [data-kit='tab']:hover::before { background-color: color-mix(in srgb, currentColor calc(var(--state-hover) * 100%), transparent); }
+    :root[data-platform='android'] [data-kit='button']:hover,
+    :root[data-platform='android'] [data-kit='icon-button']:hover { opacity: 1; }
+  }
+  :root[data-platform='android'] [data-kit='button']:not([data-variant='link']):focus-visible::after,
+  :root[data-platform='android'] [data-kit='icon-button']:focus-visible::after,
+  :root[data-platform='android'] [data-kit='tab']:focus-visible::before { background-color: color-mix(in srgb, currentColor calc(var(--state-focus) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='button']:not([data-variant='link']):active::after,
+  :root[data-platform='android'] [data-kit='icon-button']:active::after,
+  :root[data-platform='android'] [data-kit='tab']:active::before {
+    background-color: color-mix(in srgb, currentColor calc(var(--state-pressed) * 100%), transparent);
+    background-size: 250% 250%;
+    transition: background-color var(--dur-short) var(--ease-standard), background-size var(--dur-medium) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='button']:active,
+  :root[data-platform='android'] [data-kit='icon-button']:active { transform: none; }
+  /* a dialog's actions paint their pressed layer themselves (step 5): no second one on top */
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] > [data-kit='button']::after { background: none; }
+  :root[data-platform='android'] [data-kit='button']:focus-visible,
+  :root[data-platform='android'] [data-kit='icon-button']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='android'] [data-kit='button']:disabled,
+  :root[data-platform='android'] [data-kit='icon-button']:disabled { opacity: var(--state-disabled); cursor: not-allowed; }
+  :root[data-platform='android'] [data-kit='button'][data-loading]::after,
+  :root[data-platform='android'] [data-kit='icon-button'][data-loading]::after { background-size: 0% 0%; }
+  /* the busy ring is M3's circular indicator, the icon's size, in the content colour */
+  :root[data-platform='android'] [data-kit='button'] > [data-kit='spinner'],
+  :root[data-platform='android'] [data-kit='icon-button'] > [data-kit='spinner'] { width: var(--size-icon-lg); height: var(--size-icon-lg); border-width: var(--size-ring); }
+
+  /* Switch: the M3 switch, 52 × 32. Off: the outline track, a 16 dp handle in outline; on: the primary track, a 24 dp
+     handle in on-primary with its check icon; held: 28 dp. The 40 dp state layer rings the handle; 48 dp target. */
+  :root[data-platform='android'] [data-kit='switch'] {
+    width: var(--switch-w);
+    height: var(--switch-h);
+    border: var(--switch-border) solid var(--outline);
+    border-radius: var(--radius-pill);
+    background: var(--surface-c4);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--dur-short) var(--ease-standard), border-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='switch'][data-state='checked'] { border-color: var(--primary); background: var(--primary); }
+  :root[data-platform='android'] [data-kit='switch']::after {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2)) var(--space-0);
+  }
+  :root[data-platform='android'] [data-kit='switch-thumb'] {
+    display: grid;
+    place-items: center;
+    top: 50%;
+    left: calc(var(--switch-h) / 2 - var(--switch-border));
+    width: var(--switch-thumb);
+    height: var(--switch-thumb);
+    background: var(--outline);
+    color: var(--on-primary-container);
+    box-shadow: none;
+    transform: none;
+    translate: -50% -50%;
+    transition: left var(--dur-short) var(--ease-standard), width var(--dur-short) var(--ease-standard), height var(--dur-short) var(--ease-standard), background-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='switch-thumb'][data-state='checked'] {
+    left: calc(var(--switch-w) - var(--switch-h) / 2 - var(--switch-border));
+    width: var(--switch-thumb-on);
+    height: var(--switch-thumb-on);
+    background: var(--on-primary);
+    transform: none;
+  }
+  :root[data-platform='android'] [data-kit='switch-thumb'] > [data-kit='icon'] { width: var(--switch-icon); height: var(--switch-icon); }
+  :root[data-platform='android'] [data-kit='switch']:active [data-kit='switch-thumb'] { width: var(--switch-thumb-press); height: var(--switch-thumb-press); background: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='switch'][data-state='checked']:active [data-kit='switch-thumb'] { background: var(--primary-container); }
+  :root[data-platform='android'] [data-kit='switch-thumb']::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: var(--switch-halo);
+    height: var(--switch-halo);
+    border-radius: var(--radius-pill);
+    translate: -50% -50%;
+    background: transparent;
+    transition: background-color var(--dur-short) var(--ease-standard);
+  }
+  @media (hover: hover) {
+    :root[data-platform='android'] [data-kit='switch']:hover [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--on-surface) calc(var(--state-hover) * 100%), transparent); }
+    :root[data-platform='android'] [data-kit='switch'][data-state='checked']:hover [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--primary) calc(var(--state-hover) * 100%), transparent); }
+  }
+  :root[data-platform='android'] [data-kit='switch']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='android'] [data-kit='switch']:focus-visible [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--on-surface) calc(var(--state-focus) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='switch']:active [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='switch'][data-state='checked']:active [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--primary) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='switch'][data-disabled] { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='switch-field'] { gap: var(--row-lead-gap); color: var(--on-surface); font: var(--type-body-l); letter-spacing: var(--track-body-l); }
+
+  /* Tabs: M3 tabs, 48 dp, title small. line = the primary tabs (the label in primary over a 3 dp indicator as wide as
+     the content, top corners round), pill and seg = the secondary tabs (on-surface over a 2 dp line the tab's width);
+     a 1 dp divider under the row. The state layer and ripple fill the tab (::before). */
+  :root[data-platform='android'] [data-kit='tabs'] > [data-kit='tab-list'] {
+    align-self: stretch;
+    gap: var(--space-0);
+    height: var(--tab-h);
+    padding: var(--space-0);
+    border: 0;
+    border-bottom: var(--hairline) solid var(--outline-var);
+    border-radius: var(--space-0);
+    margin: var(--space-0);
+    background: transparent;
+  }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab'] {
+    flex: 1 1 0;
+    justify-content: center;
+    gap: var(--space-4);
+    min-width: max-content;
+    height: 100%;
+    min-height: var(--tab-h);
+    padding: var(--space-0) var(--tab-pad);
+    border-radius: var(--space-0);
+    background: transparent;
+    box-shadow: none;
+    color: var(--on-surface-var);
+    font: var(--type-title-s);
+    letter-spacing: var(--track-title-s);
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab'] > [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); margin: var(--space-0); }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab-count'] { margin: var(--space-0); font: inherit; color: inherit; }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab'][data-selected] { background: transparent; box-shadow: none; color: var(--primary); font: var(--type-title-s); }
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='line'] [data-kit='tab'][data-selected]::after {
+    content: '';
+    position: absolute;
+    left: var(--tab-pad);
+    right: var(--tab-pad);
+    bottom: var(--space-0);
+    height: var(--tab-indicator);
+    border-radius: var(--tab-indicator) var(--tab-indicator) var(--space-0) var(--space-0);
+    background: var(--primary);
+  }
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='pill'] [data-kit='tab'][data-selected],
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='seg'] [data-kit='tab'][data-selected] { color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='pill'] [data-kit='tab'][data-selected]::after,
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='seg'] [data-kit='tab'][data-selected]::after {
+    content: '';
+    position: absolute;
+    left: var(--space-0);
+    right: var(--space-0);
+    bottom: var(--space-0);
+    height: var(--tab-indicator-sec);
+    background: var(--primary);
+  }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab'][data-disabled] { opacity: var(--state-disabled); }
+
+  /* Input, TextArea, Select's button: the M3 outlined text field. 56 dp (sm 48), 4 dp corners, a 1 dp outline that
+     darkens on hover and is 2 dp primary on focus (an inset ring, so nothing moves), error when invalid, body large.
+     In a Field (data-float) the label sits in the outline's notch, body small, primary while focused. */
+  :root[data-platform='android'] [data-kit='input'],
+  :root[data-platform='android'] [data-kit='field-box'],
+  :root[data-platform='android'] [data-kit='textarea'],
+  :root[data-platform='android'] [data-kit='select-trigger'] {
+    height: var(--field-h);
+    padding: var(--space-0) var(--field-pad);
+    border: var(--hairline) solid var(--outline);
+    border-radius: var(--radius-xs);
+    background-color: transparent;
+    box-shadow: none;
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+    transition: border-color var(--dur-short) var(--ease-standard), box-shadow var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] :where([data-size='sm'])[data-kit='input'],
+  :root[data-platform='android'] :where([data-size='sm'])[data-kit='field-box'],
+  :root[data-platform='android'] :where([data-size='sm'])[data-kit='select-trigger'] { height: var(--field-h-sm); }
+  :root[data-platform='android'] [data-kit='textarea'] { height: auto; min-height: var(--field-h); padding: var(--field-pad); line-height: inherit; }
+  :root[data-platform='android'] [data-kit='field-box'] { gap: var(--field-pad); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='field-box'] > [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); }
+  :root[data-platform='android'] [data-kit='field-input'] { color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='input'][data-mono],
+  :root[data-platform='android'] [data-kit='textarea'][data-mono],
+  :root[data-platform='android'] [data-kit='field-box'][data-mono],
+  :root[data-platform='android'] [data-kit='select-trigger'][data-mono] { font-family: var(--mono); }
+  :root[data-platform='android'] [data-kit='input']::placeholder,
+  :root[data-platform='android'] [data-kit='textarea']::placeholder,
+  :root[data-platform='android'] [data-kit='field-input']::placeholder { color: var(--on-surface-var); }
+  @media (hover: hover) {
+    :root[data-platform='android'] [data-kit='input']:hover,
+    :root[data-platform='android'] [data-kit='field-box']:hover,
+    :root[data-platform='android'] [data-kit='textarea']:hover,
+    :root[data-platform='android'] [data-kit='select-trigger']:hover { border-color: var(--on-surface); }
+  }
+  :root[data-platform='android'] [data-kit='input']:focus,
+  :root[data-platform='android'] [data-kit='textarea']:focus,
+  :root[data-platform='android'] [data-kit='field-box']:focus-within,
+  :root[data-platform='android'] [data-kit='select-trigger']:focus-visible,
+  :root[data-platform='android'] [data-kit='select-trigger'][aria-expanded='true'] {
+    border-color: var(--primary);
+    background-color: transparent;
+    box-shadow: inset 0 0 0 calc(var(--field-outline-focus) - var(--hairline)) var(--primary);
+  }
+  :root[data-platform='android'] [data-kit='input'][aria-invalid='true'],
+  :root[data-platform='android'] [data-kit='textarea'][aria-invalid='true'],
+  :root[data-platform='android'] [data-kit='field-box'][data-invalid],
+  :root[data-platform='android'] [data-kit='select-trigger'][data-invalid] { border-color: var(--error); }
+  :root[data-platform='android'] [data-kit='input'][aria-invalid='true']:focus,
+  :root[data-platform='android'] [data-kit='textarea'][aria-invalid='true']:focus,
+  :root[data-platform='android'] [data-kit='field-box'][data-invalid]:focus-within { box-shadow: inset 0 0 0 calc(var(--field-outline-focus) - var(--hairline)) var(--error); }
+  :root[data-platform='android'] [data-kit='input']:disabled,
+  :root[data-platform='android'] [data-kit='textarea']:disabled,
+  :root[data-platform='android'] [data-kit='field-box'][data-disabled],
+  :root[data-platform='android'] [data-kit='select-trigger']:disabled { opacity: var(--state-disabled); }
+  /* Select: the exposed dropdown menu's field, the arrow turning up while it's open; its list the M3 menu */
+  :root[data-platform='android'] [data-kit='select'] { display: flex; }
+  :root[data-platform='android'] [data-kit='select-trigger'] { width: 100%; gap: var(--field-pad); }
+  :root[data-platform='android'] [data-kit='select-trigger'][data-placeholder] [data-kit='select-value'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='select-trigger'] > [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); color: var(--on-surface-var); transition: transform var(--dur-short) var(--ease-standard); }
+  :root[data-platform='android'] [data-kit='select-trigger'][aria-expanded='true'] > [data-kit='icon'] { transform: rotate(-90deg); color: var(--primary); }
+  :root[data-platform='android'] [data-kit='listbox'] {
+    min-width: var(--menu-min-w);
+    padding: var(--menu-pad-y) var(--space-0);
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: var(--surface-c2);
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='android'] [data-kit='option'] {
+    min-height: var(--menu-item-h);
+    gap: var(--menu-item-pad);
+    padding: var(--space-0) var(--menu-item-pad);
+    border-radius: var(--space-0);
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+  }
+  :root[data-platform='android'] [data-kit='option'][data-highlighted] { background: color-mix(in srgb, var(--on-surface) calc(var(--state-focus) * 100%), transparent); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='option'][data-state='checked'] { background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='option'] > [data-kit='icon'] { color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='option'][data-disabled] { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='option-group'] { padding: var(--menu-pad-y) var(--menu-item-pad); font: var(--type-title-s); color: var(--on-surface-var); }
+
+  /* Field: the label in the outline's notch (data-float: round a text control), body small; the error and the hint
+     under the field as M3 supporting text, 16 dp in. */
+  :root[data-platform='android'] [data-kit='field'] { gap: var(--space-2); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='field-label'] { color: var(--on-surface-var); font: var(--type-body-s); letter-spacing: var(--track-body-s); }
+  :root[data-platform='android'] [data-kit='field'][data-float] { position: relative; }
+  :root[data-platform='android'] [data-kit='field'][data-float] > [data-kit='field-label'] {
+    position: absolute;
+    z-index: 1;
+    top: var(--space-0);
+    left: calc(var(--field-pad) - var(--field-label-pad));
+    max-width: calc(100% - var(--field-pad) * 2);
+    padding: var(--space-0) var(--field-label-pad);
+    overflow: hidden;
+    background: var(--field-notch, var(--surface-c0));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    translate: 0 -50%;
+    pointer-events: none;
+  }
+  :root[data-platform='android'] [data-kit='field'][data-float]:focus-within > [data-kit='field-label'] { color: var(--primary); }
+  :root[data-platform='android'] [data-kit='field'][data-invalid] > [data-kit='field-label'] { color: var(--error); }
+  :root[data-platform='android'] [data-kit='field-hint'],
+  :root[data-platform='android'] [data-kit='field-error'] { padding: var(--space-0) var(--field-pad); font: var(--type-body-s); letter-spacing: var(--track-body-s); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='field-error'] { color: var(--error); }
+
+  /* A Select's long list (phone.tsx SelectSheet): radio rows in the bottom sheet, 56 dp, the radio leading */
+  :root[data-platform='android'] [data-kit='select-sheet'] { display: flex; flex-direction: column; margin: var(--space-0) calc(var(--inset) * -1); padding-bottom: var(--space-4); }
+  :root[data-platform='android'] [data-kit='select-sheet-item'] {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--row-lead-gap);
+    width: 100%;
+    min-height: var(--row-h-1);
+    padding: var(--space-0) var(--inset);
+    border: 0;
+    background: transparent;
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='select-sheet-item']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='select-sheet-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='android'] [data-kit='select-sheet-item']:disabled { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='select-sheet-label'] { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root[data-platform='android'] [data-kit='select-sheet-group'] { padding: var(--space-6) var(--inset) var(--space-2); font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--on-surface-var); }
+  /* the M3 radio button: a 20 dp ring, 2 dp, a 10 dp dot when picked, in primary */
+  :root[data-platform='android'] [data-kit='select-sheet-radio'] {
+    flex: none;
+    width: var(--radio);
+    height: var(--radio);
+    border: var(--size-ring) solid var(--on-surface-var);
+    border-radius: var(--radius-pill);
+    transition: border-color var(--dur-short) var(--ease-standard), box-shadow var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='select-sheet-radio'][data-checked] { border-color: var(--primary); box-shadow: inset 0 0 0 calc((var(--radio) - var(--size-ring) * 2 - var(--radio-dot)) / 2) var(--surface-c1), inset 0 0 0 var(--radio) var(--primary); }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='android'] [data-kit='button']:not([data-variant='link']):active::after,
+    :root[data-platform='android'] [data-kit='icon-button']:active::after,
+    :root[data-platform='android'] [data-kit='tab']:active::before { background-size: 0% 0%; transition: none; }
+    :root[data-platform='android'] [data-kit='switch'],
+    :root[data-platform='android'] [data-kit='switch-thumb'],
+    :root[data-platform='android'] [data-kit='select-trigger'] > [data-kit='icon'],
+    :root[data-platform='android'] [data-kit='select-sheet-radio'] { transition: none; }
+  }
+
+  /* Step 13: the task page, New task and Search (design/mobile.md §A.2). A pushed page's TopAppBar sits at its pane's
+     top, over the page's scroller (the browser's split head is laid out there by `order`, so is this). */
+  :root[data-platform='android'] [data-kit='frame-pane'] > [data-kit='app-bar'] { order: -1; }
+  /* the task page's status pills under its bar, before the page (QA round 6 phone #14: they followed the reply box) */
+  :root[data-platform='android'] [data-kit='frame-pane'] > [data-kit='page-status'] { order: -1; }
+  /* a menu's key hints: no keyboard on a phone (design/mobile.md §A.2: keyboard-only things are hidden) */
+  :root[data-platform='android'] [data-kit='menu-item'] > [data-kit='kbd'] { display: none; }
+  /* the bar's search icon (the M3 search view opens from it), the page's ⋮, a compose bar's Send (an M3 text button) */
+  :root[data-platform='android'] [data-kit='app-bar-search-icon'] { display: contents; }
+  :root[data-platform='android'] [data-kit='app-bar-actions'] > [data-kit='app-bar-search-icon'] > [data-kit='icon-button'],
+  :root[data-platform='android'] [data-kit='app-bar-actions'] > [data-kit='icon-button'] {
+    width: var(--bar-icon-target);
+    height: var(--bar-icon-target);
+    border-radius: var(--radius-pill);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='app-bar-confirm'] { display: flex; flex: none; padding-left: var(--space-2); }
+  :root[data-platform='android'] [data-kit='app-bar-confirm'] > [data-kit='button'] {
+    height: var(--button-h);
+    padding: var(--space-0) var(--button-pad-sm);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--primary);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='app-bar-confirm'] > [data-kit='button']:active { background: color-mix(in srgb, var(--primary) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='app-bar-confirm'] > [data-kit='button']:disabled { color: var(--on-surface); opacity: var(--state-disabled); }
+  /* New task's Start: the full-screen dialog's one primary action, a filled M3 button (UX 2026-11-18 phone #5, QA r6 #11) */
+  :root[data-platform='android'] [data-kit='app-bar'][data-kind='compose'] [data-kit='app-bar-confirm'] > [data-kit='button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='android'] [data-kit='app-bar'][data-kind='compose'] [data-kit='app-bar-confirm'] > [data-kit='button']:active { background: color-mix(in srgb, var(--on-primary) calc(var(--state-pressed) * 100%), var(--primary)); }
+  :root[data-platform='android'] [data-kit='app-bar'][data-kind='compose'] [data-kit='app-bar-confirm'] > [data-kit='button']:disabled {
+    background: color-mix(in srgb, var(--on-surface) 12%, transparent);
+    color: color-mix(in srgb, var(--on-surface) 38%, transparent);
+    opacity: 1;
+  }
+  /* New task: the M3 full-screen dialog over the list (it comes up from the FAB's corner); the destinations give way */
+  :root[data-platform='android'] [data-kit='frame'][data-behind][data-page='main'] > [data-kit='frame-nav'] { display: none; }
+  :root[data-platform='android'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'] {
+    background: var(--surface-c0);
+    animation: k-android-full var(--dur-medium) var(--ease-emph-out);
+  }
+  @keyframes k-android-full { from { opacity: 0; transform: translateY(var(--space-9)); } }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='split-home'] { padding: var(--space-4) var(--space-4) var(--space-9); }
+  /* the composer on a phone (owner, 2026-11-17): the New task sheet's field runs the screen's width, inset only as far
+     as the sheet's Cancel (8), and its prompt and tool bar scroll with no bar drawn (reset.css styles WebKit's scrollbars,
+     which would draw a classic one inside the field; scrollbar-width alone doesn't hide that one) */
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='prompt'],
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='reply'],
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'],
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar'] { scrollbar-width: none; }
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='prompt']::-webkit-scrollbar,
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='reply']::-webkit-scrollbar,
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar']::-webkit-scrollbar,
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar']::-webkit-scrollbar { display: none; }
+  /* the composer as an M3 docked bar: a filled field with the extra-large shape, Send a filled icon button */
+  :root[data-platform='android'] [data-kit='reply-box'],
+  :root[data-platform='android'] [data-kit='launcher'] {
+    border: 0;
+    border-radius: var(--radius-xl);
+    background: var(--surface-c2);
+    box-shadow: none;
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='android'] [data-kit='launcher']:focus-within,
+  :root[data-platform='android'] [data-kit='launcher'][data-open] { border: 0; box-shadow: none; }
+  /* the bar's tools scroll under Send (pinned at the end) when they don't fit a narrow phone */
+  :root[data-platform='android'] [data-kit='reply-box'] { padding-left: var(--space-4); }
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar'],
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'] { gap: var(--space-2); overflow-x: auto; scrollbar-width: none; }
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='send'],
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='send'] {
+    position: sticky;
+    right: var(--space-0);
+    /* the touch size as drawn (QA r6 phone #8): the box is --tap-min, its circle the platform's small button inside it */
+    width: var(--tap-min);
+    height: var(--tap-min);
+    padding: calc((var(--tap-min) - var(--icon-button-sm)) / 2);
+    border-radius: var(--radius-pill);
+    background: var(--primary);
+    background-clip: content-box;
+    color: var(--on-primary);
+    /* the tools scrolled under it don't show through: the box's colour around the circle, and a ring past it */
+    box-shadow: inset 0 0 0 calc((var(--tap-min) - var(--icon-button-sm)) / 2) var(--surface-c2), 0 0 0 var(--space-2) var(--surface-c2);
+  }
+  /* nothing typed yet: Send is off, as the sheet's header Send (QA r2 #12); a solid fill, so the tools under it stay hidden */
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='send']:disabled {
+    background-color: color-mix(in srgb, var(--on-surface) 12%, var(--surface-c2));
+    color: color-mix(in srgb, var(--on-surface) 38%, var(--surface-c2));
+    cursor: default;
+  }
+  /* the task's Details (from its menu): the browser's details column as a list in the sheet: the state, the harness
+     and model, its folders, the branch, its usage; its actions are the menu's */
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-bar'] { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-6); margin: var(--space-0); padding: var(--space-0) var(--space-0) var(--space-6); background: transparent; }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-props'] { flex-direction: column; align-items: flex-start; gap: var(--space-5); font: var(--type-body-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'] {
+    --tone: var(--good);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: color-mix(in srgb, var(--tone) 85%, var(--on-surface));
+  }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'][data-tone='info'],
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'][data-tone='live'] { --tone: var(--primary); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'][data-tone='bad'] { --tone: var(--error); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'][data-tone='warn'] { --tone: var(--warn); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='model-logo'] { align-items: center; gap: var(--space-3); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='ml-name'] { display: inline; }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-meta'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-actions']:empty { display: none; }
+  /* Search: the M3 search view, full screen from the bar's search icon: the field row (Back, the query) on the
+     container-high surface, a divider, the results as one-line list items; no keyboard hints */
+  :root[data-platform='android'] [data-kit='backdrop'][data-place='top'] { background: transparent; }
+  :root[data-platform='android'] [data-kit='dialog-positioner'][data-place='top'] { place-items: stretch; padding: var(--space-0); }
+  :root[data-platform='android'] [data-kit='dialog'][data-place='top'] {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: var(--space-0);
+    padding: var(--safe-top) var(--space-0) var(--space-0);
+    border: 0;
+    border-radius: var(--space-0);
+    background: var(--surface-c3);
+    box-shadow: none;
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+    animation: k-android-search var(--dur-medium) var(--ease-emph-out);
+  }
+  @keyframes k-android-search { from { opacity: 0; clip-path: inset(var(--space-0) var(--space-0) 100% var(--space-0)); } }
+  :root[data-platform='android'] [data-kit='pal-input'] { height: var(--bar-h); gap: var(--space-2); padding: var(--space-0) var(--bar-pad); border-bottom: var(--hairline) solid var(--outline); }
+  :root[data-platform='android'] [data-kit='pal-input'] > [data-kit='icon-button'] { width: var(--bar-icon-target); height: var(--bar-icon-target); border-radius: var(--radius-pill); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='pal-input'] > [data-kit='icon'] { margin: var(--space-0) var(--space-4); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='pal-input'] > input { font: var(--type-body-l); letter-spacing: var(--track-body-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='pal-input'] > input::placeholder { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='pal-list'] { padding: var(--space-2) var(--space-0); }
+  :root[data-platform='android'] [data-kit='pal-group'] { padding: var(--space-6) var(--inset) var(--space-2); font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='pal-row'] {
+    height: var(--row-h-1);
+    gap: var(--row-lead-gap);
+    padding: var(--space-0) var(--inset);
+    border-radius: var(--space-0);
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+  }
+  :root[data-platform='android'] [data-kit='pal-row'][data-on] { background: transparent; }
+  :root[data-platform='android'] [data-kit='pal-row']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='pal-sub'] { font: var(--type-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='pal-kbd'],
+  :root[data-platform='android'] [data-kit='pal-foot'] { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='android'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'],
+    :root[data-platform='android'] [data-kit='dialog'][data-place='top'] { animation: none; }
+  }
+  /* v1 responsive.css: an empty Recipes list is not worth a phone's screen (Home.tsx sets data-empty on phones only);
+     Start from an issue stays, at the row's end */
+  :root[data-platform='android'] [data-kit='lr-list'][data-empty] { display: none; }
+  :root[data-platform='android'] [data-kit='lr-list'][data-empty] ~ [data-part~='launcher.issue'] { margin-inline-start: auto; }
+
+  /* Selection mode (step 13, design/mobile.md §A.4): M3's contextual top app bar (×, the count, the bulk actions) on a
+     container tone; each row leads with its check circle in the dot's column, a picked row in the secondary container,
+     and the rows' own quick actions step aside */
+  :root[data-platform='android'] [data-kit='app-bar'][data-kind='select'] { background: var(--surface-c2); }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='row-pick'] {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-avatar-sm);
+    height: var(--size-avatar-sm);
+    border: var(--size-ring) solid var(--on-surface-var);
+    border-radius: var(--radius-pill);
+    color: var(--on-primary);
+  }
+  :root[data-platform='android'] [data-kit='list-row'][data-picked] > [data-kit='row-pick'] { border-color: var(--primary); background: var(--primary); }
+  :root[data-platform='android'] [data-kit='list-row'][data-picked] { background: var(--primary-container); }
+  :root[data-platform='android'] [data-kit='list-row'][data-picking] > [data-kit='list-row-actions'] { display: none; }
+
+  /* Step 14 (design/mobile.md §A.2): My Stuff's group headers as M3 list subheaders (title small, on-surface-variant) */
+  :root[data-platform='android'] [data-kit='stuff-phone-group-head'] { font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--on-surface-var); }
+
+  /* tap targets at least 48 dp (M3: touch targets) (QA r2 #6): a turn's tools and 👍/👎, the story viewer's Pause, More and Close, My
+     Stuff's row More; the icon keeps its size, its box takes the room */
+  :root[data-platform='android'] [data-kit='trail-bar'] [data-kit='tb-btn'],
+  :root[data-platform='android'] [data-kit='trail-bar'] [data-kit='rate-btn'],
+  :root[data-platform='android'] [data-kit='story-head'] [data-kit='icon-button'],
+  :root[data-platform='android'] [data-part~='stuff.phone.row.menu.trigger'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  /* QA phone r3 A6: the PR card's Check now and a block's Comment on this were 28 and 29 px: a finger's 48dp */
+  :root[data-platform='android'] [data-part~='side.pr.check'],
+  :root[data-platform='android'] [data-part~='pr.strip.check'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  :root[data-platform='android'] [data-kit='cmt-add'] { width: var(--tap-min); height: var(--tap-min); top: calc(var(--tap-min) / -2); right: calc(var(--space-4) * -1); }
+  /* QA phone r3 #3: the goal line says what it's for, as a native form names its field (v1's narrow box gave the label's
+     room to the condition; the hint now gives way with "…") */
+  :root[data-platform='android'] [data-kit='lg-k'] > [data-text='control'] { display: inline; }
+  /* QA phone r4 #1: New task's bar too narrow for its tools (bar-labels.ts measures it): the pill keeps its logo alone, its +
+     (Try another agent, in More too) and its model's words fold, so More never goes under Send */
+  :root[data-platform='android'] [data-kit='l-bar'][data-tight] [data-kit='vs-btn']:not([data-del]),
+  :root[data-platform='android'] [data-kit='l-bar'][data-tight] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: none; }
+  :root[data-platform='android'] [data-kit='l-bar'][data-tight] [data-kit='runner-btn'] > [data-kit='auto-pv'] { display: none; }
+  /* a picked file's agent says its model and thinking after its name when the row has room, as desktop does (audit H
+     tasks note: "critic · Codex" alone); the model gives way first (it shrinks, ending in …) */
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='runner-btn'][data-file] > [data-kit='auto-pv'] { display: flex; flex: 0 10000 auto; min-width: 0; }
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='runner-btn'][data-file] > [data-kit='auto-pv'] > [data-kit='apv-l'] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* The task's side page (Changes, PR, Shell, Preview; QA round 2 #9): an M3 page head, not the browser's pill strip
+     squeezed to icons. Close leads (a full-screen page), then the panel's primary tabs, each named, across the row;
+     the row is the touch height, under the status bar (the frame body's inset), its divider under it. */
+  :root[data-platform='android'] [data-pane='side'] [data-part~='side.head'] {
+    height: auto;
+    min-height: var(--tab-h);
+    gap: var(--space-0);
+    padding: var(--space-0) var(--space-2) var(--space-0) var(--space-0);
+    border-bottom: var(--hairline) solid var(--outline-var);
+  }
+  :root[data-platform='android'] [data-pane='side'] [data-part~='side.head'] > [data-kit='box'] { display: none; }
+  :root[data-platform='android'] [data-pane='side'] [data-part~='side.head'] > [data-kit='icon-button'] { order: -1; min-width: var(--tap-min); min-height: var(--tap-min); }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: var(--space-0);
+    padding: var(--space-0);
+    border: 0;
+    border-radius: var(--space-0);
+    background: transparent;
+  }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { flex: 1 1 auto; border-bottom: 0; }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] {
+    /* by its name's width, the room left shared out: a short name (PR) never takes a long one's room */
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    padding: var(--space-0) var(--space-1);
+  }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] > [data-kit='icon'] { display: none; }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { display: inline; }
+
+  /* a toast sits under an open menu or sheet, never over it (QA r2 #5: the error toast was drawn over the task's ⋯),
+     still over the page */
+  :root[data-platform='android'] [data-kit='toasts'] { z-index: calc(var(--z-menu) - 1); }
+
+  /* New task's bar fits a phone (QA r2 #2; ADR-0012 label → icon): its tail folds into More (HomeView), and the harness
+     pill folds to its logo and chevron in the compact size class (v1 hid the name at 520 px; the tooltip names it) */
+  @media (not (min-width: 600px)) {
+    :root[data-platform='android'] [data-kit='launcher'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: none; }
+  }
+}
+
+@layer kit {
+  /* an Org card's role on a phone card (~150 px at 360): one line with an ellipsis, never "Crew / member" on two (QA
+     phone r3 #2; v1's two-line role is the desktop's) */
+  :root[data-platform='android'] [data-kit='org-who'] > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Settings' search on a phone (M3 Search: the search bar keeps the screen's 16 dp margins), as the list under it; it stood on the screen's edge (QA round 4 #4) */
+  :root[data-platform='android'] [data-kit='settings-nav-search'] { padding: var(--space-0) var(--inset) var(--space-4); }
+
+  /* UX 2026-11-18 phone #4: every composer control has the platform's touch target (HIG 44 pt, M3 48 dp); the icon
+     keeps its size, its box takes the room. Send keeps its filled circle and gets the room as an invisible hit slop. */
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar'] > button:not([data-kit='send']),
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar'] [data-kit='c-chips'] > button,
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'] > button:not([data-kit='send']) { min-width: var(--tap-min); min-height: var(--tap-min); }
+  /* the harness pill (its logo, its ▾, Run on another agent too) keeps its shape, centred in the bar's touch height */
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'] > [data-kit='runners'] { align-self: center; }
+
+  /* UX 2026-11-18 phone #10: a task row says only what differs: the place goes when it is this computer (a row from
+     another computer or a sandbox still names it), and a finished row's title stays ink (its dot says it's done) */
+  :root[data-platform='android'] [data-kit='row-run'][data-local] > [data-kit='ir-w'] { display: none; }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-quiet] [data-kit='list-row-title'] { color: var(--on-surface); }
+
+  /* UX 2026-11-18 phone #13: the Shell's key row is the pane's bottom edge, right over the keyboard (an input accessory,
+     as Termius and Prompt keep it); the shell's name and End shell go to the top, under the sheet's tabs */
+  :root[data-platform='android'] [data-part~='side.shell.foot'] { order: -1; padding: var(--space-2) var(--inset); }
+  :root[data-platform='android'] [data-part~='side.shell.screen'] [data-kit='term-keys'] { padding-bottom: var(--space-2); }
+
+  /* UX 2026-11-18 phone #1: the reply bar's options chip (an M3 assist chip: the mode, its harness's logo, ▾) and its
+     sheet's rows (M3 list items: icon, label and its supporting line, the check of the one in use) */
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-opts'] {
+    display: inline-flex; align-items: center; gap: var(--space-3); flex: 0 1 auto; min-width: 0; min-height: var(--tap-min);
+    padding: var(--space-0) var(--space-5); border: var(--hairline) solid var(--outline-var); border-radius: var(--radius-sm);
+    background: transparent; color: var(--on-surface); font: var(--type-label-l);
+  }
+  :root[data-platform='android'] [data-kit='c-opts'] > [data-kit='icon']:last-child { transform: rotate(90deg); }
+  :root[data-platform='android'] [data-kit='c-opts'] > [data-kit='c-opts-mode'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* too tight for the mode's words: the chip folds to its icons, never cutting a word (QA r9 #3; ReplyOptions.tsx) */
+  :root[data-platform='android'] [data-kit='c-opts'][data-folded] { flex-shrink: 0; }
+  :root[data-platform='android'] [data-kit='c-opts'][data-folded] > [data-kit='c-opts-mode'] { display: none; }
+  :root[data-platform='android'] [data-kit='c-opts'] > [data-kit='icon'] { flex: none; color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='c-opts']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='opts-list'] { display: flex; flex-direction: column; gap: var(--space-4); padding-bottom: var(--space-6); }
+  :root[data-platform='android'] [data-kit='opts-group'] { display: flex; flex-direction: column; }
+  :root[data-platform='android'] [data-kit='opts-head'] { padding: var(--space-4) var(--inset); font: var(--type-title-s); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='opts-row'] {
+    display: grid; grid-template-columns: var(--size-icon-lg) minmax(0, 1fr) auto; align-items: center; gap: var(--space-7);
+    min-height: var(--tap-min); padding: var(--space-4) var(--inset); text-align: start; color: var(--on-surface); font: var(--type-body-l);
+  }
+  :root[data-platform='android'] [data-kit='opts-row'] > [data-kit='icon'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='opts-row'][aria-checked='true'],
+  :root[data-platform='android'] [data-kit='opts-row'][data-on] { background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='opts-row']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='opts-text'] { display: flex; flex-direction: column; min-width: 0; }
+  :root[data-platform='android'] [data-kit='opts-text'] > small { font: var(--type-body-m); color: var(--on-surface-var); }
+
+  /* UX 2026-11-18 phone #3: the task page's status pills under its bar (M3 assist chips, 32 dp in a 48 dp target), one
+     line that scrolls sideways; a pill whose pane is open is selected */
+  :root[data-platform='android'] [data-kit='page-status'] {
+    display: flex; flex-wrap: nowrap; gap: var(--space-4); overflow-x: auto; scrollbar-width: none;
+    padding: var(--space-0) var(--inset) var(--space-4); background: var(--surface-c0);
+  }
+  :root[data-platform='android'] [data-kit='page-status']::-webkit-scrollbar { display: none; }
+  :root[data-platform='android'] [data-kit='page-pill'] {
+    display: inline-flex; flex: none; align-items: center; gap: var(--space-3); min-height: var(--tap-min);
+    padding: var(--space-0) var(--space-6); border: var(--hairline) solid var(--outline-var); border-radius: var(--radius-sm);
+    background-clip: content-box; color: var(--on-surface); font: var(--type-label-l);
+  }
+  :root[data-platform='android'] [data-kit='page-pill'] > [data-kit='icon'] { color: var(--primary); }
+  :root[data-platform='android'] [data-kit='page-pill'][aria-pressed='true'] { background-color: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+
+  /* UX 2026-11-18 phone #5: New task has one primary action, the bar's Start (the sheet's / full-screen dialog's
+     confirm); the box's round Send and the harness's + (Run on another agent too, in More) give way to it */
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='launcher'] [data-kit='l-bar'] [data-kit='send'],
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='launcher'] [data-kit='l-bar'] [data-kit='vs-btn']:not([data-del]) { display: none; }
+
+  /* UX 2026-11-18 phone #8: an older answer's icons wait behind its ⋯ (the latest answer's stay out); the ⋯ has the
+     platform's touch target, as the icons it opens */
+  /* the answer's menu is the one overlay: the selection's Comment bubble and a block's Comment button wait under it
+     (QA r10 #5; turn-menu.ts marks the page while it is open) */
+  :root[data-platform='android'] [data-answer-menu] [data-kit='cmt-bubble'],
+  :root[data-platform='android'] [data-answer-menu] [data-kit='cmt-add']:not([data-on]) { visibility: hidden; }
+  /* an older answer's icons fold into its ⋯, which ends the row (QA r10 #6) */
+  :root[data-platform='android'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools'] > [data-kit='tb-btn'],
+  :root[data-platform='android'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools'] > [data-kit='rate'] { display: none; }
+  :root[data-platform='android'] [data-kit='tb-more'] { display: inline-flex; }
+  :root[data-platform='android'] [data-kit='tb-more'] button { min-width: var(--tap-min); min-height: var(--tap-min); color: var(--on-surface-var); }
+
+  /* UX 2026-11-18 phone #9: the thinking levels named under the track (each a tap target the width of its stop) */
+  :root[data-platform='android'] [data-kit='think-labels'] { position: relative; display: block; height: var(--tap-min); margin-top: var(--space-2); }
+  :root[data-platform='android'] [data-kit='think-label'] {
+    position: absolute; top: 0; left: calc(var(--at) * 100%); transform: translateX(-50%);
+    min-width: var(--tap-min); max-width: calc(100% / 6); height: var(--tap-min); padding: var(--space-0);
+    color: var(--on-surface-var); font: var(--type-label-s, var(--type-footnote)); text-align: center;
+  }
+  :root[data-platform='android'] [data-kit='think-label']:first-child { transform: none; left: 0; text-align: start; }
+  :root[data-platform='android'] [data-kit='think-label']:last-child { transform: none; left: auto; right: 0; text-align: end; }
+  :root[data-platform='android'] [data-kit='think-label'][data-on] { color: var(--primary); font-weight: var(--fw-semibold); }
+
+  /* UX 2026-11-18 phone #14: an empty state that explains itself in a sentence (Thread's Notes) reads as body text,
+     not a 30-word title */
+  :root[data-platform='android'] [data-kit='empty-state'][data-part~='threads.empty'] [data-kit='empty-state-title'] { font: var(--type-body, var(--type-body-l)); color: var(--on-surface-var); text-wrap: pretty; }
+
+  /* the side panel as the phone's sheet (#3): the sheet is its edge, so the panel's own left rule (the browser's divider
+     beside the task) goes */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.panel'] { border-left: 0; }
+
+  /* UX 2026-11-18 phone #13: with the keyboard up the Shell's key row rides on it (an input accessory, as Termius and
+     Prompt), the keyboard's height from the visual viewport (terminal/accessory.ts) */
+  :root[data-platform='android'] [data-kit='term-keys'][data-accessory] {
+    position: fixed; left: 0; right: 0; bottom: var(--k-kb, var(--space-0)); z-index: var(--z-toast);
+    padding: var(--space-2) var(--inset); background: var(--surface-c1); border-top: var(--hairline) solid var(--outline-var);
+  }
+
+  /* UX 2026-11-18 phone #9: the agent picker is a page of its own (pushed from the reply's options): the screen's width
+     from the bottom, Back over it, its harnesses one row of segments, its models a list, the thinking levels named */
+  :root[data-platform='android'] [data-kit='picker'] {
+    position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: calc(100% - var(--safe-top) - var(--tap-min));
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr);
+    padding-bottom: var(--safe-bottom); border-radius: var(--radius-xl) var(--radius-xl) 0 0; transform: none;
+  }
+  :root[data-platform='android'] [data-kit='pk-back'] {
+    grid-column: 1 / -1; display: inline-flex; align-items: center; gap: var(--space-2); justify-self: start;
+    min-height: var(--tap-min); padding: var(--space-0) var(--inset); color: var(--primary); font: var(--type-body, var(--type-body-l));
+  }
+  :root[data-platform='android'] [data-kit='picker'] [data-kit='pk-side'] { flex-direction: row; overflow-x: auto; border-right: 0; scrollbar-width: none; }
+  :root[data-platform='android'] [data-kit='picker'] [data-kit='pk-side'] > [data-kit='pk-head'],
+  :root[data-platform='android'] [data-kit='picker'] [data-kit='pk-h'] > [data-kit='pk-text'] > small { display: none; }
+  :root[data-platform='android'] [data-kit='picker'] [data-kit='pk-h'] { width: auto; flex: none; min-height: var(--tap-min); }
+
+  /* UX 2026-11-18 phone #5: New task's setup as a short list under the prompt (HIG's grouped rows, M3 list items): the
+     place, the permissions, the harness by name and Delegate, a row each saying what it is; attach and More (…) on the
+     last line; Start is the bar's (the box's own Send gave way) */
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='launcher'] [data-kit='l-bar'] {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-0); overflow: visible;
+  }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where'],
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='mode-btn'],
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'],
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='team'] {
+    grid-column: 1 / -1; display: flex; justify-content: flex-start; align-items: center; gap: var(--space-5); width: 100%;
+    min-height: var(--tap-min); padding: var(--space-0) var(--space-2); border-bottom: var(--hairline) solid var(--outline-var); border-radius: 0; background: transparent;
+    font: var(--type-body-l); color: var(--on-surface);
+  }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where']::after,
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='team']::after {
+    content: attr(aria-label); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where'] > [data-text='control'] { display: none; }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'],
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: inline; }
+  /* the harness row is a whole row to tap, as tall as the rows above and below it (QA r6 phone #8) */
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] {
+    flex: 1; justify-content: flex-start; gap: var(--space-5); min-height: var(--tap-min); padding: var(--space-0); border: 0; border-radius: 0;
+    background: transparent; font: var(--type-body); color: var(--on-surface);
+  }
+  /* its words at the list's size, its mark like the rows' icons (no chip behind it): it reads as a row like its siblings (QA r7 phone #8) */
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] [data-text='control'] { font: inherit; }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] > [data-kit='rb-logo'] { width: var(--size-icon); height: var(--size-icon); margin-right: var(--space-0); background: transparent; }
+  /* a control's panel as a sheet (Delegate, QA r6 phone #7): the sheet's width, not the popover card's */
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='team-pop'] { width: auto; max-height: none; }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='attach'] { grid-column: 1; order: 1; }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='grow'] { grid-column: 2; order: 1; }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='more'] { grid-column: 3; order: 1; }
+
+  /* the side panel's sheet (#3) on Android (one detent): tall enough for a pane that has no height of its own (the
+     Shell's terminal, a preview's frame), the task still showing above it */
+  :root[data-platform='android'] [data-kit='sheet'][data-part~='phone.side.sheet'] { height: 70dvh; }
+  :root[data-platform='android'] [data-kit='sheet'][data-part~='phone.side.sheet'] [data-part~='side.panel'] { height: 100%; }
+
+  /* QA r6 #5: the side sheet's tabs say their names (Changes · PR · Shell · Preview · Thread), each a touch target, one
+     row that scrolls sideways when it runs out of room; text tabs (M3 primary tabs / an iOS segment: the name, no icon),
+     the browser's pill frame gone, so the five fit a 360 px phone */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] { flex: 1 1 auto; overflow-x: auto; scrollbar-width: none; margin-left: var(--space-0); padding: var(--space-0); border-width: 0; background: none; }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] > [data-kit='icon'] { display: none; }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { display: inline; font: var(--type-title-s); letter-spacing: var(--track-title-s); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { flex: none; width: max-content; min-width: 100%; overflow: visible; gap: var(--space-0); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] { flex: none; width: auto; min-height: var(--tap-min); min-width: var(--tap-min); padding: var(--space-0) var(--space-2); font: var(--type-title-s); letter-spacing: var(--track-title-s); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] { margin-left: calc(var(--space-5) * -1); padding-left: var(--space-0); padding-right: var(--space-0); }
+  /* an M3 modal bottom sheet closes by its drag handle, the scrim and Back: no ✕ in its head (nor the spacer before
+     it), so the five tabs fit a 360 px phone */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-kit='icon-button']:last-child,
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-kit='box'] { display: none; }
+  /* QA r7 #5: when the five don't fit (a count beside Changes, a larger text size) the row scrolls, its open tab kept in
+     view, and the end it can still scroll to fades out (the kit marks it: Tabs.tsx markEnds): no name is cut hard */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'][data-scroll-end] { -webkit-mask-image: linear-gradient(90deg, var(--on-surface) calc(100% - var(--space-8)), transparent); mask-image: linear-gradient(90deg, var(--on-surface) calc(100% - var(--space-8)), transparent); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'][data-scroll-start] { -webkit-mask-image: linear-gradient(270deg, var(--on-surface) calc(100% - var(--space-8)), transparent); mask-image: linear-gradient(270deg, var(--on-surface) calc(100% - var(--space-8)), transparent); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'][data-scroll-start][data-scroll-end] {
+    -webkit-mask-image: linear-gradient(90deg, transparent, var(--on-surface) var(--space-8), var(--on-surface) calc(100% - var(--space-8)), transparent);
+    mask-image: linear-gradient(90deg, transparent, var(--on-surface) var(--space-8), var(--on-surface) calc(100% - var(--space-8)), transparent);
+  }
+  /* QA r8 #1: the tabs have the whole row, so no name is cut at 320 px: the panel's ⋯ (where the work is: copy it, open
+     it elsewhere) sits at the sheet's top corner, in its grabber's 48 dp row (22 dp above and below the handle) */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-part='panel.place.more.trigger'] { position: absolute; top: var(--space-0); right: var(--space-2); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] [data-kit='icon-button'],
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] button[aria-haspopup] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  /* audit E #3: a phone's changed file (v1 panel.css .side-panel.stacked): the name alone on its line, whole, and
+     (two rows of one column, nothing wrapping) Stage · Viewed · ⋯ with the counts last on the line under it, from under the name. On one line the actions took 285
+     of 328 px and the name read "ex." under the +1. */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-head'] { display: grid; grid-template-columns: minmax(0, 1fr); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] { min-height: var(--space-0); padding-left: calc(var(--space-8) + var(--space-2)); margin-left: var(--space-0); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-stage'][data-none] { width: var(--space-0); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-n'] { order: 1; }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-n']:first-child { margin-left: auto; }
+}

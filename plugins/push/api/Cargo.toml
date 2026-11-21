@@ -1,0 +1,18 @@
+[package]
+name = "wisp-push-api"
+description = "wisp.push contract: push.pair, push.unpair, push.devices, push.answer, the sealed note and the relay's wire (ADR-0065 §3)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+wisp-channels-api.workspace = true
+wisp-kernel.workspace = true
+
+[lints]
+workspace = true

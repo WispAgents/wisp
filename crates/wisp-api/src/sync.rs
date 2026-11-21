@@ -1,0 +1,117 @@
+//! The sync endpoints (ADR-0005, plan §4.3) and the v1 event stream.
+//!   GET  /api/events?topics&cursor…  the v2 stream (any hello key in the query): wisp-sync's, mounted
+//!   POST /api/events                 sub, unsub, window, mutate for an open v2 stream (X-Wisp-Client)
+//!   POST /api/cmd                    a command by Idempotency-Key, outside any stream → `Kernel::call`
+//! wisp-sync plugs in through `SyncMount`; until it is mounted the v2 calls answer 503 (retry) and v1
+//! clients work as before. The `Hub` is also the kernel's `notify` service: a notice reaches v2 streams
+//! as a `notice` frame and v1 streams as an event of that name.
+use std::sync::{Arc, RwLock};
+
+use bytes::Bytes;
+use serde_json::{Value, json};
+use tokio::sync::mpsc;
+use wisp_kernel::services::Notify;
+use wisp_kernel::{BoxFuture, Caller, Result, WireError};
+
+/// The query keys that make GET /api/events a v2 hello (packages/sync `HelloQuery`).
+pub const HELLO_KEYS: [&str; 9] = ["proto_min", "proto_max", "client_id", "build", "epoch", "cursor", "topics", "fresh", "passive"];
+
+/// What wisp-sync provides to the edge.
+pub trait SyncMount: Send + Sync + 'static {
+    /// The v2 stream for a hello (the query) and its `Last-Event-ID`: SSE bytes, frame by frame.
+    fn events(&self, caller: Caller, query: Vec<(String, String)>, last_event_id: Option<String>) -> Result<mpsc::Receiver<Bytes>>;
+    /// A client message (sub, unsub, window, mutate) for the open stream `client`.
+    fn message(&self, caller: Caller, client: String, body: Bytes) -> BoxFuture<'static, Result<()>>;
+    fn notice(&self, kind: &str, data: &Value, topic: Option<&str>);
+    /// v2 streams with a non-passive subscription (a passive one never keeps a box awake)
+    fn looking(&self) -> usize;
+    /// the store's head seq, answered with a command's result
+    fn head_seq(&self) -> i64;
+}
+
+pub fn has_hello(query: &[(String, String)]) -> bool {
+    query.iter().any(|(k, _)| HELLO_KEYS.contains(&k.as_str()))
+}
+
+#[derive(Default)]
+pub struct Hub {
+    mount: RwLock<Option<Arc<dyn SyncMount>>>,
+}
+
+impl std::fmt::Debug for Hub {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Hub").field("mounted", &self.mounted().is_some()).finish_non_exhaustive()
+    }
+}
+
+impl Hub {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub fn mount(&self, m: Arc<dyn SyncMount>) {
+        if let Ok(mut slot) = self.mount.write() {
+            *slot = Some(m);
+        }
+    }
+
+    pub fn mounted(&self) -> Option<Arc<dyn SyncMount>> {
+        self.mount.read().ok().and_then(|m| m.clone())
+    }
+
+    /// Clients looking: streams with an active subscription.
+    pub fn looking(&self) -> usize {
+        self.mounted().map_or(0, |m| m.looking())
+    }
+}
+
+impl Notify for Hub {
+    fn notice(&self, kind: &str, data: Value, topic: Option<&str>) {
+        if let Some(m) = self.mounted() {
+            m.notice(kind, &data, topic);
+        }
+    }
+}
+
+pub use crate::idem::{Done, Idempotency};
+
+/// `POST /api/cmd`'s answer: `{ok: true, seq, result}` or `{ok: false, error: {code, message, retry}}`
+/// (packages/protocol `CommandResponse`), with the error's HTTP status.
+pub fn command_answer(out: Result<Value>, seq: i64) -> Done {
+    match out {
+        Ok(result) => (200, json!({"ok": true, "seq": seq, "result": result})),
+        Err(e) => {
+            let mut error = json!({"code": e.code, "message": e.message, "retry": e.retry});
+            // a veto's reason (the interceptor's code: `budget_hold`), so a client can answer it in place (ADR-0091)
+            if let Some(r) = e.details.as_ref().and_then(|d| d.get("reason")).filter(|r| r.is_string()) {
+                error["reason"] = r.clone();
+            }
+            (e.status(), json!({"ok": false, "error": error, "message": e.message}))
+        }
+    }
+}
+
+pub fn not_mounted() -> WireError {
+    WireError::unavailable("the v2 sync stream is not mounted in this build")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hello_keys() {
+        assert!(has_hello(&[("topics".into(), "list".into())]));
+        assert!(has_hello(&[("cursor".into(), "12".into())]));
+        assert!(!has_hello(&[("x".into(), "1".into())]));
+        assert!(!has_hello(&[]));
+    }
+
+    #[test]
+    fn command_answers() {
+        let (s, v) = command_answer(Ok(json!({"id": "x"})), 7);
+        assert_eq!((s, v["ok"].clone(), v["seq"].clone()), (200, json!(true), json!(7)));
+        let (s, v) = command_answer(Err(WireError::forbidden("no")), 7);
+        assert_eq!((s, v["error"]["code"].clone()), (403, json!("forbidden")));
+    }
+}

@@ -1,0 +1,57 @@
+---
+title: Documentation
+description: Manage the code your agents write. Run Claude Code, Codex and every coding agent from the app, the TUI or the CLI, declare them as code, and track every line they write.
+template: splash
+hero:
+  title: wisp docs
+  tagline: Manage the code your agents write. Declare them. Run them anywhere. Track every line they write.
+  actions:
+    - text: Install wisp
+      link: /docs/start/install/
+      icon: right-arrow
+    - text: Browse the guides
+      link: /docs/guides/
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+wisp runs Claude Code, Codex, Cursor, opencode, Antigravity, Grok and Copilot from one place: the desktop app, the
+browser, the terminal UI, the command line, your phone, or your own agent. It keeps every task they did next to the
+code they wrote. Every guide shows each step four ways: the **Desktop app** (the browser is the same), the **Phone app**, the
+**TUI** and the **CLI**.
+
+<CardGrid>
+  <Card title="Declare" icon="document">
+    Your agents, crew, machines, skills, MCP servers, rules and workflows as files in your repo's `.wisp/`
+    folder. Review them in a pull request like any code.
+    [Write your setup as code](/docs/concepts/formulas/)
+  </Card>
+  <Card title="Run" icon="rocket">
+    Any agent, many at once, each in its own git worktree, on this computer, your other computers or in the
+    cloud. Follow up, set goals, compare two agents on the same task.
+    [Run a task](/docs/guides/run/run-and-follow-up/)
+  </Card>
+  <Card title="Track" icon="magnifier">
+    Every task is a file: what was asked, what the agent said, the code it wrote. `wisp blame` tells you which
+    task wrote a line and why.
+    [Track agent work](/docs/guides/track/track-agent-work/)
+  </Card>
+  <Card title="Make it yours" icon="puzzle">
+    Everything in wisp is a plugin. Add a setting, a pane, a command or a whole channel with the same API the
+    built-ins use.
+    [Make wisp your own](/docs/plugins/make-wisp-your-own/)
+  </Card>
+</CardGrid>
+
+## For agents
+
+Every page is also plain markdown: add `.md` to its address. [`llms.txt`](/docs/llms.txt) lists them all and
+[`llms-full.txt`](/docs/llms-full.txt) holds them in one file.
+
+<CardGrid>
+  <LinkCard title="Start with your agent" description="Claude Code, Codex, Cursor, opencode, Copilot, Grok or Antigravity." href="/docs/guides/agents/claude-code/" />
+  <LinkCard title="The desktop and phone apps" description="Install the desktop app; join the phone app waitlist." href="/docs/guides/apps/desktop-app/" />
+</CardGrid>
+
+<LinkCard title="Reference" description="The CLI, every command, setting, MCP tool, answer block and resource kind, generated from the code." href="/docs/reference/cli/" />

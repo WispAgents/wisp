@@ -1,0 +1,81 @@
+{
+  "wispPlugin": 1,
+  "id": "wisp.settings",
+  "name": "Settings",
+  "version": "1.0.0-alpha.1",
+  "api": "^1",
+  "description": "wisp.settings: list, read and change every plugin's settings (the kernel's registry), and v1's /config",
+  "server": {
+    "builtin": "wisp-settings"
+  },
+  "permissions": [
+    "settings:read",
+    "settings:write"
+  ],
+  "activation": [
+    "onStartup"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "settings.list",
+        "title": "Every setting",
+        "readOnly": true
+      },
+      {
+        "id": "settings.get",
+        "title": "A setting's value",
+        "readOnly": true
+      },
+      {
+        "id": "settings.set",
+        "title": "Change a setting"
+      }
+    ],
+    "settings": [
+      {
+        "key": "settings.timeZone",
+        "type": "string",
+        "default": "",
+        "scope": "server",
+        "title": "Time zone: the one scheduled times are read in, an IANA name like Europe/Zurich (the app sets it from your device)"
+      },
+      {
+        "key": "settings.editor",
+        "type": "string",
+        "default": "vscode",
+        "title": "The editor files open in (vscode, cursor, windsurf, zed, idea, none)"
+      },
+      {
+        "key": "settings.notify",
+        "type": "enum",
+        "values": [
+          "on",
+          "off"
+        ],
+        "default": "off",
+        "title": "Desktop notifications when a task needs you or finishes"
+      },
+      {
+        "key": "settings.readTimes",
+        "type": "enum",
+        "values": [
+          "on",
+          "off"
+        ],
+        "default": "on",
+        "title": "Read times in prompts: a prompt that starts with a time (“in 5 min …”, “tomorrow at 9 …”) is scheduled for then"
+      },
+      {
+        "key": "settings.transcript",
+        "type": "enum",
+        "values": [
+          "on",
+          "off"
+        ],
+        "default": "off",
+        "title": "Open tasks on their transcript instead of the answer"
+      }
+    ]
+  }
+}

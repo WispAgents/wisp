@@ -1,0 +1,470 @@
+//! Running wisp here: the kernel with this build's plugin group and services, then the edge on
+//! 127.0.0.1:<port> (`WISP_HOST` in a grid container), until Ctrl-C or SIGTERM. Env read once here:
+//!   `WISP_HOME`, `WISP_PORT`, `WISP_HOST`, `WISP_WEB_DIR`, `WISP_EXIT_WITH_STDIN` (the desktop app's child),
+//!   `WISP_BOX` (a grid box: the `box` set, `BoxPlugins`),
+//!   `WISP_TRUSTED_PROXY_SECRET`, `WISP_PUBLIC_URL`, `WISP_PREVIEW_URL`, `WISP_BROWSER` (the program a page opens with).
+use std::net::IpAddr;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
+
+use wisp_api::{Edge, EdgeConfig, Hub, Server, TrustedProxy};
+use wisp_kernel::services::NotifyService;
+use wisp_kernel::{App, Kernel};
+
+use crate::client::{CliError, Result};
+use crate::groups::{Group, Where};
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn env(k: &str) -> Option<String> {
+    std::env::var(k).ok().filter(|v| !v.is_empty())
+}
+
+/// The built web app: `WISP_WEB_DIR`, else `web/` beside or above the binary, else (a dev build) the
+/// checkout's apps/web/dist.
+pub fn web_dir() -> Option<PathBuf> {
+    if let Some(d) = env("WISP_WEB_DIR") {
+        return Some(PathBuf::from(d));
+    }
+    let exe = std::env::current_exe().ok()?;
+    let at = exe.parent()?;
+    let mut tries = vec![at.join("web"), at.join("../web")];
+    if cfg!(debug_assertions) {
+        tries.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/web/dist"));
+    }
+    tries.into_iter().find(|d| d.join("index.html").is_file())
+}
+
+fn master_token() -> String {
+    let b: [u8; 16] = rand::random();
+    crate::services::hex(&b)
+}
+
+/// Who this wisp is to a client: features come from its plugins, not its version number. Each plugin that's on
+/// (active, or resolved and waiting on its first event) is listed with the commands and topics its manifest
+/// contributes: the UI's `hasFeature` gates a command on this list, so an empty one refused every gated command
+/// ("Mark read needs a newer wisp.runtime").
+fn peer(kernel: &Kernel) -> wisp_protocol::PeerInfo {
+    let name = env("HOSTNAME").or_else(|| env("COMPUTERNAME")).unwrap_or_else(|| "this computer".into());
+    let manifests: std::collections::BTreeMap<String, wisp_kernel::Manifest> =
+        kernel.manifests().into_iter().map(|m| (m.id.clone(), m)).collect();
+    let plugins = kernel
+        .status()
+        .into_iter()
+        .filter(|s| s.state == "active" || s.state == "resolved")
+        .map(|s| {
+            let m = manifests.get(&s.id);
+            let commands = m.map(|m| m.commands().into_iter().map(|c| c.id).collect()).unwrap_or_default();
+            let topics =
+                m.map(|m| m.contributions("topics").iter().filter_map(|t| t.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+            wisp_protocol::PeerPlugin { id: s.id, version: s.version, commands, topics, blocks: Vec::new() }
+        })
+        .collect();
+    wisp_protocol::PeerInfo {
+        peer: name.clone(),
+        name,
+        build: VERSION.into(),
+        version: VERSION.into(),
+        proto_min: 2,
+        proto_max: 2,
+        plugins,
+    }
+}
+
+/// How a task's agent reaches this wisp: the edge's address, and the task's own token (HMAC of the
+/// master token, `agent:session` for that task only; wisp-api's auth checks it).
+struct Access {
+    url: String,
+    master: String,
+}
+
+impl wisp_runtime_api::points::AgentAccess for Access {
+    fn url(&self) -> String {
+        self.url.clone()
+    }
+    fn token(&self, session: &str) -> String {
+        wisp_api::auth::session_token(&self.master, session)
+    }
+}
+
+#[derive(Debug)]
+pub struct Running {
+    pub server: Server,
+    pub kernel: Kernel,
+    pub started: Instant,
+    pub store: wisp_store::Store,
+    /// the store's commits feeding the v2 stream: dropped, the feed stops
+    pub feed: wisp_store::Subscription,
+    /// glibc's heap handed back after bursts of first looks (ADR-0084), stopped with the server
+    pub trimmer: Option<tokio::task::JoinHandle<()>>,
+}
+
+/// What `config` reads in full: the kernel's own kinds (settings, plugins). Plugins add theirs.
+fn snapshot_sources() -> Vec<wisp_api::v2_store::TopicSource> {
+    let config = |t: &str| t == "config";
+    [wisp_store::SETTING, wisp_store::PLUGIN]
+        .into_iter()
+        .map(|d| wisp_api::v2_store::TopicSource { kind: d.kind, key: d.key, matches: config, query: |_| wisp_store::Query::new() })
+        // the projects (wisp.runtime's `project` kind, `StoredKind::published`): read in full while runtime is on
+        .chain(std::iter::once(wisp_api::v2_store::TopicSource {
+            kind: "project",
+            key: "id",
+            matches: config,
+            query: |_| wisp_store::Query::new(),
+        }))
+        .chain(goal_sources())
+        .chain(threads_sources())
+        .collect()
+}
+
+/// wisp.runtime's tasks on `list`, read from the session table in pages (ADR-0081): the 50 latest unarchived first
+/// (ADR-0093: 100 sat at the 5 ms budget on CI's runners; 50 still fill the tallest first screen)
+/// (on the `(archived, updated_at)` index), then the rest 500 at a time, the archived
+/// last, all at one seq. A first look is one read, never a replay of every change the list ever had (~54 ms on
+/// 5 000 tasks, and empty once retention pruned the feed); a client with a cursor still resumes from the change feed.
+fn list_pages() -> Vec<wisp_api::v2_store::PagedSource> {
+    #[cfg(feature = "runtime")]
+    {
+        let s = wisp_runtime::schema::SESSION;
+        vec![wisp_api::v2_store::PagedSource {
+            kind: s.kind,
+            key: s.key,
+            matches: |t| t == wisp_runtime_api::TOPIC_LIST,
+            queries: |_| {
+                // ties on `updated_at` (an import) by id, so every page cuts the same order
+                let by = |archived: bool| wisp_store::Query::new().eq("archived", archived).desc("updated_at").desc("id");
+                vec![by(false), by(true)]
+            },
+            first: 50,
+            page: 500,
+        }]
+    }
+    #[cfg(not(feature = "runtime"))]
+    {
+        Vec::new()
+    }
+}
+
+/// wisp.goal's check records on their task's topic (`session:<id>`), read beside runtime's task window, so a check
+/// opened after it ran (Goal checks…) has its record on the first look.
+fn goal_sources() -> Vec<wisp_api::v2_store::TopicSource> {
+    #[cfg(feature = "goal")]
+    {
+        vec![wisp_api::v2_store::TopicSource {
+            kind: wisp_goal::runs::KIND,
+            key: "id",
+            matches: |t| t.starts_with("session:"),
+            query: |t| {
+                wisp_store::Query::new().eq("task", t.trim_start_matches("session:")).desc("started_at").limit(wisp_goal::runs::KEEP as u64)
+            },
+        }]
+    }
+    #[cfg(not(feature = "goal"))]
+    {
+        Vec::new()
+    }
+}
+
+/// The newest versions of a task's Notes a first look carries (each section's own versions are a handful: this is
+/// every one for any task but the longest); `threads.revisions` answers the rest.
+const THREAD_REVISIONS: u64 = 200;
+
+/// wisp.threads' rows on their task's topic (`session:<id>`, ADR-0079, ADR-0096): its Notes, their versions, the
+/// Notes' rev, the thread's health and the compaction audits, read beside runtime's task window. Without them a first
+/// look had none, and the next change's patch of `threads_meta` found no row: the topic drifted and its resync came
+/// back without them again (the Thread tab stayed empty while `wisp notes --set` wrote).
+fn threads_sources() -> Vec<wisp_api::v2_store::TopicSource> {
+    #[cfg(feature = "threads")]
+    {
+        use wisp_api::v2_store::TopicSource;
+        use wisp_threads::kinds;
+        let session = |t: &str| t.starts_with("session:");
+        vec![
+            TopicSource {
+                kind: kinds::NOTES,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("task_id", t.trim_start_matches("session:")),
+            },
+            TopicSource {
+                kind: kinds::REVISIONS,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("task_id", t.trim_start_matches("session:")).desc("at").limit(THREAD_REVISIONS),
+            },
+            TopicSource {
+                kind: kinds::META,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("id", t.trim_start_matches("session:")),
+            },
+            TopicSource {
+                kind: kinds::HEALTH,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("id", t.trim_start_matches("session:")),
+            },
+            TopicSource {
+                kind: kinds::AUDITS,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("task_id", t.trim_start_matches("session:")).desc("at"),
+            },
+        ]
+    }
+    #[cfg(not(feature = "threads"))]
+    {
+        Vec::new()
+    }
+}
+
+/// The topics a plugin reads itself for a first look: wisp.runtime's task window (v1 #788: the latest turns
+/// whole, older ones as stubs, only the whole ones' events), so a long task never sends every event it had; a
+/// change to a stubbed turn goes as its stub (ADR-0051).
+fn snapshot_readers() -> Vec<wisp_api::v2_store::TopicReader> {
+    #[cfg(feature = "runtime")]
+    {
+        use wisp_runtime::turn_window as w;
+        let live = wisp_api::v2_store::Live { kinds: w::LIVE_KINDS, change: w::live, delta: w::delta };
+        vec![wisp_api::v2_store::TopicReader { matches: w::matches, read: w::read, kinds: w::READ_KINDS, live: Some(live) }]
+    }
+    #[cfg(not(feature = "runtime"))]
+    {
+        Vec::new()
+    }
+}
+
+/// The user's own plugins (`<home>/plugins/<slug>`, ADR-0046) join the group, each off at start: the plugin manager
+/// switches back on the ones you switched on.
+fn with_user_plugins(g: wisp_kernel::PluginGroup, home: &Path) -> wisp_kernel::PluginGroup {
+    #[cfg(feature = "plugins")]
+    {
+        let mut g = g;
+        for p in wisp_plugins::user_plugins(&home.join("plugins")) {
+            let id = wisp_kernel::Plugin::manifest(&p).id;
+            g = g.add(p).disable(&id);
+        }
+        g
+    }
+    #[cfg(not(feature = "plugins"))]
+    {
+        let _ = home;
+        g
+    }
+}
+
+/// `<home>/wisp.db`, opened before the kernel so every plugin finds it as a service. Startup only:
+/// opening and migrating block, which is fine here and nowhere else.
+fn open_store(home: &Path) -> Result<wisp_store::Store> {
+    wisp_store::Store::open(wisp_store::Location::Path(home.join("wisp.db")), Arc::new(wisp_store::SystemClock))
+        .map_err(|e| CliError::said(format!("wisp could not open its database: {e}")))
+}
+
+pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running> {
+    let started = Instant::now();
+    // Windows (ADR-0070): every process this server starts is born in a job that ends with it, however it ends
+    #[cfg(feature = "proc")]
+    if let Err(e) = wisp_proc::nursery() {
+        tracing::warn!(error = %e, "no nursery job: a child started just as wisp is killed may outlive it");
+    }
+    let box_mode = env("WISP_BOX").is_some_and(|v| v != "0");
+    let hub = Hub::new();
+    let notify: NotifyService = hub.clone();
+    let at = Where { home: home.to_owned(), user_home: crate::services::user_home().unwrap_or_else(|| home.to_owned()) };
+    let fallback = if box_mode { Group::Box } else { Group::Default };
+    let group = env("WISP_PLUGINS").and_then(|g| Group::named(&g)).unwrap_or(fallback);
+    tracing::info!("plugins in this build: {:?}", crate::groups::compiled(group));
+    let store = open_store(home)?;
+    // bound first: the agents' runs are told this address before the edge serves it
+    let ip: IpAddr = host
+        .or(env("WISP_HOST").as_deref())
+        .unwrap_or("127.0.0.1")
+        .parse()
+        .map_err(|_| CliError::said("WISP_HOST is not an IP address"))?;
+    let listener = tokio::net::TcpListener::bind((ip, port)).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AddrInUse {
+            CliError::said(format!("port {port} is in use: is wisp already running? (wisp --port N picks another)"))
+        } else {
+            CliError::Io(e)
+        }
+    })?;
+    let master = master_token();
+    let access: Arc<dyn wisp_runtime_api::points::AgentAccess> =
+        Arc::new(Access { url: format!("http://127.0.0.1:{}", listener.local_addr().map_or(port, |a| a.port())), master: master.clone() });
+    // settings outlive a restart: the kernel's registry saves them through the store
+    let settings =
+        crate::settings_store::StoreSettings::open(&store).map_err(|e| CliError::said(format!("wisp could not read its settings: {e}")))?;
+    let log = wisp_kernel::durable::EventLogService(std::sync::Arc::new(store.clone()));
+    let app = crate::services::provide(App::new(), home, VERSION, notify)
+        .service(store.clone())
+        .service(log)
+        .service(access)
+        .service(settings)
+        .plugins(with_user_plugins(group.build(&at), home));
+    let kernel = app.start().await.map_err(|e| CliError::said(format!("wisp could not start: {}", e.message)))?;
+    for s in kernel.status().iter().filter(|s| s.state == "refused") {
+        tracing::warn!("plugin {} refused: {}", s.id, s.reason.as_deref().unwrap_or(""));
+    }
+    let proxy = TrustedProxy::new(env("WISP_TRUSTED_PROXY_SECRET").as_deref(), env("WISP_PUBLIC_URL").as_deref());
+    let mut cfg = EdgeConfig::new(master, VERSION);
+    cfg.previews = proxy.on() && env("WISP_PREVIEW_URL").is_some();
+    cfg.proxy = proxy;
+    cfg.web_dir = web_dir();
+    cfg.home = Some(home.to_owned());
+    if box_mode {
+        "box".clone_into(&mut cfg.user_set);
+    }
+    if cfg.web_dir.is_none() {
+        tracing::warn!("no web build found (WISP_WEB_DIR, or npm run build): serving the API only");
+    }
+    let backend: Arc<dyn wisp_api::Backend> = Arc::new(kernel.clone());
+    // the v2 stream on the store: snapshots and deltas from its tables and change feed (under its
+    // epoch), and every commit streamed as it lands (Store::on_commit → Driver::committed)
+    // every row leaves through its owner's `kernel.egress` view (ADR-0050: .env values never leave)
+    let views: Arc<dyn wisp_api::egress::ViewSource> = Arc::new(kernel.clone());
+    let readers = snapshot_readers();
+    let snaps = wisp_api::v2_store::StoreSnapshots::new(store.clone(), snapshot_sources(), Vec::new())
+        .with_readers(readers.clone())
+        .with_pages(list_pages())
+        .with_views(views.clone());
+    let (snaps, trimmer) = crate::trim::wrap(Arc::new(snaps));
+    let driver = wisp_api::v2::Driver::start(snaps, backend.clone(), peer(&kernel));
+    let feed = wisp_api::v2_store::feed_read(&store, driver.clone(), views, readers.into());
+    hub.mount(driver);
+    let edge = Edge::new(cfg, backend, hub);
+
+    let server = wisp_api::serve(edge, listener).await?;
+    Ok(Running { server, kernel, started, store, feed, trimmer })
+}
+
+/// What the desktop app may tell its server on the stdin pipe, one line each. Nothing else is read there, and nothing
+/// else can reach it: only the app holds the pipe (default deny by construction, desktop only).
+#[derive(Debug, PartialEq, Eq)]
+enum FromShell {
+    /// `wisp:path <PATH>`: the login shell's PATH, read behind the first window (desktop/src-tauri/src/shell_path.rs):
+    /// agent CLIs are found and started on it from now on.
+    Path(String),
+}
+
+impl FromShell {
+    fn parse(line: &[u8]) -> Option<Self> {
+        let line = std::str::from_utf8(line).ok()?.trim_end_matches(['\r', '\n']);
+        let path = line.strip_prefix("wisp:path ")?;
+        (!path.is_empty() && !path.contains('\0')).then(|| Self::Path(path.to_owned()))
+    }
+
+    fn apply(self) {
+        match self {
+            Self::Path(path) => {
+                tracing::info!(target: "wisp::serve", "PATH from the desktop app's login shell");
+                #[cfg(feature = "proc")]
+                wisp_proc::set_path(&path);
+                #[cfg(not(feature = "proc"))]
+                let _ = path;
+            }
+        }
+    }
+}
+
+/// With `WISP_EXIT_WITH_STDIN` set (the desktop app's child): done once stdin closes. Only the app holds the pipe,
+/// so when it quits, crashes or is killed -9 the server stops too and never outlives it (v1 desktop/entry.mjs).
+/// Lines on it until then are the app's (`FromShell`); a line that isn't one is skipped, never the end.
+async fn stdin_closed() {
+    if std::env::var_os("WISP_EXIT_WITH_STDIN").is_none() {
+        return std::future::pending().await;
+    }
+    let _ = tokio::task::spawn_blocking(|| {
+        use std::io::BufRead as _;
+        let mut stdin = std::io::stdin().lock();
+        let mut line = Vec::new();
+        while matches!(stdin.read_until(b'\n', &mut line), Ok(n) if n > 0) {
+            if let Some(said) = FromShell::parse(&line) {
+                said.apply();
+            }
+            line.clear();
+        }
+    })
+    .await;
+}
+
+/// Until Ctrl-C, SIGTERM or (the desktop app's child) stdin closing, then a clean stop (server.json removed if it
+/// is ours).
+pub async fn until_signal(r: Running) {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = signal(SignalKind::terminate()).ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            () = async { match term.as_mut() { Some(t) => { t.recv().await; } None => std::future::pending().await } } => {}
+            () = stdin_closed() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        () = stdin_closed() => {}
+    }
+    r.server.shutdown().await;
+    if let Some(t) = &r.trimmer {
+        t.abort();
+    }
+    // every plugin off, in reverse order: their scopes end their tasks and children
+    let ids: Vec<String> = r.kernel.status().into_iter().filter(|s| s.state == "active").map(|s| s.id).collect();
+    for id in ids.iter().rev() {
+        let _ = r.kernel.set_enabled(id, false).await;
+    }
+    drop(r.feed);
+    r.store.close();
+}
+
+/// The page in the user's browser (no shell: the address is ours), or in `WISP_BROWSER` (a program given the address).
+pub fn open_url(url: &str) {
+    let chosen = std::env::var("WISP_BROWSER").ok().filter(|b| !b.is_empty());
+    let (cmd, args): (&str, Vec<&str>) = if let Some(b) = chosen.as_deref() {
+        (b, vec![url])
+    } else if cfg!(target_os = "macos") {
+        ("open", vec![url])
+    } else if cfg!(windows) {
+        ("rundll32", vec!["url.dll,FileProtocolHandler", url])
+    } else {
+        ("xdg-open", vec![url])
+    };
+    let mut c = std::process::Command::new(cmd);
+    c.args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    // a browser started here outlives wisp: out of its nursery, never holding wisp's caller's pipes
+    #[cfg(feature = "proc")]
+    let _ = wisp_proc::spawn_outliving(&mut c, 0);
+    #[cfg(not(feature = "proc"))]
+    let _ = c.spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FromShell;
+
+    #[cfg(feature = "threads")]
+    #[test]
+    fn a_tasks_first_look_carries_its_notes_versions_health_and_audits() {
+        let kinds: Vec<&str> = super::snapshot_sources().iter().filter(|s| (s.matches)("session:t1")).map(|s| s.kind).collect();
+        for k in ["threads_notes", "threads_revisions", "threads_meta", "threads_health", "threads_audit"] {
+            assert!(kinds.contains(&k), "{k} on session:<id>: {kinds:?}");
+        }
+        assert!(
+            super::snapshot_sources()
+                .iter()
+                .filter(|s| s.kind.starts_with("threads_"))
+                .all(|s| !(s.matches)("list") && !(s.matches)("config"))
+        );
+    }
+
+    #[test]
+    fn the_desktop_app_may_hand_over_a_path_and_nothing_else() {
+        assert_eq!(FromShell::parse(b"wisp:path /opt/homebrew/bin:/usr/bin\n"), Some(FromShell::Path("/opt/homebrew/bin:/usr/bin".into())));
+        assert_eq!(FromShell::parse(b"wisp:path /a b/bin\r\n"), Some(FromShell::Path("/a b/bin".into())), "a space in a folder stays");
+        for no in [&b"wisp:path \n"[..], b"wisp:path", b"wisp:path /a\0/b\n", b"wisp:env FOO=1\n", b"PATH=/x\n", b"\xff\xfe\n", b""] {
+            assert_eq!(FromShell::parse(no), None, "{:?}", String::from_utf8_lossy(no));
+        }
+    }
+}

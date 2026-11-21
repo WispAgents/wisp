@@ -4,7 +4,8 @@ reason: Keep the codebase consistent and dependency-free.
 scope:
 - '**'
 category: constraint
-status: accepted
+status: superseded
+superseded_by: D-0055
 sources:
 - AGENTS.md
 date: 2026-11-07

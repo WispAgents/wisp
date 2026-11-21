@@ -1,0 +1,14 @@
+Store ids: a plugin's defineStore id outside its client namespace fails; its own, a computed one and the shell's pass.
+=== plugins/goal/ui/package.json
+{ "name": "@wisp-plugin/goal-ui", "exports": { ".": "./src/index.ts" } }
+=== plugins/goal/ui/src/index.ts
+export default definePluginUi({ id: 'wisp.goal', extensions: [] });
+=== plugins/goal/ui/src/store.ts
+export const a = (client: any) => client.defineStore({ id: 'wisp.goal.launcher', version: 1 });
+export const b = (client: any) => client.defineStore({ id: 'goal.lines', version: 1 });
+export const c = (client: any, k: string) => client.defineStore({ id: `goal.${k}`, version: 1 });
+=== packages/shell/package.json
+{ "name": "@wisp/shell", "exports": { ".": "./src/index.ts" } }
+=== packages/shell/src/index.ts
+export const d = (client: any) => client.defineStore({ id: 'shell.sent', version: 1 });
+export const e = (client: any) => client.defineStore({ id: 'wisp.sent', version: 1 });

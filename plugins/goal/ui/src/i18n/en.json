@@ -1,0 +1,6 @@
+{
+  "wisp.goal.name": "goal",
+  "wisp.goal.band": "Goal",
+  "wisp.goal.action.set": "Set goal…",
+  "wisp.goal.action.checks": "Goal checks…"
+}

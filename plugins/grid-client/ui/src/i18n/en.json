@@ -1,0 +1,9 @@
+{
+  "grid-client.pane": "Cloud",
+  "grid-client.pane.lede": "Your wisp on a server: it keeps working while this computer sleeps.",
+  "grid-client.back.grid": "wisp Grid",
+  "grid-client.back.gridHint": "Your machines, keys and links",
+  "grid-client.tip.reach": "Reach this wisp from anywhere",
+  "grid-client.tip.reachBody": "Put this computer on a wisp Grid and open it at your grid address from your phone or any browser. No SSH, no open ports",
+  "grid-client.tip.setUp": "Set up"
+}

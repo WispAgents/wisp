@@ -1,0 +1,156 @@
+---
+title: Review by another agent
+description: Have a second harness read a task's pull request before you merge, ask a crew reviewer, or delegate a review.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
+
+An agent is bad at finding its own mistakes. A different harness, with a different model, finds other ones. wisp can
+have a second agent read the work before you merge it, in a few ways:
+
+| Way | What it does |
+| --- | --- |
+| **Review by another harness** | Each PR is read by a harness other than the one that wrote it, and the tests run again. |
+| **A crew reviewer** | A crew member with a reviewer's brief reviews when you ask, or on every PR. |
+| **A delegate** | The task's own agent hands the review to another agent and reads its report. |
+| **Judges** | Other agents vote on whether a task's goal is met. See [Goals and judges](../goals/). |
+
+## Review every PR by another harness
+
+With this on, when a task's PR opens or gets a new push, another harness reads the diff and lists what it would
+fix, by severity, and the tests run again on the PR's head. It runs on that harness's own account. Merging stays
+possible: wisp just says when a PR isn't reviewed or the review found issues.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+**⌘K** → **Settings** (or the person button in the top bar) → General → **Review by another harness**. Pick
+**Another harness than the author**, or one harness.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → General → **Review by another harness**. Pick
+**Another harness than the author**, or one harness.
+</TabItem>
+<TabItem label="TUI">
+```text
+/settings set --key review.harness --value other
+```
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp settings set review.harness other     # or codex, claude, opencode … ; off to stop
+```
+</TabItem>
+</Tabs>
+
+In a formula, for the whole team:
+
+```yaml
+settings:
+  review.harness: other
+```
+
+## Read the review, review again
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Press **P** to open the **PR** tab in the side panel. It shows the review: **Reviewed**, **Reviewing**, or how many
+issues it found, with each finding. A finding goes to the task's agent through the reply box, so you can read it
+before you send. Not reviewed yet, or not since the last push? Click the line to review it now, or use the task's
+**⋯** → **Review PR #n**.
+
+<Shot name="side-panel" alt="A task with the side panel open on the right, its tabs Changes, PR, Shell and Preview" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the PR pill under the task's title. The PR pane opens as a sheet, with the review and each finding. Tap a finding
+to put it in the reply bar. Not reviewed since the last push? Tap the review line to review it now.
+</TabItem>
+<TabItem label="TUI">
+With the task open:
+
+```text
+/review view
+/review maybe --force
+```
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp review view <id>            # the task's review
+wisp review maybe <id> --force   # review it again now
+```
+</TabItem>
+</Tabs>
+
+`review.finished` is an event, so a [trigger](../schedules-and-triggers/) can act on it.
+
+## Ask a crew reviewer
+
+A crew member keeps a brief, a kit of skills and a notebook across jobs, so their reviews follow your rules. See
+[Crew and check-ins](../crew-and-check-ins/) to add one.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+In the task's reply box, write `@ada review this PR` and press **Enter**. Ada's answer lands under your message, and
+her job shows on her page.
+</TabItem>
+<TabItem label="Phone app">
+In the task's reply bar, write `@ada review this PR` and tap **Send**. Ada's answer lands under your message.
+</TabItem>
+<TabItem label="TUI">
+Press **i** and type `@ada review this PR`; `@` lists your crew.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp crew ask <id> ada "review this PR: correctness first"
+```
+</TabItem>
+</Tabs>
+
+To have Ada review every PR the crew opens, declare a trigger:
+
+```yaml
+agents:
+  reviewer: { harness: codex, effort: high, mode: plan, instructions: "Review only. Never change files." }
+crew:
+  ada:
+    role: reviewer
+    agent: reviewer
+    brief: "Review every PR the crew opens. List what you would fix, by severity. Never merge."
+triggers:
+  review-every-pr:
+    on: pr.opened
+    crew: ada
+```
+
+## Delegate the review
+
+A task can hand parts of its work to other agents and read their reports.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+In New task or the reply box, press **+**, then **Delegate…**. **Add delegate**, pick a harness and model, and
+under **Use for** write `review`. Then ask: "when you're done, have the reviewer check it".
+</TabItem>
+<TabItem label="Phone app">
+In New task, tap **Delegate**. In a running task, tap the options chip in the reply bar, then **Delegate**. **Add
+delegate**, pick a harness and model, and under **Use for** write `review`. Then ask: "when you're done, have the
+reviewer check it".
+</TabItem>
+<TabItem label="TUI">
+Write it in the follow-up: "hand the review to @ada and fix what she finds".
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp reply <id> "hand the review to @ada and fix what she finds"
+```
+</TabItem>
+</Tabs>
+
+## Compare is not review
+
+[Compare](../compare-and-try/) runs the same ask on several agents so you can pick one result. A review keeps one
+result and has another agent check it.

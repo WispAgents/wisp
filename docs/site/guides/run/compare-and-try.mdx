@@ -1,0 +1,134 @@
+---
+title: Compare agents and try it two ways
+description: Run one task on several harnesses side by side, or twice on one harness with one setting changed, then keep the better run.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
+
+Not sure which agent does a job best? Give the same ask to several of them and see. **Compare** runs one task on
+several harnesses at once. **Try it two ways** runs it twice on one harness with one thing changed, so you learn
+what that thing is worth.
+
+Every run gets its own task and its own worktree, so the runs never touch each other.
+
+## Compare harnesses
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+1. Press **N** for **New task**, and type the task.
+2. Press **+**, then **Compare with another agent…**. A second harness joins the one you picked. Add more the same
+   way, or remove one with its **×**.
+3. Press **Enter**. One task per harness starts, grouped in the list under **Compare**.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+1. Tap the compose button at the top right (iPhone) or **New task** (Android), and write the task.
+2. Tap **⋯** (More options), then **Compare with another agent…**. A second harness joins the one you picked.
+3. Start it. One task per harness starts, grouped in the list under **Compare**.
+</TabItem>
+<TabItem label="TUI">
+Start the runs from the CLI (next tab). Each run is a task in the TUI's list, and opens like any other task.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "make the list query fast" --compare claude,codex
+wisp "make the list query fast" --agent claude --model opus --compare codex:gpt-5,opencode
+```
+`--compare` takes `harness[:model]`, comma separated. `--agent` (with its `--model`) is the first run.
+</TabItem>
+</Tabs>
+
+## Try it two ways
+
+Same harness, same model, same ask. Run B changes one thing:
+
+- **Subagents:** the subagents run on Haiku, Sonnet, or the task's own model.
+- **Skills:** off. No skills or slash commands; plugins, agents and `CLAUDE.md` stay.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+1. In **New task**, press **+**, then **Compare with another agent…**.
+2. Pick the **same** harness for the second run. Its picker then shows **What's different**.
+3. Pick what run B changes (**Subagents** or **Skills**) and press **Enter**.
+
+<Shot name="harness-picker" alt="The harness picker open from New task's footer: harness, model, thinking and account" />
+</TabItem>
+<TabItem label="Phone app">
+1. In New task, tap **⋯** (More options), then **Compare with another agent…**.
+2. Pick the **same** harness for the second run. Its picker then shows **What's different**.
+3. Pick what run B changes (**Subagents** or **Skills**) and start it.
+</TabItem>
+<TabItem label="TUI">
+Start the pair from the CLI (next tab). Both runs show in the TUI's list.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "add pagination to /users" --agent claude --try skills=off
+wisp "add pagination to /users" --agent claude --try subagents=haiku
+```
+`--try` needs `--agent`, edits (not Plan) and a worktree. It can't go with `--compare`.
+</TabItem>
+</Tabs>
+
+## Read the comparison
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+Open any run, then **⋯** at the task's top right → **Compare runs**, or open the **Compare** group in the list. Each
+run is a column: time, cost, tokens, agent steps, files, tests, and how much of your plan it took. A line on top says
+what differed ("used 30% fewer tokens and took 2 min less than A"). One run each is noisy, so it tells you that
+too.
+</TabItem>
+<TabItem label="Phone app">
+Open any run, then **⋯** (iPhone) or **⋮** (Android) in its top bar → **Show › Compare runs**. You get the same
+numbers per run, and the line that says what differed.
+</TabItem>
+<TabItem label="TUI">
+Open each run with **Enter** and press **d** for its changes.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp ls --state done
+wisp show <id>       # each run's answer
+wisp usage           # what each task took
+```
+</TabItem>
+</Tabs>
+
+## Keep one
+
+Keeping a run archives the others. Their worktrees are deleted with their changes, so ship nothing from them first.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+In Compare, press **Keep this** under the run you want, then **Keep this one**. wisp opens the kept run; ship it
+when you're ready.
+</TabItem>
+<TabItem label="Phone app">
+In Compare, tap **Keep this** under the run you want, then **Keep this one**. wisp opens the kept run.
+</TabItem>
+<TabItem label="TUI">
+Open the run you want. For a *Try it two ways* pair, send:
+
+```text
+/runtime trial keep
+```
+For a compare, open each run you don't want and send `/runtime archive --archived`.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp runtime trial keep <id>            # a Try it two ways run: the other is archived
+wisp runtime archive <id> --archived    # a compare: archive each run you don't keep
+```
+</TabItem>
+</Tabs>
+
+## When to use which
+
+- **Compare** to choose a harness or a model for a kind of work.
+- **Try it two ways** to check a setting: are your skills helping, or do cheaper subagents do as well?
+- To have one agent **check** another's work instead, see [Review by another agent](../review-by-another-agent/).

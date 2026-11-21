@@ -1,0 +1,14 @@
+{
+  "wisp.crew.name": "crew",
+  "wisp.crew.editor.add": "Add to your crew",
+  "wisp.crew.editor.edit": "Edit crew member",
+  "wisp.crew.editor.wake.after": "After {name} reports",
+  "wisp.crew.editor.need.name": "Give them a name",
+  "wisp.crew.editor.bad.name": "A name is letters, digits, spaces, . _ or -, up to 24",
+  "wisp.crew.editor.taken": "Someone on your crew already has that name",
+  "wisp.crew.org.title": "Org",
+  "wisp.crew.import.title": "Import crew members",
+  "wisp.crew.editor.addTask": "Add this task to your crew",
+  "wisp.crew.share.title": "Share {name}",
+  "wisp.crew.share.titleCrew": "Share your crew"
+}
