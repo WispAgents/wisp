@@ -1,7 +1,7 @@
 // tools/dev.ts's pure parts: the arguments, which ports and home a dev run may use, the env each child gets, and
 // which file changes rebuild the Rust server. No I/O here (tools/test/dev.test.ts).
 
-import { posix, sep, win32 } from 'node:path';
+import { join, posix, sep, win32 } from 'node:path';
 
 export const DEFAULT_PORT = 4800;
 export const DEFAULT_VITE_PORT = 5180;
@@ -70,6 +70,9 @@ npm run dev:desktop [-- options]  the same, plus the Tauri window on Vite's URL
   --home DIR      the dev server's wisp home (default ~/${DEV_HOME}, WISP_DEV_HOME; never ~/.wisp)
   --no-watch      don't rebuild on Rust changes (press r + Enter to rebuild and restart)
 
+Without apps/web/dist it builds the web app once first, so pages that reach the server itself (the grid tunnel to
+this computer) get a UI; run \`npm run build\` to refresh that copy. Vite's page always hot reloads.
+
 Keys: r + Enter rebuilds and restarts the server, q + Enter (or Ctrl-C) stops everything.`;
 
 /** The ports to try, in order: the asked one, then the next ones, never an installed wisp's. */
@@ -109,6 +112,12 @@ export function serverEnv(base: Readonly<Env>, port: number, home: string): Env 
   const env: Env = { ...base, WISP_PORT: String(port), WISP_HOME: home, WISP_EXIT_WITH_STDIN: '1' };
   for (const k of ['WISP_WEB_DIR', 'WISP_DESKTOP', 'WISP_DESKTOP_DATA', 'WISP_BOX']) delete env[k];
   return env;
+}
+
+/** The web build a debug `wisp serve` falls back to (crates/wisp/src/serve.rs `web_dir()`: CARGO_MANIFEST_DIR/../../apps/web/dist).
+ * Pages that skip Vite need it: the grid tunnel forwards `/` to the server's port, not Vite's. */
+export function webIndex(root: string): string {
+  return join(root, 'apps', 'web', 'dist', 'index.html');
 }
 
 export function apiUrl(port: number): string {

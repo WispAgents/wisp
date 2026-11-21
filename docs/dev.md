@@ -34,13 +34,14 @@ npm run doctor -- --json
 | desktop (Tauri) | on macOS there are no Command Line Tools, so cargo has no linker | `xcode-select --install` |
 
 Warns and notes don't block anything. For example: set `CARGO_TARGET_DIR` (one shared target dir per machine),
-`npm run build` (the web build only matters for `wisp serve` without Vite), and
+`npm run build` (the web build only matters for `wisp serve` without Vite, such as the grid tunnel to this computer;
+`npm run dev` builds it once when it's missing), and
 `cargo build -p wisp-testkit --bins` (fake agents, for running serve tests by hand).
 
 **Run it:**
 
 ```sh
-npm run dev           # cargo build -p wisp, then wisp serve on :4800 + Vite with HMR on :5180
+npm run dev           # cargo build -p wisp (+ vite build once if apps/web/dist is missing), then wisp serve on :4800 + Vite with HMR on :5180
 npm run dev:desktop   # the same + the Tauri window (app id dev.wisp.dev) loading Vite's page
 npm run dev -- --help # --port, --vite-port, --home, --no-watch
 ```

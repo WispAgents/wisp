@@ -1,6 +1,8 @@
 // `npm run dev` / `npm run dev:desktop`: wisp from this checkout, in dev mode.
 //   1. `cargo build -p wisp`, then `wisp serve` on its own port (4800, else the next free one) and its own home
 //      (~/.wisp-dev): never 4477/4791, never ~/.wisp or ~/.wisp-v2-preview (tools/dev/plan.ts).
+//   1b. no apps/web/dist yet: `vite build` once, alongside the cargo build, so the server has a page of its own for
+//      whatever reaches it without Vite (the grid tunnel to this computer forwards `/` to the server's port).
 //   2. Vite with HMR (apps/web), proxying /api to that server instead of the mock peer (WISP_DEV_API).
 //   3. --desktop: the Tauri shell (desktop/src-tauri) under dev.wisp.dev (tauri.dev.conf.json via TAURI_CONFIG),
 //      attached to that server (WISP_PORT) and loading Vite's page (WISP_DEV_URL).
@@ -10,7 +12,7 @@
 
 import { type ChildProcess, spawn } from 'node:child_process';
 import { watch, type FSWatcher } from 'node:fs';
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
@@ -18,7 +20,7 @@ import { join, relative } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   apiUrl, builtBinary, choosePort, desktopEnv, DevArgError, type DesktopOverlay, isRustChange, parseArgs, resolveHome,
-  serverEnv, USAGE, viteEnv, viteUrl,
+  serverEnv, USAGE, viteEnv, viteUrl, webIndex,
 } from './dev/plan.ts';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -86,6 +88,18 @@ function buildServer(): Promise<string | undefined> {
     cargo.once('error', (e) => (say(`cargo didn't start: ${e.message} (https://rustup.rs)`), done(undefined)));
     cargo.once('exit', (code) => done(code === 0 ? builtBinary(lines) : undefined));
   });
+}
+
+/** `vite build` once when apps/web/dist has no index.html; a failed build only means the server serves the API alone. */
+async function buildWebIfMissing(): Promise<void> {
+  if (await access(webIndex(ROOT)).then(() => true, () => false)) return;
+  say('no web build yet: vite build (once, for pages that reach wisp serve without Vite, like the grid tunnel) …');
+  const ok = await new Promise<boolean>((done) => {
+    const vite = track(spawn(process.execPath, [viteBin(), 'build', '--logLevel', 'warn'], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit'] }));
+    vite.once('error', () => done(false));
+    vite.once('exit', (code) => done(code === 0));
+  });
+  say(ok ? 'web build done (apps/web/dist; npm run build refreshes it)' : 'web build failed: wisp serve serves the API only, Vite is unaffected');
 }
 
 async function waitFor(url: string, alive: () => boolean): Promise<boolean> {
@@ -211,7 +225,8 @@ async function main(): Promise<void> {
   const watchers: FSWatcher[] = [];
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => void shutdown(0, watchers));
 
-  run.bin = await buildServer();
+  const [bin] = await Promise.all([buildServer(), buildWebIfMissing()]);
+  run.bin = bin;
   if (!run.bin) return void (await shutdown(1, watchers));
   const up = await startServer(run);
   if (stopping) return;
