@@ -34,6 +34,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Download saved the `.crew.json` without a word in the desktop app; it now says where the file went.
 - **Share page: Open in wisp on this computer works.** The button was a `wisp://open/…` link that no wisp registers, so
   clicking it did nothing. It now opens your wisp (127.0.0.1:4477) with the link waiting in New task: press Send.
+- **Crew files are YAML.** Share → Download saves `<name>.crew.yml` and Copy copies the same YAML (a brief over several
+  lines stays lines), like every other file wisp writes. Import takes `.crew.yml`, and a `.crew.json` from before still
+  imports.
 
 ## [1.0.0-alpha.2] - 2026-11-21
 

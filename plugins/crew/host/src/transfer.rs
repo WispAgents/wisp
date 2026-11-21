@@ -13,7 +13,7 @@ use wisp_crew_core::member::Checks;
 use wisp_crew_core::mentions::handle_of;
 use wisp_crew_core::scan::scan_all;
 use wisp_crew_core::share::{CrewFile, parse_crew_file};
-use wisp_crew_core::transfer::{export_crew, import_members, plan_import};
+use wisp_crew_core::transfer::{export_crew, import_members, plan_import, read_crew_text};
 use wisp_kernel::{Ctx, Setup, WireError};
 
 use crate::{NewIds, State, calls, lock, wire};
@@ -33,7 +33,7 @@ pub fn export(crew: &[Member], a: &c::ExportArgs) -> Result<c::Exported, WireErr
             h.place, h.what, h.line
         )));
     }
-    Ok(c::Exported { bundle: e.bundle, notes: e.notes, file: e.file, gist: None })
+    Ok(c::Exported { bundle: e.bundle, notes: e.notes, file: e.file, text: e.text, gist: None })
 }
 
 /// The bundle an import reads: the pasted text or the bundle itself (a link was fetched into `bundle` by `shared::resolve`).
@@ -48,7 +48,7 @@ fn bundle_of(a: &c::ImportArgs) -> Result<(Value, &'static str), WireError> {
     if text.is_empty() {
         return Err(WireError::invalid("Paste a crew file, or pick one."));
     }
-    serde_json::from_str(text).map(|v| (v, "file")).map_err(|_| WireError::invalid("That isn't a crew file: it isn't JSON."))
+    read_crew_text(text).map(|v| (v, "file")).map_err(wire)
 }
 
 /// The review (`dryRun`), or the members it adds to `crew` (all or none, paused).
@@ -292,7 +292,7 @@ mod tests {
     fn a_crew_bundle_exports_reviews_and_imports_paused_and_a_secret_refuses_it() {
         let crew = vec![member("Ada", "Reviews PRs")];
         let out = export(&crew, &c::ExportArgs { ids: vec!["Ada".into()], ..c::ExportArgs::default() }).unwrap();
-        assert_eq!(out.file, "ada.crew.json");
+        assert_eq!(out.file, "ada.crew.yml");
         let text = serde_json::to_string(&out.bundle).unwrap();
         let review = import(&crew, &c::ImportArgs { text: Some(text.clone()), dry_run: true, ..c::ImportArgs::default() }, 1).unwrap();
         assert_eq!(review.0.members.len(), 1);
@@ -309,6 +309,25 @@ mod tests {
             import(&crew, &c::ImportArgs { url: Some("https://x".into()), ..c::ImportArgs::default() }, 1).is_err(),
             "a link isn't fetched here"
         );
+    }
+
+    /// Owner, 2026-11-21: "everything should be YML". Download and Copy's text is YAML (`wispCrew: 1` first) that reads
+    /// back as the same bundle and imports; a brief over several lines stays lines; a `.crew.json` from before still
+    /// imports; text that is neither (or not a map) is refused.
+    #[test]
+    fn the_crew_file_is_yaml_and_an_old_json_one_still_imports() {
+        let crew = vec![member("Ada", "Reviews PRs.\nRuns the tests first: \"npm test\" # always")];
+        let out = export(&crew, &c::ExportArgs { ids: vec!["Ada".into()], ..c::ExportArgs::default() }).unwrap();
+        assert!(out.text.starts_with("wispCrew: 1\nmembers:\n"), "{}", out.text);
+        assert_eq!(read_crew_text(&out.text).unwrap(), out.bundle, "{}", out.text);
+        let review = import(&crew, &c::ImportArgs { text: Some(out.text.clone()), dry_run: true, ..c::ImportArgs::default() }, 1).unwrap();
+        assert_eq!(review.0.members.len(), 1);
+        let old = serde_json::to_string_pretty(&out.bundle).unwrap();
+        let review = import(&crew, &c::ImportArgs { text: Some(old), dry_run: true, ..c::ImportArgs::default() }, 1).unwrap();
+        assert_eq!(review.0.members.len(), 1, "a .crew.json from before");
+        for bad in ["- a\n- list", "just words", "{ not: [closed"] {
+            assert!(read_crew_text(bad).is_err(), "{bad}");
+        }
     }
 
     /// `wisp_crew_add { from }` (`crew.agent.add`, mcp's `CREW_ADD` owner) reaches `crew.import`: a link goes as `url`

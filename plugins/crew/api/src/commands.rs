@@ -249,7 +249,7 @@ pub struct AgentKitArgs {
 }
 
 /// An agent adds a crew member. `session` is the caller's task (its project is the default folder). With `from` (a
-/// share link, `gist:<id>`, an https `.crew.json`, or its JSON) the members someone shared join, paused; without it, a
+/// share link, `gist:<id>`, an https `.crew.yml` (or `.crew.json`), or its text) the members someone shared join, paused; without it, a
 /// member is made from the fields.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -522,6 +522,9 @@ pub struct Exported {
     pub bundle: Value,
     pub notes: Vec<String>,
     pub file: String,
+    /// added 2026-11-21 (additive): the file as Download saves it and Copy copies it, YAML (`<key>.crew.yml`)
+    #[serde(default)]
+    pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "Record<string, unknown>")]
     pub gist: Option<Value>,

@@ -45,7 +45,7 @@ pub fn crew_tools() -> Value {
         json!({ "member": { "type": "string", "description": "Their name, @handle or id." } }).as_object().cloned().unwrap_or_default();
     let add_extra = json!({
         "checkin": { "type": "boolean", "description": "Start their first check-in right away. Default false." },
-        "from": { "type": "string", "description": "Instead of the fields above: members someone shared, as a link to a .crew.json file (https, or gist:<id>) or its JSON. They join paused, in cwd (default: the current project), until the user resumes them." }
+        "from": { "type": "string", "description": "Instead of the fields above: members someone shared, as a link to a .crew.yml file (or a .crew.json from before; https, or gist:<id>) or its text. They join paused, in cwd (default: the current project), until the user resumes them." }
     });
     let mut edit = member.clone();
     edit.extend(member_props());

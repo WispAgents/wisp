@@ -35,8 +35,8 @@ export default definePluginUi({
   ],
   // add or edit a member (v1 crewEditor): the rail's +, a member page's Edit…
   views: [
-    // Import crew members: a shared .crew.json, its JSON or a link (v1 crew-share.js importCrew)
-    // Share…: a member or the whole crew as a .crew.json (v1 crew-share.js shareMember)
+    // Import crew members: a shared .crew.yml, its text or a link (v1 crew-share.js importCrew)
+    // Share…: a member or the whole crew as a .crew.yml (v1 crew-share.js shareMember)
     defineView({ kind: VIEW.share, slot: 'overlay', overlay: 'dialog', parse: (p) => p, title: (p) => shareTitle(p), component: lazy(() => import('./ShareCrew.tsx')) }),
     defineView({ kind: VIEW.import, slot: 'overlay', overlay: 'dialog', parse: (p) => p, title: () => t('wisp.crew.import.title'), component: lazy(() => import('./ImportCrew.tsx')) }),
     // the crew's track record (v1 crew-record.js): Settings → Usage's Crew track record

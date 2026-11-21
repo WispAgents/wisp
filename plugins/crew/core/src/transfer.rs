@@ -217,6 +217,8 @@ pub struct Export {
     pub bundle: Value,
     pub notes: Vec<String>,
     pub file: String,
+    /// the file as Download saves it and Copy copies it: YAML ([`crew_yaml`])
+    pub text: String,
     /// `(where, text)`: "Scout · notebook", …
     pub texts: Vec<(String, String)>,
 }
@@ -286,6 +288,32 @@ pub fn export_crew(
                 .map(|k| (format!("{} · {}", b.name, k.name), format!("{}\n{}", k.description.clone().unwrap_or_default(), k.body))),
         );
     }
-    let file = if members.len() == 1 { format!("{}.crew.json", members[0].key) } else { "crew.crew.json".into() };
-    Ok(Export { bundle: json!({ "wispCrew": CREW_FILE, "members": members }), notes, file, texts })
+    let file = if members.len() == 1 { format!("{}.crew.yml", members[0].key) } else { "crew.crew.yml".into() };
+    let text = crew_yaml(&members)?;
+    Ok(Export { bundle: json!({ "wispCrew": CREW_FILE, "members": members }), notes, file, texts, text })
+}
+
+/// The crew file's shape as written: the version first, then each member in the blueprint's field order.
+#[derive(Serialize)]
+struct CrewFileOut<'a> {
+    #[serde(rename = "wispCrew")]
+    wisp_crew: u64,
+    members: &'a [Blueprint],
+}
+
+/// A crew file as text: YAML, like every file wisp writes (owner, 2026-11-21: "everything should be YML"; ADR-0026).
+pub fn crew_yaml(members: &[Blueprint]) -> Result<String> {
+    serde_saphyr::to_string(&CrewFileOut { wisp_crew: CREW_FILE, members }).map_err(|e| bad(format!("Couldn't write the crew file: {e}")))
+}
+
+/// A crew file's text, read: YAML, or the JSON a `.crew.json` from before holds (tried first: it's exact JSON).
+pub fn read_crew_text(text: &str) -> Result<Value> {
+    let t = text.trim();
+    if let Ok(v) = serde_json::from_str::<Value>(t) {
+        return Ok(v);
+    }
+    match serde_saphyr::from_str::<Value>(t) {
+        Ok(v @ Value::Object(_)) => Ok(v),
+        _ => Err(bad("That isn't a crew file: it isn't YAML (or a .crew.json from before).")),
+    }
 }

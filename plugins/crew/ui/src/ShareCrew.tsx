@@ -1,8 +1,8 @@
-// Share… (v1 crew-share.js shareMember): one member or the whole crew as a .crew.json. What goes along (their name,
-// brief, schedule, mode and harness) and what stays (project, computer, log, jobs); the kit, notebook and delegates
-// to tick; the peer's check of it (crew.export: notes, and a secret that refuses it) on every change; then Download
-// or Copy, or Share link (crew.share, ADR-0052: a wisp Cloud link like every other share, no GitHub token). Whoever
-// adds them picks a project, and they join paused (Import…, which takes the link).
+// Share… (v1 crew-share.js shareMember): one member or the whole crew as a .crew.yml (YAML, the host's). What goes
+// along (their name, brief, schedule, mode and harness) and what stays (project, computer, log, jobs); the kit,
+// notebook and delegates to tick; the peer's check of it (crew.export: notes, and a secret that refuses it) on every
+// change; then Download or Copy, or Share link (crew.share, ADR-0052: a wisp Cloud link like every other share, no
+// GitHub token). Whoever adds them picks a project, and they join paused (Import…, which takes the link).
 import { createEffect, createSignal, For, on, onCleanup, Show, type JSX } from 'solid-js';
 import { defineCommand, entityKey, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
@@ -18,6 +18,8 @@ interface Exported {
   readonly bundle: Record<string, unknown>;
   readonly notes: readonly string[];
   readonly file: string;
+  /** the file's YAML (added 2026-11-21); an older wisp sends none, and its bundle goes as JSON */
+  readonly text?: string;
 }
 
 const exportCrew = defineCommand<{ peer: PeerId; ids: string[] } & ShareOpts, Exported>({
@@ -48,10 +50,13 @@ const CLOUD_KIND = 'grid-client.cloud';
 const openCloud = (c: PluginClient): void =>
   c.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'cloud' } } });
 
+/** The crew file's text: the host's YAML, or (an older wisp, no YAML) its bundle as JSON. */
+const fileText = (r: Exported): string => r.text || bundleText(r.bundle);
+
 /** A file saved from the page: the browser's download (the link freed a second later, through the plugin's scope). */
 function download(c: PluginClient, name: string, text: string): void {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.href = URL.createObjectURL(new Blob([text], { type: name.endsWith('.json') ? 'application/json' : 'application/yaml' }));
   a.download = name;
   a.click();
   c.scope.timeout(1000, () => URL.revokeObjectURL(a.href));
@@ -97,7 +102,7 @@ export default function ShareCrew(props: { readonly client: PluginClient; readon
   const copy = (): void => {
     const r = out()?.r;
     if (!r) return;
-    void navigator.clipboard.writeText(bundleText(r.bundle)).then(
+    void navigator.clipboard.writeText(fileText(r)).then(
       () => {
         close();
         shell.toast.success(say('wisp.crew.share.copied', { name: title() }));
@@ -108,7 +113,7 @@ export default function ShareCrew(props: { readonly client: PluginClient; readon
   const save = (): void => {
     const r = out()?.r;
     if (!r) return;
-    download(c, r.file, bundleText(r.bundle));
+    download(c, r.file, fileText(r));
     close();
     // the desktop app saves it to Downloads without a word (no browser download bar): say where it went
     shell.toast.success(say('wisp.crew.share.downloaded', { file: r.file }));
