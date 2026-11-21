@@ -1,9 +1,10 @@
 // The no-wrapping-bars rule (design/layout.md §2): items step down lowest priority first, label to
 // icon before anything moves into More, pins never step down, and expanding waits for slack.
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
-import { mount, part, tick } from './helpers.tsx';
+import { mount, part, tick, until } from './helpers.tsx';
 import { Toolbar, collapseSteps, formsAt, levelFor, nextLevel, widthAt, type PlanInput, type ToolbarItem } from '../src/index.ts';
 import { preloadControls } from '../src/controls/lazy-part.ts';
+import { inObserverPass } from '../src/core/observer-scope.ts';
 
 // the app fetches the overlays' machines once its first screen is up (ADR-0011); a press before that: lazy-controls.test.tsx
 beforeAll(() => preloadControls());
@@ -81,9 +82,14 @@ describe('Toolbar collapses as measured', () => {
     }
     vi.stubGlobal('ResizeObserver', FakeRO);
   });
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals();
     observers.length = 0;
+    // `resize` delivers observer callbacks, which open a kit observer pass (core/observer-scope.ts) that ends at the next
+    // task. A test that starts inside it observes its new toolbar a frame late (observeSoon), so its first `resize`
+    // reaches no one: whether `tick()` or that frame came first was the Windows flake (main 44878585321, all `full`).
+    await until(() => !inObserverPass());
+    expect(inObserverPass(), 'the next test starts outside an observer pass').toBe(false);
   });
 
   /** Report widths for every observed element: the bar's width, 100 per label form, 32 per icon. */
