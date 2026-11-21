@@ -243,7 +243,13 @@ async fn a_taken_app_port_still_runs_the_app_and_every_caller_says_the_real_port
     // wisp_terminal_core::run::port_for: the app's own port, held here (listening) as another program would
     let h = id.chars().fold(7_u32, |h, c| h.wrapping_mul(31).wrapping_add(u32::from(c)));
     let derived = 41_000 + u16::try_from(h % 900).unwrap();
-    let _held = std::net::TcpListener::bind(("127.0.0.1", derived)).unwrap();
+    // held by this test, or already by another program on the runner: either way the app's own port is taken, which is
+    // what this test needs (a bind that fails for that reason isn't a test failure)
+    let _held = match std::net::TcpListener::bind(("127.0.0.1", derived)) {
+        Ok(l) => Some(l),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => None,
+        Err(e) => panic!("holding port {derived}: {e}"),
+    };
     let said = dir.join("port.txt");
     let command = format!("echo \"$PORT\" > '{}'; sleep 30", said.display());
     let started = api.cmd("terminal.run.start", json!({ "id": id, "command": command, "cols": 80, "rows": 24 })).await;
