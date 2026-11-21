@@ -13,6 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **A task's PR card stays in sight.** The PR card (its checks, review, GitHub and Merge) moved from the top of the
+  turns to the task's details column on the right, so it no longer scrolls away; with the side panel open it sits under
+  the details bar.
 - **Opening a task no longer animates its answers.** The blocks used to rise in one after another (and stats count up)
   every time a task opened; now they are simply there.
 - **The Android app is the new phone app.** The Play build now ships wisp's own phone app (Tasks, Crew, Stuff and

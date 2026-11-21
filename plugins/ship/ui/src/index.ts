@@ -1,5 +1,5 @@
-// @wisp-plugin/ship-ui: wisp.ship's UI (v1 ship.js). A task row's PR pill, the PR strip over the open task's
-// turns, and Ship it's dialog (an overlay view). Each component loads on first show.
+// @wisp-plugin/ship-ui: wisp.ship's UI (v1 ship.js). A task row's PR pill, the PR card in the open task's
+// details column, and Ship it's dialog (an overlay view). Each component loads on first show.
 import { lazy } from 'solid-js';
 import { defineExtension, definePluginUi, defineView } from '@wisp/shell';
 import { catalogue } from './i18n.ts';
@@ -32,8 +32,9 @@ export default definePluginUi({
         return !!s?.shipping || prOf(s) !== undefined;
       },
     }),
-    // the PR row over the open task: its line and what to do next (Merge, Fix conflicts)
-    defineExtension({ id: 'wisp.ship.strip', attachTo: { id: 'shell.task:band' }, component: lazy(() => import('./PrStrip.tsx')) }),
+    // the PR card in the open task's details column (over the turns on a phone), in sight while they scroll: its line
+    // and what to do next (Merge, Fix conflicts)
+    defineExtension({ id: 'wisp.ship.strip', attachTo: { id: 'shell.task:details' }, component: lazy(() => import('./PrStrip.tsx')) }),
   ],
   // its title from the click's guess ("Ship it", "Push to PR #412"), never the shell's fallback
   views: [defineView({ kind: SHIP_VIEW, slot: 'overlay', overlay: 'dialog', parse: parseShipParams, title: (p) => dialogTitle(t, p.guess), component: lazy(() => import('./ShipDialog.tsx')) })],

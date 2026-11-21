@@ -1635,6 +1635,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
                   {...((u) => (u ? { usage: u } : {}))(usage())}
                   actions={[]}
+                  // pinned beside the turns, in sight however far they scroll (wisp.ship's PR card)
+                  extra={<Slot input="shell.task:details" layout="stack" id={key} session={() => s() as never} />}
                 />
                 </Show>
                 ),
@@ -1649,6 +1651,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 >
                   {/* the band over the turns (wisp.goal's): `shell.task:band`, the task's row as its session */}
                   <Slot input="shell.task:band" layout="stack" id={key} session={() => s() as never} />
+                  {/* a phone has no details column: what's pinned to it goes over the turns instead */}
+                  <Show when={phoneBar()}>
+                    <Slot input="shell.task:details" layout="stack" id={key} session={() => s() as never} />
+                  </Show>
                   {/* the earlier turns as a ledger (ADR-0068): outcome rows, day cards, notice folds, search, the scrubber;
                       the latest turn whole after them, as it always was (design/ux.md) */}
                   <Ledger
