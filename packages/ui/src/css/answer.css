@@ -1,10 +1,20 @@
 /* Answer blocks: the column, each block's entrance, the plain-text note and the unknown block
    (v1 .presentation / .blk). A block rises once, when its answer is first shown; data-still turns
-   that off for an answer shown before. */
+   that off (a task's page always shows its answers still). */
 @layer kit {
   [data-kit='answer'] { display: flex; flex-direction: column; gap: var(--space-7); min-width: 0; }
   [data-kit='answer-block'] { min-width: 0; animation: kit-rise var(--dur-enter) var(--ease) both; animation-delay: var(--k-answer-d, 0ms); }
   [data-kit='answer'][data-still] [data-kit='answer-block'] { animation: none; }
+  /* still means still: the rows a block rises in one by one stay put too (owner 2026-11-21: opening a task showed
+     every answer rising again) */
+  [data-kit='answer'][data-still] [data-kit='stat'],
+  [data-kit='answer'][data-still] [data-kit='step'],
+  [data-kit='answer'][data-still] [data-kit='check-item'],
+  [data-kit='answer'][data-still] [data-kit='cb-compare-list'] > li,
+  [data-kit='answer'][data-still] [data-kit='cb-file'],
+  [data-kit='answer'][data-still] [data-kit='cb-commit'],
+  [data-kit='answer'][data-still] [data-kit='rb-chip'],
+  [data-kit='answer'][data-still] [data-kit='rb-act'] { animation: none; }
   [data-kit='answer-note'] { font-size: var(--fs-sm); color: var(--muted); }
   [data-kit='answer-unknown'] { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
   [data-kit='answer-unknown-note'] { font-size: var(--fs-sm); color: var(--muted); }
