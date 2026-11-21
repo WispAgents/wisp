@@ -2,7 +2,7 @@
 // .it-bar, .it-actions, transcript.css .turn/.ask/.trail, ship.css .overlap-strip, composer.css):
 // its head, then its turns with the details column beside them, and the reply box docked at the foot.
 import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
-import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type JSX } from 'solid-js';
+import { For, Index, Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, onMount, type JSX } from 'solid-js';
 import { ForKeyed } from '../core/keyed.tsx';
 import { flag } from '../core/props.ts';
 import { ActIcon, WithAct, type Act } from './act.tsx';
@@ -17,12 +17,15 @@ import { Tool } from './launcher-tool.tsx';
 import { foldOrder, foldTail, type LauncherTool } from './launcher-fold.ts';
 import { useTailFold } from './launcher-fold-measure.ts';
 import { Icon } from '../content/Icon.tsx';
+import { Wrap } from '../layout/Stack.tsx';
 import { growTextarea } from '../core/autosize.ts';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
 import type { IconName } from '../content/icons.ts';
 import { TaskUsage, type TaskUsageProps } from './TaskUsage.tsx';
 import '../css/transcript.css';
+// the full-screen picture viewer, loaded on the first click on a sent picture (it is the answers' viewer too)
+const MediaViewer = lazy(() => import('../blocks/Viewer.tsx').then((m) => ({ default: m.MediaViewer })));
 import '../css/app-usage.css';
 import '../css/rate.css';
 
@@ -340,12 +343,72 @@ export interface TrailItem {
   readonly title?: string;
 }
 
+export interface TurnAttachment {
+  readonly name: string;
+  readonly src?: string;
+  /** a picture (an image/* mime): drawn, not named */
+  readonly image?: boolean;
+}
+
+/** v1 .ask-atts: what went with the prompt, under its words. The pictures open in the media viewer, in their order. */
+function AskAttachments(props: { readonly items: readonly TurnAttachment[] }): JSX.Element {
+  const [view, setView] = createSignal<number | undefined>();
+  const pictures = (): { src: string; alt: string }[] => props.items.flatMap((a) => (a.image && a.src ? [{ src: a.src, alt: a.name }] : []));
+  const pill = (a: TurnAttachment): JSX.Element => (
+    <>
+      <Icon name="file" />
+      <span>{a.name}</span>
+    </>
+  );
+  return (
+    <div data-kit="ask-atts">
+      <Wrap gap="4" part="turn.atts">
+        <For each={props.items}>
+          {(a) => (
+            <Show
+              when={a.image && a.src}
+              fallback={
+                <Show
+                  when={a.src}
+                  fallback={
+                    <span data-kit="att-pill" data-text="control" title={a.name}>
+                      {pill(a)}
+                    </span>
+                  }
+                >
+                  {(src) => (
+                    <a data-kit="att-pill" data-text="control" href={src()} target="_blank" rel="noopener" title={a.name}>
+                      {pill(a)}
+                    </a>
+                  )}
+                </Show>
+              }
+            >
+              {(src) => (
+                <button type="button" data-kit="ask-att-img" title={a.name} onClick={() => setView(Math.max(0, pictures().findIndex((p) => p.src === src())))}>
+                  <img src={src()} alt={a.name} loading="lazy" />
+                </button>
+              )}
+            </Show>
+          )}
+        </For>
+      </Wrap>
+      <Show when={view() !== undefined}>
+        <MediaViewer list={pictures()} at={view() ?? 0} onClose={() => setView(undefined)} />
+      </Show>
+    </div>
+  );
+}
+
 export interface TurnViewProps {
   /** the turn's id (`data-turn`): a task's kept place is held by the turn at the top (v1 split.js). Additive (2026-11-12). */
   readonly id?: string;
   readonly prompt: string;
   /** the comments the prompt went out with, as cards over its words (v1 comments.js sentComments). Additive (2026-11-12). */
   readonly askNotes?: readonly { readonly n: number; readonly on: string; readonly removed?: boolean; readonly removedLabel?: string; readonly say: string }[];
+  /** the files the prompt went out with (v1 turns.js .ask-atts): a picture as a thumbnail that opens full screen, any
+   *  other file as a pill that opens it; `src` is its bytes' URL (none: only its name). Additive (2026-11-21). */
+  readonly attachments?: readonly TurnAttachment[];
   readonly logo?: string;
   readonly harness: string;
   readonly time: string;
@@ -423,6 +486,9 @@ export function TurnView(props: TurnViewProps): JSX.Element {
         </Show>
         <Show when={props.prompt}>
           <div data-kit="ask-text">{props.prompt}</div>
+        </Show>
+        <Show when={(props.attachments ?? []).length > 0}>
+          <AskAttachments items={props.attachments ?? []} />
         </Show>
         <div data-kit="ask-foot">
           <span data-kit="model-logo" role="img" aria-label={props.harness}>

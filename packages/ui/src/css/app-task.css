@@ -468,6 +468,45 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  /* feed.css .ask-atts, .att-pill: what went with the prompt */
+  [data-kit='ask-atts'] {
+    margin-top: var(--space-5);
+  }
+  [data-kit='ask-att-img'] {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    max-width: min(100%, 320px);
+    cursor: zoom-in;
+  }
+  [data-kit='ask-att-img'] > img {
+    display: block;
+    height: var(--size-ask-thumb);
+    max-width: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    object-fit: cover;
+  }
+  [data-kit='att-pill'] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: 28px;
+    padding: 0 var(--space-5);
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    font-size: var(--fs-sm);
+    color: inherit;
+    text-decoration: none;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  [data-kit='att-pill'] > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   [data-kit='ask-foot'] {
     display: flex;
     align-items: center;

@@ -94,6 +94,13 @@ function mediaFile(url: URL, res: ServerResponse): void {
   res.writeHead(200, { 'content-type': 'image/svg+xml' }).end(svg);
 }
 
+/** A file sent with a prompt (stuff's GET /uploads/:id): a picture's upload is a drawn SVG, anything else its text. */
+function uploadFile(id: string, res: ServerResponse): void {
+  if (id !== 'up-shot') return void res.writeHead(200, { 'content-type': 'text/plain' }).end(`upload ${id}\n`);
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800"><rect width="1280" height="800" fill="hsl(210 50% 45%)"/><rect x="60" y="60" width="1160" height="680" rx="16" fill="white"/><text x="640" y="420" font-family="sans-serif" font-size="56" text-anchor="middle" fill="hsl(210 50% 35%)">the screenshot you sent</text></svg>';
+  res.writeHead(200, { 'content-type': 'image/svg+xml' }).end(svg);
+}
+
 function middleware(box: { peer: MockPeer; others: Map<string, MockPeer>; fresh: (seed?: Seed) => { peer: MockPeer; others: Map<string, MockPeer> } }) {
   return (req: IncomingMessage, res: ServerResponse, next: () => void): void => {
     const url = new URL(req.url ?? '/', 'http://mock');
@@ -115,6 +122,8 @@ function middleware(box: { peer: MockPeer; others: Map<string, MockPeer>; fresh:
     if (url.pathname === '/api/events' && req.method === 'POST') return void post(peer, req, res);
     // the side panel's Preview: the app's output (a dev server saying where it listens), then the app itself
     if (/^(\/api\/peer\/[^/]+)?\/api\/sessions\/[^/]+\/file$/.test(url.pathname) && req.method === 'GET') return mediaFile(url, res);
+    const upload = url.pathname.match(/^(?:\/api\/peer\/[^/]+)?\/api\/uploads\/([^/]+)$/);
+    if (upload && req.method === 'GET') return uploadFile(decodeURIComponent(upload[1] ?? ''), res);
     const run = url.pathname.match(/^\/api\/sessions\/[^/]+\/run$/);
     if (run && req.method === 'GET') return runStream(req, res);
     if (/^\/api\/sessions\/[^/]+\/shell$/.test(url.pathname) && req.method === 'GET') return shellStream(req, res);

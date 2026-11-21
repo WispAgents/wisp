@@ -556,7 +556,7 @@ function withMedia(topics: Map<Topic, Row[]>): void {
     const turn = rows.find((r) => r.e === 'turn' && (r.v as { body?: { presentation?: unknown } }).body?.presentation);
     if (!turn) continue;
     const v = turn.v as { body: Record<string, unknown> };
-    v.body = { ...v.body, presentation: { ...PRESENTATION, blocks: [PRESENTATION.blocks[0], ...MEDIA_BLOCKS, ...PRESENTATION.blocks.slice(1)] } };
+    v.body = { ...v.body, attachments: MEDIA_ATTACHMENTS, presentation: { ...PRESENTATION, blocks: [PRESENTATION.blocks[0], ...MEDIA_BLOCKS, ...PRESENTATION.blocks.slice(1)] } };
     return;
   }
 }
@@ -597,7 +597,8 @@ export const STUDIO = 'studio';
 export const COMPUTERS_PROJECT = { id: 'local:wisp', name: 'wisp', path: '/Users/me/code/wisp', color: 'violet' };
 
 /** `media`: the first finished task's answer shows two pictures and a video (the viewer, Copy, Show in folder; the
- *  mock serves each at /api/sessions/<id>/file as a drawn SVG, the video as a missing file). */
+ *  mock serves each at /api/sessions/<id>/file as a drawn SVG, the video as a missing file), and its prompt went out
+ *  with a screenshot and a log (MEDIA_ATTACHMENTS: the mock serves each upload at /api/uploads/<id>). */
 export const MEDIA_BLOCKS = [
   { type: 'image', path: 'shots/before.png', caption: 'Before: the retry fires after dispose' },
   { type: 'image', path: '/tmp/after.png', caption: 'After: 200 runs, no failure' },
@@ -606,6 +607,11 @@ export const MEDIA_BLOCKS = [
 
 /** `env`: the worktree task's first turn changed `.env.local` and `src/config.ts` (F-page-41: Changes masks the .env).
  *  Changes is git's diff in a worktree only (side-panel audit 2026-11-19), so the edits go to the task that has one. */
+export const MEDIA_ATTACHMENTS = [
+  { id: 'up-shot', name: 'Screenshot 2026-11-21 at 12.04.png', mime: 'image/png', size: 182044 },
+  { id: 'up-log', name: 'retry.log', mime: 'text/plain', size: 4120 },
+];
+
 export const ENV_CHANGES = [
   { file: '.env.local', op: 'modify', beforeFile: 'API_URL=https://api.dev.example\nSTRIPE_KEY=sk_test_51Hb0rk\n# local only\nDEBUG=\n', edits: [{ before: 'sk_test_51Hb0rk', after: 'sk_test_77Qx2m' }] },
   { file: 'src/config.ts', op: 'modify', beforeFile: "export const retries = 2;\nexport const timeout = 5000;\n", edits: [{ before: 'retries = 2', after: 'retries = 3' }] },
