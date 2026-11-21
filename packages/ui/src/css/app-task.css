@@ -1169,4 +1169,10 @@
       transition: opacity 0.12s var(--ease);
     }
   }
+  /* an earlier turn's icons are invisible at rest but keep their box: they go before the files, so "1 file +71 −55"
+     ends at the bar's right edge instead of an icon row's width short of it, and showing them on hover moves nothing */
+  @media (hover: hover) and (width > 520px) {
+    [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools'] { order: 1; }
+    [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='link-xs'] { order: 2; }
+  }
 }

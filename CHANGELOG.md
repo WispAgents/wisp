@@ -7,6 +7,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **An earlier turn's "1 file +71 −55" ends at the right edge.** Its action icons are hidden until you hover the
+  turn but kept their room after the files, so the counts stopped an icon row short of the edge. The hidden icons
+  now sit before the files, and showing them on hover moves nothing.
 - **Transcript on a working task reads like an agent's log.** With Transcript on, a running turn showed its steps
   and then the boxed working panel under them, repeating its last five steps. The steps are now the log, closed by one
   live line (the orb, who is working, how long, how many actions, Stop), as Claude Code and Codex show their work.
