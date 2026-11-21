@@ -1,7 +1,7 @@
 // Whether Ship it shows (src/model/pr.ts shippable, v1 ship.js shippable), on the row fields the server
 // now sends: `branch` (wisp.worktrees), `pr` and `toShip` (wisp.ship's slot, rechecked at each turn's end).
 import { expect, test } from 'vitest';
-import { shippable } from '../src/model/pr.ts';
+import { prChipLabel, prChipTitle, prsOf, prStripSub, prStripTitle, shippable } from '../src/model/pr.ts';
 import { dialogTitle } from '../src/model/ship.ts';
 import type { ShipSession } from '../src/types.ts';
 import { shipRow } from '../src/row.ts';
@@ -61,4 +61,46 @@ test('a failed review says so and Review again shows Reviewing at once_audit_E5'
   const ops = review.optimistic === 'none' || typeof review.optimistic !== 'function' ? [] : review.optimistic({ peek: () => row } as never, { key: 'local:s1' as never });
   const next = (ops[0] as { ops: { value: unknown }[] }).ops[0]?.value;
   expect(reviewState(t, { ...failed, review: next } as never, ctx)?.label).toBe('Reviewing');
+});
+
+test('prsOf deduplicates a PR present in both own and attached lists', () => {
+  const own = { number: 840, url: 'https://github.com/o/wisp/pull/840', state: 'MERGED' as const };
+  const other = { number: 841, url: 'https://github.com/o/wisp/pull/841', state: 'OPEN' as const };
+  const s = row({ project: 'wisp', pr: own, prs: [{ repo: 'wisp', pr: own }, { repo: 'wisp', pr: other }] });
+  expect(prsOf(s).map((x) => x.pr.number)).toEqual([840, 841]);
+});
+
+test('prChipLabel and prChipTitle omit repo prefix cleanly when repo is missing', () => {
+  const pr = { number: 840, url: 'https://github.com/o/wisp/pull/840', state: 'MERGED' as const };
+  expect(prChipLabel({ repo: 'wisp', pr })).toBe('wisp #840');
+  expect(prChipLabel({ repo: undefined, pr })).toBe('#840');
+  expect(prChipTitle(t, { repo: 'wisp', pr })).toBe('wisp: PR #840: Merged');
+  expect(prChipTitle(t, { repo: '', pr })).toBe('PR #840: Merged');
+});
+
+test('prStripTitle and prStripSub handle single PR and every multi-PR combination', () => {
+  const merged = (n: number) => ({ repo: 'wisp', pr: { number: n, url: `https://github.com/o/wisp/pull/${n}`, state: 'MERGED' as const } });
+  const closed = (n: number) => ({ repo: 'wisp', pr: { number: n, url: `https://github.com/o/wisp/pull/${n}`, state: 'CLOSED' as const } });
+  const open = (n: number, over: Partial<{ conflict: boolean; checks: { pass: number; fail: number; pending: number } }> = {}) => ({
+    repo: 'api',
+    pr: { number: n, url: `https://github.com/o/api/pull/${n}`, state: 'OPEN' as const, ...over },
+  });
+
+  expect(prStripTitle(t, [merged(840)])).toBe('PR #840');
+  expect(prStripSub(t, [merged(840)])).toBe('Merged');
+
+  expect(prStripTitle(t, [merged(839), merged(840)])).toBe('2 PRs');
+  expect(prStripSub(t, [merged(839), merged(840)])).toBe('All merged');
+  expect(prStripSub(t, [closed(1), closed(2)])).toBe('All closed');
+
+  const mixed = [
+    open(1, { conflict: true }),
+    open(2, { checks: { fail: 1, pending: 0, pass: 2 } }),
+    open(3, { checks: { fail: 0, pending: 1, pass: 2 } }),
+    open(4, { checks: { fail: 0, pending: 0, pass: 3 } }),
+    merged(5),
+    closed(6),
+  ];
+  expect(prStripTitle(t, mixed)).toBe('6 PRs');
+  expect(prStripSub(t, mixed)).toBe('1 conflict · 1 failing · 1 running · 1 open · 1 merged · 1 closed');
 });

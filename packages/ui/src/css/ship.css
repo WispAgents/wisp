@@ -26,9 +26,9 @@
     [data-kit='check-row-actions'] { grid-column: 4; }
   }
 
-  /* The tone chip: v1's PR pill, as a button. */
+  /* The tone chip: v1's PR pill, as a button. Never wider than its box: a long repo name truncates inside it. */
   [data-kit='tone-chip'] {
-    display: inline-flex; align-items: center; gap: var(--space-3); flex: none; height: var(--size-pill);
+    display: inline-flex; align-items: center; gap: var(--space-3); flex: none; max-width: 100%; min-width: 0; height: var(--size-pill);
     padding: var(--space-0) var(--space-4); border: var(--size-hairline) solid var(--line); border-radius: var(--radius-pill);
     background: transparent; color: var(--ink-2); font-size: var(--fs-sm); font-weight: var(--fw-medium);
     white-space: nowrap; cursor: pointer; transition: background var(--dur-fast), border-color var(--dur-fast);
@@ -38,6 +38,17 @@
   [data-kit='tone-chip-dot'] { flex: none; width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-pill); background: var(--k-tone); }
   [data-kit='tone-chip-dot'][data-live] { animation: kit-pulse 1.6s ease-in-out infinite; }
   [data-kit='tone-chip-label'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+
+  /* The task's PR card (PrStrip): compact row aligned with its chips and bar, chevron always visible and never
+     stealing clicks from the row; many attached PRs scroll inside a bounded height so the sticky column stays on screen. */
+  [data-part='pr.strip.row'] { min-height: 0; padding: var(--space-2) var(--space-3); }
+  [data-part='pr.strip.row'] > [data-kit='list-row-lead'] { margin-inline-end: var(--space-4); }
+  [data-part='pr.strip.row'] > [data-kit='list-row-actions'] { opacity: 1; pointer-events: none; padding-inline-start: var(--space-2); }
+  [data-part='pr.strip.row']:hover > [data-kit='list-row-actions'] { color: var(--ink-2); }
+  [data-part='pr.strip.also'] { padding: var(--space-2) var(--space-3); max-height: calc(var(--size-pill) * 5 + var(--space-2) * 4 + var(--space-4)); overflow-y: auto; overscroll-behavior: contain; }
+  [data-part='pr.strip.toggle'] { padding: var(--space-0) var(--space-3) var(--space-1); }
+  [data-part='pr.strip.bar'] { padding-inline: var(--space-1); }
+  [data-part='pr.strip.review'][data-tone='bad'] { color: var(--bad); }
 
   /* The docked bar: the phone's merge bar, where the reply box sits on the task. */
   [data-kit='dock-bar'] {

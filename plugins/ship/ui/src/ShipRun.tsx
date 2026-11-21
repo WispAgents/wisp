@@ -3,7 +3,7 @@
 // failure stays here with Retry (the dialog again, with what was typed) and Dismiss.
 
 import { Index, Show, type JSX } from 'solid-js';
-import { Card, Icon, Inline, Pill, Stack, Text, Toolbar, type ToolbarItem } from '@wisp/ui';
+import { Card, Icon, Inline, Pill, Stack, Text, Toolbar, Wrap, type ToolbarItem } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { stepLabel, type Track } from './model/ship.ts';
 import './i18n/lazy.ts';
@@ -19,13 +19,13 @@ export function ShipRun(props: { readonly track: Track; readonly onRetry: () => 
   return (
     <Card part="pr.strip" tone={props.track.failed ? 'bad' : 'accent'} pad="4">
       <Stack gap="3">
-        <Inline gap="3">
+        <Inline gap="3" align={props.track.failed ? 'start' : 'center'}>
           <Icon name="send" size="md" tone={props.track.failed ? 'bad' : 'accent-ink'} />
-          <Text part="ship.run.what" truncate title={props.track.what} tone={props.track.failed ? 'bad' : 'ink'}>
+          <Text part="ship.run.what" truncate={!props.track.failed} title={props.track.what} tone={props.track.failed ? 'bad' : 'ink'}>
             {props.track.what}
           </Text>
         </Inline>
-        <Inline gap="2" part="ship.track" aria-label={t('wisp.ship.run.stages')}>
+        <Wrap gap="2" part="ship.track" aria-label={t('wisp.ship.run.stages')}>
           {/* by position: a stage that moves on updates its pill in place */}
           <Index each={props.track.steps}>
             {(s) => (
@@ -34,7 +34,7 @@ export function ShipRun(props: { readonly track: Track; readonly onRetry: () => 
               </Pill>
             )}
           </Index>
-        </Inline>
+        </Wrap>
         <Show when={props.track.failed}>
           <Toolbar aria-label={t('wisp.ship.run.actions')} items={items()} compact part="ship.run.bar" />
         </Show>

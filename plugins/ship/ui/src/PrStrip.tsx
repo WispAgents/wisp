@@ -3,7 +3,7 @@
 // end. Clicking the row opens the side panel on PR. While a ship is in flight it shows the stages
 // instead; while the PR pane is open beside the task it hides, so the verdict never shows twice.
 
-import { Match, Show, Switch, createEffect, type Accessor, type JSX } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, type Accessor, type JSX } from 'solid-js';
 import { CommandError, readonly, type EntityKey, type PluginClient } from '@wisp/client';
 import { mergeRequest } from './merge-request.ts';
 import type { ExtensionProps } from '@wisp/shell/contract';
@@ -11,14 +11,14 @@ import { Button, Card, Icon, IconButton, ListRow, Stack, Toolbar, ToneChip, useS
 import { fixConflicts, refresh, review } from './commands.ts';
 import { t } from './i18n.ts';
 import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
-import { fixing, openPrs, prLine, prsOf, prTone, worstTone, type PrTone } from './model/pr.ts';
+import { fixing, openPrs, prChipLabel, prChipTitle, prsOf, prStripSub, prStripTitle, prTone, worstTone, type PrTone } from './model/pr.ts';
 import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
 import { stepsOfLive, track } from './model/ship.ts';
 import { ShipRun } from './ShipRun.tsx';
 import { TONE, TONE_ICON } from './tones.ts';
 import { useBusy } from './busy.ts';
 import { openShip, useReviewCtx, useSession, useShip } from './use.ts';
-import type { ShipSession } from './types.ts';
+import type { ConflictFix, RepoPr, ShipSession } from './types.ts';
 import './i18n/lazy.ts';
 
 export default function PrStrip(props: ExtensionProps): JSX.Element {
@@ -75,43 +75,49 @@ function Strip(props: { readonly client: PluginClient; readonly k: EntityKey }):
   );
 }
 
+/** Show up to 5 PR chips inline; beyond that collapse to 4 + a "+N more" toggle chip (never "+1 more"). */
+const PR_CHIP_CAP = 5;
+const PR_CHIP_PREVIEW = 4;
+
 // size-ok: the row's bar is one list of items, each with its own condition from v1
 function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; readonly s: ShipSession; readonly merge: MergeAsk; readonly ctx: Accessor<ReviewContext> }): JSX.Element {
   const ship = useShip(props.client, props.k);
   const merge = props.merge;
   const ctx = props.ctx;
   const checking = useBusy();
-  const prs = () => prsOf(props.s);
-  const lead = () => prs()[0];
+  const [expanded, setExpanded] = createSignal(false);
+  const prs = createMemo(() => prsOf(props.s));
   const several = (): boolean => prs().length > 1;
-  const fix = () => (props.s.pr ? props.s.conflictFix : undefined); // wisp fixes conflicts on the task's own PR only
-  const tone = (): PrTone => worstTone(prs().map((x, i) => prTone(x.pr, i ? undefined : fix())));
-  const open = () => openPrs(props.s);
+  // wisp fixes conflicts on the task's own PR only
+  const fixFor = (x: RepoPr): ConflictFix | undefined => (props.s.pr && x.pr === props.s.pr ? props.s.conflictFix : undefined);
+  const tone = createMemo((): PrTone => worstTone(prs().map((x) => prTone(x.pr, fixFor(x)))));
+  const open = createMemo(() => openPrs(props.s));
   const rv = () => (props.s.pr?.state === 'OPEN' ? reviewState(t, props.s, ctx()) : undefined);
-  const title = (): string => {
-    const x = lead();
-    return !x ? '' : several() ? `${x.repo ?? ''} #${x.pr.number}` : t('wisp.ship.tab.one', { n: x.pr.number });
-  };
-  const items = (): ToolbarItem[] => {
+  const title = (): string => prStripTitle(t, prs());
+  const sub = (): string => prStripSub(t, prs(), props.s.pr, props.s.conflictFix);
+  const overflow = (): boolean => prs().length > PR_CHIP_CAP;
+  const shown = createMemo((): readonly RepoPr[] => (overflow() && !expanded() ? prs().slice(0, PR_CHIP_PREVIEW) : prs()));
+  const hidden = createMemo((): readonly RepoPr[] => (overflow() && !expanded() ? prs().slice(PR_CHIP_PREVIEW) : []));
+  const hiddenTone = createMemo((): PrTone => worstTone(hidden().map((x) => prTone(x.pr, fixFor(x)))));
+  const hiddenLive = (): boolean => hidden().some((x) => !!x.pr.checks?.pending && x.pr.state === 'OPEN');
+  const items = createMemo((): ToolbarItem[] => {
     const out: ToolbarItem[] = [];
-    const x = lead();
-    if (!x) return out;
+    const list = prs();
+    const first = list[0];
+    if (!first) return out;
     if (open().length) {
       const check = (): void => void checking.run(props.client.run(refresh, { key: props.k }));
       // icon-only in both forms: the ring replaces the icon while it checks, the width holds
       out.push({
         id: 'refresh',
         icon: 'replay',
-        label: t('wisp.ship.strip.checkTitle'),
+        label: t('wisp.ship.strip.check'),
         priority: 1,
         onSelect: check,
         render: () => <IconButton icon="replay" size="sm" label={t('wisp.ship.strip.checkTitle')} loading={checking.busy()} onClick={check} part="pr.strip.check" />,
       });
     }
-    if (!several()) out.push({ id: 'github', icon: 'external', label: t('wisp.ship.strip.github'), priority: 2, onSelect: () => ship.shell.platform.openExternal(x.pr.url) });
-    if (x.pr.state === 'OPEN' && x.pr.conflict && props.s.pr && !fixing(fix()) && props.s.state !== 'running') {
-      out.push({ id: 'fix', icon: 'merge', label: t('wisp.ship.action.fix'), priority: 'pin', onSelect: () => quiet(props.client.run(fixConflicts, { key: props.k })) });
-    }
+    if (!several()) out.push({ id: 'github', icon: 'external', label: t('wisp.ship.strip.github'), priority: 2, onSelect: () => ship.shell.platform.openExternal(first.pr.url) });
     const v = rv();
     if (v) {
       // a rerun the server didn't start says why (audit E5: the chip said "Not reviewed" before and after)
@@ -136,7 +142,7 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
         // its title says why it isn't reviewed and that a click tries again (v1 reviewState's title, audit E5)
         render: (form) =>
           form === 'icon' ? (
-            <IconButton icon={REVIEW_ICON[v.kind]} size="sm" variant="ghost" label={`${v.label}: ${v.title}`} onClick={go} part="pr.strip.review" />
+            <IconButton icon={REVIEW_ICON[v.kind]} size="sm" variant="ghost" {...(bad ? { tone: 'bad' as const } : {})} label={`${v.label}: ${v.title}`} onClick={go} part="pr.strip.review" />
           ) : (
             <Button size="sm" variant="ghost" icon={REVIEW_ICON[v.kind]} {...(bad ? { tone: 'bad' as const } : {})} title={v.title} onClick={go} part="pr.strip.review">
               {v.label}
@@ -144,40 +150,64 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           ),
       });
     }
+    // Pinned primary action (Fix conflicts or Merge) always sits last so Toolbar pushes it cleanly to the end.
+    if (props.s.pr?.state === 'OPEN' && props.s.pr.conflict && !fixing(props.s.conflictFix) && props.s.state !== 'running') {
+      out.push({ id: 'fix', icon: 'merge', label: t('wisp.ship.action.fix'), priority: 'pin', onSelect: () => quiet(props.client.run(fixConflicts, { key: props.k })) });
+    }
     if (open().length && !open().some((o) => o.pr.conflict)) {
       const label = open().length > 1 ? t('wisp.ship.strip.mergeAll') : t('wisp.ship.strip.merge');
       out.push({ id: 'merge', icon: 'merge', label, priority: 'pin', render: (form) => <MergeButton label={label} form={form} busy={merge.merging()} onClick={merge.ask} /> });
     }
     return out;
-  };
+  });
   return (
     <Card part="pr.strip" tone={TONE[tone()]} pad="3">
       <Stack gap="1">
         <ListRow
           part="pr.strip.row"
           title={title()}
-          sub={prLine(t, lead()?.pr ?? { number: 0, url: '', state: 'OPEN' }, fix())}
+          sub={sub()}
+          subTitle={sub()}
           lead={<Icon name={TONE_ICON[tone()]} size="md" tone={TONE[tone()] === 'accent' ? 'accent-ink' : TONE[tone()]} />}
           actions={<Icon name="chevron" size="sm" tone="faint" />}
           onOpen={() => ship.openPane()}
         />
-        {/* the other repos' PRs: a Wrap line under the row (v1 .pr-strip wraps), never the row's nowrap pills
-            column, which in a narrow pane pushed the title out and spilled the chips past the card */}
+        {/* every attached PR as a wrapping chip row under the summary (never ListRow's nowrap pills column, which
+            squeezed the title and spilled chips past the card); bounded with "+N more" past 5 PRs */}
         <Show when={several()}>
           <Wrap gap="2" part="pr.strip.also">
-            {prs()
-              .slice(1)
-              .map((o) => (
+            <For each={shown()}>
+              {(o) => (
                 <ToneChip
-                  label={`${o.repo ?? ''} #${o.pr.number}`}
-                  tone={TONE[prTone(o.pr)]}
-                  title={`${o.repo ?? ''}: ${t('wisp.ship.pill.title', { n: o.pr.number, line: prLine(t, o.pr) })}`}
+                  part="pr.strip.chip"
+                  label={prChipLabel(o)}
+                  tone={TONE[prTone(o.pr, fixFor(o))]}
+                  live={!!o.pr.checks?.pending && o.pr.state === 'OPEN'}
+                  title={prChipTitle(t, o, fixFor(o))}
                   onClick={() => ship.shell.platform.openExternal(o.pr.url)}
                 />
-              ))}
+              )}
+            </For>
+            <Show when={overflow() && !expanded()}>
+              <ToneChip
+                part="pr.strip.more"
+                label={t('wisp.ship.strip.more', { count: hidden().length })}
+                tone={TONE[hiddenTone()]}
+                live={hiddenLive()}
+                title={t('wisp.ship.strip.moreTitle', { count: prs().length })}
+                onClick={() => setExpanded(true)}
+              />
+            </Show>
           </Wrap>
+          <Show when={overflow() && expanded()}>
+            <Wrap gap="2" part="pr.strip.toggle">
+              <ToneChip part="pr.strip.more" label={t('wisp.ship.strip.less')} tone="neutral" title={t('wisp.ship.strip.less')} onClick={() => setExpanded(false)} />
+            </Wrap>
+          </Show>
         </Show>
-        <Toolbar aria-label={t('wisp.ship.strip.actions')} items={items()} compact part="pr.strip.bar" />
+        <Show when={items().length > 0}>
+          <Toolbar aria-label={t('wisp.ship.strip.actions')} items={items()} compact part="pr.strip.bar" />
+        </Show>
       </Stack>
     </Card>
   );

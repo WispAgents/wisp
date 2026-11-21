@@ -1651,4 +1651,19 @@
   :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-stage'][data-none] { width: var(--space-0); }
   :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-n'] { order: 1; }
   :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-n']:first-child { margin-left: auto; }
+  /* The task's PR card (PrStrip / ShipRun): single card padding, compact row with 48 dp touch height (no double 16 dp
+     insets or 40 dp icon gutter), comfortable chip targets, and a 48 dp bar so tap-min buttons are never clipped. */
+  :root[data-platform='android'] [data-part='pr.strip'] > [data-kit='card-body'] { padding: var(--space-4); }
+  :root[data-platform='android'] [data-part='pr.strip.row'] { min-height: var(--tap-min); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); }
+  :root[data-platform='android'] [data-part='pr.strip.row'][data-lead] > [data-kit='list-row-lead'] { width: auto; min-height: 0; margin-inline-end: var(--space-4); }
+  :root[data-platform='android'] [data-part='pr.strip.row'] > [data-kit='list-row-actions'] { opacity: 1; pointer-events: none; padding-inline-start: var(--space-2); }
+  :root[data-platform='android'] [data-part='pr.strip.also'] { max-height: calc(var(--chip-h) * 4 + var(--space-2) * 3 + var(--space-4)); }
+  :root[data-platform='android'] [data-part='pr.strip.also'] [data-kit='tone-chip'],
+  :root[data-platform='android'] [data-part='pr.strip.toggle'] [data-kit='tone-chip'] { height: var(--chip-h); padding: var(--space-0) var(--chip-pad); }
+  :root[data-platform='android'] [data-part='pr.strip.bar'],
+  :root[data-platform='android'] [data-part='ship.run.bar'] { height: var(--tap-min); }
+  :root[data-platform='android'] [data-part='pr.strip.bar'] [data-kit='button'],
+  :root[data-platform='android'] [data-part='pr.strip.bar'] [data-kit='icon-button'],
+  :root[data-platform='android'] [data-part='ship.run.bar'] [data-kit='button'],
+  :root[data-platform='android'] [data-part='ship.run.bar'] [data-kit='icon-button'] { min-height: var(--tap-min); }
 }
