@@ -112,13 +112,14 @@ pub fn gist_api(id: &str) -> String {
     format!("https://api.github.com/gists/{id}")
 }
 
-/// The crew file in a gist (the API's answer): the first `*.crew.json`, else the only JSON file, else the first file.
+/// The crew file in a gist (the API's answer): the first `*.crew.yml` / `*.crew.json`, else a YAML or JSON file, else
+/// the first file.
 pub fn gist_text(api: &Value) -> Result<String> {
     let files = api.get("files").and_then(Value::as_object).ok_or_else(|| bad("That gist has no files."))?;
     let pick = files
         .iter()
-        .find(|(n, _)| n.to_ascii_lowercase().ends_with(".crew.json"))
-        .or_else(|| files.iter().find(|(n, _)| n.to_ascii_lowercase().ends_with(".json")))
+        .find(|(n, _)| [".crew.yml", ".crew.yaml", ".crew.json"].iter().any(|x| n.to_ascii_lowercase().ends_with(x)))
+        .or_else(|| files.iter().find(|(n, _)| [".yml", ".yaml", ".json"].iter().any(|x| n.to_ascii_lowercase().ends_with(x))))
         .or_else(|| files.iter().next())
         .map(|(_, f)| f)
         .ok_or_else(|| bad("That gist has no files."))?;
@@ -139,12 +140,13 @@ pub fn share_crew(content: &Value, card_kind: &str) -> Result<Value> {
     Ok(content.clone())
 }
 
-/// A fetched body as the crew file's JSON, refused when it's too big or isn't JSON.
+/// A fetched body as the crew file (YAML, or JSON from before), refused when it's too big or isn't either.
 pub fn parse_fetched(bytes: &[u8]) -> Result<Value> {
     if bytes.len() > MAX_FETCHED {
         return Err(bad("That file is too big to be a crew file."));
     }
-    serde_json::from_slice(bytes).map_err(|_| bad("That link isn't a crew file: it isn't JSON."))
+    let text = std::str::from_utf8(bytes).map_err(|_| bad("That link isn't a crew file: it isn't text."))?;
+    crate::transfer::read_crew_text(text).map_err(|_| bad("That link isn't a crew file: it isn't YAML or JSON."))
 }
 
 /// The key a crew share is kept under on the destination, so sharing the same members again updates the same link:

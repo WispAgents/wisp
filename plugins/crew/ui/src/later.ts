@@ -97,7 +97,7 @@ const later: PluginUiLater = {
           group: 'shell.palette.group.actions',
           label: t('wisp.crew.palette.import'),
           icon: 'download',
-          keywords: 'crew members import add link gist file crew.json',
+          keywords: 'crew members import add link gist file crew.yml yaml crew.json',
           run: () => ctx.client.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: VIEW.import as never, params: {} } }),
         },
       ],

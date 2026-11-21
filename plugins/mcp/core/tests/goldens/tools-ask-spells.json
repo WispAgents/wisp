@@ -383,7 +383,7 @@
     },
     "from": {
      "type": "string",
-     "description": "Instead of the fields above: members someone shared, as a link to a .crew.json file (https, or gist:<id>) or its JSON. They join paused, in cwd (default: the current project), until the user resumes them."
+     "description": "Instead of the fields above: members someone shared, as a link to a .crew.yml file (or a .crew.json from before; https, or gist:<id>) or its text. They join paused, in cwd (default: the current project), until the user resumes them."
     }
    }
   }

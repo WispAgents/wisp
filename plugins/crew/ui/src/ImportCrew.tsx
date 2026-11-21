@@ -1,5 +1,5 @@
-// Import crew members (v1 crew-share.js importCrew, reviewImportCrew): a shared member's .crew.json, its JSON, or a
-// link (https or gist:<id>), checked by the host (crew.import, dryRun), then who joins: each ticked, its name editable,
+// Import crew members (v1 crew-share.js importCrew, reviewImportCrew): a shared member's .crew.yml (or a .crew.json
+// from before), its text, or a link (https or gist:<id>), checked by the host (crew.import, dryRun), then who joins: each ticked, its name editable,
 // what starts it and how it runs. Add puts them on the crew at once, paused; a refusal comes back with the toast.
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
@@ -132,7 +132,7 @@ export default function ImportCrew(props: { readonly client: PluginClient; reado
             <input
               ref={(el) => (file = el)}
               type="file"
-              accept=".json,application/json"
+              accept=".yml,.yaml,.json,application/yaml,text/yaml,application/json"
               hidden
               onChange={(e) => {
                 const f = e.currentTarget.files?.[0];
