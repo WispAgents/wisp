@@ -226,6 +226,11 @@ impl Kernel {
             *c = crate::state::Chaos { seed, delays };
         }
     }
+    /// A number that changes whenever any point's contributions do (a plugin switched on or off, a lazy one woken): what
+    /// [`Self::routes`] gave is stale once it moves (audit I IS6).
+    pub fn points_generation(&self) -> u64 {
+        self.state.reg.read().map_or(0, |r| r.points_gen)
+    }
     /// Every route of every plugin that is on.
     pub fn routes(&self) -> Vec<RouteEntry> {
         self.contributions_owned(&crate::http::ROUTES)

@@ -194,7 +194,7 @@ fn build_agent_list(t: &Table, info: &SessionInfo) -> String {
 /// What a tool list says of `auto` as a harness, and what it says while Auto is off (`runtime.auto`, docs/v2-plan.md
 /// §3): no list offers it, as New task and the crew editor don't (audit H HS7). Exact text, so the rest of the bytes
 /// stay v1's.
-const AUTO_HARNESS: [(&str, &str); 5] = [
+const AUTO_HARNESS: [(&str, &str); 7] = [
     (r#""enum":["auto","claude""#, r#""enum":["claude""#),
     (
         "Harness: auto, claude, codex, opencode, cursor, antigravity, grok or copilot. Default auto.",
@@ -203,6 +203,10 @@ const AUTO_HARNESS: [(&str, &str); 5] = [
     ("A harness (auto, claude, ", "A harness (claude, "),
     (" (auto: wisp picks harness and model)", ""),
     ("Harness to run; auto lets wisp pick harness and model from what worked before. Default", "Harness to run. Default"),
+    // the catalogue's own words (audit I IS8): `runtime_create`'s, from its command's doc, and an agent profile's harness
+    // (`runtime_profile_set`), as they are in a list's JSON
+    (r#" `agent: \"auto\"` lets wisp.router pick."#, ""),
+    ("; `auto` lets the router pick)", ")"),
 ];
 
 /// A `tools/list` answer (or any text of tool definitions) with `auto` taken out of the harness lists, for a wisp whose
@@ -289,5 +293,16 @@ mod tests {
         }
         // a contributed tool brings its own flags: the Cast check is the built-ins'
         assert_eq!(not_offered("wisp_plugins", &SessionInfo::default(), Some(OwnFlags::default())), None);
+    }
+
+    /// Audit I IS8: with Auto off, `runtime_create` still said "`agent: \"auto\"` lets wisp.router pick" and
+    /// `runtime_profile_set` "`auto` lets the router pick" (their commands' own docs, in every list).
+    #[test]
+    fn the_catalogues_tools_offer_no_auto_harness_with_auto_off_audit_i_is8() {
+        let list = r#"{"name":"runtime_create","description":"`runtime.create`: creates a task and starts its first turn. `agent: \"auto\"` lets wisp.router pick."},{"name":"runtime_profile_set","inputSchema":{"properties":{"harness":{"description":"the harness that runs it (`claude`, `codex`, `cursor`, `opencode`, …; `auto` lets the router pick)"}}}}"#;
+        let off = without_auto(list);
+        assert!(!off.contains("router pick") && !off.contains(r#"\"auto\""#), "{off}");
+        assert!(off.contains("starts its first turn.\"") && off.contains("`opencode`, …)"), "{off}");
+        let _: Vec<serde_json::Value> = serde_json::from_str(&format!("[{off}]")).unwrap();
     }
 }

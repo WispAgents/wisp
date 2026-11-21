@@ -47,7 +47,7 @@ impl TransportDef for Def {
     }
 }
 
-/// wisp.runtime with `q1` (a plain question) open on `s1` and a setup card open on `s2`; `runtime.answer` is recorded.
+/// wisp.runtime with `q1` (a plain question) open on `s1`, a setup card open on `s2` and a guard question (ADR-0115) on `s3`; `runtime.answer` is recorded.
 struct Runtime(HubSlot, Answers);
 impl Plugin for Runtime {
     fn manifest(&self) -> Manifest {
@@ -57,6 +57,8 @@ impl Plugin for Runtime {
         s.command::<r::Get, _, _>(move |_, _, a: r::IdArgs| {
             let ask = if a.id.0 == "s2" {
                 json!({ "id": "c2", "question": "Ada wants to add the connector “x”", "options": ["Allow", "Deny"], "setup": { "headline": "…" } })
+            } else if a.id.0 == "s3" {
+                json!({ "id": "g3", "question": "Your harness wants to turn off …", "options": ["Allow", "Deny"], "guard": true })
             } else {
                 json!({ "id": "q1", "question": "Which?", "options": ["Yes", "No"] })
             };
@@ -175,5 +177,33 @@ async fn a_typed_reply_under_a_setup_card_answers_it_only_for_the_linked_person_
     assert_eq!(
         answers.lock().unwrap().clone(),
         vec![json!({ "id": "s2", "text": "Allow", "askId": "c2" }), json!({ "id": "s2", "text": "not that one", "askId": "c2" })]
+    );
+}
+
+/// Audit I IS1: a guard question (ADR-0115 §4, the user's harness lowering a safety guard) took a replayed ntfy action and
+/// another Telegram member's tap. It's answered as a setup card is: a tap or a typed reply the channel can't vouch is the
+/// linked person's answers nothing and says to answer in wisp; the linked person's does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guard_question_is_answered_from_a_channel_only_by_the_linked_person_audit_i_is1() {
+    let (_k, h, answers) = hub().await;
+    // a replayed ntfy action (ntfy never vouches) and another member's tap in a linked group chat: both `person: false`
+    let said = h.act(&tap("s3", "g3", 0, false)).await.unwrap();
+    assert_eq!(said, wisp_channels_core::SETUP_ELSEWHERE);
+    let typed = |text: &str, person: bool| ActArgs {
+        session_id: "s3".into(),
+        kind: ActKind::Reply,
+        reference: None,
+        index: None,
+        text: Some(text.into()),
+        approvals: false,
+        person,
+    };
+    assert_eq!(h.act(&typed("Allow", false)).await.unwrap(), wisp_channels_core::SETUP_ELSEWHERE);
+    assert!(answers.lock().unwrap().is_empty(), "nothing answered: {:?}", answers.lock().unwrap());
+    h.act(&tap("s3", "g3", 1, true)).await.unwrap();
+    h.act(&typed("Allow", true)).await.unwrap();
+    assert_eq!(
+        answers.lock().unwrap().clone(),
+        vec![json!({ "id": "s3", "text": "Deny", "askId": "g3" }), json!({ "id": "s3", "text": "Allow", "askId": "g3" })]
     );
 }

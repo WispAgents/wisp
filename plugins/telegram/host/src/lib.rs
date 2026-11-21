@@ -184,6 +184,10 @@ impl Telegram {
         }
         let tap = q.data.as_deref().and_then(parse_tap);
         let session = tap.as_ref().and_then(|t| t.session.clone()).or_else(|| q.message_id().and_then(|m| self.session_of(m)));
+        // the keyboard goes only once a tap did what it says: a refused one (another person's in a group, a setup card or
+        // guard question tapped where it can't be the linked person's, an unknown or stale button) leaves it, so the
+        // linked person can still tap (audit I, smaller notes: they could only type)
+        let mut took = false;
         let result = match (tap, session) {
             (Some(t), Some(session)) => {
                 // a ref that didn't fit in the button is read back from the task (its open ask, its newest turn), as
@@ -209,7 +213,13 @@ impl Telegram {
                         approvals: false,
                         person: linked_person(&self.cfg(), &chat, q.from.as_ref().and_then(|f| f.id.as_deref())),
                     };
-                    self.hub.act(&a).await.unwrap_or_else(|e| e.message)
+                    match self.hub.act(&a).await {
+                        Ok(said) => {
+                            took = said != wisp_channels_api::SETUP_ELSEWHERE;
+                            said
+                        }
+                        Err(e) => e.message,
+                    }
                 } else {
                     "That button is out of date.".to_owned()
                 }
@@ -223,7 +233,7 @@ impl Telegram {
                 15_000,
             )
             .await;
-        if let Some(mid) = q.message_id() {
+        if took && let Some(mid) = q.message_id() {
             let _ = self
                 .api(
                     "editMessageReplyMarkup",

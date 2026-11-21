@@ -95,3 +95,30 @@ async fn a_peer_s_tasks_are_seen_and_started_from_another_wisp() {
     assert_eq!(a.cmd("machines.sessions", json!({})).await, json!([]));
     drop((sa, sb));
 }
+
+/// Audit I IS12: a run whose CLI hadn't sent its first event yet (gated: a sign-in prompt, a network wait) was missing
+/// from This computer → What's using it ("No task is running"; `machine.read`'s `tasks: []`), though its process was
+/// alive and its task running. A running task's processes are listed from its start.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_that_has_not_said_anything_yet_is_listed_on_this_computer_audit_i_is12() {
+    let dir = common::temp("serve-machine-starting");
+    let gates = dir.join("gates");
+    std::fs::create_dir_all(&gates).unwrap();
+    let (_serve, port) = common::start_with(&dir, &[("FAKE_GATE", gates.to_str().unwrap()), ("FAKE_GATE_ALL", "hold")]);
+    let api = common::Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let made = api.cmd("runtime.create", json!({ "prompt": "hi", "cwd": dir.join("proj"), "agent": "claude", "worktree": false })).await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    let at = std::time::Instant::now();
+    loop {
+        let last = api.cmd("machine.read", json!({})).await;
+        if last["tasks"].as_array().is_some_and(|t| t.iter().any(|x| x["id"] == id.as_str())) {
+            break;
+        }
+        if at.elapsed() >= std::time::Duration::from_secs(20) {
+            let t = api.cmd("runtime.get", json!({ "id": id })).await;
+            panic!("the starting run isn't listed: {} (task {})", last["tasks"], t["state"]);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+    std::fs::write(gates.join("hold"), "").unwrap();
+}

@@ -70,10 +70,14 @@ impl Runtime {
     /// `runtime.adopt`: a read-only task holding someone else's turns (a `full` share); fork it to go on.
     pub async fn adopt(self: &Arc<Self>, a: wisp_runtime_api::spec::AdoptArgs) -> Result<wisp_runtime_api::commands::Created> {
         let now = self.now();
+        // a fresh task brought in (Settings → Worktrees) names no harness: it's the one its next follow-up runs on, New
+        // task's last pick, else the first, as `runtime.create` picks (audit I IS13: its head read "· Default model" and
+        // its box "Follow up with …")
+        let agent = if a.agent.trim().is_empty() && a.fresh { self.default_agent() } else { a.agent };
         let mut s = Session {
             id: SessionId::new(),
             title: a.title,
-            agent: a.agent,
+            agent,
             cwd: a.cwd,
             state: SessionState::Done,
             created_at: now,

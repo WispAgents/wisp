@@ -833,6 +833,11 @@ pub async fn mcp(argv: &[String], cwd: &Path, port: u16) -> Result<i32> {
             && let (Some(c), Some(mut reply)) = (&client, mcp_reply(&root, &msg))
         {
             merge_catalogue(&mut reply, c.mcp(&msg, &at).await.ok().as_ref());
+            // Auto off (the default): no list offers `auto` as a harness, this server's own tools included (audit I IS8)
+            let auto = c.cmd("settings.get", json!({ "key": "runtime.auto" })).await.ok();
+            if !auto.is_some_and(|v| v == json!(true) || v.get("value") == Some(&json!(true))) {
+                crate::mcp_tasks::without_auto(&mut reply);
+            }
             let _ = writeln!(out, "{reply}");
             let _ = out.flush();
             continue;

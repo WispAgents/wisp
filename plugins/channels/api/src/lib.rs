@@ -34,6 +34,11 @@ pub const PLUGIN: &str = "wisp.channels";
 pub const TOPIC: &str = "plugin:wisp.channels:remote";
 /// v1 `defaults.acceptChannels`: `on` takes tasks the grid routes here.
 pub const SETTING_ACCEPT: &str = "channels.acceptChannels";
+/// What a tap or typed reply reads when it can't be the linked person's and the question is one only they answer (a
+/// setup card, ADR-0113; a guard question, ADR-0115): nothing was done. A transport keeps a refused tap's buttons
+/// (audit I: Telegram took the keyboard away, and the linked person could only type).
+pub const SETUP_ELSEWHERE: &str =
+    "That's a change to your setup: answer it in wisp (or from the chat you linked, yourself). Nothing changed.";
 
 macro_rules! command {
     ($ty:ident, $id:literal, $args:ty, $out:ty $(, read_only = $ro:literal)?) => {

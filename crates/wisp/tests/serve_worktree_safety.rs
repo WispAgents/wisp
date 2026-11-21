@@ -268,6 +268,9 @@ async fn bring_in_makes_a_task_of_a_stray_worktree_and_never_offers_wisps_own() 
     let s = f.api.cmd("runtime.get", json!({ "id": made })).await;
     assert_eq!(s["ext"]["wisp.worktrees"]["branch"], "stray-branch", "on its own branch: {s}");
     assert_ne!(s["ext"]["wisp.runtime"]["readOnly"], true, "a task you go on with: {s}");
+    // audit I IS13: it names the harness its next follow-up runs on (the default one), never none ("· Default model",
+    // "Follow up with …")
+    assert_eq!(s["agent"], "claude", "the default harness: {s}");
     let own = f.api.cmd("worktrees.bringIn", json!({ "project": project, "paths": [wt["path"]] })).await;
     assert_eq!(own["created"], json!([]), "wisp's own worktree is never offered: {own}");
 }

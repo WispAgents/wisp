@@ -45,9 +45,19 @@ async fn test_now(live: &Live, a: &TestArgs) -> Result<Vec<Tested>> {
             continue;
         }
         let r = t.publish(&msg, None).await;
-        let error = r.err().map(|e| scrub(live, &name, e.message));
-        let st = wisp_channels_api::Status { ok: Some(error.is_none()), error: error.clone(), ..wisp_channels_api::Status::default() };
-        lock(&live.st.status).insert(name.clone(), st);
+        // a channel that can't send yet because its service already refused it (Telegram's 401, so it's never linked to
+        // a chat) says that, the cause, and its status keeps it: "isn't linked to a chat" overwrote the 401 (audit I,
+        // smaller notes)
+        let known = lock(&live.st.status).get(&name).filter(|s| s.ok == Some(false)).and_then(|s| s.error.clone());
+        let (error, keep) = match r {
+            Ok(()) => (None, false),
+            Err(e) if e.code == wisp_kernel::Code::Unavailable && known.is_some() => (known, true),
+            Err(e) => (Some(scrub(live, &name, e.message)), false),
+        };
+        if !keep {
+            let st = wisp_channels_api::Status { ok: Some(error.is_none()), error: error.clone(), ..wisp_channels_api::Status::default() };
+            lock(&live.st.status).insert(name.clone(), st);
+        }
         out.push(Tested { channel: name, outcome: if error.is_none() { TestOutcome::Sent } else { TestOutcome::Failed }, error });
     }
     out.sort_by_key(|x| PHONE_ORDER.iter().position(|n| *n == x.channel).unwrap_or(PHONE_ORDER.len()));

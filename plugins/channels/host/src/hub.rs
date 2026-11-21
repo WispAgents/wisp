@@ -570,7 +570,8 @@ impl Phone for KPhone {
                         a.index.and_then(|i| ask["options"].get(usize::try_from(i).ok()?).and_then(Value::as_str).map(str::to_owned))
                     })
                     .unwrap_or_default();
-                if ask.get("setup").is_some_and(|x| !x.is_null()) && !a.person {
+                // a setup card or a guard question: the linked person's tap only (ADR-0113, ADR-0115 §4; audit I IS1)
+                if wisp_channels_core::answered_in_person(&ask) && !a.person {
                     return Ok(wisp_channels_core::SETUP_ELSEWHERE.into());
                 }
                 // the question this answers: the button's (refused once it isn't the open one)
@@ -578,10 +579,11 @@ impl Phone for KPhone {
                 Ok("Answered.".into())
             }
             ActKind::Reply | ActKind::Text => {
-                // under a setup card a typed reply answers it, naming it, for the linked person only (ADR-0113 rules 4
-                // and 6; audit G4: a typed "Allow" queued behind the card and later ran as the agent's prompt)
+                // under a setup card or a guard question a typed reply answers it, naming it, for the linked person only
+                // (ADR-0113 rules 4 and 6; audit G4: a typed "Allow" queued behind the card and later ran as the agent's
+                // prompt; audit I IS1: the guard question too)
                 let s = self.cmd_json::<rt::Get>(json!({ "id": a.session_id })).await?;
-                if let Some(ask) = s.pointer("/ext/wisp.runtime/ask").filter(|x| x.get("setup").is_some_and(|c| !c.is_null())) {
+                if let Some(ask) = s.pointer("/ext/wisp.runtime/ask").filter(|x| wisp_channels_core::answered_in_person(x)) {
                     if !a.person {
                         return Ok(wisp_channels_core::SETUP_ELSEWHERE.into());
                     }

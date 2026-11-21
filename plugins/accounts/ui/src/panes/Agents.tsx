@@ -30,11 +30,11 @@ import {
 import { useDetected } from '../detected.ts';
 import { fromRow, text } from '../source.ts';
 import { Steps } from './Steps.tsx';
-import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust, updateAccount, upgrade } from '../commands.ts';
+import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust, updateAccount, upgrade, upgradeQuiet } from '../commands.ts';
 import { AddAccount, RemoveAccount, RenameAccount } from './AccountDialogs.tsx';
 import { t } from '../i18n.ts';
 import { ACCOUNT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountKind, type AccountRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
-import { accOf, accountMenu, accountState, withPending, accountLine, changeTip, changeTitle, changeWhat, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, sentence, stillChanged, toolState } from '../words.ts';
+import { accOf, accountMenu, accountState, withPending, accountLine, changeTip, changeTitle, changeWhat, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, sentence, stillChanged, toolState, updateAllSummary } from '../words.ts';
 import '../i18n/lazy.ts';
 
 const quiet = (p: Promise<unknown>): void => {
@@ -176,6 +176,26 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
           }),
         );
     }
+  };
+  // Update all: every update at once, then one word on each, what took and what didn't with the command to run (audit I
+  // IS11: it said nothing when they didn't take)
+  const updateAll = (list: readonly HarnessRow[]): void => {
+    for (const h of list) setUpdating((s) => new Set(s).add(h.id));
+    void Promise.allSettled(list.map((h) => c.run(upgradeQuiet, { peer, agent: h.id }))).then((done) => {
+      setUpdating((s) => {
+        const n = new Set(s);
+        for (const h of list) n.delete(h.id);
+        return n;
+      });
+      const said = updateAllSummary(
+        done.map((d, i) => {
+          const h = list[i];
+          const name = h?.name ?? '';
+          return d.status === 'fulfilled' ? { name, version: h?.latest ?? '' } : { name, error: d.reason instanceof Error ? d.reason.message : String((d.reason as { message?: unknown } | undefined)?.message ?? d.reason) };
+        }),
+      );
+      shell.toast.show(said.message, { tone: said.failed ? 'error' : 'success', description: said.description });
+    });
   };
   // keyed by id: a harness that settles updates its row in place (no remount, nothing moves)
   const byId = createMemo(() => new Map(harnesses().map((h) => [h.id, h])));
@@ -403,7 +423,7 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
               .map((h) => t('accounts.updateAll.item', { name: h.name, version: h.latest ?? '' }))
               .join(' · ')}
             control={
-              <Button size="sm" variant="primary" icon="update" onClick={() => update(outdated())}>
+              <Button size="sm" variant="primary" icon="update" onClick={() => updateAll(outdated())}>
                 {t('accounts.updateAll', { count: outdated().length })}
               </Button>
             }

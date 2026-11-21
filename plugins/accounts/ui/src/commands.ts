@@ -69,6 +69,15 @@ export const upgrade = defineCommand<AgentArgs>({
   optimistic: (base, a) => merge<HarnessRow>(base, HARNESS, at(a.peer, a.agent), { installing: true }),
 });
 
+/** The same update, for Update all: its refusal is the caller's to say, in the one summary of every harness's outcome
+ *  (audit I IS11), not a toast of its own. */
+export const upgradeQuiet = defineCommand<AgentArgs>({
+  id: 'accounts.upgrade',
+  owner: (a) => a.peer,
+  quiet: true,
+  optimistic: (base, a) => merge<HarnessRow>(base, HARNESS, at(a.peer, a.agent), { installing: true }),
+});
+
 /** Trust this version (POST /agents/:id/trust): the change notice goes at once. */
 export const trust = defineCommand<AgentArgs>({
   id: 'accounts.watch.trust',

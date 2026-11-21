@@ -11,8 +11,18 @@ use super::{Slot, rt, track};
 
 /// asks, approvals, /btw, compact, rerun, fork, subagents, quick, sign-in, overage, agents (more.rs)
 pub(super) fn more(s: &mut Setup, slot: &Slot, harness_kind: Arc<StoredKind>, kinds_for_run: Arc<StoredKind>) {
-    cmd!(s, slot, c::Ask, |r, call, a| r.ask(a).await.map(|ask_id| c::Asked { ask_id }));
-    setup_cards(s, slot);
+    cmd!(s, slot, c::Ask, |r, call, a| {
+        // a guard question (ADR-0115) is wisp.mcp's for the user's harness: an agent's token can't mark one (the review of
+        // audit I IS2: it would take follow-ups away from its own task for good)
+        let mut a = a;
+        if call.caller().session.is_some()
+            && let Some(d) = a.details.as_mut().and_then(serde_json::Value::as_object_mut)
+        {
+            d.remove("guard");
+        }
+        r.ask(a).await.map(|ask_id| c::Asked { ask_id })
+    });
+    setup_cards(s, slot, kinds_for_run.clone());
     cmd!(s, slot, c::Unask, |r, call, a| r.unask(&a.id, &a.question).await);
     cmd!(s, slot, c::PollAnswerOf, |r, call, a| Ok(r.poll_answer(&a.ask_id)));
     cmd!(s, slot, c::Approval, |r, call, a| r.approval(a).await);
@@ -212,6 +222,23 @@ async fn missing_folder(path: &str) -> Option<String> {
     }
 }
 
+/// A crew member asked for on `auto` while Auto is off (audit I IS8).
+const AUTO_OFF_NOTHING_ASKED: &str = "Auto is off (runtime.auto): name a harness, or leave it out for the default one. Nothing was asked.";
+
+/// Why adding a project at `path` would change nothing: it's a project already (by its folder, spelled as stored).
+async fn already_a_project(projects: &StoredKind, path: &str) -> Option<String> {
+    let path = path.trim();
+    if path.is_empty() || path.contains("://") || path.starts_with("git@") || !std::path::Path::new(path).is_absolute() {
+        return None;
+    }
+    let at = crate::kinds::project_path(path).await;
+    let list = projects.specs().await.ok()?;
+    match crate::kinds::project_add(&list, &at, None) {
+        (None, (name, false)) => Some(format!("{path} is the project {name} already: nothing to add, so nothing was asked.")),
+        _ => None,
+    }
+}
+
 /// Who answers a guard question: the user's own hands (`user:*`, a grid box's `box`), or a plugin that relays the user's
 /// own tap and declared it (`runtime:setup.answer`, as for setup cards).
 fn may_answer_guard(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call) -> bool {
@@ -225,11 +252,12 @@ fn may_answer_guard(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call) -> bool {
         .is_some_and(|p| ctx.manifests().iter().any(|m| m.id == p && m.permissions.iter().any(|x| x == crate::more::RELAY)))
 }
 
-fn setup_cards(s: &mut Setup, slot: &Slot) {
+fn setup_cards(s: &mut Setup, slot: &Slot, projects: Arc<StoredKind>) {
     use wisp_runtime_core::setup::{self as su, Normalized};
     let sl = slot.clone();
     s.command::<c::SetupAsk, _, _>(move |ctx, call, a| {
         let slot = sl.clone();
+        let projects = projects.clone();
         async move {
             let r = rt(&slot)?;
             // v1 offered none of these to a capped task (mcp-ask.js CAPPED_OFF)
@@ -251,9 +279,26 @@ fn setup_cards(s: &mut Setup, slot: &Slot) {
             // a project that can't be added is refused to the agent before any card (audit I6: the user was asked,
             // allowed it, and read "it didn't go through: No folder at …")
             for w in writes.iter().filter(|w| w.command == su::PROJECT_ADD) {
-                if let Some(why) = missing_folder(w.args.get("path").and_then(serde_json::Value::as_str).unwrap_or_default()).await {
+                let path = w.args.get("path").and_then(serde_json::Value::as_str).unwrap_or_default();
+                if let Some(why) = missing_folder(path).await {
                     return Err(WireError::invalid(why));
                 }
+                // nor one that's a project already: Allow would change nothing (audit I IS9: "✓ You allowed: add the
+                // project …", the projects as before, no word that it existed)
+                if let Some(why) = already_a_project(&projects, path).await {
+                    return Err(WireError::invalid(why));
+                }
+            }
+            // a crew member on `auto` while Auto is off: refused up front, as a formula refuses it (audit I IS8: the card
+            // was made, and only Allow said "it didn't go through: Auto is off")
+            let auto_off = ctx.setting("runtime.auto") != Some(serde_json::Value::Bool(true));
+            if auto_off
+                && writes.iter().any(|w| {
+                    (w.command == su::CREW_ADD || w.command == su::CREW_EDIT)
+                        && w.args.get("agent").and_then(serde_json::Value::as_str).is_some_and(|h| h.trim() == "auto")
+                })
+            {
+                return Err(WireError::invalid(AUTO_OFF_NOTHING_ASKED));
             }
             let who = asker(&ctx, &r, &a.id).await;
             r.setup_ask(&a.id, &who, writes).await.map_err(WireError::from)

@@ -139,8 +139,16 @@ pub fn lowers(command: &str, args: &Value, now: &dyn Fn(&str) -> Option<Value>) 
 fn runs_code(command: &str, args: &Value) -> Option<Lowered> {
     match command {
         "runtime.exec" => {
+            // where it runs is said: a task's folder (its worktree), else the folder named (audit I, smaller notes: the
+            // card didn't say which folder it ran in)
             let cmd = args.get("command").and_then(Value::as_str).unwrap_or_default();
-            Some(Lowered { what: "run a command on this computer".into(), change: format!("runtime.exec: {cmd}") })
+            let place = ["cwd", "id"].iter().find_map(|k| args.get(*k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(|v| (*k, v)));
+            let at = match place {
+                Some(("cwd", dir)) => format!(" (in {dir})"),
+                Some((_, task)) => format!(" (in task {task}'s folder)"),
+                None => String::new(),
+            };
+            Some(Lowered { what: format!("run a command on this computer{at}"), change: format!("runtime.exec: {cmd}") })
         }
         "plugins.install" => {
             Some(Lowered { what: "install a plugin (its code runs in wisp)".into(), change: format!("plugins.install {}", text(args)) })
@@ -179,8 +187,12 @@ pub fn guarded(command: &str, args: &Value) -> bool {
         "settings.set" => {
             args.get("key").and_then(Value::as_str).is_some_and(|k| k == "runtime.setupAnswerSets" || GUARDS.iter().any(|g| g.key == k))
         }
-        "worktrees.trust" | "runtime.exec" | "plugins.install" | "plugins.trust" | "plugins.setEnabled" | "machines.call"
-        | "machines.route" => true,
+        "worktrees.trust" | "runtime.exec" | "plugins.install" | "plugins.trust" | "machines.call" => true,
+        // switching a plugin off lowers nothing (audit I, smaller notes)
+        "plugins.setEnabled" => args.get("enabled") == Some(&Value::Bool(true)),
+        // a command sent on: guarded as that command is (audit I, smaller notes: `machines_route` of `runtime.list` with a
+        // `peer` was refused as a guard change)
+        "machines.route" => guarded(args.get("cmd").and_then(Value::as_str).unwrap_or_default(), args.get("args").unwrap_or(&Value::Null)),
         _ => false,
     }
 }
@@ -284,5 +296,19 @@ mod tests {
         // a reset to a safe default raises; a read is no write
         assert!(set("worktrees.projectAsk", Value::Null, Some(json!("off"))).is_none());
         assert!(lowers("settings.get", &json!({ "key": "worktrees.projectAsk" }), &|_| None).is_none());
+    }
+
+    /// Audit I (smaller notes): `machines_route` of `runtime.list` with a `peer` was refused as a guard change, and so was
+    /// switching a plugin off there; `runtime.exec`'s card didn't say where the command runs.
+    #[test]
+    fn only_what_lowers_a_guard_is_guarded_and_the_exec_card_names_its_folder_audit_i() {
+        assert!(!guarded("machines.route", &json!({ "id": "p", "cmd": "runtime.list", "args": {} })));
+        assert!(guarded("machines.route", &json!({ "id": "p", "cmd": "runtime.exec", "args": { "command": "ls" } })));
+        assert!(!guarded("plugins.setEnabled", &json!({ "id": "x", "enabled": false })));
+        assert!(guarded("plugins.setEnabled", &json!({ "id": "x", "enabled": true })));
+        let l = lowers("runtime.exec", &json!({ "id": "t1", "command": "make" }), &|_| None).unwrap();
+        assert!(question(&l).contains("in task t1's folder"), "{}", question(&l));
+        let l = lowers("runtime.exec", &json!({ "cwd": "/w/app", "command": "make" }), &|_| None).unwrap();
+        assert!(question(&l).contains("(in /w/app)"), "{}", question(&l));
     }
 }

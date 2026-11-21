@@ -88,11 +88,9 @@ impl Runtime {
         // the files it asked for (codex's base instructions, grok's prompt file, copilot's usage file) in a folder of
         // its own, and `{tmp}` in its argv and env pointing there, as a turn's launch has them
         let tmp = crate::run::write_files(&format!("wisp-side-{}", wisp_kernel::ids::uuid7()), &launch).await?;
-        let out = self.side_spawned(h, run, &launch, &tmp, timeout, stop).await;
-        if !launch.files.is_empty() {
-            let _ = tokio::fs::remove_dir_all(&tmp).await;
-        }
-        out
+        // removed however this ends, a dropped side run too (ADR-0116)
+        let _files = crate::run::LaunchDir::of(&launch, &tmp);
+        self.side_spawned(h, run, &launch, &tmp, timeout, stop).await
     }
 
     async fn side_spawned(

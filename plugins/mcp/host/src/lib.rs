@@ -107,7 +107,7 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
                 if harness && peer.is_some() && wisp_mcp_core::guard::guarded(&id, &args) {
                     return Ok(wisp_mcp_api::ToolText { text: None, error: Some(wisp_mcp_core::guard::NOT_ON_A_PEER.into()) });
                 }
-                if harness && let Some(l) = wisp_mcp_core::guard::lowers(&id, &args, &|k| ctx.setting(k)) {
+                if harness && let Some(l) = guard_lowered(&ctx, &call, &id, &args).await {
                     return Ok(match crate::run::guard_card(&ctx, &call, &id, args, &l).await {
                         wisp_mcp_core::Outcome::Failed(e) | wisp_mcp_core::Outcome::Rpc(_, e) => {
                             wisp_mcp_api::ToolText { text: None, error: Some(e) }
@@ -176,6 +176,28 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
         }));
     }
     (ex, list)
+}
+
+/// What a write from the user's harness would lower (ADR-0115), as its card says it. None: it lowers nothing, or it
+/// changes nothing (switching on a plugin that's already on; audit I, smaller notes). `runtime.exec`'s card names the
+/// folder it runs in: its task's (a worktree's), read here.
+async fn guard_lowered(ctx: &Ctx, call: &Call, id: &str, args: &Value) -> Option<wisp_mcp_core::guard::Lowered> {
+    let already_on = id == "plugins.setEnabled"
+        && args.get("enabled") == Some(&Value::Bool(true))
+        && args.get("id").and_then(Value::as_str).is_some_and(|p| ctx.plugin_status().iter().any(|s| s.id == p && s.state == "active"));
+    if already_on {
+        return None;
+    }
+    let mut shown = args.clone();
+    if id == "runtime.exec"
+        && let Some(task) = args.get("id").and_then(Value::as_str)
+    {
+        let got = ctx.run::<wisp_runtime_api::commands::Get>(call, wisp_runtime_api::commands::IdArgs { id: task.into() }).await.ok();
+        if let (Some(t), Some(o)) = (got, shown.as_object_mut()) {
+            o.insert("cwd".into(), Value::String(t.cwd));
+        }
+    }
+    wisp_mcp_core::guard::lowers(id, &shown, &|k| ctx.setting(k))
 }
 
 /// The tasks that ask the user to allow a guard their harness wants lowered (ADR-0115), while the harness's call waits:

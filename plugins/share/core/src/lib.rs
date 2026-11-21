@@ -64,8 +64,10 @@ fn patterns() -> &'static [Regex] {
             r"\bAKIA[0-9A-Z]{16}\b",
             r"\bAIza[0-9A-Za-z_-]{35}",
             r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{20,}=*",
-            // the name and what joins it stay (`X-Api-Key: <secret>`, `password=<secret>`; audit H HS9): group 1
-            r#"(?i)(\b(?:api[_-]?key|(?:access[_-]?)?token|secret|password|passwd)\b\s*[:=]\s*["']?)[^\s"',;]{8,}"#,
+            // the name and what joins it stay (`X-Api-Key: <secret>`, `password=<secret>`; audit H HS9): group 1. A mask
+            // already made isn't masked again (audit I IS7: `https://x-access-token:<secret>@host/path` lost its host and
+            // path); a password with `@` in it is still all masked (the review)
+            r#"(?i)(\b(?:api[_-]?key|(?:access[_-]?)?token|secret|password|passwd)\b\s*[:=]\s*["']?)[^\s"',;<][^\s"',;]{7,}"#,
         ]
         .iter()
         .filter_map(|p| Regex::new(p).ok())
@@ -320,6 +322,17 @@ mod tests {
         let key = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----";
         assert_eq!(scrub_text(key, &Scrub::default(), "x", &mut Vec::new()), "<secret>");
         assert_eq!(slug("Fix the login: 401s!"), "fix-the-login-401s");
+    }
+
+    /// Audit I IS7 and its review: a value already masked isn't masked again (a URL's host and path stay), and a password
+    /// with `@` in it is masked whole.
+    #[test]
+    fn a_mask_is_never_masked_again_and_an_at_sign_doesnt_end_a_password_audit_i_is7() {
+        let s = Scrub::default();
+        let t = |x: &str| scrub_text(x, &s, "x", &mut Vec::new());
+        assert_eq!(t("password: P@ssw0rd123 ok"), "password: <secret> ok");
+        assert_eq!(t("password: Sup3rS3cret@2024"), "password: <secret>");
+        assert_eq!(t("https://x-access-token:<secret>@github.invalid/o/r.git"), "https://x-access-token:<secret>@github.invalid/o/r.git");
     }
 
     /// Review r194 of GS4: a share keeps the sharer's askpass and agent socket paths (they aren't secrets) and takes

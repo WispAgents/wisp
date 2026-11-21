@@ -72,6 +72,10 @@ impl Plugin for Runtime {
                 json!({ "title": "Ship it", "cwd": "/w/api", "ext": { "wisp.runtime": { "ask": { "id": "a5", "question": "Ship to staging or prod?", "options": ["Staging", "Prod"] } } } }),
             ),
             (
+                "s6",
+                json!({ "title": "Your harness wants to turn off Ask before trusting a project", "cwd": "/w/api", "ext": { "wisp.runtime": { "ask": { "id": "g6", "question": "Your harness wants to … Allow it only if you asked for this.", "options": ["Allow", "Deny"], "guard": true } } } }),
+            ),
+            (
                 "s4",
                 json!({ "title": "Deploy", "cwd": "/w/api", "mode": "edits", "ext": { "wisp.runtime": { "capped": { "mode": "edits" }, "ask": { "id": "a4", "question": "Allow Bash?", "permission": { "action": "Run npm publish" } } } } }),
             ),
@@ -262,4 +266,34 @@ async fn a_question_notification_carries_its_options_as_answer_buttons() {
     let buttons: Vec<(&str, &str, u32)> = msg.actions.iter().map(|a| (a.label.as_str(), a.reference.as_str(), a.index)).collect();
     assert_eq!(buttons, [("Staging", "a5", 0), ("Prod", "a5", 1)]);
     assert!(msg.actions.iter().all(|a| a.kind == wisp_channels_api::views::ActionKind::Answer));
+}
+
+/// Audit I IS1: a guard question (ADR-0115 §4) went to ntfy with Allow and Deny buttons anyone who knows the topic could
+/// replay. It goes as a setup card does: where a tap can't be the linked person's (this transport, as ntfy), no buttons,
+/// and where to answer instead.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guard_question_goes_without_buttons_where_a_tap_cant_be_the_person_audit_i_is1() {
+    let out = Published::default();
+    let k = kernel(&out).await;
+    k.call(
+        Caller::user(),
+        "resources.apply",
+        json!({ "resources": [{ "kind": "notification", "name": "asks", "spec": { "on": ["asks"], "to": "fake" } }] }),
+    )
+    .await
+    .unwrap();
+    let ctx = k.ctx("wisp.runtime").unwrap();
+    let asked = TaskAsked(TaskFact {
+        session_id: SessionId::from("s6"),
+        title: "Your harness wants to turn off Ask before trusting a project".into(),
+        cwd: "/w/api".into(),
+        status: "asked".into(),
+        text: "Your harness wants to … Allow it only if you asked for this.".into(),
+        ..TaskFact::default()
+    });
+    ctx.emit(&ctx.root_call(), &asked);
+    let got = settle(&out, 1).await;
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert!(got[0].1.actions.is_empty(), "no button anyone with the topic could tap: {:?}", got[0].1.actions);
+    assert!(got[0].1.text.ends_with(wisp_channels_core::SETUP_IN_WISP), "{}", got[0].1.text);
 }

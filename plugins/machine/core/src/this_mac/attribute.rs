@@ -135,6 +135,11 @@ impl Attributor {
             .collect()
     }
 
+    /// The task a process's environment names (`WISP_TASK`), as last read for it (macOS reads each process's once).
+    pub fn environ_task(&self, pid: u32) -> Option<String> {
+        self.environ.get(&pid).and_then(|(_, t)| t.clone())
+    }
+
     pub fn set_environ(&mut self, pid: u32, since: i64, task: Option<String>) {
         self.environ.insert(pid, (since, task));
     }

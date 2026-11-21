@@ -61,6 +61,10 @@ pub(crate) struct Registry {
     /// contract id → the provider resolution chose (the user's pick, then overrides, then order)
     pub(crate) chosen: HashMap<String, String>,
     pub(crate) order: u64,
+    /// bumped whenever a point's contributions change (a plugin switched on or off): who caches what a point holds (the
+    /// HTTP edge's route table) builds it again (audit I IS6: the routes of a plugin switched off and on still ran the
+    /// first activation's handlers)
+    pub(crate) points_gen: u64,
 }
 
 pub(crate) fn service_key(id: &str, major: u32) -> String {
@@ -86,6 +90,7 @@ impl Registry {
     }
 
     pub(crate) fn add_point(&mut self, id: &str, e: PointEntry) {
+        self.points_gen += 1;
         self.points.entry(id.to_owned()).or_default().push(e);
     }
 
@@ -113,6 +118,9 @@ impl Registry {
             let before = v.len();
             v.retain(|p| &*p.owner != owner);
             n += before - v.len();
+            if v.len() != before {
+                self.points_gen += 1;
+            }
         }
         self.points.retain(|_, v| !v.is_empty());
         for v in self.services.values_mut() {

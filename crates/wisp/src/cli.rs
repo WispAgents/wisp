@@ -195,7 +195,10 @@ pub fn help(cat: &Catalogue, words: &[String]) -> i32 {
             }
         }
         [p] => {
-            let Some(h) = verbs::help_plugin(cat, p) else {
+            // a built-in command HELP documents (`wisp help reply`, `wisp help import`): its lines, as its `--help`
+            // prints them (audit I IS10: 30 commands `wisp help` lists were "no command or plugin named …")
+            let documented = crate::words::documented(p);
+            let Some(h) = verbs::help_plugin(cat, p).or(documented) else {
                 // `wisp help me` (QA round 15 #6): how to get help, and the way to a task
                 eprintln!(
                     "  ✗ wisp help {p}: no command or plugin named {p}\n  wisp help lists every command and plugin; wisp help <plugin> its verbs; wisp --help the usage\n  a task that says this: wisp -- help {p}"

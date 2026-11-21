@@ -8,7 +8,7 @@ mod parser;
 mod shell;
 mod usage;
 
-pub use argv::{ASK_TIMEOUT_S, CodexArgs, LEAN_BASE, LEAN_FEATURES, args, toml};
+pub use argv::{ASK_TIMEOUT_S, CodexArgs, LEAN_BASE, LEAN_FEATURES, Secret, args, mcp_env, mcp_secrets, toml};
 pub use parser::{CodexOptions, CodexParser, describe_mcp};
 pub use shell::unwrap_shell;
 pub use usage::turn_usage;

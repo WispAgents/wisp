@@ -77,17 +77,25 @@ fn refusal(r: Refusal) -> WireError {
 }
 
 /// The runs going now: the contributors' (runtime), else for each running task the process wisp itself
-/// started whose `WISP_TASK` names it (the harness CLI the runner spawned).
-pub fn live_runs(contributed: Vec<LiveRun>, procs: &[parse::Proc], me: u32, running: &HashSet<String>) -> Vec<LiveRun> {
+/// started whose `WISP_TASK` names it (the harness CLI the runner spawned): in its `ps` line (Linux), or in its
+/// environment as read once (`env_task`: macOS reads each process's with one `ps -E`; audit I IS12: a run whose CLI hadn't
+/// said anything yet was never listed, its line carrying no environment).
+pub fn live_runs(
+    contributed: Vec<LiveRun>,
+    procs: &[parse::Proc],
+    me: u32,
+    running: &HashSet<String>,
+    env_task: &dyn Fn(u32) -> Option<String>,
+) -> Vec<LiveRun> {
     if !contributed.is_empty() {
         return contributed;
     }
     let mut out: Vec<LiveRun> = Vec::new();
     for p in procs.iter().filter(|p| p.ppid == me) {
-        if let Some(t) = p.task.as_ref().filter(|t| running.contains(*t))
-            && !out.iter().any(|r| &r.task == t)
+        if let Some(t) = p.task.clone().or_else(|| env_task(p.pid)).filter(|t| running.contains(t))
+            && !out.iter().any(|r| r.task == t)
         {
-            out.push(LiveRun { task: t.clone(), pid: p.pid });
+            out.push(LiveRun { task: t, pid: p.pid });
         }
     }
     out
@@ -187,7 +195,10 @@ impl Procs {
                 }
             }
         }
-        let runs = live_runs(contributed, &procs, me, &running);
+        let runs = {
+            let a = lock(&self.attr);
+            live_runs(contributed, &procs, me, &running, &|pid| a.environ_task(pid))
+        };
         let known = |t: &str| tasks.contains_key(t);
         let (placed, leftovers, groups): (Placed, _, _) = {
             let mut a = lock(&self.attr);
@@ -450,10 +461,22 @@ mod tests {
         let me = 100;
         let procs = vec![proc(200, me, Some("t1")), proc(201, 200, Some("t1")), proc(300, me, Some("t2")), proc(400, 1, Some("t1"))];
         let running: HashSet<String> = ["t1".to_owned()].into();
-        let runs = live_runs(Vec::new(), &procs, me, &running);
+        let runs = live_runs(Vec::new(), &procs, me, &running, &|_| None);
         assert_eq!(runs, vec![LiveRun { task: "t1".into(), pid: 200 }]);
         let given = vec![LiveRun { task: "t9".into(), pid: 9 }];
-        assert_eq!(live_runs(given.clone(), &procs, me, &running), given, "runtime's own answer wins");
+        assert_eq!(live_runs(given.clone(), &procs, me, &running, &|_| None), given, "runtime's own answer wins");
+    }
+
+    /// Audit I IS12: on macOS a process's `ps` line has no environment (it's read once, with `ps -E`): a run whose CLI
+    /// hadn't said anything yet was never listed. Its tag from the environment read counts as one in its line.
+    #[test]
+    fn a_run_tagged_only_in_its_environment_read_is_a_run_audit_i_is12() {
+        let me = 100;
+        let procs = vec![proc(200, me, None), proc(300, me, None)];
+        let running: HashSet<String> = ["t1".to_owned()].into();
+        let env = |pid: u32| (pid == 200).then(|| "t1".to_owned()).or_else(|| (pid == 300).then(|| "t2".to_owned()));
+        assert_eq!(live_runs(Vec::new(), &procs, me, &running, &env), vec![LiveRun { task: "t1".into(), pid: 200 }]);
+        assert!(live_runs(Vec::new(), &procs, me, &running, &|_| None).is_empty(), "before: none");
     }
 
     /// Stop takes only what the last sample placed as a task's (a leftover, a run's tree): never wisp,

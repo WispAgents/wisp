@@ -77,6 +77,22 @@ export function recheckSummary(before: ReadonlyMap<string, Pick<HarnessRow, 'ava
   return notes.length ? notes.join(' · ') : t('accounts.recheck.none');
 }
 
+/** One harness's Update in an Update all: the version it went to, or why it didn't (the server's words, which name the
+ *  command to run by hand). */
+export interface UpdateOutcome {
+  readonly name: string;
+  readonly version?: string;
+  readonly error?: string;
+}
+
+/** What Update all says once every update settled (audit I IS11: it said nothing when they didn't take): how many took,
+ *  then each harness, what it went to or why not, in the order pressed. */
+export function updateAllSummary(results: readonly UpdateOutcome[]): { readonly message: string; readonly description: string; readonly failed: boolean } {
+  const ok = results.filter((r) => r.error === undefined).length;
+  const lines = results.map((r) => (r.error === undefined ? t('accounts.updateAll.took', { name: r.name, version: r.version ?? '' }).trim() : t('accounts.updateAll.didnt', { why: r.error })));
+  return { message: t('accounts.updateAll.summary', { ok, count: results.length }), description: lines.join('\n'), failed: ok < results.length };
+}
+
 /** The pane's harness rows (ADR-0066): wisp.runtime's detection rows in their order, each with what this plugin's
  * own row adds (sign-in, keys, accounts, Install); a detection row is the fresher of the two. With no detection rows
  * (a wisp before the topic), this plugin's rows as they are. */

@@ -93,6 +93,9 @@ pub struct Delegation {
     pub name: Option<String>,
     #[serde(default)]
     pub subagent: Option<String>,
+    /// the harness it runs on
+    #[serde(default)]
+    pub agent: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
 }
@@ -120,7 +123,11 @@ pub fn delegated(all: &[Delegation]) -> Delegated {
 
 pub fn delegated_no_wait(head: &str, all: &[Delegation]) -> String {
     let s = |v: &Option<String>| v.clone().unwrap_or_default();
-    let name = |d: &Delegation| d.name.clone().or_else(|| d.subagent.clone()).unwrap_or_default();
+    // `auto` names no harness: the one it runs on is said (audit I, smaller notes: "Delegated: auto" for a task on Claude)
+    let name = |d: &Delegation| {
+        let n = d.name.clone().or_else(|| d.subagent.clone()).unwrap_or_default();
+        if n == "auto" { d.agent.clone().filter(|a| !a.is_empty()).unwrap_or(n) } else { n }
+    };
     let list = all.iter().filter(|d| d.error.is_none()).map(|d| format!("{} (id {})", name(d), s(&d.id))).collect::<Vec<_>>().join(", ");
     format!("{head}Delegated: {list}. Collect the reports with subagent_results.")
 }
@@ -174,5 +181,9 @@ mod tests {
             ("Some tasks were not delegated:\n- frob: no harness frob: name one of codex\n\n", vec!["t1".to_owned()])
         );
         assert_eq!(delegated_no_wait(&head, &mixed), format!("{head}Delegated: codex (id t1). Collect the reports with subagent_results."));
+        // `auto`: the harness it runs on is named (audit I, smaller notes)
+        let auto =
+            [Delegation { id: Some("t2".into()), subagent: Some("auto".into()), agent: Some("claude".into()), ..Delegation::default() }];
+        assert_eq!(delegated_no_wait("", &auto), "Delegated: claude (id t2). Collect the reports with subagent_results.");
     }
 }

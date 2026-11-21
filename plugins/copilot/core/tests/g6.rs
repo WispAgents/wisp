@@ -74,6 +74,7 @@ fn every_fixture_builds_v1s_argv() {
             session: SESSION,
             usage_file: "USAGE",
             mcp_servers: Some(&mcp),
+            mcp_config_file: "MCPFILE",
             grants: &grants,
             ..CopilotArgs::default()
         };
@@ -90,7 +91,19 @@ fn every_fixture_builds_v1s_argv() {
                 .map(|x| serde_json::from_str::<Value>(&x).ok().filter(Value::is_object).map_or(x, |j| j.to_string()))
                 .collect::<Vec<_>>()
         };
-        assert_eq!(norm(args(&a)), norm(want), "{name}");
+        // v1 put the MCP config on argv; v2 writes the same JSON to a file of the run's own and names it (ADR-0116,
+        // audit I IS3: its token and a connector's secrets were readable with `ps`)
+        let mut want = norm(want);
+        if let Some(at) = want.iter().position(|x| x == "--additional-mcp-config") {
+            let v1: Value = serde_json::from_str(&want[at + 1]).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(&wisp_copilot_core::mcp_config(&mcp)).unwrap(),
+                v1,
+                "{name}: the file holds v1's config"
+            );
+            want[at + 1] = "@MCPFILE".into();
+        }
+        assert_eq!(norm(args(&a)), want, "{name}");
     }
 }
 

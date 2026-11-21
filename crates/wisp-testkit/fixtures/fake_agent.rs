@@ -191,6 +191,31 @@ fn live_of(file: &str, pid: u32) -> std::path::PathBuf {
     std::path::PathBuf::from(format!("{file}.{pid}.live"))
 }
 
+/// The MCP config the run was given (ADR-0116): read from the file `--mcp-config <path>` (Claude) or
+/// `--additional-mcp-config @<path>` (Copilot) names, while it's there (the runtime removes it when the run ends), or the
+/// JSON itself when it was given inline.
+fn mcp_config(argv: &[String]) -> Value {
+    let Some(i) = argv.iter().position(|a| a == "--mcp-config" || a == "--additional-mcp-config") else { return Value::Null };
+    let Some(v) = argv.get(i + 1) else { return Value::Null };
+    let text =
+        if v.trim_start().starts_with('{') { v.clone() } else { std::fs::read_to_string(v.trim_start_matches('@')).unwrap_or_default() };
+    serde_json::from_str(&text).unwrap_or(Value::Null)
+}
+
+/// What Codex's MCP servers read from its environment (ADR-0116): the variables its argv names (`env_vars=[…]`,
+/// `env_http_headers={…="VAR"}`), with their values.
+fn mcp_env(argv: &[String]) -> Value {
+    let mut out = serde_json::Map::new();
+    for a in argv.iter().filter(|a| a.contains(".env_vars=") || a.contains(".env_http_headers=")) {
+        for name in a.split('"').skip(1).step_by(2) {
+            if let Some(v) = env(name) {
+                out.insert(name.to_owned(), Value::String(v));
+            }
+        }
+    }
+    Value::Object(out)
+}
+
 fn record(name: &str, argv: &[String], prompt: &str) {
     let Some(dir) = env("FAKE_RECORD") else {
         return;
@@ -200,7 +225,7 @@ fn record(name: &str, argv: &[String], prompt: &str) {
     let live = Path::new(&dir).join("live").join(format!("{name}.{}.{nanos}", std::process::id()));
     // taken before the record is written: a test that reads the record finds the lock held while this runs
     hold_live(&live);
-    let line = json!({ "argv": argv, "stdin": prompt, "cwd": std::env::current_dir().ok(), "pid": std::process::id(), "live": live, "codexHome": env("CODEX_HOME"), "subagentModel": env("CLAUDE_CODE_SUBAGENT_MODEL") });
+    let line = json!({ "argv": argv, "stdin": prompt, "cwd": std::env::current_dir().ok(), "pid": std::process::id(), "live": live, "codexHome": env("CODEX_HOME"), "subagentModel": env("CLAUDE_CODE_SUBAGENT_MODEL"), "mcpConfig": mcp_config(argv), "mcpEnv": mcp_env(argv) });
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(Path::new(&dir).join(format!("{name}.jsonl"))) {
         // one write per line: `writeln!` may split a long argv line, and a reader would see half of it
         let _ = f.write_all(format!("{line}\n").as_bytes());

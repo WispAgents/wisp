@@ -535,6 +535,14 @@ impl UnknownVerb {
     /// What the CLI says (exit 2): the verb it's closest to, the verbs there are, and how to make the words a task anyway.
     pub fn said(&self, words: &[String]) -> String {
         let typed = words.get(self.at).map_or("", String::as_str);
+        if self.group == "git" && GIT_OWN.contains(&typed) {
+            let all = words.join(" ").replace('"', "\\\"");
+            let line = words[self.at..].join(" ");
+            return format!(
+                "  ✗ wisp git has no {typed}: that's git's own command. Run it with git itself: git {line}\n  wisp git's own: {}\n  To start a task with these words: wisp -- \"{all}\"   (or quote them as one: wisp \"{all}\")",
+                self.verbs.join(", ")
+            );
+        }
         let close = self.close(words).map(|v| format!(" (did you mean {v}?)")).unwrap_or_default();
         let have = if self.verbs.is_empty() {
             format!("  ✗ wisp {g} has no {typed}{close}: it takes no verb (wisp {g})", g = self.group)
@@ -563,6 +571,58 @@ fn plugin_slip(first: &str, rest: &[String], catalogue: &[Vec<String>]) -> bool 
 fn prompt_line(first: &str, rest: &[String]) -> bool {
     PROMPT_WORDS.contains(&first) && rest.iter().filter(|w| !flag_shaped(w)).count() > 1
 }
+
+/// git's own commands that `wisp git` doesn't have (audit I IS4): after `wisp git` one of them is a command line for git,
+/// refused with a pointer to plain git, never read as a prompt (`wisp git push origin main` launched a Full-auto task).
+/// The ones wisp git has (`checkout`, `clone`, `commit`, `revert`, `status`) are its own verbs.
+pub const GIT_OWN: &[&str] = &[
+    "add",
+    "am",
+    "apply",
+    "archive",
+    "bisect",
+    "blame",
+    "branch",
+    "bundle",
+    "cherry",
+    "cherry-pick",
+    "clean",
+    "config",
+    "describe",
+    "diff",
+    "difftool",
+    "fetch",
+    "format-patch",
+    "fsck",
+    "gc",
+    "grep",
+    "init",
+    "log",
+    "ls-files",
+    "ls-remote",
+    "merge",
+    "mergetool",
+    "mv",
+    "notes",
+    "pull",
+    "push",
+    "range-diff",
+    "rebase",
+    "reflog",
+    "remote",
+    "reset",
+    "restore",
+    "rev-parse",
+    "rm",
+    "shortlog",
+    "show",
+    "sparse-checkout",
+    "stash",
+    "submodule",
+    "switch",
+    "tag",
+    "worktree",
+];
 
 /// Command words a prompt may naturally start with (owner's decision on audit I2, 2026-11-20): `wisp review the auth
 /// module`, `wisp plugin for prettier`, `wisp crew a reviewer for the PR`, `wisp update the readme`. Under one of these an
@@ -627,8 +687,11 @@ pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>
     if rest.first().is_none_or(|w| flag_shaped(w) || w.contains(char::is_whitespace)) {
         return None;
     }
+    // `wisp git push origin main`: one of git's own commands is a command line for git, never a task (audit I IS4: it
+    // launched a Full-auto task with that line as its prompt), however many words follow
+    let git_own = first == "git" && rest.first().is_some_and(|w| GIT_OWN.contains(&w.as_str()));
     let group = is_group(first) && !prompt_line(first, rest);
-    let slip = !is_group(first) && plugin_slip(first, rest, catalogue);
+    let slip = git_own || (!is_group(first) && plugin_slip(first, rest, catalogue));
     if !group && !slip {
         return None;
     }
@@ -656,7 +719,7 @@ pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>
     }
     // a word a prompt may start with, a far word and more after it: a prompt (owner, audit I2 refined)
     let said: Vec<&String> = words.iter().filter(|w| !flag_shaped(w)).collect();
-    if !slip_line(first, &said, 1, &verbs) {
+    if !git_own && !slip_line(first, &said, 1, &verbs) {
         return None;
     }
     Some(UnknownVerb { group: first.clone(), verbs, at: 1 })
@@ -820,6 +883,53 @@ pub fn usage(word: &str) -> String {
         out = format!("  wisp {word} needs more: wisp --help\n");
     }
     format!("{out}  a task that starts with {word}: wisp -- {word} …")
+}
+
+/// The built-in commands that take arguments of their own, whose `--help` right after them is their usage (audit I IS10:
+/// `wisp import --help` looked for a folder named `--help`). A group's and a plugin's `--help` is `wisp help <it>`
+/// (audit G GS10), from the catalogue.
+pub const OWN_HELP: &[&str] = &[
+    "add",
+    "adopt",
+    "apply",
+    "attach",
+    "blame",
+    "btw",
+    "diff",
+    "export",
+    "fmt",
+    "fresh",
+    "held",
+    "import",
+    "init",
+    "log",
+    "ls",
+    "merge",
+    "notes",
+    "open",
+    "output",
+    "plan",
+    "reply",
+    "rerun",
+    "resume",
+    "run",
+    "secret",
+    "show",
+    "stop",
+    "tasks",
+    "track",
+    "untrack",
+    "wait",
+    "workspace",
+];
+
+/// `wisp <word>`'s usage when HELP documents it as a command of its own (its lines, never "needs more"), else None.
+pub fn documented(word: &str) -> Option<String> {
+    if word.starts_with('-') || word.is_empty() {
+        return None;
+    }
+    let u = usage(word);
+    (!u.contains(" needs more: ")).then_some(u)
 }
 
 /// Why a file couldn't be read, in words (audit D9: "No such file or directory (os error 2)"), as Projects and Plugins

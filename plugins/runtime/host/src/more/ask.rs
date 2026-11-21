@@ -76,9 +76,36 @@ pub(crate) fn open_guard(s: &Session) -> bool {
 /// What a follow-up or an answer from elsewhere reads on such a task.
 pub(crate) const GUARD_ASKS_YOU: &str = "This task asks you whether your harness may change one of wisp's safety guards: answer it with its buttons or wisp reply <id> Allow|Deny, not a follow-up. Nothing was sent.";
 
-/// A follow-up to a task whose question is a guard's: refused (ADR-0115).
+/// What a task that asked about a guard reads once the harness call that asked is gone (it gave up, disconnected, or
+/// wisp restarted): the change wasn't made, and an answer or a follow-up says so (audit I IS2).
+pub(crate) const GUARD_GONE: &str = "Nothing changed: the harness that asked stopped waiting for the answer (it gave up, disconnected, or wisp restarted), so its change wasn't made. Ask again from your harness if you still want it.";
+/// What a follow-up to a guard task reads once its question is answered: it takes none (audit I IS2: a reply ran the
+/// guard's own text as a Full-auto prompt).
+pub(crate) const GUARD_SETTLED: &str = "This task only asked whether your harness may change one of wisp's safety guards: it's settled and takes no follow-ups. Nothing was sent.";
+
+/// Runtime's mark on a task that asked about a guard (ADR-0115): `asking`, `answered` or `gone`. It stays after the
+/// question goes, so the task never takes a follow-up.
+const GUARD_TASK: &str = "guardTask";
+/// What a settled guard task's title ends with, so the list and `wisp ls` say it too.
+pub(crate) const GUARD_GONE_TITLE: &str = " · not changed: the harness stopped waiting";
+
+/// Where a guard task is (`asking`, `answered`, `gone`), or `None` for any other task.
+pub(crate) fn guard_task(s: &Session) -> Option<&str> {
+    slot(s)?.get(GUARD_TASK)?.as_str()
+}
+
+/// A follow-up to a task that asks, or asked, about a guard: refused (ADR-0115; audit I IS2).
 pub(crate) fn no_follow_up_on_guard(s: &Session) -> crate::error::Result<()> {
-    if open_guard(s) { Err(crate::error::RuntimeError::Conflict(GUARD_ASKS_YOU.into())) } else { Ok(()) }
+    let why = if open_guard(s) {
+        GUARD_ASKS_YOU
+    } else {
+        match guard_task(s) {
+            Some("gone") => GUARD_GONE,
+            Some(_) => GUARD_SETTLED,
+            None => return Ok(()),
+        }
+    };
+    Err(crate::error::RuntimeError::Conflict(why.into()))
 }
 
 /// The open question's id, from the task itself (the truth across a restart).
@@ -151,10 +178,16 @@ impl Runtime {
                 None => format!("Asked you: {question}"),
             };
             let mut ask = json!({ "id": ask_id, "question": question, "context": context, "options": options, "askedAt": self.now() });
+            let guard = matches!(permission, Some(("guard", _)));
             if let (Some((key, p)), Some(o)) = (permission, ask.as_object_mut()) {
                 o.insert(key.into(), p);
             }
-            with_slot(&mut s.ext, |m| m.insert("ask".into(), ask));
+            with_slot(&mut s.ext, |m| {
+                m.insert("ask".into(), ask);
+                if guard {
+                    m.insert(GUARD_TASK.into(), json!("asking"));
+                }
+            });
             s.state = SessionState::Waiting;
             s.unread = true;
             s.archived = false; // a question needs the user: it comes back to the feed
@@ -174,6 +207,10 @@ impl Runtime {
     pub async fn answer(self: &Arc<Self>, id: &SessionId, text: &str, ask: Option<&str>) -> Result<Value> {
         let _g = self.task_lock(id.as_str()).await;
         let s = self.repo.session(id.as_str()).await?;
+        // a guard question whose harness call is gone: the answer changes nothing, and says why (audit I IS2)
+        if ask_id(&s).is_none() && guard_task(&s) == Some("gone") {
+            return Err(RuntimeError::Conflict(GUARD_GONE.into()));
+        }
         if let Some(want) = ask {
             match ask_id(&s) {
                 None => return Err(RuntimeError::Conflict(NONE_OPEN.into())),
@@ -219,6 +256,9 @@ impl Runtime {
         self.asks().remove(&ask_id);
         self.close_ask(&ask_id);
         self.keep_answer(&ask_id, text);
+        if ask.get("guard") == Some(&Value::Bool(true)) {
+            with_slot(&mut s.ext, |m| m.insert(GUARD_TASK.into(), json!("answered")));
+        }
         s.state =
             if self.run_state(id.as_str()) == wisp_runtime_core::queue::Run::Idle { SessionState::Review } else { SessionState::Running };
         self.persist(&mut s, turns).await?;
@@ -238,12 +278,41 @@ impl Runtime {
         if open.is_none_or(|q| q != question.trim()) {
             return Ok(json!({ "withdrawn": false }));
         }
+        // a guard question taken back: the harness call that asked is gone (audit I IS2)
+        if open_guard(&s) {
+            self.guard_gone(&mut s).await?;
+            return Ok(json!({ "withdrawn": true }));
+        }
         self.cancel_asks(&mut s);
         self.persist(&mut s, Vec::new()).await?;
         if let Some(t) = self.last_turn(id.as_str()).await? {
             self.add_row(id.as_str(), t.id.as_str(), tool_row(ToolKind::Answer, "The question was taken back".to_owned())).await?;
         }
         Ok(json!({ "withdrawn": true }))
+    }
+
+    /// A guard task (ADR-0115) whose harness call is gone (it gave up or disconnected; wisp restarted): it settles. Its
+    /// question goes, its held prompt is dropped (it never runs), it's done, and it says the change wasn't made because
+    /// the harness stopped waiting; an answer or follow-up after says the same (audit I IS2: it stayed in Needs you with
+    /// its prompt queued, and a reply ran the guard's text as a Full-auto prompt). The caller holds the task's lock.
+    pub(crate) async fn guard_gone(self: &Arc<Self>, s: &mut Session) -> Result<()> {
+        if let Some(ask) = with_slot(&mut s.ext, |m| m.remove("ask")) {
+            let id = ask.get("id").and_then(Value::as_str).unwrap_or_default();
+            self.asks().remove(id);
+            self.close_ask(id);
+        }
+        with_slot(&mut s.ext, |m| m.insert(GUARD_TASK.into(), json!("gone")));
+        s.queue.clear();
+        s.queue_held = false;
+        s.state = SessionState::Done;
+        if !s.title.ends_with(GUARD_GONE_TITLE) {
+            s.title = format!("{}{GUARD_GONE_TITLE}", s.title);
+        }
+        self.persist(s, Vec::new()).await?;
+        if let Some(t) = self.last_turn(s.id.as_str()).await? {
+            self.add_row(s.id.as_str(), t.id.as_str(), tool_row(ToolKind::Answer, GUARD_GONE.to_owned())).await?;
+        }
+        Ok(())
     }
 
     /// `runtime.pollAnswer`: the answer once (then it's gone), pending while the question is on its

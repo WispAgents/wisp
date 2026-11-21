@@ -278,6 +278,11 @@ pub(crate) async fn guard_card(ctx: &Ctx, call: &Call, command: &str, args: Valu
     if let Ok(mut g) = crate::GUARD_TASKS.lock() {
         g.insert(id.clone());
     }
+    let question = guard::question(l).trim().to_owned();
+    // from here the call may go (the harness gives up, disconnects): the task settles however far it got, so a held task
+    // with the guard's text as its prompt is never left behind (the review of audit I IS2)
+    let mut waiting =
+        Waiting { ctx: ctx.clone(), call: call.clone(), id: id.clone(), question: question.clone(), asked: false, armed: true };
     let asked = typed::<rt::Ask>(
         ctx,
         call,
@@ -293,13 +298,23 @@ pub(crate) async fn guard_card(ctx: &Ctx, call: &Call, command: &str, args: Valu
     let answer = match asked {
         Ok(v) => {
             let ask = v.get("askId").and_then(Value::as_str).unwrap_or_default().to_owned();
-            wait_answer(ctx, call, &ask, ASK_WAIT_MS).await
+            // the harness's call may go while it waits (it gives up on a slow tool, disconnects): the task then settles,
+            // saying the change wasn't made, instead of asking for good with its prompt queued (audit I IS2)
+            waiting.asked = true;
+            let a = wait_answer(ctx, call, &ask, ASK_WAIT_MS).await;
+            waiting.armed = false;
+            a
         }
         Err(e) => {
+            waiting.armed = false;
             settle_guard(ctx, call, &id).await;
             return Outcome::Failed(e);
         }
     };
+    if answer.is_none() {
+        // nobody answered while the call waited: it ends now, so the task says the change wasn't made
+        let _ = typed::<rt::Unask>(ctx, call, rt::UnaskArgs { id: id.as_str().into(), question }).await;
+    }
     let allowed = answer.as_deref().is_some_and(guard::allowed);
     let out = if allowed {
         match ctx.run_json(call, command, args).await {
@@ -313,6 +328,43 @@ pub(crate) async fn guard_card(ctx: &Ctx, call: &Call, command: &str, args: Valu
     };
     settle_guard(ctx, call, &id).await;
     out
+}
+
+/// A guard task's question while the harness's call waits on it: dropped with the call (the harness gave up, or
+/// disconnected), the question is taken back (`runtime.unask`), which settles the task as one whose harness stopped
+/// waiting (audit I IS2).
+struct Waiting {
+    ctx: Ctx,
+    call: Call,
+    id: String,
+    question: String,
+    /// its question is on the task (else the call went between making the task and asking)
+    asked: bool,
+    armed: bool,
+}
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        if let Ok(mut g) = crate::GUARD_TASKS.lock() {
+            g.remove(&self.id);
+        }
+        let (ctx, call, id, question) =
+            (self.ctx.clone(), self.call.clone(), std::mem::take(&mut self.id), std::mem::take(&mut self.question));
+        let asked = self.asked;
+        self.ctx.spawn(async move {
+            if asked {
+                if let Err(e) = typed::<rt::Unask>(&ctx, &call, rt::UnaskArgs { id: id.as_str().into(), question }).await {
+                    tracing::warn!(task = %id, "wisp.mcp: a guard task whose call went wasn't settled: {e}");
+                }
+            } else {
+                // nothing asked yet: the held task goes done, its prompt dropped, before anyone can send it
+                settle_guard(&ctx, &call, &id).await;
+            }
+        });
+    }
 }
 
 /// The asking task, done once it's answered: its held prompt never runs, and the harness may act on it again.

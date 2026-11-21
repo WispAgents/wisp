@@ -57,6 +57,71 @@ fn s(v: &str) -> String {
     toml(&Value::String(v.to_owned()))
 }
 
+/// Environment names a process is shaped by: a server's own value for one of them is no secret and stays in its `env`
+/// table (forwarding it would change codex's own).
+const PROCESS_ENV: [&str; 11] = ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "PWD"];
+
+/// One value an MCP server needs that goes through codex's environment instead of its argv (ADR-0116, audit I IS3): an
+/// HTTP server's header (wisp's token, a connector's key), under a name of wisp's own, or a command server's env value,
+/// under its own name (codex's `env_vars` forwards a variable by its name).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Secret {
+    pub server: String,
+    /// the header it fills, for an HTTP server; `None`: a command server's env
+    pub header: Option<String>,
+    /// the variable in codex's environment
+    pub var: String,
+    pub value: String,
+}
+
+/// The values [`args`] names by variable, in order. Two command servers asking for one name with different values: the
+/// first keeps it, the other's isn't passed (one environment holds one value per name).
+pub fn mcp_secrets(servers: Option<&BTreeMap<String, Value>>) -> Vec<Secret> {
+    let mut out: Vec<Secret> = Vec::new();
+    for (i, (name, srv)) in servers.into_iter().flatten().enumerate() {
+        let str_of = |v: &Value| v.as_str().map_or_else(|| v.to_string(), str::to_owned);
+        if srv.get("url").and_then(Value::as_str).is_some() {
+            for (j, (h, v)) in srv.get("headers").and_then(Value::as_object).into_iter().flatten().enumerate() {
+                // named `…TOKEN…`: codex's default shell policy keeps such names from its agent's commands, and a user's own
+                // `shell_environment_policy` is left as they set it (the review of audit I IS3)
+                out.push(Secret {
+                    server: name.clone(),
+                    header: Some(h.clone()),
+                    var: format!("WISP_MCP_TOKEN_{i}_{j}"),
+                    value: str_of(v),
+                });
+            }
+        } else {
+            for (k, v) in srv.get("env").and_then(Value::as_object).into_iter().flatten() {
+                if PROCESS_ENV.contains(&k.as_str()) || codex_reads(k) || out.iter().any(|x| x.header.is_none() && x.var == *k) {
+                    continue;
+                }
+                out.push(Secret { server: name.clone(), header: None, var: k.clone(), value: str_of(v) });
+            }
+        }
+    }
+    out
+}
+
+/// Names codex itself (or what it runs on) reads: a server's value for one isn't put in codex's environment, where it
+/// would change codex's own account, endpoint, proxy or loader (the review of audit I IS3). Such a server gets none.
+fn codex_reads(name: &str) -> bool {
+    let n = name.to_ascii_uppercase();
+    ["OPENAI_", "CODEX_", "SSL_", "NODE_", "LD_", "DYLD_", "RUST_"].iter().any(|p| n.starts_with(p))
+        || n.ends_with("_PROXY")
+        || n == "NO_PROXY"
+}
+
+/// What codex's environment gets for its MCP servers: each [`Secret`]'s variable.
+pub fn mcp_env(servers: Option<&BTreeMap<String, Value>>) -> BTreeMap<String, String> {
+    mcp_secrets(servers).into_iter().map(|x| (x.var, x.value)).collect()
+}
+
+/// A TOML key: bare when it can be, quoted otherwise (`x-wisp-token` is bare; `Authorization` too).
+fn toml_key(k: &str) -> String {
+    if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') { k.to_owned() } else { s(k) }
+}
+
 pub fn args(a: &CodexArgs<'_>) -> Vec<String> {
     let mut out: Vec<String> = ["exec", "--json", "--skip-git-repo-check"].map(str::to_owned).to_vec();
     let c = |out: &mut Vec<String>, kv: String| {
@@ -96,19 +161,38 @@ pub fn args(a: &CodexArgs<'_>) -> Vec<String> {
     if !a.effort.is_empty() {
         c(&mut out, format!("model_reasoning_effort={}", s(a.effort)));
     }
+    let secrets = mcp_secrets(a.mcp_servers);
     for (name, srv) in a.mcp_servers.into_iter().flatten() {
         let key = format!("mcp_servers.{name}");
+        let mine: Vec<&Secret> = secrets.iter().filter(|x| x.server == *name).collect();
         if let Some(url) = srv.get("url").and_then(Value::as_str) {
-            // a streamable-HTTP server (wisp's own, in v2)
+            // a streamable-HTTP server (wisp's own, in v2): its headers (wisp's token, a connector's key) read from
+            // codex's environment, never written on argv (ADR-0116, audit I IS3)
             c(&mut out, format!("{key}.url={}", s(url)));
-            if let Some(h) = srv.get("headers").filter(|h| h.as_object().is_some_and(|o| !o.is_empty())) {
-                c(&mut out, format!("{key}.http_headers={}", toml(h)));
+            let headers: Vec<String> =
+                mine.iter().filter_map(|x| x.header.as_deref().map(|h| format!("{}={}", toml_key(h), s(&x.var)))).collect();
+            if !headers.is_empty() {
+                c(&mut out, format!("{key}.env_http_headers={{{}}}", headers.join(",")));
             }
         } else {
             c(&mut out, format!("{key}.command={}", toml(srv.get("command").unwrap_or(&Value::Null))));
             c(&mut out, format!("{key}.args={}", toml(srv.get("args").filter(|x| !x.is_null()).unwrap_or(&Value::Array(Vec::new())))));
-            if let Some(env) = srv.get("env").filter(|e| !e.is_null()) {
-                c(&mut out, format!("{key}.env={}", toml(env)));
+            // the names a process is shaped by (PATH, HOME …) stay as they are: no secret, and passing them through would
+            // change codex's own; every other value is forwarded from codex's environment by name (`env_vars`)
+            let plain: serde_json::Map<String, Value> = srv
+                .get("env")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .filter(|(k, _)| PROCESS_ENV.contains(&k.as_str()))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            if !plain.is_empty() {
+                c(&mut out, format!("{key}.env={}", toml(&Value::Object(plain))));
+            }
+            let vars: Vec<Value> = mine.iter().filter(|x| x.header.is_none()).map(|x| Value::String(x.var.clone())).collect();
+            if !vars.is_empty() {
+                c(&mut out, format!("{key}.env_vars={}", toml(&Value::Array(vars))));
             }
         }
         c(&mut out, format!("{key}.tool_timeout_sec={ASK_TIMEOUT_S}"));
@@ -147,8 +231,12 @@ mod tests {
         m.insert("wisp".to_owned(), json!({ "type": "http", "url": "http://127.0.0.1:1/api/mcp", "headers": { "x-wisp-token": "t" } }));
         m.insert("x".to_owned(), json!({ "command": "node", "args": ["s.js"], "env": { "A": "1" } }));
         let a = args(&CodexArgs { mode: "edits", mcp_servers: Some(&m), ..CodexArgs::default() }).join(" ");
-        assert!(a.contains(r#"-c mcp_servers.wisp.url="http://127.0.0.1:1/api/mcp" -c mcp_servers.wisp.http_headers={x-wisp-token="t"} -c mcp_servers.wisp.tool_timeout_sec=604800 -c mcp_servers.wisp.default_tools_approval_mode="approve""#), "{a}");
-        assert!(a.contains(r#"-c mcp_servers.x.command="node" -c mcp_servers.x.args=["s.js"] -c mcp_servers.x.env={A="1"}"#), "{a}");
+        assert!(a.contains(r#"-c mcp_servers.wisp.url="http://127.0.0.1:1/api/mcp" -c mcp_servers.wisp.env_http_headers={x-wisp-token="WISP_MCP_TOKEN_0_0"} -c mcp_servers.wisp.tool_timeout_sec=604800 -c mcp_servers.wisp.default_tools_approval_mode="approve""#), "{a}");
+        assert!(a.contains(r#"-c mcp_servers.x.command="node" -c mcp_servers.x.args=["s.js"] -c mcp_servers.x.env_vars=["A"]"#), "{a}");
+        assert_eq!(
+            mcp_env(Some(&m)),
+            BTreeMap::from([("WISP_MCP_TOKEN_0_0".to_owned(), "t".to_owned()), ("A".to_owned(), "1".to_owned())])
+        );
     }
 
     #[test]
@@ -181,5 +269,30 @@ mod tests {
         let lean = args(&CodexArgs { mode: "auto", hooks: Some("/opt/wisp"), lean_base: Some("BASE"), ..CodexArgs::default() });
         assert!(!lean.iter().any(|x| x.contains("hook-trust")), "a lean run only answers");
         assert!(!args(&CodexArgs { mode: "auto", ..CodexArgs::default() }).iter().any(|x| x.contains("hook-trust")));
+    }
+
+    /// Audit I IS3: wisp's token (`http_headers={x-wisp-token=…}`) and a connector's secret env (`env={QA_VAR=…}`) were
+    /// on codex's argv, readable by any local user with `ps`. They go through codex's environment by name; argv names
+    /// the variables only. A name codex reads itself (`OPENAI_API_KEY`) isn't put there.
+    #[test]
+    fn no_secret_goes_on_argv_audit_i_is3() {
+        let mut m = BTreeMap::new();
+        m.insert("wisp".to_owned(), json!({ "type": "http", "url": "http://127.0.0.1:1/api/mcp", "headers": { "x-wisp-token": "tok-SECRET-1", "x-wisp-session": "s1" } }));
+        m.insert("old-echo".to_owned(), json!({ "command": "echo-mcp", "env": { "QA_VAR": "v1SECRET", "PATH": "/opt/bin" } }));
+        m.insert("other".to_owned(), json!({ "command": "o", "env": { "QA_VAR": "otherSECRET", "OPENAI_API_KEY": "sk-otherSECRET" } }));
+        let a = args(&CodexArgs { mode: "edits", mcp_servers: Some(&m), ..CodexArgs::default() }).join(" ");
+        assert!(!a.contains("SECRET") && !a.contains("s1\""), "{a}");
+        assert!(a.contains(r#"mcp_servers.old-echo.env={PATH="/opt/bin"} -c mcp_servers.old-echo.env_vars=["QA_VAR"]"#), "{a}");
+        assert!(!a.contains("mcp_servers.other.env_vars"), "a name another server holds isn't passed twice: {a}");
+        assert!(
+            a.contains(r#"mcp_servers.wisp.env_http_headers={x-wisp-session="WISP_MCP_TOKEN_2_0",x-wisp-token="WISP_MCP_TOKEN_2_1"}"#),
+            "{a}"
+        );
+        assert!(!a.contains("shell_environment_policy"), "the user's own policy is left alone: {a}");
+        let env = mcp_env(Some(&m));
+        assert_eq!(env["QA_VAR"], "v1SECRET");
+        assert_eq!(env.values().filter(|v| v.contains("tok-SECRET-1")).count(), 1);
+        assert!(!env.contains_key("PATH"));
+        assert!(!env.contains_key("OPENAI_API_KEY"), "codex's own key isn't replaced by a server's");
     }
 }

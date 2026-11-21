@@ -403,8 +403,8 @@ async fn the_agent_reaches_wisp_over_mcp_with_its_own_token() {
     // what the run was launched with: wisp's MCP server, at this wisp, with a token for this task
     let runs = common::until_records(&rec.join("claude.jsonl"), "the run's record", |r| !r.is_empty()).await;
     let argv = common::argv(&runs[0]);
-    let cfg_at = argv.iter().position(|a| a == "--mcp-config").expect("--mcp-config");
-    let cfg: Value = serde_json::from_str(&argv[cfg_at + 1]).unwrap();
+    assert!(argv.iter().any(|a| a == "--mcp-config"));
+    let cfg: Value = common::mcp_config(&runs[0]);
     let wisp = &cfg["mcpServers"]["wisp"];
     assert_eq!(wisp["url"], format!("http://127.0.0.1:{port}/api/mcp"));
     let token = wisp["headers"]["x-wisp-token"].as_str().unwrap().to_owned();
@@ -478,9 +478,7 @@ async fn an_agents_token_cannot_touch_another_task() {
         .unwrap()
         .to_owned();
     api.until(&lead, "L ends", |t| t.len() == 1 && ended(&t[0])).await;
-    let argv = common::argv(common::records(&rec.join("claude.jsonl")).last().unwrap());
-    let cfg: Value = serde_json::from_str(&argv[argv.iter().position(|a| a == "--mcp-config").unwrap() + 1]).unwrap();
-    let token = cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"].as_str().unwrap().to_owned();
+    let token = common::wisp_token(common::records(&rec.join("claude.jsonl")).last().unwrap());
     let as_agent = |name: &'static str, args: Value| {
         let (http, token, lead) = (api.http.clone(), token.clone(), lead.clone());
         async move {

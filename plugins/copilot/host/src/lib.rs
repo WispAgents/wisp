@@ -16,8 +16,8 @@ use wisp_harness_kit::detect::{help_efforts, version_in};
 use wisp_harness_kit::protocol::{FileNote, attachment_note};
 use wisp_kernel::{BoxFuture, Manifest, Plugin, Result, Setup};
 use wisp_runtime_api::harness::{
-    ExecReq, HarnessFound, HarnessInfo, HarnessModel, HarnessRun, HarnessSys, Launch, ResumeCommand, ResumeOptions, RunDriver, SetupTip,
-    Stdin,
+    ExecReq, HarnessFound, HarnessInfo, HarnessModel, HarnessRun, HarnessSys, Launch, LaunchFile, MCP_CONFIG_FILE, ResumeCommand,
+    ResumeOptions, RunDriver, SetupTip, Stdin,
 };
 use wisp_runtime_api::model::Mode;
 use wisp_runtime_api::{HARNESS, Harness};
@@ -84,6 +84,7 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         session: &session,
         usage_file: "{tmp}/copilot-usage.json",
         mcp_servers: Some(&run.mcp_servers),
+        mcp_config_file: &format!("{{tmp}}/{MCP_CONFIG_FILE}"),
         grants: &run.grants,
         delegating: run.delegating,
         images: &images,
@@ -102,6 +103,12 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         env_remove: if run.mode == Mode::Auto { Vec::new() } else { vec!["COPILOT_ALLOW_ALL".into()] },
         cwd: run.cwd.clone(),
         stdin: Stdin::Bytes(input.into_bytes()),
+        // the MCP servers in a file of the run's own (0600), never on argv (ADR-0116, audit I IS3)
+        files: if run.mcp_servers.is_empty() {
+            Vec::new()
+        } else {
+            vec![LaunchFile { path: MCP_CONFIG_FILE.into(), contents: wisp_copilot_core::mcp_config(&run.mcp_servers) }]
+        },
         ..Launch::default()
     }
 }

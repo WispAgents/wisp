@@ -37,6 +37,8 @@ pub struct Edge {
     pub(crate) port: AtomicU16,
     pub(crate) backend: Arc<dyn Backend>,
     table: RwLock<Arc<Table>>,
+    /// the backend's routes generation the table was built at (`Backend::routes_generation`)
+    table_gen: std::sync::atomic::AtomicU64,
     pub(crate) hub: Arc<Hub>,
     pub(crate) idem: Idempotency,
     pub(crate) prepared: PreparedCache,
@@ -84,6 +86,7 @@ impl Edge {
             port: AtomicU16::new(0),
             backend,
             table: RwLock::new(Arc::new(Table::new())),
+            table_gen: std::sync::atomic::AtomicU64::new(u64::MAX),
             hub,
             idem: Idempotency::default(),
             prepared: PreparedCache::default(),
@@ -106,6 +109,8 @@ impl Edge {
 
     /// Rebuilds the table from the plugins that are on (after a plugin is switched on or off).
     pub fn reload_routes(&self) {
+        // read before the routes: a change while they're read moves it again, and the next request builds once more
+        self.table_gen.store(self.backend.routes_generation(), Ordering::Relaxed);
         let mut t = Table::new();
         for (m, p, perm, s, o) in [
             ("GET", "/health", "edge:health", "Is wisp up: name, version, apiVersion, pid, url", Own::Health),
@@ -131,6 +136,12 @@ impl Edge {
     /// The route for a request; a miss wakes plugins waiting on `onRoute` (an API path, or a write to a
     /// raw path such as a webhook) and looks once more.
     async fn find(&self, method: &Method, path: &str) -> Option<(Arc<Entry>, Params)> {
+        // a plugin switched on or off since the table was built: its routes (and their handlers) are those of now, never
+        // a switched-off activation's (audit I IS6: a machine added after wisp.machines went off and on was "No such
+        // machine." through `/api/peer/<id>` until a restart)
+        if self.backend.routes_generation() != self.table_gen.load(Ordering::Relaxed) {
+            self.reload_routes();
+        }
         if let Some(f) = self.table().find(method.as_str(), path) {
             return Some(f);
         }

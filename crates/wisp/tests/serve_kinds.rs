@@ -112,7 +112,7 @@ async fn a_project_profile_skill_team_connector_harness_and_tools_shape_the_run(
         assert!(all.contains(needle), "{what}: {all}");
     }
     assert!(argv.iter().any(|a| a == "--setting-sources"), "project: trust without hooks or MCP skips the repo's own: {argv:?}");
-    let cfg: Value = serde_json::from_str(&argv[argv.iter().position(|a| a == "--mcp-config").expect("--mcp-config") + 1]).unwrap();
+    let cfg: Value = common::mcp_config(common::records(&rec.join("claude.jsonl")).first().expect("a claude run"));
     assert_eq!(
         cfg["mcpServers"]["docs"],
         json!({ "type": "stdio", "command": "docs-mcp", "args": ["--stdio"], "env": {} }),
@@ -252,10 +252,14 @@ async fn wisp_run_formula_is_an_overlay_for_one_task_that_leaves_nothing() {
     finished(&api, &id).await;
 
     // the task ran with the overlay's agent, skill and connector
-    let argv = runs(&rec).pop().expect("a claude run");
-    let all = argv.join("\n");
-    assert!(all.contains("OVERLAY-RULE-5") && all.contains("OVERLAY-SKILL") && all.contains("scratch-mcp"), "{all}");
-    assert!(all.contains("tok-777"), "the overlay connector's secret was read for the run: {all}");
+    let record = common::records(&rec.join("claude.jsonl")).pop().expect("a claude run");
+    let all = common::argv(&record).join("\n");
+    let cfg = common::mcp_config(&record);
+    assert!(all.contains("OVERLAY-RULE-5") && all.contains("OVERLAY-SKILL"), "{all}");
+    assert_eq!(cfg["mcpServers"]["scratch"]["command"], "scratch-mcp", "{cfg}");
+    // read for the run, in its MCP config file, never on its argv (ADR-0116)
+    assert_eq!(cfg["mcpServers"]["scratch"]["env"]["TOKEN"], "tok-777", "the overlay connector's secret was read for the run: {cfg}");
+    assert!(!all.contains("tok-777"), "{all}");
     let row = api.cmd("runtime.get", json!({ "id": id })).await;
     assert!(!row.to_string().contains("tok-777") && row.to_string().contains("${secret:SCRATCH}"), "and never stored: {row}");
     assert_eq!(api.cmd("runtime.spec", json!({ "id": id })).await["agent"], "solo");

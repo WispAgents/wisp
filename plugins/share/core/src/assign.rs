@@ -182,8 +182,8 @@ fn assigned(t: &str) -> Option<&str> {
 
 /// Tools whose short flag takes a password: (tool, its subcommand if it needs one, flag, whether the value may come as
 /// the next word). `mysql -p db` reads `db` as the database (the password is prompted), so only `-pVALUE` is one there;
-/// `docker -p` is a port except under `login`.
-const SHORT: [(&str, Option<&str>, &str, bool); 8] = [
+/// `docker -p` is a port except under `login`; so is Azure's `az login -p` (audit I IS7).
+const SHORT: [(&str, Option<&str>, &str, bool); 9] = [
     ("mysql", None, "-p", false),
     ("mysqldump", None, "-p", false),
     ("mysqladmin", None, "-p", false),
@@ -192,6 +192,7 @@ const SHORT: [(&str, Option<&str>, &str, bool); 8] = [
     ("sshpass", None, "-p", true),
     ("redis-cli", None, "-a", true),
     ("docker", Some("login"), "-p", true),
+    ("az", Some("login"), "-p", true),
 ];
 
 /// Tools whose `-u` / `--user` is `user:password`: the part after the colon is masked.
@@ -379,6 +380,9 @@ fn line_cuts(l: &str, base: usize, command: bool, cuts: &mut Vec<(usize, usize)>
                 continue;
             }
             if !t.starts_with('-') {
+                if vault_token(tool, sub, words.len(), t) {
+                    cut(cuts, a, b);
+                }
                 words.push(unquoted(t));
                 if sub.is_none() {
                     sub = Some(t);
@@ -386,11 +390,39 @@ fn line_cuts(l: &str, base: usize, command: bool, cuts: &mut Vec<(usize, usize)>
             }
         }
         if command {
-            for (a, b) in echoed(l, seg, segs.get(si + 1)) {
+            for (a, b) in whole_command(l, seg, segs.get(si + 1)) {
                 cut(cuts, a, b);
             }
         }
     }
+}
+
+/// What one command, read whole, gives away: `htpasswd -b`'s password, and what's echoed into a flag that reads stdin.
+fn whole_command(l: &str, seg: &Seg, next: Option<&Seg>) -> Vec<(usize, usize)> {
+    let mut out = echoed(l, seg, next);
+    out.extend(htpasswd_password(l, seg).copied());
+    out
+}
+
+/// Whether `t` is the token of `vault login <token>` (audit I IS7): the word right after `login`.
+fn vault_token(tool: Option<&str>, sub: Option<&str>, words: usize, t: &str) -> bool {
+    tool == Some("vault") && sub == Some("login") && words == 1 && masks(t)
+}
+
+/// The span of the password in `htpasswd -b [file] user <password>` (audit I IS7; `-nb`, `-bB` …: the flags go
+/// together): its last word, when a flag group holds `b` and it isn't a flag itself.
+fn htpasswd_password<'a>(l: &str, seg: &'a Seg) -> Option<&'a (usize, usize)> {
+    let words: Vec<&(usize, usize)> = seg.toks.iter().filter(|&&(a, b)| !WRAPPERS.contains(&&l[a..b])).collect();
+    let (&&(a, b), _) = words.split_first()?;
+    if l[a..b].rsplit(['/', '\\']).next() != Some("htpasswd") {
+        return None;
+    }
+    let batch = words.iter().any(|&&(x, y)| {
+        let t = &l[x..y];
+        t.len() > 1 && t.starts_with('-') && !t.starts_with("--") && t[1..].chars().all(|c| c.is_ascii_alphabetic()) && t.contains('b')
+    });
+    let last = words.last().copied()?;
+    (batch && words.len() > 2 && !l[last.0..last.1].starts_with('-') && masks(&l[last.0..last.1])).then_some(last)
 }
 
 /// `echo <token> | gh auth login --with-token`: what's echoed into a flag that reads a secret from stdin is the secret.
@@ -411,7 +443,7 @@ type Shape = (Regex, Masked);
 fn shapes() -> &'static [Shape] {
     static S: OnceLock<Vec<Shape>> = OnceLock::new();
     S.get_or_init(|| {
-        let list: [(&str, Masked); 8] = [
+        let list: [(&str, Masked); 10] = [
             // a URL's `user:password@`: `https://user:<secret>@host`
             (r#"(?i)\b([a-z][a-z0-9+.-]*://[^\s:/@'"]+:)([^\s@/'"]+)@"#, |c| real(&c[2]).then(|| format!("{}<secret>@", &c[1]))),
             // a token as a URL's user: `https://<secret>@github.com/…` (a name is short; a token isn't)
@@ -432,6 +464,9 @@ fn shapes() -> &'static [Shape] {
             (r#"(?i)(:_(?:authToken|auth|password)\s*=\s*)([^\s"']+)"#, |c| real(&c[2]).then(|| format!("{}<secret>", &c[1]))),
             // GitLab's tokens (`glpat-…`, `glptt-…`), which the share's shapes didn't know
             (r"\b(gl(?:pat|ptt|dt|rt)-)[A-Za-z0-9_-]{20,}", |_| Some("<secret>".to_owned())),
+            // HashiCorp Vault's tokens (audit I IS7): `hvs.` / `hvb.` / `hvr.` …, and the older `s.` / `b.` + 24
+            (r"\bhv[sbr]\.[A-Za-z0-9_-]{20,}", |_| Some("<secret>".to_owned())),
+            (r"\b[sb]\.[A-Za-z0-9]{24}\b", |_| Some("<secret>".to_owned())),
         ];
         list.into_iter().filter_map(|(p, f)| Regex::new(p).ok().map(|r| (r, f))).collect()
     })
@@ -669,5 +704,29 @@ mod tests {
         ] {
             assert_eq!(secret_name(name), secret, "{name}");
         }
+    }
+
+    /// Audit I IS7: Azure's `az login -p`, a token after `vault login` and `htpasswd -b`'s password went out as typed.
+    #[test]
+    fn az_vault_and_htpasswd_secrets_are_masked_audit_i_is7() {
+        for (said, want) in [
+            ("az login -u ada@x.invalid -p hunter2qa", "az login -u ada@x.invalid -p <secret>"),
+            ("sudo az login -u ada -p hunter2qa", "sudo az login -u ada -p <secret>"),
+            ("az login --password hunter2qa", "az login --password <secret>"),
+            ("vault login s3cr3tT0kenValue", "vault login <secret>"),
+            ("vault login -method=token s3cr3tT0kenValue", "vault login -method=token <secret>"),
+            ("htpasswd -b .htpasswd ada hunter2qa", "htpasswd -b .htpasswd ada <secret>"),
+            ("htpasswd -cbB /etc/nginx/.htpasswd ada hunter2qa", "htpasswd -cbB /etc/nginx/.htpasswd ada <secret>"),
+            ("htpasswd -nb ada hunter2qa && echo ok", "htpasswd -nb ada <secret> && echo ok"),
+        ] {
+            assert_eq!(cmd(said), want);
+        }
+        for keep in
+            ["az group list -p x", "vault status", "vault login", "htpasswd .htpasswd ada", "htpasswd -c .htpasswd ada", "az vm show -p x"]
+        {
+            assert_eq!(cmd(keep), keep, "nothing typed there is a secret");
+        }
+        let (out, n) = mask_shapes("token hvs.CAESIAbCdEfGhIjKlMnOpQrStUvWxYz0123 and s.AbCdEfGhIjKlMnOpQrStUvWx, not s.short");
+        assert_eq!((out.as_str(), n.len()), ("token <secret> and <secret>, not s.short", 2));
     }
 }

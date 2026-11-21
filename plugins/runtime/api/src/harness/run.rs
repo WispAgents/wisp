@@ -80,7 +80,13 @@ pub enum Stdin {
     Pipe,
 }
 
-/// A file the runtime writes before spawning and removes after the run (an MCP config, a prompt file).
+/// The launch file a harness's MCP servers go in when its CLI reads them from a file (Claude's `--mcp-config`, Copilot's
+/// `--additional-mcp-config @…`): a connector's secret env and the run's wisp token never go on argv, where any local
+/// user reads them (`ps`; ADR-0116, audit I IS3).
+pub const MCP_CONFIG_FILE: &str = "wisp-mcp.json";
+
+/// A file the runtime writes before spawning and removes after the run (an MCP config, a prompt file). The runtime
+/// writes it 0600 in a 0700 folder of the run's own (ADR-0116): it may hold secrets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaunchFile {
     /// relative: under the run's private temp folder; the runtime puts `{tmp}` in argv/env for it

@@ -38,7 +38,14 @@ pub(super) fn specs(s: &mut Setup, slot: &Slot) {
     );
     s.contribute(&RESOURCE_KIND, kind);
     s.command::<c::Profiles, _, _>(|ctx, _, _| async move { crate::specs::profiles(&*ctx.service::<Store>()?).await });
-    s.command::<c::ProfileSet, _, _>(|ctx, _, p| async move { crate::specs::set_profile(&*ctx.service::<Store>()?, p).await });
+    s.command::<c::ProfileSet, _, _>(|ctx, _, p| async move {
+        // `auto` while Auto is off: refused as a formula refuses it (audit I IS8: `wisp runtime profile set --harness auto`
+        // and the user's harness stored one, offered after as a harness)
+        if p.spec.harness.trim() == "auto" && ctx.setting("runtime.auto") != Some(serde_json::Value::Bool(true)) {
+            return Err(WireError::invalid("harness: auto: Auto is off (runtime.auto): name a harness, or turn Auto on"));
+        }
+        crate::specs::set_profile(&*ctx.service::<Store>()?, p).await
+    });
     s.command::<c::ProfileRename, _, _>(|ctx, _, a| async move {
         crate::specs::rename_profile(&*ctx.service::<Store>()?, &a.from, &a.to).await
     });

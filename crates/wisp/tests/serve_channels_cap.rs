@@ -8,7 +8,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Api, argv, records, start_with, temp};
+use common::{Api, records, start_with, temp};
 use serde_json::{Value, json};
 
 /// The MCP token a task's run was given, from the fake agent's record of its argv.
@@ -16,9 +16,10 @@ async fn token_of(rec: &std::path::Path, id: &str) -> String {
     let at = Instant::now();
     loop {
         for r in records(&rec.join("claude.jsonl")) {
-            let a = argv(&r);
-            let Some(i) = a.iter().position(|x| x == "--mcp-config") else { continue };
-            let cfg: Value = serde_json::from_str(&a[i + 1]).unwrap();
+            let cfg = common::mcp_config(&r);
+            if cfg.is_null() {
+                continue;
+            }
             let h = &cfg["mcpServers"]["wisp"]["headers"];
             if h["x-wisp-session"] == id {
                 return h["x-wisp-token"].as_str().unwrap().to_owned();

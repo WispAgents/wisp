@@ -53,9 +53,7 @@ impl Agent {
         let id = made["id"].as_str().unwrap().to_owned();
         api.until(&id, "the turn running", |t| t.len() == 1 && t[0]["status"] == "running").await;
         let runs = until_records(&rec.join("claude.jsonl"), "the run's record", |r| !r.is_empty()).await;
-        let argv = argv(&runs[0]);
-        let cfg: Value = serde_json::from_str(&argv[argv.iter().position(|a| a == "--mcp-config").expect("--mcp-config") + 1]).unwrap();
-        let token = cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"].as_str().unwrap().to_owned();
+        let token = common::wisp_token(&runs[0]);
         Self { serve, api, port, id, token, dir }
     }
 
@@ -1616,6 +1614,8 @@ async fn the_users_harness_reaches_triggers_settings_channels_and_worktrees_and_
     for agent_side in [true, false] {
         let list = a.post(json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }), agent_side).await.to_string();
         assert!(!list.contains(r#""auto","claude""#) && !list.contains("Harness: auto"), "auto offered (agent {agent_side})");
+        // audit I IS8: nor the catalogue's own words (`runtime_create`, `runtime_profile_set`)
+        assert!(!list.contains("router pick"), "auto offered by a catalogue tool (agent {agent_side})");
     }
     let (t, _) = a.call("delegate", json!({ "tasks": [{ "agent": "frob", "prompt": "x" }] })).await;
     assert!(t.starts_with("Nothing was delegated.") && t.contains("- frob: no harness frob: name one of claude"), "{t}");
@@ -1805,5 +1805,167 @@ async fn an_agents_project_add_for_a_missing_folder_is_refused_before_any_card_a
     assert!(err && t.contains("No folder at") && t.contains("nothing was asked"), "{t}");
     let task = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
     assert!(task["ext"]["wisp.runtime"]["ask"].is_null(), "a card was made: {}", task["ext"]["wisp.runtime"]["ask"]);
+    a.serve.stop();
+}
+
+/// Waits until the guard task `id` settled as one whose harness stopped waiting; its row then.
+async fn guard_gone(api: &Api, id: &str) -> Value {
+    let at = std::time::Instant::now();
+    loop {
+        let got = api.cmd("runtime.get", json!({ "id": id })).await;
+        if got["state"] == "done" && got["title"].as_str().is_some_and(|t| t.ends_with("not changed: the harness stopped waiting")) {
+            return got;
+        }
+        assert!(at.elapsed() < std::time::Duration::from_secs(15), "the guard task didn't settle: {got}");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// Audit I IS2: a guard task whose harness call went (the harness gave up on a slow tool call; `wisp serve` restarted)
+/// stayed in Needs you with its held prompt queued, answers changed nothing silently, and a reply ran the guard's own
+/// text as a Full-auto prompt. It settles: done, its prompt dropped, saying the change wasn't made because the harness
+/// stopped waiting; an answer or a follow-up after says so and runs nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guard_task_whose_harness_stopped_waiting_settles_and_runs_nothing_audit_i_is2() {
+    let a = Agent::start("guard-gone").await;
+    let key = "worktrees.projectAsk";
+    let before = a.api.cmd("settings.get", json!({ "key": key })).await;
+    // a harness that gives up on a slow tool call after 1.5 s
+    let impatient = reqwest::Client::builder().timeout(std::time::Duration::from_millis(1500)).build().unwrap();
+    let (port, cwd) = (a.port, a.dir.join("proj").to_string_lossy().into_owned());
+    let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "settings_set", "arguments": { "key": key, "value": "off" } } });
+    let gave_up = tokio::spawn(async move {
+        impatient
+            .post(format!("http://127.0.0.1:{port}/api/mcp"))
+            .header("content-type", "application/json")
+            .header("x-wisp-cwd", cwd)
+            .body(body.to_string())
+            .send()
+            .await
+            .is_err()
+    });
+    let (task, ask) = guard_ask(&a).await;
+    assert!(gave_up.await.unwrap(), "the harness's call timed out");
+    let row = guard_gone(&a.api, &task).await;
+    assert!(row["queue"].as_array().is_none_or(Vec::is_empty), "its held prompt is dropped: {row}");
+    assert!(row["ext"]["wisp.runtime"]["ask"].is_null(), "nothing is asked any more: {row}");
+    // an answer (the page's Allow, `wisp reply`) after: refused, saying why; nothing changes
+    let r = a.api.try_cmd("runtime.answer", json!({ "id": task, "text": "Allow", "askId": ask })).await;
+    assert!(r.to_string().contains("stopped waiting") && r.to_string().contains("wasn't made"), "{r}");
+    let r = a.api.try_cmd("runtime.answer", json!({ "id": task, "text": "Allow" })).await;
+    assert!(r.to_string().contains("stopped waiting"), "{r}");
+    // a reply never runs the guard's text (nor the reply) as a prompt: guard tasks take no follow-ups
+    let r = a.api.try_cmd("runtime.followUp", json!({ "id": task, "text": "hello there" })).await;
+    assert!(r.to_string().contains("stopped waiting"), "{r}");
+    let turns = a.api.cmd("runtime.turns", json!({ "id": task })).await;
+    assert!(turns.as_array().is_none_or(Vec::is_empty), "nothing ran: {turns}");
+    assert_eq!(a.api.cmd("settings.get", json!({ "key": key })).await, before, "nothing changed");
+
+    // answered in time, then a follow-up: still none (it only asked)
+    let call = spawn_user_call(&a, "settings_set", &json!({ "key": key, "value": "off" }));
+    let (task2, ask2) = guard_ask(&a).await;
+    a.api.cmd("runtime.answer", json!({ "id": task2, "text": "Deny", "askId": ask2 })).await;
+    assert!(call.await.unwrap().0.contains("said no"));
+    let r = a.api.try_cmd("runtime.followUp", json!({ "id": task2, "text": "hello there" })).await;
+    assert!(r.to_string().contains("takes no follow-ups"), "{r}");
+
+    // `wisp serve` restarted while it asked: the call that would run it is gone, so it settles at start
+    let _call = spawn_user_call(&a, "settings_set", &json!({ "key": key, "value": "off" }));
+    let (task3, _) = guard_ask(&a).await;
+    a.serve.stop();
+    let (serve, port) = common::restart(&a.dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let row = guard_gone(&api, &task3).await;
+    assert!(row["queue"].as_array().is_none_or(Vec::is_empty), "{row}");
+    let r = api.try_cmd("runtime.answer", json!({ "id": task3, "text": "Allow" })).await;
+    assert!(r.to_string().contains("stopped waiting"), "{r}");
+    assert_eq!(api.cmd("settings.get", json!({ "key": key })).await, before, "nothing changed");
+    serve.stop();
+}
+
+/// Audit I IS8 and IS9: with Auto off, an agent's `wisp_crew_add {agent: auto}` made a card that only after Allow said
+/// "it didn't go through: Auto is off", `runtime_projectAdd` for a folder that's a project already made a card whose
+/// Allow said "✓ You allowed" and changed nothing, and `runtime.profile.set {harness: auto}` stored an `auto` profile.
+/// Each is refused up front, nobody asked, nothing stored.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_change_that_cant_or_neednt_happen_is_refused_before_any_card_audit_i_is8_is9() {
+    let a = Agent::start("refused-before-card").await;
+    let proj = a.dir.join("proj");
+    a.api.cmd("runtime.projectAdd", json!({ "path": proj })).await;
+    let (t, err) = a.call("runtime_projectAdd", json!({ "path": proj })).await;
+    assert!(err && t.contains("already") && t.contains("nothing was asked"), "{t}");
+    let (t, err) = a.call("wisp_crew_add", json!({ "name": "Qa Auto", "role": "x", "agent": "auto" })).await;
+    assert!(err && t.contains("Auto is off") && t.contains("Nothing was asked"), "{t}");
+    let task = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    assert!(task["ext"]["wisp.runtime"]["ask"].is_null(), "a card was made: {}", task["ext"]["wisp.runtime"]["ask"]);
+    let r = a.api.try_cmd("runtime.profile.set", json!({ "name": "qa-auto-prof", "harness": "auto" })).await;
+    assert!(r.to_string().contains("Auto is off"), "{r}");
+    let (t, err) = a.user_call("runtime_profile_set", json!({ "name": "qa-auto-prof", "harness": "auto" })).await;
+    assert!(err && t.contains("Auto is off"), "{t}");
+    let exported = a.api.cmd("resources.export", json!({ "kinds": ["agent"] })).await;
+    assert!(!exported.to_string().contains("qa-auto-prof"), "stored: {exported}");
+    a.serve.stop();
+}
+
+/// Audit I (smaller notes): an agent's `later.add` was stored as the user's (`"by": "user"`). An agent's scheduled
+/// follow-up is the agent's, whatever it says; the user's stays the user's.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_scheduled_follow_up_is_the_agents_audit_i() {
+    let a = Agent::start("later-by-agent").await;
+    for by in [None, Some("user")] {
+        let mut args = json!({ "sessionId": a.id, "text": "check CI", "in": 60 });
+        if let Some(b) = by {
+            args["by"] = json!(b);
+        }
+        let r = raw_cmd(&a, "later.add", args).await;
+        assert!(r["ok"] != false, "{r}");
+    }
+    a.api.cmd("later.add", json!({ "sessionId": a.id, "text": "mine", "in": 60 })).await;
+    let list = a.api.cmd("later.list", json!({ "sessionId": a.id })).await;
+    let by: Vec<(String, String)> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| (l["text"].as_str().unwrap_or_default().to_owned(), l["by"].as_str().unwrap_or_default().to_owned()))
+        .collect();
+    assert_eq!(by.iter().filter(|(t, b)| t == "check CI" && b == "agent").count(), 2, "{by:?}");
+    assert!(by.iter().any(|(t, b)| t == "mine" && b == "user"), "{by:?}");
+    a.serve.stop();
+}
+
+/// Audit I (smaller notes on the guard card): switching on a plugin that's already on asked the user; `machines_route`
+/// of `runtime.list` with a `peer` was refused as a guard change; `runtime.exec`'s card didn't say which folder it runs
+/// in. The first applies at once, the second isn't a guard, and the card names the task's folder.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_guard_asks_only_about_what_lowers_one_and_says_where_a_command_runs_audit_i() {
+    let a = Agent::start("guard-notes").await;
+    let (t, err) = a.user_call("plugins_setEnabled", json!({ "id": "wisp.learn", "enabled": true })).await;
+    assert!(!err && !t.contains("said no") && !t.contains("Your harness"), "{t}");
+    let list = a.api.cmd("runtime.list", json!({})).await;
+    assert!(!list.to_string().contains("Your harness wants to"), "it asked: {list}");
+    let (t, _) = a.user_call("machines_route", json!({ "cmd": "runtime.list", "args": {}, "peer": "studio" })).await;
+    assert!(!t.contains("safety guards"), "{t}");
+    let call = spawn_user_call(&a, "runtime_exec", &json!({ "id": a.id, "command": "echo hi" }));
+    let (task, ask) = guard_ask(&a).await;
+    let got = a.api.cmd("runtime.get", json!({ "id": task })).await;
+    let q = got["ext"]["wisp.runtime"]["ask"]["question"].as_str().unwrap_or_default().to_owned();
+    let cwd = a.api.cmd("runtime.get", json!({ "id": a.id })).await["cwd"].as_str().unwrap_or_default().to_owned();
+    assert!(!cwd.is_empty() && q.contains(&format!("(in {cwd})")), "{q}");
+    a.api.cmd("runtime.answer", json!({ "id": task, "text": "Deny", "askId": ask })).await;
+    assert!(call.await.unwrap().0.contains("said no"));
+    a.serve.stop();
+}
+
+/// The review of audit I IS2: `runtime.ask` took `details.guard` from any caller, so an agent's token could mark its own
+/// task as a guard task, which then took no follow-ups for good. Only the user's side makes a guard question.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_cannot_make_a_guard_question_audit_i_is2() {
+    let a = Agent::start("agent-no-guard").await;
+    let r = raw_cmd(&a, "runtime.ask", json!({ "id": a.id, "question": "x?", "options": ["Allow", "Deny"], "details": { "guard": true } }))
+        .await;
+    assert!(r["ok"] != false, "{r}");
+    let task = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    assert!(task["ext"]["wisp.runtime"]["ask"]["guard"].is_null(), "an agent marked a guard question: {task}");
+    assert!(task["ext"]["wisp.runtime"]["guardTask"].is_null(), "{task}");
     a.serve.stop();
 }

@@ -28,6 +28,9 @@ pub struct CopilotArgs<'a> {
     pub session: &'a str,
     pub usage_file: &'a str,
     pub mcp_servers: Option<&'a BTreeMap<String, Value>>,
+    /// the file [`mcp_config`] is written to (the run's own, 0600): `--additional-mcp-config @<it>`, so a connector's
+    /// secret env and the run's wisp token never go on argv (ADR-0116, audit I IS3)
+    pub mcp_config_file: &'a str,
     /// `--allow-tool` rules the user allowed
     pub grants: &'a [String],
     pub delegating: bool,
@@ -42,6 +45,12 @@ fn server(srv: &Value) -> Value {
         return json!({ "type": "http", "url": url, "headers": srv.get("headers").cloned().unwrap_or_else(|| json!({})), "tools": ["*"], "timeout": ASK_TIMEOUT_MS });
     }
     json!({ "type": "local", "command": srv["command"], "args": srv.get("args").filter(|a| !a.is_null()).cloned().unwrap_or_else(|| json!([])), "env": srv.get("env").filter(|e| !e.is_null()).cloned().unwrap_or_else(|| json!({})), "tools": ["*"], "timeout": ASK_TIMEOUT_MS })
+}
+
+/// What goes in the `--additional-mcp-config` file: the servers as copilot has them.
+pub fn mcp_config(m: &BTreeMap<String, Value>) -> String {
+    let servers: Map<String, Value> = m.iter().map(|(k, v)| (k.clone(), server(v))).collect();
+    json!({ "mcpServers": servers }).to_string()
 }
 
 pub fn args(a: &CopilotArgs<'_>) -> Vec<String> {
@@ -63,8 +72,7 @@ pub fn args(a: &CopilotArgs<'_>) -> Vec<String> {
     }
     out.extend(["--no-ask-user".into(), "--usage-output-file".into(), a.usage_file.into()]);
     if let Some(m) = a.mcp_servers.filter(|m| !m.is_empty()) {
-        let servers: Map<String, Value> = m.iter().map(|(k, v)| (k.clone(), server(v))).collect();
-        out.extend(["--additional-mcp-config".into(), json!({ "mcpServers": servers }).to_string()]);
+        out.extend(["--additional-mcp-config".into(), format!("@{}", a.mcp_config_file)]);
         // its permissions would refuse an MCP call outside Full auto: wisp's own tools need no asking
         out.extend(m.keys().map(|k| format!("--allow-tool={k}")));
     }
@@ -298,10 +306,21 @@ mod tests {
     fn wisps_http_server_goes_in_the_mcp_config() {
         let mut m = BTreeMap::new();
         m.insert("wisp".to_owned(), json!({ "type": "http", "url": "http://x/api/mcp", "headers": { "x-wisp-token": "t" } }));
-        let a = args(&CopilotArgs { mode: "auto", session: "s", usage_file: "u", mcp_servers: Some(&m), ..CopilotArgs::default() });
+        let a = args(&CopilotArgs {
+            mode: "auto",
+            session: "s",
+            usage_file: "u",
+            mcp_servers: Some(&m),
+            mcp_config_file: "/t/m.json",
+            ..CopilotArgs::default()
+        });
         let at = a.iter().position(|x| x == "--additional-mcp-config").unwrap_or(0);
-        let cfg: Value = serde_json::from_str(&a[at + 1]).unwrap_or_default();
+        // a file, never the JSON itself on argv: the token is in it (audit I IS3)
+        assert_eq!(a[at + 1], "@/t/m.json");
+        assert!(!a.join(" ").contains("x-wisp-token"));
+        let cfg: Value = serde_json::from_str(&mcp_config(&m)).unwrap_or_default();
         assert_eq!(cfg["mcpServers"]["wisp"]["type"], "http");
+        assert_eq!(cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"], "t");
         assert!(a.iter().any(|x| x == "--allow-tool=wisp") && a.iter().any(|x| x == "--allow-all"));
     }
 }

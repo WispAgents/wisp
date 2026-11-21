@@ -27,6 +27,11 @@ impl std::fmt::Debug for Binding {
 pub trait Backend: Send + Sync + 'static {
     /// every `kernel.http` route of the plugins that are on, in the order they were added
     fn routes(&self) -> Vec<Binding>;
+    /// Changes whenever [`Self::routes`] would give something else (a plugin switched on or off): the edge builds its
+    /// table again (audit I IS6). A backend whose routes never change keeps the default.
+    fn routes_generation(&self) -> u64 {
+        0
+    }
     fn status_parts(&self) -> Vec<Arc<dyn StatusPart>>;
     fn call(&self, caller: Caller, cmd: &str, args: Value) -> BoxFuture<'static, Result<Value>>;
     /// Ok, or the reason the caller's capability set doesn't hold `permission`
@@ -51,6 +56,9 @@ pub trait Backend: Send + Sync + 'static {
 }
 
 impl Backend for Kernel {
+    fn routes_generation(&self) -> u64 {
+        Kernel::points_generation(self)
+    }
     fn routes(&self) -> Vec<Binding> {
         Kernel::routes(self)
             .into_iter()

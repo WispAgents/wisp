@@ -248,6 +248,9 @@ pub struct TestPhone {
     pub acts: Mutex<Vec<ActArgs>>,
     /// the tasks `session` answers with (their open ask and newest turn)
     pub tasks: Mutex<Vec<SessionView>>,
+    /// the open question is one only the linked person answers (a setup card, a guard question): an act the transport
+    /// can't vouch for is refused with [`crate::SETUP_ELSEWHERE`], as the hub refuses it
+    pub in_person: Mutex<bool>,
 }
 
 #[async_trait]
@@ -297,6 +300,9 @@ impl Phone for TestPhone {
     }
     async fn act(&self, a: &ActArgs) -> Result<String> {
         lock(&self.acts).push(a.clone());
+        if *lock(&self.in_person) && !a.person {
+            return Ok(crate::SETUP_ELSEWHERE.into());
+        }
         Ok("✓ Done.".into())
     }
     async fn projects(&self) -> Result<Vec<ProjectView>> {

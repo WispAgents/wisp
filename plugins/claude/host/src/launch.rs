@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use wisp_runtime_api::harness::{HarnessRun, Launch, Stdin};
+use wisp_runtime_api::harness::{HarnessRun, Launch, LaunchFile, MCP_CONFIG_FILE, Stdin};
 use wisp_runtime_api::model::{Attachment, Mode};
 
 /// The program when detect found none and `WISP_CLAUDE_BIN` isn't set.
@@ -141,9 +141,13 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
             args.push("--no-session-persistence".into());
         }
     }
+    // as a file of the run's own (0600), never inline: a connector's secret env and the run's wisp token on argv are
+    // anyone's to read with `ps` (ADR-0116, audit I IS3)
+    let mut files = Vec::new();
     if !run.mcp_servers.is_empty() {
         args.push("--mcp-config".into());
-        args.push(serde_json::json!({ "mcpServers": run.mcp_servers }).to_string());
+        args.push(format!("{{tmp}}/{MCP_CONFIG_FILE}"));
+        files.push(LaunchFile { path: MCP_CONFIG_FILE.into(), contents: serde_json::json!({ "mcpServers": run.mcp_servers }).to_string() });
     }
     if run.mcp_servers.contains_key("wisp") && run.mode == Mode::Edits {
         args.push("--permission-prompt-tool".into());
@@ -193,6 +197,7 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         env_remove: ENV_REMOVE.iter().map(|s| (*s).to_owned()).collect(),
         cwd: run.cwd.clone(),
         stdin: Stdin::Bytes(prompt.into_bytes()),
+        files,
         ..Launch::default()
     }
 }
@@ -245,6 +250,7 @@ mod tests {
             "--permission-mode acceptEdits --model opus --effort high --resume c1 --fork-session --no-session-persistence --mcp-config"
         ));
         assert!(a.contains("--permission-prompt-tool mcp__wisp__approve --allowedTools mcp__wisp --disallowedTools Task Agent Workflow --add-dir /a /up --verbose"));
+        assert!(a.contains("--mcp-config {tmp}/wisp-mcp.json --permission-prompt-tool"), "a file of the run's own: {a}");
         let Stdin::Bytes(b) = launch(&r, "claude").stdin else { panic!("stdin") };
         assert!(String::from_utf8_lossy(&b).contains("- /up/pic.png  (image/png, 3 KB)"));
         // a 13-byte file is 13 B, not "1 KB" (audit B #19)
@@ -340,5 +346,27 @@ mod tests {
         assert!(!launch(&run(), "claude").env.contains_key("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"));
         let q = HarnessRun { quiet: true, ..run() };
         assert_eq!(launch(&q, "claude").env.get("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC").map(String::as_str), Some("1"));
+    }
+
+    /// Audit I IS3: a connector's secret env and the run's wisp token were on Claude's argv (`--mcp-config '{…}'`), where
+    /// any local user reads them with `ps`. They go in the run's own MCP config file; argv names only its path.
+    #[test]
+    fn mcp_servers_go_in_a_file_never_on_argv_audit_i_is3() {
+        let mut r = run();
+        r.mcp_servers.insert(
+            "wisp".into(),
+            serde_json::json!({ "type": "http", "url": "http://127.0.0.1:1/api/mcp", "headers": { "x-wisp-token": "tok-SECRET-1" } }),
+        );
+        r.mcp_servers.insert("docs".into(), serde_json::json!({ "command": "docs-mcp", "env": { "DOCS_TOKEN": "env-SECRET-2" } }));
+        let l = launch(&r, "claude");
+        let argv = l.args.join(" ");
+        assert!(!argv.contains("SECRET") && !argv.contains("x-wisp-token"), "{argv}");
+        let at = l.args.iter().position(|a| a == "--mcp-config").unwrap();
+        assert_eq!(l.args[at + 1], "{tmp}/wisp-mcp.json");
+        assert_eq!(l.files.len(), 1);
+        let cfg: serde_json::Value = serde_json::from_str(&l.files[0].contents).unwrap();
+        assert_eq!(cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"], "tok-SECRET-1");
+        assert_eq!(cfg["mcpServers"]["docs"]["env"]["DOCS_TOKEN"], "env-SECRET-2");
+        assert!(l.env.values().all(|v| !v.contains("SECRET")));
     }
 }

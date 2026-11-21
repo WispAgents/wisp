@@ -178,9 +178,7 @@ async fn the_catalogue_is_wisps_mcp_tools() {
     let id = made["id"].as_str().unwrap().to_owned();
     api.until(&id, "running", |t| t.len() == 1 && t[0]["status"] == "running").await;
     let runs = common::until_records(&rec.join("claude.jsonl"), "the run's record", |r| !r.is_empty()).await;
-    let argv = common::argv(&runs[0]);
-    let cfg: Value = serde_json::from_str(&argv[argv.iter().position(|a| a == "--mcp-config").unwrap() + 1]).unwrap();
-    let token = cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"].as_str().unwrap().to_owned();
+    let token = common::wisp_token(&runs[0]);
     let agent = [("x-wisp-token", token.as_str()), ("x-wisp-session", id.as_str())];
     let theirs = names(&mcp(&api.http, port, &agent, json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/list" })).await);
     assert!(theirs.contains(&"crew_list".to_owned()) && theirs.contains(&"runtime_get".to_owned()), "{theirs:?}");

@@ -19,6 +19,20 @@ pub fn is_task_tool(name: &str) -> bool {
     NAMES.contains(&name)
 }
 
+/// `wisp_launch`'s `agent`, with Auto on; [`without_auto`] says it as it is with Auto off.
+const AGENT_AUTO: &str = "Harness to run (see wisp_agents); auto lets wisp pick. Default: the user's pick.";
+const AGENT: &str = "Harness to run (see wisp_agents). Default: the user's pick.";
+
+/// A `tools/list` reply with `auto` taken out of `wisp_launch`'s harness, for a wisp whose Auto is off (`runtime.auto`):
+/// `/api/mcp`'s list already says it so (audit I IS8: this server's own still offered it).
+pub fn without_auto(reply: &mut Value) {
+    for t in reply.pointer_mut("/result/tools").and_then(Value::as_array_mut).into_iter().flatten() {
+        if let Some(d) = t.pointer_mut("/inputSchema/properties/agent/description").filter(|d| d.as_str() == Some(AGENT_AUTO)) {
+            *d = json!(AGENT);
+        }
+    }
+}
+
 /// The tools, as `tools/list` lists them.
 pub fn tools() -> Vec<Value> {
     let id = json!({ "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] });
@@ -29,7 +43,7 @@ pub fn tools() -> Vec<Value> {
             "inputSchema": { "type": "object", "properties": {
                 "prompt": { "type": "string", "description": "The task, written as you would brief a colleague: goal, constraints, how to verify." },
                 "cwd": { "type": "string", "description": "Absolute path of the project folder. Default: this MCP server's working directory." },
-                "agent": { "type": "string", "description": "Harness to run (see wisp_agents); auto lets wisp pick. Default: the user's pick." },
+                "agent": { "type": "string", "description": AGENT_AUTO },
                 "mode": { "type": "string", "enum": ["plan", "edits", "auto"], "description": "plan = no file edits, edits = auto-accept edits, auto = no permission prompts. Default: the user's pick." },
                 "model": { "type": "string", "description": "Model id for that harness. Default: the user's pick." },
                 "effort": { "type": "string", "description": "Thinking level, e.g. low | medium | high." },
@@ -268,5 +282,17 @@ mod tests {
         assert!(t.iter().all(|x| x["inputSchema"]["type"] == "object" && !x["description"].as_str().unwrap_or_default().is_empty()));
         assert_eq!(t[0]["inputSchema"]["required"], json!(["prompt"]));
         assert!(is_task_tool("wisp_launch") && !is_task_tool("wisp_history"));
+    }
+
+    /// Audit I IS8: with Auto off, `wisp mcp`'s own `wisp_launch` still said "auto lets wisp pick".
+    #[test]
+    fn with_auto_off_wisp_launch_offers_no_auto_harness_audit_i_is8() {
+        let mut reply = json!({ "result": { "tools": tools() } });
+        assert!(reply.to_string().contains("auto lets wisp pick"));
+        without_auto(&mut reply);
+        let said = reply.to_string();
+        assert!(!said.contains("auto lets wisp pick") && said.contains("Harness to run (see wisp_agents). Default"), "{said}");
+        // the modes keep their `auto` (Full auto)
+        assert!(said.contains(r#""enum":["plan","edits","auto"]"#));
     }
 }

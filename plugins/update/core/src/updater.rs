@@ -280,11 +280,15 @@ impl Updater {
         let channel = req.channel;
         let version = if self.method() == Method::App { self.pick_release(channel, body) } else { self.pick_tag(channel, body) };
         let available = self.method() != Method::Git && version.as_deref().is_some_and(|v| newer(v, &self.current));
-        let changed = version != self.latest || available != self.available || channel != self.last_channel;
+        let mut changed = version != self.latest || available != self.available || channel != self.last_channel;
         if changed {
             self.latest = version;
             self.available = available;
             self.last_channel = channel;
+        }
+        // an install refused before this check knew of a download (no asset then) isn't this copy's state any more
+        if self.status != Status::Installing && self.asset.is_some() && self.error.take().is_some() {
+            changed = true;
         }
         changed
     }
@@ -332,6 +336,15 @@ impl Updater {
         let step = match self.method() {
             Method::App => {
                 let Some(asset) = self.asset.clone() else {
+                    // checks on but none answered yet (right after start): nothing is known of the update, so the copy
+                    // isn't to blame, and nothing is kept as its error (audit I, smaller notes: it said "no automatic
+                    // update for this copy" and kept that after the check found 2.0.1)
+                    if self.enabled && self.latest.is_none() {
+                        return Err(Refusal::Invalid(
+                            "wisp hasn't found out about the update yet (it checks shortly after it starts): run wisp update check, then try again."
+                                .into(),
+                        ));
+                    }
                     // checks off: nothing looked for the download, so the copy isn't to blame (audit H HS10)
                     let m = if self.enabled {
                         format!("There's no automatic update for this copy of wisp. {}", self.later())

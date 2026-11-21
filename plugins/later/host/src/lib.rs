@@ -138,6 +138,15 @@ impl State {
     }
 
     async fn add(&self, ctx: &Ctx, call: &Call, a: &c::AddArgs) -> Result<LaterEntry> {
+        // an agent's own follow-up is the agent's, whatever it says (audit I, smaller notes: an agent's `later.add` was
+        // stored as the user's, so it read as theirs where it shows and fired as theirs)
+        let mine;
+        let a = if by_agent(call.caller()) && a.by.as_deref() != Some(BY_AGENT) {
+            mine = c::AddArgs { by: Some(BY_AGENT.into()), ..a.clone() };
+            &mine
+        } else {
+            a
+        };
         let task = need_task(ctx, call, &a.session_id, "No such task.").await?;
         let pending = self.of_task(&a.session_id).len();
         let l = rules::new_entry(wisp_kernel::ids::uuid7(), &task, &self.meta(&a.session_id), pending, a, now(ctx), self.tz(now(ctx)))
@@ -615,6 +624,11 @@ impl Plugin for LaterPlugin {
         });
         Ok(())
     }
+}
+
+/// Whether a call comes from a task's agent (its token: `agent:session…`, `agent:capped…`, a crew member's).
+fn by_agent(c: &wisp_kernel::Caller) -> bool {
+    c.session.is_some() && (c.set.starts_with("agent:") || c.set.starts_with("crew:"))
 }
 
 #[cfg(test)]

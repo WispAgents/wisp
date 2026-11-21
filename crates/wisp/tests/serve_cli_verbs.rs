@@ -233,7 +233,8 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
         &["review", "the", "auth", "module"],
         &["ship", "the", "docs"],
         &["update", "the", "readme"],
-        &["git", "rebase", "onto", "main"],
+        // (`git rebase onto main` was one: one of git's own commands after `wisp git` is refused now, audit I IS4)
+        &["git", "is", "slow", "here"],
         &["learn", "rust", "properly"],
     ];
     for words in prompts {
@@ -263,7 +264,7 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
         "review the auth module",
         "ship the docs",
         "update the readme",
-        "git rebase onto main",
+        "git is slow here",
         "learn rust properly",
     ] {
         assert!(made.contains(p), "{p}: {tasks}");

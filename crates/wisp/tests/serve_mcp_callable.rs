@@ -53,9 +53,7 @@ impl Agent {
         let id = made["id"].as_str().unwrap().to_owned();
         api.until(&id, "the turn running", |t| t.len() == 1 && t[0]["status"] == "running").await;
         let runs = until_records(&rec.join("claude.jsonl"), "the run's record", |r| !r.is_empty()).await;
-        let argv = argv(&runs[0]);
-        let cfg: Value = serde_json::from_str(&argv[argv.iter().position(|a| a == "--mcp-config").expect("--mcp-config") + 1]).unwrap();
-        let token = cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"].as_str().unwrap().to_owned();
+        let token = common::wisp_token(&runs[0]);
         Self { serve, api, port, id, token, repo }
     }
 

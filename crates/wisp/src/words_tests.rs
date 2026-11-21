@@ -293,7 +293,7 @@ fn an_unknown_verb_under_a_command_group_is_an_error_naming_its_verbs_and_never_
     for args in [
         &["review", "the", "auth", "module"][..],
         &["update", "the", "readme"],
-        &["git", "rebase", "onto", "main"],
+        &["git", "is", "slow", "here"],
         &["learn", "rust", "properly"],
     ] {
         let x = p(args);
@@ -751,4 +751,85 @@ fn under_a_prompt_word_only_a_close_word_or_a_two_word_line_is_a_slip() {
     ] {
         assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_some(), "{args:?} is a slip");
     }
+}
+
+/// Audit I IS4: `wisp git push origin main` launched a Full-auto task with that line as its prompt (`git` is a word a
+/// prompt may start with, and `push` is no slip of wisp git's verbs). One of git's own commands after `wisp git` is a
+/// command line for git: refused, pointing at plain git and at quoting for a task.
+#[test]
+fn gits_own_commands_after_wisp_git_are_refused_never_a_task_audit_i_is4() {
+    // wisp.git's verbs, as the server's catalogue names them
+    let cat: Vec<Vec<String>> = ["changes", "checkout", "clone", "commit", "status"].iter().map(|v| w(&["git", v])).collect();
+    for line in [
+        "git push origin main",
+        "git pull --rebase origin main",
+        "git fetch origin",
+        "git log --oneline -5",
+        "git diff HEAD~1",
+        "git merge feature/x",
+        "git rebase -i main",
+        "git push",
+        "git stash pop",
+    ] {
+        let args: Vec<&str> = line.split(' ').collect();
+        let x = p(&args);
+        let u = unknown_verb(&x.words, x.literal, &cat).unwrap_or_else(|| panic!("{line}: read as a task"));
+        let said = u.said(&x.words);
+        let rest = &line["git ".len()..];
+        assert!(said.contains(&format!("wisp git has no {}: that's git's own command", args[1])), "{said}");
+        assert!(said.contains(&format!("git {}", x.words[1..].join(" "))) || said.contains(rest), "{said}");
+        assert!(said.contains("To start a task with these words: wisp -- \""), "{said}");
+        assert!(unknown_verb(&x.words, x.literal, &[]).is_some(), "{line}: refused before the catalogue is read too");
+    }
+    // wisp git's own verbs, a quoted prompt and `--` stay as they were
+    for args in [&["git", "status"][..], &["git", "commit", "-m", "x"], &["git push origin main"], &["--", "git", "push", "origin", "main"]]
+    {
+        let x = p(args);
+        assert!(unknown_verb(&x.words, x.literal, &cat).is_none(), "{args:?}");
+    }
+}
+
+/// Audit I IS10: `wisp help reply` (and 29 more commands `wisp help` lists) said "no command or plugin named reply", and
+/// `wisp import --help` read `--help` as its folder. Each built-in command HELP documents has its usage lines for both.
+#[test]
+fn every_documented_command_has_its_usage_for_help_audit_i_is10() {
+    for cmd in [
+        "reply",
+        "ls",
+        "import",
+        "run",
+        "show",
+        "stop",
+        "wait",
+        "held",
+        "diff",
+        "apply",
+        "export",
+        "add",
+        "attach",
+        "blame",
+        "btw",
+        "fmt",
+        "fresh",
+        "init",
+        "log",
+        "merge",
+        "notes",
+        "open",
+        "output",
+        "plan",
+        "rerun",
+        "resume",
+        "secret",
+        "tasks",
+        "track",
+        "untrack",
+        "workspace",
+        "adopt",
+    ] {
+        let u = crate::words::documented(cmd).unwrap_or_else(|| panic!("{cmd}: no usage"));
+        assert!(u.contains(&format!("wisp {cmd}")) || u.contains(&format!("|{cmd}")) || u.contains(&format!("{cmd}|")), "{cmd}: {u}");
+    }
+    assert!(crate::words::documented("frobnicate").is_none());
+    assert!(crate::words::documented("--help").is_none());
 }

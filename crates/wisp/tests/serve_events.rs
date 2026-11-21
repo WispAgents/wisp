@@ -102,9 +102,7 @@ async fn capped_agent_sees_only_its_task_events_over_mcp() {
         r.iter().any(|v| common::argv(v).iter().any(|a| a == "--mcp-config"))
     })
     .await;
-    let argv = common::argv(runs.last().unwrap());
-    let cfg: Value = serde_json::from_str(&argv[argv.iter().position(|a| a == "--mcp-config").unwrap() + 1]).unwrap();
-    let token = cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"].as_str().unwrap().to_owned();
+    let token = common::wisp_token(runs.last().unwrap());
     let agent = [("x-wisp-token", token.as_str()), ("x-wisp-session", id.as_str())];
     let got = mcp(
         &api.http,

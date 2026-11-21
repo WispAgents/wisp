@@ -123,3 +123,56 @@ fn git_out(dir: &Path, args: &[&str]) -> String {
     let o = Command::new("git").args(args).current_dir(dir).output().unwrap();
     String::from_utf8_lossy(&o.stdout).into_owned()
 }
+
+/// Audit I IS4 and IS10, end to end: `wisp git push origin main` launched a Full-auto task with that line as its prompt;
+/// `wisp help reply` was "no command or plugin named reply"; `wisp import --help` read `--help` as its folder and
+/// `wisp run --help`, `wisp open --help` … as their argument. Nothing launches, and each prints its usage.
+#[tokio::test(flavor = "multi_thread")]
+async fn gits_own_commands_are_refused_and_every_command_has_its_help_audit_i_is4_is10() {
+    let dir = temp("serve-auditI-cli");
+    let (_serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let proj = dir.join("proj");
+    let before = api.cmd("runtime.list", json!({})).await.as_array().map_or(0, Vec::len);
+    for line in [&["git", "push", "origin", "main"][..], &["git", "pull", "--rebase", "origin", "main"], &["git", "log", "--oneline", "-5"]]
+    {
+        let (code, _, err) = wisp(&dir, &proj, port, line);
+        assert_eq!(code, 2, "{line:?}: {err}");
+        assert!(err.contains(&format!("wisp git has no {}: that's git's own command", line[1])) && err.contains("wisp -- \""), "{err}");
+    }
+    for cmd in [
+        "reply",
+        "ls",
+        "import",
+        "run",
+        "show",
+        "export",
+        "open",
+        "resume",
+        "track",
+        "adopt",
+        "untrack",
+        "blame",
+        "init",
+        "secret",
+        "workspace",
+        "log",
+    ] {
+        let (code, out, err) = wisp(&dir, &proj, port, &["help", cmd]);
+        assert_eq!(code, 0, "wisp help {cmd}: {err}");
+        assert!(
+            out.contains(&format!("wisp {cmd}")) || out.contains(&format!("{cmd}|")) || out.contains(&format!("|{cmd}")),
+            "wisp help {cmd}: {out}"
+        );
+        let (code, out2, err) = wisp(&dir, &proj, port, &[cmd, "--help"]);
+        assert_eq!(code, 0, "wisp {cmd} --help: {err}");
+        assert!(
+            !err.contains("--help") && out2.contains(&format!("wisp {cmd}"))
+                || out2.contains(&format!("{cmd}|"))
+                || out2.contains(&format!("|{cmd}")),
+            "wisp {cmd} --help: {out2}{err}"
+        );
+    }
+    let after = api.cmd("runtime.list", json!({})).await.as_array().map_or(0, Vec::len);
+    assert_eq!(after, before, "nothing launched");
+}

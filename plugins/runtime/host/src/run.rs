@@ -127,6 +127,9 @@ impl Runtime {
         if claim.cancelled() {
             return Err(RuntimeError::NoTask(s.id.0.clone()));
         }
+        // a task that asks (or asked) whether the user's harness may lower a guard runs nothing, ever: its held prompt is
+        // the question's own text (audit I IS2: Send now or a reply ran it in Full auto)
+        crate::more::no_follow_up_on_guard(&s)?;
         let was = s.agent.clone();
         let fresh = fresh_start(&mut s, &item);
         apply_opts(&mut s, &item);
@@ -561,6 +564,9 @@ impl Runtime {
     async fn spawn_run(self: &Arc<Self>, s: &Session, t: &Turn, h: &Arc<dyn Harness>, run: &HarnessRun, claim: &Claim) -> Result<bool> {
         let launch = h.launch(run)?;
         let tmp = write_files(&format!("wisp-run-{}", t.id), &launch).await?;
+        // its launch files (an MCP config with the run's token and a connector's secrets, ADR-0116) go on every way out:
+        // the run ended, its drive was dropped (wisp.runtime switched off), or it never spawned
+        let files = LaunchDir::of(&launch, &tmp);
         let fill = |x: &str| x.replace("{tmp}", &tmp);
         let mut set: Vec<(String, String)> = run.env.iter().chain(&run.account_env).map(|(k, v)| (k.clone(), v.clone())).collect();
         set.extend(launch.env.iter().map(|(k, v)| (k.clone(), fill(v))));
@@ -605,9 +611,6 @@ impl Runtime {
             Ok((handle, rx, ctl_rx, ended_tx))
         });
         let Some(spawned) = spawned else {
-            if !launch.files.is_empty() {
-                let _ = tokio::fs::remove_dir_all(&tmp).await;
-            }
             return Ok(false);
         };
         let (handle, rx, ctl_rx, ended_tx) = spawned?;
@@ -626,6 +629,7 @@ impl Runtime {
         // on the plugin's scope: switching wisp.runtime off ends the drive (and its CLI, through the spawn's scope)
         self.host.spawn(Box::pin(async move {
             rt.drive(sid, tid, driver, handle, rx, ctl_rx).await;
+            drop(files);
             drop(ended_tx);
         }));
         Ok(true)
@@ -728,6 +732,44 @@ pub(crate) fn side_main(s: &Session) -> Option<&str> {
     s.ext.get("wisp.runtime").and_then(|o| o.pointer("/sideOf/id")).and_then(Value::as_str).filter(|id| !id.is_empty())
 }
 
+/// A run's folder of launch files, removed when this goes (ADR-0116: they may hold the run's token and a connector's
+/// secrets). Held by the run's drive, so it goes when the run ends, when the drive is dropped (wisp.runtime switched
+/// off), or at once when the run never spawned.
+pub(crate) struct LaunchDir(Option<std::path::PathBuf>);
+
+impl LaunchDir {
+    pub(crate) fn of(launch: &Launch, dir: &str) -> Self {
+        Self((!launch.files.is_empty()).then(|| std::path::PathBuf::from(dir)))
+    }
+}
+
+impl Drop for LaunchDir {
+    fn drop(&mut self) {
+        // a few small files: removed where the run lets go, whatever runtime is (or isn't) still up
+        if let Some(d) = self.0.take() {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+}
+
+/// Launch folders a crash left (`wisp-run-*`, `wisp-side-*` under the temp folder) older than a week: removed at
+/// start (ADR-0116). A newer one may be another wisp's running run on this computer, so it stays.
+pub(crate) async fn sweep_launch_dirs() {
+    const WEEK: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
+    let Ok(mut rd) = tokio::fs::read_dir(std::env::temp_dir()).await else { return };
+    while let Ok(Some(e)) = rd.next_entry().await {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if !(name.starts_with("wisp-run-") || name.starts_with("wisp-side-")) {
+            continue;
+        }
+        let Ok(m) = tokio::fs::symlink_metadata(e.path()).await else { continue };
+        let old = m.modified().ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > WEEK);
+        if m.is_dir() && old {
+            let _ = tokio::fs::remove_dir_all(e.path()).await;
+        }
+    }
+}
+
 /// Files the launch asked for (an MCP config, a prompt file), in a temp folder of the run's own (`name`, under the
 /// OS temp folder). Returns the folder, which the launch's `{tmp}` stands for.
 pub(crate) async fn write_files(name: &str, launch: &Launch) -> Result<String> {
@@ -736,11 +778,16 @@ pub(crate) async fn write_files(name: &str, launch: &Launch) -> Result<String> {
         return Ok(dir.to_string_lossy().into_owned());
     }
     tokio::fs::create_dir_all(&dir).await.map_err(|e| RuntimeError::Invalid(e.to_string()))?;
+    // the files may hold secrets (an MCP config with the run's wisp token and a connector's env, ADR-0116): the folder is
+    // this user's only (0700), each file 0600; a folder someone else made there is refused, not written into
+    if let Err(e) = private_dir(&dir).await {
+        return Err(RuntimeError::Invalid(format!("the run's own folder {} isn't private: {e}", dir.display())));
+    }
     for f in &launch.files {
         let wrote = if f.path.contains("..") {
             Err(RuntimeError::Invalid(format!("launch file {} leaves its folder", f.path)))
         } else {
-            tokio::fs::write(dir.join(&f.path), &f.contents).await.map_err(|e| RuntimeError::Invalid(e.to_string()))
+            write_private(&dir.join(&f.path), f.contents.as_bytes()).await.map_err(|e| RuntimeError::Invalid(e.to_string()))
         };
         // nothing it wrote (a prompt, instructions) is left behind when it can't spawn
         if let Err(e) = wrote {
@@ -749,6 +796,35 @@ pub(crate) async fn write_files(name: &str, launch: &Launch) -> Result<String> {
         }
     }
     Ok(dir.to_string_lossy().into_owned())
+}
+
+/// `dir`, made this user's only (0700). A link at its name is refused, and so is a folder another user made there:
+/// only a file's owner may change its mode, so the chmod is the ownership check. Not on Unix: the temp folder is the
+/// user's own already.
+async fn private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    let m = tokio::fs::symlink_metadata(dir).await?;
+    if !m.is_dir() {
+        return Err(std::io::Error::other("not a folder"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        tokio::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).await?;
+    }
+    Ok(())
+}
+
+/// `bytes` to `path`, readable by this user only (0600 on Unix), made fresh: an earlier file of the name is replaced.
+async fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt as _;
+    let _ = tokio::fs::remove_file(path).await;
+    let mut o = tokio::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    o.mode(0o600);
+    let mut f = o.open(path).await?;
+    f.write_all(bytes).await?;
+    f.flush().await
 }
 
 pub(crate) async fn run_folder(launch: &str, task: &str, scratch: &str) -> Result<std::path::PathBuf> {
@@ -837,6 +913,56 @@ mod folder_tests {
             assert!(e.to_string().contains("Not a project folder"), "{launch:?} {task:?}: {e}");
         }
         std::fs::remove_dir_all(scratch).ok();
+    }
+
+    /// Audit I IS3 / ADR-0116: a launch file may hold the run's wisp token and a connector's secrets (the MCP config):
+    /// it's written 0600 in a folder only this user may enter (0700), and a link at the folder's name is refused.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn launch_files_are_this_users_only_audit_i_is3() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let launch = wisp_runtime_api::harness::Launch {
+            files: vec![wisp_runtime_api::harness::LaunchFile { path: "wisp-mcp.json".into(), contents: "{\"secret\":1}".into() }],
+            ..wisp_runtime_api::harness::Launch::default()
+        };
+        let name = format!("wisp-run-perm-test-{}", std::process::id());
+        let dir = std::path::PathBuf::from(super::write_files(&name, &launch).await.unwrap());
+        assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(std::fs::metadata(dir.join("wisp-mcp.json")).unwrap().permissions().mode() & 0o777, 0o600);
+        // written again (a retry of the same turn): still 0600, its new contents
+        super::write_files(&name, &launch).await.unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("wisp-mcp.json")).unwrap(), "{\"secret\":1}");
+        std::fs::remove_dir_all(&dir).ok();
+        // a link at the run's name (someone else's folder, or anywhere) is never written through
+        let elsewhere = std::env::temp_dir().join(format!("{name}-elsewhere"));
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &dir).unwrap();
+        assert!(super::write_files(&name, &launch).await.is_err());
+        assert!(!elsewhere.join("wisp-mcp.json").exists());
+        std::fs::remove_file(&dir).ok();
+        std::fs::remove_dir_all(&elsewhere).ok();
+    }
+
+    /// The review of audit I IS3: a run that never spawned (its folder gone, a spawn error) or whose drive was dropped
+    /// (wisp.runtime switched off) left its launch folder, with the run's token, behind. It goes with its guard.
+    #[tokio::test]
+    async fn a_runs_launch_folder_goes_however_the_run_ends_audit_i_is3() {
+        let launch = wisp_runtime_api::harness::Launch {
+            files: vec![wisp_runtime_api::harness::LaunchFile { path: "wisp-mcp.json".into(), contents: "{}".into() }],
+            ..wisp_runtime_api::harness::Launch::default()
+        };
+        let dir = super::write_files(&format!("wisp-run-drop-test-{}", std::process::id()), &launch).await.unwrap();
+        let guard = super::LaunchDir::of(&launch, &dir);
+        assert!(std::path::Path::new(&dir).join("wisp-mcp.json").exists());
+        let dropped = tokio::spawn(async move {
+            let _held = guard;
+            std::future::pending::<()>().await;
+        });
+        dropped.abort();
+        let _ = dropped.await;
+        assert!(!std::path::Path::new(&dir).exists(), "the folder went with the dropped drive");
+        // a launch with no files has no folder to remove
+        assert!(super::LaunchDir::of(&wisp_runtime_api::harness::Launch::default(), "/nonexistent").0.is_none());
     }
 }
 

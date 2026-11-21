@@ -30,10 +30,15 @@ fn last_argv(rec: &Path, harness: &str) -> Vec<String> {
     common::records(&rec.join(format!("{harness}.jsonl"))).last().map(common::argv).unwrap_or_default()
 }
 
-/// Claude's `--mcp-config` of its last run.
+/// Claude's MCP config of its last run (the file `--mcp-config` names, ADR-0116).
 fn mcp_config(rec: &Path) -> Value {
-    let argv = last_argv(rec, "claude");
-    serde_json::from_str(&argv[argv.iter().position(|a| a == "--mcp-config").expect("--mcp-config") + 1]).unwrap()
+    common::mcp_config(common::records(&rec.join("claude.jsonl")).last().expect("a claude run"))
+}
+
+/// Codex's last run: its argv, and what its MCP servers read from its environment.
+fn last_codex(rec: &Path) -> (String, Value) {
+    let r = common::records(&rec.join("codex.jsonl")).last().cloned().unwrap_or_default();
+    (common::argv(&r).join(" "), r["mcpEnv"].clone())
 }
 
 /// v1 #340: added once in Settings → Connectors, a connector goes to Claude Code's and Codex's runs alike, its
@@ -60,9 +65,12 @@ async fn a_connector_added_in_settings_reaches_every_harness() {
         "claude: the connector, its secret read: {cfg}"
     );
     run(&api, &dir, "codex", "edits").await;
-    let codex = last_argv(&rec, "codex").join(" ");
+    let (codex, codex_env) = last_codex(&rec);
     assert!(codex.contains(r#"mcp_servers.docs.command="docs-mcp""#), "codex: the same connector: {codex}");
-    assert!(codex.contains(r#"mcp_servers.docs.env={DOCS_TOKEN="tok-777"}"#), "codex: its secret read: {codex}");
+    // its secret read, through codex's environment, never on its argv (ADR-0116, audit I IS3)
+    assert!(codex.contains(r#"mcp_servers.docs.env_vars=["DOCS_TOKEN"]"#), "codex: its secret passed by name: {codex}");
+    assert_eq!(codex_env["DOCS_TOKEN"], "tok-777", "codex: its secret read: {codex_env}");
+    assert!(!codex.contains("tok-777"), "{codex}");
 
     api.cmd("connectors.update", json!({ "id": "docs", "enabled": false })).await;
     run(&api, &dir, "claude", "edits").await;
@@ -268,4 +276,56 @@ async fn wisps_tools_work_in_plan_mode_and_in_codex_edits_and_plan() {
         assert!(a.contains(r#"mcp_servers.wisp.default_tools_approval_mode="approve""#), "codex {mode}: wisp's tools aren't refused: {a}");
         assert!(a.contains(r#"mcp_servers.docs.default_tools_approval_mode="approve""#), "codex {mode}: nor a connector's: {a}");
     }
+}
+
+/// Audit I IS3 (ADR-0116): a connector's secret env and the run's wisp token were on the harness's command line
+/// (Claude's inline `--mcp-config`, Codex's `-c …env=` and `http_headers=`), which any local user reads with `ps`. Run on
+/// every harness, no recorded argv holds the secret, the token or the `x-wisp-token` header; Claude's and Copilot's
+/// config files are gone once their run ends.
+#[tokio::test(flavor = "multi_thread")]
+async fn no_harness_gets_a_secret_or_its_wisp_token_on_its_command_line_audit_i_is3() {
+    let dir = temp("serve-connectors-argv");
+    let rec = dir.join("rec");
+    std::fs::create_dir_all(&rec).unwrap();
+    let (_serve, port) = start_with(&dir, &[("FAKE_RECORD", rec.to_str().unwrap())]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    api.cmd("connectors.add", json!({ "name": "docs", "command": "docs-mcp", "env": { "DOCS_TOKEN": "argv-SECRET-tok-913" } })).await;
+    for (agent, bin) in [
+        ("claude", "claude"),
+        ("codex", "codex"),
+        ("opencode", "opencode"),
+        ("cursor", "cursor-agent"),
+        ("copilot", "copilot"),
+        ("grok", "grok"),
+        ("antigravity", "agy"),
+    ] {
+        run(&api, &dir, agent, "edits").await;
+        let r = common::records(&rec.join(format!("{bin}.jsonl"))).last().cloned().unwrap_or_else(|| panic!("{agent}: a run"));
+        let argv = common::argv(&r).join(" ");
+        assert!(!argv.contains("argv-SECRET-tok-913"), "{agent}: the connector's secret on argv: {argv}");
+        // the header may be named (codex reads its value from a variable: `x-wisp-token="WISP_MCP_…"`), never given one
+        for (at, _) in argv.match_indices("x-wisp-token") {
+            let after = argv[at + "x-wisp-token".len()..].trim_start_matches(['"', ':', '=', ' ']);
+            assert!(after.starts_with("WISP_MCP_"), "{agent}: wisp's token header with its value on argv: {argv}");
+        }
+        let token = r["mcpConfig"]["mcpServers"]["wisp"]["headers"]["x-wisp-token"].as_str().unwrap_or_default();
+        if !token.is_empty() {
+            assert!(!argv.contains(token), "{agent}: the run's token on argv");
+        }
+        for (flag, file) in [("--mcp-config", ""), ("--additional-mcp-config", "@")] {
+            if let Some(i) = common::argv(&r).iter().position(|a| a == flag) {
+                let path = common::argv(&r)[i + 1].trim_start_matches(file).to_owned();
+                assert!(!r["mcpConfig"].is_null(), "{agent}: the config was there for the run");
+                for _ in 0..100 {
+                    if !Path::new(&path).exists() {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+                assert!(!Path::new(&path).exists(), "{agent}: its config file is removed when the run ends: {path}");
+            }
+        }
+    }
+    // the token Claude's run had reached its MCP calls all the same (from the file)
+    assert_ne!(common::wisp_token(common::records(&rec.join("claude.jsonl")).last().unwrap()), "");
 }

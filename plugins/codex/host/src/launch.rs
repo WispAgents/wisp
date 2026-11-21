@@ -3,7 +3,7 @@
 
 use std::fmt::Write as _;
 
-use wisp_codex_core::{CodexArgs, LEAN_BASE, args};
+use wisp_codex_core::{CodexArgs, LEAN_BASE, args, mcp_env};
 use wisp_harness_kit::protocol::{FileNote, attachment_note, with_protocol};
 use wisp_runtime_api::harness::{HarnessRun, Launch, LaunchFile, Stdin};
 use wisp_runtime_api::model::Mode;
@@ -82,6 +82,9 @@ pub fn launch(run: &HarnessRun, bin: &str, developer: bool) -> Launch {
         args: args(&a),
         cwd: run.cwd.clone(),
         stdin: Stdin::Bytes(input.into_bytes()),
+        // its MCP servers' secrets (wisp's token, a connector's env) in its environment, which only this user reads,
+        // never on argv (ADR-0116, audit I IS3)
+        env: mcp_env(Some(&run.mcp_servers)),
         files: if run.lean { vec![LaunchFile { path: LEAN_FILE.into(), contents: LEAN_BASE.into() }] } else { Vec::new() },
         ..Launch::default()
     }

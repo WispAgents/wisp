@@ -150,6 +150,8 @@ impl Runtime {
                 }
             }));
         }
+        // launch folders a crash left behind (they may hold secrets, ADR-0116): off the start's way
+        self.host.spawn(Box::pin(crate::run::sweep_launch_dirs()));
         // questions open when wisp stopped stay answerable: the ask is on the task (v1 `session.ask`)
         let waiting: Vec<String> = self.lock_list().values().filter(|s| s.state == SessionState::Waiting).map(|s| s.id.0.clone()).collect();
         let mut leads: Vec<String> = Vec::new();
@@ -180,6 +182,13 @@ impl Runtime {
         }
         for id in waiting {
             let mut s = self.repo.session(&id).await?;
+            // a guard question (ADR-0115) is answered for the harness call that waited on it, which ended with wisp: it
+            // settles, saying so, instead of staying in Needs you for good (audit I IS2)
+            if crate::more::open_guard(&s) {
+                let _g = self.task_lock(&id).await;
+                self.guard_gone(&mut s).await?;
+                continue;
+            }
             let Some(ask) = crate::more::ask_id(&s) else { continue };
             self.asks().insert(ask, id);
             if s.state != SessionState::Waiting {
@@ -442,6 +451,11 @@ impl Runtime {
     fn last_pick(&self) -> Option<Arc<dyn Harness>> {
         let id = self.host.setting(LAUNCH_SETTING)?.get("agent")?.as_str()?.to_owned();
         self.host.harnesses().into_iter().find(|h| h.info().id == id)
+    }
+
+    /// The harness a task that names none runs on: New task's last pick, else the first installed (as `create`).
+    pub(crate) fn default_agent(&self) -> String {
+        self.last_pick().or_else(|| self.host.harnesses().into_iter().next()).map(|h| h.info().id.clone()).unwrap_or_default()
     }
 
     /// Auto's pick for a new task, or `None` (no router on, or nothing allowed can run now: the first

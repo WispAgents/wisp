@@ -226,7 +226,7 @@ pub fn formula_of(cfg: &Value) -> (Vec<Resource>, Vec<String>) {
                     spec["routing"] = Value::Object(routing);
                 }
             }
-            out.push(Resource::new("channel", k.clone(), spec));
+            out.extend(channel_and_send_me(k, spec));
             // only a channel v1 kept a secret for (server/remote.js's masked fields): v1's ntfy has none, unless it
             // was given an access token (audit E7)
             let secret = |f: &str| v.pointer(f).and_then(Value::as_str).is_some_and(|x| !x.is_empty());
@@ -236,6 +236,15 @@ pub fn formula_of(cfg: &Value) -> (Vec<Resource>, Vec<String>) {
         }
     }
     (out, notes)
+}
+
+/// v1 sent its questions and finished tasks to ntfy and Telegram by itself (F-chan-1): the same Send me v2 keeps for a
+/// channel switched on in Settings → Phone (`phone-<transport>`, wisp-channels-core's `notification_name`). Without it
+/// an imported ntfy polled its topic and sent nothing (audit I IS5). A channel that was off gets none.
+fn channel_and_send_me(transport: &str, spec: Value) -> Vec<Resource> {
+    let send_me = (spec["enabled"] != json!(false) && matches!(transport, "ntfy" | "telegram"))
+        .then(|| Resource::new("notification", format!("phone-{transport}"), json!({ "on": ["asks", "finished"], "to": transport })));
+    std::iter::once(Resource::new("channel", transport, spec)).chain(send_me).collect()
 }
 
 /// v1's triggers: a schedule is a declared task, every other kind the trigger source it is now.
@@ -543,6 +552,10 @@ mod tests {
         assert_eq!(ntfy["routing"], json!({ "topic": "wisp-old-topic-1", "server": "https://ntfy.example" }), "{ntfy}");
         assert_eq!(ntfy["allow"], json!([]), "a topic isn't someone allowed to speak: {ntfy}");
         assert_eq!(get("channel", "telegram")["allow"], json!(["42"]), "a chat id still is");
+        // audit I IS5: v1 sent questions and finished tasks to the phone; so does the import's ntfy (a channel that was
+        // off in v1 gets none)
+        assert_eq!(get("notification", "phone-ntfy"), json!({ "on": ["asks", "finished"], "to": "ntfy" }));
+        assert!(rs.iter().all(|r| r.name != "phone-telegram"), "telegram was off: {rs:?}");
         for (key, want) in [
             ("git.maskEnvFiles", json!(false)),
             ("runtime.leanRuns", json!("all")),

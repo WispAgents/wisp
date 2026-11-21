@@ -564,3 +564,27 @@ fn the_release_feed_can_be_a_local_one_only() {
     let mut npm = updater(global(), Env { feed: Some("http://127.0.0.1:1/r".into()), ..Env::default() });
     assert_eq!(npm.begin_check(0, "stable").url, "https://registry.npmjs.org/-/package/wisp-agents/dist-tags", "the app's feed only");
 }
+
+/// Audit I (smaller notes): right after start, before the first check, `wisp update apply` (checks on) said "There's no
+/// automatic update for this copy of wisp" and `update view` kept that as its error after the check found 2.0.1. Before
+/// any check it says wisp hasn't found out yet (and keeps nothing); a refusal kept from before is gone once a check finds
+/// the download.
+#[test]
+fn an_install_before_the_first_check_says_so_and_a_check_clears_a_stale_refusal_audit_i() {
+    let rel = json!({ "tag_name": "v99.0.0", "assets": [{ "name": "wisp-mac-arm64.zip", "browser_download_url": "https://dl/wisp-mac-arm64.zip" }] });
+    let mut u = app("darwin", "arm64", "/Applications/wisp.app/Contents/MacOS/wisp", None);
+    assert!(u.enabled, "checks on");
+    let e = u.begin_install().unwrap_err();
+    let said = format!("{e:?}");
+    assert!(said.contains("hasn't found out about the update yet") && !said.contains("no automatic update"), "{said}");
+    assert_eq!(u.view("stable").error, None, "nothing kept");
+    // a refusal kept from an answer that had no download for this computer, then a check that has one
+    let req = u.begin_check(0, "stable");
+    u.end_check(&req, Some(&json!({ "tag_name": "v99.0.0", "assets": [] })));
+    assert!(u.begin_install().is_err());
+    assert!(u.view("stable").error.is_some_and(|e| e.contains("no automatic update")));
+    let req = u.begin_check(1, "stable");
+    assert!(u.end_check(&req, Some(&rel)), "what the UI shows changed");
+    assert_eq!(u.view("stable").error, None, "the stale refusal is gone");
+    assert!(u.begin_install().is_ok());
+}

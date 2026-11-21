@@ -63,9 +63,7 @@ async fn the_leads_team_is_in_its_prompt_and_its_delegate_tool() {
     let runs = until_records(&rec.join("claude.jsonl"), "the lead's run", |r| !r.is_empty()).await;
     let text = runs[0].to_string();
     assert!(text.contains("## Subagents") && text.contains("`tester` ×2"), "the lead hears about its team: {text}");
-    let argv = argv(&runs[0]);
-    let cfg: Value = serde_json::from_str(&argv[argv.iter().position(|a| a == "--mcp-config").unwrap() + 1]).unwrap();
-    let token = cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"].as_str().unwrap().to_owned();
+    let token = common::wisp_token(&runs[0]);
     let list: Value = api
         .http
         .post(format!("http://127.0.0.1:{port}/api/mcp"))

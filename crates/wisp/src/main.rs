@@ -123,7 +123,8 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
     if !matches!(p.command, Some("serve" | "mcp" | "grid" | "desktop" | "completions" | "sdk")) && Client::new(port).ping().await {
         attach::notices(&Client::new(port), &home).await;
     }
-    if let Some(code) = misused_verb_path(p, true) {
+    // `wisp import --help` (audit I IS10), then a built-in verb path its arm didn't take
+    if let Some(code) = own_help(p).or_else(|| misused_verb_path(p, true)) {
         return Ok(code);
     }
     if let Some(code) = as_code(p, port, f.cwd.as_deref().unwrap_or(cwd), &home).await? {
@@ -226,6 +227,23 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
 /// QA round 9 #1 (`wisp computer on --grid …` started a task): words that start with a built-in verb path are that
 /// command. `flags`: refuse a flag it doesn't take, before anything runs; else (past every arm, on the launch path)
 /// refuse whatever it was given. Either way its usage, exit 2. None: not a verb path, or after `--` (a task on purpose).
+/// `wisp import --help`, `wisp run --help`: the command's usage, never `--help` read as its argument (audit I IS10:
+/// "No folder at …/--help", "no task --help"). Only right after the command: a verb's own `--help` (`wisp crew create
+/// --help`) is its own, and a group's or a plugin's is `wisp help <it>` (audit G GS10). (`wisp run` takes what follows as
+/// its words: there `--help` is the word after the command.)
+fn own_help(p: &Parsed) -> Option<i32> {
+    let asked = (p.flags.help && p.words.len() == 1) || p.words.get(1).is_some_and(|w| w == "--help" || w == "-h");
+    if p.literal != args::Literal::No || !asked {
+        return None;
+    }
+    let cmd = p.command.or_else(|| p.words.first().map(String::as_str))?;
+    if !words::OWN_HELP.contains(&cmd) {
+        return None;
+    }
+    say(&words::documented(cmd)?);
+    Some(0)
+}
+
 fn misused_verb_path(p: &Parsed, flags: bool) -> Option<i32> {
     if p.literal == args::Literal::Task || p.command.is_some() {
         return None;

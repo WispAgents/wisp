@@ -2,7 +2,8 @@
 // (v1 settings.js paintAgents, setup.js setupCommand, recheckSummary).
 import { expect, test } from 'vitest';
 import type { DetectRow, HarnessRow } from '../src/types.ts';
-import { harnessLine, harnessState, howToGet, mergeHarnesses, recheckSummary, toolState } from '../src/words.ts';
+import { harnessLine, harnessState, howToGet, mergeHarnesses, recheckSummary, toolState, updateAllSummary } from '../src/words.ts';
+import '../src/i18n/lazy.ts';
 import { recheck } from '../src/commands.ts';
 import { createRoot } from 'solid-js';
 import { signal } from '@wisp/client';
@@ -113,4 +114,22 @@ test('a_harness_its_cli_says_is_signed_out_reads_signed_out_and_github_says_its_
   expect(toolState({ id: 'gh', name: 'GitHub CLI', installed: true, signedIn: false })?.tone).toBe('warn');
   expect(toolState({ id: 'gh', name: 'GitHub CLI', installed: true })).toBeUndefined();
   expect(toolState({ id: 'gh', name: 'GitHub CLI', installed: false })?.tone).toBe('bad');
+});
+
+// Audit I IS11: Update all ran three updates that didn't take and said nothing; one Update says why. It says, for each,
+// what it went to or why not (the server's words name the command to run), and how many took.
+test('update_all_says_what_took_and_what_didnt_audit_i_is11', () => {
+  const said = updateAllSummary([
+    { name: 'Codex', version: '9.9.10' },
+    { name: 'Claude Code', error: 'Claude Code is still 9.9.9 after the update (the latest is 9.9.10). Run `/x/claude update` in a terminal, then re-check.' },
+    { name: 'opencode', error: 'Updating opencode failed: exit 1' },
+  ]);
+  expect(said.failed).toBe(true);
+  expect(said.message).toBe('Update all: 1 of 3 updated');
+  expect(said.description.split('\n')).toEqual([
+    '✓ Codex 9.9.10',
+    '✗ Claude Code is still 9.9.9 after the update (the latest is 9.9.10). Run `/x/claude update` in a terminal, then re-check.',
+    '✗ Updating opencode failed: exit 1',
+  ]);
+  expect(updateAllSummary([{ name: 'Codex', version: '9.9.10' }, { name: 'Grok', version: '1.2' }]).failed).toBe(false);
 });

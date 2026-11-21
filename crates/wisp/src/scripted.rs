@@ -339,8 +339,13 @@ fn ls_lines(rows: &[&Value]) -> Vec<String> {
     let sw = rows.iter().map(|x| state_of(x).chars().count()).max().unwrap_or(0).max(7);
     rows.iter()
         .map(|x| {
-            let ask =
-                x.get("question").and_then(Value::as_str).filter(|q| !q.is_empty()).map_or(String::new(), |q| format!("  — asks: {q}"));
+            // one line per task: a question's own lines go on one (audit I, smaller notes: a guard task took three)
+            let ask = x
+                .get("question")
+                .and_then(Value::as_str)
+                .map(|q| q.split_whitespace().collect::<Vec<_>>().join(" "))
+                .filter(|q| !q.is_empty())
+                .map_or(String::new(), |q| format!("  — asks: {q}"));
             let proj = project_of(x);
             format!(
                 "{}  {:<sw$}  {:<aw$}  {:<16}  {}{ask}",
@@ -348,7 +353,7 @@ fn ls_lines(rows: &[&Value]) -> Vec<String> {
                 state_of(x),
                 agent_of(x),
                 proj.chars().take(16).collect::<String>(),
-                s(x, "title")
+                s(x, "title").split_whitespace().collect::<Vec<_>>().join(" ")
             )
         })
         .collect()
@@ -619,5 +624,21 @@ mod tests {
         assert_eq!(super::project_of(&row("")), "no project");
         assert_eq!(super::project_of(&row("/w/app")), "app");
         assert_eq!(super::project_of(&serde_json::json!({ "cwd": "/w/app-01a1", "summary": { "project": "app" } })), "app");
+    }
+
+    /// Audit I (smaller notes): `wisp ls` printed a guard task over three lines (its question's own lines). Each task is
+    /// one line.
+    #[test]
+    fn a_task_asking_a_question_of_several_lines_is_one_line_audit_i() {
+        let g = serde_json::json!({ "id": "g1", "state": "waiting", "agent": "claude", "cwd": "/w/app", "title": "Your harness wants to x",
+            "question": "Your harness wants to x.\nworktrees.projectAsk: on → off\nAllow it only if you asked for this." });
+        let lines = ls_lines(&[&g]);
+        assert_eq!(lines.len(), 1);
+        assert!(!lines[0].contains('\n'), "{}", lines[0]);
+        assert!(
+            lines[0].ends_with("asks: Your harness wants to x. worktrees.projectAsk: on → off Allow it only if you asked for this."),
+            "{}",
+            lines[0]
+        );
     }
 }

@@ -348,4 +348,45 @@ mod tests {
         assert!(shell_init("fish").unwrap().contains("fish_postexec"));
         assert!(shell_init("tcsh").unwrap_err().contains("zsh, bash or fish"));
     }
+
+    /// Audit I IS7: `az login -p`, a Vault token after `vault login` (and Vault's token shapes anywhere) and `htpasswd -b`'s
+    /// password went into the prompt as typed; a token in a URL's userinfo took the host and path with it.
+    #[test]
+    fn az_vault_and_htpasswd_secrets_are_masked_and_a_urls_host_stays_audit_i_is7() {
+        let typed = [
+            "az login -u ada@x.invalid -p hunter2qa",
+            "az login --service-principal -u app --password hunter2qa --tenant t1",
+            "vault login s.AbCdEfGhIjKlMnOpQrStUvWx",
+            "vault login -method=token hvs.CAESIAbCdEfGhIjKlMnOpQrStUvWxYz0123",
+            "htpasswd -b .htpasswd ada hunter2qa",
+            "htpasswd -nbB ada hunter2qa",
+            "git remote set-url origin https://x-access-token:ghs_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@github.invalid/o/r.git",
+        ];
+        let ctx = TermContext {
+            cwd: "/w".into(),
+            output: "Success! token: hvs.CAESIAbCdEfGhIjKlMnOpQrStUvWxYz0123\nlegacy s.AbCdEfGhIjKlMnOpQrStUvWx ok".into(),
+            commands: typed.iter().map(|c| Cmd { cmd: (*c).into(), exit: Some(1), ..Cmd::default() }).collect(),
+            source: "hook".into(),
+            ..TermContext::default()
+        };
+        let (out, _) = scrub(ctx, Vec::new());
+        let block = out.block();
+        for leak in ["hunter2qa", "AbCdEfGhIjKlMnOpQrStUvWx", "CAESIAbCd", "ghs_AbCd"] {
+            assert!(!block.contains(leak), "{leak} went out: {block}");
+        }
+        let got: Vec<&str> = out.commands.iter().map(|c| c.cmd.as_str()).collect();
+        assert_eq!(
+            got,
+            [
+                "az login -u ada@x.invalid -p <secret>",
+                "az login --service-principal -u app --password <secret> --tenant t1",
+                "vault login <secret>",
+                "vault login -method=token <secret>",
+                "htpasswd -b .htpasswd ada <secret>",
+                "htpasswd -nbB ada <secret>",
+                "git remote set-url origin https://x-access-token:<secret>@github.invalid/o/r.git",
+            ]
+        );
+        assert!(out.output.contains("Success! token: <secret>") && out.output.contains("legacy <secret> ok"), "{}", out.output);
+    }
 }

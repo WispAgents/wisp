@@ -398,6 +398,19 @@ pub fn argv(record: &Value) -> Vec<String> {
     record["argv"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()).unwrap_or_default()
 }
 
+/// The MCP config a recorded Claude run was given: the fake agent reads the file `--mcp-config` names while the run
+/// has it (ADR-0116: never inline on argv).
+#[allow(dead_code)]
+pub fn mcp_config(record: &Value) -> Value {
+    record["mcpConfig"].clone()
+}
+
+/// The run's wisp token, from its recorded MCP config.
+#[allow(dead_code)]
+pub fn wisp_token(record: &Value) -> String {
+    record["mcpConfig"]["mcpServers"]["wisp"]["headers"]["x-wisp-token"].as_str().expect("the run's wisp token").to_owned()
+}
+
 /// Waits until the complete records in `path` satisfy `f`, and returns them.
 pub async fn until_records(path: &Path, what: &str, f: impl Fn(&[Value]) -> bool) -> Vec<Value> {
     let at = Instant::now();

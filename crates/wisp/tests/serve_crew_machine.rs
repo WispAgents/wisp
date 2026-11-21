@@ -99,3 +99,39 @@ async fn a_members_job_on_another_machine_runs_there_and_its_answer_lands_here()
     let jobs = detail["jobList"].as_array().cloned().unwrap_or_default();
     assert!(jobs.iter().any(|j| j["sessionId"] == job.as_str() && j["state"] != "running"), "{detail}");
 }
+
+/// Audit I IS6: after wisp.machines was switched off and on, a computer added later was "No such machine." to the app's
+/// `/api/peer/<id>` until a restart (its list showed it). The proxy reads the machines as they are now.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_added_after_machines_was_switched_off_and_on_is_reached_through_the_proxy_audit_i_is6() {
+    let (da, db) = (temp("machines-reenable-a"), temp("machines-reenable-b"));
+    let (_sa, pa) = start(&da);
+    let (_sb, pb) = start(&db);
+    let a = Api { http: reqwest::Client::new(), port: pa, n: 0.into() };
+    for on in [false, true] {
+        a.cmd("plugins.setEnabled", json!({ "id": "wisp.machines", "enabled": on })).await;
+    }
+    let added = until("wisp.machines takes commands again", 30, async || {
+        let r = a.try_cmd("machines.add", json!({ "transport": "loopback", "address": "127.0.0.1", "port": pb, "name": "studio" })).await;
+        (r["ok"] != false).then_some(r)
+    })
+    .await;
+    let machine = added["id"].as_str().or_else(|| added["result"]["id"].as_str()).unwrap_or_else(|| panic!("{added}")).to_owned();
+    until("the peer comes online", 60, async || {
+        let v = a.cmd("machines.get", json!({ "id": machine })).await;
+        (v["state"] == "online").then_some(v)
+    })
+    .await;
+    let r = a
+        .http
+        .post(format!("http://127.0.0.1:{pa}/api/peer/{machine}/api/cmd"))
+        .header("content-type", "application/json")
+        .header("idempotency-key", "t-reenable-1")
+        .body(json!({ "cmd": "runtime.list", "args": {} }).to_string())
+        .send()
+        .await
+        .unwrap();
+    let status = r.status();
+    let body = r.text().await.unwrap();
+    assert!(status.is_success() && !body.contains("No such machine"), "{status}: {body}");
+}

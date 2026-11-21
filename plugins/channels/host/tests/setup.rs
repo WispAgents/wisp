@@ -60,6 +60,8 @@ struct Net {
     tg_down: std::sync::atomic::AtomicBool,
     /// ntfy can't be reached: the error names the URL (its poll's holds the topic), as `ReqwestNet`'s does
     ntfy_down: std::sync::atomic::AtomicBool,
+    /// Telegram refuses the token (401)
+    tg_refused: std::sync::atomic::AtomicBool,
 }
 impl Default for Net {
     fn default() -> Self {
@@ -68,6 +70,7 @@ impl Default for Net {
             posts: Mutex::default(),
             tg_down: std::sync::atomic::AtomicBool::new(false),
             ntfy_down: std::sync::atomic::AtomicBool::new(false),
+            tg_refused: std::sync::atomic::AtomicBool::new(false),
         }
     }
 }
@@ -84,6 +87,10 @@ impl wisp_kernel::services::Net for Net {
             return Box::pin(
                 async move { Err(wisp_kernel::WireError::unavailable(format!("{url}: error sending request for url ({url})"))) },
             );
+        }
+        if req.url.contains("telegram") && self.tg_refused.load(Ordering::SeqCst) {
+            let answer = json!({ "ok": false, "error_code": 401, "description": "Unauthorized" }).to_string().into_bytes();
+            return Box::pin(async move { Ok(NetResponse { status: 401, headers: Vec::new(), body: answer }) });
         }
         if req.url.contains("getUpdates") || (req.method == "GET" && req.url.contains("ntfy")) {
             return Box::pin(std::future::pending());
@@ -628,4 +635,19 @@ async fn slacks_manifest_is_there_before_slack_is_on() {
     let m = a.call("channels.extra", json!({ "channel": "slack", "what": "manifest" })).await;
     assert_eq!(m["settings"]["socket_mode_enabled"], true, "on a computer: Socket Mode: {m}");
     assert_eq!(m["oauth_config"]["scopes"]["bot"][1], "chat:write");
+}
+
+/// Audit I (smaller notes): Test on a token Telegram refuses said "isn't linked to a chat" and that overwrote the 401 in
+/// the channel's status (the card's own line said "Unauthorized. Check the token …"). The test says the cause, and the
+/// status keeps it.
+#[tokio::test(flavor = "multi_thread")]
+async fn telegrams_test_on_a_refused_token_says_the_refusal_and_keeps_it_audit_i() {
+    let a = app("tg-refused").await;
+    a.net.tg_refused.store(true, Ordering::SeqCst);
+    a.call("channels.setup", json!({ "transport": "telegram", "enabled": true, "secrets": { "token": tg_token() } })).await;
+    eventually("Telegram's refusal is its status", async || a.status("telegram").await.to_string().contains("Unauthorized")).await;
+    let t = a.call("channels.test", json!({ "channel": "telegram" })).await.to_string();
+    assert!(t.contains("Unauthorized") && !t.contains("isn't linked"), "{t}");
+    let st = a.status("telegram").await.to_string();
+    assert!(st.contains("Unauthorized") && !st.contains("isn't linked"), "{st}");
 }

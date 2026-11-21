@@ -184,8 +184,9 @@ async fn notify(ctx: &Ctx, live: &Arc<Live>, event: &str, session: &str, text: &
     };
     // a question's options are signed answer buttons, named by its ask, as the channel's own report makes them (v1
     // `message`; audit G GS2). One only wisp can answer (an approval, a clash, a connector's keys) gets none.
-    // a setup card (ADR-0113): where a tap can't be the linked person's it goes without its buttons (audit H HS8)
-    let setup = event == "asks" && task.pointer("/ext/wisp.runtime/ask/setup").is_some_and(|c| !c.is_null());
+    // a setup card (ADR-0113) or a guard question (ADR-0115 §4): where a tap can't be the linked person's it goes without
+    // its buttons (audit H HS8, audit I IS1)
+    let setup = event == "asks" && task.pointer("/ext/wisp.runtime/ask").is_some_and(wisp_channels_core::answered_in_person);
     let actions = match (event, task.pointer("/ext/wisp.runtime/ask")) {
         ("asks", Some(a)) if actions.is_empty() => serde_json::from_value::<wisp_channels_api::AskView>(a.clone())
             .ok()

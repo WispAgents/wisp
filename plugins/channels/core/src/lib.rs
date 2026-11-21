@@ -17,14 +17,22 @@ pub mod ws;
 
 /// A setup card (ADR-0113) tapped where the channel can't tell it was the linked person (ntfy: anyone with the topic;
 /// a group chat): answered in wisp instead.
-pub const SETUP_ELSEWHERE: &str =
-    "That's a change to your setup: answer it in wisp (or from the chat you linked, yourself). Nothing changed.";
+pub use wisp_channels_api::SETUP_ELSEWHERE;
 
 /// Whether a tap on a channel's button can be the linked person's (ADR-0113): Slack's, Discord's and Telegram's carry
 /// who tapped, checked against who linked the chat. Any other's can't be told (ntfy: anyone who knows the topic taps;
 /// a channel a plugin adds says nothing of it), so a setup card goes there without buttons: default deny.
 pub fn taps_are_personal(transport: &str) -> bool {
     matches!(transport, "telegram" | "slack" | "discord")
+}
+
+/// Whether an open question (a task's `ext.wisp.runtime.ask`) is one only the person themselves may answer: a setup card
+/// (ADR-0113, `setup`) or the question about a safety guard the user's harness wants lowered (ADR-0115 §4, `guard`). One
+/// rule for both (audit I IS1: the guard question went to ntfy with buttons anyone with the topic could tap, and took
+/// another Telegram member's tap): where a tap can't be the linked person's it goes without buttons
+/// ([`for_channel`]), and a tap or typed reply answers it only when the channel vouches it's the linked person.
+pub fn answered_in_person(ask: &serde_json::Value) -> bool {
+    ask.get("setup").is_some_and(|c| !c.is_null()) || ask.get("guard") == Some(&serde_json::Value::Bool(true))
 }
 
 /// What a setup card's message says on a channel whose taps can't be the person's (audit H HS8: ntfy got Allow and Deny
@@ -68,5 +76,16 @@ mod tests {
         }
         assert_eq!(for_channel(&msg, "ntfy", false).actions.len(), 2, "a plain question's buttons stay on ntfy");
         assert!(for_channel(&msg, "acme-chat", true).actions.is_empty(), "a channel a plugin adds: can't be told, none");
+    }
+
+    /// Audit I IS1: a guard question (ADR-0115 §4) is answered as a setup card is; a plain question isn't.
+    #[test]
+    fn a_guard_question_is_answered_in_person_as_a_setup_card_is_audit_i_is1() {
+        use serde_json::json;
+        assert!(answered_in_person(&json!({ "id": "c", "setup": { "headline": "x" } })));
+        assert!(answered_in_person(&json!({ "id": "g", "options": ["Allow", "Deny"], "guard": true })));
+        assert!(!answered_in_person(&json!({ "id": "q", "options": ["Allow", "Deny"] })));
+        assert!(!answered_in_person(&json!({ "id": "q", "setup": null, "guard": false })));
+        assert!(!answered_in_person(&serde_json::Value::Null));
     }
 }

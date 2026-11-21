@@ -161,3 +161,35 @@ async fn a_tap_whose_ref_did_not_fit_is_read_back_from_the_task_and_answers_audi
         }
     }
 }
+
+/// Audit I (smaller notes): a refused tap (another member's in a linked group, on a question only the linked person
+/// answers) took the message's keyboard away, so the linked person could only type. A refused tap leaves it; the linked
+/// person's tap answers and then it goes.
+#[tokio::test]
+async fn a_refused_tap_leaves_the_keyboard_for_the_linked_person_audit_i() {
+    const GROUP: i64 = -10_077;
+    let tap = |from: i64| {
+        json!({ "update_id": 1, "callback_query": {
+            "id": "q1", "data": "a:0:signed:t1:ask1", "from": { "id": from, "first_name": "x" },
+            "message": { "message_id": 900, "chat": { "id": GROUP, "type": "group" } },
+        } })
+    };
+    for (from, cleared) in [(8, false), (7, true)] {
+        let h = TestHub::default().with_cfg("telegram", json!({ "enabled": true, "token": "123:abc", "chatId": GROUP, "userId": "7" }));
+        *h.phone.in_person.lock().unwrap() = true;
+        h.net.replies.lock().unwrap().extend([
+            Reply::json("getUpdates", json!({ "ok": true, "result": [tap(from)] })),
+            Reply::json("getUpdates", json!({ "ok": false, "description": "done" })).status(500),
+            Reply::json("answerCallbackQuery", json!({ "ok": true, "result": true })),
+            Reply::json("editMessageReplyMarkup", json!({ "ok": true, "result": true })),
+        ]);
+        let h = Arc::new(h);
+        run(&h).await;
+        let said = h.net.sent("answerCallbackQuery");
+        assert_eq!(said.len(), 1, "from {from}: {said:?}");
+        assert_eq!(h.net.sent("editMessageReplyMarkup").is_empty(), !cleared, "from {from}: keyboard cleared = {cleared}");
+        if !cleared {
+            assert!(said[0]["text"].as_str().unwrap_or_default().contains("answer it in wisp"), "{said:?}");
+        }
+    }
+}
