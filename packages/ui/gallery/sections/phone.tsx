@@ -76,7 +76,7 @@ export function PhoneGallery(): JSX.Element {
               </Box>
             </State>
           </Specimen>
-          <Specimen title="A pushed page" note="M3 medium top app bar (the title on one line, an ellipsis past it, folding into the bar on scroll) / iOS inline title with Back carrying the previous title. Actions fold label → icon → More (⋮ on Android, ⋯ on iOS).">
+          <Specimen title="A pushed page" note="M3 small top app bar (the one-line title beside Back) / iOS inline title with Back carrying the previous title. Actions fold label → icon → More (⋮ on Android, ⋯ on iOS).">
             <State label="page">
               <Box grow>
                 <Frame
