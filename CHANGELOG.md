@@ -14,6 +14,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Phone app: a grid computer's tasks open.** The task list showed but a task stayed empty: the app's sync posts carry
   `x-wisp-client`, which the grid's CORS didn't allow, so no task was ever subscribed. The grid now allows the headers
   `@wisp/client` sends.
+- **A task with several PRs: the PR card holds them.** The other repos' PR chips sat on the card's one row, which never
+  wraps, so in the side column they pushed the PR's title out and ran past the card's edge. They now sit on their own
+  line under it and wrap.
 
 ## [1.0.0-alpha.2] - 2026-11-21
 
