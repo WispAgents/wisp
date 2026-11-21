@@ -112,6 +112,9 @@
     background: color-mix(in srgb, var(--on-primary-container) calc(var(--state-pressed) * 100%), var(--primary-container));
   }
   :root[data-platform='android'] [data-kit='nav-item']:focus-visible { outline: none; }
+  /* a destination not offered yet (Tasks before a computer is connected): M3 disabled content, no state layer */
+  :root[data-platform='android'] [data-kit='nav-item'][data-disabled] { opacity: var(--state-disabled); cursor: default; }
+  :root[data-platform='android'] [data-kit='nav-item'][data-disabled]:active [data-kit='nav-pill'] { background: transparent; }
   :root[data-platform='android'] [data-kit='nav-item']:focus-visible [data-kit='nav-pill'] { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
   :root[data-platform='android'] [data-kit='nav-label'] { max-width: 100%; }
   /* M3 large badge: 16 dp tall, label small, error colours, over the icon's top end */

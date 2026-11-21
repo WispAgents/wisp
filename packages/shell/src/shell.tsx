@@ -55,6 +55,8 @@ export interface ShellOptions {
   home: PeerId;
   window: ShellWindow;
   warn?: Warn;
+  /** the phone app: whether Tasks can open yet (ShellContext.tasksReady); absent: always */
+  tasksReady?: Readable<boolean>;
 }
 
 export interface Shell extends ShellApi {
@@ -167,6 +169,7 @@ export function createShell(o: ShellOptions): Shell {
     t,
     toast: toaster,
     platform,
+    ...(o.tasksReady && { tasksReady: o.tasksReady }),
     theme: { pref: theme.pref, resolved: theme.resolved, set: theme.set },
     selection: { get: () => selected(), set: (k) => selected(k) },
     sidebar: {

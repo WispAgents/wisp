@@ -43,6 +43,8 @@ export interface PhoneOptions {
   createShell?: (client: Client, platform: Platform, bridge: NativeBridge) => void | Promise<void>;
   /** anything else createClient takes (onError for the toast, dev, warn, timers) */
   client?: Partial<Omit<ClientOptions, 'clientId' | 'build' | 'home'>>;
+  /** whether Tasks can open yet (launch.ts tasksReady): Back from Computers leaves the app until it can */
+  tasksReady?: () => boolean;
 }
 
 export interface Phone {
@@ -93,7 +95,7 @@ export async function bootPhone(o: PhoneOptions): Promise<Phone> {
   await client.start(await phonePeers(bridge, computers));
   followComputers(client, bridge, client.scope, computers);
   openOnComputers(client);
-  client.scope.add(bridge.onBack(() => back(client, bridge)));
+  client.scope.add(bridge.onBack(() => back(client, bridge, o.tasksReady)));
   const hidden = (): void => {
     if (w.document.visibilityState === 'hidden') void client.flush();
   };
@@ -107,9 +109,15 @@ export function openOnComputers(client: Pick<Client, 'nav' | 'views'>): void {
   if (client.views.accepts('main', COMPUTERS_VIEW, null)) client.nav.navigate(intentOf({ view: COMPUTERS_VIEW }));
 }
 
-/** Back closes what's open (an overlay, the side, a task); with nothing left the app goes behind. */
-export function back(client: Pick<Client, 'nav'>, bridge: Pick<NativeBridge, 'leave'>): void {
+/** Back closes what's open (an overlay, the side, a task); with nothing left the app goes behind. On Computers while
+ *  Tasks can't open yet (no computer opened and connected) it goes behind too: Back never lands on Tasks early. */
+export function back(client: Pick<Client, 'nav'>, bridge: Pick<NativeBridge, 'leave'>, tasksReady?: () => boolean): void {
   const before = untracked(client.nav.nav);
+  const onComputers = before.main.kind === 'view' && String(before.main.id) === COMPUTERS_VIEW && before.overlays.length === 0 && before.side.kind === 'none';
+  if (onComputers && tasksReady && !untracked(tasksReady)) {
+    void bridge.leave().catch(() => {});
+    return;
+  }
   client.nav.navigate({ t: 'back' });
   if (sameNav(before, untracked(client.nav.nav))) void bridge.leave().catch(() => {});
 }

@@ -82,6 +82,7 @@
   }
   :root[data-platform='ios'] [data-kit='nav-item']:active { opacity: calc(1 - var(--state-pressed) * 2); }
   :root[data-platform='ios'] [data-kit='nav-item'][data-selected] { color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='nav-item'][data-disabled] { opacity: var(--state-disabled); cursor: default; }
   :root[data-platform='ios'] [data-kit='nav-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--space-1) * -1); }
   :root[data-platform='ios'] [data-kit='nav-pill'] { position: relative; flex: none; display: grid; place-items: center; }
   :root[data-platform='ios'] [data-kit='nav-pill'] > [data-kit='icon'] { width: var(--tab-icon); height: var(--tab-icon); }

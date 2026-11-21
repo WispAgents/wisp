@@ -95,6 +95,19 @@ describe('NavigationBar', () => {
     expect(q('[data-item="tasks"]')?.hasAttribute('data-selected')).toBe(false);
   });
 
+  it('a_disabled_destination_is_dimmed_and_a_press_on_it_reports_nothing', () => {
+    const picked: string[] = [];
+    const items = ITEMS.map((i) => (i.id === 'tasks' ? { ...i, disabled: true } : i));
+    as('android', () => <NavigationBar aria-label="D" items={items} selected="computers" onSelect={(id) => picked.push(id)} />);
+    const tasks = q('[data-item="tasks"]') as HTMLButtonElement;
+    expect(tasks.disabled).toBe(true);
+    expect(tasks.hasAttribute('data-disabled')).toBe(true);
+    expect(q('[data-item="crew"]')?.hasAttribute('data-disabled')).toBe(false);
+    tasks.click();
+    q('[data-item="crew"]')?.click();
+    expect(picked).toEqual(['crew']);
+  });
+
   it('a_badge_over_99_reads_99_plus_and_has_its_accessible_text', () => {
     as('ios', () => <NavigationBar aria-label="D" items={[{ id: 'a', label: 'Tasks', icon: 'feed', badge: 140 }]} selected="a" onSelect={noop} badgeLabel={(n) => `${n} need you`} />);
     const b = q('[data-kit="nav-badge"]');

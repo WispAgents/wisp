@@ -11,12 +11,21 @@ export function PhoneNav(): JSX.Element {
   const shell = useShell();
   const nav = useSignal(shell.nav);
   const offered = createMemo(() => destinationsOf((v) => shell.view(v) !== undefined));
+  // Tasks waits for a computer: the phone app says when one you opened has connected (shell.tasksReady)
+  const ready = shell.tasksReady ? useSignal(shell.tasksReady) : () => true;
+  const off = (id: string): boolean => id === 'tasks' && !ready();
   const items = createMemo((): readonly NavigationItem[] =>
-    offered().map((d) => ({ id: d.id, label: shell.t(d.label), icon: d.icon as IconName, ...(d.iconSelected && { iconSelected: d.iconSelected as IconName }) })),
+    offered().map((d) => ({
+      id: d.id,
+      label: shell.t(d.label),
+      icon: d.icon as IconName,
+      ...(d.iconSelected && { iconSelected: d.iconSelected as IconName }),
+      ...(off(d.id) && { disabled: true }),
+    })),
   );
   const select = (id: string): void => {
     const d = offered().find((x) => x.id === id);
-    if (!d) return;
+    if (!d || off(d.id)) return;
     shell.platform.haptic('select');
     shell.navigate(intentOf(d));
   };

@@ -6,9 +6,9 @@ import { test } from 'node:test';
 import { createClient, createScope, memoryHistory, peerId, type Json } from '@wisp/client';
 import { applyPlatformLook } from '@wisp/shell/platform';
 import { COMPUTERS_VIEW } from '@wisp/shell/pure';
-import { bootPhone, phonePlatform, type PhoneWindow } from '../src/boot.ts';
+import { back, bootPhone, phonePlatform, type PhoneWindow } from '../src/boot.ts';
 import { computerRows, stateOf } from '../src/computers.ts';
-import { createLauncher, LAUNCHED, startHome } from '../src/launch.ts';
+import { createLauncher, LAUNCHED, startHome, tasksReady } from '../src/launch.ts';
 import { followComputers, peerMap, phonePeers, PHONE } from '../src/peers.ts';
 import { fakeBridge, fakeServer, fakeTimers, memoryStorage, settle, ssh, grid, welcome } from './helpers.ts';
 
@@ -184,4 +184,88 @@ test('the Computers rows: how each is reached, its state as a word, the launched
   assert.equal(stateOf({ kind: 'waking' }), 'connecting');
   assert.equal(stateOf({ kind: 'incompatible', reason: 'old', update: 'peer' }), 'update');
   assert.equal(stateOf(undefined), 'offline');
+});
+
+test('tasks_waits_for_a_computer_you_opened: dimmed until you pick one and it is online', async () => {
+  const { clock, bridge, storage, client, scope } = await twoComputers();
+  const launcher = createLauncher({ client, storage, scope });
+  const shellScope = createScope('shell', clock);
+  const ready = tasksReady({ client, launcher, storage, list: () => bridge.list(), scope: shellScope });
+  await settle(clock);
+  assert.equal(client.home(), 'studio', 'the first saved one runs the shell');
+  assert.equal(client.peers.status(peerId('studio'))().kind, 'online');
+  assert.equal(ready(), false, 'online, but nobody picked it: Tasks stays dimmed');
+  launcher.launch({ id: 'a', peer: peerId('studio') });
+  assert.equal(ready(), true, 'picked and online: in the press frame');
+  shellScope.dispose();
+  client.dispose();
+  scope.dispose();
+});
+
+test('tasks_is_ready_at_start_for_the_computer_opened_on_an_earlier_run', async () => {
+  const { clock, bridge, client, scope } = await twoComputers();
+  const storage = memoryStorage([[LAUNCHED, 'a']]);
+  const launcher = createLauncher({ client, storage, scope });
+  const shellScope = createScope('shell', clock);
+  const ready = tasksReady({ client, launcher, storage, list: () => bridge.list(), scope: shellScope });
+  await settle(clock);
+  assert.equal(ready(), true, 'Studio was opened last time and is online');
+  const other = tasksReady({ client, launcher, storage: memoryStorage([[LAUNCHED, 'b']]), list: () => bridge.list(), scope: shellScope });
+  await settle(clock);
+  assert.equal(other(), false, 'Laptop was opened last time, not the shell\u2019s computer');
+  shellScope.dispose();
+  client.dispose();
+  scope.dispose();
+});
+
+test('the_phone_without_a_computer_never_offers_tasks', async () => {
+  const clock = fakeTimers();
+  const bridge = fakeBridge([]);
+  const storage = memoryStorage();
+  const client = createClient({ clientId: 'phone-1', build: 'test', home: startHome([], storage), width: 390, timers: clock, history: memoryHistory('/') });
+  client.plugin('phone').registerView({ id: COMPUTERS_VIEW as never, slot: 'main', parse: () => null as Json });
+  await client.start([]);
+  const scope = createScope('follow', clock);
+  const launcher = createLauncher({ client, storage, scope });
+  const ready = tasksReady({ client, launcher, storage, list: () => bridge.list(), scope });
+  await settle(clock);
+  assert.equal(client.home(), PHONE);
+  assert.equal(ready(), false);
+  client.nav.navigate({ t: 'openView', id: COMPUTERS_VIEW as never, params: null });
+  back(client, bridge, ready);
+  assert.equal(bridge.leaves, 1, 'Back on Computers leaves the app instead of landing on Tasks');
+  assert.deepEqual(client.nav.nav().main, { kind: 'view', id: COMPUTERS_VIEW, params: null });
+  client.dispose();
+  scope.dispose();
+});
+
+test('launching_a_computer_still_connecting_stays_on_computers_and_opens_its_tasks_once_online', async () => {
+  const clock = fakeTimers();
+  const bridge = fakeBridge([ssh('a', { name: 'Studio', peer: 'studio' })]);
+  bridge.answers = [{ kind: 'ssh', port: 5001, token: 't', name: 'x' }];
+  const srv = fakeServer();
+  const storage = memoryStorage();
+  const known = await bridge.list();
+  const client = createClient({ clientId: 'phone-1', build: 'test', home: startHome(known, storage), width: 390, timers: clock, history: memoryHistory('/') });
+  client.plugin('phone').registerView({ id: COMPUTERS_VIEW as never, slot: 'main', parse: () => null as Json });
+  await client.start(await phonePeers(bridge, known, { fetch: srv.fetch }));
+  const scope = createScope('follow', clock);
+  followComputers(client, bridge, scope, known, { fetch: srv.fetch });
+  const launcher = createLauncher({ client, storage, scope });
+  const ready = tasksReady({ client, launcher, storage, list: () => bridge.list(), scope });
+  for (const p of client.peers.list()()) client.peers.watch(p, 'list', client.scope);
+  client.nav.navigate({ t: 'openView', id: COMPUTERS_VIEW as never, params: null });
+  assert.notEqual(client.peers.status(peerId('studio'))().kind, 'online');
+
+  assert.equal(launcher.launch({ id: 'a', peer: peerId('studio') }), true);
+  assert.deepEqual(client.nav.nav().main, { kind: 'view', id: COMPUTERS_VIEW, params: null }, 'still on Computers');
+  assert.equal(ready(), false, 'picked, not connected yet');
+  await settle(clock);
+  srv.streams.forEach((st) => st.frame(null, welcome('studio')));
+  await settle(clock);
+  assert.equal(client.peers.status(peerId('studio'))().kind, 'online');
+  assert.equal(ready(), true);
+  assert.deepEqual(client.nav.nav().main, { kind: 'home' }, 'its tasks open once it connects');
+  client.dispose();
+  scope.dispose();
 });

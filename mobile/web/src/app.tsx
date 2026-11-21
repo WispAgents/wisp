@@ -2,13 +2,13 @@
 // look, every plugin's UI and the app's own Computers destination. Launching another computer runs the shell again on
 // it (what's mounted read the old home); the client, and with it every peer's connection, rows and pending commands,
 // stays. No app CSS: the shell sets `data-platform` and the kit draws Material 3 or HIG.
-import type { Client, FetchLike } from '@wisp/client';
+import { untracked, type Client, type FetchLike, type Readable, type Scope } from '@wisp/client';
 import { commandErrorToast, createShell, type PluginUiDef, type Shell } from '@wisp/shell';
 import type { Platform, SecureStore } from '@wisp/shell/platform';
 import { createToaster, type Toaster } from '@wisp/ui';
 import type { NativeBridge } from './bridge.ts';
 import { bootPhone, type PhoneWindow } from './boot.ts';
-import { createLauncher, type Launcher } from './launch.ts';
+import { createLauncher, tasksReady, type Launcher } from './launch.ts';
 import { phoneUi } from './ui/index.tsx';
 import { followStayConnected, type StayConnected } from './stay.ts';
 import { sleepOn } from './cloud.ts';
@@ -65,9 +65,21 @@ export async function startPhoneApp(o: PhoneAppOptions): Promise<PhoneApp> {
   let stopExtend: (() => void) | void;
   let launcher: Launcher | undefined;
   let stay: StayConnected | undefined;
+  let readyScope: Scope | undefined; // the shell's Tasks gate (tasksReady), made again with it
+  let ready: Readable<boolean> | undefined;
 
   const make = (client: Client, platform: Platform, bridge: NativeBridge): Shell => {
-    const s = createShell({ client, toaster, platform, home: client.home(), window: w as unknown as Parameters<typeof createShell>[0]['window'] });
+    readyScope?.dispose();
+    readyScope = client.scope.child('tasks-ready');
+    ready = launcher ? tasksReady({ client, launcher, storage: w.localStorage, list: () => bridge.list(), scope: readyScope }) : undefined;
+    const s = createShell({
+      client,
+      toaster,
+      platform,
+      home: client.home(),
+      window: w as unknown as Parameters<typeof createShell>[0]['window'],
+      ...(ready && { tasksReady: ready }),
+    });
     for (const { path, def } of o.plugins()) {
       if (!def) continue;
       try {
@@ -91,6 +103,7 @@ export async function startPhoneApp(o: PhoneAppOptions): Promise<PhoneApp> {
     window: w,
     ...(o.bridge && { bridge: o.bridge }),
     client: { onError: commandErrorToast(toaster), ...(o.dev !== undefined && { dev: o.dev }) },
+    tasksReady: () => (ready ? untracked(ready) : true),
     createShell: (client, platform, bridge) => {
       // Stay connected follows the saved computers (ON for SSH without push) for as long as the client lives
       stay = followStayConnected(bridge, w.localStorage, client.scope);
