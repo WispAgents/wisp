@@ -20,7 +20,7 @@ export function section(changelog, version) {
   const end = lines.findIndex((l, i) => i > start && l.startsWith('## ['));
   const body = lines.slice(start + 1, end < 0 ? undefined : end);
   // the last section runs to the end of the file: leave out the compare links Keep a Changelog puts there
-  while (body.length && (!body.at(-1).trim() || /^\[[^\]]+\]: \S+$/.test(body.at(-1)))) body.pop();
+  if (end < 0) while (body.length && (!body.at(-1).trim() || /^\[[^\]]+\]: \S+$/.test(body.at(-1)))) body.pop();
   return body.join('\n').trim() || null;
 }
 

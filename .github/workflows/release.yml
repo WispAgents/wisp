@@ -433,7 +433,7 @@ jobs:
           for t in $EXTRA; do
             if [ "$(npm view "wisp-agents@$t" version 2>/dev/null || true)" = "$VERSION" ]; then echo "$t is already $VERSION."; continue; fi
             if npm dist-tag add "wisp-agents@$VERSION" "$t"; then echo "wisp-agents@$t → $VERSION" >> "$GITHUB_STEP_SUMMARY"
-            else echo "::warning::couldn't tag wisp-agents@$VERSION as $t: turn on \"Allow npm dist-tag\" in wisp-agents' trusted publishing settings on npmjs.com, then re-run this job (or run npm dist-tag add wisp-agents@$VERSION $t)."; fi
+            else echo "::warning::couldn't tag wisp-agents@$VERSION as $t: turn on \"Allow npm dist-tag\" in wisp-agents' trusted publishing settings on npmjs.com, then re-run only this npm job of this run (it keeps the plan's outputs and skips what's published; a new run or Re-run all jobs skips npm, as the version is there), or run npm dist-tag add wisp-agents@$VERSION $t."; fi
           done
 
   publish:
