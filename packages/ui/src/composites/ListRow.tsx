@@ -335,7 +335,7 @@ export function ListRow(props: ListRowProps): JSX.Element {
       </div>
       <div data-kit="list-row-main" data-part={named(props, part(), 'main')}>
         <Hit row={props} part={part()} />
-        <div data-kit="list-row-sub" data-part={named(props, part(), 'sub')}>
+        <div data-kit="list-row-sub" data-part={named(props, part(), 'sub')} title={props.subTitle}>
           {c.sub()}
         </div>
       </div>

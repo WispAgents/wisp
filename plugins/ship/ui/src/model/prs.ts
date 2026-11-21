@@ -10,8 +10,20 @@ export function shippedPrs(s: ShipSession | undefined): RepoPr[] {
   return [...own, ...also];
 }
 
-/** Every PR the row shows: shipped ones, then the ones its agent attached (wisp_pr). */
-export const prsOf = (s: ShipSession | undefined): RepoPr[] => [...shippedPrs(s), ...(s?.prs ?? []).map((x): RepoPr => ({ repo: x.repo, pr: x.pr }))];
+const prKey = (x: RepoPr): string => x.pr.url || `${x.repo ?? ''}#${x.pr.number}`;
+
+/** Every PR the row shows: shipped ones, then the ones its agent attached (wisp_pr), deduplicated. */
+export function prsOf(s: ShipSession | undefined): RepoPr[] {
+  const seen = new Set<string>();
+  const out: RepoPr[] = [];
+  for (const x of [...shippedPrs(s), ...(s?.prs ?? []).map((p): RepoPr => ({ repo: p.repo, pr: p.pr }))]) {
+    const k = prKey(x);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(x);
+  }
+  return out;
+}
 
 /** The PR the row's pill shows. */
 export const prOf = (s: ShipSession | undefined): PrSummary | undefined => prsOf(s)[0]?.pr;
