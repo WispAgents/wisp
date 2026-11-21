@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.3] - 2026-11-21
+
 ### Fixed
 
 - **An earlier turn's "1 file +71 −55" ends at the right edge.** Its action icons are hidden until you hover the
@@ -247,6 +249,7 @@ from your own agent through wisp's MCP tools. It's an alpha: expect rough edges,
 - With Auto off, nothing offers `auto` or the router.
 - Settings → Connectors keeps each connector's last check across a restart.
 
-[Unreleased]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.2...main
+[Unreleased]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.3...main
+[1.0.0-alpha.3]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.2...v1.0.0-alpha.3
 [1.0.0-alpha.2]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.1...v1.0.0-alpha.2
 [1.0.0-alpha.1]: https://github.com/WispAgents/wisp/releases/tag/v1.0.0-alpha.1

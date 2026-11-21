@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.slack",
   "name": "Slack",
-  "version": "1.0.0-alpha.2",
+  "version": "1.0.0-alpha.3",
   "api": "^1",
   "description": "wisp.slack: the Slack transport for wisp.channels (Socket Mode, mentions, threads)",
   "server": {

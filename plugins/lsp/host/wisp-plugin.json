@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.lsp",
   "name": "Language servers",
-  "version": "1.0.0-alpha.2",
+  "version": "1.0.0-alpha.3",
   "api": "^1",
   "description": "wisp.lsp: language servers for the editor (definition, references, hover, diagnostics, rename, completion)",
   "server": {
