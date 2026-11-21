@@ -5,6 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Phone app: grid computers connect.** A computer reached through wisp Cloud stayed on its loading skeleton and
+  *Offline* in the v2 phone app: the grid answered the app's CORS preflight on the computer's address with 401 and no
+  CORS headers, so the WebView refused every request. A computer's and a box's `/api/` now answer it like the grid's
+  own device API (open CORS, bearer token, never cookies).
+
 ### Added
 
 - **Save to repo in the app.** When a repo on `history: { track: ask }` offers to save a finished task, its last answer

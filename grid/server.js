@@ -68,6 +68,8 @@ const webLook = () =>
     const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
     return { styles: [...html.matchAll(/<link rel="stylesheet" href="(\/css\/[\w.-]+\.css)">/g)].map((m) => m[1]), sprite: /<svg width="0" height="0"[\s\S]*?<\/svg>\n/.exec(html)?.[0] || '' };
   })());
+// the device API's CORS (the phone app is another origin and signs in with a bearer token, never a cookie)
+const DEVICE_CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type, x-wisp-passkey', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'access-control-max-age': '600' };
 const HOP = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'te', 'trailer']);
 
 // --- small HTTP helpers --------------------------------------------------------------------
@@ -327,6 +329,18 @@ export async function startGrid(cfg, { log = (m) => console.log(m), resolveTxt }
 
   // Which part of the grid a Host header is for: the grid itself, or a handle.
   const rootHosts = new Set([cfg.domain, `${cfg.domain}${cfg.portSuffix}`, `${cfg.domain}:${cfg.listen.port}`]);
+  // A computer's or box's /api/ reached from the phone app (another origin: https://localhost) with its device token:
+  // the same open CORS as the grid's own device API. Never credentials: '*' makes a browser refuse cookies with it, so a
+  // signed-in page elsewhere still can't read a computer. True when this was the preflight (answered here).
+  function deviceCors(req, res, p) {
+    if (!p.startsWith('/api/')) return false;
+    for (const [k, v] of Object.entries(DEVICE_CORS)) res.setHeader(k, v);
+    if (req.method !== 'OPTIONS') return false;
+    res.writeHead(204);
+    res.end();
+    return true;
+  }
+
   function hostKind(req) {
     const host = String(req.headers.host || '').toLowerCase();
     if (rootHosts.has(host)) return { kind: 'root' };
@@ -380,7 +394,7 @@ export async function startGrid(cfg, { log = (m) => console.log(m), resolveTxt }
     // Device API: other origins (the phone app) call it with a bearer token, so CORS is open
     // and cookies are never involved.
     if (p.startsWith('/api/')) {
-      const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type, x-wisp-passkey', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'access-control-max-age': '600' };
+      const cors = DEVICE_CORS;
       if (req.method === 'OPTIONS') {
         res.writeHead(204, cors);
         return res.end();
@@ -1041,6 +1055,7 @@ export async function startGrid(cfg, { log = (m) => console.log(m), resolveTxt }
         return json(res, err.status || 429, { error: err.message });
       }
     }
+    if (deviceCors(req, res, p)) return;
     const who = hook ? { via: 'hook', user } : edgeAuth(req, user, box, row, row === null);
     if (!who) {
       // A share with no worker (server/http/share.js) is a browser's page too: signed in, the same answer.
@@ -1117,6 +1132,7 @@ export async function startGrid(cfg, { log = (m) => console.log(m), resolveTxt }
       accounts.endSession(cookies(req)[names.wisp]);
       return redirect(res, cfg.publicUrl, { 'set-cookie': setCookie(names.wisp, '', 0) });
     }
+    if (deviceCors(req, res, p)) return;
     const who = edgeAuth(req, user);
     if (!who) {
       if (wantsHtml(req) || isShare(req)) return redirect(res, `${back}&path=${encodeURIComponent(isShare(req) ? SHARE_LANDING : p + url.search)}`);
