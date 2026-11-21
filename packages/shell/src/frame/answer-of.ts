@@ -20,3 +20,12 @@ export function blockedOf(turn: unknown): 'allowable' | 'unallowed' | 'none' {
   if (Array.isArray(kept) && kept.length > 0) return 'allowable';
   return o.mode === 'auto' ? 'unallowed' : 'none';
 }
+
+/** A file sent with a prompt (a turn's attachment) → its bytes' URL (v1 turns.js `/api/uploads/<id>`), through the
+ *  task's own computer when it is another one. No id (a channel's file that never was an upload): none. */
+export function uploadUrl(home: string, key: string, id: string): string | undefined {
+  if (!id) return undefined;
+  const peer = key.slice(0, key.indexOf(':'));
+  const base = peer && peer !== home ? `/api/peer/${encodeURIComponent(peer)}` : '';
+  return `${base}/api/uploads/${encodeURIComponent(id)}`;
+}
