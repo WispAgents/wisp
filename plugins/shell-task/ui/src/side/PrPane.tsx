@@ -160,7 +160,17 @@ export function PrPane(): JSX.Element {
               <>
                 <Show when={(list() ?? []).length > 1}>
                   <Wrap gap="2" part="side.pr.chips">
-                    <For each={list()}>{(x, k) => <ToneChip label={`${x.repo ?? ''} #${x.number}`} tone={TONE[verdict(x).tone]} pressed={k() === picked()} onClick={() => setPicked(k())} />}</For>
+                    <For each={list()}>
+                      {(x, k) => (
+                        <ToneChip
+                          label={x.repo || `#${x.number}`}
+                          suffix={x.repo ? `#${x.number}` : undefined}
+                          tone={TONE[verdict(x).tone]}
+                          pressed={k() === picked()}
+                          onClick={() => setPicked(k())}
+                        />
+                      )}
+                    </For>
                   </Wrap>
                 </Show>
                 <Stack gap="1">

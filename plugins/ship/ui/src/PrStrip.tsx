@@ -11,7 +11,7 @@ import { Button, Card, Icon, IconButton, ListRow, Stack, Toolbar, ToneChip, useS
 import { fixConflicts, refresh, review } from './commands.ts';
 import { t } from './i18n.ts';
 import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
-import { fixing, openPrs, prChipLabel, prChipTitle, prsOf, prTone, worstTone, type PrTone } from './model/pr.ts';
+import { fixing, openPrs, prChipTitle, prsOf, prTone, worstTone, type PrTone } from './model/pr.ts';
 import { prStripSub, prStripTitle } from './model/strip.ts';
 import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
 import { stepsOfLive, track } from './model/ship.ts';
@@ -89,17 +89,28 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
   const [expanded, setExpanded] = createSignal(false);
   const prs = createMemo(() => prsOf(props.s));
   const several = (): boolean => prs().length > 1;
+  // When every PR belongs to the task's own repo (already named above the card), chips show "#853" cleanly
+  // instead of repeating the repo name on every pill; cross-repo tasks keep "repo" + non-truncating "#853".
+  const sameRepo = createMemo((): boolean => !!props.s.project && prs().every((x) => !x.repo || x.repo === props.s.project));
   // wisp fixes conflicts on the task's own PR only
   const fixFor = (x: RepoPr): ConflictFix | undefined => (props.s.pr && x.pr === props.s.pr ? props.s.conflictFix : undefined);
   const tone = createMemo((): PrTone => worstTone(prs().map((x) => prTone(x.pr, fixFor(x)))));
   const open = createMemo(() => openPrs(props.s));
   const rv = () => (props.s.pr?.state === 'OPEN' ? reviewState(t, props.s, ctx()) : undefined);
+  // A single settled (merged/closed) PR has no active toolbar actions: put its GitHub link inline in the row
+  // instead of opening a mostly empty 32px toolbar beneath it.
+  const inlineGithub = createMemo((): string | undefined => {
+    const first = prs()[0];
+    if (!first || several() || open().length > 0 || rv()) return undefined;
+    return first.pr.url;
+  });
   const title = (): string => prStripTitle(t, prs());
   const sub = (): string => prStripSub(t, prs(), props.s.pr, props.s.conflictFix);
   const overflow = (): boolean => prs().length > PR_CHIP_CAP;
   const shown = createMemo((): readonly RepoPr[] => (overflow() && !expanded() ? prs().slice(0, PR_CHIP_PREVIEW) : prs()));
   const hidden = createMemo((): readonly RepoPr[] => (overflow() && !expanded() ? prs().slice(PR_CHIP_PREVIEW) : []));
   const hiddenTone = createMemo((): PrTone => worstTone(hidden().map((x) => prTone(x.pr, fixFor(x)))));
+  const hiddenNeedsDot = (): boolean => hiddenTone() === 'fail' || hiddenTone() === 'pending';
   const hiddenLive = (): boolean => hidden().some((x) => !!x.pr.checks?.pending && x.pr.state === 'OPEN');
   const items = createMemo((): ToolbarItem[] => {
     const out: ToolbarItem[] = [];
@@ -118,7 +129,7 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
         render: () => <IconButton icon="replay" size="sm" label={t('wisp.ship.strip.checkTitle')} loading={checking.busy()} onClick={check} part="pr.strip.check" />,
       });
     }
-    if (!several()) out.push({ id: 'github', icon: 'external', label: t('wisp.ship.strip.github'), priority: 2, onSelect: () => ship.shell.platform.openExternal(first.pr.url) });
+    if (!several() && !inlineGithub()) out.push({ id: 'github', icon: 'external', label: t('wisp.ship.strip.github'), priority: 2, onSelect: () => ship.shell.platform.openExternal(first.pr.url) });
     const v = rv();
     if (v) {
       // a rerun the server didn't start says why (audit E5: the chip said "Not reviewed" before and after)
@@ -170,7 +181,26 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           sub={sub()}
           subTitle={sub()}
           lead={<Icon name={TONE_ICON[tone()]} size="md" tone={TONE[tone()] === 'accent' ? 'accent-ink' : TONE[tone()]} />}
-          actions={<Icon name="chevron" size="sm" tone="faint" />}
+          actions={
+            <>
+              <Show when={inlineGithub()}>
+                {(url) => (
+                  <IconButton
+                    icon="external"
+                    size="xs"
+                    variant="ghost"
+                    label={t('wisp.ship.strip.github')}
+                    part="pr.strip.github"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      ship.shell.platform.openExternal(url());
+                    }}
+                  />
+                )}
+              </Show>
+              <Icon name="chevron" size="sm" tone="faint" />
+            </>
+          }
           onOpen={() => ship.openPane()}
         />
         {/* every attached PR as a wrapping chip row under the summary (never ListRow's nowrap pills column, which
@@ -181,7 +211,8 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
               {(o) => (
                 <ToneChip
                   part="pr.strip.chip"
-                  label={prChipLabel(o)}
+                  label={!sameRepo() && o.repo ? o.repo : `#${o.pr.number}`}
+                  suffix={!sameRepo() && o.repo ? `#${o.pr.number}` : undefined}
                   tone={TONE[prTone(o.pr, fixFor(o))]}
                   live={!!o.pr.checks?.pending && o.pr.state === 'OPEN'}
                   title={prChipTitle(t, o, fixFor(o))}
@@ -194,6 +225,7 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
                 part="pr.strip.more"
                 label={t('wisp.ship.strip.more', { count: hidden().length })}
                 tone={TONE[hiddenTone()]}
+                dot={hiddenNeedsDot()}
                 live={hiddenLive()}
                 title={t('wisp.ship.strip.moreTitle', { count: prs().length })}
                 onClick={() => setExpanded(true)}
@@ -202,7 +234,9 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           </Wrap>
           <Show when={overflow() && expanded()}>
             <Wrap gap="2" part="pr.strip.toggle">
-              <ToneChip part="pr.strip.more" label={t('wisp.ship.strip.less')} tone="neutral" title={t('wisp.ship.strip.less')} onClick={() => setExpanded(false)} />
+              <Button variant="ghost" size="xs" part="pr.strip.more" onClick={() => setExpanded(false)}>
+                {t('wisp.ship.strip.less')}
+              </Button>
             </Wrap>
           </Show>
         </Show>
