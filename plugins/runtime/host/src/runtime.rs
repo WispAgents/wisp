@@ -626,7 +626,7 @@ impl Runtime {
                 None => own.remove("capped"),
             };
         }
-        own.insert("titleAuto".into(), a.title.is_none().into());
+        own.entry("titleAuto").or_insert_with(|| a.title.is_none().into());
         self.own_team(&a, &mut own)?;
         // a channel's task stays one after its cap is lifted: its Plan only reads (v1 #794 `origin`, `plan::outside`)
         if let Some(by) = a.by.as_deref().filter(|b| b.starts_with(wisp_runtime_core::plan::CHANNEL)) {

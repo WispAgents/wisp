@@ -71,4 +71,19 @@ describe('Answer', () => {
     mount(() => <Answer fallback blocks={[]} />);
     expect(part('answer.fallback')?.textContent).toContain('plain text');
   });
+
+  test('internal crew blocks already saved on older turns are hidden, never UnknownBlock', () => {
+    mount(() => (
+      <Answer
+        blocks={[
+          { type: 'markdown', text: 'All clear.' },
+          { type: 'crew', forLater: true, remember: ['saw build 42'] },
+        ]}
+      />
+    ));
+    expect(part('block.unknown')).toBeNull();
+    expect(document.querySelectorAll('[data-kit="answer-block"]').length).toBe(1);
+    expect(document.body.textContent).toContain('All clear.');
+    expect(document.body.textContent).not.toContain('saw build 42');
+  });
 });

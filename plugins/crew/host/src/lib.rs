@@ -12,6 +12,7 @@ mod jobs;
 mod kind;
 mod offers;
 mod remote;
+mod report;
 mod shared;
 mod stats;
 mod store;
@@ -277,69 +278,24 @@ impl PromptPart for Note {
     }
 }
 
-/// How a member's job lands (v1 runner.js `#finishTurn` with `crewOut`): quiet (archived), For later, or
-/// filed under Done, from its crew block. A quiet job that scheduled a follow-up is filed, not archived (#760).
+/// How a member's job lands (v1 runner.js `#finishTurn` with `crewOut`): strips the hidden `crew` block before
+/// persisting (`prepare`), and tells the runtime whether it lands quiet (archived), For later, or filed under Done.
 struct Filed;
 
 impl TurnOutcome for Filed {
     fn id(&self) -> &'static str {
         "wisp.crew"
     }
+    fn prepare(&self, s: &Session, turn: &mut wisp_runtime_api::model::Turn) {
+        report::prepare(s, turn);
+    }
     fn outcome(&self, s: &Session, turn: &wisp_runtime_api::model::Turn) -> Option<Outcome> {
-        let job = s.ext.get(wisp_crew_api::PLUGIN_ID).and_then(|v| serde_json::from_value::<CrewExt>(v.clone()).ok())?;
-        let mut p = turn.presentation.as_ref().and_then(|p| serde_json::to_value(p).ok()).unwrap_or_default();
-        let data = wisp_crew_core::memory::take_crew_block(&mut p);
-        let f = wisp_crew_core::filing::file_turn(job.job, turn.idx as usize + 1, data.as_ref()).keeping(scheduled(s));
-        Some(Outcome { quiet: f.quiet, filed: f.filed, later: f.later })
+        report::outcome(s, turn)
     }
 }
 
-/// The task has follow-ups or a reminder still to come (wisp.later's mirror on the task).
-fn scheduled(s: &Session) -> bool {
-    // read by key, not by the full row: a mirror written by a newer wisp.later still counts
-    let Some(l) = s.ext.get(wisp_later_api::PLUGIN_ID) else { return false };
-    l.get("later").and_then(serde_json::Value::as_array).is_some_and(|a| !a.is_empty()) || l.get("reminder").is_some_and(|r| !r.is_null())
-}
-
-/// A member's job's turn ended (here, or in a sandbox: `remote.rs`): its answer under the question that asked, and
-/// `crew.reported`. `text`: what the fact said, when the turn has no words of its own.
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn report(
-    ctx: &wisp_kernel::Ctx,
-    call: &wisp_kernel::Call,
-    st: &State,
-    m: &Member,
-    job: &str,
-    last: Option<&wisp_runtime_api::model::Turn>,
-    text: &str,
-    failed: bool,
-) {
-    let mut p = last.and_then(|t| t.presentation.as_ref()).and_then(|p| calls::to_json(p).ok()).unwrap_or_default();
-    let data = wisp_crew_core::memory::take_crew_block(&mut p);
-    let quiet = data.as_ref().is_some_and(|d| d.quiet);
-    if let Some(d) = data.as_ref().filter(|_| !failed) {
-        offers::from_report(ctx, call, st, &m.id, job, &d.kit).await;
-    }
-    // asked in another task: the answer goes under the message that asked
-    let said = last.and_then(|t| t.text.clone()).unwrap_or_else(|| text.to_owned());
-    let said = wisp_crew_core::answers::answer_text(&said, &p);
-    answers::answered(ctx, call, st, job, &said, failed).await;
-    let status = if failed { "error" } else { "done" };
-    ctx.emit(
-        call,
-        &wisp_crew_api::events::Reported {
-            crew_id: m.id.clone(),
-            member: m.name.clone(),
-            session_id: job.to_owned(),
-            status: status.into(),
-            quiet,
-            text: text.chars().take(500).collect(),
-        },
-    );
-}
-
-/// A member's job ended: `crew.reported` (ADR-0043), from the runtime's durable task facts, so a hand-off
-/// survives a restart. `quiet`: the job's crew block said there was nothing to do.
+/// A member's job ended: applies memory/log/offers/follow-ups, fills in any answer under the question that asked,
+/// and emits `crew.reported` (ADR-0043), from the runtime's durable task facts so a hand-off survives a restart.
 fn reported(s: &mut Setup, st: &Arc<State>) {
     for (name, failed) in [("reported", false), ("reported_failed", true)] {
         let st = st.clone();
@@ -349,7 +305,16 @@ fn reported(s: &mut Setup, st: &Arc<State>) {
                 let Some(id) = f.crew.clone() else { return Ok(()) };
                 let Ok(m) = st.member(&id) else { return Ok(()) };
                 let turns = calls::turns(&ctx, &call, f.session_id.as_str()).await.unwrap_or_default();
-                report(&ctx, &call, &st, &m, &f.session_id.0, turns.last(), &f.text, failed).await;
+                let n = u32::try_from(turns.len()).unwrap_or(u32::MAX);
+                // Durable events can redeliver on restart: apply memory/log/follow-ups at most once per turn count.
+                let _g = st.reporting.lock().await;
+                if n > 0 && lock(&st.reported).get(f.session_id.as_str()).is_some_and(|prev| *prev >= n) {
+                    return Ok(());
+                }
+                if n > 0 {
+                    st.set_reported(f.session_id.as_str(), n).await;
+                }
+                report::report(&ctx, &call, &st, &m, &f.session_id.0, turns.last(), &f.text, failed).await;
                 Ok(())
             }
         };

@@ -189,7 +189,12 @@ impl Runtime {
         self.kept_before(&s, &mut turn).await;
         s.state = SessionState::Running;
         s.unread = false;
-        s.archived = false;
+        if turn.by.as_deref() != Some("compact") {
+            s.archived = false;
+            if let Some(o) = s.ext.get_mut("wisp.runtime").and_then(Value::as_object_mut) {
+                o.remove("forLater");
+            }
+        }
         s.updated_at = self.now();
         // from the moment the turn is saved as running until its CLI is in `live`: a run to the queue (B37)
         let _starting = self.mark_starting(s.id.as_str());

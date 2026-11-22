@@ -74,8 +74,30 @@ pub(crate) async fn turn_set_ext(ctx: &Ctx, call: &Call, id: &str, turn: &str, v
 
 /// `runtime.followUp`: a crew follow-up, queued behind a running turn.
 pub(crate) async fn follow_up(ctx: &Ctx, call: &Call, id: &str, text: String) -> R<()> {
-    let a = rt::FollowUpArgs { id: id.into(), text, queue: Some(true), by: Some("crew".into()), ..rt::FollowUpArgs::default() };
+    follow_up_with_team(ctx, call, id, text, None).await
+}
+
+/// `runtime.followUp` with an optional updated delegates list (`team`).
+pub(crate) async fn follow_up_with_team(ctx: &Ctx, call: &Call, id: &str, text: String, team: Option<Value>) -> R<()> {
+    let a = rt::FollowUpArgs { id: id.into(), text, queue: Some(true), by: Some("crew".into()), team, ..rt::FollowUpArgs::default() };
     ctx.run::<rt::FollowUp>(call, a).await.map(|_| ())
+}
+
+/// Records a task that job `id` followed up on in `ext["wisp.crew"].sent` (deduplicated, compare-and-set).
+pub(crate) async fn record_sent(ctx: &Ctx, call: &Call, id: &str, target: wisp_crew_api::TaskRef) -> R<()> {
+    update_ext(ctx, call, id, PLUGIN_ID, |slot, _| {
+        let mut next = if slot.is_object() { slot.clone() } else { serde_json::json!({}) };
+        let sent = next.get("sent").and_then(Value::as_array).cloned().unwrap_or_default();
+        if sent.iter().any(|x| x.get("id").and_then(Value::as_str) == Some(target.id.as_str())) {
+            return Ok(None);
+        }
+        let mut sent = sent;
+        sent.push(serde_json::json!({ "id": target.id, "title": target.title }));
+        next["sent"] = Value::Array(sent);
+        Ok(Some(next))
+    })
+    .await
+    .map(|_| ())
 }
 
 /// `C` on another machine (a sandbox): `machines.route` is typed, the command it carries is named for the peer to

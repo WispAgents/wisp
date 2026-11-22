@@ -59,7 +59,7 @@ pub(crate) async fn check(ctx: &Ctx, st: &State, machine: &str, id: &str) {
     st.set_reported(&job, turns).await;
     let last = list.last();
     let text = last.and_then(|t| t.text.clone()).unwrap_or_default();
-    crate::report(ctx, &call, st, &m, &job, last, &text, state == "error").await;
+    crate::report::report(ctx, &call, st, &m, &job, last, &text, state == "error").await;
 }
 
 pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {

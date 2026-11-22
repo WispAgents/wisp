@@ -4,10 +4,13 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use wisp_crew_api::{FOLLOW_UPS_MAX, KIT_BODY_MAX, Member, NOTEBOOK_MAX, OFFER_FILES, REMEMBER_CHARS, REMEMBER_LINES};
+use wisp_crew_api::{
+    FOLLOW_UPS_MAX, JobKind, KIT_BODY_MAX, LogEntry, Member, NOTEBOOK_MAX, OFFER_FILES, REMEMBER_CHARS, REMEMBER_LINES, TaskRef,
+};
 
+use crate::mentions::plain_crew;
 use crate::schedule::wake_at;
-use crate::text::{clip, squash, str_of, tail, unix};
+use crate::text::{clip, squash, str_of, tail, truncate, unix};
 
 /// A follow-up a job asked for: a message to the agent of one of the member's tasks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -158,5 +161,91 @@ pub fn apply_memory(m: &mut Member, data: &CrewOut, now: i64) {
     }
     if let Some(w) = data.wake_in {
         m.wake_at = Some(wake_at(now, w));
+    }
+}
+
+/// Facts of a finished job turn for one line in `Member.log` (v1 crew.js `logEntry`).
+#[derive(Debug, Clone)]
+pub struct LogInput<'a> {
+    pub session_id: &'a str,
+    pub job: JobKind,
+    pub from: Option<&'a TaskRef>,
+    /// `"done"`, `"stopped"` or `"error"`
+    pub turn_status: &'a str,
+    pub prompt: &'a str,
+    pub presentation: &'a Value,
+    pub quiet: bool,
+    pub for_later: bool,
+    pub at: i64,
+}
+
+/// One line in the member's log for a finished job (v1 crew.js `logEntry`).
+pub fn log_entry(x: &LogInput<'_>) -> LogEntry {
+    let hero = x
+        .presentation
+        .get("blocks")
+        .and_then(Value::as_array)
+        .and_then(|b| b.iter().find(|v| v.get("type").and_then(Value::as_str) == Some("hero")));
+    let field = |k: &str| hero.and_then(|h| h.get(k)).and_then(Value::as_str).unwrap_or_default();
+    let status = match x.turn_status {
+        "done" => {
+            let s = field("status");
+            if s.is_empty() { "done" } else { s }
+        }
+        "stopped" => "partial",
+        _ => "blocked",
+    };
+    let title_raw = field("title");
+    let title = if !title_raw.is_empty() {
+        title_raw
+    } else if x.turn_status == "error" {
+        "Failed"
+    } else if x.turn_status == "stopped" {
+        "Stopped"
+    } else {
+        "Finished"
+    };
+    let prompt = truncate(&squash(&plain_crew(x.prompt)), 200);
+    LogEntry {
+        at: x.at,
+        job: x.job,
+        title: truncate(title, 80),
+        summary: truncate(&squash(field("summary")), 160),
+        prompt: (!prompt.is_empty()).then_some(prompt),
+        from: x.from.filter(|f| !f.title.is_empty()).cloned(),
+        status: status.to_owned(),
+        quiet: x.quiet,
+        for_later: x.for_later,
+        skipped: None,
+        session_id: Some(x.session_id.to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_entry_reads_hero_prompt_and_filing_flags() {
+        let pres = json!({ "blocks": [{ "type": "hero", "title": "All green", "summary": "Checked\n  CI", "status": "info" }] });
+        let from = TaskRef { id: "s1".into(), title: "Fix auth".into() };
+        let e = log_entry(&LogInput {
+            session_id: "j1",
+            job: JobKind::Checkin,
+            from: Some(&from),
+            turn_status: "done",
+            prompt: "Ask @[Ada](crew:a1b2c3d4) to check",
+            presentation: &pres,
+            quiet: false,
+            for_later: true,
+            at: 42,
+        });
+        assert_eq!(e.title, "All green");
+        assert_eq!(e.summary, "Checked CI");
+        assert_eq!(e.status, "info");
+        assert_eq!(e.prompt.as_deref(), Some("Ask @Ada to check"));
+        assert_eq!(e.from, Some(from));
+        assert!(e.for_later && !e.quiet);
+        assert_eq!(e.session_id.as_deref(), Some("j1"));
     }
 }

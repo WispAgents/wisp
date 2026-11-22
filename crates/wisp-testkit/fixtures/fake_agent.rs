@@ -83,7 +83,15 @@ fn final_text(name: &str, prompt: &str) -> String {
     if let Some(t) = prompt.split_once("TOPIC[").and_then(|(_, r)| r.split_once(']')).map(|(t, _)| t) {
         hero["topic"] = Value::from(t);
     }
-    format!("All done.\n{}```wisp\n{}\n```", said(prompt), json!({ "blocks": [hero] }))
+    let mut blocks = vec![hero];
+    if let Ok(path) = std::env::var("FAKE_CREW_BLOCK_FILE")
+        && let Ok(raw) = std::fs::read_to_string(&path)
+        && let Ok(v) = serde_json::from_str::<Value>(&raw)
+        && v.is_object()
+    {
+        blocks.push(v);
+    }
+    format!("All done.\n{}```wisp\n{}\n```", said(prompt), json!({ "blocks": blocks }))
 }
 
 /// `FAKE_SAY`: `needle=>words` pairs split by `;;`; a run whose prompt holds a needle ends its answer with its words (before

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use wisp_crew_api::Member;
 use wisp_crew_api::commands::{self as c, OfferSettle};
 use wisp_crew_core::kit::Ids as _;
-use wisp_crew_core::offers::{offer_from_job, propose, proposed_text, settle};
+use wisp_crew_core::offers::{propose, proposed_text, settle};
 use wisp_kernel::Setup;
 
 use crate::jobs::now;
@@ -16,26 +16,6 @@ use crate::{NewIds, State, calls};
 pub(crate) fn settle_all(m: &mut Member, list: Option<&Vec<OfferSettle>>, now: i64) {
     for o in list.into_iter().flatten() {
         settle(m, &o.id, &o.state, &o.names, now);
-    }
-}
-
-/// A job's turn ended with files in its crew block (a kit job's proposal): an offer under that job.
-pub(crate) async fn from_report(
-    ctx: &wisp_kernel::Ctx,
-    call: &wisp_kernel::Call,
-    st: &State,
-    crew_id: &str,
-    job: &str,
-    kit: &[serde_json::Value],
-) {
-    if kit.is_empty() {
-        return;
-    }
-    let Ok(mut m) = st.member(crew_id) else { return };
-    if offer_from_job(&mut m, job, kit, NewIds.next_id(), now(ctx)).is_some() {
-        st.put(m.clone());
-        st.save().await;
-        ctx.emit(call, &wisp_crew_api::events::MemberChanged { crew_id: m.id });
     }
 }
 

@@ -176,6 +176,11 @@ pub struct Outcome {
 pub trait TurnOutcome: Send + Sync + 'static {
     fn id(&self) -> &str;
     fn outcome(&self, session: &Session, turn: &Turn) -> Option<Outcome>;
+    /// Called once a turn finished (`Done`, non-compaction), before title auto-naming, media keep,
+    /// `outcome()` and persisting (and when an older turn's presentation is lazily rebuilt): a plugin
+    /// may strip internal blocks from `turn.presentation` and keep their extracted metadata in its own
+    /// `turn.ext` slot (v1 `crewTurn` / `takeCrewBlock`). Additive (2026-11-22).
+    fn prepare(&self, _session: &Session, _turn: &mut Turn) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
