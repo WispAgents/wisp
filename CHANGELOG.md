@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Site and docs (`trywisp.dev`, `trywisp.dev/docs`): standardized branding on **Wisp Agents** across page headers, footers, titles, Open Graph/Twitter cards, social preview image (`og.png`), JSON-LD structured data, and `llms.txt`; fixed SEO audit gaps including `noindex` on `/docs/404.html`, `BreadcrumbList`/`TechArticle` JSON-LD on all docs pages, `SoftwareApplication`/`CollectionPage` structured data, SERP title/description lengths, `/cloud.html` heading hierarchy, and IndexNow coverage for `/docs/` URLs.
+
 ## [1.0.0-alpha.5] - 2026-11-22
 
 ### Added

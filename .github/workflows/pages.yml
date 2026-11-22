@@ -61,6 +61,6 @@ jobs:
         if: github.event_name == 'push'
         continue-on-error: true
         run: |
-          urls=$(grep -o '<loc>[^<]*' _site/sitemap.xml | sed 's/<loc>//' | jq -R . | jq -sc .)
+          urls=$(grep -ho '<loc>[^<]*' _site/sitemap.xml _site/docs/sitemap-0.xml 2>/dev/null | sed 's/<loc>//' | sort -u | jq -R . | jq -sc .)
           curl -fsS -X POST https://api.indexnow.org/indexnow -H 'Content-Type: application/json; charset=utf-8' \
             -d "{\"host\":\"trywisp.dev\",\"key\":\"c74d7dc2f8b011de1d62484d8507a500\",\"keyLocation\":\"https://trywisp.dev/c74d7dc2f8b011de1d62484d8507a500.txt\",\"urlList\":$urls}"

@@ -60,7 +60,7 @@ function cli() {
   page(
     'cli.md',
     'CLI',
-    'Every wisp command and option, as `wisp --help` prints it.',
+    'Every Wisp Agents CLI command, subcommand and option, generated from wisp --help, plus terminal context and prompt rules.',
     1,
     `\`wisp --help\` prints this. \`wisp help <plugin> [verb]\` lists a plugin's verbs and a verb's flags: every plugin command below is also \`wisp <plugin> <verb>\` (see [Commands](../commands/)).
 
@@ -84,7 +84,7 @@ function commands(all) {
     parts.push(`\n## ${m.id}\n\n${esc(m.description)}\n\n| Command | What it does | Reads |\n| --- | --- | --- |`);
     for (const c of list) parts.push(`| \`${c.id}\` | ${esc(c.title)} | ${c.readOnly ? 'yes' : ''} |`);
   }
-  page('commands.md', 'Commands', 'Every command each built-in plugin contributes, from its manifest.', 2, parts.join('\n'));
+  page('commands.md', 'Commands', 'Every command contributed by built-in Wisp Agents plugins, generated from each manifest for the app, TUI, CLI and MCP.', 2, parts.join('\n'));
 }
 
 function settings(all) {
@@ -200,7 +200,7 @@ function triggers(all) {
   page(
     'triggers.md',
     'Events and trigger sources',
-    "Every value a trigger's `on` takes, and the plugin that offers it.",
+    'Every event and trigger source a Wisp Agents automation can subscribe to, and which built-in plugin provides it.',
     8,
     `A trigger starts work when something happens. Its \`on\` is one of these. A trigger whose plugin is off stays declared but doesn't fire until you switch the plugin on. See [Schedules and triggers](../../guides/run/schedules-and-triggers/) and the trigger's fields in [Resource kinds](../kinds/).\n\n| \`on:\` | Offered by | Kind |\n| --- | --- | --- |\n${rows.join('\n')}`,
   );

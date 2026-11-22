@@ -71,7 +71,8 @@ pre { margin: 0; padding: 16px 18px; background: var(--code); border: 1px solid 
 .gh { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none; font-size: 0.92rem; white-space: nowrap; }
 .gh svg { width: 18px; height: 18px; }
 @media (max-width: 860px) { .links .opt { display: none; } }
-@media (max-width: 560px) { .links { display: none; } .gh span { display: none; } .nav-in { gap: 14px; } }
+@media (max-width: 620px) { .links { display: none; } .gh span { display: none; } .nav-in { gap: 12px; } }
+@media (max-width: 420px) { .nav-in { gap: 8px; } .brand { font-size: 0.98rem; gap: 6px; } .alpha { margin-left: -4px; padding: 0 6px; font-size: 0.65rem; } .nav .btn { padding: 6px 11px; font-size: 0.85rem; } }
 
 /* buttons */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 18px; border-radius: 999px; font-weight: 600; font-size: 1rem; text-decoration: none; border: 1px solid transparent; cursor: pointer; white-space: nowrap; font-family: inherit; line-height: 1.2; }

@@ -1,8 +1,8 @@
-# wisp
+# Wisp Agents
 
-> wisp manages the code your agents write: an open-source app, terminal UI and CLI that runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel (each task in its own git worktree, on your own plans), lets you declare agents, crew, machines, skills and MCP servers as code in a repo's .wisp/ folder, and keeps every task next to the code it wrote (wisp blame, wisp resume). Desktop app for macOS, Windows and Linux; phone apps for iPhone and Android on a waitlist; wisp Cloud and self-hosted Grids for always-on agents.
+> Wisp Agents manages the code your agents write: an open-source app, terminal UI and CLI that runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel (each task in its own git worktree, on your own plans), lets you declare agents, crew, machines, skills and MCP servers as code in a repo's .wisp/ folder, and keeps every task next to the code it wrote (wisp blame, wisp resume). Desktop app for macOS, Windows and Linux; phone apps for iPhone and Android on a waitlist; Wisp Agents Cloud and self-hosted Grids for always-on agents.
 
-Install: `npm install -g wisp-agents` (Node.js 20+), `brew install --cask wispagents/tap/wisp` (desktop app), or `npx wisp-agents` to try it. Every feature works from the app, `wisp tui` and the CLI, and from your own agent through `wisp mcp`.
+Install: `npm install -g wisp-agents` (Node.js 18+), `brew install --cask wispagents/tap/wisp` (desktop app), or `npx wisp-agents` to try it. Every feature works from the desktop app, the phone app, `wisp tui` and the CLI, and from your own agent through `wisp mcp`.
 
 ## Docs
 
@@ -15,10 +15,10 @@ Install: `npm install -g wisp-agents` (Node.js 20+), `brew install --cask wispag
 
 ## Pages
 
-- [Home](https://trywisp.dev/): what wisp is, Declare · Run · Track
+- [Home](https://trywisp.dev/): what Wisp Agents is, Declare · Run · Track
 - [Get the app](https://trywisp.dev/app.html): desktop downloads, phone app waitlist
-- [wisp Cloud](https://trywisp.dev/cloud.html): your own wisp on a server; self-hosted Grids
-- [Agents](https://trywisp.dev/agents/): how wisp runs each coding agent
+- [Wisp Agents Cloud](https://trywisp.dev/cloud.html): your own instance on a server; self-hosted Grids
+- [Agents](https://trywisp.dev/agents/): how Wisp Agents runs each coding agent
 - [Claude Code](https://trywisp.dev/agents/claude-code.html): flags, modes, models
 - [Codex](https://trywisp.dev/agents/codex.html): flags, modes, models
 - [Cursor CLI](https://trywisp.dev/agents/cursor.html): flags, modes, models
@@ -26,7 +26,7 @@ Install: `npm install -g wisp-agents` (Node.js 20+), `brew install --cask wispag
 - [Antigravity CLI](https://trywisp.dev/agents/antigravity.html): flags, modes, models
 - [Grok Build](https://trywisp.dev/agents/grok.html): flags, modes, models
 - [Copilot CLI](https://trywisp.dev/agents/copilot.html): flags, modes, models
-- [Use wisp from your agent](https://trywisp.dev/docs/integrations/your-agent.md): MCP server and skill
+- [Use Wisp Agents from your agent](https://trywisp.dev/docs/integrations/your-agent.md): MCP server and skill
 - [Changelog](https://trywisp.dev/changelog.html)
 - [Privacy](https://trywisp.dev/privacy.html)
 
