@@ -81,6 +81,8 @@ struct Inst {
     last_active_at: Option<i64>,
     /// the timer that wakes it for `next_wake_at` while it sleeps
     wake: Option<tokio::task::AbortHandle>,
+    /// monotonic per-start id so an old exit watcher never reaps a newer start
+    run_id: u64,
 }
 
 #[derive(Debug)]
@@ -97,6 +99,7 @@ pub struct ProcessHost {
     me: std::sync::Weak<Self>,
     /// the grid is stopping: nothing starts, and a start under way gives up
     closed: std::sync::atomic::AtomicBool,
+    next_run: std::sync::atomic::AtomicU64,
 }
 
 /// More environment for one box (a sandbox's owner's env and sign-ins).
@@ -139,6 +142,7 @@ impl ProcessHost {
             env_for: EnvSlot::default(),
             me: me.clone(),
             closed: std::sync::atomic::AtomicBool::new(false),
+            next_run: std::sync::atomic::AtomicU64::new(0),
         });
         let me = Arc::downgrade(&h);
         let every = Duration::from_millis(u64::try_from(h.o.check_ms.max(200)).unwrap_or(5000));
@@ -222,17 +226,78 @@ impl ProcessHost {
         };
         let (child, port) = self.healthy(user, port, child).await?;
         let now = self.clock.now_ms();
+        let run_id = self.next_run.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let mut exit_rx = child.watch_exit();
         {
             let mut m = lock(&self.inst);
             let i = m.entry(user.id.clone()).or_default();
-            (i.state, i.port, i.secret, i.child, i.started_at, i.last_touch) =
-                (BoxState::Running, Some(port), secret, Some(child), Some(now), now);
+            (i.state, i.port, i.secret, i.child, i.started_at, i.last_touch, i.run_id) =
+                (BoxState::Running, Some(port), secret, Some(child), Some(now), now, run_id);
             let up = m.values().filter(|i| i.state == BoxState::Running).count();
             let mut p = lock(&self.peak);
             p.0 = p.0.max(up);
         }
         self.change(user, BoxState::Running, "woke");
+        // Watch for an unexpected exit after startup (crash, OOM, boxd restart), matching v1 hostd.js:
+        // without this, a dead box stays Running on a dead port and every request returns 502.
+        let me = self.me.clone();
+        let who = user.clone();
+        tokio::spawn(async move {
+            let _ = exit_rx.wait_for(Option::is_some).await;
+            let why = exit_rx.borrow().clone().unwrap_or_else(|| "exited".into());
+            let Some(h) = me.upgrade() else { return };
+            h.on_unexpected_exit(&who, run_id, &why);
+        });
         Ok(Running { port })
+    }
+
+    /// Reaps a running box whose process or container exited unexpectedly (if `run_id` still matches).
+    fn on_unexpected_exit(&self, user: &BoxUser, run_id: u64, why: &str) {
+        let now = self.clock.now_ms();
+        let who = {
+            let mut m = lock(&self.inst);
+            let Some(i) = m.get_mut(&user.id) else { return };
+            if i.state != BoxState::Running || i.run_id != run_id {
+                return;
+            }
+            (i.state, i.port, i.child, i.stopped_at) = (BoxState::Stopped, None, None, Some(now));
+            i.secret.clear();
+            i.user.clone().unwrap_or_else(|| user.clone())
+        };
+        self.record_unexpected_exit(&who, why);
+    }
+
+    /// Synchronous check before handing back a running port or polling `/api/status`: reaps a box that has
+    /// already exited even if its watcher task has not run yet.
+    pub(super) fn reap_if_exited(&self, user_id: &str) -> bool {
+        let now = self.clock.now_ms();
+        let reaped = {
+            let mut m = lock(&self.inst);
+            let Some(i) = m.get_mut(user_id).filter(|i| i.state == BoxState::Running) else { return false };
+            let Some(why) = i.child.as_ref().and_then(BoxProc::exited) else { return false };
+            (i.state, i.port, i.child, i.stopped_at) = (BoxState::Stopped, None, None, Some(now));
+            i.secret.clear();
+            let who =
+                i.user.clone().unwrap_or_else(|| BoxUser { id: user_id.to_owned(), handle: String::new(), sandbox: None, owner: None });
+            (who, why)
+        };
+        self.record_unexpected_exit(&reaped.0, &reaped.1);
+        true
+    }
+
+    fn record_unexpected_exit(&self, user: &BoxUser, why: &str) {
+        let reason = exit_reason(why);
+        tracing::warn!("hostd: {} ({}) stopped unexpectedly: {reason}", user.handle, user.id);
+        self.change(user, BoxState::Stopped, &reason);
+        self.schedule_wake(&user.id);
+    }
+}
+
+fn exit_reason(why: &str) -> String {
+    if why.contains("137") || why.contains("SIGKILL") || why.contains("signal: 9") || why.contains("signal 9") {
+        "out of memory".into()
+    } else {
+        format!("exited ({why})")
     }
 }
 
@@ -269,6 +334,7 @@ impl BoxHost for ProcessHost {
     async fn ensure(&self, user: &BoxUser, wake: bool) -> Result<Running> {
         let gate = lock(&self.starts).entry(user.id.clone()).or_default().clone();
         let _one = gate.lock().await;
+        self.reap_if_exited(&user.id);
         if let Some(port) = self.port(&user.id) {
             if !wake {
                 self.touch(&user.id);

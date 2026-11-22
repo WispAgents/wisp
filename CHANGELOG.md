@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- wisp Cloud (grid hostd): a cloud box whose process or container exits unexpectedly (crash, OOM, or boxd exit) is now reaped immediately to `stopped` instead of remaining stuck in `running` on a dead port returning `502 Your wisp didn't answer: client error (Connect)` until manually stopped; computer addresses also answer `/_grid/state` like v1 so offline watches reconnect when a computer returns.
+- Cloud computers & grid machines: connecting or clicking **Wake** / **Try again** on a cloud computer now sends a non-passive `/api/health` request so sleeping boxes actually wake instead of looping on `503 asleep`, reports the grid's real error or sign-out hint instead of SSH's `"The tunnel opened, but wisp doesn’t answer through it."`, and watches offline `grid-tunnel` computers and sleeping boxes cleanly without hanging.
 - Site and docs (`trywisp.dev`, `trywisp.dev/docs`): standardized branding on **Wisp Agents** across page headers, footers, titles, Open Graph/Twitter cards, social preview image (`og.png`), JSON-LD structured data, and `llms.txt`; fixed SEO audit gaps including `noindex` on `/docs/404.html`, `BreadcrumbList`/`TechArticle` JSON-LD on all docs pages, `SoftwareApplication`/`CollectionPage` structured data, SERP title/description lengths, `/cloud.html` heading hierarchy, and IndexNow coverage for `/docs/` URLs.
 
 ## [1.0.0-alpha.5] - 2026-11-22

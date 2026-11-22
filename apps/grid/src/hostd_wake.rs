@@ -56,7 +56,13 @@ impl ProcessHost {
             .filter_map(|(id, i)| i.port.map(|p| (id.clone(), p)))
             .collect();
         for (id, port) in running {
-            let Ok(r) = self.http.get(format!("http://127.0.0.1:{port}/api/status")).send().await else { continue };
+            if self.reap_if_exited(&id) {
+                continue;
+            }
+            let Ok(r) = self.http.get(format!("http://127.0.0.1:{port}/api/status")).send().await else {
+                let _ = self.reap_if_exited(&id);
+                continue;
+            };
             let s = Status::of(&r.json::<serde_json::Value>().await.unwrap_or_default());
             let now = self.clock.now_ms();
             let quiet = {

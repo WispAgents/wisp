@@ -2,6 +2,7 @@
 //! every box gets, and the wait until it answers.
 use std::time::Duration;
 
+use tokio::sync::{oneshot, watch};
 use wisp_kernel::exec::windows_base_env;
 
 use super::{ProcessHost, lock, preview_template};
@@ -9,19 +10,65 @@ use crate::boxhost::BoxState;
 use crate::error::{Result, bad};
 use crate::rows::BoxUser;
 
+/// A local child process wrapped like [`crate::boxd::BoxdRun`]: its exit is watched on a
+/// `watch::Receiver`, and dropping it without `stop()` kills and reaps the child.
+#[derive(Debug)]
+pub(super) struct LocalRun {
+    stop_tx: Option<oneshot::Sender<()>>,
+    exit: watch::Receiver<Option<String>>,
+}
+
+impl LocalRun {
+    fn spawn(mut child: tokio::process::Child) -> Self {
+        let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
+        let (tx, exit) = watch::channel(None);
+        tokio::spawn(async move {
+            let why = tokio::select! {
+                st = child.wait() => match st {
+                    Ok(s) => s.to_string(),
+                    Err(e) => format!("wait error: {e}"),
+                },
+                _ = &mut stop_rx => {
+                    let _ = child.start_kill();
+                    match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
+                        Ok(Ok(s)) => s.to_string(),
+                        _ => "killed".into(),
+                    }
+                }
+            };
+            let _ = tx.send(Some(why));
+        });
+        Self { stop_tx: Some(stop_tx), exit }
+    }
+
+    fn exited(&self) -> Option<String> {
+        self.exit.borrow().clone()
+    }
+
+    fn watch_exit(&self) -> watch::Receiver<Option<String>> {
+        self.exit.clone()
+    }
+
+    async fn stop(mut self) {
+        if let Some(tx) = self.stop_tx.take() {
+            let _ = tx.send(());
+        }
+        let _ = tokio::time::timeout(Duration::from_secs(11), self.exit.wait_for(Option::is_some)).await;
+    }
+}
+
 /// A started box: a process here, or a container boxd runs.
 #[derive(Debug)]
 pub(super) enum BoxProc {
-    /// boxed: a Child is 272 bytes on Windows, a [`crate::boxd::BoxdRun`] 32
-    Local(Box<tokio::process::Child>),
+    Local(LocalRun),
     Boxd(crate::boxd::BoxdRun),
 }
 
 impl BoxProc {
     /// It ended, and how.
-    pub(super) fn exited(&mut self) -> Option<String> {
+    pub(super) fn exited(&self) -> Option<String> {
         match self {
-            Self::Local(c) => c.try_wait().ok().flatten().map(|s| s.to_string()),
+            Self::Local(c) => c.exited(),
             Self::Boxd(r) => r.exited().map(|e| {
                 let why = r.error();
                 if why.is_empty() { e } else { why }
@@ -29,12 +76,17 @@ impl BoxProc {
         }
     }
 
+    /// Fires when the box exits (for both process and boxd container drivers).
+    pub(super) fn watch_exit(&self) -> watch::Receiver<Option<String>> {
+        match self {
+            Self::Local(c) => c.watch_exit(),
+            Self::Boxd(r) => r.watch_exit(),
+        }
+    }
+
     pub(super) async fn stop(self) {
         match self {
-            Self::Local(mut c) => {
-                let _ = c.start_kill();
-                let _ = tokio::time::timeout(Duration::from_secs(10), c.wait()).await;
-            }
+            Self::Local(c) => c.stop().await,
             Self::Boxd(r) => r.stop(Duration::from_secs(10)).await,
         }
     }
@@ -105,7 +157,8 @@ impl ProcessHost {
         for (k, v) in self.box_env(user, port, secret) {
             cmd.env(k, v);
         }
-        Ok(BoxProc::Local(Box::new(cmd.spawn().map_err(|e| bad(format!("wisp didn't start in the box: {e}"), 503))?)))
+        let child = cmd.spawn().map_err(|e| bad(format!("wisp didn't start in the box: {e}"), 503))?;
+        Ok(BoxProc::Local(LocalRun::spawn(child)))
     }
 
     /// Waits for the started box to answer `/api/health`: its process and the port it answers on, or why it never came
@@ -113,7 +166,6 @@ impl ProcessHost {
     /// marked stopped. `port` 0: a process box binds its own, read from its `server.json` once it's written.
     pub(super) async fn healthy(&self, user: &BoxUser, port: u16, child: BoxProc) -> Result<(BoxProc, u16)> {
         let deadline = self.clock.now_ms() + self.o.start_ms;
-        let mut child = child;
         let mut port = port;
         let home = self.o.data.join("users").join(&user.id).join("home");
         let failed = |event: &str| {
@@ -139,6 +191,7 @@ impl ProcessHost {
                 return Err(bad(format!("wisp in the box stopped as it started ({st})."), 503));
             }
             if self.clock.now_ms() > deadline {
+                child.stop().await;
                 failed("failed");
                 return Err(bad("wisp in the box didn't answer in time.", 504));
             }

@@ -113,3 +113,87 @@ async fn hostd_runs_a_box_through_boxd() {
     host.remove(&ada).await.unwrap();
     assert!(seen.lock().unwrap().asks.iter().any(|m| m["op"] == "remove" && m["id"] == "u1"), "boxd deletes it");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hostd_reaps_a_boxd_container_that_exits_unexpectedly() {
+    let dir = std::env::temp_dir().join(format!("wisp-grid-boxd-crash-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let sock = dir.join("box.sock");
+    let l = UnixListener::bind(&sock).unwrap();
+    let (crash_tx, crash_rx) = tokio::sync::oneshot::channel::<()>();
+    let crash_rx = Arc::new(tokio::sync::Mutex::new(Some(crash_rx)));
+    tokio::spawn(async move {
+        loop {
+            let Ok((c, _)) = l.accept().await else { return };
+            let crash_rx = crash_rx.clone();
+            tokio::spawn(async move {
+                let (rd, mut wr) = c.into_split();
+                let mut lines = BufReader::new(rd).lines();
+                let Ok(Some(first)) = lines.next_line().await else { return };
+                let m: Value = serde_json::from_str(&first).unwrap();
+                let port = u16::try_from(m["port"].as_u64().unwrap()).unwrap();
+                let http = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+                let server = tokio::spawn(async move {
+                    loop {
+                        let Ok((s, _)) = http.accept().await else { return };
+                        tokio::spawn(async move {
+                            let svc = hyper::service::service_fn(|_r| async {
+                                Ok::<_, std::convert::Infallible>(http::Response::new(Full::new(Bytes::from_static(b"{\"ok\":true}"))))
+                            });
+                            let _ = hyper::server::conn::http1::Builder::new().serve_connection(TokioIo::new(s), svc).await;
+                        });
+                    }
+                });
+                let rx = crash_rx.lock().await.take();
+                if let Some(rx) = rx {
+                    let _ = rx.await;
+                    server.abort();
+                    let _ = wr.write_all(b"{\"exit\":137,\"signal\":\"SIGKILL\"}\n").await;
+                    return;
+                }
+                while let Ok(Some(l)) = lines.next_line().await {
+                    if l.contains("SIGTERM") {
+                        break;
+                    }
+                }
+                server.abort();
+                let _ = wr.write_all(b"{\"exit\":0}\n").await;
+            });
+        }
+    });
+    let clock = wisp_grid::clock::system();
+    let o = wisp_grid::hostd::ProcessOptions {
+        bin: "/nonexistent/wisp".into(),
+        data: dir.clone(),
+        idle_ms: 600_000,
+        check_ms: 60_000,
+        start_ms: 10_000,
+        max_running: 2,
+        env: Vec::new(),
+        url_of: Arc::new(|h| format!("https://{h}.grid.test")),
+        boxd: Some(wisp_grid::boxd::Driver { socket: sock.clone(), limits: Value::Null, dns: None }),
+        previews: false,
+    };
+    let host = wisp_grid::hostd::ProcessHost::new(o, clock);
+    let ada = BoxUser { id: "u1".into(), handle: "ada".into(), sandbox: None, owner: None };
+    let first = host.ensure(&ada, false).await.unwrap();
+    assert_eq!(host.state("u1"), BoxState::Running);
+    // Simulate container exiting with OOM (exit 137 / SIGKILL) after startup.
+    let _ = crash_tx.send(());
+    for _ in 0..100 {
+        if host.state("u1") == BoxState::Stopped {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(host.state("u1"), BoxState::Stopped);
+    assert_eq!(host.port("u1"), None);
+    // Next ensure restarts a fresh box.
+    let second = host.ensure(&ada, false).await.unwrap();
+    assert_eq!(host.state("u1"), BoxState::Running);
+    assert_eq!(host.port("u1"), Some(second.port));
+    let _ = first;
+    host.close_all().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}

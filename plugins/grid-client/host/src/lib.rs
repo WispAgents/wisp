@@ -42,6 +42,7 @@ use wisp_share_api::{DESTINATION, ShareDestination};
 use wisp_store::Store;
 
 pub use state::St;
+pub use transport::GridTransport;
 
 type Slot = Arc<OnceLock<Arc<St>>>;
 

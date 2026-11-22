@@ -157,6 +157,11 @@ impl BoxdRun {
         self.exit.borrow().clone()
     }
 
+    /// Fires when the container exits (or boxd's socket closes).
+    pub fn watch_exit(&self) -> watch::Receiver<Option<String>> {
+        self.exit.clone()
+    }
+
     /// What boxd said when it couldn't start it.
     pub fn error(&self) -> String {
         self.error.lock().unwrap_or_else(PoisonError::into_inner).clone()

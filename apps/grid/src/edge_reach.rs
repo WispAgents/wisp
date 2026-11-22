@@ -104,6 +104,10 @@ impl Grid {
         if cred == Credential::Cookie && self.foreign_origin(req.method(), req.headers(), &c.label) {
             return Err(bad("forbidden origin", 403));
         }
+        if req.uri().path() == "/_grid/state" {
+            let state = if self.tunnels.online(&c.id) { "running" } else { "offline" };
+            return Ok(json(200, &json!({ "state": state, "name": c.name })));
+        }
         // its waiting page (QA round 10 Grid #2): while it's offline, the page; once it's back, what was asked for
         // (a preview's too, on its own address: its page waits the same way)
         if req.uri().path() == answer::WAITING {
