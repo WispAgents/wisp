@@ -1,7 +1,8 @@
 // Whether Ship it shows (src/model/pr.ts shippable, v1 ship.js shippable), on the row fields the server
 // now sends: `branch` (wisp.worktrees), `pr` and `toShip` (wisp.ship's slot, rechecked at each turn's end).
 import { expect, test } from 'vitest';
-import { prChipLabel, prChipTitle, prsOf, prStripSub, prStripTitle, shippable } from '../src/model/pr.ts';
+import { prChipLabel, prChipTitle, prsOf, shippable } from '../src/model/pr.ts';
+import { prStripSub, prStripTitle } from '../src/model/strip.ts';
 import { dialogTitle } from '../src/model/ship.ts';
 import type { ShipSession } from '../src/types.ts';
 import { shipRow } from '../src/row.ts';

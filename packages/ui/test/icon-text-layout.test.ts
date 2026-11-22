@@ -7,8 +7,11 @@ import reset from '../src/css/reset.css?raw';
 import answer from '../src/css/answer-content.css?raw';
 import transcript from '../src/css/transcript.css?raw';
 
+// the rule whose whole selector is `selector` (it opens its line), not a longer one ending in it: #831's
+// `[data-kit='working'][data-inline] [data-kit='working-orb'] {` came first and was read as the orb's own rule
 const rule = (css: string, selector: string): string => {
-  const at = css.indexOf(`${selector} {`);
+  const head = new RegExp(`^[ \\t]*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{`, 'm');
+  const at = head.exec(css)?.index ?? -1;
   expect(at, `no rule for ${selector}`).toBeGreaterThanOrEqual(0);
   return css.slice(at, css.indexOf('}', at));
 };
@@ -30,7 +33,7 @@ test('step_output_wraps_and_scrolls_inside_the_transcript', () => {
 test('working_orb_is_one_status_line_tall_and_centred_in_it', () => {
   // #6: the orb hung 4px lower than the title line
   const orb = rule(transcript, "[data-kit='working-orb']");
-  const status = rule(transcript, "[data-kit='working-status']");
+  const status = rule(transcript, "[data-kit='working'] [data-kit='working-status']");
   const h = /height: (var\(--[a-z-]+\))/.exec(orb)?.[1];
   expect(h).toBeDefined();
   expect(orb).toContain('align-items: center');
