@@ -13,11 +13,14 @@ pub const SAME_PERIOD_MS: i64 = 10 * MIN;
 pub const FULL: f64 = 0.995;
 
 /// What wisp calls each known window, and how long it is when the CLI doesn't say.
-const KNOWN: [(&str, &str, i64); 4] = [
+const KNOWN: [(&str, &str, i64); 7] = [
     ("five_hour", "5-hour", 5 * H),
     ("seven_day", "Weekly", 7 * 24 * H),
     ("seven_day_opus", "Weekly Opus", 7 * 24 * H),
     ("seven_day_sonnet", "Weekly Sonnet", 7 * 24 * H),
+    ("five_hour_3p", "3P 5-hour", 5 * H),
+    ("seven_day_3p", "3P Weekly", 7 * 24 * H),
+    ("seven_day_argon", "Argon wk", 7 * 24 * H),
 ];
 
 /// The length of a window wisp knows by name.
@@ -69,6 +72,7 @@ pub fn stop_key(agent: &str) -> Option<&'static str> {
     match agent {
         "claude" => Some(settings::AUTO_STOP_CLAUDE),
         "codex" => Some(settings::AUTO_STOP_CODEX),
+        "antigravity" => Some(settings::AUTO_STOP_ANTIGRAVITY),
         _ => None,
     }
 }
@@ -213,5 +217,17 @@ mod unit_tests {
         assert_eq!(unit_words(true, 1.234), "$1.23");
         assert_eq!(unit_words(false, 1.25), "1.2M tokens");
         assert_eq!(unit_words(false, 0.05), "0.05M tokens");
+    }
+
+    #[test]
+    fn antigravity_windows_and_stop_line() {
+        assert_eq!(window_label("five_hour_3p", None), "3P 5-hour");
+        assert_eq!(window_label("seven_day_3p", None), "3P Weekly");
+        assert_eq!(window_label("seven_day_argon", None), "Argon wk");
+        assert_eq!(known_ms("five_hour_3p"), Some(5 * H));
+        assert_eq!(known_ms("seven_day_argon"), Some(7 * 24 * H));
+        assert!(rank("five_hour") < rank("seven_day") && rank("seven_day") < rank("five_hour_3p"));
+        let s = BTreeMap::from([("autoStop".into(), "90".into()), ("autoStopAntigravity".into(), "75".into())]);
+        assert_eq!(stop_for(&s, "antigravity"), Some(0.75));
     }
 }

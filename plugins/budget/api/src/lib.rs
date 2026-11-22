@@ -227,6 +227,7 @@ pub mod settings {
     /// 'same' | 'off' | '50' | '75' | '90'
     pub const AUTO_STOP_CLAUDE: &str = "autoStopClaude";
     pub const AUTO_STOP_CODEX: &str = "autoStopCodex";
+    pub const AUTO_STOP_ANTIGRAVITY: &str = "autoStopAntigravity";
     /// 'on' | 'off' (off unless on)
     pub const DRAIN_WATCH: &str = "drainWatch";
     /// 'on' | 'off' (on unless off)

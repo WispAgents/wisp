@@ -23,6 +23,9 @@ pub struct BudgetSpec {
     /// Codex's own line (same | off | 50 | 75 | 90)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub codex: String,
+    /// Antigravity's own line (same | off | 50 | 75 | 90)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub antigravity: String,
     /// at most this many dollars per task
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_usd: Option<f64>,
@@ -34,8 +37,12 @@ pub struct BudgetSpec {
 struct BudgetKind(Arc<StoredKind>);
 
 /// Each stop line: its field in the spec, its key in the plugin's settings, and its default.
-const LINES: [(&str, &str, &str); 3] =
-    [("stopAt", "autoStop", "off"), ("claude", "autoStopClaude", "same"), ("codex", "autoStopCodex", "same")];
+const LINES: [(&str, &str, &str); 4] = [
+    ("stopAt", "autoStop", "off"),
+    ("claude", "autoStopClaude", "same"),
+    ("codex", "autoStopCodex", "same"),
+    ("antigravity", "autoStopAntigravity", "same"),
+];
 
 impl ResourceKind for BudgetKind {
     fn info(&self) -> KindInfo {

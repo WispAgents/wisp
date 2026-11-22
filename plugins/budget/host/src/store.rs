@@ -118,6 +118,7 @@ fn import_settings(f: &ImportFile, w: &mut Writer<'_>) -> wisp_store::Result<()>
         wisp_budget_api::settings::AUTO_STOP,
         wisp_budget_api::settings::AUTO_STOP_CLAUDE,
         wisp_budget_api::settings::AUTO_STOP_CODEX,
+        wisp_budget_api::settings::AUTO_STOP_ANTIGRAVITY,
         wisp_budget_api::settings::DRAIN_WATCH,
     ] {
         if let Some(v) = cfg.pointer(&format!("/defaults/{k}")) {

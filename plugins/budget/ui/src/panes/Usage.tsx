@@ -54,6 +54,7 @@ type Stop = 'same' | (typeof STOPS)[number];
 const PLANNED = [
   { agent: 'claude', name: 'Claude Code', key: 'autoStopClaude' },
   { agent: 'codex', name: 'Codex', key: 'autoStopCodex' },
+  { agent: 'antigravity', name: 'Antigravity', key: 'autoStopAntigravity' },
 ] as const;
 
 const money = (n: number): string => `$${n.toFixed(2)}`;
@@ -64,22 +65,27 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
   const scope = c.scope.child('usage-pane');
   onCleanup(() => scope.dispose());
   c.watch(peer, TOPIC, scope);
+  const accs = useSignal(c.entities.list('budget_acc'));
   const meta = useSignal(c.entities.row<{ body: Record<string, string> }>(META, entityKey(peer, 'settings')));
   const [line] = createResource(() => c.run(usage, { peer }).catch(() => undefined));
-  const [windows, { refetch: again }] = createResource(async () => {
-    const out: { agent: string; name: string; accounts: AccountPlan[]; names: Map<string, string>; compare: Compare[] }[] = [];
-    for (const p of PLANNED) {
-      const [accounts, names, cmp] = await Promise.all([
-        c.run(plans, { peer, agent: p.agent, named: true }).catch(() => [] as AccountPlan[]),
-        c.run(accountNames, { peer, agent: p.agent }).catch(() => ({ accounts: [] })),
-        c.run(compare, { peer, agent: p.agent }).catch(() => [] as Compare[]),
-      ]);
-      // an account's name when the harness has several (v1 budgetHtml: `many`)
-      const many = names.accounts.length > 1;
-      out.push({ agent: p.agent, name: p.name, accounts, names: new Map(many ? names.accounts.map((a) => [a.id, a.label]) : []), compare: cmp });
-    }
-    return out;
-  });
+  const [windows, { refetch: again }] = createResource(
+    () => ({ n: accs().length, rows: accs() }),
+    async () => {
+      const out: { agent: string; name: string; accounts: AccountPlan[]; names: Map<string, string>; compare: Compare[] }[] = [];
+      for (const p of PLANNED) {
+        const [accounts, names, cmp] = await Promise.all([
+          c.run(plans, { peer, agent: p.agent, named: true }).catch(() => [] as AccountPlan[]),
+          c.run(accountNames, { peer, agent: p.agent }).catch(() => ({ accounts: [] })),
+          c.run(compare, { peer, agent: p.agent }).catch(() => [] as Compare[]),
+        ]);
+        // an account's name when the harness has several (v1 budgetHtml: `many`)
+        const many = names.accounts.length > 1;
+        out.push({ agent: p.agent, name: p.name, accounts, names: new Map(many ? names.accounts.map((a) => [a.id, a.label]) : []), compare: cmp });
+      }
+      return out;
+    },
+  );
+  const planRows = () => windows.latest ?? [];
   const stop = (key: string, dflt: string) => ({
     value: () => meta()?.body?.[key] ?? dflt,
     set: (v: string) => void c.run(setStop, { peer, key, value: v }).catch(() => {}),
@@ -114,7 +120,7 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
       () => void again(),
       () => {},
     );
-  const reported = (): boolean => (windows() ?? []).some((w) => w.accounts.some((a) => a.windows.length > 0) || w.compare.length > 0);
+  const reported = (): boolean => planRows().some((w) => w.accounts.some((a) => a.windows.length > 0) || w.compare.length > 0);
   // the share where automations stop on this harness (v1 stopAt): its own line, else Automations stop at
   const stopOf = (agent: string): number | null => {
     const body = meta()?.body ?? {};
@@ -130,7 +136,7 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
   const logoOf = (id: string): string | undefined => marks().find((m) => m.id === id)?.logo;
   const day = (at: number): string => dayWhen(at, Date.now(), when);
   const meters = (): JSX.Element[] =>
-    (windows() ?? []).flatMap((h) => [
+    planRows().flatMap((h) => [
       ...h.accounts
         .filter((a) => a.windows.length > 0 || a.banked || a.overage || a.where)
         .map((a) => <AccountPlanView c={c} name={h.name} logo={logoOf(h.agent)} label={nameOf(h, a.account)} a={a} stop={stopOf(h.agent)} when={when} day={day} />),
@@ -173,7 +179,7 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
         >
           <PlanList part="budget.usage.windows">{meters()}</PlanList>
         </Show>
-        <For each={windows() ?? []}>
+        <For each={planRows()}>
           {(h) => (
             <For each={h.accounts}>
               {(a) => (

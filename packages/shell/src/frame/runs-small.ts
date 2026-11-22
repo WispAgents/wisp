@@ -21,7 +21,15 @@ export function nextRun(lead: string, runs: readonly string[], available: readon
 /** A group id for the runs of one launch (v1: 6 random bytes in hex). */
 export const newGroup = (bytes: Uint8Array): string => `g-${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 
-const WINDOW_NAMES: Readonly<Record<string, string>> = { five_hour: '5-hour', seven_day: 'weekly', seven_day_opus: 'weekly Opus', seven_day_sonnet: 'weekly Sonnet' };
+const WINDOW_NAMES: Readonly<Record<string, string>> = {
+  five_hour: '5-hour',
+  seven_day: 'weekly',
+  seven_day_opus: 'weekly Opus',
+  seven_day_sonnet: 'weekly Sonnet',
+  five_hour_3p: '3P 5-hour',
+  seven_day_3p: '3P weekly',
+  seven_day_argon: 'Argon weekly',
+};
 
 /** "5-hour", "weekly", "3-day" (v1 receipt.js windowName) */
 export function windowName(id: string): string {

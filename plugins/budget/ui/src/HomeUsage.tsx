@@ -23,6 +23,7 @@ import './i18n/lazy.ts';
 const PLANNED = [
   { agent: 'claude', name: 'Claude Code', key: 'autoStopClaude' },
   { agent: 'codex', name: 'Codex', key: 'autoStopCodex' },
+  { agent: 'antigravity', name: 'Antigravity', key: 'autoStopAntigravity' },
 ] as const;
 
 export default function HomeUsage(props: ExtensionProps): JSX.Element {

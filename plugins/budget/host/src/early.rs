@@ -141,17 +141,17 @@ impl State {
         }
     }
 
-    /// Codex accounts work waits on (v1 `waitingOn`): runs held here, and accounts a run found at their limit.
-    pub(crate) fn waiting(&self, at: i64) -> Vec<String> {
-        let mut out: std::collections::BTreeSet<String> =
-            lock(&self.held).keys().filter(|(g, _)| g == "codex").map(|(_, a)| a.clone()).collect();
-        out.extend(lock(&self.asked).iter().filter(|a| a.agent == "codex").map(|a| a.account.clone()));
-        let limited: Vec<String> = lock(&self.limited).iter().filter(|(g, _)| g == "codex").map(|(_, a)| a.clone()).collect();
-        let (free, held): (Vec<String>, Vec<String>) = limited.into_iter().partition(|a| self.free("codex", a, at));
+    /// Codex and Antigravity accounts work waits on (v1 `waitingOn`): runs held here, and accounts a run found at their limit.
+    pub(crate) fn waiting(&self, at: i64) -> Vec<(String, String)> {
+        let live = |g: &str| matches!(g, "codex" | "antigravity");
+        let mut out: std::collections::BTreeSet<(String, String)> = lock(&self.held).keys().filter(|(g, _)| live(g)).cloned().collect();
+        out.extend(lock(&self.asked).iter().filter(|a| live(&a.agent)).map(|a| (a.agent.clone(), a.account.clone())));
+        let limited: Vec<(String, String)> = lock(&self.limited).iter().filter(|(g, _)| live(g)).cloned().collect();
+        let (free, held): (Vec<_>, Vec<_>) = limited.into_iter().partition(|(g, a)| self.free(g, a, at));
         {
             let mut l = lock(&self.limited);
-            for a in free {
-                l.remove(&("codex".to_owned(), a));
+            for k in free {
+                l.remove(&k);
             }
         }
         out.extend(held);
