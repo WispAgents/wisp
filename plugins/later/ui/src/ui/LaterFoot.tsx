@@ -5,7 +5,7 @@
 // A click, right-click, Enter or Space on a row is its menu: Send now / Change time… / Cancel follow-up. A follow-up typed with a
 // time in the reply box (F-auto-5) appears here at once: `later.add`'s patch. Before it goes it can be changed
 // (F-auto-7, v1 0.49.0): the pen edits its text in place, Enter keeps it, Escape leaves it as it was.
-import { Show, createMemo, createSignal, type JSX } from 'solid-js';
+import { Show, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
 import { Key } from '@zag-js/solid';
 import type { EntityKey } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';
@@ -57,6 +57,8 @@ const textOf = (l: LaterView): string => (l.goal ? laterLine(l)[1] : l.text);
 
 export default function LaterFoot(props: ExtensionProps): JSX.Element {
   const c = props.client;
+  const [now, setNow] = createSignal(Date.now());
+  onCleanup(c.scope.interval(30_000, () => setNow(Date.now())));
   const key = (): EntityKey | undefined => (props.id ?? props.session?.()?.id) as EntityKey | undefined;
   type Row = SessionRow & { body?: { ext?: Record<string, { later?: LaterView[] } | undefined> } };
   const row = createMemo(() => {
@@ -125,9 +127,9 @@ export default function LaterFoot(props: ExtensionProps): JSX.Element {
                 <ScheduledRow
                   part="later.foot.row"
                   icon={iconOf(l())}
-                  time={aheadLabel(l().at, Date.now())}
+                  time={aheadLabel(l().at, now())}
                   text={textOf(l())}
-                  tip={followUpTip(l(), Date.now())}
+                  tip={followUpTip(l(), now())}
                   held={!!l().held}
                   {...(l().files ? { files: { count: l().files ?? 0, tip: t('wisp.later.foot.files', { count: l().files ?? 0 }) } } : {})}
                   onMenu={() => setTarget(l())}
@@ -158,7 +160,7 @@ export default function LaterFoot(props: ExtensionProps): JSX.Element {
               <ScheduledMore
                 part="later.foot.more"
                 open={open()}
-                label={open() ? t('wisp.later.foot.less') : t('wisp.later.foot.more', { n: m().rest, time: aheadLabel(m().next, Date.now()) })}
+                label={open() ? t('wisp.later.foot.less') : t('wisp.later.foot.more', { n: m().rest, time: aheadLabel(m().next, now()) })}
                 onToggle={toggle}
               />
             )}

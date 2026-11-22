@@ -14,17 +14,33 @@ export const NO_EVENTS: readonly never[] = Object.freeze([]);
 
 const same = <T>(a: readonly T[], b: readonly T[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
 
-/** `events` by turn, each oldest first; a turn's array from `prev` when it holds the same events. */
-export function eventsByTurn<T extends TurnEvent>(events: readonly T[], prev?: ReadonlyMap<string, readonly T[]>): Map<string, readonly T[]> {
-  const by = new Map<string, T[]>();
-  for (const e of events) {
-    const list = by.get(e.turn_id);
-    if (list) list.push(e);
-    else by.set(e.turn_id, [e]);
+/** Flattens entity store `'event'` rows (individual snapshot rows and live `ChangeOp::Append` arrays). */
+export function flattenEvents<T extends TurnEvent>(events: readonly (T | readonly T[])[]): T[] {
+  const out: T[] = [];
+  for (const item of events) {
+    if (Array.isArray(item)) {
+      for (const e of item as readonly T[]) if (e && typeof e.turn_id === 'string') out.push(e);
+    } else if (item && typeof (item as T).turn_id === 'string') {
+      out.push(item as T);
+    }
+  }
+  return out;
+}
+
+/** `events` by turn, each oldest first (deduped by seq); a turn's array from `prev` when it holds the same events. */
+export function eventsByTurn<T extends TurnEvent>(
+  events: readonly (T | readonly T[])[],
+  prev?: ReadonlyMap<string, readonly T[]>,
+): Map<string, readonly T[]> {
+  const by = new Map<string, Map<number, T>>();
+  for (const e of flattenEvents(events)) {
+    let seen = by.get(e.turn_id);
+    if (!seen) by.set(e.turn_id, (seen = new Map()));
+    seen.set(e.seq, e);
   }
   const out = new Map<string, readonly T[]>();
-  for (const [turn, list] of by) {
-    list.sort((a, b) => a.seq - b.seq);
+  for (const [turn, seen] of by) {
+    const list = [...seen.values()].sort((a, b) => a.seq - b.seq);
     const was = prev?.get(turn);
     out.set(turn, was && same(was, list) ? was : list);
   }

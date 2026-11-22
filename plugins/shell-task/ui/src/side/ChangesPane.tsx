@@ -160,6 +160,22 @@ export function ChangesPane(): JSX.Element {
   );
   // every turn whole while the pane is open: the task's topic sends older turns as stubs, without their edits (v1 #788)
   const turns = useSignal(task.client.entities.list<ChangeTurn>('turn'));
+  // git read again in place when the task settles (a running turn ends) or its uncommitted/ahead counts move; not on
+  // every row patch (a turn streaming), nor after a refused read (a gone folder doesn't come back: Retry is there)
+  const moved = createMemo(() => {
+    const r = raw() as { state?: string; summary?: { toShip?: { dirty?: number; ahead?: number } | null } } | undefined;
+    return { running: r?.state === 'running', counts: `${r?.summary?.toShip?.dirty ?? 0}|${r?.summary?.toShip?.ahead ?? 0}` };
+  }, undefined, { equals: (a, b) => a.running === b.running && a.counts === b.counts });
+  createEffect(
+    on(
+      moved,
+      (now, before) => {
+        const settled = before?.running === true && !now.running;
+        if ((settled || before?.counts !== now.counts) && readArgs() && !refused()) void refetch();
+      },
+      { defer: true },
+    ),
+  );
   const whole = task.client.scope.child(`changes:${task.key}`);
   onCleanup(() => whole.dispose());
   keepTurnsWhole({

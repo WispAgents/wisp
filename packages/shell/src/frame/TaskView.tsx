@@ -283,7 +283,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     );
   const row = useSignal(shell.client.entities.row<SessionRow>(SESSION, key));
   const allTurns = useSignal(shell.client.entities.list<TurnRow>('turn'));
-  const allEvents = useSignal(shell.client.entities.list<EventRow>('event'));
+  const allEvents = useSignal(shell.client.entities.list<EventRow | readonly EventRow[]>('event'));
   // a turn's steps, oldest first: its tool calls and its messages. Grouped once per change of the events, a turn whose
   // events didn't change keeps its array, so only that turn recomputes (turn-events.ts, perf r2 #5)
   const byTurn = createMemo<Map<string, readonly EventRow[]>>((prev) => eventsByTurn(allEvents(), prev));
@@ -443,7 +443,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const askStop = (): void => {
     const r = row();
     if (!r) return;
-    const live = allRows().filter((x) => x.parent_id === key && x.state === 'running').length;
+    const live = allRows().filter((x) => (x.parent_id === key || x.parent_id === bare) && x.state === 'running').length;
     setStopAsk(stopQuestion({ sub: !!r.parent_id, name: harnessView(r.agent).name, live, queued: Number(r.summary.queued ?? 0) }, t));
   };
   // Restore to before a turn asks first (orch #17): it undoes every change made in the folder since that turn
@@ -725,12 +725,17 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     if (!through && sendAt === undefined && holds && v && !v.startsWith('/') && row()?.state !== 'waiting') {
       if (checking()) return;
       setChecking(true);
-      void holds.check({ peer, agent, session: bare }).then((h) => {
-        setChecking(false);
-        if (h) return void (setHold(h), input?.focus());
-        pass = 'checked';
-        send();
-      });
+      void holds
+        .check({ peer, agent, session: bare })
+        .then(
+          (h) => {
+            setChecking(false);
+            if (h) return void (setHold(h), input?.focus());
+            pass = 'checked';
+            send();
+          },
+          () => setChecking(false),
+        );
       return;
     }
     menu.reset();
@@ -740,7 +745,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       .filter((p) => (p.where ?? ['reply']).includes('reply') && p.pending)
       .map((p) => p.pending?.(v, { client: clients.client((p as { plugin?: string }).plugin ?? 'shell'), task: key }))
       .find((x) => x !== undefined);
-    if (!v && !extra) return;
+    if (!v && !extra && files().length === 0) return;
     // a plugin's prompt source may take it (@a crew member: their job, their answer under this turn)
     const pc = shell.client.plugin('shell');
     if (
@@ -785,7 +790,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         at,
         ...(attachments.length > 0 && { attachments }),
         ...(runOf() ? { run: runOf() as NonNullable<ReturnType<typeof runOf>> } : {}),
-        ...(queues() && { queue: true }),
+        queue: queues(),
         ...(through === 'confirmed' && { confirmLimit: true }),
         ...(sentTeam !== undefined && { team: teamToSend(sentTeam) }),
       }).catch((err: unknown) => {
@@ -804,7 +809,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   /** an answer's `next` chip, `question` option, `actions` reply: sent as a follow-up */
   const reply = (v: string): void => {
     toEnd();
-    run(followUp, { id: key, text: v, turnId: entityKey(peer, newRowId()), idx: turns().length, at: Date.now() }).catch(() => undefined);
+    run(followUp, { id: key, text: v, turnId: entityKey(peer, newRowId()), idx: turns().length, at: Date.now(), queue: queues() }).catch(() => undefined);
   };
   /** an answer's chip without ⌘: into the reply box, to read first. The view goes to the end, by the box it fills (on a
    *  phone the chip sat far above it, behind the keyboard): from the tail, the hold-view keeps it there as the keyboard
@@ -1384,7 +1389,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           // the quiet note's view of the steps and whether a delegate still works: memos, not work done on every token (a
           // scan of every task's row per token, perf r1 #15)
           const quietSteps = createMemo(() => turnEvents().map((e) => ({ kind: e.kind ?? e.body?.kind, t: e.t, outAt: e.body?.outAt, call: e.body?.callId, output: e.body?.output })));
-          const delegating = createMemo(() => allRows().some((x) => x.parent_id === key && x.state === 'running'));
+          const delegating = createMemo(() => allRows().some((x) => (x.parent_id === key || x.parent_id === bare) && x.state === 'running'));
           const count = (k: string): number => steps().filter((a) => a.kind === k).length;
           const blocks = () => b.presentation?.blocks ?? [];
           const stubbed = () => isStub(b);

@@ -607,20 +607,18 @@ impl Runtime {
             let mut all = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             // a Stop that came while it started: it stops now
             let stopping = self.stops.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(s.id.as_str());
+            let resumable = s.resume_id.is_some();
+            let interrupting = !stopping
+                && resumable
+                && self.pending_interrupt.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(s.id.as_str());
             if stopping {
+                self.pending_interrupt.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(s.id.as_str());
                 let _ = ctl.send(Ctl::Stop);
+            } else if interrupting {
+                let _ = ctl.send(Ctl::Interrupt);
             }
-            let live = Live {
-                pid,
-                resumable: s.resume_id.is_some(),
-                finished: false,
-                stopping,
-                interrupting: false,
-                label: None,
-                account: t.account.clone(),
-                ctl,
-                ended,
-            };
+            let live =
+                Live { pid, resumable, finished: false, stopping, interrupting, label: None, account: t.account.clone(), ctl, ended };
             all.insert(s.id.0.clone(), live);
             drop(all);
             // `live` has it now: no longer starting (cleared here, not when the start returns, so a run that ends at
@@ -673,6 +671,7 @@ impl Runtime {
     }
 
     pub(crate) fn stop_run(&self, id: &str) {
+        self.pending_interrupt.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(id);
         let mut live = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(l) = live.get_mut(id) {
             l.stopping = true;

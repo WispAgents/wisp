@@ -149,4 +149,8 @@ export type ClientInput =
   /** the host's watchdog, about once a keepalive while a stream is open: drops one silent for two */
   | { kind: 'tick' }
   /** open again now, from the cursor, skipping the backoff (pull to refresh, Retry) */
-  | { kind: 'reopen' };
+  | { kind: 'reopen' }
+  /** a topic's cached rows were evicted from the client store (dropTopic): forget its held cursor so reopening asks fresh */
+  | { kind: 'evicted'; topic: Topic }
+  /** app returned to foreground or network/tunnel came back: reopen if offline or silent for a keepalive */
+  | { kind: 'resume' };

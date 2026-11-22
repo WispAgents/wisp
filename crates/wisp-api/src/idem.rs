@@ -38,24 +38,28 @@ struct Inner {
 
 impl Inner {
     fn forget_oldest(&mut self) {
-        if let Some(old) = self.order.pop_front()
-            && let Some(k) = self.map.remove(&old)
-        {
-            self.bytes -= k.bytes;
+        while let Some(old) = self.order.pop_front() {
+            if let Some(k) = self.map.remove(&old) {
+                self.bytes -= k.bytes;
+                break;
+            }
         }
     }
 
     fn expire(&mut self, now: Instant, ttl: Duration) {
-        while let Some(k) = self.order.front().and_then(|key| self.map.get(key)) {
-            if now.duration_since(k.at) < ttl {
-                break;
+        while let Some(front) = self.order.front() {
+            match self.map.get(front) {
+                None => {
+                    self.order.pop_front();
+                }
+                Some(k) if now.duration_since(k.at) >= ttl => self.forget_oldest(),
+                Some(_) => break,
             }
-            self.forget_oldest();
         }
     }
 
     fn trim(&mut self, count: usize, bytes: usize) {
-        while self.order.len() > 1 && (self.order.len() > count || self.bytes > bytes) {
+        while self.map.len() > 1 && (self.map.len() > count || self.bytes > bytes) {
             self.forget_oldest();
         }
     }
@@ -110,6 +114,17 @@ impl Idempotency {
             }
         };
         let done = cell.get_or_init(|| run).await.clone();
+        // Never cache transient/retryable failures (5xx or error.retry == true): a retry must run again.
+        let retryable = done.0 >= 500 || done.1.pointer("/error/retry").and_then(Value::as_bool) == Some(true);
+        if retryable {
+            let mut g = self.lock();
+            if g.map.get(&key).is_some_and(|k| Arc::ptr_eq(&k.cell, &cell))
+                && let Some(k) = g.map.remove(&key)
+            {
+                g.bytes -= k.bytes;
+            }
+            return done;
+        }
         // counted once, by the caller whose run filled it (a retry finds `bytes` already set)
         let size = serde_json::to_vec(&done.1).map_or(0, |v| v.len()).max(1);
         let mut g = self.lock();

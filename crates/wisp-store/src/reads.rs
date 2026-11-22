@@ -91,6 +91,10 @@ impl Reader<'_> {
     pub fn defines(&self, kind: &str) -> bool {
         self.shared.kind(kind).is_ok()
     }
+    /// The key column name of a defined `kind` (`EntityDef::key`).
+    pub fn key_of(&self, kind: &str) -> Option<&'static str> {
+        self.shared.kind(kind).ok().map(|k| k.def.key)
+    }
     pub fn query(&self, kind: &str, q: &Query) -> Result<Vec<Row>> {
         query(self.db, &*self.shared.kind(kind)?, q)
     }

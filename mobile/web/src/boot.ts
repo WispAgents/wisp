@@ -98,9 +98,14 @@ export async function bootPhone(o: PhoneOptions): Promise<Phone> {
   client.scope.add(bridge.onBack(() => back(client, bridge, o.tasksReady)));
   const hidden = (): void => {
     if (w.document.visibilityState === 'hidden') void client.flush();
+    else client.peers.resume();
   };
   w.document.addEventListener('visibilitychange', hidden);
   client.scope.add(() => w.document.removeEventListener('visibilitychange', hidden));
+  const online = (): void => client.peers.resume();
+  w.addEventListener('online', online);
+  client.scope.add(() => w.removeEventListener('online', online));
+  client.scope.add(platform.onResume(() => client.peers.resume()));
   return { client, platform, bridge };
 }
 

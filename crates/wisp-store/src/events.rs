@@ -125,15 +125,19 @@ pub(crate) fn set_cursor_on(db: &Connection, plugin: &str, name: &str, seq: u64)
 }
 
 /// Trims what's past retention: older than 30 days, or beyond the newest 1 M.
+/// Always preserves the newest row (`seq = max`) so SQLite's rowid never resets back to 1 (as `change` does).
 pub(crate) fn trim_on(db: &Connection, now: i64, keep_ms: i64, keep_rows: i64) -> Result<usize> {
     let max: i64 = db.query_row("SELECT coalesce(max(seq), 0) FROM event", [], |r| r.get(0))?;
-    let a = db.execute("DELETE FROM event WHERE seq <= ?1", [max - keep_rows])?;
+    if max == 0 {
+        return Ok(0);
+    }
+    let a = db.execute("DELETE FROM event WHERE seq <= ?1 AND seq < ?2", [max - keep_rows, max])?;
     // oldest first: stop at the first row young enough (rowid order is time order)
     let cut: Option<i64> =
         db.query_row("SELECT seq FROM event WHERE at >= ?1 ORDER BY seq LIMIT 1", [now - keep_ms], |r| r.get(0)).optional()?;
     let b = match cut {
-        Some(s) => db.execute("DELETE FROM event WHERE seq < ?1", [s])?,
-        None => db.execute("DELETE FROM event", [])?,
+        Some(s) => db.execute("DELETE FROM event WHERE seq < ?1 AND seq < ?2", [s, max])?,
+        None => db.execute("DELETE FROM event WHERE seq < ?1", [max])?,
     };
     Ok(a + b)
 }
@@ -211,18 +215,17 @@ impl Store {
         let mine = outbox.as_ref().map(wisp_kernel::Outbox::rows).unwrap_or_default();
         let n = rows.len() + mine.len();
         let shared = self.shared.clone();
-        let added = std::sync::Arc::new(Mutex::new(Vec::new()));
-        let added2 = added.clone();
         let intx = intx.map(std::sync::Arc::new);
         let intx2 = intx.clone();
         let r = self
             .thread
             .queued(move |s| {
-                crate::thread::transact(s, move |w| {
+                let added = Mutex::new(Vec::new());
+                let res = crate::thread::transact(s, |w| {
                     let v = f(w)?;
                     let now = w.now();
                     let (seqs, keys) = append_on(w.db, &shared.log, now, &rows)?;
-                    lock(&added2).extend(keys);
+                    lock(&added).extend(keys);
                     if let Some((p, name, seq)) = &cursor {
                         set_cursor_on(w.db, p, name, *seq)?;
                     }
@@ -236,7 +239,7 @@ impl Store {
                     }
                     if let Some(ob) = outbox {
                         let (theirs, keys) = append_on(w.db, &shared.log, now, &mine)?;
-                        lock(&added2).extend(keys);
+                        lock(&added).extend(keys);
                         let head = match head {
                             Some(h) => Some(h),
                             None => u64::try_from(w.head_seq()?).ok(),
@@ -244,7 +247,11 @@ impl Store {
                         w.staged.push(ob.stage(head, &theirs));
                     }
                     Ok::<T, StoreError>(v)
-                })
+                });
+                if res.is_err() {
+                    forget(&shared.log, &lock(&added));
+                }
+                res
             })
             .await;
         match r {
@@ -258,7 +265,6 @@ impl Store {
                 Ok(v)
             }
             Err(e) => {
-                forget(&self.shared.log, &lock(&added));
                 if let Some(i) = &intx {
                     i.rolled_back();
                 }
@@ -316,17 +322,20 @@ impl EventLog for Store {
         Box::pin(async move {
             let n = rows.len();
             let shared = s.shared.clone();
-            let added = std::sync::Arc::new(Mutex::new(Vec::new()));
-            let added2 = added.clone();
             let r = s
                 .thread
                 .queued(move |st| {
-                    crate::thread::transact(st, move |w| {
+                    let added = Mutex::new(Vec::new());
+                    let res = crate::thread::transact(st, |w| {
                         let now = w.now();
                         let (seqs, keys) = append_on(w.db, &shared.log, now, &rows)?;
-                        *lock(&added2) = keys;
+                        *lock(&added) = keys;
                         Ok(seqs)
-                    })
+                    });
+                    if res.is_err() {
+                        forget(&shared.log, &lock(&added));
+                    }
+                    res
                 })
                 .await;
             match r {
@@ -334,10 +343,7 @@ impl EventLog for Store {
                     s.after_append(n);
                     Ok(v)
                 }
-                Err(e) => {
-                    forget(&s.shared.log, &lock(&added));
-                    Err(wire(&e))
-                }
+                Err(e) => Err(wire(&e)),
             }
         })
     }

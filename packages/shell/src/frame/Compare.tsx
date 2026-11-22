@@ -59,7 +59,7 @@ export default function Compare(props: { readonly params: { readonly id: string 
   const t = shell.t;
   const sessions = useSignal(shell.client.entities.list<SessionRow>(SESSION));
   const allTurns = useSignal(shell.client.entities.list<TurnRow>('turn'));
-  const allEvents = useSignal(shell.client.entities.list<EventRow>('event'));
+  const allEvents = useSignal(shell.client.entities.list<EventRow | readonly EventRow[]>('event'));
   const harnesses = useSignal(shell.harnesses());
   const scope = shell.client.scope.child(`compare:${props.params.id}`);
   onCleanup(() => scope.dispose());
@@ -85,8 +85,16 @@ export default function Compare(props: { readonly params: { readonly id: string 
     allTurns()
       .filter((x) => x.session_id === s.id || x.session_id === bareOf(s.id))
       .sort((a, b) => a.idx - b.idx);
+  const flatEvents = createMemo(() => {
+    const out: EventRow[] = [];
+    for (const item of allEvents()) {
+      if (Array.isArray(item)) for (const e of item as readonly EventRow[]) out.push(e);
+      else out.push(item as EventRow);
+    }
+    return out;
+  });
   const stepsOf = (turnId: string): string[] =>
-    allEvents()
+    flatEvents()
       .filter((e) => e.turn_id === turnId)
       .map((e) => e.kind ?? e.body?.kind ?? '');
   const runs = createMemo((): CompareRun[] =>

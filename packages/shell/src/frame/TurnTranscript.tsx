@@ -47,49 +47,54 @@ function Step(props: {
   readonly t: ShellContext['t'];
 }): JSX.Element {
   const [open, setOpen] = createSignal(false);
-  const a = props.a;
-  // the step's event names it to the server; an older row without one is its place in the list (no Reveal to ask)
-  const id = a.seq !== undefined ? `step:${a.seq}` : `index:${props.index}`;
-  const shown = (): boolean => props.env?.shown(id) ?? false;
+  // Read props.a and props.changes reactively: <Index> keeps this Step mounted while live tool_output/changes arrive.
+  const id = (): string => (props.a.seq !== undefined ? `step:${props.a.seq}` : `index:${props.index}`);
+  const shown = (): boolean => props.env?.shown(id()) ?? false;
   const rawOut = (): string | undefined => {
-    const r = props.env?.raw?.(id);
+    const r = props.env?.raw?.(id());
     const v = r?.['output'] ?? r?.['text'];
     return typeof v === 'string' ? v : undefined;
   };
-  const out = () => stepOutput(a, props.env?.on() ?? true, shown(), rawOut());
+  const out = () => stepOutput(props.a, props.env?.on() ?? true, shown(), rawOut());
   const t = props.t;
-  const change = props.changes.find((c) => (c as { file?: string }).file === a.file);
-  const nums = a.kind === 'edit' && change ? changeFigures([change]) : undefined;
-  const command = a.kind === 'run' && a.detail && !(a.label ?? '').includes(a.detail.slice(0, 24)) ? props.here(a.detail) : undefined;
-  const more = a.out ?? (a.kind === 'error' ? a.label : undefined);
+  const nums = () => {
+    if (props.a.kind !== 'edit') return undefined;
+    const change = props.changes.find((c) => (c as { file?: string }).file === props.a.file);
+    return change ? changeFigures([change]) : undefined;
+  };
+  const command = (): string | undefined =>
+    props.a.kind === 'run' && props.a.detail && !(props.a.label ?? '').includes(props.a.detail.slice(0, 24)) ? props.here(props.a.detail) : undefined;
+  const more = (): string | undefined => props.a.out ?? (props.a.kind === 'error' ? props.a.label : undefined);
   // a step whose label was cut opens to its whole title (v1 #779/#780), with its output when it has one
-  const opens = more !== undefined || a.title !== undefined;
+  const opens = (): boolean => more() !== undefined || props.a.title !== undefined;
   return (
     <TimelineStep
-      icon={ICON[a.kind] ?? 'tool'}
-      label={props.here(open() && a.title ? a.title : (a.label ?? a.kind))}
-      kind={a.kind}
-      {...(command !== undefined && { command })}
-      {...(nums && { nums: { add: nums.plus, del: nums.minus } })}
-      {...(a.bad || a.kind === 'error' ? { tone: 'bad' as const } : {})}
-      {...(opens && {
+      icon={ICON[props.a.kind] ?? 'tool'}
+      label={props.here(open() && props.a.title ? props.a.title : (props.a.label ?? props.a.kind))}
+      kind={props.a.kind}
+      {...(command() !== undefined ? { command: command() as string } : {})}
+      {...(nums() ? { nums: { add: nums()!.plus, del: nums()!.minus } } : {})}
+      {...(props.a.bad || props.a.kind === 'error' ? { tone: 'bad' as const } : {})}
+      {...(opens() && {
         expanded: open(),
         onToggle: () => setOpen(!open()),
-        detail: () =>
-          more === undefined ? null : (
+        detail: () => {
+          const m = more();
+          return m === undefined ? null : (
             <>
               <Show when={out()?.env}>
                 <EnvMask
                   part="turn.transcript.envMask"
                   shown={shown()}
-                  what={t(shown() ? 'shell.env.shown' : 'shell.env.hidden', { name: envName(a.file || envFileNamed(a.detail) || envFileNamed(a.label)) })}
+                  what={t(shown() ? 'shell.env.shown' : 'shell.env.hidden', { name: envName(props.a.file || envFileNamed(props.a.detail) || envFileNamed(props.a.label)) })}
                   action={t(shown() ? 'shell.env.hide' : 'shell.env.reveal')}
-                  onToggle={(on) => props.env?.set(id, on)}
+                  onToggle={(on) => props.env?.set(id(), on)}
                 />
               </Show>
-              <pre>{props.here(out()?.text ?? more)}</pre>
+              <pre>{props.here(out()?.text ?? m)}</pre>
             </>
-          ),
+          );
+        },
       })}
     />
   );

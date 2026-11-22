@@ -30,9 +30,13 @@ export function bareId(key: string): string {
 }
 
 /** The turns of one session, oldest first, from the `turn` collection. */
-export function turnsOf(client: PluginClient, id: string): Accessor<readonly TurnRow[]> {
-  const mine = filterBy(client.entities.list<TurnRow>(KIND.turn), (t) => t.sessionId === id);
-  return useSignal(sortBy(mine, byKeys<TurnRow>({ of: (t) => t.idx }, { of: (t) => t.startedAt })));
+export function turnsOf(client: PluginClient, id: string, key?: EntityKey): Accessor<readonly TurnRow[]> {
+  type WireTurn = TurnRow & { readonly session_id?: string; readonly started_at?: number };
+  const mine = filterBy(client.entities.list<WireTurn>(KIND.turn), (t) => {
+    const sid = t.sessionId ?? t.session_id;
+    return sid === id || (key !== undefined && sid === key);
+  });
+  return useSignal(sortBy(mine, byKeys<WireTurn>({ of: (t) => t.idx }, { of: (t) => t.startedAt ?? t.started_at ?? 0 })));
 }
 
 export function createTaskContext(client: PluginClient, key: EntityKey): TaskContext {
@@ -48,7 +52,7 @@ export function createTaskContext(client: PluginClient, key: EntityKey): TaskCon
     client,
     scope,
     task,
-    turns: turnsOf(client, id),
+    turns: turnsOf(client, id, key),
     send: (cmd, args) => client.run(cmd, args).catch(() => undefined),
   };
 }

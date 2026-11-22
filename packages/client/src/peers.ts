@@ -53,6 +53,8 @@ export interface Peers {
   /** opens `peer`'s stream again now (every peer when omitted), from its cursor, skipping the backoff: pull to
    *  refresh, the me menu's *Reconnect*, the offline bar's *Retry*. A sleeping box stays asleep. Additive. */
   reconnect(peer?: PeerId): void;
+  /** app resumed or network/tunnel returned: reopen offline or stale streams without disturbing healthy ones. Additive. */
+  resume(peer?: PeerId): void;
   /** hands a command to the peer's link: sent now if live, else after the next welcome */
   mutate(peer: PeerId, m: { mid: string; cmd: string; args: unknown }): boolean;
   /** asks for older rows of `topic` (a transcript page); false when the peer isn't online */
@@ -61,6 +63,7 @@ export interface Peers {
   /** the peer's own routes (raw bodies, event streams), through its transport */
   http(peer: PeerId): PeerHttp;
   onLive(fn: (peer: PeerId) => void): () => void;
+  onRemoved?(fn: (peer: PeerId) => void): () => void;
   onSent(fn: (peer: PeerId, mid: string) => void): () => void;
   onAnswer(fn: (peer: PeerId, a: Answer) => void): () => void;
   onNotice(fn: (peer: PeerId, n: Notice) => void): () => void;
@@ -89,6 +92,8 @@ interface PeerRuntime {
   readonly info: WritableSignal<PeerInfo | undefined>;
   conn?: Scope;
   cancelRetry?: () => void;
+  /** serialized FIFO queue for POST /api/events so unsub+sub never race out of order on the wire */
+  postQueue: Promise<void>;
   asleep: boolean;
   waking: boolean;
   lastError: string;
@@ -107,6 +112,8 @@ export function createPeers(o: PeersOptions): Peers {
   const peers = new Map<PeerId, PeerRuntime>();
   /** watches on a peer not added yet, started when it is */
   const waiting = new Map<PeerId, { topic: Topic; scope: Scope; opts: { passive?: boolean } }[]>();
+  /** mutations on a peer not added yet (e.g. restored before extraPeers/machines load), handed over on add() */
+  const waitingMutates = new Map<PeerId, { mid: string; cmd: string; args: unknown }[]>();
   const ids = signal<readonly PeerId[]>([]);
   // only what's open stays in memory (AGENTS.md): a topic's rows go a while after its last watch ends (perf r2 #14: a
   // task's turns and events stayed for good once it had been opened, every streamed event of a task looked at once)
@@ -123,12 +130,15 @@ export function createPeers(o: PeersOptions): Peers {
       if ((watching.get(k)?.n ?? 0) > 0) return;
       watching.delete(k);
       o.writer.dropTopic(peer, topic);
+      const p = peers.get(peer);
+      if (p) feed(p, { kind: 'evicted', topic });
     });
   };
   const statusOf = new Map<PeerId, WritableSignal<PeerStatus>>();
   const infoOf = new Map<PeerId, WritableSignal<PeerInfo | undefined>>();
   const on = {
     live: new Set<(p: PeerId) => void>(),
+    removed: new Set<(p: PeerId) => void>(),
     sent: new Set<(p: PeerId, mid: string) => void>(),
     answer: new Set<(p: PeerId, a: Answer) => void>(),
     notice: new Set<(p: PeerId, n: Notice) => void>(),
@@ -182,10 +192,25 @@ export function createPeers(o: PeersOptions): Peers {
     switch (out.kind) {
       case 'request':
         return void connect(p, out.params);
-      case 'send':
+      case 'send': {
         if (out.message.t === 'mutate') for (const fn of on.sent) fn(peer, out.message.mid);
-        p.cfg.transport.post(out.message, p.scope.signal).catch((err: unknown) => warn(`${out.message.t} to ${peer} not sent`, message(err)));
+        const conn = p.conn;
+        const msg = out.message;
+        // Serialize POST /api/events per peer so back-to-back unsub+sub never arrive out of order.
+        // If a POST fails while the same stream is still open (e.g. HTTP 404 or broken socket), reopen so
+        // subscriptions and mutations recover instead of silently stalling until reload.
+        p.postQueue = p.postQueue.then(async () => {
+          if (!p.scope.alive || (conn && (!conn.alive || p.conn !== conn))) return;
+          try {
+            await p.cfg.transport.post(msg, conn?.signal ?? p.scope.signal);
+          } catch (err: unknown) {
+            if (!p.scope.alive || (conn && (!conn.alive || p.conn !== conn))) return;
+            warn(`${msg.t} to ${peer} not sent`, message(err));
+            if (untracked(p.status).kind === 'online') feed(p, { kind: 'reopen' });
+          }
+        });
         return; // a lost mutate is resent after the next welcome, with the same mid
+      }
       case 'reset':
         return o.writer.resetPeer(peer);
       case 'snapshot':
@@ -273,7 +298,7 @@ export function createPeers(o: PeersOptions): Peers {
       if (peers.has(cfg.peer)) throw new Error(`peer ${cfg.peer} is added twice`);
       const scope = o.scope.child(`peer:${cfg.peer}`);
       const link = cfg.link ?? syncLink({ peer: cfg.peer, clientId: o.clientId, build: o.build, ...(cfg.saved && { saved: cfg.saved }) });
-      const p: PeerRuntime = { cfg, link, scope, status: statusSig(cfg.peer), info: infoSig(cfg.peer), asleep: false, waking: false, lastError: 'not connected' };
+      const p: PeerRuntime = { cfg, link, scope, status: statusSig(cfg.peer), info: infoSig(cfg.peer), postQueue: Promise.resolve(), asleep: false, waking: false, lastError: 'not connected' };
       peers.set(cfg.peer, p);
       ids([...untracked(ids), cfg.peer]);
       scope.add(() => {
@@ -283,16 +308,21 @@ export function createPeers(o: PeersOptions): Peers {
       });
       // open after the current task, so the views that watch right after add() ride on the hello
       scope.timeout(0, () => feed(p, { kind: 'open' }));
-      // the watches that waited for this peer go now
+      // the watches and pending mutations that waited for this peer go now
       const pending = waiting.get(cfg.peer) ?? [];
       waiting.delete(cfg.peer);
       for (const w of pending) manager.watch(cfg.peer, w.topic, w.scope, w.opts);
+      const queuedMutates = waitingMutates.get(cfg.peer) ?? [];
+      waitingMutates.delete(cfg.peer);
+      for (const m of queuedMutates) manager.mutate(cfg.peer, m);
     },
     // a removed peer's rows go with it: a forgotten computer's tasks leave the list, and a computer re-keyed by its
     // welcome (the phone's `grid-mac` → its wisp's id) isn't listed twice, every task and project doubled (r285)
     remove: (peer) => {
+      waitingMutates.delete(peer);
       peers.get(peer)?.scope.dispose();
       o.writer.resetPeer(peer);
+      for (const fn of on.removed) fn(peer);
     },
     http: (peer) => peerHttp(() => peers.get(peer)?.cfg.transport, peer),
     list: () => () => ids(),
@@ -355,9 +385,22 @@ export function createPeers(o: PeersOptions): Peers {
         feed(p, { kind: 'reopen' });
       }
     },
+    resume(peer) {
+      for (const p of peer === undefined ? [...peers.values()] : [peers.get(peer)]) {
+        if (!p || p.asleep || p.waking) continue;
+        p.cancelRetry?.();
+        delete p.cancelRetry;
+        feed(p, { kind: 'resume' });
+      }
+    },
     mutate(peer, m) {
       const p = peers.get(peer);
-      if (!p) return false;
+      if (!p) {
+        const list = waitingMutates.get(peer) ?? [];
+        if (!list.some((x) => x.mid === m.mid)) list.push(m);
+        waitingMutates.set(peer, list);
+        return false;
+      }
       feed(p, { kind: 'mutate', mid: m.mid, cmd: m.cmd, args: m.args });
       if (p.asleep) void manager.wake(peer); // sending it a command wakes a box
       return true;
@@ -370,6 +413,7 @@ export function createPeers(o: PeersOptions): Peers {
     },
     save: (peer) => peers.get(peer)?.link.save(),
     onLive: (fn) => listen(on.live, fn),
+    onRemoved: (fn) => listen(on.removed, fn),
     onSent: (fn) => listen(on.sent, fn),
     onAnswer: (fn) => listen(on.answer, fn),
     onNotice: (fn) => listen(on.notice, fn),

@@ -329,6 +329,14 @@ impl Runtime {
     fn resumable(&self, sid: &str, _id: &str) {
         if let Some(l) = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get_mut(sid) {
             l.resumable = true;
+            if !l.stopping
+                && !l.interrupting
+                && !l.finished
+                && self.pending_interrupt.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(sid)
+            {
+                l.interrupting = true;
+                let _ = l.ctl.send(Ctl::Interrupt);
+            }
         }
     }
 }

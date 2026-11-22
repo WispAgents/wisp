@@ -19,10 +19,11 @@ impl<C> Core<C> {
         }
     }
 
-    /// When `tick` next has work for this stream: a due flush or heartbeat.
+    /// When `tick` next has work for this stream: a due flush, a waiting snapshot, or heartbeat.
     pub(crate) fn wake_at(&self, c: &Conn<C>) -> u64 {
         let beat = c.last_write_at + self.opts.heartbeat_ms;
-        if !self.pending(c) {
+        let has_waiting = c.subs.values().any(|s| s.state == SubState::Waiting);
+        if !self.pending(c) && !has_waiting {
             return beat;
         }
         beat.min(c.last_flush_at.map_or(0, |at| at + self.opts.flush_ms))

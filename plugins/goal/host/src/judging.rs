@@ -147,7 +147,7 @@ pub(crate) async fn wake_dropped(ctx: &Ctx, defaults: &kinds::Defaults, live: &I
 }
 
 pub(crate) async fn after(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, e: &TurnEnded) {
-    if e.status != TurnStatus::Done {
+    if e.status != TurnStatus::Done || e.inner {
         return;
     }
     judge_turn(ctx, defaults, live, e.session_id.as_str(), e.turn_id.as_str()).await;
@@ -228,7 +228,10 @@ pub(crate) async fn judge_turn(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inf
     let out = match step {
         Next::Met => Ok(()),
         Next::Again(text) => ctx
-            .run::<rt::FollowUp>(&call, rt::FollowUpArgs { id: id.into(), text, by: Some(BY.into()), ..rt::FollowUpArgs::default() })
+            .run::<rt::FollowUp>(
+                &call,
+                rt::FollowUpArgs { id: id.into(), text, by: Some(BY.into()), queue: Some(true), ..rt::FollowUpArgs::default() },
+            )
             .await
             .map(|_| ()),
         Next::Stall(q) => {

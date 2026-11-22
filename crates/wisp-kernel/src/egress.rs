@@ -27,6 +27,11 @@ pub trait RowView: Send + Sync + 'static {
         let _ = id;
         self.patch(kind, path, v);
     }
+    /// Whether a patch op targeting `path` should be dropped before leaving (e.g. internal mask metadata stripped from
+    /// snapshots/upserts so a client never applies a patch to a path that was removed). Additive (2026-11-22).
+    fn strip_patch(&self, _kind: &str, _path: &str) -> bool {
+        false
+    }
 }
 
 pub const VIEWS: crate::Point<dyn RowView> = crate::Point::new("kernel.egress", 1);

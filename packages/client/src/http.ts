@@ -59,8 +59,13 @@ export function httpTransport(o: HttpTransportOptions): Transport {
       const reader = res.ok ? readerOf(res.body) : undefined;
       if (!reader) throw await failure(res, 'events');
       const parser = new SseParser();
+      const onAbort = (): void => {
+        reader.cancel().catch(() => {});
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
       try {
         for (;;) {
+          if (signal.aborted) return;
           const { done, value } = await reader.read();
           if (done || signal.aborted) return;
           if (!value) continue;
@@ -76,6 +81,7 @@ export function httpTransport(o: HttpTransportOptions): Transport {
           if (!any) yield HEARTBEAT;
         }
       } finally {
+        signal.removeEventListener('abort', onAbort);
         reader.cancel().catch(() => {}); // frees the connection when the consumer stops early
       }
     },
@@ -103,13 +109,19 @@ export function httpTransport(o: HttpTransportOptions): Transport {
       const reader = res.ok ? readerOf(res.body) : undefined;
       if (!reader) throw await failure(res, path);
       const parser = new SseParser();
+      const onAbort = (): void => {
+        reader.cancel().catch(() => {});
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
       try {
         for (;;) {
+          if (signal.aborted) return;
           const { done, value } = await reader.read();
           if (done || signal.aborted) return;
           if (value) for (const ev of parser.push(value)) yield { event: ev.event, data: ev.data };
         }
       } finally {
+        signal.removeEventListener('abort', onAbort);
         reader.cancel().catch(() => {});
       }
     },

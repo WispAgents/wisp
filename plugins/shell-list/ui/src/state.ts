@@ -150,8 +150,9 @@ function createModel(client: PluginClient): ListModel {
   const raw = client.entities.list<Session>(KIND.session);
   // the projects in your order; a task is in the one that holds its folder (v1 projectFor)
   const projectRows = client.entities.list<unknown>(KIND.project);
+  const homeOrder = client.entities.row<{ value: unknown }>('setting', `${client.home}:${PROJECT_ORDER}` as EntityKey);
   const settingRows = client.entities.list<{ key: string; value: unknown }>('setting');
-  const projects = computed(() => projectList(projectRows(), settingRows().find((r) => r.key === PROJECT_ORDER)?.value));
+  const projects = computed(() => projectList(projectRows(), homeOrder()?.value ?? settingRows().find((r) => r.key === PROJECT_ORDER)?.value));
   // a row from another wisp: which machine it is (a sandbox shows as Sandbox), from wisp.machines' rows
   const machineRows = client.entities.list<{ id: string; body?: { peer?: string | null; name?: string; data?: Record<string, unknown> } }>('machines_peer');
   const machines = computed(() => machinesByPeer(machineRows()));

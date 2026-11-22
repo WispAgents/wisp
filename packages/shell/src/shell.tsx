@@ -376,7 +376,7 @@ export function createShell(o: ShellOptions): Shell {
   }
 
   register(shellUi(context));
-  watchCoreTopics(client, o.home, self.scope);
+  watchCoreTopics(client, client.home, self.scope);
   wireNotices(context, self.scope);
   // ADR-0007: trusted themes' contributes.partStyles, in @layer plugins, while the shell lives
   pluginStyles(client, self, o.home, o.window.document, self.scope.child('plugin-styles'));

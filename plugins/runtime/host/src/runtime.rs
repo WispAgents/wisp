@@ -40,6 +40,9 @@ pub struct Runtime {
     /// tasks a Stop reached while their turn was starting (no `Live` yet): the spawn stops its run at once (Windows CI:
     /// a slow spawn came after the Stop and ran on); cleared when the start ends without a spawn
     pub(crate) stops: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// tasks with a waiting direct/interrupting follow-up or Send Now that arrived while the turn was starting or not
+    /// yet resumable: once `resumable` becomes true, the run is interrupted immediately.
+    pub(crate) pending_interrupt: Arc<Mutex<std::collections::HashSet<String>>>,
     /// The tasks whose running turn the queue started (a queued follow-up's own): a later follow-up waits behind it,
     /// never interrupts it (audit I3, `queue::run_for_follow_up`). Cleared when a turn starts otherwise, when the start
     /// fails, and when the task is deleted.
@@ -99,6 +102,7 @@ impl Runtime {
             live: Mutex::default(),
             starting: Arc::default(),
             stops: Arc::default(),
+            pending_interrupt: Arc::default(),
             from_queue: Arc::default(),
             locks: Mutex::default(),
             asks: Arc::default(),
@@ -354,26 +358,55 @@ impl Runtime {
         let mut events = vec![Emitted::Changed(SessionChanged { id: s.id.clone() })];
         events.extend(also(&summary));
         let outbox = self.host.outbox(&events);
-        let (mut row, sum, ts, k) = (s.clone(), summary.clone(), turns, known);
+        let (mut row, mut sum, ts, k) = (s.clone(), (*summary).clone(), turns, known);
         let (asks, closed) = (self.asks.clone(), self.closed.clone());
         let job = move |w: &mut wisp_store::Writer<'_>| {
             // the open question as the stored row has it, settled in this transaction (review r194 of GS5): an older
             // copy never drops an open card nor brings back one answered or taken back meanwhile
             let stored = w.get("session", row.id.as_str())?.and_then(|r| crate::rows::session_of(r, Vec::new()).ok());
             let stored_ask = stored.as_ref().and_then(|x| x.ext.get("wisp.runtime")).and_then(|r| r.get("ask")).cloned();
-            crate::more::reconcile_ask(&mut row, stored_ask.as_ref(), |a| lock(&asks).contains_key(a), |a| lock(&closed).contains_key(a));
+            if crate::more::reconcile_ask(&mut row, stored_ask.as_ref(), |a| lock(&asks).contains_key(a), |a| lock(&closed).contains_key(a))
+            {
+                sum.state = row.state;
+                let open = row.ext.get("wisp.runtime").and_then(|r| r.get("ask"));
+                if let Some(a) = open {
+                    let q = a
+                        .get("setup")
+                        .and_then(|c| c.get("headline"))
+                        .or_else(|| a.get("question"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    sum.fields.insert("question".into(), serde_json::Value::String(q.to_owned()));
+                    if let Some(opts) = a.get("options").filter(|_| a.get("clash").is_none()) {
+                        sum.fields.insert("options".into(), opts.clone());
+                    } else {
+                        sum.fields.remove("options");
+                    }
+                    if a.get("permission").is_some() {
+                        sum.fields.insert("approval".into(), serde_json::Value::Bool(true));
+                    } else {
+                        sum.fields.remove("approval");
+                    }
+                } else {
+                    sum.fields.remove("question");
+                    sum.fields.remove("options");
+                    sum.fields.remove("approval");
+                }
+            }
             // the session first: a new task's turns point at it (a fork's, an adopted share's)
             repo::save_session(w, &row, &sum, Some(&hide)).map_err(|e| wisp_store::StoreError::Internal(e.to_string()))?;
             for t in &ts {
                 repo::save_turn(w, t, k.as_deref()).map_err(|e| wisp_store::StoreError::Internal(e.to_string()))?;
             }
-            extra(w)
+            extra(w)?;
+            Ok(sum)
         };
         let sent = outbox.is_some();
-        match outbox {
+        let written = match outbox {
             Some(ob) => self.repo.store.write_with(ob, job).await?,
             None => self.repo.store.write(job).await?,
-        }
+        };
+        let summary = Arc::new(written);
         self.note_cap(s);
         let before = self.lock_list().insert(s.id.0.clone(), summary.clone());
         if !sent {
@@ -712,6 +745,7 @@ impl Runtime {
 
     /// `runtime.followUp` (v1 `reply`): starts a turn, queues, interrupts, answers an open question, or
     /// holds, as the queue decider says.
+    #[allow(clippy::too_many_lines)] // one pass: lock, decide, then act on the plan
     pub async fn follow_up(self: &Arc<Self>, a: FollowUpArgs) -> Result<FollowedUp> {
         let guard = self.task_lock(a.id.as_str()).await;
         let mut s = self.repo.session(a.id.as_str()).await?;
@@ -769,7 +803,14 @@ impl Runtime {
             return Ok(FollowedUp { turn_id: None, queued: Some(id), interrupts: false });
         }
         let last_held = self.repo.turns(a.id.as_str(), None, Some(1)).await?.last().is_some_and(|t| t.status == TurnStatus::Held);
-        let run = queue::run_for_follow_up(self.run_state(a.id.as_str()), lock(&self.from_queue).contains(a.id.as_str()));
+        let item_id = item.id.clone();
+        // v1 launch.js: a follow-up sent without saying queues when Settings → follow-ups say queue
+        let want_queue = a.queue.unwrap_or_else(|| self.text_setting("runtime.followUp") == "queue");
+        // An explicit direct follow-up (`queue: Some(false)`) interrupts even a turn started from the queue;
+        // an implicit one (`queue: None`, e.g. rapid-fire `wisp reply`) still respects `from_queue` (audit I3).
+        let from_queue = a.queue.is_none() && lock(&self.from_queue).contains(a.id.as_str());
+        let raw_run = self.run_state(a.id.as_str());
+        let run = queue::run_for_follow_up(raw_run, from_queue);
         let mut held = s.queue_held;
         let mut items = std::mem::take(&mut s.queue);
         let d = queue::follow_up(
@@ -777,13 +818,7 @@ impl Runtime {
             run,
             crate::more::ask_id(&s).is_some(),
             last_held,
-            Incoming {
-                item,
-                // v1 launch.js: a follow-up sent without saying queues when Settings → follow-ups say queue
-                queue: a.queue.unwrap_or_else(|| self.text_setting("runtime.followUp") == "queue"),
-                has_extras,
-                hold: false,
-            },
+            Incoming { item, queue: want_queue, has_extras, hold: false },
         );
         s.queue = items;
         s.queue_held = held;
@@ -809,10 +844,17 @@ impl Runtime {
                 // boxed: a follow-up's future stays small for its callers
                 return Ok(FollowedUp { turn_id: Some(Box::pin(self.start_turn(s, item)).await?), queued: None, interrupts: false });
             }
-            Plan::Queued { .. } => FollowedUp { turn_id: None, queued: s.queue.last().map(|q| q.id.clone()), interrupts: false },
+            Plan::Queued { .. } => {
+                // Direct follow-up arrived while the turn was starting or hadn't reported its harness session id yet:
+                // arm a deferred interrupt so it fires as soon as `resumable` becomes true.
+                if !want_queue && !last_held && !from_queue && matches!(raw_run, Run::Running { resumable: false }) {
+                    lock(&self.pending_interrupt).insert(a.id.0.clone());
+                }
+                FollowedUp { turn_id: None, queued: Some(item_id), interrupts: false }
+            }
             Plan::Interrupt => {
                 self.interrupt(a.id.as_str());
-                FollowedUp { turn_id: None, queued: s.queue.first().map(|q| q.id.clone()), interrupts: true }
+                FollowedUp { turn_id: None, queued: Some(item_id), interrupts: true }
             }
             Plan::Answer(item) => {
                 self.persist(&mut s, Vec::new()).await?;

@@ -82,7 +82,10 @@ export function sortBy<T>(source: Readable<readonly T[]>, compare: (a: T, b: T) 
     if (!patched) return out;
     const p = patched;
     if (!slots.every((at) => fits(p, at))) return full(next);
-    for (const at of slots) pos.set(p[at] as T, at);
+    for (const at of slots) {
+      pos.delete(out[at] as T);
+      pos.set(p[at] as T, at);
+    }
     input = next;
     out = p;
     return out;

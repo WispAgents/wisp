@@ -10,7 +10,8 @@ export function follow<T>(source: () => Readable<T>): Accessor<T> {
   createComputed(() => {
     const r = source();
     setValue(() => untracked(r));
-    onCleanup(subscribe(r, (v) => setValue(() => v)));
+    // Detach from any outer alien-signals subscriber so the child subscription isn't silently killed on outer re-runs.
+    onCleanup(untracked(() => subscribe(r, (v) => setValue(() => v))));
   });
   return value;
 }

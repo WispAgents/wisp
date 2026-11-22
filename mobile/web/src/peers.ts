@@ -133,11 +133,13 @@ export function followComputers(client: Client_, bridge: NativeBridge, scope: Sc
     }),
   );
 
-  // Back up after a drop: connect now instead of after the client's backoff.
+  // Back up after a drop: connect now on the new tunnel port instead of waiting on backoff or a stale socket.
   scope.add(
     bridge.onTunnel((e) => {
       const entry = current.get(e.id);
-      if (e.state === 'ready' && entry && client.peers.status(entry.peer)().kind === 'unreachable') client.peers.reconnect(entry.peer);
+      if (e.state !== 'ready' || !entry) return;
+      const kind = client.peers.status(entry.peer)().kind;
+      if (kind !== 'asleep' && kind !== 'waking') client.peers.reconnect(entry.peer);
     }),
   );
 }

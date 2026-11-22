@@ -30,6 +30,9 @@ pub(crate) struct Sub {
     pub buffer_bytes: usize,
     /// a page of its snapshot came (`more`): the rest go out as they come, not at the flush rate (ADR-0081)
     pub paged: bool,
+    /// the seq stamped on page 1 of a paged snapshot, kept so later pages (including a reconciled final page) carry the
+    /// same wire seq for the client to stitch them together
+    pub page_seq: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -83,8 +86,13 @@ impl<C> Core<C> {
             w = w.min(q.saturating_sub(1));
         }
         for sub in c.subs.values() {
-            if let (false, Some(since)) = (sub.state == SubState::Live, sub.since) {
-                w = w.min(since);
+            if sub.state != SubState::Live {
+                if let Some(since) = sub.since {
+                    w = w.min(since);
+                }
+                if let Some((first, _)) = sub.buffer.first() {
+                    w = w.min(first.saturating_sub(1));
+                }
             }
         }
         w

@@ -51,9 +51,15 @@ pub(super) fn resume(r: &Reader<'_>, s: TopicReads<'_>, topic: &str, since: Opti
     if let Some(live) = s.readers.iter().find(|x| (x.matches)(topic)).and_then(|x| x.live) {
         (live.delta)(r, topic, &mut d.rows)?;
     }
-    let key_of =
-        |e: &str| s.sources.iter().find(|x| x.kind == e).map(|x| x.key).or_else(|| s.pages.iter().find(|x| x.kind == e).map(|x| x.key));
-    Ok(Some(delta_read(d, false, key_of)))
+    let key_of = |r: &Reader<'_>, e: &str| {
+        s.sources
+            .iter()
+            .find(|x| x.kind == e)
+            .map(|x| x.key)
+            .or_else(|| s.pages.iter().find(|x| x.kind == e).map(|x| x.key))
+            .or_else(|| r.key_of(e))
+    };
+    Ok(Some(delta_read(d, false, |e| key_of(r, e))))
 }
 
 /// A [`PagedSource`]'s topic in full, each page handed to `emit` as it is read (`more` on all but the last); other
@@ -297,10 +303,32 @@ fn read_short(
         page(read, more);
         let Some((mut c, true)) = cur.take() else { return };
         let want = p.page.max(1);
-        match store.read(|r| next_rows(r, p, topic, &mut c, want)) {
-            Ok(rows) => {
-                let more = !c.done && rows.len() as u64 == want;
-                read = Read { seq: head, rows, full: true, deleted: Vec::new() };
+        match store.read(|r| {
+            let mut rows = next_rows(r, p, topic, &mut c, want)?;
+            let more = !c.done && rows.len() as u64 == want;
+            if more {
+                return Ok((Read { seq: head, rows, full: true, deleted: Vec::new() }, true));
+            }
+            let end_head = seq(r.head_seq()?);
+            if end_head > head
+                && let Some(delta) = r.changed_since(topic, i64::try_from(head).unwrap_or(i64::MAX))?
+            {
+                let key_of = |e: &str| {
+                    sources
+                        .iter()
+                        .find(|x| x.kind == e)
+                        .map(|x| x.key)
+                        .or_else(|| pages.iter().find(|x| x.kind == e).map(|x| x.key))
+                        .or_else(|| r.key_of(e))
+                };
+                let d = delta_read(delta, false, key_of);
+                rows.extend(d.rows);
+                return Ok((Read { seq: d.seq, rows, full: true, deleted: d.deleted }, false));
+            }
+            Ok((Read { seq: end_head.max(head), rows, full: true, deleted: Vec::new() }, false))
+        }) {
+            Ok((next_read, more)) => {
+                read = next_read;
                 cur = Some((c, more));
             }
             // a page that couldn't be read closes the snapshot with what went (as a failed read answers empty): the

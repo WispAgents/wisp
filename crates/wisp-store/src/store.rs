@@ -258,6 +258,15 @@ impl Store {
     /// Runs `f` with a consistent read view (one read transaction on a pooled connection). Fast and
     /// synchronous: call it from a blocking context, or use `read_async` from async code.
     pub fn read<T>(&self, f: impl FnOnce(&Reader<'_>) -> Result<T>) -> Result<T> {
+        // Rolls the read transaction back if `f` panics or COMMIT fails, so a pooled reader never stays inside BEGIN.
+        struct ReadTx<'a>(&'a Connection, bool);
+        impl Drop for ReadTx<'_> {
+            fn drop(&mut self) {
+                if !self.1 {
+                    let _ = self.0.execute_batch("ROLLBACK");
+                }
+            }
+        }
         crate::thread::refuse_inside_write()?;
         if self.shared.memory {
             let db = lock(&self.shared.writer);
@@ -265,8 +274,10 @@ impl Store {
         }
         let db = self.reader();
         db.execute_batch("BEGIN DEFERRED")?;
+        let mut tx = ReadTx(&db, false);
         let out = f(&Reader { db: &db, shared: &self.shared });
         db.execute_batch("COMMIT")?;
+        tx.1 = true;
         out
     }
 

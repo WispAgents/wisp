@@ -137,6 +137,23 @@ pub(crate) async fn create(ctx: &Ctx, call: &Call, body: Option<&Value>) -> Resu
     ctx.run::<r::Create>(call, a).await.map(|c| c.id.0)
 }
 
+/// `runtime.card`: a standalone reminder or missed-plan card in Needs you.
+pub(crate) async fn card(
+    ctx: &Ctx,
+    call: &Call,
+    title: String,
+    summary: String,
+    text: String,
+    ext: std::collections::BTreeMap<String, Value>,
+) -> Result<String> {
+    let blocks = vec![
+        serde_json::json!({ "type": "hero", "title": title, "summary": summary, "status": "info" }),
+        serde_json::json!({ "type": "markdown", "text": text }),
+    ];
+    let a = r::CardArgs { title, prompt: text, blocks, started_at: None, cwd: None, agent: None, ext };
+    ctx.run::<r::Card>(call, a).await.map(|c| c.id.0)
+}
+
 /// The phone hears that `agent@account` reset early and `n` tasks waiting on it start (v1 `app.resetEarly`); nothing
 /// when none did, and nothing but a debug line when no phone is set up.
 pub(crate) async fn early_note(ctx: &Ctx, agent: &str, account: &str, n: u32) {

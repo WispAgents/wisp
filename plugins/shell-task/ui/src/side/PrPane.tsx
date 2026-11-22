@@ -2,7 +2,7 @@
 // there are several), the title as a link, #n · state · branch → base · author, the verdict with its one step
 // (Merge, Fix conflicts), checks with the passed folded, reviewers, the conversation (outdated threads and bots
 // folded), the files, and Open on GitHub · Checked … · Check now. Skeleton rows while the first answer comes.
-import { For, Show, createMemo, createResource, createSignal, type JSX } from 'solid-js';
+import { For, Show, createEffect, createMemo, createResource, createSignal, on, type JSX } from 'solid-js';
 import { defineCommand, type EntityKey } from '@wisp/client';
 import { Banner, Button, CheckList, CheckRow, Dialog, EmptyState, Heading, IconButton, Inline, Link, Skeleton, Stack, Text, ToneChip, Wrap, timeLabel } from '@wisp/ui';
 import type { Tone as KitTone } from '@wisp/tokens';
@@ -50,11 +50,25 @@ export function PrPane(): JSX.Element {
         () => [] as PrPanel[],
       ),
   );
+  // Refresh PR details in place when the server updates the task's PR summary or state.
+  const prSig = createMemo(() => {
+    const r = task.task() as { state?: string; summary?: { pr?: unknown } } | undefined;
+    return `${r?.state ?? ''}|${JSON.stringify(r?.summary?.pr ?? null)}`;
+  });
+  createEffect(
+    on(
+      prSig,
+      () => {
+        if (known()) void refetch();
+      },
+      { defer: true },
+    ),
+  );
   const [picked, setPicked] = createSignal(0);
   const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());
   const unfold = (k: string): void => void setOpen(new Set([...open(), k]));
   const fold = (k: string): void => void setOpen(new Set([...open()].filter((x) => x !== k)));
-  const raw = (): { agent?: string; status?: string; body?: { conflictFix?: { step?: string } } } => (task.task() ?? {}) as never;
+  const raw = (): { agent?: string; state?: string; status?: string; body?: { conflictFix?: { step?: string } } } => (task.task() ?? {}) as never;
   const pr = createMemo((): PrPanel | undefined => {
     const l = list() ?? [];
     return l[Math.min(picked(), l.length - 1)];
@@ -97,7 +111,7 @@ export function PrPane(): JSX.Element {
     );
   };
   const fixing = (): boolean => ['fixing', 'pushing'].includes(raw().body?.conflictFix?.step ?? '');
-  const canAsk = (): boolean => raw().agent !== 'wisp' && raw().status !== 'running';
+  const canAsk = (): boolean => raw().agent !== 'wisp' && raw().state !== 'running' && raw().status !== 'running';
 
   const who = (n: { author: string; bot?: boolean }): JSX.Element => (
     <Text size="sm" weight="medium" truncate>

@@ -69,6 +69,7 @@ export function persistEntities(o: PersistEntitiesOptions): EntityPersister {
   const dirty = new Map<string, ChangedRow>();
   const eventOrder: EntityKey[] = []; // event rows by last change, oldest first
   let cancel: (() => void) | undefined;
+  let chain: Promise<void> = Promise.resolve();
 
   const touchEvents = (key: EntityKey): EntityKey[] => {
     const i = eventOrder.indexOf(key);
@@ -95,14 +96,20 @@ export function persistEntities(o: PersistEntitiesOptions): EntityPersister {
     return writes;
   }
 
-  async function flush(): Promise<void> {
+  function flush(): Promise<void> {
     cancel?.();
     cancel = undefined;
-    if (dirty.size === 0) return;
-    // in chunks, each its own transaction (and task): 5 000 rows in one were a long task as the first screen settled
-    // (perf r1 #4). The links come last in `capture()`, so a save cut short never records a cursor ahead of its rows.
-    const all = capture();
-    for (let i = 0; i < all.length; i += SAVE_CHUNK) await o.persist.write(all.slice(i, i + SAVE_CHUNK));
+    const run = async (): Promise<void> => {
+      if (dirty.size === 0) return;
+      // in chunks, each its own transaction (and task): 5 000 rows in one were a long task as the first screen settled
+      // (perf r1 #4). The links come last in `capture()`, so a save cut short never records a cursor ahead of its rows.
+      // Serialized on `chain` so overlapping flushes cannot overwrite a newer link cursor with an older one.
+      const all = capture();
+      for (let i = 0; i < all.length; i += SAVE_CHUNK) await o.persist.write(all.slice(i, i + SAVE_CHUNK));
+    };
+    const next = chain.then(run, run);
+    chain = next.catch(() => {});
+    return next;
   }
 
   const stop = o.writer.onChange((rows) => {

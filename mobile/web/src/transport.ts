@@ -54,7 +54,11 @@ export function bridgeTransport(bridge: NativeBridge, computer: Pick<Computer, '
       if (signal.aborted) return;
       const http = httpFor(r, o.fetch);
       open = http;
-      yield* http.connect(params, signal);
+      try {
+        yield* http.connect(params, signal);
+      } finally {
+        if (open === http) open = undefined;
+      }
     },
     post(m: ClientMessage, signal) {
       return open ? open.post(m, signal) : Promise.reject(new PeerDown('unreachable', 'not connected'));

@@ -321,6 +321,7 @@ impl Runtime {
             // let go under the task's lock (audit C2): a follow-up deciding in between found the task idle and started
             // a turn of its own beside the queue's next, on the same turn index
             self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(sid);
+            self.pending_interrupt.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(sid);
             let Ok(mut s) = self.repo.session(sid).await else {
                 return;
             };
@@ -329,7 +330,8 @@ impl Runtime {
             if next.is_some() && self.persist(&mut s, Vec::new()).await.is_err() {
                 return;
             }
-            // the next run is a queued follow-up's own: a later follow-up waits behind it (audit I3)
+            // the next run is a queued follow-up's own: a later implicit follow-up waits behind it (audit I3); an explicit
+            // direct one (`queue: Some(false)`, as the reply box sends) still interrupts it (runtime.rs `follow_up`)
             {
                 let mut fq = self.from_queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 if next.is_some() {
@@ -365,10 +367,22 @@ impl Runtime {
         let rt = self.clone();
         let sid = s.id.0.clone();
         self.host.spawn(Box::pin(async move {
-            let (claim, _starting) = claim;
+            let (claim, starting) = claim;
             if let Err(err) = rt.start_claimed(s, n, claim).await {
+                drop(starting);
                 rt.from_queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&sid);
                 tracing::warn!(task = %sid, %err, "the next queued follow-up did not start");
+                if !matches!(err, crate::error::RuntimeError::NoTask(_)) {
+                    let _guard = rt.task_lock(&sid).await;
+                    if rt.run_state(&sid) == queue::Run::Idle
+                        && let Ok(mut cur) = rt.repo.session(&sid).await
+                        && cur.state == wisp_runtime_api::model::SessionState::Running
+                    {
+                        cur.state = wisp_runtime_api::model::SessionState::Review;
+                        cur.unread = true;
+                        let _ = rt.persist(&mut cur, Vec::new()).await;
+                    }
+                }
             }
         }));
     }

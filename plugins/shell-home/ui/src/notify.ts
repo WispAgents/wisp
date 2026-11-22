@@ -81,9 +81,8 @@ export function flatRow(raw: unknown): TaskRow | undefined {
   const top = raw as Record<string, unknown>;
   const part = (k: string): Record<string, unknown> => (top[k] && typeof top[k] === 'object' ? (top[k] as Record<string, unknown>) : {});
   if (!('body' in top) && !('summary' in top)) return raw as TaskRow;
-  const out: Record<string, unknown> = { ...part('body') };
-  for (const [k, v] of Object.entries(top)) if (k !== 'body' && k !== 'summary') out[k.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase())] = v;
-  Object.assign(out, part('summary'));
+  const out: Record<string, unknown> = { ...part('body'), ...part('summary') };
+  for (const [k, v] of Object.entries(top)) if (k !== 'body' && k !== 'summary' && v !== undefined) out[k.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase())] = v;
   // a crew member's job: the crew's note in `ext` (CrewExt), read as `crew` (the list reads it the same way)
   const job = (out['ext'] as Record<string, unknown> | undefined)?.['wisp.crew'] as { id?: unknown } | undefined;
   if (job && typeof job.id === 'string' && out['crew'] === undefined) out['crew'] = { id: job.id };
