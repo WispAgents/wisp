@@ -43,6 +43,12 @@ fn fake_box_serve() {
         while r.read_line(&mut h).is_ok_and(|n| n > 2) {
             h.clear();
         }
+        if line.contains("/_die") {
+            let mut s = r.into_inner();
+            let _ = write!(s, "HTTP/1.1 200 OK\r\ncontent-length: 3\r\nconnection: close\r\n\r\nbye");
+            let _ = s.flush();
+            std::process::exit(137);
+        }
         let body = if line.contains("/api/status") {
             json!({ "live": 0, "sides": 0, "terms": 0, "channels": 0, "nextWakeAt": next, "lastActivityAt": null }).to_string()
         } else if line.contains("/api/health") {
@@ -370,5 +376,26 @@ async fn the_grid_reaches_a_box_on_the_port_the_box_bound() {
     let home = g.dir.join("users").join(g.uid()).join("home");
     let said: serde_json::Value = serde_json::from_slice(&std::fs::read(home.join("server.json")).unwrap()).unwrap();
     assert_eq!(g.grid.boxes.port(&g.uid()).map(u64::from), said["port"].as_u64());
+    g.done().await;
+}
+
+/// Regression: a running box whose process exits unexpectedly (crash or OOM) must be reaped to `stopped`
+/// immediately so `/_grid/state` stops reporting `"running"` and the next request restarts it instead of
+/// returning `502 Your wisp didn't answer: client error (Connect)` forever.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_box_that_exits_unexpectedly_is_reaped_and_restarts_on_next_request() {
+    let g = rig("crash-reap", None).await;
+    let cookie = g.session();
+    assert_eq!(g.open(&cookie).await, "fake box");
+    let first_pid = g.pid();
+    let port = g.grid.boxes.port(&g.uid()).expect("running port");
+    // Ask the fake box to exit 137 (simulating an OOM kill after startup).
+    let _ = g.c.get(format!("http://127.0.0.1:{port}/_die")).send().await;
+    until("crashed box is reaped to stopped", || g.grid.boxes.state(&g.uid()) == BoxState::Stopped).await;
+    until("crash recorded in instances", || g.row().0 == "stopped" && g.row().4.as_deref() == Some("out of memory")).await;
+    assert_eq!(g.grid.boxes.port(&g.uid()), None);
+    // The next request wakes a fresh box instead of hitting the dead port with 502.
+    assert_eq!(g.open(&cookie).await, "fake box");
+    assert_ne!(g.pid(), first_pid, "restarted as a new process");
     g.done().await;
 }

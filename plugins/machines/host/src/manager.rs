@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 use wisp_kernel::CancellationToken;
 use wisp_kernel::services;
 use wisp_machines_api::{
-    AutoStart, Channel, ChannelRequest, ConnectIo, Offline, Online, PeerState, Probe, RemoteAgent, StepStatus, Transport, secret_key,
+    AutoStart, Channel, ChannelRequest, ConnectIo, EndReason, FailKind, Offline, Online, PeerState, Probe, RemoteAgent, StepStatus,
+    Transport, secret_key,
 };
 use wisp_machines_core::bootstrap::{AGENTS, TUNNEL};
 use wisp_machines_core::conn::{Conn, GRID_WATCH_MS, NO_TUNNEL, Next, TUNNEL_GAP_MS, TUNNEL_TRIES};
@@ -127,14 +128,22 @@ async fn sleep(st: &State, ms: u64) {
 
 async fn run(st: Arc<State>, id: String, t: Arc<dyn Transport>, token: CancellationToken) {
     loop {
-        let Next::RetryIn(ms) = attempt(&st, &id, t.as_ref(), &token).await else { return };
-        tokio::select! {
-            () = token.cancelled() => return,
-            () = sleep(&st, ms) => {}
+        match attempt(&st, &id, t.as_ref(), &token).await {
+            Next::RetryIn(ms) => {
+                tokio::select! {
+                    () = token.cancelled() => return,
+                    () = sleep(&st, ms) => {}
+                }
+                let Ok(row) = st.peer(&id) else { return };
+                st.with_link(&id, |l| l.conn = Conn::start(&id, t.steps(), row.is_grid(), true, Some(&l.conn)));
+                st.publish(&id);
+            }
+            Next::WatchIn(ms) => {
+                watch_loop(&st, &id, t.as_ref(), &token, ms).await;
+                return;
+            }
+            _ => return,
         }
-        let Ok(row) = st.peer(&id) else { return };
-        st.with_link(&id, |l| l.conn = Conn::start(&id, t.steps(), row.is_grid(), true, Some(&l.conn)));
-        st.publish(&id);
     }
 }
 
@@ -156,6 +165,9 @@ async fn attempt(st: &Arc<State>, id: &str, t: &dyn Transport, token: &Cancellat
     let ch = match ch {
         Ok(ch) => ch,
         Err(f) => {
+            if f.kind == Some(FailKind::Asleep) {
+                return on_conn(st, id, |c| c.asleep(GRID_WATCH_MS));
+            }
             return on_conn(st, id, |c| {
                 c.give_up |= f.give_up;
                 c.fail(&f.message, f.hint.clone(), true);
@@ -165,17 +177,24 @@ async fn attempt(st: &Arc<State>, id: &str, t: &dyn Transport, token: &Cancellat
     };
     st.with_link(id, |l| l.channel = Some(ch.clone()));
     let lists = |s: &str| t.steps().iter().any(|(x, _)| *x == s);
-    let health = if lists(TUNNEL) { tunnel(st, id, ch.as_ref(), token).await } else { health(ch.as_ref()).await };
-    let Some(health) = health else {
-        ch.close();
-        return if token.is_cancelled() {
-            Next::Nothing
-        } else {
-            on_conn(st, id, |c| {
-                c.fail(NO_TUNNEL, None, false);
-                c.closed(None, &row.address)
-            })
-        };
+    let health = if lists(TUNNEL) {
+        tunnel(st, id, ch.as_ref(), token).await.ok_or_else(|| NO_TUNNEL.to_owned())
+    } else {
+        health(ch.as_ref(), &row.name).await
+    };
+    let health = match health {
+        Ok(h) => h,
+        Err(err) => {
+            ch.close();
+            return if token.is_cancelled() {
+                Next::Nothing
+            } else {
+                on_conn(st, id, |c| {
+                    c.fail(&err, None, false);
+                    c.closed(None, &row.address)
+                })
+            };
+        }
     };
     let agents = if lists(AGENTS) { agents(ch.as_ref(), None).await } else { Some(Vec::new()) };
     let (now, label) = (st.now(), ch.label());
@@ -201,18 +220,21 @@ async fn after(st: &Arc<State>, id: &str, address: &str, ch: Arc<dyn Channel>, e
             Next::Nothing
         }
         End::Lost => {
-            let hang_up = on_conn(st, id, Conn::stream_lost) == Next::HangUp;
-            if hang_up {
-                ch.close();
-            }
+            let lost_next = on_conn(st, id, Conn::stream_lost);
+            ch.close();
             let gone = ch.closed().await;
-            let next = on_conn(st, id, |c| {
-                if let (Some(e), true) = (gone.error, c.status.error.is_empty()) {
-                    c.status.error = e;
-                }
-                c.hung_up = false;
-                c.closed(None, address)
-            });
+            let next = if matches!(lost_next, Next::WatchIn(_)) && !gone.give_up && gone.reason != EndReason::Gone {
+                lost_next
+            } else {
+                on_conn(st, id, |c| {
+                    c.give_up |= gone.give_up;
+                    if let Some(e) = gone.error.filter(|_| c.status.error.is_empty() || gone.give_up) {
+                        c.fail(&e, gone.hint.clone(), gone.give_up);
+                    }
+                    c.hung_up = false;
+                    c.closed(None, address)
+                })
+            };
             st.with_link(id, |l| l.channel = None);
             st.emit_after_writes(&Offline { id: id.to_owned(), state: state(st) });
             next
@@ -220,14 +242,18 @@ async fn after(st: &Arc<State>, id: &str, address: &str, ch: Arc<dyn Channel>, e
     }
 }
 
-/// `GET /health` through the channel: wisp's answer, or `None`.
-pub(crate) async fn health(ch: &dyn Channel) -> Option<Value> {
-    let r = ch.request(ChannelRequest { timeout_ms: Some(3_000), passive: true, ..ChannelRequest::get("/health") }).await.ok()?;
-    if r.status != 200 {
-        return None;
-    }
+/// `GET /health` through the channel: wisp's answer, or why it didn't answer.
+pub(crate) async fn health(ch: &dyn Channel, name: &str) -> std::result::Result<Value, String> {
+    let r = ch
+        .request(ChannelRequest { timeout_ms: Some(3_000), passive: true, ..ChannelRequest::get("/health") })
+        .await
+        .map_err(|e| e.message)?;
+    let status = r.status;
     let v = reply::parse_reply(&r.bytes(64 * 1024).await);
-    (v.get("name").and_then(Value::as_str) == Some("wisp")).then_some(v)
+    if status != 200 {
+        return Err(reply::reply_error(name, status, &v).0);
+    }
+    if v.get("name").and_then(Value::as_str) == Some("wisp") { Ok(v) } else { Err(format!("{name}: unexpected answer from /health.")) }
 }
 
 /// The `tunnel` step: wisp answers through the way within 40 × 250 ms.
@@ -236,7 +262,7 @@ async fn tunnel(st: &State, id: &str, ch: &dyn Channel, token: &CancellationToke
         if token.is_cancelled() {
             return None;
         }
-        if let Some(h) = health(ch).await {
+        if let Ok(h) = health(ch, id).await {
             let label = ch.label();
             if st.with_link(id, |l| l.conn.step(TUNNEL, StepStatus::Done, Some(&label))) == Some(true) {
                 st.publish(id);
@@ -289,28 +315,32 @@ pub(crate) fn follow(st: &Arc<State>, id: &str) -> Res<()> {
     let token = begin(st, id, &[], false, row.is_grid());
     on_conn(st, id, |c| c.asleep(GRID_WATCH_MS));
     let (st2, id2) = (st.clone(), id.to_owned());
-    st.ctx.spawn(async move {
-        loop {
-            tokio::select! {
-                () = token.cancelled() => return,
-                () = sleep(&st2, GRID_WATCH_MS) => {}
+    st.ctx.spawn(async move { watch_loop(&st2, &id2, t.as_ref(), &token, GRID_WATCH_MS).await });
+    Ok(())
+}
+
+async fn watch_loop(st: &Arc<State>, id: &str, t: &dyn Transport, token: &CancellationToken, first_ms: u64) {
+    let mut wait = first_ms;
+    loop {
+        tokio::select! {
+            () = token.cancelled() => return,
+            () = sleep(st, wait) => {}
+        }
+        wait = GRID_WATCH_MS;
+        let Ok(row) = st.peer(id) else { return };
+        let secret = secret_of(st, id).await;
+        match t.probe(row, Arc::new(PeerIo::quiet_with(id, secret))).await {
+            Probe::Asleep => {}
+            Probe::Running => {
+                let _ = connect(st, id, false);
+                return;
             }
-            let Ok(row) = st2.peer(&id2) else { return };
-            let secret = secret_of(&st2, &id2).await;
-            match t.probe(row, Arc::new(PeerIo::quiet_with(&id2, secret))).await {
-                Probe::Asleep => {}
-                Probe::Running => {
-                    let _ = connect(&st2, &id2, false);
-                    return;
-                }
-                Probe::Gone => {
-                    disconnect(&st2, &id2);
-                    return;
-                }
+            Probe::Gone => {
+                disconnect(st, id);
+                return;
             }
         }
-    });
-    Ok(())
+    }
 }
 
 /// The ids of peers whose link is running (online or on its way).

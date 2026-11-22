@@ -7,19 +7,41 @@
 //! - `grid-tunnel`: another of your computers (`<name>--<handle>.<domain>`), through the tunnel it holds
 //!   to the grid. Only its owner turns it on: nothing here wakes it.
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::StreamExt as _;
+use serde_json::Value;
 use tokio::sync::mpsc;
 use wisp_kernel::{BoxFuture, CancellationToken, Result, WireError};
 use wisp_machines_api::{
-    AddArgs, AutoStart, Body, Channel, ChannelEnd, ChannelRequest, ChannelResponse, Cleaned, ConnectIo, EndReason, Failing, PeerRow, Probe,
-    Stopped, Transport, TransportFailure,
+    AddArgs, AutoStart, Body, Channel, ChannelEnd, ChannelRequest, ChannelResponse, Cleaned, ConnectIo, EndReason, FailKind, Failing, Hint,
+    PeerRow, Probe, StepStatus, Stopped, Transport, TransportFailure,
 };
 
 use crate::net;
 
 pub const PASSIVE: &str = "x-wisp-passive";
+/// How long `connect` waits for a sleeping cloud computer to wake (`503` while starting).
+const WAKE_TIMEOUT: Duration = Duration::from_secs(90);
+const WAKE_GAP: Duration = Duration::from_secs(1);
+/// Hard errors (502, network failure) retry briefly for restarts, then surface the grid's error.
+const HARD_TRIES: u32 = 3;
+const WAKE_STEP: &str = "wake";
+
+fn signed_out_hint() -> Hint {
+    Hint::titled("Signed out", "The device was revoked or expired. Settings → Cloud → Sign in again.")
+}
+
+fn no_token_hint() -> Hint {
+    Hint::titled("Sign in again", "Settings → Cloud → Sign in, with the same grid.")
+}
+
+fn grid_error(status: u16, body: &Value) -> String {
+    body.get("error")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map_or_else(|| format!("The grid answered HTTP {status}."), str::to_owned)
+}
 
 pub struct GridChannel {
     /// `<origin>/api`
@@ -96,13 +118,15 @@ impl Channel for GridChannel {
                 let e = ChannelEnd {
                     reason: EndReason::Gone,
                     error: Some("The grid doesn't know this device any more: sign in again.".into()),
-                    hint: None,
+                    hint: Some(signed_out_hint()),
                     give_up: true,
                 };
                 let mut g = end.lock().unwrap_or_else(PoisonError::into_inner);
                 if g.is_none() {
                     *g = Some(e);
                 }
+                drop(g);
+                scope.cancel();
             }
             let headers = resp.headers().iter().filter_map(|(k, v)| Some((k.as_str().to_owned(), v.to_str().ok()?.to_owned()))).collect();
             let (tx, body) = mpsc::channel(64);
@@ -180,22 +204,118 @@ pub struct GridTransport {
     pub client: reqwest::Client,
 }
 
+async fn wake_and_check(
+    client: &reqwest::Client,
+    origin: &str,
+    token: &str,
+    peer_name: &str,
+    tunnel: bool,
+    io: &dyn ConnectIo,
+    cancel: &CancellationToken,
+) -> Failing<()> {
+    let url = format!("{origin}/api/health");
+    let deadline = Instant::now() + WAKE_TIMEOUT;
+    let mut hard_fails = 0u32;
+    let mut last_err = String::new();
+    loop {
+        if cancel.is_cancelled() {
+            return Err(TransportFailure::new("Disconnected.").final_());
+        }
+        // Non-passive GET /api/health: wakes a sleeping cloud computer on connect, and checks a computer tunnel.
+        let res = tokio::select! {
+            () = cancel.cancelled() => return Err(TransportFailure::new("Disconnected.").final_()),
+            r = net::call(client, "GET", &url, Some(token), None, &[]) => r,
+        };
+        match res {
+            Ok((200, v)) if v.get("name").and_then(Value::as_str) == Some("wisp") => {
+                io.step(WAKE_STEP, StepStatus::Done, Some(net::host_of(origin)));
+                return Ok(());
+            }
+            Ok((401 | 403, _)) => {
+                return Err(TransportFailure {
+                    kind: Some(FailKind::Gone),
+                    status: Some(401),
+                    ..TransportFailure::new("The grid didn’t accept this computer’s sign-in.").with_hint(signed_out_hint()).final_()
+                });
+            }
+            Ok((status @ (404 | 410), v)) => {
+                return Err(TransportFailure {
+                    kind: Some(FailKind::Gone),
+                    status: Some(status),
+                    ..TransportFailure::new(grid_error(status, &v)).final_()
+                });
+            }
+            Ok((503, _)) if tunnel => {
+                return Err(TransportFailure {
+                    kind: Some(FailKind::Asleep),
+                    status: Some(503),
+                    ..TransportFailure::new(format!("{peer_name} is offline."))
+                });
+            }
+            Ok((503, v)) => {
+                let detail = v
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty() && !v.get("asleep").and_then(Value::as_bool).unwrap_or(false))
+                    .unwrap_or("Starting…");
+                detail.clone_into(&mut last_err);
+                io.step(WAKE_STEP, StepStatus::Run, Some(detail));
+                if Instant::now() >= deadline {
+                    return Err(TransportFailure { status: Some(503), ..TransportFailure::new("It didn’t wake up in time.") });
+                }
+            }
+            Ok((status, v)) => {
+                let msg = if status == 200 { format!("Unexpected answer from {}.", net::host_of(origin)) } else { grid_error(status, &v) };
+                io.log(&format!("HTTP {status}: {msg}"));
+                io.step(WAKE_STEP, StepStatus::Run, Some(&msg));
+                hard_fails += 1;
+                if hard_fails >= HARD_TRIES || Instant::now() >= deadline {
+                    return Err(TransportFailure { status: Some(status), ..TransportFailure::new(msg) });
+                }
+            }
+            Err(e) => {
+                io.log(&e.message);
+                io.step(WAKE_STEP, StepStatus::Run, Some(&e.message));
+                hard_fails += 1;
+                if hard_fails >= HARD_TRIES || Instant::now() >= deadline {
+                    return Err(TransportFailure::new(e.message));
+                }
+            }
+        }
+        tokio::select! {
+            () = cancel.cancelled() => return Err(TransportFailure::new("Disconnected.").final_()),
+            () = tokio::time::sleep(WAKE_GAP) => {}
+        }
+        let _ = &last_err;
+    }
+}
+
 impl Transport for GridTransport {
     fn kind(&self) -> &str {
         if self.tunnel { wisp_machines_api::GRID_TUNNEL } else { wisp_machines_api::GRID }
     }
     fn steps(&self) -> &'static [(&'static str, &'static str)] {
-        &[("tunnel", "Reach it through the grid"), ("agents", "Find coding agents")]
+        if self.tunnel {
+            &[(WAKE_STEP, "Reach it through the grid"), ("agents", "Find coding agents")]
+        } else {
+            &[(WAKE_STEP, "Wake it up"), ("agents", "Find coding agents")]
+        }
     }
     fn clean(&self, input: &AddArgs, prev: Option<&PeerRow>) -> Failing<Cleaned> {
         clean(input, prev)
     }
     fn connect(&self, peer: PeerRow, io: Arc<dyn ConnectIo>, cancel: CancellationToken) -> BoxFuture<'static, Failing<Arc<dyn Channel>>> {
-        let client = self.client.clone();
+        let (client, tunnel) = (self.client.clone(), self.tunnel);
         Box::pin(async move {
             let o =
                 origin(&peer).ok_or_else(|| TransportFailure::new("This machine has no address on the grid: sign in again.").final_())?;
-            let ch: Arc<dyn Channel> = GridChannel::new(&o, io.secret(), client, cancel);
+            let token = io.secret().filter(|s| !s.is_empty()).ok_or_else(|| TransportFailure {
+                kind: Some(FailKind::Gone),
+                status: Some(401),
+                ..TransportFailure::new("Signed out of this cloud computer.").with_hint(no_token_hint()).final_()
+            })?;
+            wake_and_check(&client, &o, &token, &peer.name, tunnel, io.as_ref(), &cancel).await?;
+            let ch: Arc<dyn Channel> = GridChannel::new(&o, Some(token), client, cancel);
             Ok(ch)
         })
     }
