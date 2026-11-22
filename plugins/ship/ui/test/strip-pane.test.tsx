@@ -149,10 +149,23 @@ test('merged_multi_pr_card_hides_empty_toolbar_and_shows_summary_with_all_chips'
   expect(host.querySelector('[data-part="pr.strip.row.sub"]')?.textContent).toBe('All merged');
   expect(host.querySelector('[data-part="pr.strip.bar"]'), 'no empty toolbar void when 0 actions').toBeNull();
   const chips = [...host.querySelectorAll('[data-part="pr.strip.chip"]')];
-  expect(chips.map((c) => c.textContent?.trim())).toEqual(['wisp #839', 'wisp #840']);
+  // Same-repo PRs omit the redundant repo name (already shown above the card) and keep the full tooltip.
+  expect(chips.map((c) => c.textContent?.trim())).toEqual(['#839', '#840']);
+  expect(chips[0]?.getAttribute('title')).toBe('wisp: PR #839: Merged');
   expect(host.querySelector('[data-part="pr.strip.more"]')).toBeNull();
   (chips[1] as HTMLButtonElement).click();
   expect(opened).toEqual(['https://github.com/o/wisp/pull/840']);
+  stop();
+  dispose();
+});
+
+test('cross_repo_pr_chips_keep_repo_label_and_non_truncating_number_suffix', () => {
+  const p1 = { number: 839, url: 'https://github.com/o/api/pull/839', state: 'MERGED' };
+  const p2 = { number: 1234, url: 'https://github.com/o/very-long-repo/pull/1234', state: 'MERGED' };
+  const { host, stop, dispose } = mountStrip({ id: 's1', state: 'done', project: 'api', pr: p1, prs: [{ repo: 'very-long-repository-name', pr: p2 }] });
+  const chips = [...host.querySelectorAll('[data-part="pr.strip.chip"]')];
+  expect(chips.map((c) => c.querySelector('[data-kit="tone-chip-label"]')?.textContent)).toEqual(['api', 'very-long-repository-name']);
+  expect(chips.map((c) => c.querySelector('[data-kit="tone-chip-suffix"]')?.textContent)).toEqual(['#839', '#1234']);
   stop();
   dispose();
 });
@@ -174,21 +187,47 @@ test('many_attached_prs_collapse_past_five_and_expand_with_worst_hidden_tone', (
   const more = host.querySelector('[data-part="pr.strip.more"]') as HTMLButtonElement | null;
   expect(more?.textContent?.trim()).toBe('+8 more');
   expect(more?.getAttribute('data-tone'), 'hidden failing PR tints +N more red').toBe('bad');
+  expect(more?.querySelector('[data-kit="tone-chip-dot"]'), 'hidden failing PR shows status dot on +N more').not.toBeNull();
   more?.click();
   expect(host.querySelectorAll('[data-part="pr.strip.chip"]').length).toBe(12);
-  expect(host.querySelector('[data-part="pr.strip.more"]')?.textContent?.trim()).toBe('Show less');
-  (host.querySelector('[data-part="pr.strip.more"]') as HTMLButtonElement).click();
+  const less = host.querySelector('[data-part="pr.strip.more"]') as HTMLButtonElement | null;
+  expect(less?.textContent?.trim()).toBe('Show less');
+  expect(less?.querySelector('[data-kit="tone-chip-dot"]'), 'Show less never shows a fake status dot').toBeNull();
+  less?.click();
   expect(host.querySelectorAll('[data-part="pr.strip.chip"]').length).toBe(4);
   stop();
   dispose();
 });
 
-test('single_pr_keeps_direct_title_no_chips_and_github_action', () => {
-  const { host, stop, dispose } = mountStrip({ id: 's1', state: 'done', project: 'wisp', pr: { number: 840, url: 'https://github.com/o/wisp/pull/840', state: 'MERGED' } });
-  expect(host.querySelector('[data-part="pr.strip.row.title"]')?.textContent).toBe('PR #840');
-  expect(host.querySelector('[data-part="pr.strip.row.sub"]')?.textContent).toBe('Merged');
-  expect(host.querySelector('[data-part="pr.strip.also"]')).toBeNull();
-  expect(host.querySelector('[data-part="pr.strip.bar"]')).not.toBeNull();
+test('many_merged_prs_overflow_chip_omits_status_dot_when_all_hidden_are_calm', () => {
+  const prs = Array.from({ length: 7 }, (_, i) => ({
+    repo: 'wisp',
+    pr: { number: 850 + i, url: `https://github.com/o/wisp/pull/${850 + i}`, state: 'MERGED' },
+  }));
+  const { host, stop, dispose } = mountStrip({ id: 's1', state: 'done', project: 'wisp', pr: prs[0]!.pr, prs: prs.slice(1) });
+  const more = host.querySelector('[data-part="pr.strip.more"]') as HTMLButtonElement | null;
+  expect(more?.textContent?.trim()).toBe('+3 more');
+  expect(more?.querySelector('[data-kit="tone-chip-dot"]')).toBeNull();
   stop();
   dispose();
+});
+
+test('single_merged_pr_puts_github_inline_without_empty_toolbar_while_open_pr_keeps_toolbar', () => {
+  const merged = mountStrip({ id: 's1', state: 'done', project: 'wisp', pr: { number: 840, url: 'https://github.com/o/wisp/pull/840', state: 'MERGED' } });
+  expect(merged.host.querySelector('[data-part="pr.strip.row.title"]')?.textContent).toBe('PR #840');
+  expect(merged.host.querySelector('[data-part="pr.strip.row.sub"]')?.textContent).toBe('Merged');
+  expect(merged.host.querySelector('[data-part="pr.strip.also"]')).toBeNull();
+  expect(merged.host.querySelector('[data-part="pr.strip.bar"]'), 'no bottom toolbar row for a single merged PR').toBeNull();
+  const gh = merged.host.querySelector('[data-part="pr.strip.github"]') as HTMLButtonElement | null;
+  expect(gh, 'inline GitHub button sits in the row').not.toBeNull();
+  gh?.click();
+  expect(merged.opened).toEqual(['https://github.com/o/wisp/pull/840']);
+  merged.stop();
+  merged.dispose();
+
+  const open = mountStrip({ id: 's1', state: 'done', project: 'wisp', pr: { number: 841, url: 'https://github.com/o/wisp/pull/841', state: 'OPEN', checks: { pass: 2, fail: 0, pending: 0 } } });
+  expect(open.host.querySelector('[data-part="pr.strip.bar"]'), 'open PR keeps its action toolbar').not.toBeNull();
+  expect(open.host.querySelector('[data-part="pr.strip.github"]')).toBeNull();
+  open.stop();
+  open.dispose();
 });
