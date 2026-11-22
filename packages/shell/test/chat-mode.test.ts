@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { buildChatSteps, type RawTurnEvent } from '../src/frame/chat-steps.ts';
 import { parseInlineChatBlocks } from '../src/frame/chat-blocks.ts';
-import { asChatMode } from '../src/frame/chat-settings.ts';
+import { asChatMode } from '../src/frame/chat-parse.ts';
 import { turnClock } from '../src/frame/turn-clock.ts';
 
 const EVENTS: RawTurnEvent[] = [

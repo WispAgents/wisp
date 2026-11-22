@@ -1,7 +1,7 @@
 // Pure conversion of a turn's event log into inline chat / transcript steps, respecting Chat mode's
 // Tool calls in chat (`showAll` | `hideSuccessful` | `hideAll` | `zen`) and Show thinking settings.
 
-import type { ToolCallVisibility } from './chat-settings.ts';
+import type { ToolCallVisibility } from './chat-parse.ts';
 import type { TranscriptStepRow } from './TurnTranscript.tsx';
 
 export interface RawTurnEvent {
