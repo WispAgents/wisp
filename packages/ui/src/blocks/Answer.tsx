@@ -63,20 +63,22 @@ export function Answer(props: AnswerProps): JSX.Element {
           {(raw, i) => {
             const block = (): AnswerBlock => asBlock(raw());
             return (
-              <div
-                data-kit="answer-block"
-                data-part={sub(part(), 'block')}
-                data-type={block().type}
-                data-i={i}
-                style={styleOf({ '--k-answer-d': reveal() ? `${Math.min(i, MAX_STEPS) * STEP_MS}ms` : undefined })}
-              >
-                <ErrorBoundary fallback={() => <UnknownBlock block={block()} index={i} failed />}>
-                  <Show when={rendererFor(block().type, props.ctx)} keyed fallback={<UnknownBlock block={block()} index={i} />}>
-                    {(r) => <Dynamic component={r} block={block()} index={i} />}
-                  </Show>
-                </ErrorBoundary>
-                <Show when={cm && commentable(block().type) ? cm : undefined}>{(on) => <BlockComment cm={on()} i={i} block={block()} />}</Show>
-              </div>
+              <Show when={block().type !== 'crew'}>
+                <div
+                  data-kit="answer-block"
+                  data-part={sub(part(), 'block')}
+                  data-type={block().type}
+                  data-i={i}
+                  style={styleOf({ '--k-answer-d': reveal() ? `${Math.min(i, MAX_STEPS) * STEP_MS}ms` : undefined })}
+                >
+                  <ErrorBoundary fallback={() => <UnknownBlock block={block()} index={i} failed />}>
+                    <Show when={rendererFor(block().type, props.ctx)} keyed fallback={<UnknownBlock block={block()} index={i} />}>
+                      {(r) => <Dynamic component={r} block={block()} index={i} />}
+                    </Show>
+                  </ErrorBoundary>
+                  <Show when={cm && commentable(block().type) ? cm : undefined}>{(on) => <BlockComment cm={on()} i={i} block={block()} />}</Show>
+                </div>
+              </Show>
             );
           }}
         </Index>

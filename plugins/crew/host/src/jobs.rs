@@ -161,9 +161,11 @@ async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, c
     if !team.is_empty() {
         args["team"] = Value::Array(team);
     }
+    let mut rt_ext = json!({ "titleAuto": true });
     if let Some(cap) = capped {
-        args["ext"][wisp_runtime_api::PLUGIN_ID] = json!({ "capped": cap });
+        rt_ext["capped"] = cap.clone();
     }
+    args["ext"][wisp_runtime_api::PLUGIN_ID] = rt_ext;
     let made = match &place {
         Some((machine, cwd)) => {
             // no folder: the machine's own default (a member's there may have none)
@@ -216,14 +218,26 @@ fn work(prompt: String, job: JobKind, attachments: Vec<Value>, run: Option<RunPi
     WaitingJob { prompt, job, attachments, run, ..WaitingJob::default() }
 }
 
+/// Records a link to the task that tagged, delegated to or watched the member, so it may follow up there later
+/// (v1 crew.js:630 `#link`).
+async fn record_link(ctx: &Ctx, st: &State, m: &mut Member, w: &WaitingJob) {
+    let Some(from) = w.from.as_ref().filter(|f| !f.id.is_empty()) else { return };
+    if matches!(w.job, JobKind::Mention | JobKind::Delegated | JobKind::Event) || w.reply.is_some() {
+        wisp_crew_core::queue::link(m, from, now(ctx));
+        st.put(m.clone());
+        st.save().await;
+    }
+}
+
 /// A job for `m`: now when a slot is free, else in its queue (v1 `assign`).
 pub(crate) async fn assign(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: WaitingJob) -> Result<c::Started, WireError> {
-    let busy = u32::try_from(jobs_of(ctx, call, st, m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
-    match place(m, busy, w.job).map_err(wire)? {
-        Placement::Start => Ok(c::Started { session: Some(start(ctx, call, st, m, &w, None).await?), ..c::Started::default() }),
+    let mut m = m.clone();
+    record_link(ctx, st, &mut m, &w).await;
+    let busy = u32::try_from(jobs_of(ctx, call, st, &m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
+    match place(&m, busy, w.job).map_err(wire)? {
+        Placement::Start => Ok(c::Started { session: Some(start(ctx, call, st, &m, &w, None).await?), ..c::Started::default() }),
         Placement::Queue => {
             let id = wisp_kernel::ids::uuid7();
-            let mut m = m.clone();
             m.queue.push(WaitingJob { id: id.clone(), at: now(ctx), ..w });
             let position = u32::try_from(m.queue.len()).unwrap_or(u32::MAX);
             st.put(m);
@@ -241,7 +255,9 @@ async fn delegated(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: WaitingJob
     }
     let busy = u32::try_from(jobs_of(ctx, call, st, m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
     place_delegated(m, busy).map_err(wire)?;
-    Ok(c::Started { session: Some(start(ctx, call, st, m, &w, capped).await?), ..c::Started::default() })
+    let mut m = m.clone();
+    record_link(ctx, st, &mut m, &w).await;
+    Ok(c::Started { session: Some(start(ctx, call, st, &m, &w, capped).await?), ..c::Started::default() })
 }
 
 /// `crew.checkin`: one check-in at a time per member (v1 `checkin`).
@@ -484,6 +500,12 @@ async fn run_tick(ctx: &Ctx, st: &State) {
         }
         drain(ctx, &call, st, &m.id).await;
     }
+    st.save().await;
+}
+
+/// Starts waiting jobs for `id` that now have room and saves any queue change (called when a job finishes).
+pub(crate) async fn drain_and_save(ctx: &Ctx, call: &Call, st: &State, id: &str) {
+    drain(ctx, call, st, id).await;
     st.save().await;
 }
 

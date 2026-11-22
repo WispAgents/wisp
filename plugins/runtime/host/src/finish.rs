@@ -77,15 +77,8 @@ impl Runtime {
         turn.n_events = n_events;
         turn.resume_id.clone_from(&head.resume_id);
         keep_facts(&mut turn, head, auth_failed);
-        if status == TurnStatus::Done
-            && turn.idx == 0
-            && title_auto(&s)
-            && let Some(t) = land::topic_title(&presentation)
-        {
-            s.title = t;
-        }
-        self.keep_media(&s, turn.id.as_str(), &mut presentation.blocks).await;
         turn.presentation = Some(presentation);
+        self.prepare_done(&mut s, &mut turn, status).await;
         if head.resume_id.is_some() {
             s.resume_id.clone_from(&head.resume_id);
         }
@@ -95,17 +88,12 @@ impl Runtime {
         self.cancel_asks(&mut s);
         // a lead: its delegates still at work hold it in Working; all of them done, their reports are queued now
         let waits_on = self.lead_turn_ends(&mut s, &mut turn, stopped || stopping, &far).await;
-        let mut landing = self.landing(&s, &turn, stopped || stopping, interrupted, waits_on.is_some());
+        let (mut landing, later_by) = self.landing(&s, &turn, stopped || stopping, interrupted, waits_on.is_some());
         if let Some(names) = waits_on.filter(|_| landing.state == wisp_runtime_api::model::SessionState::Running && !landing.handing) {
             Self::note_waits(&mut s, &names);
         }
         let waits = self.waits_reset(&s, &mut turn, &mut landing);
-        s.state = landing.state;
-        s.unread = landing.unread;
-        if landing.archive {
-            s.archived = true;
-        }
-        s.updated_at = self.now();
+        self.apply_landing(&mut s, &landing, later_by.as_deref());
         let (s0, t0, l) = (s.clone(), turn.clone(), &landing); // its events ride on the write (ADR-0074)
         self.persist_emitting(&mut s, vec![turn.clone()], |sum| Self::end_events(&s0, &t0, interrupted, l, sum, &text)).await?;
         // a delegate's turn ended (a child, or a crew job a lead handed out): its lead may have waited on it last
@@ -136,8 +124,57 @@ impl Runtime {
         Ok(())
     }
 
-    fn landing(&self, s: &Session, turn: &Turn, stopped: bool, interrupted: bool, owes: bool) -> land::Landing {
-        let outcome = self.host.outcomes().iter().find_map(|o| o.outcome(s, turn)).unwrap_or_default();
+    /// Strips plugin-internal blocks (`TurnOutcome::prepare`), applies turn-1 auto-titling from `topic`,
+    /// and keeps media attachments referenced by the final blocks.
+    async fn prepare_done(self: &Arc<Self>, s: &mut Session, turn: &mut Turn, status: TurnStatus) {
+        if status == TurnStatus::Done && turn.by.as_deref() != Some("compact") {
+            for o in self.host.outcomes() {
+                o.prepare(s, turn);
+            }
+        }
+        if status == TurnStatus::Done
+            && turn.idx == 0
+            && title_auto(s)
+            && let Some(p) = turn.presentation.as_ref()
+            && let Some(t) = land::topic_title(p)
+        {
+            s.title = t;
+        }
+        if let Some(p) = turn.presentation.as_mut() {
+            self.keep_media(s, turn.id.as_str(), &mut p.blocks).await;
+        }
+    }
+
+    /// Writes `landing`'s state, unread, archive, For later and timestamp onto `s`.
+    fn apply_landing(&self, s: &mut Session, landing: &land::Landing, later_by: Option<&str>) {
+        s.state = landing.state;
+        s.unread = landing.unread;
+        if landing.archive {
+            s.archived = true;
+        }
+        let now = self.now();
+        if landing.for_later {
+            let own = s.ext.entry("wisp.runtime".into()).or_insert_with(|| json!({}));
+            if !own.is_object() {
+                *own = json!({});
+            }
+            if let Some(o) = own.as_object_mut() {
+                o.insert("forLater".into(), json!({ "at": now, "by": later_by.unwrap_or("wisp") }));
+            }
+        }
+        s.updated_at = now;
+    }
+
+    fn landing(&self, s: &Session, turn: &Turn, stopped: bool, interrupted: bool, owes: bool) -> (land::Landing, Option<String>) {
+        let picked = self
+            .host
+            .outcomes()
+            .into_iter()
+            .find_map(|o| o.outcome(s, turn).map(|x| (x, o.id().strip_prefix("wisp.").unwrap_or(o.id()).to_owned())));
+        let (outcome, by) = match picked {
+            Some((o, by)) => (o, Some(by)),
+            None => (wisp_runtime_api::points::Outcome::default(), None),
+        };
         let facts = Facts {
             stopped,
             interrupted,
@@ -150,7 +187,7 @@ impl Runtime {
         let end = wisp_runtime_api::points::TurnEnd { stopped, is_error: turn.is_error };
         let mut steps = self.host.after_steps();
         steps.sort_by_key(|a| a.order());
-        land::land(facts, outcome, || steps.iter().find(|a| a.wants(s, turn, end)).map(|a| a.id().to_owned()))
+        (land::land(facts, outcome, || steps.iter().find(|a| a.wants(s, turn, end)).map(|a| a.id().to_owned())), by)
     }
 
     /// What a turn's end tells, in order: `turn.ended`, `task.finished`/`failed`, `turn.finished` if someone should hear.

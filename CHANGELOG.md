@@ -11,6 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Crew: fixed `Unknown block · crew` cards showing at the bottom of crew job answers and wired the rest of v1's crew turn-end handling. `{"type":"crew"}` blocks are now stripped before saving (and hidden in the UI for already-saved turns), `crew.topic` names turn 1, `remember`/`notebook`/`wakeIn` update the member's notebook and next wake-up, `forLater: true` persists on the task row (`by: "crew"`), finished jobs append to `member.log`, and `followUp` messages reach linked tasks and join their delegates.
 - Repo history: fixed **Save to repo** silently writing into `~/.wisp/tasks/` instead of the project's `.wisp/tasks/` when a task's worktree had been cleaned up or its repo had no `.wisp/` yet (`root_of` walked up to `$HOME` and matched wisp's own app data directory). Worktree tasks that are merged, cleaned up, or have no unshipped work now save directly into the main repo checkout so they show up in Repo history immediately.
 - Repo history: rebuilt the Repo history page in a scrollable `PageShell` with a Back button on phones, centered reading width on desktop, a Refresh action, and multi-peer routing so remote/mobile projects load from the computer that owns them.
 - Repo history (mobile & desktop): **Save to repo** now matches `turn` rows on `session_id` (not only `body.sessionId`), stays in **Keep and copy ›** on phones, and shows a confirmation toast when saving completes even if scrolled away from the bottom of the turn.

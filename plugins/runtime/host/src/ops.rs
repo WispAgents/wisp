@@ -580,6 +580,13 @@ impl Runtime {
         let stale = t.presentation.as_ref().is_some_and(|p| p.v < PARSER_VERSION) && t.status == TurnStatus::Done;
         if let (true, Some(text)) = (stale, t.text.clone()) {
             t.presentation = Some(presentation(&text, &self.host.blocks()));
+            if t.by.as_deref() != Some("compact")
+                && let Ok(s) = self.repo.session(id).await
+            {
+                for o in self.host.outcomes() {
+                    o.prepare(&s, &mut t);
+                }
+            }
             let row = t.clone();
             let known = self.env_known(id).await.ok().map(|v| v.0);
             self.env.note_turn(t.id.as_str(), id);
