@@ -6,9 +6,12 @@
 // Docs quote agy's own JSON keys and PascalCase parameters as prose.
 #![allow(clippy::doc_markdown)]
 
+pub mod usage;
+
 use std::collections::{HashMap, HashSet};
 
 use serde_json::{Map, Value, json};
+pub use usage::usage_limits;
 use wisp_harness_kit::js::{self, truthy};
 use wisp_harness_kit::protocol::exit_text;
 use wisp_harness_kit::{
@@ -244,6 +247,9 @@ impl LineParser for AgyParser {
                         stats.insert(k.into(), v.clone());
                     }
                 }
+                if r["usage"]["cache_read_tokens"].as_f64().is_some_and(|n| n > 0.0) {
+                    stats.insert("cacheReadTokens".into(), r["usage"]["cache_read_tokens"].clone());
+                }
                 let stats: Option<Box<Stats>> = serde_json::from_value(Value::Object(stats)).ok().map(Box::new);
                 out.push(HarnessEvent::Result(TurnResult { text, is_error: !ok, stats, ..TurnResult::default() }).into());
             }
@@ -301,5 +307,31 @@ mod tests {
             &mut out,
         );
         assert!(matches!(out.last(), Some(Out::Event(HarnessEvent::Text { text })) if text == "Fixed it."));
+    }
+
+    #[test]
+    fn cache_read_tokens_reported_when_nonzero_and_omitted_when_zero() {
+        let mut p = AgyParser::new(RunPaths::same("/w"));
+        let mut out = Vec::new();
+        p.line(
+            r#"{"event":"result","result":{"conversation_id":"c1","status":"SUCCESS","response":"ok","duration_seconds":1.2,"usage":{"input_tokens":100,"output_tokens":20,"cache_read_tokens":60}}}"#,
+            0,
+            &mut out,
+        );
+        let Some(Out::Event(HarnessEvent::Result(r))) = out.last() else { panic!("expected result") };
+        let st = r.stats.as_ref().expect("stats");
+        assert_eq!(st.input_tokens, Some(json!(100)));
+        assert_eq!(st.output_tokens, Some(json!(20)));
+        assert_eq!(st.cache_read_tokens, Some(json!(60)));
+
+        let mut p0 = AgyParser::new(RunPaths::same("/w"));
+        let mut out0 = Vec::new();
+        p0.line(
+            r#"{"event":"result","result":{"conversation_id":"c2","status":"SUCCESS","response":"ok","usage":{"input_tokens":10,"output_tokens":5,"cache_read_tokens":0}}}"#,
+            0,
+            &mut out0,
+        );
+        let Some(Out::Event(HarnessEvent::Result(r0))) = out0.last() else { panic!("expected result") };
+        assert_eq!(r0.stats.as_ref().and_then(|s| s.cache_read_tokens.as_ref()), None);
     }
 }

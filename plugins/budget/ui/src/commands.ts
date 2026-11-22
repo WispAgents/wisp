@@ -99,7 +99,7 @@ export const accountNames = defineCommand<{ peer: PeerId; agent: string }, { acc
   pending: 'the account names',
 });
 
-/** `autoStop`, `autoStopClaude`, `autoStopCodex`: 'off' | '50' | '75' | '90', 'same' for a harness's own. */
+/** `autoStop`, `autoStopClaude`, `autoStopCodex`, `autoStopAntigravity`: 'off' | '50' | '75' | '90', 'same' for a harness's own. */
 export const setStop = defineCommand<{ peer: PeerId; key: string; value: string }>({
   id: 'budget.setStop',
   owner: (a) => a.peer,

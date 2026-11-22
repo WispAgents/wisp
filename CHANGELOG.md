@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Usage (Antigravity): added Antigravity plan quota support using `agy -p "/usage" --output-format json` (`Harness::live_limits`, non-blocking post-turn and stale-view refreshes, `autoStopAntigravity` stop line, Home usage bar, Settings → Usage live updates, Spare allowance, and `cache_read_tokens` capture).
+
 ### Fixed
 
 - PR card: audited and refined the PR card for merged, closed, and multi-PR tasks. A single merged or closed PR now puts its GitHub link inline in the header row instead of opening a mostly empty 32 px action bar below it; multi-PR chips omit the redundant repo name when all PRs belong to the task's own repo and keep `#number` intact when a long repo name truncates (in both the card and the PR side panel); `+N more` omits its status dot when all hidden PRs are merged/closed and `Show less` renders as a plain ghost toggle instead of a status chip; the card adopts v1's subtle tone-tinted surface; and clicking the row's chevron on desktop hover now opens the PR pane instead of being intercepted by `list-row-actions`.

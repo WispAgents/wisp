@@ -319,3 +319,84 @@ async fn a_turns_end_saves_its_spend_and_the_learned_run_in_one_commit() {
         store.read(|r| r.get("budget_meta", "runs")).unwrap().and_then(|row| row.get("body").map(ToString::to_string)).unwrap_or_default();
     assert!(runs.contains("\"t1\""), "the run is kept: {runs}");
 }
+
+/// Fake `wisp.accounts` returning a sequence of `accounts.limits` responses for Antigravity.
+struct Accounts {
+    calls: Arc<Mutex<Vec<(String, String)>>>,
+    answers: Arc<Mutex<std::collections::VecDeque<serde_json::Value>>>,
+}
+impl Plugin for Accounts {
+    fn manifest(&self) -> Manifest {
+        manifest("wisp.accounts")
+    }
+    fn setup(&self, s: &mut Setup) -> Result<()> {
+        let (calls, answers) = (self.calls.clone(), self.answers.clone());
+        s.command::<wisp_accounts_api::commands::Limits, _, _>(move |_, _, a| {
+            calls.lock().unwrap().push((a.agent, a.account));
+            let v = answers.lock().unwrap().pop_front().unwrap_or(serde_json::Value::Null);
+            async move { Ok(v) }
+        });
+        Ok(())
+    }
+}
+
+/// Antigravity has no in-stream rate-limit event: `turn.ended` refreshes quota asynchronously via `accounts.limits`,
+/// populates `budget.view`, and `autoStopAntigravity` holds unattended runs past the stop line.
+#[tokio::test(flavor = "multi_thread")]
+async fn antigravity_turn_end_refreshes_limits_and_stop_line_holds_unattended_work() {
+    let (seen, clock) = (Seen::default(), FakeClock::at(NOW));
+    let calls: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+    let answers = Arc::new(Mutex::new(std::collections::VecDeque::from([json!({
+        "windows": [
+            { "id": "five_hour", "used": 0.25, "resetsAt": NOW + 4 * H, "ms": 5 * H },
+            { "id": "seven_day", "used": 0.80, "resetsAt": NOW + 5 * 24 * H, "ms": 7 * 24 * H }
+        ],
+        "complete": true
+    })])));
+    let store = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
+    let k = TestApp::new()
+        .clock(&clock)
+        .service(store)
+        .with(BudgetPlugin)
+        .with(Runtime(seen.clone()))
+        .with(Channels(seen.clone()))
+        .with(Accounts { calls: calls.clone(), answers })
+        .start()
+        .await;
+
+    let e: TurnEnded = serde_json::from_value(json!({
+        "sessionId": "ag1", "turnId": "u1", "status": "done", "interrupted": false,
+        "agent": "antigravity", "model": "gemini-4-neon-high", "tokens": 12000
+    }))
+    .unwrap();
+    let ctx = k.ctx("wisp.runtime").unwrap();
+    ctx.emit(&ctx.root_call(), &e);
+
+    eventually("antigravity live limits recorded", || !calls.lock().unwrap().is_empty()).await;
+    eventually("budget.view returns antigravity windows", || {
+        let v = futures_view(&k);
+        v.as_array().is_some_and(|a| !a.is_empty())
+    })
+    .await;
+    let view = k.call(Caller::user(), "budget.view", json!({ "agent": "antigravity" })).await.unwrap();
+    let ws = view[0]["windows"].as_array().unwrap();
+    assert_eq!(ws.len(), 2, "{view}");
+    assert_eq!(ws[0]["id"], "five_hour");
+    assert_eq!(ws[1]["id"], "seven_day");
+
+    k.call(Caller::user(), "budget.setStop", json!({ "key": "autoStopAntigravity", "value": "75" })).await.unwrap();
+    let run: BeforeRunCtx = serde_json::from_value(json!({
+        "sessionId": "ag2", "turnId": "u2", "agent": "antigravity", "model": "", "effort": "",
+        "mode": "auto", "cwd": "/repo", "prompt": "check", "by": "crew", "kind": "first"
+    }))
+    .unwrap();
+    let held = ctx.run_hook::<BeforeRun>(&ctx.root_call(), run).await.unwrap();
+    assert_eq!(held.hold.as_ref().map(|h| h.kind.as_str()), Some("plan"), "{held:?}");
+}
+
+fn futures_view(k: &Kernel) -> serde_json::Value {
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(k.call(Caller::user(), "budget.view", json!({ "agent": "antigravity" })))
+    })
+    .unwrap_or(serde_json::Value::Null)
+}

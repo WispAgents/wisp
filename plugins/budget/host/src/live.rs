@@ -1,19 +1,25 @@
-//! Check Codex while work waits (v1 live-limits.js, Settings → Usage, `budget.liveLimits`, off by default): while
-//! work on a Codex account waits for its plan, wisp asks Codex's app-server how that account's windows stand
-//! (`accounts.limits`: no model turn, nothing spent), every 10 minutes. A window that reset early (a banked reset)
-//! frees the waiting work through `record`. A read that fails tries less often, up to hourly. Claude Code has no
-//! such read. wisp never redeems a reset credit.
+//! Live usage reads via `accounts.limits` (no model turn, nothing spent):
+//! - While work waits for a Codex or Antigravity plan (`budget.liveLimits`, off by default), wisp asks every 10 minutes
+//!   so an early/banked reset frees waiting work through `record` (backing off up to hourly on failure).
+//! - For Antigravity (whose `stream-json` turns don't include quota windows), wisp also reads `accounts.limits`
+//!   asynchronously after each Antigravity turn ends and when `budget.view` sees a missing or stale reading.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
-use wisp_budget_core::limits::{codex_banked, codex_live};
+use serde_json::Value;
+use wisp_budget_api::LimitsReport;
+use wisp_budget_core::limits::{codex_banked, codex_live, report_from_value};
 use wisp_kernel::Ctx;
 
-use crate::{State, now};
+use crate::{State, account_of, lock, now};
 
 pub const SETTING: &str = "budget.liveLimits";
 /// How often held work looks whether its account is free, and reads when due (v1 tick).
 const TICK_MS: u64 = 60_000;
+/// Minimum interval between passive (view-triggered) refreshes and retry backoff for Antigravity.
+pub const STALE_MS: i64 = 5 * 60_000;
+const ACCOUNTS: &str = "wisp.accounts";
 
 /// The look's interval; tests look sooner (`WISP_BUDGET_TICK_MS`, at least 200 ms).
 pub fn tick_ms() -> u64 {
@@ -29,6 +35,18 @@ pub struct Due {
     pub backoff: i64,
 }
 
+/// Deduplicates background `accounts.limits` refreshes and backs off stale-view reads.
+#[derive(Debug, Default)]
+pub struct Refresh {
+    inflight: BTreeSet<(String, String)>,
+    next_at: BTreeMap<(String, String), i64>,
+}
+
+/// Whether `wisp.accounts` is active or resolved so `accounts.limits` can be called.
+pub fn accounts_on(ctx: &Ctx) -> bool {
+    ctx.plugin_status().iter().any(|p| p.id == ACCOUNTS && (p.state == "active" || p.state == "resolved"))
+}
+
 /// After a read: on time again in ten minutes, or later and later while it fails (v1: half of ten, doubled).
 pub fn next(d: Option<Due>, ok: bool, now: i64) -> Due {
     if ok {
@@ -38,43 +56,94 @@ pub fn next(d: Option<Due>, ok: bool, now: i64) -> Due {
     Due { at: now + backoff, backoff }
 }
 
+fn parse_live(agent: &str, v: &Value, t: i64, read: bool) -> Option<LimitsReport> {
+    if agent == "codex" {
+        let banked = codex_banked(v, t);
+        codex_live(v, t).map(|mut r| {
+            r.read = read;
+            r.banked = banked;
+            r
+        })
+    } else {
+        report_from_value(v).map(|mut r| {
+            r.read = read;
+            r
+        })
+    }
+}
+
 impl State {
-    /// One pass: each Codex account with work held on it, when its read is due.
-    pub(crate) async fn live(&self, ctx: &Ctx, due: &mut BTreeMap<String, Due>) -> u32 {
+    /// Reads one account's live limits through `accounts.limits` and records them when present.
+    pub(crate) async fn read_limits(&self, ctx: &Ctx, agent: &str, account: &str, read: bool) -> bool {
+        let a = wisp_accounts_api::commands::AccountArgs { agent: agent.into(), account: account.into() };
+        let got = match ctx.run::<wisp_accounts_api::commands::Limits>(&ctx.root_call(), a).await {
+            Ok(v) => Some(v).filter(|v| !v.is_null()),
+            Err(err) => {
+                tracing::warn!(error = %err.message, agent, account, "budget: accounts.limits");
+                None
+            }
+        };
+        let t = now(ctx);
+        let report = got.as_ref().and_then(|v| parse_live(agent, v, t, read));
+        if let Some(r) = report {
+            self.record(ctx, agent, account, &r).await;
+            true
+        } else {
+            tracing::debug!(agent, account, "live usage: no reading");
+            false
+        }
+    }
+
+    /// Spawns a non-blocking `accounts.limits` refresh for Antigravity. `force` refreshes after a turn ends;
+    /// `!force` refreshes on view only when missing or older than [`STALE_MS`].
+    pub(crate) fn spawn_refresh(self: &Arc<Self>, ctx: &Ctx, agent: &str, account: &str, read: bool, force: bool) {
+        if agent != "antigravity" || !accounts_on(ctx) {
+            return;
+        }
+        let account = account_of(account);
+        let key = (agent.to_owned(), account.clone());
+        let t = now(ctx);
+        {
+            let mut r = lock(&self.refresh);
+            if r.inflight.contains(&key) {
+                return;
+            }
+            if !force {
+                if r.next_at.get(&key).is_some_and(|at| *at > t) {
+                    return;
+                }
+                if lock(&self.budget).reading_at(agent, &account).is_some_and(|at| t - at < STALE_MS) {
+                    return;
+                }
+            }
+            r.inflight.insert(key.clone());
+            r.next_at.insert(key.clone(), t + STALE_MS);
+        }
+        let (st, c, agent) = (Arc::clone(self), ctx.clone(), agent.to_owned());
+        ctx.spawn(async move {
+            let _ = st.read_limits(&c, &agent, &account, read).await;
+            lock(&st.refresh).inflight.remove(&(agent, account));
+        });
+    }
+
+    /// One pass: each Codex or Antigravity account with work held on it, when its read is due.
+    pub(crate) async fn live(&self, ctx: &Ctx, due: &mut BTreeMap<(String, String), Due>) -> u32 {
         if ctx.setting(SETTING).and_then(|v| v.as_bool()) != Some(true) {
             return 0;
         }
         let mut n = 0;
-        for account in self.waiting(now(ctx)) {
+        for (agent, account) in self.waiting(now(ctx)) {
+            let key = (agent.clone(), account.clone());
             let t = now(ctx);
-            if due.get(&account).is_some_and(|d| d.at > t) {
+            if due.get(&key).is_some_and(|d| d.at > t) {
                 continue;
             }
-            let a = wisp_accounts_api::commands::AccountArgs { agent: "codex".into(), account: account.clone() };
-            let read = match ctx.run::<wisp_accounts_api::commands::Limits>(&ctx.root_call(), a).await {
-                Ok(v) => Some(v).filter(|v| !v.is_null()),
-                Err(err) => {
-                    tracing::warn!(error = %err.message, %account, "budget: accounts.limits");
-                    None
-                }
-            };
-            let report = read.as_ref().and_then(|v| {
-                let banked = codex_banked(v, t);
-                codex_live(v, t).map(|mut r| {
-                    r.read = true;
-                    r.banked = banked;
-                    r
-                })
-            });
-            let ok = report.is_some();
-            if let Some(r) = report {
-                self.record(ctx, "codex", &account, &r).await;
+            let ok = self.read_limits(ctx, &agent, &account, true).await;
+            if ok {
                 n += 1;
-            } else {
-                tracing::debug!(%account, "codex usage: no reading");
             }
-            let was = due.get(&account).copied();
-            due.insert(account, next(was, ok, t));
+            let was = due.get(&key).copied();
+            due.insert(key, next(was, ok, t));
         }
         n
     }

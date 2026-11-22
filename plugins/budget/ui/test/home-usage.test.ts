@@ -42,6 +42,31 @@ test('home usage: a window it does not know keeps its own label', () => {
   expect(r?.windows.map((w) => w.short)).toEqual(['Daily']);
 });
 
+test('home usage: antigravity shows 5h and its fullest weekly bucket', () => {
+  const agy: HomeHarness = {
+    agent: 'antigravity',
+    name: 'Antigravity',
+    names: [],
+    accounts: [
+      {
+        account: 'default',
+        windows: [
+          win('five_hour', '5-hour', 0.23),
+          win('seven_day', 'Weekly', 0.6),
+          win('five_hour_3p', '3P 5-hour', 0),
+          win('seven_day_3p', '3P Weekly', 0),
+          win('seven_day_argon', 'Argon wk', 0.75),
+        ],
+      },
+    ],
+  };
+  const [r] = homeUsage([agy]);
+  expect(r?.windows.map((w) => [w.short, w.used])).toEqual([
+    ['5h', 0.23],
+    ['Argon wk', 0.75],
+  ]);
+});
+
 test('home usage tone: red used up, amber at the Ask-near-the-limit line, past the stop line or on pace to run out', () => {
   const hold = holdLine('90');
   expect(homeTone({ used: 1 }, null, hold)).toBe('full');

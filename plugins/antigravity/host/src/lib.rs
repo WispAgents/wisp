@@ -184,6 +184,34 @@ impl Harness for AntigravityHarness {
         driver::KitDriver::boxed(AgyParser::new(paths.clone()), paths, true)
     }
 
+    /// Reads Antigravity's quota windows without spending tokens (`agy -p "/usage" --output-format json`),
+    /// returning wisp's normalised `LimitsReport` JSON.
+    fn live_limits<'a>(
+        &'a self,
+        sys: &'a dyn HarnessSys,
+        env: &'a std::collections::BTreeMap<String, String>,
+    ) -> BoxFuture<'a, Option<serde_json::Value>> {
+        Box::pin(async move {
+            let req = ExecReq {
+                program: self.bin(),
+                args: ["-p", "/usage", "--output-format", "json"].map(str::to_owned).to_vec(),
+                env: env.clone(),
+                timeout_ms: 15_000,
+                ..ExecReq::default()
+            };
+            let out = sys.exec(req).await.ok()?;
+            if out.code != Some(0) || out.timed_out {
+                return None;
+            }
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| i64::try_from(d.as_millis()).ok())
+                .unwrap_or(0);
+            wisp_antigravity_core::usage_limits(&out.stdout, now_ms)
+        })
+    }
+
     fn login(&self) -> Option<&HarnessLogin> {
         Some(&self.login)
     }
@@ -294,5 +322,58 @@ mod tests {
             h.resume_command(&o).map(|c| c.argv.last().cloned()).unwrap_or_default().as_deref(),
             Some("{\"trustedWorkspaces\":[\"/w\"]}")
         );
+    }
+
+    struct FakeSys {
+        stdout: String,
+        seen: Mutex<Option<ExecReq>>,
+    }
+
+    impl HarnessSys for FakeSys {
+        fn exec(&self, req: ExecReq) -> BoxFuture<'_, Result<wisp_runtime_api::harness::ExecOut>> {
+            if let Ok(mut s) = self.seen.lock() {
+                *s = Some(req);
+            }
+            let stdout = self.stdout.clone();
+            Box::pin(async move { Ok(wisp_runtime_api::harness::ExecOut { code: Some(0), stdout, ..Default::default() }) })
+        }
+        fn which(&self, _: &str) -> BoxFuture<'_, Option<String>> {
+            Box::pin(async { None })
+        }
+        fn read_file(&self, _: &str) -> BoxFuture<'_, Option<String>> {
+            Box::pin(async { None })
+        }
+        fn write_file(&self, _: &str, _: String) -> BoxFuture<'_, Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn list_dir(&self, _: &str) -> BoxFuture<'_, Vec<String>> {
+            Box::pin(async { Vec::new() })
+        }
+        fn env(&self, _: &str) -> Option<String> {
+            None
+        }
+        fn home(&self) -> String {
+            "/home/test".into()
+        }
+        fn platform(&self) -> String {
+            "darwin".into()
+        }
+    }
+
+    #[tokio::test]
+    async fn live_limits_runs_agy_usage_and_parses_buckets() {
+        let sys = FakeSys {
+            stdout: r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-5h","window":"5h","remaining_fraction":0.75,"reset_time":"2099-01-01T05:00:00Z"},{"id":"gemini-weekly","window":"weekly","remaining_fraction":0.4,"reset_time":"2099-01-07T00:00:00Z"}]}]}}}"#
+                .into(),
+            seen: Mutex::new(None),
+        };
+        let h = AntigravityHarness::default();
+        let got = h.live_limits(&sys, &std::collections::BTreeMap::new()).await;
+        let req = sys.seen.lock().ok().and_then(|g| g.clone());
+        assert_eq!(req.map(|r| r.args), Some(["-p", "/usage", "--output-format", "json"].map(str::to_owned).to_vec()));
+        let ws = got.as_ref().and_then(|v| v["windows"].as_array()).map_or(&[][..], Vec::as_slice);
+        assert_eq!(ws.len(), 2);
+        assert_eq!(ws[0]["id"], "five_hour");
+        assert_eq!(ws[1]["id"], "seven_day");
     }
 }

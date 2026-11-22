@@ -76,7 +76,15 @@ export function rowUsage(f: Readonly<Record<string, unknown>>): RowUsage {
 export { modelWords };
 
 const DAY = 864e5;
-const LENGTH: Readonly<Record<string, number>> = { seven_day: 7 * DAY, seven_day_opus: 7 * DAY - 1, seven_day_sonnet: 7 * DAY - 2, five_hour: 5 * 36e5 };
+const LENGTH: Readonly<Record<string, number>> = {
+  seven_day: 7 * DAY,
+  seven_day_opus: 7 * DAY - 1,
+  seven_day_sonnet: 7 * DAY - 2,
+  seven_day_3p: 7 * DAY - 3,
+  seven_day_argon: 7 * DAY - 4,
+  five_hour: 5 * 36e5,
+  five_hour_3p: 5 * 36e5 - 1,
+};
 // unknown lengths (a 30-day) lead, as v1's RANK put them
 const lengthOf = (id: string): number => LENGTH[id] ?? (Number(/^w(\d+)m$/.exec(id)?.[1]) * 60_000 || Number.MAX_SAFE_INTEGER);
 /** [window, used], longest window first */

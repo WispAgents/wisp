@@ -16,6 +16,7 @@ import './i18n/lazy.ts';
 const PLANNED = [
   { agent: 'claude', name: 'Claude Code' },
   { agent: 'codex', name: 'Codex' },
+  { agent: 'antigravity', name: 'Antigravity' },
 ] as const;
 const EVERY = 5 * 60_000;
 

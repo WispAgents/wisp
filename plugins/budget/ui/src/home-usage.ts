@@ -10,6 +10,9 @@ const SHORT: Readonly<Record<string, Key>> = {
   seven_day: 'budget.home.short.week',
   seven_day_opus: 'budget.home.short.opus',
   seven_day_sonnet: 'budget.home.short.sonnet',
+  five_hour_3p: 'budget.home.short.fiveHour3p',
+  seven_day_3p: 'budget.home.short.week3p',
+  seven_day_argon: 'budget.home.short.argon',
 };
 /** "5h", "Week", "Opus week"; another window keeps its own label. */
 export const shortLabel = (w: Pick<Window, 'id' | 'label'>): string => {

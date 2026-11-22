@@ -67,6 +67,8 @@ struct State {
     plan_seq: std::sync::atomic::AtomicU64,
     /// running turns' last sign of life, per task (TRY-23: silent runs)
     quiet: Mutex<BTreeMap<String, wisp_budget_core::silent::Quiet>>,
+    /// in-flight and backoff state for background live-limits refreshes (Antigravity)
+    refresh: Mutex<live::Refresh>,
 }
 
 /// turns whose plan shares are kept in memory to add to (a share lands during the run or with the next report)
@@ -95,6 +97,7 @@ fn stop_for(settings: &Value, agent: &str) -> Option<f64> {
     let own = match agent {
         "claude" => settings.get(settings::AUTO_STOP_CLAUDE),
         "codex" => settings.get(settings::AUTO_STOP_CODEX),
+        "antigravity" => settings.get(settings::AUTO_STOP_ANTIGRAVITY),
         _ => None,
     }
     .and_then(Value::as_str)
@@ -364,6 +367,10 @@ fn on_turns(s: &mut Setup, slot: &Slot) {
                 if st.runs_dirty.load(std::sync::atomic::Ordering::SeqCst) {
                     st.save().await;
                 }
+                // Antigravity doesn't stream quota during a turn: refresh asynchronously after it ends
+                if e.agent == "antigravity" {
+                    st.spawn_refresh(&ctx, &e.agent, e.account.as_deref().unwrap_or_default(), false, true);
+                }
             }
         }
     });
@@ -391,6 +398,9 @@ fn commands(s: &mut Setup, slot: &Slot) {
     on!(s, slot, c::View, |st, ctx, a| {
         // the turns a client saw end are in what it reads (their drain, their Where it went): ADR-0073
         ctx.events_delivered(EVENTS_WAIT).await;
+        if a.agent == "antigravity" {
+            st.spawn_refresh(&ctx, &a.agent, "", true, false);
+        }
         let mut v = lock(&st.budget).view(&a.agent, now(&ctx));
         // v1 meta.js:63: the drain card with Drain watch on, the notices unless they're switched off
         let (drain, notices) = (
@@ -455,7 +465,7 @@ fn commands(s: &mut Setup, slot: &Slot) {
         Ok(c::Done { ok })
     });
     on!(s, slot, c::SetStop, |st, ctx, a| {
-        let keys = [settings::AUTO_STOP, settings::AUTO_STOP_CLAUDE, settings::AUTO_STOP_CODEX];
+        let keys = [settings::AUTO_STOP, settings::AUTO_STOP_CLAUDE, settings::AUTO_STOP_CODEX, settings::AUTO_STOP_ANTIGRAVITY];
         if !keys.contains(&a.key.as_str()) || !(STOP_AT.contains(&a.value.as_str()) || (a.value == "same" && a.key != settings::AUTO_STOP))
         {
             return Err(WireError::invalid("Automations stop at: off, 50, 75 or 90 (or same)."));
@@ -530,6 +540,7 @@ impl Plugin for BudgetPlugin {
                 plans: Mutex::default(),
                 plan_seq: std::sync::atomic::AtomicU64::new(0),
                 quiet: Mutex::default(),
+                refresh: Mutex::default(),
                 runs_dirty: std::sync::atomic::AtomicBool::new(false),
             });
             let _ = start.set(st.clone());
