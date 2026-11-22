@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.machines",
   "name": "Machines",
-  "version": "1.0.0-alpha.5",
+  "version": "1.0.0-alpha.6",
   "api": "1",
   "description": "Peers, your other computers, over the v2 sync protocol: the ssh and loopback transports, the mirrored task lists, commands routed to the owner with the same key, the machines.peers service",
   "author": "wisp",

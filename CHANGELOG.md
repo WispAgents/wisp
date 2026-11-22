@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.6] - 2026-11-23
+
 ### Added
 
 - Usage (Antigravity): added Antigravity plan quota support using `agy -p "/usage" --output-format json` (`Harness::live_limits`, non-blocking post-turn and stale-view refreshes, `autoStopAntigravity` stop line, Home usage bar, Settings → Usage live updates, Spare allowance, and `cache_read_tokens` capture).
