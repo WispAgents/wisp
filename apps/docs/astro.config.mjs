@@ -23,18 +23,19 @@ export default defineConfig({
   vite: { resolve: { alias: { '@wisp-docs': fileURLToPath(new URL('./src/components', import.meta.url)) } } },
   integrations: [
     starlight({
-      title: 'wisp docs',
-      description: 'Manage the code your agents write: run Claude Code, Codex and every coding agent from the app, the TUI or the CLI; declare them as code; track every line they write.',
+      title: 'Wisp Agents',
+      description: 'Wisp Agents documentation: run Claude Code, Codex and Cursor in parallel from the app, TUI or CLI, declare agents as code, and track every line.',
       // every page: the site's card for links shared on X, Slack, LinkedIn…; the page's own title and description
       // come from Starlight (og:title, og:description, canonical)
       head: [
         { tag: 'meta', attrs: { property: 'og:image', content: 'https://trywisp.dev/assets/og.png' } },
         { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
         { tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
-        { tag: 'meta', attrs: { property: 'og:image:alt', content: 'wisp: manage the code your agents write' } },
+        { tag: 'meta', attrs: { property: 'og:image:alt', content: 'Wisp Agents: manage the code your agents write' } },
         { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
         { tag: 'meta', attrs: { name: 'twitter:site', content: '@trywispagents' } },
         { tag: 'meta', attrs: { name: 'twitter:image', content: 'https://trywisp.dev/assets/og.png' } },
+        { tag: 'meta', attrs: { name: 'twitter:image:alt', content: 'Wisp Agents: manage the code your agents write' } },
         { tag: 'link', attrs: { rel: 'alternate', type: 'text/plain', href: '/docs/llms.txt', title: 'llms.txt' } },
         // How-to tabs (Desktop app · Phone app · TUI · CLI, synced as "way"): a reader on a phone who never picked one
         // gets Phone app first. Before paint, so Starlight's restore script draws it at once (no flash, no shift); with
@@ -53,8 +54,11 @@ export default defineConfig({
       editLink: { baseUrl: 'https://github.com/WispAgents/wisp/edit/main/docs/site/' },
       lastUpdated: true,
       customCss: ['./src/styles/wisp.css'],
-      // the alpha badge beside the title, on every page (as the site's header has it)
-      components: { SiteTitle: './src/components/SiteTitle.astro' },
+      // the alpha badge beside the title, and SEO head enhancements (404 noindex, JSON-LD, Twitter meta)
+      components: {
+        SiteTitle: './src/components/SiteTitle.astro',
+        Head: './src/components/Head.astro',
+      },
       sidebar: [
         { label: 'Get started', items: pages('start') },
         { label: 'Concepts', items: pages('concepts') },

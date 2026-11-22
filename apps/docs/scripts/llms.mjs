@@ -73,9 +73,9 @@ for (const p of pages) {
 }
 const names = { start: 'Get started', concepts: 'Concepts', guides: 'Guides', integrations: 'Integrations', plugins: 'Build plugins', reference: 'Reference', migrate: 'Import a wisp home' };
 const index = [
-  '# wisp',
+  '# Wisp Agents',
   '',
-  '> Your coding agents, as code. wisp runs Claude Code, Codex, Cursor and every other coding agent from your repo, in parallel, on any of your computers or in the cloud, and keeps every task they did next to the code they wrote.',
+  '> Your coding agents, as code. Wisp Agents runs Claude Code, Codex, Cursor and every other coding agent from your repo, in parallel, on any of your computers or in the cloud, and keeps every task they did next to the code they wrote.',
   '',
   'Each page below is plain markdown. `llms-full.txt` has all of them in one file.',
   '',

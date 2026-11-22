@@ -1,14 +1,5 @@
 User-agent: *
 Allow: /
-# the repo's working notes are published with the site; they aren't pages
-Disallow: /adr/
-Disallow: /qa/
-Disallow: /design/
-Disallow: /ux/
-Disallow: /research/
-Disallow: /site/
-Disallow: /v1-*
-Disallow: /v2-*
 
 Sitemap: https://trywisp.dev/sitemap.xml
 Sitemap: https://trywisp.dev/docs/sitemap-index.xml

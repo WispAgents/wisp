@@ -17,6 +17,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DOCS = path.join(ROOT, 'docs');
 const SITE = 'https://trywisp.dev';
 const REPO = 'https://github.com/WispAgents/wisp';
+const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'npm/wisp-agents/package.json'), 'utf8')).version;
 // Markdown with \n line ends, whatever the checkout has (Windows checks out CRLF).
 const readText = (f) => fs.readFileSync(f, 'utf8').replace(/\r\n?/g, '\n');
 
@@ -120,24 +121,24 @@ export const AGENTS = [
   {
     id: 'claude', slug: 'claude-code', name: 'Claude Code', vendor: 'Anthropic', bin: 'claude', logo: 'claudecode-color.svg',
     docs: 'https://claude.com/claude-code',
-    lede: 'Hand Claude Code a task and close the tab. wisp runs it headless in its own git worktree, routes its questions and permission prompts to you, and hands back a one-screen report with the real diff and the test run.',
+    lede: 'Hand Claude Code a task and close the tab. Wisp Agents runs it headless in its own git worktree, routes its questions and permission prompts to you, and hands back a one-screen report with the real diff and the test run.',
     run: 'claude -p --output-format stream-json \\\n  --permission-mode acceptEdits \\\n  --append-system-prompt "<wisp protocol>" \\\n  --mcp-config \'{"mcpServers":{"wisp":…}}\' --verbose',
     modes: { plan: '--permission-mode plan', edits: '--permission-mode acceptEdits', auto: '--permission-mode bypassPermissions' },
     ask: 'An MCP tool, <code>mcp__wisp__ask_user</code>, added with <code>--mcp-config</code>. The run pauses, you get a notification, and your answer goes straight back into the same session.',
-    approve: 'In Edits mode, Claude Code’s permission prompts go to wisp’s <code>approve</code> tool (<code>--permission-prompt-tool</code>). The card asks <em>Allow Claude Code to run <code>npm publish</code>?</em> with <b>Allow</b>, <b>Always allow in this task</b> and <b>Deny</b>.',
+    approve: 'In Edits mode, Claude Code’s permission prompts go to Wisp Agents’ <code>approve</code> tool (<code>--permission-prompt-tool</code>). The card asks <em>Allow Claude Code to run <code>npm publish</code>?</em> with <b>Allow</b>, <b>Always allow in this task</b> and <b>Deny</b>.',
     btw: 'answered on a copy of the conversation (<code>--resume &lt;id&gt; --fork-session</code>), so it knows what the run did and why',
     resume: 'claude --resume <id>',
     models: 'Opus, Sonnet or Haiku (or whatever Claude Code is set to), plus a thinking level passed as <code>--effort</code>.',
     extras: [
       'Several folders in one task: the others are passed as <code>--add-dir</code>.',
-      'Claude in Chrome: when it is on by default in your Claude settings, wisp adds <code>--chrome</code>, which headless runs need.',
-      'Delegate: a Claude Code lead can hand work to Codex, opencode or another Claude, here or on your other machines, through wisp’s <code>delegate</code> tool.',
+      'Claude in Chrome: when it is on by default in your Claude settings, Wisp Agents adds <code>--chrome</code>, which headless runs need.',
+      'Delegate: a Claude Code lead can hand work to Codex, opencode or another Claude, here or on your other machines, through Wisp Agents’ <code>delegate</code> tool.',
     ],
   },
   {
     id: 'codex', slug: 'codex', name: 'Codex', vendor: 'OpenAI', bin: 'codex', logo: 'codex-color.svg',
     docs: 'https://github.com/openai/codex',
-    lede: 'Run OpenAI’s Codex CLI on real tasks without watching it. wisp starts <code>codex exec</code> in a fresh worktree, keeps the sandbox you pick, and turns the JSON event stream into a readable report: what changed, what ran, what passed.',
+    lede: 'Run OpenAI’s Codex CLI on real tasks without watching it. Wisp Agents starts <code>codex exec</code> in a fresh worktree, keeps the sandbox you pick, and turns the JSON event stream into a readable report: what changed, what ran, what passed.',
     run: 'codex exec --json --skip-git-repo-check \\\n  -c sandbox_mode="workspace-write" \\\n  -c mcp_servers.wisp.command=…',
     modes: { plan: '-c sandbox_mode="read-only"', edits: '-c sandbox_mode="workspace-write"', auto: '--dangerously-bypass-approvals-and-sandbox' },
     ask: 'An MCP tool, <code>mcp__wisp__ask_user</code>, configured for the run. Codex pauses on it, and your answer comes back as the tool result.',
@@ -154,14 +155,14 @@ export const AGENTS = [
   {
     id: 'cursor', slug: 'cursor', name: 'Cursor CLI', vendor: 'Cursor', bin: 'cursor-agent', logo: 'cursor.svg', mono: true,
     docs: 'https://cursor.com/cli',
-    lede: 'Use the Cursor agent outside the editor. wisp drives <code>cursor-agent</code> in print mode on its own branch, reads its stream of tool calls, and gives you a report you can ship from, with any model your Cursor plan includes.',
+    lede: 'Use the Cursor agent outside the editor. Wisp Agents drives <code>cursor-agent</code> in print mode on its own branch, reads its stream of tool calls, and gives you a report you can ship from, with any model your Cursor plan includes.',
     run: 'cursor-agent -p --output-format stream-json --trust \\\n  [--mode plan | --force] [--model <id>]',
     modes: { plan: '--mode plan', edits: '(its own permissions)', auto: '--force' },
-    ask: 'Cursor CLI can’t load extra MCP servers per run, so wisp asks it to end the turn with a question block. The card shows the options; your pick resumes the session.',
+    ask: 'Cursor CLI can’t load extra MCP servers per run, so Wisp Agents asks it to end the turn with a question block. The card shows the options; your pick resumes the session.',
     approve: 'Without <code>--force</code>, calls Cursor’s permissions refuse come back on the card with <b>Allow &amp; retry</b>.',
-    btw: 'answered from wisp’s record of the task (requests, reports, actions and files changed), since Cursor CLI can’t fork a chat',
+    btw: 'answered from Wisp Agents’ record of the task (requests, reports, actions and files changed), since Cursor CLI can’t fork a chat',
     resume: 'cursor-agent --resume <id>',
-    models: 'The list from <code>cursor-agent --list-models</code>, so new models show up without a wisp update.',
+    models: 'The list from <code>cursor-agent --list-models</code>, so new models show up without a Wisp Agents update.',
     extras: [
       'Prompts go in on stdin, so long tasks and pasted logs aren’t cut by the shell.',
       'Subagent calls show on the card as <em>Delegating</em>.',
@@ -170,7 +171,7 @@ export const AGENTS = [
   {
     id: 'opencode', slug: 'opencode', name: 'opencode', vendor: 'SST', bin: 'opencode', logo: 'opencode.svg', mono: true,
     docs: 'https://opencode.ai',
-    lede: 'Point opencode at any provider and let it work in the background. wisp runs <code>opencode run</code> with the model and variant you pick, gives it a way to ask you questions, and turns the session into a short report.',
+    lede: 'Point opencode at any provider and let it work in the background. Wisp Agents runs <code>opencode run</code> with the model and variant you pick, gives it a way to ask you questions, and turns the session into a short report.',
     run: 'opencode run --format json --print-logs --log-level ERROR \\\n  [--agent plan | --auto] [--model provider/model --variant <effort>]',
     modes: { plan: '--agent plan', edits: '(its own permissions)', auto: '--auto' },
     ask: 'An MCP tool, <code>wisp_ask_user</code>, added through opencode’s inline config, with a long MCP timeout so it can wait for you.',
@@ -180,19 +181,19 @@ export const AGENTS = [
     models: 'Every <code>provider/model</code> from <code>opencode models</code>, with each model’s variants as the thinking level.',
     extras: [
       'Attachments go in with <code>--file</code>.',
-      'When a free model is rate-limited and opencode keeps retrying in silence, wisp stops waiting and says so on the card.',
-      'If opencode isn’t on your PATH, wisp can install its own copy from the launcher.',
+      'When a free model is rate-limited and opencode keeps retrying in silence, Wisp Agents stops waiting and says so on the card.',
+      'If opencode isn’t on your PATH, Wisp Agents can install its own copy from the launcher.',
     ],
   },
   {
     id: 'antigravity', slug: 'antigravity', name: 'Antigravity CLI', vendor: 'Google', bin: 'agy', logo: 'antigravity-color.svg',
     docs: 'https://antigravity.google/docs/cli/headless/',
-    lede: 'Run Google’s Antigravity agent headless on long tasks. wisp drives <code>agy</code> over stream-json with a long print timeout, so it isn’t cut off at five minutes, and turns its steps into a report.',
+    lede: 'Run Google’s Antigravity agent headless on long tasks. Wisp Agents drives <code>agy</code> over stream-json with a long print timeout, so it isn’t cut off at five minutes, and turns its steps into a report.',
     run: 'agy --input-format stream-json --output-format stream-json \\\n  --print-timeout <long> --mode accept-edits',
     modes: { plan: '--mode plan', edits: '--mode accept-edits', auto: '--dangerously-skip-permissions' },
-    ask: 'wisp asks it to end the turn with a question block. The card shows the options; your pick resumes the conversation.',
+    ask: 'Wisp Agents asks it to end the turn with a question block. The card shows the options; your pick resumes the conversation.',
     approve: 'In headless mode shell commands are governed by Antigravity’s permissions; refused ones come back on the card with <b>Allow &amp; retry</b>.',
-    btw: 'answered from wisp’s record of the task (requests, reports, actions and files changed)',
+    btw: 'answered from Wisp Agents’ record of the task (requests, reports, actions and files changed)',
     resume: 'agy --conversation <id>',
     models: 'The list from <code>agy models</code>, plus a thinking level passed as <code>--effort</code>.',
     extras: [
@@ -203,34 +204,34 @@ export const AGENTS = [
   {
     id: 'grok', slug: 'grok', name: 'Grok Build', vendor: 'xAI', bin: 'grok', logo: 'grok.svg', mono: true,
     docs: 'https://x.ai/cli',
-    lede: 'Put xAI’s Grok Build CLI to work in the background. wisp runs <code>grok</code> with your permission mode, gives it wisp’s tools through a throwaway agent file, and hands you the report when it’s done.',
+    lede: 'Put xAI’s Grok Build CLI to work in the background. Wisp Agents runs <code>grok</code> with your permission mode, gives it Wisp Agents’ tools through a throwaway agent file, and hands you the report when it’s done.',
     run: 'grok --prompt-file <task> --output-format streaming-messages-json \\\n  --permission-mode acceptEdits --rules "<wisp protocol>" \\\n  --agent <file with wisp’s MCP server> --no-auto-update',
     modes: { plan: '--permission-mode plan', edits: '--permission-mode acceptEdits', auto: '--permission-mode bypassPermissions' },
-    ask: 'An MCP tool, reached as <code>wisp__ask_user</code>. Each turn writes an agent file that keeps Grok’s stock prompt and only adds wisp’s server.',
+    ask: 'An MCP tool, reached as <code>wisp__ask_user</code>. Each turn writes an agent file that keeps Grok’s stock prompt and only adds Wisp Agents’ server.',
     approve: 'Calls its permission mode refuses come back on the card with <b>Allow &amp; retry</b>.',
-    btw: 'answered from wisp’s record of the task (requests, reports, actions and files changed)',
+    btw: 'answered from Wisp Agents’ record of the task (requests, reports, actions and files changed)',
     resume: 'grok --resume <id>',
     models: 'The list from <code>grok models</code>, with each model’s reasoning levels as <code>--reasoning-effort</code>.',
     extras: [
-      'Grok’s own question tool is turned off so questions come to you through wisp.',
+      'Grok’s own question tool is turned off so questions come to you through Wisp Agents.',
       'Auto-updates are off during a run, so a task never stalls on one.',
     ],
   },
   {
     id: 'copilot', slug: 'copilot', name: 'Copilot CLI', vendor: 'GitHub', bin: 'copilot', logo: 'githubcopilot.svg', mono: true,
     docs: 'https://docs.github.com/copilot/how-tos/copilot-cli',
-    lede: 'Put the GitHub Copilot CLI to work in the background, with any model your Copilot plan includes. wisp hands <code>copilot</code> the task on stdin, adds wisp’s tools for the run, and turns its JSON event stream into a report you can ship from.',
+    lede: 'Put the GitHub Copilot CLI to work in the background, with any model your Copilot plan includes. Wisp Agents hands <code>copilot</code> the task on stdin, adds Wisp Agents’ tools for the run, and turns its JSON event stream into a report you can ship from.',
     run: 'copilot --output-format json --allow-tool=write \\\n  --session-id <uuid> --no-ask-user \\\n  --additional-mcp-config \'{"mcpServers":{"wisp":…}}\' < task',
     modes: { plan: '--mode plan', edits: '--allow-tool=write', auto: '--allow-all' },
     ask: 'An MCP tool, reached as <code>wisp-ask_user</code>, added with <code>--additional-mcp-config</code> and allowed with <code>--allow-tool=wisp</code>. Copilot’s own question tool is off (<code>--no-ask-user</code>), so its questions come to you.',
-    approve: 'Copilot can’t hand a permission prompt to wisp, so in Edits mode the commands its permissions refuse come back on the card with <b>Allow &amp; retry</b>, which re-runs the turn with exactly those commands allowed (<code>--allow-tool=shell(npm publish)</code>).',
-    btw: 'answered from wisp’s record of the task (requests, reports, actions and files changed)',
+    approve: 'Copilot can’t hand a permission prompt to Wisp Agents, so in Edits mode the commands its permissions refuse come back on the card with <b>Allow &amp; retry</b>, which re-runs the turn with exactly those commands allowed (<code>--allow-tool=shell(npm publish)</code>).',
+    btw: 'answered from Wisp Agents’ record of the task (requests, reports, actions and files changed)',
     resume: 'copilot --resume=<id>',
     models: 'The models <code>copilot help config</code> lists (Claude, GPT, Gemini, Grok…), plus a thinking level passed as <code>--reasoning-effort</code>.',
     extras: [
       'The task goes in on stdin, so long prompts and pasted logs aren’t cut by the shell.',
       'Several folders in one task: the others are passed as <code>--add-dir</code>. Pasted screenshots go in with <code>--attachment</code>.',
-      'Delegate: a Copilot lead hands work through wisp’s <code>delegate</code> tool, with its own <code>task</code> subagents turned off.',
+      'Delegate: a Copilot lead hands work through Wisp Agents’ <code>delegate</code> tool, with its own <code>task</code> subagents turned off.',
     ],
   },
 ];
@@ -314,7 +315,7 @@ const PAGE_JS = `<script>
         if (r.ok) {
           var phone = { ios: 'iPhone', android: 'Android', both: 'iPhone and Android' }[platform];
           var t = d.createElement('div'); t.className = 'thanks ph-no-capture'; t.setAttribute('role', 'status'); t.tabIndex = -1;
-          t.innerHTML = '<b>You’re on the list.</b> We’ll email <span></span> once, when wisp is out for ' + phone + '. Nothing else.';
+          t.innerHTML = '<b>You’re on the list.</b> We’ll email <span></span> once, when Wisp Agents is out for ' + phone + '. Nothing else.';
           t.querySelector('span').textContent = email;
           f.replaceWith(t); t.focus();
         } else if (r.status === 429) say('Too many tries from here. Wait a minute, then try again.', true);
@@ -338,9 +339,9 @@ const NAV = [
   ['Changelog', '/changelog.html', 'opt'],
 ];
 
-function page({ path: p, title, description, crumbs = [], body, schema = [], noindex = false, image = '/assets/og.png', imageAlt = 'wisp: manage the code your agents write', head = '', type = 'website', main = 'doc' }) {
+function page({ path: p, title, description, crumbs = [], body, schema = [], noindex = false, image = '/assets/og.png', imageAlt = 'Wisp Agents: manage the code your agents write', head = '', type = 'website', main = 'doc' }) {
   const url = `${SITE}${p.replace(/index\.html$/, '')}`;
-  const trail = [['wisp', '/'], ...crumbs];
+  const trail = [['Wisp Agents', '/'], ...crumbs];
   const breadcrumb = {
     '@type': 'BreadcrumbList',
     itemListElement: trail.map(([name, at], i) => ({ '@type': 'ListItem', position: i + 1, name, item: `${SITE}${at}` })),
@@ -360,7 +361,8 @@ ${noindex ? '<meta name="robots" content="noindex" />' : `<link rel="canonical" 
 <meta name="theme-color" content="#f7f6f3" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#0d0d0f" media="(prefers-color-scheme: dark)" />
 <meta property="og:type" content="${type}" />
-<meta property="og:site_name" content="wisp" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:site_name" content="Wisp Agents" />
 <meta property="og:url" content="${url}" />
 <meta property="og:title" content="${esc(title)}" />
 <meta property="og:description" content="${esc(description)}" />
@@ -377,6 +379,7 @@ ${noindex ? '<meta name="robots" content="noindex" />' : `<link rel="canonical" 
 <link rel="icon" href="/favicon.ico" sizes="48x48" />
 <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" sizes="180x180" />
+<link rel="sitemap" type="application/xml" href="/sitemap.xml" />
 <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
 ${graph.length ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })}</script>\n` : ''}<style>${CSS}</style>
 ${head}</head>
@@ -384,8 +387,8 @@ ${head}</head>
 <a class="skip" href="#main">Skip to content</a>
 <header class="nav">
   <div class="wrap nav-in">
-    <a class="brand" href="/" aria-label="wisp, home">${MARK}wisp</a>
-    <span class="alpha" title="wisp is in alpha: expect rough edges">alpha</span>
+    <a class="brand" href="/" aria-label="Wisp Agents, home">${MARK}Wisp Agents</a>
+    <span class="alpha" title="Wisp Agents is in alpha: expect rough edges">alpha</span>
     <nav class="links" aria-label="Main">
       ${NAV.map(([t, h, c]) => `<a${c ? ` class="${c}"` : ''} href="${h}"${p === h || (h !== '/' && h.length > 1 && p.startsWith(h) && h !== DOCS_URL) ? ' aria-current="page"' : ''}>${t}</a>`).join('\n      ')}
     </nav>
@@ -399,12 +402,12 @@ ${crumbs.length ? `<div class="wrap"><nav class="crumbs" aria-label="Breadcrumb"
 <footer class="foot">
   <div class="wrap foot-in">
     <div>
-      <a class="brand" href="/">${MARK}wisp</a>
+      <a class="brand" href="/">${MARK}Wisp Agents</a>
       <p class="muted small" style="margin-top:10px">Manage the code your agents write.<br />Open source, MIT. Runs on your machines.</p>
     </div>
     <div><h2>Product</h2><ul>
       <li><a href="/app.html">Desktop and phone apps</a></li>
-      <li><a href="/cloud.html">wisp Cloud and the Grid</a></li>
+      <li><a href="/cloud.html">Wisp Agents Cloud &amp; Grid</a></li>
       <li><a href="/agents/">Agents</a></li>
       <li><a href="/changelog.html">Changelog</a></li>
     </ul></div>
@@ -450,7 +453,7 @@ const phoneShot = (name, alt, o) => `<div class="phone">${shot(name, PHONE, [390
 
 const wayShot = (html, phone = false) => `<div class="way-shot${phone ? ' is-phone' : ''}">${html}</div>`;
 /** Where install is shown: wisp is in alpha, and where to say what broke. */
-const ALPHA_NOTE = `<p class="muted small alpha-note">wisp is in alpha: expect rough edges, and <a href="${REPO}/issues">tell us what breaks</a>.</p>`;
+const ALPHA_NOTE = `<p class="muted small alpha-note">Wisp Agents is in alpha: expect rough edges, and <a href="${REPO}/issues">tell us what breaks</a>.</p>`;
 const install = (cmd = 'npx wisp-agents') =>
   `<div class="install"><span class="dollar" aria-hidden="true">$</span><code>${esc(cmd)}</code><button class="copy" type="button" data-copy="${esc(cmd)}" aria-label="Copy command">${COPY_ICON}</button></div>`;
 
@@ -476,12 +479,12 @@ const sh = (cmd, note = '') => `${esc(cmd)}${note ? `   <span class="muted"># ${
 const LOGO = (a, size = 20) => `<img src="/assets/logos/${a.logo}" alt="" width="${size}" height="${size}"${a.mono ? ' class="mono"' : ''} />`;
 
 const FAQ = [
-  ['Is wisp free?', 'Yes. wisp is open source under the MIT license and runs on your own computers. You use the coding agents you already have, on your own plans and keys, so wisp adds nothing to your bill. wisp Cloud, a hosted wisp on a server, is optional.'],
-  ['Which coding agents does wisp work with?', 'Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity. wisp runs the real CLIs you already installed and signed in to, so each agent keeps its own models, tools and settings.'],
-  ['Does my code leave my computer?', 'No. wisp runs on your machines. Your prompts and code go only to the agents you use, under your own accounts, as they would without wisp. wisp sends anonymous usage counts you can turn off, never your code or prompts.'],
-  ['Do I need an API key?', 'No. If you already use Claude Code or Codex with a subscription, wisp uses that same sign-in. API keys work too, for agents that take them.'],
-  ['Can I use it from the terminal?', 'Yes. Everything the app does, the CLI does (wisp "fix the flaky test", wisp ls, wisp ship), and wisp tui is a full terminal UI. After a command fails, wisp "check the error above" hands the agent what just happened in that terminal. Your agents can drive wisp too, through its MCP server.'],
-  ['Is there a phone app?', 'The phone apps for iPhone and Android are coming. Join the waitlist on the Get the app page and we email you once, when yours is out. Today you can already use wisp from your phone’s browser, from your cloud wisp or a computer you put on the Grid.'],
+  ['Is Wisp Agents free?', 'Yes. Wisp Agents is open source under the MIT license and runs on your own computers. You use the coding agents you already have, on your own plans and keys, so Wisp Agents adds nothing to your bill. Wisp Agents Cloud, a hosted instance on a server, is optional.'],
+  ['Which coding agents does Wisp Agents work with?', 'Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity. Wisp Agents runs the real CLIs you already installed and signed in to, so each agent keeps its own models, tools and settings.'],
+  ['Does my code leave my computer?', 'No. Wisp Agents runs on your machines. Your prompts and code go only to the agents you use, under your own accounts, as they would without Wisp Agents. Wisp Agents sends anonymous usage counts you can turn off, never your code or prompts.'],
+  ['Do I need an API key?', 'No. If you already use Claude Code or Codex with a subscription, Wisp Agents uses that same sign-in. API keys work too, for agents that take them.'],
+  ['Can I use it from the terminal?', 'Yes. Everything the app does, the CLI does (wisp "fix the flaky test", wisp ls, wisp ship), and wisp tui is a full terminal UI. After a command fails, wisp "check the error above" hands the agent what just happened in that terminal. Your agents can drive Wisp Agents too, through its MCP server.'],
+  ['Is there a phone app?', 'The phone apps for iPhone and Android are coming. Join the waitlist on the Get the app page and we email you once, when yours is out. Today you can already use Wisp Agents from your phone’s browser, from Wisp Agents Cloud or a computer you put on the Grid.'],
   ['Does it run on Windows and Linux?', 'Yes. The desktop app runs on macOS, Windows and Linux, and the command line installs with npm on macOS, Windows and Linux, x64 and Arm (Node.js 18 or later).'],
   ['What does “as code” mean here?', 'Your agents, crew, machines, skills, MCP servers and workflows can live as files in your repo’s .wisp/ folder. You review them in a pull request, apply them with wisp apply, and every task the agents ran is kept next to the code it wrote.'],
 ];
@@ -494,7 +497,7 @@ function landing() {
   const body = `
 <div class="wrap">
   <section class="hero" aria-labelledby="hero-h">
-    <p class="kicker"><b>Open source</b> · MIT · runs on your machines</p>
+    <p class="kicker"><b>Wisp Agents</b> · Open source · MIT</p>
     <h1 id="hero-h">Manage the code your agents write.</h1>
     <p class="lede"><b>Declare</b> your coding agents as code. <b>Run</b> them anywhere, many at once. <b>Track</b> every line they write, right next to your code. From the desktop app, your phone or the terminal.</p>
     <div class="cta" id="install">
@@ -505,8 +508,8 @@ function landing() {
     <p class="muted small" style="margin-top:14px">Works with Claude Code, Codex, Cursor, opencode, Copilot, Grok and Antigravity, on the plans you already pay for.</p>
     ${ALPHA_NOTE}
     <div class="stage">
-      ${deskShot('desktop-task', 'The wisp desktop app: a list of tasks on the left, and a finished task with its report: what the agent did, the diff and the tests', { eager: true, sizes: '(max-width: 1100px) 100vw, 1080px' })}
-      ${phoneShot('ios-task', 'The wisp iPhone app showing the same task’s report', { sizes: '(max-width: 700px) 34vw, 260px' })}
+      ${deskShot('desktop-task', 'The Wisp Agents desktop app: a list of tasks on the left, and a finished task with its report: what the agent did, the diff and the tests', { eager: true, sizes: '(max-width: 1100px) 100vw, 1080px' })}
+      ${phoneShot('ios-task', 'The Wisp Agents iPhone app showing the same task’s report', { sizes: '(max-width: 700px) 34vw, 260px' })}
     </div>
   </section>
 
@@ -517,12 +520,12 @@ function landing() {
 
   <section aria-labelledby="why-h">
     <div class="sec-head">
-      <p class="eyebrow">Why wisp</p>
+      <p class="eyebrow">Why Wisp Agents</p>
       <h2 id="why-h">The new way to build with agents</h2>
-      <p>Coding agents now write much of the code. The hard part moved: keeping several of them busy, checking their work, and knowing later why a line is there. wisp is built for that part.</p>
+      <p>Coding agents now write much of the code. The hard part moved: keeping several of them busy, checking their work, and knowing later why a line is there. Wisp Agents is built for that part.</p>
     </div>
     <div class="why">
-      <div class="card"><span class="num">01</span><h3>Your agents, your plans</h3><p>wisp runs the real Claude Code, Codex and the others, signed in with your own accounts. No new model, no markup, no lock-in.</p></div>
+      <div class="card"><span class="num">01</span><h3>Your agents, your plans</h3><p>Wisp Agents runs the real Claude Code, Codex and the others, signed in with your own accounts. No new model, no markup, no lock-in.</p></div>
       <div class="card"><span class="num">02</span><h3>Many at once, nothing collides</h3><p>Each task gets its own git worktree. Run several at once, on this computer, your other ones or the cloud, and ship each as its own pull request.</p></div>
       <div class="card"><span class="num">03</span><h3>Done means done</h3><p>Give a task a goal and judges on other harnesses. It keeps going until they agree, or tells you why it can’t.</p></div>
       <div class="card"><span class="num">04</span><h3>Code that remembers why</h3><p>Every task is a file in your repo. <code>wisp blame</code> shows which task wrote a line and what it was asked. Rerun it, resume it, share it.</p></div>
@@ -544,7 +547,7 @@ function landing() {
       </div>
       ${ways({
         label: 'Set up a team',
-        desktop: `<ol><li>Open the <b>Org</b> page (its button is at the bottom of the rail on the left) and choose <b>Add member</b>: a reviewer, a fixer, a nightly bot.</li><li>Settings (<kbd>⌘K</kbd> → Settings) → <b>Setup</b> → <b>Make the formula</b> writes your whole setup as a file to commit.</li><li>Paste a formula in the same pane to import one: you see what it would change first.</li></ol>${wayShot(deskShot('desktop-org', 'The Org page in the wisp desktop app: the crew, and who hands work to whom', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        desktop: `<ol><li>Open the <b>Org</b> page (its button is at the bottom of the rail on the left) and choose <b>Add member</b>: a reviewer, a fixer, a nightly bot.</li><li>Settings (<kbd>⌘K</kbd> → Settings) → <b>Setup</b> → <b>Make the formula</b> writes your whole setup as a file to commit.</li><li>Paste a formula in the same pane to import one: you see what it would change first.</li></ol>${wayShot(deskShot('desktop-org', 'The Org page in the Wisp Agents desktop app: the crew, and who hands work to whom', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
         phone: `<ol><li>Open the <b>Crew</b> tab to see your members and add one.</li><li>Tap a member’s story under the Tasks bar to see what they’re doing, and reply.</li><li>Writing the formula itself is easier on a computer: the Desktop app or the CLI.</li></ol>`,
         tui: `<ol><li><code>wisp tui</code>, then <kbd>g</kbd> <kbd>c</kbd> for the crew view.</li><li><kbd>n</kbd> adds a member, <kbd>a</kbd> gives one a job, <kbd>c</kbd> checks in.</li><li>Any CLI command runs from the reply box: <code>/crew create --name Ada</code>.</li></ol>`,
         cli: `<span class="c"># .wisp/wisp.yml</span>
@@ -563,18 +566,18 @@ ${sh('wisp apply -f .wisp/wisp.yml')}`,
       <div>
         <p class="eyebrow">2 · Run</p>
         <h2>Every harness, any machine, from anywhere</h2>
-        <p class="muted">Start a task in one line. wisp runs the agent in its own worktree, streams what it does, and hands back a short report with the diff and the tests. The full transcript is always one click away.</p>
+        <p class="muted">Start a task in one line. Wisp Agents runs the agent in its own worktree, streams what it does, and hands back a short report with the diff and the tests. The full transcript is always one click away.</p>
         <ul>
           <li>Follow up, queue the next step, or ask on the side with <code>btw</code> without stopping it.</li>
           <li><b>Compare</b> two agents on the same task, or <b>try it two ways</b> on one.</li>
-          <li>Run it here, on your other computers over SSH, or in wisp Cloud.</li>
+          <li>Run it here, on your other computers over SSH, or in Wisp Agents Cloud.</li>
         </ul>
         <p><a href="/docs/guides/run/run-and-follow-up/">Run a task and follow up ${'→'}</a></p>
       </div>
       ${ways({
         label: 'Start and ship a task',
-        desktop: `<ol><li>Press <kbd>N</kbd> for <b>New task</b>, pick the agent and model in its footer, type, <kbd>Enter</kbd>.</li><li>Answer its questions on the task page; reply below to follow up. <kbd>]</kbd> opens the side panel: Changes, PR, Shell, Preview.</li><li><b>Ship</b> (<kbd>S</kbd>) commits, pushes and opens the pull request.</li></ol><p class="small muted">In the browser it’s the same window, menus and keys.</p>${wayShot(deskShot('desktop-new-task', 'New task in the wisp desktop app: a prompt typed, with the mode, Claude Code and where it runs under it', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
-        phone: `<ol><li>In <b>Tasks</b>, tap <b>New task</b>, write what you want, send.</li><li>Answer its questions in the task; the reply bar follows up. Swipe a row right to mark it done.</li><li><b>⋯</b> (iPhone) or <b>⋮</b> (Android) → <b>Ship it…</b> opens the pull request.</li></ol>${wayShot(phoneShot('ios-list', 'The task list in the wisp iPhone app: tasks that need you, and tasks still working', { sizes: '200px' }), true)}`,
+        desktop: `<ol><li>Press <kbd>N</kbd> for <b>New task</b>, pick the agent and model in its footer, type, <kbd>Enter</kbd>.</li><li>Answer its questions on the task page; reply below to follow up. <kbd>]</kbd> opens the side panel: Changes, PR, Shell, Preview.</li><li><b>Ship</b> (<kbd>S</kbd>) commits, pushes and opens the pull request.</li></ol><p class="small muted">In the browser it’s the same window, menus and keys.</p>${wayShot(deskShot('desktop-new-task', 'New task in the Wisp Agents desktop app: a prompt typed, with the mode, Claude Code and where it runs under it', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>In <b>Tasks</b>, tap <b>New task</b>, write what you want, send.</li><li>Answer its questions in the task; the reply bar follows up. Swipe a row right to mark it done.</li><li><b>⋯</b> (iPhone) or <b>⋮</b> (Android) → <b>Ship it…</b> opens the pull request.</li></ol>${wayShot(phoneShot('ios-list', 'The task list in the Wisp Agents iPhone app: tasks that need you, and tasks still working', { sizes: '200px' }), true)}`,
         tui: `<ol><li><code>wisp tui</code>, <kbd>n</kbd> for a new task, <kbd>Enter</kbd> to send.</li><li><kbd>1</kbd>–<kbd>9</kbd> answers a question; <kbd>y</kbd> <kbd>a</kbd> <kbd>n</kbd> allow a tool.</li><li><code>/ship ship</code> opens the pull request; <kbd>d</kbd> shows the diff.</li></ol>`,
         cli: `${sh('wisp "fix the flaky reconnect test"', 'runs in its own worktree')}
 ${sh('wisp "add rate limiting to /login" --agent codex --effort high')}
@@ -588,18 +591,18 @@ ${sh('wisp ship <id>', 'commit, push, open the PR')}`,
       <div>
         <p class="eyebrow">3 · Track</p>
         <h2>Know why every line exists<span class="tag">New</span></h2>
-        <p class="muted">A repo built by agents should remember how it was built. wisp keeps each task in <code>.wisp/tasks</code>: what was asked, from which commit, what the agent said, the code it wrote.</p>
+        <p class="muted">A repo built by agents should remember how it was built. Wisp Agents keeps each task in <code>.wisp/tasks</code>: what was asked, from which commit, what the agent said, the code it wrote.</p>
         <ul>
           <li><code>wisp blame</code> on a line, a file or a pull request gives the task and its ask.</li>
           <li><code>wisp resume</code> picks last month’s task up on today’s code.</li>
-          <li>Tasks you ran in a harness outside wisp come in with <code>wisp adopt</code>.</li>
+          <li>Tasks you ran in a harness outside Wisp Agents come in with <code>wisp adopt</code>.</li>
         </ul>
         <p><a href="/docs/guides/track/track-agent-work/">Track your agents’ work beside your code ${'→'}</a></p>
       </div>
       ${ways({
         label: 'Find out why',
-        desktop: `<ol><li><kbd>⌘K</kbd> → <b>Repo history</b>: what agents did in this repo, from everyone who worked on it.</li><li>Open a task to read what was asked and its report; <b>Resume</b> carries it on, on today’s code.</li><li>Keep a task in the repo with <b>Track</b> in its <b>⋯</b> menu.</li></ol>${wayShot(deskShot('desktop-task', 'A task in the wisp desktop app: its turns, what was asked, and the report with the diff and the tests', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
-        phone: `<ol><li>Open a task to read what was asked, its turns and its report.</li><li><b>⋯</b> / <b>⋮</b> → <b>Rerun…</b> asks the same again; <b>Keep and copy ›</b> forks or shares it.</li><li>The repo’s full history is in the Desktop app, the TUI and the CLI.</li></ol>${wayShot(phoneShot('ios-task', 'A task in the wisp iPhone app: its turns, what was asked, and the report', { sizes: '200px' }), true)}`,
+        desktop: `<ol><li><kbd>⌘K</kbd> → <b>Repo history</b>: what agents did in this repo, from everyone who worked on it.</li><li>Open a task to read what was asked and its report; <b>Resume</b> carries it on, on today’s code.</li><li>Keep a task in the repo with <b>Track</b> in its <b>⋯</b> menu.</li></ol>${wayShot(deskShot('desktop-task', 'A task in the Wisp Agents desktop app: its turns, what was asked, and the report with the diff and the tests', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>Open a task to read what was asked, its turns and its report.</li><li><b>⋯</b> / <b>⋮</b> → <b>Rerun…</b> asks the same again; <b>Keep and copy ›</b> forks or shares it.</li><li>The repo’s full history is in the Desktop app, the TUI and the CLI.</li></ol>${wayShot(phoneShot('ios-task', 'A task in the Wisp Agents iPhone app: its turns, what was asked, and the report', { sizes: '200px' }), true)}`,
         tui: `<ol><li><code>wisp tui</code>, then <kbd>g</kbd> <kbd>h</kbd> for the repo history view.</li><li><kbd>Enter</kbd> opens a task; <kbd>/</kbd> searches.</li><li>A task’s page says what it was asked and from which commit.</li></ol>`,
         cli: `${sh('wisp blame src/sync/peers.ts:118', 'the task that wrote it, and what it was asked')}
 ${sh("wisp blame '#812'", 'the tasks behind a pull request')}
@@ -614,22 +617,22 @@ ${sh('wisp adopt --all --since 7d', 'sessions you ran outside wisp')}`,
     <div class="sec-head">
       <p class="eyebrow">Everything else</p>
       <h2 id="more-h">One tool for the whole loop</h2>
-      <p>Every feature works from the desktop app, the phone app, the TUI and the CLI, and from your own agent through wisp’s MCP tools.</p>
+      <p>Every feature works from the desktop app, the phone app, the TUI and the CLI, and from your own agent through Wisp Agents’ MCP tools.</p>
     </div>
     <div class="grid">
       ${[
-        ['Worktrees and pull requests', 'Each task on its own branch and worktree. See the changes, fix conflicts, ship and merge from wisp.', 'wisp ship <id> --draft', '/docs/guides/run/worktrees-and-shipping/'],
+        ['Worktrees and pull requests', 'Each task on its own branch and worktree. See the changes, fix conflicts, ship and merge from Wisp Agents.', 'wisp ship <id> --draft', '/docs/guides/run/worktrees-and-shipping/'],
         ['Compare and try it two ways', 'The same task on two agents side by side, or twice on one with one setting changed. Keep the better one.', 'wisp "…" --try skills=off', '/docs/guides/run/compare-and-try/'],
         ['Goals and judges', 'Agents keep going until judges on other harnesses agree the goal is met.', 'wisp goal set <id> "tests pass"', '/docs/guides/run/goals/'],
         ['Crew and check-ins', 'Named agents with a role, a kit and a schedule. They check in, pick up jobs and hand work to each other.', 'wisp crew assign <id> "review #812"', '/docs/guides/run/crew-and-check-ins/'],
         ['Automations and triggers', 'Run a task on a schedule, on a GitHub event, when a goal is met, or when anything else happens.', 'wisp automations tasks', '/docs/guides/run/schedules-and-triggers/'],
         ['Slack, Telegram, Discord, Linear…', 'Start tasks and talk to your crew from Slack, Telegram, Discord, ntfy, GitHub, Linear or email.', 'wisp help channels', '/docs/guides/run/from-slack-and-linear/'],
         ['Review by another agent', 'Have a second harness read the diff before you do. Blind spots differ; so do the bugs they catch.', 'wisp help review', '/docs/guides/run/review-by-another-agent/'],
-        ['Long threads, fresh threads', 'wisp keeps a task’s Notes: goal, decisions, what failed. Start a fresh conversation from them when one wears out.', 'wisp fresh <id> --print', '/docs/guides/run/long-threads/'],
-        ['Machines, Grid and Cloud', 'Run on your other computers over SSH, put one on the Grid, or get your own wisp in the cloud.', 'wisp "…" --on studio', '/docs/guides/run/machines/'],
-        ['MCP from your harness', 'Your Claude Code or Codex can start wisp tasks, read results and talk to the crew, without leaving its chat.', 'wisp skill install --agent all', '/docs/guides/run/mcp-from-your-harness/'],
+        ['Long threads, fresh threads', 'Wisp Agents keeps a task’s Notes: goal, decisions, what failed. Start a fresh conversation from them when one wears out.', 'wisp fresh <id> --print', '/docs/guides/run/long-threads/'],
+        ['Machines, Grid and Cloud', 'Run on your other computers over SSH, put one on the Grid, or get your own Wisp Agents in the cloud.', 'wisp "…" --on studio', '/docs/guides/run/machines/'],
+        ['MCP from your harness', 'Your Claude Code or Codex can start Wisp Agents tasks, read results and talk to the crew, without leaving its chat.', 'wisp skill install --agent all', '/docs/guides/run/mcp-from-your-harness/'],
         ['Budgets and usage', 'See your plan’s limits and what each task took. Hold work near the limit instead of hitting it.', 'wisp usage', '/docs/guides/run/budgets-and-usage/'],
-        ['Plugins', 'Everything in wisp is a plugin. Add a command, a pane, a channel or a theme with the same API the built-ins use.', 'wisp plugin new my-plugin', '/docs/plugins/make-wisp-your-own/'],
+        ['Plugins', 'Everything in Wisp Agents is a plugin. Add a command, a pane, a channel or a theme with the same API the built-ins use.', 'wisp plugin new my-plugin', '/docs/plugins/make-wisp-your-own/'],
       ].map(([t, p, c, h]) => `<div class="card"><h3>${esc(t)}</h3><p>${esc(p)}</p><pre><code>${esc(c)}</code></pre><a class="more" href="${h}">Read the guide <span aria-hidden="true">→</span></a></div>`).join('\n      ')}
     </div>
   </section>
@@ -638,7 +641,7 @@ ${sh('wisp adopt --all --since 7d', 'sessions you ran outside wisp')}`,
     <div class="sec-head">
       <p class="eyebrow">Apps</p>
       <h2 id="apps-h">On your desk, and in your pocket</h2>
-      <p>The same wisp, everywhere: a fast native window on your computer, and apps for your phone so a question from an agent never waits for you to get back.</p>
+      <p>The same Wisp Agents, everywhere: a fast native window on your computer, and apps for your phone so a question from an agent never waits for you to get back.</p>
     </div>
     <div class="apps">
       <div class="app-card desk">
@@ -650,15 +653,15 @@ ${sh('wisp adopt --all --since 7d', 'sessions you ran outside wisp')}`,
           <a class="btn ghost" href="${DL}/wisp-linux-x64.deb" data-dl="linux-deb">Linux</a>
         </div>
         <p class="small muted" style="margin:0">Intel Mac, Arm and AppImage builds on the <a href="/app.html#desktop">download page</a>.</p>
-        <div class="app-shots">${deskShot('desktop-org', 'The crew’s Org page in the wisp desktop app: who hands work to whom', { sizes: '(max-width: 880px) 92vw, 540px' })}</div>
+        <div class="app-shots">${deskShot('desktop-org', 'The crew’s Org page in the Wisp Agents desktop app: who hands work to whom', { sizes: '(max-width: 880px) 92vw, 540px' })}</div>
       </div>
       <div class="app-card" id="phone">
         <h3>Phone apps <span class="tag">Waitlist</span></h3>
         <p class="muted">For iPhone and Android, built for each. Answer an agent’s question, check a report, start a task from the train. Join the waitlist and we email you once, when yours is out.</p>
         ${waitlistForm('home')}
         <div class="app-shots">
-          ${phoneShot('ios-list', 'The task list in the wisp iPhone app', { sizes: '210px' })}
-          ${phoneShot('android-task', 'A finished task’s report in the wisp Android app', { sizes: '210px' })}
+          ${phoneShot('ios-list', 'The task list in the Wisp Agents iPhone app', { sizes: '210px' })}
+          ${phoneShot('android-task', 'A finished task’s report in the Wisp Agents Android app', { sizes: '210px' })}
         </div>
       </div>
     </div>
@@ -682,17 +685,17 @@ ${sh('wisp adopt --all --since 7d', 'sessions you ran outside wisp')}`,
   <section id="cloud" aria-labelledby="cloud-h">
     <div class="pillar">
       <div>
-        <p class="eyebrow">wisp Cloud and the Grid</p>
+        <p class="eyebrow">Wisp Agents Cloud &amp; Grid</p>
         <h2 id="cloud-h">Agents that keep working when your laptop sleeps</h2>
-        <p class="muted">wisp Cloud gives you your own wisp on a server, signed in with GitHub or Google. Put your own computers on it too, and reach all of them from any browser or your phone. No SSH, no open ports. Or run a Grid on your own server for your team.</p>
-        <p><a class="btn ghost" href="/cloud.html">About wisp Cloud ${ARROW}</a></p>
+        <p class="muted">Wisp Agents Cloud gives you your own instance on a server, signed in with GitHub or Google. Put your own computers on it too, and reach all of them from any browser or your phone. No SSH, no open ports. Or run a Grid on your own server for your team.</p>
+        <p><a class="btn ghost" href="/cloud.html">About Wisp Agents Cloud ${ARROW}</a></p>
       </div>
       ${ways({
         label: 'Reach this computer from anywhere',
-        desktop: `<ol><li>Settings → <b>Machines</b> → <b>Reach this computer from anywhere</b> → <b>Sign in and add it</b> (or Home’s tip → <b>Set up</b>).</li><li>Sign in with GitHub or Google.</li><li>Open your grid address from any browser or phone.</li></ol>${wayShot(deskShot('desktop-machines', 'Settings → Machines in the wisp desktop app: SSH, Tailscale, and Reach this computer from anywhere', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
-        phone: `<ol><li>Open the <b>Computers</b> tab.</li><li><b>Continue with GitHub</b> or <b>Continue with Google</b>.</li><li>Your cloud wisp and the computers on it show there; tap one to open its tasks.</li></ol>`,
+        desktop: `<ol><li>Settings → <b>Machines</b> → <b>Reach this computer from anywhere</b> → <b>Sign in and add it</b> (or Home’s tip → <b>Set up</b>).</li><li>Sign in with GitHub or Google.</li><li>Open your grid address from any browser or phone.</li></ol>${wayShot(deskShot('desktop-machines', 'Settings → Machines in the Wisp Agents desktop app: SSH, Tailscale, and Reach this computer from anywhere', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>Open the <b>Computers</b> tab.</li><li><b>Continue with GitHub</b> or <b>Continue with Google</b>.</li><li>Your cloud instance and the computers on it show there; tap one to open its tasks.</li></ol>`,
         tui: `<ol><li><kbd>g</kbd> <kbd>m</kbd> for machines; <kbd>c</kbd> connects one.</li><li>From the reply box: <code>/grid-client signin --add-computer</code>.</li></ol>`,
-        cli: `${sh('wisp cloud signin', 'wisp Cloud, or: wisp cloud signin <your grid>')}
+        cli: `${sh('wisp cloud signin', 'Wisp Agents Cloud, or: wisp cloud signin <your grid>')}
 ${sh('wisp computer on', 'this computer on the grid')}
 ${sh('wisp ls --on cloud')}
 ${sh('wisp grid serve', 'run a Grid on your own server')}`,
@@ -709,19 +712,20 @@ ${sh('wisp grid serve', 'run a Grid on your own server')}`,
 
   <section class="close" aria-labelledby="close-h">
     <h2 id="close-h">Declare. Run. Track.</h2>
-    <p class="lede">Your agents write the code. wisp keeps them busy, checks their work and remembers why.</p>
+    <p class="lede">Your agents write the code. Wisp Agents keeps them busy, checks their work and remembers why.</p>
     <div class="cta">${install()}<a class="btn primary" href="/app.html">${DL_ICON}Get the app</a></div>
   </section>
 </div>`;
+  const homeDesc = 'Wisp Agents is an open-source app, TUI and CLI to run Claude Code, Codex and Cursor in parallel, declare agents as code, and track every line they write.';
   return page({
     path: '/',
-    title: 'wisp: manage the code your agents write · Claude Code, Codex and more',
-    description: 'Open-source app, TUI and CLI to run Claude Code, Codex, Cursor and every coding agent in parallel, declare them as code, and track every line they write. Desktop and phone apps.',
+    title: 'Wisp Agents — Manage the code your coding agents write',
+    description: homeDesc,
     body,
     main: '',
     schema: [
-      { '@type': 'WebSite', '@id': `${SITE}/#website`, url: `${SITE}/`, name: 'wisp', inLanguage: 'en' },
-      { '@type': 'Organization', '@id': `${SITE}/#org`, name: 'wisp', url: `${SITE}/`, logo: `${SITE}/assets/icon.png`, sameAs: [REPO, 'https://x.com/trywispagents', 'https://www.npmjs.com/package/wisp-agents'] },
+      { '@type': 'WebSite', '@id': `${SITE}/#website`, url: `${SITE}/`, name: 'Wisp Agents', alternateName: ['wisp', 'wisp-agents'], description: homeDesc, publisher: { '@id': `${SITE}/#org` }, inLanguage: 'en' },
+      { '@type': 'Organization', '@id': `${SITE}/#org`, name: 'Wisp Agents', alternateName: 'wisp', url: `${SITE}/`, email: 'hello@trywisp.dev', logo: { '@type': 'ImageObject', url: `${SITE}/assets/icon.png`, width: 1024, height: 1024 }, sameAs: [REPO, 'https://x.com/trywispagents', 'https://www.npmjs.com/package/wisp-agents'] },
       SOFTWARE,
       { '@type': 'FAQPage', '@id': `${SITE}/#faq`, mainEntity: FAQ.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) },
     ],
@@ -731,12 +735,15 @@ ${sh('wisp grid serve', 'run a Grid on your own server')}`,
 const SOFTWARE = {
   '@type': 'SoftwareApplication',
   '@id': `${SITE}/#app`,
-  name: 'wisp',
+  name: 'Wisp Agents',
+  alternateName: ['wisp', 'wisp-agents'],
+  softwareVersion: VERSION,
   url: `${SITE}/`,
-  description: 'Run Claude Code, Codex, Cursor and every coding agent in parallel, declare them as code, and track every line they write.',
+  description: 'Open-source app, TUI and CLI to run Claude Code, Codex, Cursor and other coding agents in parallel, declare them as code, and track every line they write.',
   applicationCategory: 'DeveloperApplication',
   operatingSystem: 'macOS, Windows, Linux',
   license: 'https://opensource.org/licenses/MIT',
+  codeRepository: REPO,
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
   downloadUrl: 'https://github.com/WispAgents/wisp/releases/latest',
   installUrl: `${SITE}/app.html`,
@@ -775,7 +782,7 @@ function appPage() {
 <div class="wrap">
   <header class="doc-head">
     <p class="eyebrow">Get the app</p>
-    <h1>wisp on your desk and in your pocket</h1>
+    <h1>Wisp Agents on your desk and in your pocket</h1>
     <p class="lede">The desktop app for macOS, Windows and Linux is ready today. The phone apps for iPhone and Android are next: join the waitlist and we email you once, when yours is out.</p>
   </header>
   <div class="apps">
@@ -788,16 +795,16 @@ function appPage() {
         ${row('Linux', [['.deb x64', 'wisp-linux-x64.deb'], ['.deb Arm', 'wisp-linux-arm64.deb'], ['AppImage x64', 'wisp-linux-x64.AppImage'], ['AppImage Arm', 'wisp-linux-arm64.AppImage']])}
       </table></div>
       <p class="small muted">Or with Homebrew: <code>brew install --cask wispagents/tap/wisp</code>. Checksums are in <code>SHA256SUMS.txt</code> on the <a href="https://github.com/WispAgents/wisp/releases/latest">latest release</a>. The builds aren’t signed yet: on macOS, after the first open, System Settings → Privacy &amp; Security → <b>Open Anyway</b>; on Windows, SmartScreen → <b>More info</b> → <b>Run anyway</b>.</p>
-      <div class="app-shots">${deskShot('desktop-task', 'The wisp desktop app with a finished task and its report', { sizes: '(max-width: 880px) 92vw, 540px' })}</div>
+      <div class="app-shots">${deskShot('desktop-task', 'The Wisp Agents desktop app with a finished task and its report', { sizes: '(max-width: 880px) 92vw, 540px' })}</div>
     </div>
     <div class="app-card" id="phone">
       <h2 style="font-size:1.5rem;margin:0">Phone apps <span class="tag">Waitlist</span></h2>
-      <p class="muted">Built for each phone: Material on Android, Apple’s look on iPhone. Your tasks and crew, the answers and their diffs, a reply box, notifications, and your computers over SSH or wisp Cloud.</p>
+      <p class="muted">Built for each phone: Material on Android, Apple’s look on iPhone. Your tasks and crew, the answers and their diffs, a reply box, notifications, and your computers over SSH or Wisp Agents Cloud.</p>
       ${waitlistForm('app')}
-      <p class="small muted">Can’t wait? Open your cloud wisp, or a computer you put on the Grid, in your phone’s browser and choose <b>Add to Home Screen</b>: it runs full screen. <a href="/docs/guides/apps/phone-app/">How</a>.</p>
+      <p class="small muted">Can’t wait? Open your Wisp Agents Cloud instance, or a computer you put on the Grid, in your phone’s browser and choose <b>Add to Home Screen</b>: it runs full screen. <a href="/docs/guides/apps/phone-app/">How</a>.</p>
       <div class="app-shots">
-        ${phoneShot('ios-list', 'The task list in the wisp iPhone app', { sizes: '210px' })}
-        ${phoneShot('android-task', 'A finished task’s report in the wisp Android app', { sizes: '210px' })}
+        ${phoneShot('ios-list', 'The task list in the Wisp Agents iPhone app', { sizes: '210px' })}
+        ${phoneShot('android-task', 'A finished task’s report in the Wisp Agents Android app', { sizes: '210px' })}
       </div>
     </div>
   </div>
@@ -812,30 +819,31 @@ function appPage() {
 </div>`;
   return page({
     path: '/app.html',
-    title: 'Get the wisp app: desktop for macOS, Windows and Linux; iPhone and Android waitlist',
-    description: 'Download the wisp desktop app for macOS, Windows and Linux, or join the waitlist for the iPhone and Android apps. Run and follow every coding agent from your desk or your phone.',
+    title: 'Download Wisp Agents — macOS, Windows, Linux & Phone',
+    description: 'Download the Wisp Agents desktop app for macOS, Windows and Linux, or join the iPhone and Android waitlist. Run and follow coding agents from anywhere.',
     crumbs: [['Get the app', '/app.html']],
     body,
     schema: [{ ...SOFTWARE, '@id': `${SITE}/app.html#app` }],
   });
 }
 
-// ---------- wisp Cloud ----------
+// ---------- Wisp Agents Cloud ----------
 
 function cloudPage() {
   waysN = 0;
   const body = `
 <div class="wrap">
   <header class="doc-head" id="join">
-    <p class="eyebrow">wisp Cloud and the Grid</p>
-    <h1>Your own wisp in the cloud</h1>
-    <p class="lede">wisp Cloud is wisp on a server, yours alone. Your agents keep working when your laptop sleeps, and you reach it, and your own computers, from any browser or your phone.</p>
-    <div class="cta" style="justify-content:flex-start"><a class="btn primary" href="${GRID}">Sign in to wisp Cloud ${ARROW}</a><a class="btn ghost" href="/docs/guides/run/machines/">How it works</a></div>
+    <p class="eyebrow">Wisp Agents Cloud &amp; Grid</p>
+    <h1>Your own Wisp Agents in the cloud</h1>
+    <p class="lede">Wisp Agents Cloud is your own instance on a server, yours alone. Your agents keep working when your laptop sleeps, and you reach it, and your own computers, from any browser or your phone.</p>
+    <div class="cta" style="justify-content:flex-start"><a class="btn primary" href="${GRID}">Sign in to Wisp Agents Cloud ${ARROW}</a><a class="btn ghost" href="/docs/guides/run/machines/">How it works</a></div>
   </header>
+  <h2 class="sr">What Wisp Agents Cloud includes</h2>
   <div class="grid">
-    <div class="card"><h3>Always on</h3><p>Tasks run on your cloud wisp while your computers are off. It sleeps when idle and wakes when you or a trigger need it.</p></div>
+    <div class="card"><h3>Always on</h3><p>Tasks run on your cloud instance while your computers are off. It sleeps when idle and wakes when you or a trigger need it.</p></div>
     <div class="card"><h3>Your computers too</h3><p><code>wisp computer on</code> puts a computer on the grid. Open it at your grid address from anywhere: no SSH, no open ports.</p></div>
-    <div class="card"><h3>Your sign-ins</h3><p>Sign in to Claude Code, Codex and the others on your cloud wisp, with your own plans. Secrets are encrypted.</p></div>
+    <div class="card"><h3>Your sign-ins</h3><p>Sign in to Claude Code, Codex and the others on your cloud instance, with your own plans. Secrets are encrypted.</p></div>
     <div class="card"><h3>Share</h3><p>Share a task, a setup or a crew member with a link, with the access you choose.</p></div>
     <div class="card"><h3>Run your own Grid</h3><p>The same service on your own server for your team: <code>wisp grid serve</code>, with sign-in through GitHub or Google. <a href="/docs/guides/run/machines/">How</a>.</p></div>
     <div class="card"><h3>From your phone</h3><p>Open your grid address on your phone and add it to your Home Screen. The phone apps are <a href="/app.html#phone">on the waitlist</a>.</p></div>
@@ -843,9 +851,9 @@ function cloudPage() {
   <section aria-labelledby="how-h" style="padding-top:56px">
     <h2 id="how-h">Get started</h2>
     ${ways({
-      label: 'wisp Cloud',
-      desktop: `<ol><li>Settings → <b>Machines</b> → <b>Reach this computer from anywhere</b> → <b>Sign in and add it</b>, or Home’s tip → <b>Set up</b>.</li><li>Continue with GitHub or Google.</li><li>Your cloud wisp and your computers show under <b>Machines</b>.</li></ol>${wayShot(deskShot('desktop-machines', 'Settings → Machines in the wisp desktop app', { sizes: '(max-width: 880px) 90vw, 760px' }))}`,
-      phone: `<ol><li>Open the <b>Computers</b> tab.</li><li><b>Continue with GitHub</b> or <b>Continue with Google</b>.</li><li>Your cloud wisp and the computers on it show there.</li></ol>`,
+      label: 'Wisp Agents Cloud',
+      desktop: `<ol><li>Settings → <b>Machines</b> → <b>Reach this computer from anywhere</b> → <b>Sign in and add it</b>, or Home’s tip → <b>Set up</b>.</li><li>Continue with GitHub or Google.</li><li>Your cloud instance and your computers show under <b>Machines</b>.</li></ol>${wayShot(deskShot('desktop-machines', 'Settings → Machines in the Wisp Agents desktop app', { sizes: '(max-width: 880px) 90vw, 760px' }))}`,
+      phone: `<ol><li>Open the <b>Computers</b> tab.</li><li><b>Continue with GitHub</b> or <b>Continue with Google</b>.</li><li>Your cloud instance and the computers on it show there.</li></ol>`,
       tui: `<ol><li><kbd>g</kbd> <kbd>m</kbd> opens the machines view.</li><li>Send <code>/grid-client signin --add-computer</code> from the reply box.</li></ol>`,
       cli: `${sh('wisp cloud signin')}
 ${sh('wisp cloud status')}
@@ -854,13 +862,15 @@ ${sh('wisp "nightly dependency check" --on cloud')}`,
     })}
   </section>
 </div>`;
+  const cloudDesc = 'Wisp Agents Cloud runs your coding agents on a dedicated server when your laptop sleeps, reachable from any browser or phone. Or self-host a Wisp Grid.';
   return page({
     path: '/cloud.html',
-    title: 'wisp Cloud: your own wisp on a server · run coding agents 24/7',
-    description: 'wisp Cloud is your own wisp on a server: your coding agents keep working when your laptop sleeps, and you reach it and your computers from any browser or phone. Or self-host a wisp Grid.',
-    crumbs: [['wisp Cloud', '/cloud.html']],
+    title: 'Wisp Agents Cloud — Run Coding Agents 24/7 on a Server',
+    description: cloudDesc,
+    crumbs: [['Wisp Agents Cloud', '/cloud.html']],
     body,
     image: '/assets/og.png',
+    schema: [{ '@type': 'WebPage', '@id': `${SITE}/cloud.html#page`, name: 'Wisp Agents Cloud', description: cloudDesc, url: `${SITE}/cloud.html`, isPartOf: { '@id': `${SITE}/#website` }, about: { '@id': `${SITE}/#app` }, inLanguage: 'en' }],
   });
 }
 
@@ -872,15 +882,15 @@ function agentPage(a) {
 <div class="wrap">
   <header class="doc-head">
     <div class="agent-head">${LOGO(a, 44)}<p class="eyebrow" style="margin:0">${esc(a.vendor)} · <code>${esc(a.bin)}</code></p></div>
-    <h1>Run ${esc(a.name)} with wisp</h1>
+    <h1>Run ${esc(a.name)} with Wisp Agents</h1>
     <p class="lede">${a.lede}</p>
     <div class="cta" style="justify-content:flex-start">${install(`wisp "fix the flaky test" --agent ${a.id}`)}<a class="btn ghost" href="/docs/guides/agents/${a.slug}/">Start with ${esc(a.name)} ${ARROW}</a></div>
   </header>
   <div class="prose">
-    <h2>How wisp runs it</h2>
+    <h2>How Wisp Agents runs it</h2>
     <pre><code>${esc(a.run)}</code></pre>
     <div class="scroll-x"><table class="table">
-      <thead><tr><th scope="col">wisp mode</th><th scope="col">What ${esc(a.name)} gets</th></tr></thead>
+      <thead><tr><th scope="col">Wisp Agents mode</th><th scope="col">What ${esc(a.name)} gets</th></tr></thead>
       <tbody>${Object.entries(MODES).map(([k, t]) => `<tr><td>${esc(t)}</td><td><code>${esc(a.modes[k])}</code></td></tr>`).join('')}</tbody>
     </table></div>
     <h2>Questions and permissions</h2>
@@ -896,14 +906,27 @@ function agentPage(a) {
     <ul class="logos" style="justify-content:flex-start">${others.map((o) => `<li><a href="/agents/${o.slug}.html">${LOGO(o)}${esc(o.name)}</a></li>`).join('')}</ul>
   </div>
 </div>`;
+  const desc = `Run ${a.name} with Wisp Agents in parallel git worktrees on your own plan. Route questions and approvals to you with a report, diff and test run.`;
   return page({
     path: `/agents/${a.slug}.html`,
-    title: `Run ${a.name} in parallel, in the background · wisp`,
-    description: `${a.name} with wisp: run it in its own git worktree, many tasks at once, on your own plan. Questions and permission prompts come to you; you get a short report with the diff and the tests.`,
+    title: `Run ${a.name} in Parallel · Wisp Agents`,
+    description: desc,
     crumbs: [['Agents', '/agents/'], [a.name, `/agents/${a.slug}.html`]],
     body,
     type: 'article',
-    schema: [{ '@type': 'TechArticle', headline: `Run ${a.name} with wisp`, url: `${SITE}/agents/${a.slug}.html`, about: { '@id': `${SITE}/#app` }, inLanguage: 'en' }],
+    schema: [{
+      '@type': 'TechArticle',
+      headline: `Run ${a.name} with Wisp Agents`,
+      description: desc,
+      url: `${SITE}/agents/${a.slug}.html`,
+      image: `${SITE}/assets/og.png`,
+      dateModified: lastmod(['scripts/site.mjs', `plugins/${a.id}`]),
+      author: { '@id': `${SITE}/#org` },
+      publisher: { '@id': `${SITE}/#org` },
+      isPartOf: { '@id': `${SITE}/#website` },
+      about: { '@id': `${SITE}/#app` },
+      inLanguage: 'en',
+    }],
   });
 }
 
@@ -913,18 +936,32 @@ function agentsIndex() {
   <header class="doc-head">
     <p class="eyebrow">Agents</p>
     <h1>Every coding agent, one place</h1>
-    <p class="lede">wisp runs the real CLIs you already installed and signed in to, on your own plans. Pick one per task, compare two on the same task, or let a crew mix them.</p>
+    <p class="lede">Wisp Agents runs the real CLIs you already installed and signed in to, on your own plans. Pick one per task, compare two on the same task, or let a crew mix them.</p>
   </header>
   <div class="grid">
     ${AGENTS.map((a) => `<a class="card" style="text-decoration:none;color:inherit" href="/agents/${a.slug}.html"><span class="agent-head" style="margin:0">${LOGO(a, 32)}<h2 style="font-size:1.2rem;margin:0">${esc(a.name)}</h2></span><p>${esc(a.vendor)} · <code>${esc(a.bin)}</code></p><p>${a.models}</p></a>`).join('\n    ')}
   </div>
 </div>`;
+  const desc = 'Wisp Agents runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel on your own plans, from one place.';
   return page({
     path: '/agents/',
-    title: 'Coding agents wisp runs: Claude Code, Codex, Cursor, opencode, Copilot, Grok, Antigravity',
-    description: 'wisp runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel, on your own plans, from one app, TUI and CLI.',
+    title: 'Run Claude Code, Codex, Cursor & More · Wisp Agents',
+    description: desc,
     crumbs: [['Agents', '/agents/']],
     body,
+    schema: [{
+      '@type': 'CollectionPage',
+      '@id': `${SITE}/agents/#page`,
+      name: 'Coding agents supported by Wisp Agents',
+      description: desc,
+      url: `${SITE}/agents/`,
+      isPartOf: { '@id': `${SITE}/#website` },
+      mainEntity: {
+        '@type': 'ItemList',
+        itemListElement: AGENTS.map((a, i) => ({ '@type': 'ListItem', position: i + 1, name: a.name, url: `${SITE}/agents/${a.slug}.html` })),
+      },
+      inLanguage: 'en',
+    }],
   });
 }
 
@@ -951,8 +988,8 @@ const privacyPage = () =>
   mdPage({
     path: '/privacy.html',
     file: path.join(DOCS, 'privacy.md'),
-    title: 'wisp privacy policy',
-    description: 'What wisp, the wisp phone apps, wisp Cloud and trywisp.dev collect, what never leaves your computer, what the phone app waitlist does with your email, and how to delete your account.',
+    title: 'Privacy Policy · Wisp Agents',
+    description: 'What Wisp Agents, its phone apps, Wisp Agents Cloud and trywisp.dev collect, what stays on your computer, and how to delete your cloud account.',
     eyebrow: 'Legal',
     h1: 'Privacy policy',
   });
@@ -1018,16 +1055,18 @@ function changelogPage() {
     </details>`;
   }).join('\n');
   const latest = released[0]?.match(/^## \[([^\]]+)\]/)?.[1];
+  const clDesc = `Release notes for Wisp Agents (wisp-agents on npm)${latest ? `, latest ${latest}` : ''}: new features, improvements and fixes.`;
   return page({
     path: '/changelog.html',
-    title: 'wisp changelog: what’s new in each release',
-    description: `Release notes for wisp (wisp-agents on npm)${latest ? `, latest ${latest}` : ''}: new features, changes and fixes.`,
+    title: 'Wisp Agents Changelog — Releases & Updates',
+    description: clDesc,
     crumbs: [['Changelog', '/changelog.html']],
+    schema: [{ '@type': 'WebPage', '@id': `${SITE}/changelog.html#page`, name: 'Wisp Agents Changelog', description: clDesc, url: `${SITE}/changelog.html`, isPartOf: { '@id': `${SITE}/#website` }, inLanguage: 'en' }],
     body: `
 <div class="wrap">
   <header class="doc-head">
     <p class="eyebrow">Changelog</p>
-    <h1>What’s new in wisp</h1>
+    <h1>What’s new in Wisp Agents</h1>
     <p class="lede">Every release of <code>wisp-agents</code>, a week at a time, newest first. Update with <code>npm install -g wisp-agents</code>, or let the app update itself.</p>
   </header>
   <article class="prose">${list}</article>
@@ -1042,7 +1081,7 @@ addEventListener('hashchange', openRelease); openRelease();
 function notFoundPage() {
   return page({
     path: '/404.html',
-    title: 'Page not found · wisp',
+    title: 'Page not found · Wisp Agents',
     description: 'This page doesn’t exist.',
     noindex: true,
     body: `
@@ -1062,7 +1101,7 @@ function redirectPage(from, to, title) {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>${esc(title)} · wisp</title>
+<title>${esc(title)} · Wisp Agents</title>
 <meta name="robots" content="noindex, follow" />
 <link rel="canonical" href="${to.startsWith('http') ? to : `${SITE}${to}`}" />
 <meta http-equiv="refresh" content="0; url=${esc(to)}" />
@@ -1080,9 +1119,9 @@ function redirectPage(from, to, title) {
 // ---------- llms.txt, robots.txt ----------
 
 function llmsTxt() {
-  return `# wisp
+  return `# Wisp Agents
 
-> wisp manages the code your agents write: an open-source app, terminal UI and CLI that runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel (each task in its own git worktree, on your own plans), lets you declare agents, crew, machines, skills and MCP servers as code in a repo's .wisp/ folder, and keeps every task next to the code it wrote (wisp blame, wisp resume). Desktop app for macOS, Windows and Linux; phone apps for iPhone and Android on a waitlist; wisp Cloud and self-hosted Grids for always-on agents.
+> Wisp Agents manages the code your agents write: an open-source app, terminal UI and CLI that runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel (each task in its own git worktree, on your own plans), lets you declare agents, crew, machines, skills and MCP servers as code in a repo's .wisp/ folder, and keeps every task next to the code it wrote (wisp blame, wisp resume). Desktop app for macOS, Windows and Linux; phone apps for iPhone and Android on a waitlist; Wisp Agents Cloud and self-hosted Grids for always-on agents.
 
 Install: \`npm install -g wisp-agents\` (Node.js 18+), \`brew install --cask wispagents/tap/wisp\` (desktop app), or \`npx wisp-agents\` to try it. Every feature works from the desktop app, the phone app, \`wisp tui\` and the CLI, and from your own agent through \`wisp mcp\`.
 
@@ -1097,12 +1136,12 @@ Install: \`npm install -g wisp-agents\` (Node.js 18+), \`brew install --cask wis
 
 ## Pages
 
-- [Home](${SITE}/): what wisp is, Declare · Run · Track
+- [Home](${SITE}/): what Wisp Agents is, Declare · Run · Track
 - [Get the app](${SITE}/app.html): desktop downloads, phone app waitlist
-- [wisp Cloud](${SITE}/cloud.html): your own wisp on a server; self-hosted Grids
-- [Agents](${SITE}/agents/): how wisp runs each coding agent
+- [Wisp Agents Cloud](${SITE}/cloud.html): your own instance on a server; self-hosted Grids
+- [Agents](${SITE}/agents/): how Wisp Agents runs each coding agent
 ${AGENTS.map((a) => `- [${a.name}](${SITE}/agents/${a.slug}.html): flags, modes, models`).join('\n')}
-- [Use wisp from your agent](${SITE}/docs/integrations/your-agent.md): MCP server and skill
+- [Use Wisp Agents from your agent](${SITE}/docs/integrations/your-agent.md): MCP server and skill
 - [Changelog](${SITE}/changelog.html)
 - [Privacy](${SITE}/privacy.html)
 

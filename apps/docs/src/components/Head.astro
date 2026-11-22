@@ -1,0 +1,91 @@
+---
+// Starlight Head override: adds robots noindex on 404 (stripping its canonical), robots max-image-preview on
+// indexable pages, Twitter title/description, and JSON-LD (BreadcrumbList + TechArticle/WebPage) tied to trywisp.dev's
+// Organization and WebSite entities.
+const route = Astro.locals.starlightRoute;
+const { head, id, entry, lastUpdated } = route;
+const is404 = id === '404';
+const SITE = 'https://trywisp.dev';
+
+const filteredHead = is404
+  ? head.filter((item) => !(item.tag === 'link' && item.attrs?.rel === 'canonical'))
+  : head;
+
+const canonical = filteredHead.find((item) => item.tag === 'link' && item.attrs?.rel === 'canonical')?.attrs?.href;
+const ogTitle = filteredHead.find((item) => item.tag === 'meta' && item.attrs?.property === 'og:title')?.attrs?.content;
+const ogDesc = filteredHead.find((item) => item.tag === 'meta' && item.attrs?.property === 'og:description')?.attrs?.content;
+
+const SECTION_NAMES: Record<string, string> = {
+  start: 'Get started',
+  concepts: 'Concepts',
+  guides: 'Guides',
+  integrations: 'Integrations',
+  plugins: 'Build plugins',
+  reference: 'Reference',
+  migrate: 'Import a wisp home',
+};
+
+let jsonLd: string | null = null;
+if (!is404 && canonical) {
+  const url = String(canonical);
+  const relPath = url.replace(`${SITE}/docs/`, '').replace(/\/$/, '');
+  const segs = relPath ? relPath.split('/') : [];
+  const crumbs: Array<[string, string]> = [
+    ['Wisp Agents', `${SITE}/`],
+    ['Docs', `${SITE}/docs/`],
+  ];
+  if (segs.length >= 2 && segs[0] === 'guides') {
+    crumbs.push(['Guides', `${SITE}/docs/guides/`]);
+  }
+  const pageTitle = entry?.data?.title || String(ogTitle || 'Wisp Agents Docs');
+  if (segs.length > 0 && !(segs.length === 1 && segs[0] === 'guides')) {
+    crumbs.push([pageTitle, url]);
+  } else if (segs.length === 1 && segs[0] === 'guides') {
+    crumbs.push([SECTION_NAMES.guides, url]);
+  }
+
+  const breadcrumb = {
+    '@type': 'BreadcrumbList',
+    itemListElement: crumbs.map(([name, item], i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name,
+      item,
+    })),
+  };
+
+  const docNode: Record<string, unknown> = {
+    '@type': relPath ? 'TechArticle' : 'WebPage',
+    headline: pageTitle,
+    name: pageTitle,
+    description: entry?.data?.description || String(ogDesc || ''),
+    url,
+    image: `${SITE}/assets/og.png`,
+    inLanguage: 'en',
+    isPartOf: { '@id': `${SITE}/#website` },
+    publisher: { '@id': `${SITE}/#org` },
+    author: { '@id': `${SITE}/#org` },
+    about: { '@id': `${SITE}/#app` },
+  };
+  if (lastUpdated instanceof Date && !Number.isNaN(lastUpdated.getTime())) {
+    docNode.dateModified = lastUpdated.toISOString().slice(0, 10);
+  }
+
+  jsonLd = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@graph': [breadcrumb, docNode],
+  });
+}
+---
+
+{filteredHead.map(({ tag: Tag, attrs, content }) => (
+	<Tag {...attrs} set:html={content} />
+))}
+{is404 ? (
+  <meta name="robots" content="noindex" />
+) : (
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+)}
+{ogTitle && <meta name="twitter:title" content={String(ogTitle)} />}
+{ogDesc && <meta name="twitter:description" content={String(ogDesc)} />}
+{jsonLd && <script type="application/ld+json" set:html={jsonLd} />}
