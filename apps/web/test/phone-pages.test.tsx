@@ -184,7 +184,8 @@ for (const kind of ['android', 'ios'] as const) {
     // … and the rest one tap away in More: the goal, the start time, an issue, the recipes
     // the open menu More drew (portaled: the one holding Start from an issue)
     const moreRows = (): string[] => {
-      const menu = [...document.querySelectorAll('[data-kit="menu"]')].find((m) => m.textContent?.includes('Start from an issue'));
+      // a composer's menu in the phone apps is the bottom sheet Delegate's panel opens as (#847: SheetMenus), not Zag's menu
+      const menu = [...document.querySelectorAll('[data-kit="sheet-menu"]')].find((m) => m.textContent?.includes('Start from an issue'));
       return [...(menu?.querySelectorAll('[role^="menuitem"]') ?? [])].map((e) => (e.textContent ?? '').trim());
     };
     const more = (): HTMLElement | null => root.querySelector('[data-part~="launcher.more"]');
@@ -226,10 +227,10 @@ for (const kind of ['android', 'ios'] as const) {
     const more = root.querySelector<HTMLElement>('[data-part~="launcher.more"]');
     expect(more?.getAttribute('aria-haspopup')).toBe('menu');
     more?.click();
-    // in the open menu only: a closed menu stays in the page, so "the row is gone" on every menu never came true and
-    // the wait below ran out its whole 4 s each time (CI 44273734971 timed out on that; the menu closes in a frame)
+    // in the open sheet only (#847: the composer's More is the phone sheet, mounted while open): a closed Zag menu stayed
+    // in the page, so "the row is gone" never came true and the wait ran out its whole 4 s (CI 44273734971)
     const row = (): HTMLElement | undefined =>
-      [...document.querySelectorAll<HTMLElement>('[data-kit="menu"][data-state="open"] [role^="menuitem"]')].find((e) => /^(Worktree|In place)/.test((e.textContent ?? '').trim()));
+      [...document.querySelectorAll<HTMLElement>('[data-kit="sheet-menu"] [role^="menuitem"]')].find((e) => /^(Worktree|In place)/.test((e.textContent ?? '').trim()));
     await until(() => row() !== undefined);
     const before = row();
     expect(before, 'Worktree in More').toBeDefined();

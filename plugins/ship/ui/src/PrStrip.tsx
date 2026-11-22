@@ -11,7 +11,8 @@ import { Button, Card, Icon, IconButton, ListRow, Stack, Toolbar, ToneChip, useS
 import { fixConflicts, refresh, review } from './commands.ts';
 import { t } from './i18n.ts';
 import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
-import { fixing, openPrs, prChipLabel, prChipTitle, prsOf, prStripSub, prStripTitle, prTone, worstTone, type PrTone } from './model/pr.ts';
+import { fixing, openPrs, prChipLabel, prChipTitle, prsOf, prTone, worstTone, type PrTone } from './model/pr.ts';
+import { prStripSub, prStripTitle } from './model/strip.ts';
 import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
 import { stepsOfLive, track } from './model/ship.ts';
 import { ShipRun } from './ShipRun.tsx';

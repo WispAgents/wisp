@@ -1,5 +1,8 @@
 // Save to repo (ADR-0033): shared save state and `history.track` for the task ⋯ menu (later.ts) and OfferFoot.
 import { defineCommand, readonly, signal, type EntityKey } from '@wisp/client';
+// its `history.save` command id is also the lazy half's "Save to repo" key, and only lazy modules (later.ts,
+// OfferFoot) import this one: the loader comes with it, so the words are there wherever the id is
+import './i18n/lazy.ts';
 
 /** What the task's `wisp.history` slot holds (wisp_history_api::EXT): offered, and what the last save wrote. */
 export interface HistoryExt {
