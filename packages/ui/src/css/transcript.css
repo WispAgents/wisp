@@ -86,6 +86,9 @@
   [data-kit='timeline-step'][data-tone='bad'] [data-kit='timeline-icon'], [data-kit='timeline-step'][data-tone='bad'] [data-kit='timeline-label'] { color: var(--bad); }
   [data-kit='timeline-step'][data-tone='warn'] [data-kit='timeline-icon'], [data-kit='timeline-step'][data-tone='warn'] [data-kit='timeline-label'] { color: var(--warn); }
   [data-kit='timeline-step'][data-tone='quiet'] [data-kit='timeline-label'] { color: var(--muted); }
+  [data-kit='timeline-step'][data-kind='thinking'] [data-kit='timeline-label'] { color: var(--muted); font-style: italic; }
+  [data-kit='timeline'][data-chat] { margin-bottom: var(--space-3); }
+  [data-kit='timeline'][data-chat] [data-kit='timeline-list']::before { top: var(--space-5); bottom: var(--space-5); }
   [data-kit='timeline-step'][data-end='good'] [data-kit='timeline-icon'] { color: var(--good); }
   [data-kit='timeline-msg'] { flex-wrap: nowrap; align-items: flex-start; gap: var(--space-5); padding: var(--space-3) 0; }
   [data-kit='timeline-dot'] {

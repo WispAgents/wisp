@@ -30,6 +30,7 @@ export function openSettings(pane?: string): Intent {
 // the frame loads on first open (ADR-0011: not in the first page)
 const SettingsView = lazy(() => import('./frame.tsx').then((m) => ({ default: m.SettingsView })));
 const General = lazy(() => import('./panes/General.tsx'));
+const Chat = lazy(() => import('./panes/Chat.tsx'));
 const Notifications = lazy(() => import('./panes/Notifications.tsx'));
 const Keys = lazy(() => import('./panes/Keys.tsx'));
 
@@ -38,6 +39,7 @@ export type ShellSettingsDeps = FrameDeps;
 export function shellSettingsPanes(): SettingsPaneDef[] {
   return [
     { id: 'general', group: 'general', title: 'shell-settings.pane.general', icon: 'settings', order: 10, component: General },
+    { id: 'chat', group: 'general', title: 'shell-settings.pane.chat', icon: 'comment', order: 20, component: Chat },
     { id: 'notifications', group: 'general', title: 'shell-settings.pane.notifications', icon: 'bell', order: 30, component: Notifications },
     { id: 'keys', group: 'general', title: 'shell-settings.pane.keys', icon: 'grid', order: 40, component: Keys },
   ];

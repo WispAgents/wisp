@@ -327,6 +327,15 @@
       --pad: max(24px, calc((100cqw - 232px - 48px - 860px) / 2));
       padding: 0 var(--pad);
     }
+    /* Settings → Chat → Chat width: wide (1080px) or full width */
+    [data-kit='split-head'][data-width='wide'],
+    [data-kit='it-body'][data-width='wide'] {
+      --pad: max(24px, calc((100cqw - 232px - 48px - 1080px) / 2));
+    }
+    [data-kit='split-head'][data-width='full'],
+    [data-kit='it-body'][data-width='full'] {
+      --pad: 24px;
+    }
     [data-kit='it-body'][data-details] > :not([data-kit='it-bar']) {
       margin-right: 280px;
     }
@@ -463,6 +472,21 @@
   }
   [data-kit='turn'] {
     padding-top: var(--space-6);
+  }
+  /* Chat mode: continuous conversation rhythm between user prompts and assistant turns */
+  [data-kit='turn'][data-chat] {
+    padding-top: var(--space-5);
+  }
+  [data-kit='turn'][data-chat] + [data-kit='turn'][data-chat] {
+    margin-top: var(--space-4);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--line);
+  }
+  [data-kit='turn'][data-chat] [data-kit='ask'] {
+    margin: 0 0 var(--space-5);
+  }
+  [data-kit='turn'][data-chat] [data-kit='trail'] {
+    margin-top: var(--space-5);
   }
   [data-kit='ask'] {
     position: relative;

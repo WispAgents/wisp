@@ -8,6 +8,6 @@ pub mod map_spec;
 pub mod parse;
 pub mod render;
 
-pub use check::{BUILTIN_BLOCKS, check, presentation};
-pub use parse::{PARSER_VERSION, Parsed, hero_of, parse};
+pub use check::{BUILTIN_BLOCKS, check, presentation, presentation_chat};
+pub use parse::{PARSER_VERSION, Parsed, hero_of, parse, parse_chat};
 pub use render::{blocks_to_markdown, session_to_markdown};

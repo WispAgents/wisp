@@ -10,7 +10,7 @@ use wisp_runtime_api::model::Presentation;
 use wisp_runtime_api::points::BlockType;
 
 use super::js;
-use super::parse::{PARSER_VERSION, parse};
+use super::parse::{PARSER_VERSION, parse, parse_chat};
 
 /// The block types the protocol prompt documents, plus what wisp writes itself.
 pub const BUILTIN_BLOCKS: &[&str] = &[
@@ -89,6 +89,13 @@ pub fn check(blocks: Vec<Value>, contributed: &[Arc<dyn BlockType>]) -> (Vec<Val
 /// An answer's text as it is stored: parsed, checked, stamped with the parser version.
 pub fn presentation(text: &str, contributed: &[Arc<dyn BlockType>]) -> Presentation {
     let parsed = parse(text);
+    let (blocks, dropped) = check(parsed.blocks, contributed);
+    Presentation { blocks, v: PARSER_VERSION, dropped, topic: parsed.topic, notes: parsed.notes, fallback: parsed.fallback }
+}
+
+/// Chat mode answer: markdown prose preserved in place with any inline ` ```wisp ` blocks spliced in order.
+pub fn presentation_chat(text: &str, contributed: &[Arc<dyn BlockType>]) -> Presentation {
+    let parsed = parse_chat(text);
     let (blocks, dropped) = check(parsed.blocks, contributed);
     Presentation { blocks, v: PARSER_VERSION, dropped, topic: parsed.topic, notes: parsed.notes, fallback: parsed.fallback }
 }

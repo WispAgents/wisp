@@ -10,6 +10,7 @@ import { useOpenWithin } from '../core/open-within.ts';
 import { ForKeyed } from '../core/keyed.tsx';
 import { Icon } from '../content/Icon.tsx';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
+import { shouldSendOnKey, type SendShortcut } from '../composer/send-shortcut.ts';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
 import type { IconName } from '../content/icons.ts';
 import { ActIcon, WithAct, actAttrs, type Act } from './act.tsx';
@@ -105,6 +106,8 @@ export interface LauncherProps {
   readonly firstRun?: boolean;
   /** the box's own keys after its menus (↑ history, Shift+Tab mode): true when taken */
   readonly onKey?: (e: KeyboardEvent) => boolean;
+  /** Settings → Chat → Send shortcut: when Enter sends vs inserts a new line. Additive. */
+  readonly sendShortcut?: SendShortcut;
   /** the @ and / menus (under the box) */
   readonly suggest?: PromptSuggest | undefined;
   /** a paste into the box (files): the host may take it */
@@ -210,7 +213,7 @@ function LauncherBox(props: LauncherProps): JSX.Element {
   const key = (e: KeyboardEvent): void => {
     if (suggestKeyDown(props.suggest, e)) return;
     if (props.onKey?.(e)) return;
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    if (shouldSendOnKey(e, props.value, props.sendShortcut)) {
       e.preventDefault();
       props.onSend();
     }

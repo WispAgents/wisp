@@ -48,6 +48,9 @@ import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { displayCombo } from '../keys.ts';
 import { draftValue, launcherDraft, withShareLink } from './drafts.ts';
 import { homePlaceholderKey } from './reply-hint.ts';
+import type { SendShortcut } from '@wisp/ui';
+
+const sendShortcutOf = (v: unknown): SendShortcut => (v === 'mod-enter-multiline' || v === 'mod-enter' ? v : 'enter');
 import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 import { newRecipeIntent } from './recipe-new.ts';
 import { foldTail } from './phone-bar.ts';
@@ -988,6 +991,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         }}
         onSend={send}
         onKey={onKey}
+        sendShortcut={sendShortcutOf(settings().find((r) => r.key === 'settings.sendShortcut')?.value)}
         firstRun={firstRun()}
         setup={target() === home ? setup() : undefined}
         suggest={suggest()}

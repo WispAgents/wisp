@@ -265,6 +265,15 @@ impl Runtime {
         self.host.setting(key).and_then(|v| v.as_bool()).unwrap_or(true)
     }
 
+    /// A switch in Settings that is on unless switched off (`false` or `"off"`), whichever form it was written in.
+    pub(crate) fn on_unless_switched_off(&self, key: &str) -> bool {
+        match self.host.setting(key) {
+            Some(serde_json::Value::Bool(b)) => b,
+            Some(serde_json::Value::String(s)) => s != "off",
+            _ => true,
+        }
+    }
+
     /// A setting's text value ('' when unset).
     pub(crate) fn text_setting(&self, key: &str) -> String {
         self.host.setting(key).and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()

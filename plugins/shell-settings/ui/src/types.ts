@@ -26,7 +26,13 @@ export const KEYS = {
   readTimes: 'settings.readTimes', // on unless 'off'
   watch: 'runtime.watch', // on unless 'off'
   apps: 'runtime.apps', // on unless 'off'
-  transcript: 'settings.transcript', // off unless 'on' (B53: declared by wisp.settings)
+  transcript: 'settings.transcript', // Chat mode: on unless 'off' (declared by wisp.settings)
+  chatToolCalls: 'settings.chatToolCalls', // showAll | hideSuccessful | hideAll | zen
+  chatThinking: 'settings.chatThinking', // bool, on by default
+  followUp: 'runtime.followUp', // interrupt | queue
+  sendShortcut: 'settings.sendShortcut', // enter | mod-enter-multiline | mod-enter
+  chatWidth: 'settings.chatWidth', // comfortable | wide | full
+  timeFormat: 'settings.timeFormat', // locale | 12-hour | 24-hour
   notify: 'settings.notify', // 'on' | 'off'
   acceptChannels: 'channels.acceptChannels', // off unless 'on'
   channelProject: 'channels.project', // a project id (its name), '' for the last used

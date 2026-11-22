@@ -53,7 +53,7 @@ import { sameEntries } from './same-entries.ts';
 import { useProjects } from './projects.ts';
 import { taskPlaces } from './project-pick.ts';
 import { phoneTaskMenu } from './phone-menu.ts';
-import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, projectOfRow, statusOf, trailActs } from './rows-view.ts';
+import { changeFigures, duration, foldedFrom, nextNeedsYou, overlapLine, overlapsOf, projectOfRow, statusOf, trailActs } from './rows-view.ts';
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
 import { factoryFoot, factoryReply, runFactory } from './run-factory.ts';
@@ -62,7 +62,9 @@ import { useGoalKit } from './goal-kit.ts';
 import { isFeedback } from './feedback.ts';
 import { readComments } from './comment-text.ts';
 import { useNow } from '../clock.ts';
-import { turnClock } from './turn-clock.ts';
+import { turnClock, turnLongTime } from './turn-clock.ts';
+import { useChatSettings } from './chat-settings.ts';
+import { buildChatSteps } from './chat-steps.ts';
 import { factoryStopQuestion, stopQuestion, type StopQuestion } from './stop-question.ts';
 import { noOutputLine } from './no-output.ts';
 import { completionOf, suggestedFollowUps } from './follow-ghost.ts';
@@ -196,10 +198,16 @@ interface TurnRow {
   readonly body: TurnBody;
 }
 
-const ACT_ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', tool: 'tool' };
+const ACT_ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', thinking: 'spark', tool: 'tool' };
 
-/** A turn's clock time, in the app's locale (v1 turnTime). */
-const clock = (at: number): string => turnClock(at);
+/** The markdown text of a turn's final answer (used to deduplicate trailing text events in Chat mode). */
+function finalMarkdownOf(blocks: readonly { readonly type: string; readonly text?: string }[]): string | undefined {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if (b?.type === 'markdown' && typeof b.text === 'string' && b.text.trim()) return b.text;
+  }
+  return undefined;
+}
 
 /** An earlier day in the ledger ("Mon 9 Nov"), in the app's locale as the kit's <Time> reads (content/time-format.ts). */
 const DAY_NAME = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
@@ -495,10 +503,12 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   );
   const hint = (): ReturnType<typeof coldHint> => (row()?.state === 'running' ? undefined : coldHint(cold(), now(), t));
   const compactOffer = (): ReturnType<typeof compactItem> => (row()?.state === 'running' ? undefined : compactItem(cold(), now(), t));
-  // what's open in the page: the steps, the notes, a command in flight, the reply's extras
-  // Settings → Full transcript (`settings.transcript`: 'on'): a task opens on its transcript (v1 transcriptByDefault, B54)
-  const txDefault = shell.client.entities.peek<{ value?: unknown }>('setting', entityKey(ownerOf(key), 'settings.transcript'))?.value;
-  const [stepsOpen, setStepsOpen] = createSignal(txDefault === 'on' || txDefault === true);
+  // Settings → Chat: Chat mode (`settings.transcript`: 'on'), Tool calls in chat, Show thinking, Send shortcut,
+  // Chat width, Time format — all reactive so changing a setting updates open tasks immediately.
+  const chat = useChatSettings(shell.client, ownerOf(key));
+  const clock = (at: number): string => turnClock(at, undefined, chat.timeFormat());
+  const [stepsOpen, setStepsOpen] = createSignal(false);
+  const showStream = (): boolean => chat.chatMode() || stepsOpen();
   // the phone apps: the details column as a sheet from the menu, and Rename as a dialog (the bar's title isn't edited)
   const phone = shell.platform.phone;
   const [detailsOpen, setDetailsOpen] = createSignal(false);
@@ -517,7 +527,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // the latest turn shows whole; the earlier ones are the ledger's (ADR-0068). Once the reader has left the end, the
   // first turn shown whole stays whole as turns land (F-page-44): what they read doesn't fold into a row under them
   const [keepFrom, setKeepFrom] = createSignal<string | undefined>(undefined);
-  const fold = createMemo(() => foldedFrom(turns(), false, keepFrom(), 1));
+  // In Chat mode every turn stays visible as a continuous conversation instead of folding behind the Ledger.
+  const fold = createMemo(() => foldedFrom(turns(), chat.chatMode(), keepFrom(), 1));
   const keepShown = (el: HTMLElement): void => {
     if (keepFrom() === undefined && el.scrollHeight - el.scrollTop - el.clientHeight >= 2) setKeepFrom(fold().shown[0]?.id);
   };
@@ -926,7 +937,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const own: TaskMenuEntry[] = [];
     // the head's bar keeps Changes, Ship, Done (docs/ux/2026-11-18-desktop.md #4): Transcript, Rerun and Open in are
     // here, with their keys, on every width
-    own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: stepsOpen() } });
+    own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: showStream() } });
     if (!row()?.summary['sideOf'])
       own.push(
         { section: 'open', order: -20, entry: { value: 'rerun', label: t('shell.task.rerun'), icon: 'rerun', keys: '⇧R' } },
@@ -1392,6 +1403,16 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const delegating = createMemo(() => allRows().some((x) => (x.parent_id === key || x.parent_id === bare) && x.state === 'running'));
           const count = (k: string): number => steps().filter((a) => a.kind === k).length;
           const blocks = () => b.presentation?.blocks ?? [];
+          const streamSteps = createMemo(() =>
+            buildChatSteps(turnEvents(), b.activity ?? [], {
+              chatMode: chat.chatMode(),
+              toolCalls: chat.toolCalls(),
+              showThinking: chat.showThinking(),
+              running: turn.status === 'running' || turn.status === 'starting',
+              finalText: finalMarkdownOf(blocks() as readonly { readonly type: string; readonly text?: string }[]),
+              notes: (b as { presentation?: { notes?: string } }).presentation?.notes,
+            }),
+          );
           const stubbed = () => isStub(b);
           const changes = () => b.ext?.['wisp.runtime']?.changes ?? b.changes ?? [];
           const figures = () => changeFigures(changes());
@@ -1411,18 +1432,41 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           // v1 transcript.js renderLiveTranscript: with Transcript on, a running turn shows its timeline so far above the
           // working panel, growing as steps come (owner, 2026-11-17: Transcript did nothing on a working task). Made once.
           let madeTx: JSX.Element | undefined;
+          const turnAnswerCtx = Object.assign(
+            answerContext({
+              shell,
+              key,
+              turnId: turn.id,
+              env,
+              blocked: () => blockedOf(b),
+              latest: () => turn.id === turns().at(-1)?.id,
+              title: () => s().title,
+              transcript: showStream,
+              meta: () => [
+                ...(b.endedAt && b.endedAt > turn.started_at ? [duration(b.endedAt - turn.started_at)] : []),
+                ...(b.stats?.costUsd ? [`$${b.stats.costUsd.toFixed(2)}`] : []),
+                ...(changes().length ? [t(changes().length === 1 ? 'shell.task.touched.one' : 'shell.task.touched.other', { n: changes().length })] : []),
+              ],
+              reply,
+              draft,
+              openChanges: () => side('changes'),
+              apps: () => ((b as { ext?: Record<string, unknown> }).ext?.['wisp.apps'] ?? {}) as Record<string, unknown>,
+              tour: s().agent === 'wisp',
+            }),
+            { comment },
+          );
           const liveTx = (): JSX.Element =>
             (madeTx ??= runWithOwner(owner, () => (
-              <Show when={stepsOpen()}>
-                <TurnTranscript steps={steps()} changes={changes()} env={env} here={here} status={turn.status ?? ''} t={t} />
+              <Show when={showStream() && (!chat.chatMode() || streamSteps().length > 0)}>
+                <TurnTranscript steps={streamSteps()} changes={changes()} env={env} here={here} status={turn.status ?? ''} chat={chat.chatMode()} answerCtx={turnAnswerCtx} t={t} />
               </Show>
             )));
           const working = (): JSX.Element =>
             (made ??= runWithOwner(owner, () => (
               <WorkingPanel
                 part="task.working"
-                // with Transcript on, the steps above are the log (owner, 2026-11-21): the panel becomes their live last line
-                inline={stepsOpen()}
+                // with Transcript or Chat mode on, the steps above are the log (owner, 2026-11-21): one live last line
+                inline={showStream()}
                 waiting={s().state === 'waiting'}
                 status={
                   (b as { by?: string }).by === 'compact'
@@ -1467,45 +1511,20 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const answerShown = createMemo(() => !stubbed() && blocks().length > 0);
           const answerView = createMemo(on(answerShown, (shown) => (shown ? untrack(() => (
                     <>
-                      {/* v1 transcript.js renderTranscript: with Transcript on, the turn's timeline comes before its answer */}
-                      <Show when={stepsOpen()}>
+                      {/* v1 transcript.js renderTranscript & Chat mode: inline stream before the answer */}
+                      <Show when={showStream() && (!chat.chatMode() || streamSteps().length > 0)}>
                         <TurnTranscript
-                          steps={[
-                            ...steps(),
-                            ...((b as { presentation?: { notes?: string } }).presentation?.notes
-                              ? [{ kind: 'text', label: String((b as { presentation?: { notes?: string } }).presentation?.notes) }]
-                              : []),
-                          ]}
+                          steps={streamSteps()}
                           changes={changes()}
                           env={env}
                           here={here}
                           status={turn.status ?? ''}
+                          chat={chat.chatMode()}
+                          answerCtx={turnAnswerCtx}
                           t={t}
                         />
                       </Show>
-                      <Answer
-                        blocks={blocks()}
-                        ctx={Object.assign(answerContext({
-                          shell,
-                          key,
-                          turnId: turn.id,
-                          env,
-                          blocked: () => blockedOf(b),
-                          latest: () => turn.id === turns().at(-1)?.id,
-                          title: () => s().title,
-                          transcript: stepsOpen,
-                          meta: () => [
-                            ...(b.endedAt && b.endedAt > turn.started_at ? [duration(b.endedAt - turn.started_at)] : []),
-                            ...(b.stats?.costUsd ? [`$${b.stats.costUsd.toFixed(2)}`] : []),
-                            ...(changes().length ? [t(changes().length === 1 ? 'shell.task.touched.one' : 'shell.task.touched.other', { n: changes().length })] : []),
-                          ],
-                          reply,
-                          draft,
-                          openChanges: () => side('changes'),
-                          apps: () => ((b as { ext?: Record<string, unknown> }).ext?.['wisp.apps'] ?? {}) as Record<string, unknown>,
-                          tour: s().agent === 'wisp',
-                        }), { comment })}
-                      />
+                      <Answer blocks={blocks()} ctx={turnAnswerCtx} />
                     </>
           )) : undefined)));
           return (
@@ -1513,6 +1532,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               <TurnView
                 id={turn.id}
                 latest={turn.id === turns().at(-1)?.id}
+                chat={chat.chatMode()}
                 {...(rates() && { rate: <RateButtons rating={ratingOf(b)} labels={{ up: t('shell.rate.up'), down: t('shell.rate.down') }} onRate={(next) => rate(turn.id, next)} /> })}
                 {...(whyFor() === turn.id && {
                   trailBody: (
@@ -1545,7 +1565,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 harness={turnHarness().name}
                 {...(turnHarness().logo && { logo: turnHarness().logo })}
                 time={clock(turn.started_at)}
-                timeTitle={longTime(turn.started_at)}
+                timeTitle={turnLongTime(turn.started_at, chat.timeFormat())}
                 {...(b.checkpoint?.commit && {
                   sha: { short: b.checkpoint.commit.slice(0, 7), title: t('shell.task.checkpoint', { branch: b.checkpoint.branch ?? '', sha: b.checkpoint.commit }) },
                 })}
@@ -1563,7 +1583,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 {...(turn.status === 'held' && { untold: true })}
                 {...(live() && { working: [liveTx(), working()] })}
                 actsTitle={t('shell.task.activity')}
-                acts={trailActs(stepsOpen() ? 0 : steps().length, { read: count('read'), edit: count('edit'), run: count('run') }, t)}
+                acts={trailActs(showStream() ? 0 : steps().length, { read: count('read'), edit: count('edit'), run: count('run') }, t)}
                 stats={[
                   // v1 renderTrail: each only when there is something to say; a turn refused before it ran (no stats,
                   // no steps) took no time worth a figure ("1ms": B9)
@@ -1625,6 +1645,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         return (
           <>
             <TaskBody
+              chatWidth={chat.chatWidth()}
+              chat={chat.chatMode()}
               bodyRef={(el) => {
                 bodyEl = el;
                 el.addEventListener('scroll', onBodyScroll, { passive: true });
@@ -1762,6 +1784,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     }}
                     onSend={send}
                     onKey={replyKeys}
+                    sendShortcut={chat.sendShortcut()}
                     top={composerTop}
                     {...(working() && {
                       queue: {
@@ -1863,6 +1886,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               actions={<TaskHeadSlot id={key} session={() => s() as never} />}
               title={s().title}
               color={color()}
+              chatWidth={chat.chatWidth()}
               renameLabel={t('shell.task.rename')}
               panelLabel={t('shell.task.panel')}
               closeLabel={t('shell.task.close')}

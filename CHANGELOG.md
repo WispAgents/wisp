@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - Usage (Antigravity): added Antigravity plan quota support using `agy -p "/usage" --output-format json` (`Harness::live_limits`, non-blocking post-turn and stale-view refreshes, `autoStopAntigravity` stop line, Home usage bar, Settings → Usage live updates, Spare allowance, and `cache_read_tokens` capture).
+- Settings → **Chat**: replaced **Full transcript** in General with a dedicated **Chat** settings pane featuring **Chat mode** (tasks render as a continuous chat with live messages, thinking, and tool calls without an end-of-turn report, while **wisp blocks** stays an independent toggle in General so agents can still embed blocks inline inside chat responses) along with **Tool calls in chat** (`Show all` / `Hide successful` / `Hide all` / `Zen`), **Show thinking**, **Follow-up behavior** (`Interrupt` / `Queue`), **Send shortcut** (`Enter` / `⌘+Enter` for multiline / `⌘+Enter` always), **Chat width** (`Comfortable` / `Wide` / `Full`), and **Time format** (`System default` / `12-hour` / `24-hour`). **Chat mode is on by default**; switch it off in Settings → Chat for the Cards view (end-of-turn report).
 
 ### Fixed
 

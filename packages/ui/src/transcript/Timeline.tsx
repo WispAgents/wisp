@@ -11,6 +11,8 @@ export interface TimelineProps extends KitProps {
   /** the head: title and counts on one line */
   readonly head?: JSX.Element;
   readonly live?: boolean;
+  /** Chat mode: inline activity stream without the transcript frame. Additive. */
+  readonly chat?: boolean;
   readonly children?: JSX.Element;
   readonly 'aria-label'?: string;
 }
@@ -18,7 +20,7 @@ export interface TimelineProps extends KitProps {
 export function Timeline(props: TimelineProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.timeline';
   return (
-    <div id={props.id} data-kit="timeline" data-part={part()} data-live={flag(props.live)}>
+    <div id={props.id} data-kit="timeline" data-part={part()} data-live={flag(props.live)} data-chat={flag(props.chat)}>
       <Show when={props.head}>
         <div data-kit="timeline-head" data-part={sub(part(), 'head')}>
           {props.head}

@@ -1445,6 +1445,29 @@
           "description": "Watch agents work: agents may open what they built in wisp's browser to check it",
           "type": "boolean"
         },
+        "settings.chatThinking": {
+          "description": "Show thinking: display agent reasoning steps inline in chat",
+          "type": "boolean"
+        },
+        "settings.chatToolCalls": {
+          "description": "Tool calls in chat: show all, hide successful, hide all, or zen (final answers only)",
+          "enum": [
+            "showAll",
+            "hideSuccessful",
+            "hideAll",
+            "zen"
+          ],
+          "type": "string"
+        },
+        "settings.chatWidth": {
+          "description": "Chat width: comfortable, wide, or full",
+          "enum": [
+            "comfortable",
+            "wide",
+            "full"
+          ],
+          "type": "string"
+        },
         "settings.editor": {
           "description": "The editor files open in (vscode, cursor, windsurf, zed, idea, none)",
           "type": "string"
@@ -1465,12 +1488,30 @@
           ],
           "type": "string"
         },
+        "settings.sendShortcut": {
+          "description": "Send shortcut: Enter, modifier+Enter for multiline prompts, or modifier+Enter always",
+          "enum": [
+            "enter",
+            "mod-enter-multiline",
+            "mod-enter"
+          ],
+          "type": "string"
+        },
+        "settings.timeFormat": {
+          "description": "Time format: system default, 12-hour, or 24-hour",
+          "enum": [
+            "locale",
+            "12-hour",
+            "24-hour"
+          ],
+          "type": "string"
+        },
         "settings.timeZone": {
           "description": "Time zone: the one scheduled times are read in, an IANA name like Europe/Zurich (the app sets it from your device)",
           "type": "string"
         },
         "settings.transcript": {
-          "description": "Open tasks on their transcript instead of the answer",
+          "description": "Chat mode: show tasks as a chat without an end-of-turn report (wisp blocks can still be used inside responses)",
           "enum": [
             "on",
             "off"

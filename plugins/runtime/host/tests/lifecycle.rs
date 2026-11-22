@@ -140,6 +140,44 @@ async fn settings_decide_what_a_run_is_offered_and_whether_a_follow_up_queues() 
     off.rt.follow_up(f).await.unwrap();
     let s = off.rt.get(&o.0).await.unwrap();
     assert!(s.queue.iter().any(|q| q.text == "then this"), "queued: {:?}", s.queue);
+
+    // Chat mode (`settings.transcript`: "on"): independent from `runtime.blocks` — drops the end-of-turn report while
+    // keeping wisp blocks enabled unless `runtime.blocks` is turned off
+    let chat = rig_with(Recorder { settings: [set("settings.transcript", "on".into())].into(), ..Default::default() }).await;
+    let chat_id = chat.rt.create(start("chat reply")).await.unwrap().id;
+    until("chat run", || async { chat.sim.spawned().len() == 1 }).await;
+    assert!(
+        has(&chat, 0, "--chat") && !has(&chat, 0, "--plain"),
+        "chat mode keeps blocks enabled by default: {:?}",
+        chat.sim.spawned()[0].args
+    );
+    until("chat ends", || async { last_status(&chat, &chat_id.0).await == Some(TurnStatus::Done) }).await;
+
+    let chat_plain = rig_with(Recorder {
+        settings: [set("settings.transcript", "on".into()), set("runtime.blocks", false.into())].into(),
+        ..Default::default()
+    })
+    .await;
+    let cp = chat_plain.rt.create(start("chat plain reply")).await.unwrap().id;
+    until("chat plain run", || async { chat_plain.sim.spawned().len() == 1 }).await;
+    assert!(
+        has(&chat_plain, 0, "--chat") && has(&chat_plain, 0, "--plain"),
+        "chat mode + blocks off sends both --chat and --plain: {:?}",
+        chat_plain.sim.spawned()[0].args
+    );
+    until("chat plain ends", || async { last_status(&chat_plain, &cp.0).await == Some(TurnStatus::Done) }).await;
+
+    // Chat mode is the default: unset is chat, only an explicit "off" (or false) brings back the Cards report
+    let unset = rig().await;
+    let unset_id = unset.rt.create(start("default reply")).await.unwrap().id;
+    until("default run", || async { unset.sim.spawned().len() == 1 }).await;
+    assert!(has(&unset, 0, "--chat"), "chat mode is on by default: {:?}", unset.sim.spawned()[0].args);
+    until("default ends", || async { last_status(&unset, &unset_id.0).await == Some(TurnStatus::Done) }).await;
+    let cards = rig_with(Recorder { settings: [set("settings.transcript", "off".into())].into(), ..Default::default() }).await;
+    let cards_id = cards.rt.create(start("cards reply")).await.unwrap().id;
+    until("cards run", || async { cards.sim.spawned().len() == 1 }).await;
+    assert!(!has(&cards, 0, "--chat"), "chat mode off is the Cards view: {:?}", cards.sim.spawned()[0].args);
+    until("cards ends", || async { last_status(&cards, &cards_id.0).await == Some(TurnStatus::Done) }).await;
 }
 
 /// v1 lean.js: a task's run is lean when Settings says every run ('all') or the task asked; the task's own choice wins.

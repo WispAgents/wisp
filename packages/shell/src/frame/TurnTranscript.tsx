@@ -4,12 +4,13 @@
 // where the turn ended. The answer follows it (TaskView). What a step printed of a .env file (`cat .env`) reads
 // KEY=•••• under v1's Reveal line (env-reveal.ts keeps what's shown, per task).
 import { For, Index, Show, createSignal, type JSX } from 'solid-js';
-import { EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type EnvReveal, type IconName } from '@wisp/ui';
+import { Answer, EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type BlockContext, type EnvReveal, type IconName } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
+import { parseInlineChatBlocks } from './chat-blocks.ts';
 import { changeFigures } from './rows-view.ts';
 import '../i18n/lazy.ts';
 
-const ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', tool: 'tool', search: 'search' };
+const ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', thinking: 'spark', tool: 'tool', search: 'search' };
 
 export interface TranscriptStepRow {
   readonly kind: string;
@@ -74,7 +75,7 @@ function Step(props: {
       kind={props.a.kind}
       {...(command() !== undefined ? { command: command() as string } : {})}
       {...(nums() ? { nums: { add: nums()!.plus, del: nums()!.minus } } : {})}
-      {...(props.a.bad || props.a.kind === 'error' ? { tone: 'bad' as const } : {})}
+      {...(props.a.bad || props.a.kind === 'error' ? { tone: 'bad' as const } : props.a.kind === 'thinking' ? { tone: 'quiet' as const } : {})}
       {...(opens() && {
         expanded: open(),
         onToggle: () => setOpen(!open()),
@@ -107,6 +108,10 @@ export function TurnTranscript(props: {
   readonly changes: readonly Change[];
   readonly here: (s: string) => string;
   readonly status: string;
+  /** Chat mode: inline stream without the Transcript head or Finished footer. */
+  readonly chat?: boolean;
+  /** Block host context so mid-chat messages containing ```wisp fences render rich blocks inline. */
+  readonly answerCtx?: BlockContext;
   readonly t: ShellContext['t'];
 }): JSX.Element {
   const t = props.t;
@@ -123,17 +128,20 @@ export function TurnTranscript(props: {
     <Timeline
       part="turn.transcript"
       live={props.status === 'running' || props.status === 'starting'}
-      head={
-        <>
-          <Icon name="transcript" size="sm" />
-          <Text size="sm" weight="medium" tone="muted">
-            {t('shell.task.transcript')}
-          </Text>
-          <Show when={count()}>
-            <Text size="sm" tone="faint" truncate>{`· ${count()}`}</Text>
-          </Show>
-        </>
-      }
+      {...(props.chat !== undefined && { chat: props.chat })}
+      {...(!props.chat && {
+        head: (
+          <>
+            <Icon name="transcript" size="sm" />
+            <Text size="sm" weight="medium" tone="muted">
+              {t('shell.task.transcript')}
+            </Text>
+            <Show when={count()}>
+              <Text size="sm" tone="faint" truncate>{`· ${count()}`}</Text>
+            </Show>
+          </>
+        ),
+      })}
     >
       {/* by place, updated in place: the steps are made again as new objects whenever the turn's row changes (a 👍),
           and a list keyed by object made every step again */}
@@ -144,13 +152,18 @@ export function TurnTranscript(props: {
             fallback={<Step a={a()} index={i} changes={props.changes} here={props.here} env={props.env} t={t} />}
           >
             <TimelineMessage>
-              <Markdown source={props.here(a().label ?? '')} />
+              {(() => {
+                const raw = props.here(a().label ?? '');
+                const ctx = props.answerCtx;
+                const inline = props.chat && ctx ? parseInlineChatBlocks(raw) : undefined;
+                return inline && ctx ? <Answer blocks={inline} ctx={ctx} /> : <Markdown source={raw} />;
+              })()}
             </TimelineMessage>
           </Show>
         )}
       </Index>
-      {/* a running turn's timeline so far (v1 renderLiveTranscript) has no end yet */}
-      <Show when={props.status !== 'running' && props.status !== 'starting'}>
+      {/* a running turn's timeline so far (v1 renderLiveTranscript) has no end yet; Chat mode omits Finished */}
+      <Show when={!props.chat && props.status !== 'running' && props.status !== 'starting'}>
         <TimelineEnd
           icon={props.status === 'error' ? 'warn' : 'done'}
           label={t(props.status === 'error' ? 'shell.task.endedError' : 'shell.task.finished')}
