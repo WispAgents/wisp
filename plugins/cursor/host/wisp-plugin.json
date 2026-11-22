@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.cursor",
   "name": "Cursor",
-  "version": "1.0.0-alpha.4",
+  "version": "1.0.0-alpha.5",
   "api": "^1",
   "description": "wisp.cursor host: Cursor as a runtime.harness@1 contribution (detect, setup, launch, resume, trust)",
   "server": {

@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.5] - 2026-11-22
+
 ### Added
 
 - Ship it: when the repo has a `.wisp/` folder, the Ship it dialog shows a **Save task to repo (.wisp/)** checkbox; ticking it saves the task's spec, report and scrubbed transcript into the worktree right before committing so it ships inside the PR.
@@ -280,7 +282,8 @@ from your own agent through wisp's MCP tools. It's an alpha: expect rough edges,
 - With Auto off, nothing offers `auto` or the router.
 - Settings → Connectors keeps each connector's last check across a restart.
 
-[Unreleased]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.4...main
+[Unreleased]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.5...main
+[1.0.0-alpha.5]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.4...v1.0.0-alpha.5
 [1.0.0-alpha.4]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.3...v1.0.0-alpha.4
 [1.0.0-alpha.3]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.2...v1.0.0-alpha.3
 [1.0.0-alpha.2]: https://github.com/WispAgents/wisp/compare/v1.0.0-alpha.1...v1.0.0-alpha.2

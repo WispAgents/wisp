@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.push",
   "name": "Push",
-  "version": "1.0.0-alpha.4",
+  "version": "1.0.0-alpha.5",
   "api": "^1",
   "description": "wisp.push: the push transport for wisp.channels (phones paired by their own keys, notes sealed with HPKE, posted through the grid relay)",
   "server": {
