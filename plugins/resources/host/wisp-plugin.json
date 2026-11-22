@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.resources",
   "name": "Resources",
-  "version": "1.0.0-alpha.5",
+  "version": "1.0.0-alpha.6",
   "api": "^1",
   "description": "wisp as code: plan, apply and export every plugin's resource kinds (wisp.yml)",
   "kind": "plugin",

@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.update",
   "name": "Updates",
-  "version": "1.0.0-alpha.5",
+  "version": "1.0.0-alpha.6",
   "api": "^1",
   "description": "wisp.update: a newer wisp, checked daily (npm dist-tags or GitHub Releases), and installed with npm or Homebrew",
   "server": {

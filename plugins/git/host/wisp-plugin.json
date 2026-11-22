@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.git",
   "name": "Git",
-  "version": "1.0.0-alpha.5",
+  "version": "1.0.0-alpha.6",
   "api": "1",
   "description": "Git for every other plugin: repo handles (git.service@1), status, diffs from the merge-base, worktrees, staging and commits. Every git call runs async through the proc service.",
   "server": {

@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.accounts",
   "name": "Accounts",
-  "version": "1.0.0-alpha.5",
+  "version": "1.0.0-alpha.6",
   "api": "^1",
   "description": "wisp.accounts host: accounts, sign-in, harness watch (before:run), harness disk, live limits, usage, allowance",
   "server": {

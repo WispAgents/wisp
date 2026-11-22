@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.opencode",
   "name": "opencode",
-  "version": "1.0.0-alpha.5",
+  "version": "1.0.0-alpha.6",
   "api": "^1",
   "description": "wisp.opencode host: opencode as a runtime.harness@1 contribution (detect, setup, launch, resume, trust)",
   "server": {
