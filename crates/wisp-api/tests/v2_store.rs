@@ -270,7 +270,7 @@ async fn a_paged_topic_sends_a_small_first_page_then_the_rest_every_row_once_at_
 
 /// ADR-0106 (perf audit 2026-11-19 #1): each page is its own short read, so a write can land between two pages. It is
 /// never lost: the later pages read the rows as they are now (a row it moved may come twice: the client keys by id),
-/// every page still goes at the first read's seq, and the patches after that seq (here, a resume from it) carry it.
+/// the last page carries the changes since page 1 at the seq it read to, and a resume from page 1's seq carries them too.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_write_between_two_pages_is_in_a_later_page_or_the_patches_after_the_snapshots_seq() {
     let s = store();
@@ -295,8 +295,16 @@ async fn a_write_between_two_pages_is_in_a_later_page_or_the_patches_after_the_s
     snaps.snapshot_pages(&Topic::parse("config").unwrap(), None, sink).await;
     let pages = got.lock().unwrap().clone();
     let ids: Vec<&str> = pages.iter().flat_map(|p| p.1.iter().map(String::as_str)).collect();
-    assert_eq!(ids, ["k1", "k3", "k5", "k7", "k8", "k2", "k3", "k4", "k6"], "k8 in a later page; k3 again where it moved to");
-    assert!(pages.iter().all(|p| p.0 == head), "every page at the first read's seq: {pages:?}");
+    // the last page also folds in what changed since page 1 (2026-11-22 audit: a row that moved behind the keyset
+    // cursor would otherwise only come as a patch for a row the client never got), and goes at the seq it read to
+    assert_eq!(
+        ids,
+        ["k1", "k3", "k5", "k7", "k8", "k2", "k3", "k4", "k6", "k8", "k3"],
+        "k8 in a later page; k3 again where it moved to; both again in the last page's delta"
+    );
+    let (last, rest) = pages.split_last().unwrap();
+    assert!(rest.iter().all(|p| p.0 == head), "every page but the last at the first read's seq: {pages:?}");
+    assert!(last.0 > head, "the last page at the seq its delta read to: {pages:?}");
     assert_eq!(pages.iter().map(|p| p.2).collect::<Vec<_>>(), [true, true, true, false]);
     let after: Vec<String> = pages_of(&snaps, "config", Some(head)).await.into_iter().flat_map(|p| p.1).collect();
     assert!(after.contains(&"k8".to_owned()) && after.contains(&"k3".to_owned()), "the patches after its seq: {after:?}");

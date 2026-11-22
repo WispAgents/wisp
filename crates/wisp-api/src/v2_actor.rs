@@ -60,13 +60,13 @@ impl Actor {
                     let _ = reply.send(self.post(&caller, &client, body));
                 }
                 Some(Msg::In(input)) => {
-                    // a snapshot page meets the socket's backlog as it is now: the last report was taken just after
-                    // the previous page was written, so it still counts that page, and two pages in a row would read
-                    // as past the high-water mark and drop the topic for a resync (ADR-0081)
-                    if let Input::SnapshotRows(a) = &input
-                        && let Some(s) = self.conns.get(&a.conn)
-                    {
-                        self.feed(Input::Drained { conn: a.conn, buffered_bytes: s.queued.load(Ordering::Relaxed) });
+                    // Refresh socket backlog before handling snapshot pages, commits, or command results so stale
+                    // `buffered` counts never hold back snapshots or trigger spurious high-water resyncs.
+                    match &input {
+                        Input::SnapshotRows(a) => self.refresh_one(a.conn),
+                        Input::CommandResult { conn, .. } => self.refresh_one(*conn),
+                        Input::Committed { .. } => self.refresh_all(),
+                        _ => {}
                     }
                     self.feed(input);
                 }
@@ -79,10 +79,7 @@ impl Actor {
                 None => {
                     // the machine ticks with each socket's backlog as it is now: pages held past the high-water mark
                     // go once it drained, though nothing was written since the last report (ADR-0081)
-                    let now: Vec<(ConnId, usize)> = self.conns.iter().map(|(c, s)| (*c, s.queued.load(Ordering::Relaxed))).collect();
-                    for (conn, buffered_bytes) in now {
-                        self.feed(Input::Drained { conn, buffered_bytes });
-                    }
+                    self.refresh_all();
                     self.feed(Input::Tick);
                 }
             }
@@ -100,8 +97,22 @@ impl Actor {
         if owner.is_none_or(|c| c.set != caller.set || c.session != caller.session) {
             return Err(WireError::forbidden("that stream belongs to another caller"));
         }
+        self.refresh_one(conn);
         self.feed(Input::Message { conn, message });
         Ok(())
+    }
+
+    fn refresh_one(&mut self, conn: ConnId) {
+        if let Some(s) = self.conns.get(&conn) {
+            self.feed(Input::Drained { conn, buffered_bytes: s.queued.load(Ordering::Relaxed) });
+        }
+    }
+
+    fn refresh_all(&mut self) {
+        let now: Vec<(ConnId, usize)> = self.conns.iter().map(|(c, s)| (*c, s.queued.load(Ordering::Relaxed))).collect();
+        for (conn, buffered_bytes) in now {
+            self.feed(Input::Drained { conn, buffered_bytes });
+        }
     }
 
     /// Streams whose socket went away: closed in the machine too.
@@ -125,8 +136,14 @@ impl Actor {
         let mut inputs = vec![first];
         while let Some(input) = inputs.pop() {
             let mut sent: Vec<ConnId> = Vec::new();
+            let mut dead: Vec<ConnId> = Vec::new();
             for out in self.server.handle(input, now_ms()) {
-                self.carry(out, &mut sent);
+                self.carry(out, &mut sent, &mut dead);
+            }
+            dead.sort_unstable();
+            dead.dedup();
+            for conn in dead {
+                inputs.push(Input::Close { conn });
             }
             sent.sort_unstable();
             sent.dedup();
@@ -138,17 +155,24 @@ impl Actor {
         }
     }
 
-    fn carry(&mut self, out: Output<Caller>, sent: &mut Vec<ConnId>) {
+    fn carry(&mut self, out: Output<Caller>, sent: &mut Vec<ConnId>, dead: &mut Vec<ConnId>) {
         match out {
             Output::Send { conn, frame, .. } => {
                 let ok = self.conns.get(&conn).is_some_and(|s| {
-                    s.queued.fetch_add(frame.len(), Ordering::Relaxed);
-                    s.tx.try_send(Bytes::from(frame)).is_ok()
+                    let len = frame.len();
+                    s.queued.fetch_add(len, Ordering::Relaxed);
+                    if s.tx.try_send(Bytes::from(frame)).is_ok() {
+                        true
+                    } else {
+                        s.queued.fetch_sub(len, Ordering::Relaxed);
+                        false
+                    }
                 });
                 if ok {
                     sent.push(conn);
                 } else {
                     self.close(conn);
+                    dead.push(conn);
                 }
             }
             Output::Activity { conn, active } => {

@@ -6,7 +6,7 @@
 import type { DeepReadonly, EntityKey } from '@wisp/client';
 import type { ProjectColor } from '@wisp/tokens';
 
-export type SessionState = 'running' | 'waiting' | 'review' | 'done';
+export type SessionState = 'running' | 'waiting' | 'review' | 'done' | 'error';
 /** The agent's verdict on its last turn (`status`), plus wisp's own halt words. */
 export type Verdict = 'done' | 'partial' | 'blocked' | 'failed' | 'limit' | 'refused' | 'signedOut' | 'info' | 'held' | 'running';
 export type Halt = 'limit' | 'signedOut' | 'refused' | 'failed';

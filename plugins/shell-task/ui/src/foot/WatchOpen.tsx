@@ -21,7 +21,13 @@ export default function WatchOpen(props: ExtensionProps): JSX.Element {
   });
   // the mark the task had when it opened (or when its row arrived): only a later open opens the tab
   let seen: number | undefined;
+  let seenKey: EntityKey | undefined;
   createEffect(() => {
+    const k = key();
+    if (k !== seenKey) {
+      seenKey = k;
+      seen = undefined;
+    }
     const r = row()();
     if (r === undefined) return;
     const now = watchOpened(r);

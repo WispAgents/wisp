@@ -222,7 +222,7 @@ fn full_rows(r: &Reader<'_>, sources: &[TopicSource], topic: &str) -> wisp_store
 
 fn read_topic(r: &Reader<'_>, s: TopicReads<'_>, topic: &str, since: Option<u64>) -> wisp_store::Result<Read> {
     let TopicReads { sources, readers, pages } = s;
-    let key_of = |e: &str| sources.iter().find(|s| s.kind == e).map(|s| s.key);
+    let key_of = |e: &str| sources.iter().find(|s| s.kind == e).map(|s| s.key).or_else(|| r.key_of(e));
     if let Some(read) = resume(r, s, topic, since)? {
         return Ok(read);
     }
@@ -257,8 +257,10 @@ impl Snapshots for StoreSnapshots {
         self.head.load(Ordering::Relaxed)
     }
     /// Read once, when the stream starts (retention moves it later through `Driver::retained`).
+    /// `Reader::oldest_seq` is the lowest kept change seq (`min(seq)`, or `head + 1` when empty); a cursor at
+    /// `oldest_seq - 1` has seen everything before it and can still resume (`wisp_store::can_resume`).
     fn oldest_seq(&self) -> u64 {
-        self.store.read(oldest_of).map_or(0, seq)
+        self.store.read(oldest_of).map_or(0, |v| seq(v).saturating_sub(1))
     }
     fn snapshot(&self, topic: &Topic, since: Option<u64>) -> BoxFuture<'static, Read> {
         let (store, sources, readers, topic) = (self.store.clone(), self.sources.clone(), self.readers.clone(), topic.as_str().to_owned());
@@ -389,6 +391,8 @@ pub fn feed_read(store: &Store, driver: Arc<Driver>, views: Arc<dyn ViewSource>,
                 egress::change(&vs, c);
             }
             driver.committed(wire);
+        } else if let Some(top) = rows.iter().map(|c| seq(c.seq)).max() {
+            driver.advance(top);
         }
     })
 }

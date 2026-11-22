@@ -148,14 +148,20 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
         }
       }
     }
-    const before = r.sig();
+    const before = untracked(r.sig);
     if (deepEqual(before, v)) return; // same value keeps the same reference: nothing repaints
     r.sig(v);
     let d = dirty.get(c);
     if (!d) dirty.set(c, (d = { added: [], removed: new Set(), changed: new Map() }));
-    if (before === undefined) d.added.push(key);
-    else if (v === undefined) d.removed.add(key);
-    else d.changed.set(key, v);
+    if (before === undefined) {
+      if (d.removed.delete(key)) d.changed.set(key, v);
+      else d.added.push(key);
+    } else if (v === undefined) {
+      const i = d.added.indexOf(key);
+      if (i >= 0) d.added.splice(i, 1);
+      else d.removed.add(key);
+      d.changed.delete(key);
+    } else d.changed.set(key, v);
   }
 
   /** membership and the list, once per batch: a token patch copies one array and sets one slot */
@@ -258,16 +264,16 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
       recomputeAll(rows.map((row) => putBase(peer, topic, row)));
     },
     snapshot(peer, topic, rows) {
-      const seen = new Set<EntityKey>();
+      const seen = new Set<string>();
       const touched: ChangedRow[] = [];
       for (const row of rows) {
         const changed = putBase(peer, topic, row);
-        seen.add(changed.key);
+        seen.add(`${row.e}\u0000${changed.key}`);
         touched.push(changed);
       }
       for (const [kind, c] of collections) {
         for (const [key, r] of c.rows) {
-          if (r.peer !== peer || !r.topics.has(topic) || seen.has(key)) continue;
+          if (r.peer !== peer || !r.topics.has(topic) || seen.has(`${kind}\u0000${key}`)) continue;
           const gone = dropTopicRow(kind, key, topic);
           if (gone) touched.push(gone);
         }
@@ -295,7 +301,14 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
     },
     resetPeer(peer) {
       cursors.delete(peer);
+      // Drop acked pending overlays from the old epoch so they can't stay pinned if the new epoch's cursor is lower.
+      const list = untracked(pending);
+      const stale = list.filter((p) => p.peer === peer && p.settleAt !== undefined);
       const touched: ChangedRow[] = [];
+      if (stale.length > 0) {
+        pending(list.filter((p) => !stale.includes(p)));
+        for (const p of stale) touched.push(...touchedBy(p.ops));
+      }
       for (const [kind, c] of collections) {
         for (const [key, r] of c.rows) {
           if (r.peer !== peer || r.base === undefined) continue;

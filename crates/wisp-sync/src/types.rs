@@ -130,6 +130,10 @@ pub enum Input<C> {
     Retained {
         oldest_seq: u64,
     },
+    /// The store's head moved without emitting any wire ops (e.g. a kind with no topics): keeps `head` current for acks.
+    Advance {
+        head: u64,
+    },
     Tick,
     /// What the socket still holds after a write: the backpressure signal.
     Drained {

@@ -198,23 +198,30 @@ pub(crate) fn changed_since(
         return Ok(None);
     }
     let head = head_seq(db)?;
-    // (kind, id) in the order of their latest change; appends name their rows in the patch
-    let mut order: Vec<(String, Id)> = Vec::new();
-    let mut seen: HashSet<(String, String)> = HashSet::new();
+    // (kind, id) in the order of their latest change; appends name their rows in the patch.
+    // Collect pages oldest→newest, then walk newest→oldest across ALL pages so a multi-page
+    // range (> MAX_LIMIT changes) deduplicates by each row's truly newest change and delivers oldest first.
+    let mut pages: Vec<Vec<ChangeRow>> = Vec::new();
     let mut cursor = since;
     loop {
         let page = read(db, cursor, Some(&[topic]), MAX_LIMIT)?;
         let Some(last) = page.last() else { break };
         cursor = last.seq;
+        let more = page.len() == MAX_LIMIT as usize;
+        pages.push(page);
+        if !more {
+            break;
+        }
+    }
+    let mut order: Vec<(String, Id)> = Vec::new();
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    for page in pages.iter().rev() {
         for c in page.iter().rev() {
             for id in touched(c, kinds)? {
                 if seen.insert((c.entity.clone(), id.to_string())) {
                     order.push((c.entity.clone(), id));
                 }
             }
-        }
-        if page.len() < MAX_LIMIT as usize {
-            break;
         }
     }
     order.reverse(); // collected newest first; deliver oldest first, each at its latest change

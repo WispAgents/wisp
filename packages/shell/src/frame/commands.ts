@@ -216,7 +216,14 @@ export const followUp = defineCommand<{
   owner: (a) => a.id,
   // the turn's id as the server keeps it (bare, 32 hex): its card is the server's turn when it lands (B35)
   wire: (a) => ({ ...a, id: bare(a.id), turnId: bare(a.turnId) }),
-  optimistic: (base, a) => (a.queue ? queuedOps(base.peek<SessionRow>(SESSION, a.id as EntityKey), a) : startedOps(a)),
+  optimistic: (base, a) => {
+    if (!a.queue) return startedOps(a);
+    const bareId = bare(a.id);
+    // read only when the row keeps its queue as `queue_item` rows (not in `body.queue`)
+    const queued = (): number =>
+      typeof base.list === 'function' ? base.list<{ session_id?: string }>('queue_item')().filter((r) => r.session_id === bareId).length : 0;
+    return queuedOps(base.peek<SessionRow>(SESSION, a.id as EntityKey), a, queued);
+  },
 });
 
 /** The setup card open on a task (ADR-0113: an agent asks to change your setup), its id; undefined when none is. */
@@ -235,9 +242,34 @@ export const answerSetup = defineCommand<{ id: string; text: string; askId: stri
 });
 
 /** A queued follow-up shows in the queue over the reply box at once, under its turn id (the peer's item id). */
-export function queuedOps(s: SessionRow | undefined, a: { id: string; text: string; turnId: string; at: number; attachments?: readonly Attachment[] }): LocalOp[] {
-  const queue = ((s?.body as { queue?: readonly unknown[] } | undefined)?.queue ?? []) as readonly unknown[];
+export function queuedOps(
+  s: SessionRow | undefined,
+  a: { id: string; text: string; turnId: string; at: number; attachments?: readonly Attachment[] },
+  existingQueueItems: number | (() => number) = 0,
+): LocalOp[] {
+  const bodyQueue = (s?.body as { queue?: readonly unknown[] } | undefined)?.queue;
   const item = { id: bare(a.turnId), text: a.text, at: a.at, ...(a.attachments?.length && { attachments: a.attachments }) };
+  // Real server rows keep queued items in the `queue_item` collection rather than `session.body.queue`:
+  // upserting a `queue_item` preserves earlier queued items instead of masking them with `/body/queue`.
+  if (!Array.isArray(bodyQueue) && s?.body !== undefined) {
+    const items = typeof existingQueueItems === 'function' ? existingQueueItems() : existingQueueItems;
+    const count = Math.max(items, Number((s.summary as { queued?: unknown } | undefined)?.queued ?? 0));
+    return [
+      {
+        e: 'queue_item',
+        id: a.turnId as EntityKey,
+        op: 'upsert',
+        v: { id: bare(a.turnId), session_id: bare(a.id), pos: count, body: item },
+      },
+      {
+        e: SESSION,
+        id: a.id as EntityKey,
+        op: 'patch',
+        ops: [{ op: 'replace', path: '/summary/queued', value: count + 1 }],
+      },
+    ];
+  }
+  const queue = (bodyQueue ?? []) as readonly unknown[];
   return [
     {
       e: SESSION,

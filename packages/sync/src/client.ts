@@ -156,6 +156,20 @@ export class SyncClient {
         }
         break;
       }
+      case 'evicted':
+        this.#held.delete(input.topic);
+        break;
+      case 'resume':
+        if (this.#state === 'idle' || this.#state === 'incompatible') break;
+        if (this.#state === 'offline') {
+          this.#open(now);
+        } else if (now - this.#heard >= this.#o.keepaliveMs) {
+          this.#out.push({ kind: 'drop' });
+          for (const s of this.#topics.values()) s.pages = null;
+          this.#state = 'offline';
+          this.#open(now);
+        }
+        break;
     }
     return this.#out;
   }
@@ -212,8 +226,11 @@ export class SyncClient {
       return false;
     }
     const resume = w.resume && w.epoch === this.#epoch;
-    if (!resume) this.#out.push({ kind: 'reset', peer: this.peer });
-    if (!resume) this.#held.clear(); // seqs of another epoch, or rows the reset just dropped
+    if (!resume) {
+      this.#cursor = null;
+      this.#held.clear(); // seqs of another epoch, or rows the reset just dropped
+      this.#out.push({ kind: 'reset', peer: this.peer });
+    }
     for (const [t, s] of this.#topics) {
       s.synced = resume && this.#hello.get(t) === true;
       s.pages = null;

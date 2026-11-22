@@ -19,7 +19,7 @@ use serde_json::{Map, Value, json};
 use wisp_kernel::{Call, Ctx, Manifest, Plugin, Result, Setup, WireError};
 use wisp_later_api::commands as c;
 use wisp_later_api::{BY_AGENT, LaterEntry, LaterHeld, PER_TICK, Plan, PlanKind, SentMeta, TICK_MS};
-use wisp_later_core::{Action, PlanAction, Task, TaskMeta, TaskState, due, due_plans, next_at, pull_forward, rules};
+use wisp_later_core::{Action, PlanAction, Task, TaskMeta, due, due_plans, next_at, pull_forward, rules};
 use wisp_store::Store;
 
 /// A zone's offset from UTC at `at`, in minutes: the zone named, else the server's, else UTC.
@@ -164,29 +164,58 @@ impl State {
         gone
     }
 
-    /// A follow-up goes into its task now.
+    /// A follow-up goes into its task now. Sends before deleting the entry so a transient error never drops it.
     async fn fire(&self, ctx: &Ctx, call: &Call, l: &LaterEntry, late: bool) -> Result<wisp_runtime_api::commands::FollowedUp> {
         let sent = SentMeta { by: l.by.clone(), set_at: l.set_at, at: l.at, late };
         let note = rules::late_note(&sent, now(ctx), self.tz(now(ctx)));
+        let text = format!("{note}\n\n{}", l.text);
+        let res = calls::follow_up(ctx, call, &l.session_id, text, &l.attachments).await?;
         let mut m = self.meta(&l.session_id);
         m.sent = Some(sent);
         lock(&self.metas).insert(l.session_id.clone(), m.clone());
-        self.write(store::Ops { drop_entries: vec![l.id.clone()], metas: vec![(l.session_id.clone(), m)], ..store::Ops::default() })
-            .await?;
-        let text = format!("{note}\n\n{}", l.text);
-        calls::follow_up(ctx, call, &l.session_id, text, &l.attachments).await
+        logged(
+            self.write(store::Ops { drop_entries: vec![l.id.clone()], metas: vec![(l.session_id.clone(), m)], ..store::Ops::default() })
+                .await,
+            "drop fired entry",
+        );
+        Ok(res)
     }
 
     /// A reminder (or a missed follow-up) brings the task back to Needs you with its text.
     async fn remind(&self, ctx: &Ctx, call: &Call, task: &Task, l: &LaterEntry, text: String, missed: bool) -> Result<()> {
-        let (reminder, _) = rules::reminder_of(task, l, text, missed);
+        let (reminder, new_state) = rules::reminder_of(task, l, text, missed);
         let mut m = self.meta(&l.session_id);
         m.reminder = Some(reminder);
         lock(&self.metas).insert(l.session_id.clone(), m.clone());
         self.write(store::Ops { drop_entries: vec![l.id.clone()], metas: vec![(l.session_id.clone(), m)], ..store::Ops::default() })
             .await?;
+        if new_state != task.state {
+            logged(calls::set_state(ctx, call, &l.session_id, new_state.as_str()).await, "a reminder's state");
+        }
         calls::note(ctx, call, &l.session_id, l.text.clone()).await;
         Ok(())
+    }
+
+    /// Runs a due plan (task or reminder) or records a missed overdue task plan as a card instead of running it.
+    async fn run_plan(&self, ctx: &Ctx, call: &Call, p: &Plan, missed: bool) -> Result<String> {
+        let at = now(ctx);
+        let tz = self.tz(at);
+        if !missed && p.kind == PlanKind::Task {
+            return calls::create(ctx, call, p.body.as_ref()).await;
+        }
+        let text = if missed && p.kind == PlanKind::Task {
+            rules::missed_plan_text(p, at, tz)
+        } else {
+            p.text.clone().unwrap_or_else(|| p.title.clone().unwrap_or_default())
+        };
+        let title = rules::card_title(&text);
+        let summary = rules::card_summary(p, missed && p.kind == PlanKind::Task, at, tz);
+        let mut ext = BTreeMap::new();
+        let meta = TaskMeta { card: true, origin: Some(rules::origin_of(p)), ..TaskMeta::default() };
+        if let Ok(v) = serde_json::to_value(meta.ext(&[])) {
+            ext.insert(wisp_later_api::PLUGIN_ID.to_owned(), v);
+        }
+        calls::card(ctx, call, title, summary, text, ext).await
     }
 
     /// `agent@account`'s plan reset early and nothing holds it (`budget.plan_free`): follow-ups held for it, or waiting
@@ -295,7 +324,10 @@ impl State {
                     if let Some(l) = self.take(std::slice::from_ref(&id)).pop() {
                         match self.fire(ctx, call, &l, late).await {
                             Ok(_) => fired += 1,
-                            Err(err) => tracing::warn!(error = %err.message, task = %session_id, "later: a follow-up"),
+                            Err(err) => {
+                                lock(&self.entries).push(l);
+                                tracing::warn!(error = %err.message, task = %session_id, "later: a follow-up");
+                            }
                         }
                         touched.push(session_id);
                     }
@@ -319,15 +351,22 @@ impl State {
         let pd = due_plans(&plans, &tasks, at, PER_TICK.saturating_sub(d.used));
         for a in pd.actions {
             match a {
-                PlanAction::Run { id } | PlanAction::Missed { id } => {
+                PlanAction::Run { id } => {
                     let Some(p) = lock(&self.plans).iter().find(|p| p.id == id).cloned() else { continue };
                     lock(&self.plans).retain(|x| x.id != id);
                     logged(self.write(store::Ops { drop_plans: vec![id], ..store::Ops::default() }).await, "a plan");
-                    if p.kind == PlanKind::Task {
-                        match calls::create(ctx, call, p.body.as_ref()).await {
-                            Ok(_) => fired += 1,
-                            Err(err) => tracing::warn!(error = %err.message, plan = %p.id, "later: runtime.create"),
-                        }
+                    match self.run_plan(ctx, call, &p, false).await {
+                        Ok(_) => fired += 1,
+                        Err(err) => tracing::warn!(error = %err.message, plan = %p.id, "later: plan run"),
+                    }
+                }
+                PlanAction::Missed { id } => {
+                    let Some(p) = lock(&self.plans).iter().find(|p| p.id == id).cloned() else { continue };
+                    lock(&self.plans).retain(|x| x.id != id);
+                    logged(self.write(store::Ops { drop_plans: vec![id], ..store::Ops::default() }).await, "a missed plan");
+                    match self.run_plan(ctx, call, &p, true).await {
+                        Ok(_) => fired += 1,
+                        Err(err) => tracing::warn!(error = %err.message, plan = %p.id, "later: missed plan"),
                     }
                 }
                 PlanAction::Lose { id, why } => {
@@ -380,6 +419,9 @@ fn commands(s: &mut Setup, slot: &Slot) {
         if a.now {
             st.take(std::slice::from_ref(&l.id));
             let res = st.fire(&ctx, &call, &l, false).await;
+            if res.is_err() {
+                lock(&st.entries).push(l);
+            }
             st.mirror(&ctx, &a.session_id).await;
             let sent = res?;
             return serde_json::to_value(sent).map(c::Edited::Sent).map_err(|e| WireError::internal(e.to_string()));
@@ -453,20 +495,27 @@ fn commands(s: &mut Setup, slot: &Slot) {
             }
             None => None,
         };
-        let p = rules::new_plan(
-            wisp_kernel::ids::uuid7(),
-            &a,
-            after.as_ref().map(|t| (t, t.state == TaskState::Done)),
-            now(&ctx),
-            st.tz(now(&ctx)),
-        )
-        .map_err(wire)?;
+        let p =
+            rules::new_plan(wisp_kernel::ids::uuid7(), &a, after.as_ref().map(|t| (t, st.meta(&t.id).card)), now(&ctx), st.tz(now(&ctx)))
+                .map_err(wire)?;
         lock(&st.plans).push(p.clone());
         st.write(store::Ops { plans: vec![p.clone()], ..store::Ops::default() }).await?;
         Ok(p)
     });
-    on!(s, slot, c::EditPlan, |st, ctx, _call, a| {
+    on!(s, slot, c::EditPlan, |st, ctx, call, a| {
         let p = lock(&st.plans).iter().find(|p| p.id == a.id).cloned().ok_or_else(|| WireError::not_found("No such plan."))?;
+        if a.now {
+            lock(&st.plans).retain(|x| x.id != p.id);
+            let started = match st.run_plan(&ctx, &call, &p, false).await {
+                Ok(id) => id,
+                Err(err) => {
+                    lock(&st.plans).push(p);
+                    return Err(err);
+                }
+            };
+            logged(st.write(store::Ops { drop_plans: vec![p.id], ..store::Ops::default() }).await, "start plan now");
+            return Ok(c::PlanEdited::Started(c::Started { session: c::StartedRef { id: started } }));
+        }
         let next = rules::edit_plan(&p, &a, now(&ctx), st.tz(now(&ctx))).map_err(wire)?;
         if let Some(x) = lock(&st.plans).iter_mut().find(|x| x.id == next.id) {
             *x = next.clone();
@@ -579,6 +628,38 @@ impl Plugin for LaterPlugin {
             async move {
                 if let Ok(st) = state(&slot) {
                     st.plan_free(&ctx, &e).await;
+                }
+            }
+        });
+        // A new turn accounts for a fired follow-up (chain count), clears reminder & for_later (rules::on_turn).
+        let started = slot.clone();
+        s.on::<wisp_runtime_api::events::TurnStarted, _, _>(move |ctx, e| {
+            let slot = started.clone();
+            async move {
+                let Ok(st) = state(&slot) else { return };
+                let sid = e.session_id.as_str();
+                let prev = st.meta(sid);
+                let by = prev.sent.as_ref().map(|_| "later");
+                let (next, _) = rules::on_turn(&prev, by);
+                if next != prev {
+                    lock(&st.metas).insert(sid.to_owned(), next.clone());
+                    logged(st.write(store::Ops { metas: vec![(sid.to_owned(), next)], ..store::Ops::default() }).await, "on turn");
+                    st.mirror(&ctx, sid).await;
+                }
+            }
+        });
+        // A deleted task drops its scheduled entries and meta immediately rather than waiting for the next tick.
+        let deleted = slot.clone();
+        s.on::<wisp_runtime_api::events::SessionDeleted, _, _>(move |_ctx, e| {
+            let slot = deleted.clone();
+            async move {
+                let Ok(st) = state(&slot) else { return };
+                let sid = e.id.as_str();
+                let ids: Vec<String> = st.of_task(sid).into_iter().map(|l| l.id).collect();
+                st.take(&ids);
+                lock(&st.metas).remove(sid);
+                if !ids.is_empty() {
+                    logged(st.write(store::Ops { drop_entries: ids, ..store::Ops::default() }).await, "session deleted");
                 }
             }
         });

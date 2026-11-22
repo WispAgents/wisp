@@ -44,7 +44,17 @@ export function useSignal<T>(readable: Readable<T>): Accessor<T> {
   if (getOwner()) onCleanup(stop);
   // a getter may read Solid signals too (a setting source a form builds over its own draft): follow those as well,
   // or such a value is read once and the control never shows the change
-  if (!isSubscribable(readable) && getOwner()) createComputed(() => setValue(() => readable()));
+  if (!isSubscribable(readable) && getOwner())
+    createComputed(() => {
+      const prev = setActiveSub(undefined);
+      let v: T;
+      try {
+        v = readable();
+      } finally {
+        setActiveSub(prev);
+      }
+      setValue(() => v);
+    });
   return value;
 }
 

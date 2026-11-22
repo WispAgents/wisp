@@ -4,8 +4,8 @@
 // (PrPane.tsx, `ship.details`) and Shell (ShellPane.tsx, wisp.terminal).
 import { Match, Show, Switch, createEffect, createMemo, createResource, createRoot, createSignal, onCleanup, onMount, untrack, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { computed, defineCommand, readonly, entityKey, type EntityKey } from '@wisp/client';
-import { IconButton, type IconName, Icon, Inline, Menu, Stack, Tabs, Text, afterNextPaint, useAfterPaint, useSignal } from '@wisp/ui';
+import { defineCommand, readonly, entityKey, type EntityKey } from '@wisp/client';
+import { IconButton, type IconName, Icon, Inline, Menu, Stack, Tabs, Text, afterNextPaint, useAfterPaint, useDerived, useSignal } from '@wisp/ui';
 import { editorUrl } from '../editor.ts';
 import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, isTui, pickedTab, tabKey, type SidePane } from '../open-task.ts';
 import { showsPlace } from './place.ts';
@@ -133,7 +133,7 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
   // other plugins' tabs, after the panel's own (v1 panel.js: an app from My Stuff pinned to tasks, "pane:<id>")
   // (a client computed: what the tabs read are the client's signals, the pins setting and the items)
   const defs = shell.sideTabs?.();
-  const extra = useSignal(computed(() => (defs?.() ?? []).flatMap((d) => d.tabs({ client: d.client, task: task.key }).map((x) => ({ ...x, key: tabKey(d.plugin, d.id, x.value), def: d })))));
+  const extra = useDerived(() => (defs?.() ?? []).flatMap((d) => d.tabs({ client: d.client, task: task.key }).map((x) => ({ ...x, key: tabKey(d.plugin, d.id, x.value), def: d }))));
   const picked = useSignal(readonly(pickedTab));
   const shown = createMemo(() => (props.pane === 'tab' ? extra().find((x) => x.key === picked()) : undefined));
   // Changes counts its files (the Changes pane's read, else one of the panel's own while another pane is open), PR names

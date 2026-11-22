@@ -145,6 +145,11 @@ impl RowView for View {
     }
     fn rows(&self, kind: &str, rows: &mut [&mut Value]) {
         if !on(&self.0) {
+            if WATCH_KINDS.contains(&kind) {
+                for v in rows.iter_mut() {
+                    drop_kept(v);
+                }
+            }
             return;
         }
         if kind == "event" {
@@ -213,6 +218,9 @@ impl RowView for View {
             let known = rt(&self.1).ok().and_then(|r| r.env.get(id)).map(|v| v.0);
             env_session::mask_patch(path, v, known.as_deref());
         }
+    }
+    fn strip_patch(&self, kind: &str, path: &str) -> bool {
+        WATCH_KINDS.contains(&kind) && (path == "/body/envHide" || path.starts_with("/body/envHide/"))
     }
 }
 

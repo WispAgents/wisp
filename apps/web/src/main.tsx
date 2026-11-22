@@ -166,10 +166,14 @@ function start(platform: Platform): void {
     shell.afterFirstScreen(() => void preloadControls().catch(() => undefined));
   });
 
-  // what's waiting (rows, drafts) is written before the page goes away
+  // what's waiting (rows, drafts) is written before the page goes away; returning to the foreground or
+  // regaining network checks and resumes offline or stale peer streams immediately
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') void client.flush();
+    else client.peers.resume();
   });
+  window.addEventListener('online', () => client.peers.resume());
+  platform.onResume(() => client.peers.resume());
   if (import.meta.env.PROD) registerWorker(platform, toaster, (k) => client.i18n.t(k));
 }
 

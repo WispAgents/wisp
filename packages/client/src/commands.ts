@@ -188,6 +188,17 @@ export function createCommands(o: CommandsOptions): Commands {
   }
 
   o.peers.onAnswer((_peer, a) => answer(a));
+  o.peers.onRemoved?.((peer) => {
+    for (const r of [...records.values()]) {
+      if (r.peer !== peer) continue;
+      finish(r.mid);
+      const w = waiters.get(r.mid);
+      waiters.delete(r.mid);
+      agains.delete(r.mid);
+      o.writer.dropPending(r.mid);
+      fail(r.cmd, new CommandError({ code: 'unavailable', message: `peer ${peer} was removed` }), w, undefined, quiet.delete(r.mid));
+    }
+  });
   o.peers.onSent((peer, mid) => {
     if (!records.has(mid) || sent.has(mid)) return;
     sent.add(mid);

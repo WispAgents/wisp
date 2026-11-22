@@ -148,6 +148,9 @@ impl Runtime {
             let mut held = s.queue_held;
             queue::remove(&mut Queue { items: &mut s.queue, held: &mut held }, item);
             s.queue_held = held;
+            if !s.queue.iter().any(|q| q.now) {
+                self.pending_interrupt.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(id);
+            }
             Ok(())
         })
         .await
@@ -272,6 +275,7 @@ impl Runtime {
 
     pub async fn delete(self: &Arc<Self>, id: &str) -> Result<()> {
         self.from_queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(id);
+        self.pending_interrupt.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(id);
         self.stop_run(id);
         let guard = self.task_lock(id).await;
         // a run still starting (the next queued follow-up, claimed under this lock when its run let go) is told
@@ -390,7 +394,9 @@ impl Runtime {
                     }
                     SendNow::Interrupt => self.interrupt(id),
                     SendNow::ReleaseLinger => self.release_linger(id),
-                    SendNow::Next => {}
+                    SendNow::Next => {
+                        self.pending_interrupt.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(id.to_owned());
+                    }
                 }
                 Ok(())
             })
@@ -418,6 +424,7 @@ impl Runtime {
         yes: bool,
     ) -> Result<()> {
         use wisp_runtime_api::commands::ReleaseAction as A;
+        let guard = self.task_lock(id).await;
         let mut s = self.repo.session(id).await?;
         let mut t = self.repo.turn(turn).await?;
         if t.status != TurnStatus::Held {
@@ -427,6 +434,7 @@ impl Runtime {
             // straight into its start: never written to the queue first, where the page would show it as a queued
             // follow-up until the start (its folder, `before:run`) is done
             self.release_held(&mut s, yes, action == A::Without).await?;
+            drop(guard);
             return self.kick(s).await.map(drop);
         }
         let held = t.held.clone();
@@ -466,15 +474,16 @@ impl Runtime {
 
     /// An after-turn step is done with the task it held (v1 `settle`).
     pub async fn settle(self: &Arc<Self>, id: &str, quiet: bool) -> Result<()> {
-        let running = self.run_state(id) != queue::Run::Idle;
         let _guard = self.task_lock(id).await;
+        let running = self.run_state(id) != queue::Run::Idle;
         let mut s = self.repo.session(id).await?;
         if s.state != SessionState::Running {
             return Ok(());
         }
         let last = self.repo.turns(id, None, Some(1)).await?.pop();
         let sub = s.parent_id.is_some();
-        let steps = self.host.after_steps();
+        let mut steps = self.host.after_steps();
+        steps.sort_by_key(|a| a.order());
         let end = |t: &Turn| wisp_runtime_api::points::TurnEnd {
             stopped: t.status == TurnStatus::Stopped,
             is_error: t.status == TurnStatus::Error,
@@ -487,6 +496,17 @@ impl Runtime {
         s.state = l.state;
         s.unread = l.unread;
         let summary = self.persist(&mut s, Vec::new()).await?;
+        if let Some(next_id) = l.run_after
+            && let Some(step) = steps.into_iter().find(|a| a.id() == next_id)
+            && let Some(t) = last.clone()
+        {
+            let s2 = s.clone();
+            tokio::spawn(async move {
+                if let Err(err) = step.run(s2, t).await {
+                    tracing::warn!(%err, "an after-turn step failed");
+                }
+            });
+        }
         if l.notify
             && let Some(t) = last
         {

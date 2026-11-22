@@ -164,7 +164,17 @@ export function subagentData(client: PluginClient): SubagentData {
   if (had) return had;
   // a task's steps come as one list row per task while it's open (its live tail: an array), or one row per step
   const rows = client.entities.list<StepRowLike | readonly StepRowLike[]>('event');
-  const steps = computed(() => (rows() as readonly (StepRowLike | readonly StepRowLike[])[]).flatMap((r) => (Array.isArray(r) ? (r as readonly StepRowLike[]) : [r as StepRowLike])));
+  const steps = computed(() => {
+    const seen = new Map<string, StepRowLike>();
+    for (const r of rows() as readonly (StepRowLike | readonly StepRowLike[])[]) {
+      const items = Array.isArray(r) ? (r as readonly StepRowLike[]) : [r as StepRowLike];
+      for (const e of items) {
+        if (!e) continue;
+        seen.set(`${e.session_id}\u0000${e.seq}`, e);
+      }
+    }
+    return [...seen.values()];
+  });
   const d: SubagentData = { tasks: client.entities.list<TaskRowLike>('session'), steps };
   madeFor.set(client, d);
   return d;

@@ -3,7 +3,7 @@
 //!
 //! size-ok: one sans-IO machine; its `handle` arms share private state, and the frame/fold/outbox parts already live in their own files
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use wisp_protocol::{Change, ClientMessage, EntityOp, PROTO, PROTO_MIN, Rows, Snapshot, Topic, Welcome, tag};
@@ -84,6 +84,7 @@ impl<C: Clone> SyncServer<C> {
                 }
             }
             Input::Retained { oldest_seq } => self.core.oldest = self.core.oldest.max(oldest_seq),
+            Input::Advance { head } => self.core.head = self.core.head.max(head),
             Input::Tick => self.tick(now),
             Input::Drained { conn, buffered_bytes } => {
                 if let Some(c) = self.conns.get_mut(&conn) {
@@ -228,8 +229,10 @@ impl<C: Clone> SyncServer<C> {
             return;
         };
         let since = sub.since;
+        self.core.head = self.core.head.max(a.seq);
         // a snapshot in pages goes page by page as each is read (ADR-0081): the first screen draws from the first
         let paged = a.more || sub.paged;
+        let wire_seq = if a.more { *sub.page_seq.get_or_insert(a.seq) } else { sub.page_seq.take().unwrap_or(a.seq) };
         sub.paged = a.more;
         let mut buffered = Vec::new();
         if !a.more {
@@ -241,13 +244,24 @@ impl<C: Clone> SyncServer<C> {
         match since.filter(|_| !a.full) {
             None => {
                 let frame = match &a.rows_json {
-                    Some(rows) => snapshot_frame(&a.topic, a.seq, rows, a.more),
-                    None => {
-                        json(&Snapshot { t: tag::Snapshot, topic: a.topic.clone(), seq: a.seq, rows: a.rows, more: a.more.then_some(true) })
-                    }
+                    Some(rows) => snapshot_frame(&a.topic, wire_seq, rows, a.more),
+                    None => json(&Snapshot {
+                        t: tag::Snapshot,
+                        topic: a.topic.clone(),
+                        seq: wire_seq,
+                        rows: a.rows,
+                        more: a.more.then_some(true),
+                    }),
                 };
                 // replacing rows the client holds as of `since`: the cursor stays there until this is sent
                 c.out.push_front(&a.topic, Front { json: frame, kind: FrontKind::Snapshot, first_seq: since.map(|s| s + 1) });
+                if !a.more {
+                    for d in a.deleted {
+                        let op = Arc::new(SharedOp::new(EntityOp { topic: a.topic.clone(), e: d.e, id: d.id, change: Change::Del }));
+                        let bytes = op.json().len();
+                        c.out.push_op(op, a.seq, bytes);
+                    }
+                }
             }
             Some(since) => {
                 let first = since + 1;
@@ -312,7 +326,10 @@ impl<C: Clone> SyncServer<C> {
     // ---------- the change feed ----------
 
     fn committed(&mut self, mut rows: Vec<ChangeRow>, now: u64) {
-        rows.sort_by_key(|r| r.seq);
+        // Longer-lived topics (higher rank number, e.g. `list` over `session:<id>`) come first at the same seq so
+        // non-idempotent ops (`Patch`/`Append`) shared across multiple live subs go once on the longer-lived topic.
+        rows.sort_by(|a, b| a.seq.cmp(&b.seq).then_with(|| b.topic.rank().cmp(&a.topic.rank())).then_with(|| a.topic.cmp(&b.topic)));
+        let mut live_sent: HashSet<(ConnId, u64, String, String)> = HashSet::new();
         for row in rows {
             let seq = row.seq;
             self.core.head = self.core.head.max(seq);
@@ -321,6 +338,7 @@ impl<C: Clone> SyncServer<C> {
             if !wanted {
                 continue; // waiting and dropped: the snapshot or delta asked for later covers it
             }
+            let dedupe = matches!(row.change, Change::Patch { .. } | Change::Append { .. });
             let topic = row.topic.clone();
             let op = Arc::new(SharedOp::new(EntityOp { topic: row.topic, e: row.entity, id: row.id, change: row.change }));
             let bytes = op.json().len();
@@ -330,6 +348,9 @@ impl<C: Clone> SyncServer<C> {
                 };
                 let op = op.clone();
                 if sub.state == SubState::Live {
+                    if dedupe && !live_sent.insert((c.id, seq, op.op.e.clone(), op.op.id.clone())) {
+                        continue;
+                    }
                     c.out.push_op(op, seq, bytes);
                     continue;
                 }
@@ -370,7 +391,16 @@ impl<C> Core<C> {
         c.out.drop_topic(topic, true);
         // a cursor older than the change log can't be resumed from: take the whole topic
         let from = since.filter(|s| *s >= self.oldest && *s <= self.head);
-        let mut sub = Sub { passive, state: SubState::Waiting, since: from, req: 0, buffer: Vec::new(), buffer_bytes: 0, paged: false };
+        let mut sub = Sub {
+            passive,
+            state: SubState::Waiting,
+            since: from,
+            req: 0,
+            buffer: Vec::new(),
+            buffer_bytes: 0,
+            paged: false,
+            page_seq: None,
+        };
         if c.buffered <= self.low_water() {
             let req = self.next_req();
             Self::start_request(c.id, topic, &mut sub, req, &mut self.out);
@@ -387,6 +417,7 @@ impl<C> Core<C> {
         sub.state = SubState::Loading;
         sub.req = req;
         sub.paged = false;
+        sub.page_seq = None;
         sub.buffer.clear();
         sub.buffer_bytes = 0;
         out.push(Output::SnapshotRequest { conn, topic: topic.clone(), since: sub.since, req });

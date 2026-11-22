@@ -25,9 +25,10 @@ export function flatSession(raw: SessionRow | undefined): SessionRow | undefined
   if (!body && !summary) return raw;
   const had = cache.get(raw);
   if (had) return had;
-  const out: Record<string, unknown> = { ...body };
-  for (const [k, v] of Object.entries(top)) if (k !== 'body' && k !== 'summary') out[camel(k)] = v;
-  Object.assign(out, summary);
+  // Merge body, then summary, then top-level SQLite columns last so column-level or optimistic patches
+  // (`/title`, `/state`, `/unread`, `/archived`, `/agent`) are never overwritten by a stale `summary`.
+  const out: Record<string, unknown> = { ...body, ...summary };
+  for (const [k, v] of Object.entries(top)) if (k !== 'body' && k !== 'summary' && v !== undefined) out[camel(k)] = v;
   // whose crew job it is: the crew's note in `ext` (CrewExt), read as v1's `crew`
   const job = obj(obj(out['ext'])?.['wisp.crew']);
   if (job && typeof job['id'] === 'string' && out['crew'] === undefined) out['crew'] = { id: job['id'], ...(typeof job['job'] === 'string' && { job: job['job'] }) };

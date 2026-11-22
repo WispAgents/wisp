@@ -135,6 +135,11 @@ impl Driver {
     pub fn retained(&self, oldest_seq: u64) {
         let _ = self.tx.send(Msg::In(Input::Retained { oldest_seq }));
     }
+
+    /// The store's head moved without producing wire ops: keeps `SyncServer`'s head in sync for acks.
+    pub fn advance(&self, head: u64) {
+        let _ = self.tx.send(Msg::In(Input::Advance { head }));
+    }
 }
 
 fn connect_query(q: Vec<(String, String)>, last_event_id: Option<String>) -> ConnectQuery {
@@ -171,8 +176,10 @@ impl SyncMount for Driver {
                 tokio::select! {
                     b = queue.recv() => {
                         let Some(b) = b else { break };
-                        left.fetch_sub(b.len(), Ordering::Relaxed);
-                        if out.send(b).await.is_err() {
+                        let len = b.len();
+                        let sent = out.send(b).await.is_ok();
+                        left.fetch_sub(len, Ordering::Relaxed);
+                        if !sent {
                             break;
                         }
                     }

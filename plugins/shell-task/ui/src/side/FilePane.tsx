@@ -2,7 +2,7 @@
 // Saved / Unsaved and Save (⌘S); the text, highlighted and editable; and the why-gutter (ADR-0033): each line's task
 // from the repo's agent history, a click opens it. The file is read from the task's folder (`worktrees.source`) and
 // saved back only if it hasn't changed since (`worktrees.save`), never while the agent works on the task.
-import { Show, createMemo, createResource, createSignal, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createResource, createSignal, on, type JSX } from 'solid-js';
 import { defineCommand, entityKey, type EntityKey } from '@wisp/client';
 import { Box, Button, EmptyState, FileView, IconButton, Inline, Stack, Text, langOfPath, useSignal } from '@wisp/ui';
 import { useShell } from '../shell.ts';
@@ -74,6 +74,17 @@ export function FilePane(props: { readonly path: string }): JSX.Element {
   const [saving, setSaving] = createSignal(false);
   // what's on disk as far as this view knows: the text it opened, then each text it saved
   const [savedText, setSavedText] = createSignal<string | undefined>(undefined);
+  createEffect(
+    on(
+      path,
+      () => {
+        setDraft(undefined);
+        setHash(undefined);
+        setSavedText(undefined);
+      },
+      { defer: true },
+    ),
+  );
   const text = (): string => draft() ?? loaded()?.text ?? '';
   const saved = (): string => savedText() ?? loaded()?.text ?? '';
   const dirty = (): boolean => draft() !== undefined && draft() !== saved();

@@ -57,6 +57,14 @@ pub fn change(views: &[Arc<dyn RowView>], c: &mut ChangeRow) {
         Change::Upsert { v } => view.row(kind, v),
         Change::Append { v } => view.rows(kind, &mut v.iter_mut().collect::<Vec<_>>()),
         Change::Patch { ops } => {
+            ops.retain(|op| {
+                let path = match op {
+                    PatchOp::Add { path, .. } | PatchOp::Replace { path, .. } | PatchOp::Remove { path } | PatchOp::Test { path, .. } => {
+                        path.as_str()
+                    }
+                };
+                !view.strip_patch(kind, path)
+            });
             for op in ops {
                 if let PatchOp::Add { path, value } | PatchOp::Replace { path, value } | PatchOp::Test { path, value } = op {
                     view.patch_row(kind, &c.id, path, value);

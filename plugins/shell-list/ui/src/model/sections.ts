@@ -64,8 +64,8 @@ export function isScheduled(s: SessionRow): boolean {
   return s.state === 'review' && !s.reminder && !s.held && !s.pending && !(s.tui && s.term) && !!s.later?.some((l) => !l.remind);
 }
 
-/** Asking you, or a report you haven't read: the tab title, the dots, the project counts. */
-export const needsYou = (s: SessionRow): boolean => !isForLater(s) && !s.archived && !isScheduled(s) && (s.state === 'waiting' || (s.state === 'review' && !!s.unread));
+/** Asking you, failed, or a report you haven't read: the tab title, the dots, the project counts. */
+export const needsYou = (s: SessionRow): boolean => !isForLater(s) && !s.archived && !isScheduled(s) && (s.state === 'waiting' || s.state === 'error' || (s.state === 'review' && !!s.unread));
 
 /** When a scheduled task's next thing happens: its follow-up, or its held run's reset. */
 export const nextAt = (s: SessionRow): number => Math.min(s.later?.[0]?.at ?? Infinity, s.held?.waiting ? (s.held.until ?? Infinity) : Infinity);
@@ -144,9 +144,9 @@ export function sections(all: readonly Keyed[], f: Filter = ALL, plans: readonly
   const live = every.filter((e) => !archived(e) && !isPinned(e) && !everyRun(e, isForLater));
   const scheduled = (e: Entry): boolean => e.kind === 'task' && isScheduled(e.s);
   const term = (e: Entry): boolean => e.kind === 'task' && inTerm(e.s);
-  // Needs you: asking first, then the latest
+  // Needs you: asking first, then the latest (including error tasks so they never vanish from every section)
   const needs = live
-    .filter((e) => (stateOf(e) === 'review' || stateOf(e) === 'waiting') && !term(e) && !scheduled(e))
+    .filter((e) => (stateOf(e) === 'review' || stateOf(e) === 'waiting' || stateOf(e) === 'error') && !term(e) && !scheduled(e))
     .sort((a, b) => Number(stateOf(b) === 'waiting') - Number(stateOf(a) === 'waiting') || updatedOf(b) - updatedOf(a));
   // Working keeps launch order, so the list doesn't reshuffle on every tool call
   const working = live.filter((e) => stateOf(e) === 'running' || term(e)).sort((a, b) => createdOf(b) - createdOf(a));

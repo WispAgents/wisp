@@ -137,12 +137,26 @@ export const editPlan = defineCommand<EditPlanArgs>({
   id: 'later.editPlan',
   owner: (a) => a.id,
   wire: bareId,
-  optimistic: (base, a) =>
-    patchRow<Plan>(base, KIND.plan, a.id, (p) => {
-      if ('at' in a) return { at: a.at, draft: undefined, after: undefined, lost: undefined };
-      if ('text' in a) return { text: a.text };
-      return { body: { ...p.body, prompt: a.prompt }, title: (a.prompt.split('\n')[0] ?? '').slice(0, 80) };
-    }),
+  optimistic: (base, a) => {
+    const raw = base.peek<Plan & { body?: Plan }>(KIND.plan, asKey(a.id));
+    if (!raw) return [];
+    const enveloped = typeof raw.body === 'object' && raw.body !== null && 'kind' in raw.body;
+    const p = enveloped ? (raw.body as Plan) : (raw as Plan);
+    const prefix = enveloped ? '/body' : '';
+    const patchFields: Partial<Record<keyof Plan, unknown>> =
+      'at' in a
+        ? { at: a.at, draft: undefined, after: undefined, lost: undefined }
+        : 'text' in a
+          ? { text: a.text }
+          : { body: { ...p.body, prompt: a.prompt }, title: (a.prompt.split('\n')[0] ?? '').slice(0, 80) };
+    const ops: PatchOp[] = [];
+    for (const [k, v] of Object.entries(patchFields)) {
+      if (v === undefined) {
+        if (k in p) ops.push({ op: 'remove', path: `${prefix}/${k}` });
+      } else ops.push({ op: 'add', path: `${prefix}/${k}`, value: v });
+    }
+    return ops.length ? [{ e: KIND.plan, id: asKey(a.id), op: 'patch', ops } satisfies LocalOp] : [];
+  },
 });
 
 /** Start now: the plan goes; its task arrives on the list topic. */

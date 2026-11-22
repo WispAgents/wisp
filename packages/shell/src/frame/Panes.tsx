@@ -7,7 +7,7 @@
 import { Match, Show, Switch, createMemo, createSignal, getOwner, lazy, runWithOwner, untrack, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import type { EntityKey, Nav } from '@wisp/client';
-import { EmptyState, Skeleton, Stack, useSignal } from '@wisp/ui';
+import { EmptyState, Skeleton, Stack, useDerived, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import type { ExtensionProps, ResolvedExtension } from '../contract.ts';
 import { Area, Slot, useExtensions, useViewClient } from '../slot.tsx';
@@ -52,11 +52,11 @@ type SessionProp = NonNullable<ExtensionProps['session']>;
 
 function useSession(id: () => string | undefined): SessionProp {
   const shell = useShell();
-  const row = createMemo(() => {
+  const row = useDerived(() => {
     const key = id();
-    return key === undefined ? undefined : shell.client.entities.row<SessionRow>(SESSION, key as EntityKey);
+    return key === undefined ? undefined : shell.client.entities.row<SessionRow>(SESSION, key as EntityKey)();
   });
-  return () => row()?.() as ReturnType<SessionProp>;
+  return () => row() as ReturnType<SessionProp>;
 }
 
 export function ListPane(): JSX.Element {

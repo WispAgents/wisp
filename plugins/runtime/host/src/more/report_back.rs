@@ -298,7 +298,14 @@ impl Runtime {
                     // a queue the user held keeps it there for them: the lead waits on you, not on wisp
                     (s.state, s.unread) = if s.queue_held { (SessionState::Review, true) } else { (SessionState::Running, false) };
                     self.persist(&mut s, vec![t]).await?;
-                    self.claim_next(&mut s).await?
+                    let claimed = self.claim_next(&mut s).await?;
+                    if claimed.is_none() && s.state == SessionState::Running && !s.queue_held {
+                        // Nothing started (e.g. a concurrent claim or empty queue): don't leave the lead stuck Running
+                        s.state = SessionState::Review;
+                        s.unread = true;
+                        self.persist(&mut s, Vec::new()).await?;
+                    }
+                    claimed
                 }
                 _ => {
                     // it waited, and nothing is owed any more (a stop, a read): it lands, quietly
