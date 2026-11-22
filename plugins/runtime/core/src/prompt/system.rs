@@ -1,7 +1,9 @@
 //! The system prompt every task's agent gets (v1 `server/protocol.js` `systemPrompt`, `blockDocs`). The
 //! text is a contract (plan §6.9): `tests/goldens/system-prompt*.txt` pin it byte for byte.
 
-use super::protocol_text::{APP_BLOCK, ASK_BLOCK, ASK_TOOL, GRAPH_BLOCK, PLAIN_FINAL, PROTOCOL, WATCH_TOOL};
+use super::protocol_text::{
+    APP_BLOCK, ASK_BLOCK, ASK_TOOL, CHAT_FINAL_BLOCKS, CHAT_INTRO, GRAPH_BLOCK, PLAIN_FINAL, PROTOCOL, REPORT_INTRO, WATCH_TOOL,
+};
 use super::text::is_js_space;
 
 /// v1's default ask tool name (Claude Code's view of wisp's injected MCP server).
@@ -18,6 +20,7 @@ pub struct BlockDoc {
 
 /// v1's `systemPrompt({ askTool, ask, extraBlocks, apps, watch, blocks })`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)] // independent prompt switches (apps, watch, blocks, chat_mode)
 pub struct SystemOpts {
     /// how the harness names wisp's ask tool; None: it can't take MCP (ask with a question block)
     pub ask_tool: Option<String>,
@@ -30,11 +33,21 @@ pub struct SystemOpts {
     pub watch: bool,
     /// false: a plain markdown answer instead of a wisp block
     pub blocks: bool,
+    /// true: Chat mode — live conversation, no end-of-turn report; wisp blocks may still be embedded inline when `blocks` is true
+    pub chat_mode: bool,
 }
 
 impl Default for SystemOpts {
     fn default() -> Self {
-        Self { ask_tool: Some(DEFAULT_ASK_TOOL.to_owned()), ask: None, extra_blocks: Vec::new(), apps: false, watch: false, blocks: true }
+        Self {
+            ask_tool: Some(DEFAULT_ASK_TOOL.to_owned()),
+            ask: None,
+            extra_blocks: Vec::new(),
+            apps: false,
+            watch: false,
+            blocks: true,
+            chat_mode: false,
+        }
     }
 }
 
@@ -104,6 +117,21 @@ fn plain(out: &str) -> String {
     s
 }
 
+/// Chat mode: swap the report-only intro and (when blocks are enabled) replace the end-of-turn report section
+/// with inline chat block guidance while keeping the block reference.
+fn chatify(out: &str, blocks: bool) -> String {
+    let mut s = out.replacen(REPORT_INTRO, CHAT_INTRO, 1);
+    if !blocks {
+        return s;
+    }
+    if let (Some(start), Some(end)) = (s.find("## Your final message"), s.find("### Blocks"))
+        && start < end
+    {
+        s = format!("{}{CHAT_FINAL_BLOCKS}{}", &s[..start], &s[end..]);
+    }
+    s
+}
+
 /// The system prompt for one run.
 pub fn system_prompt(o: &SystemOpts) -> String {
     let ask = o.ask.as_deref().filter(|a| !a.is_empty());
@@ -116,7 +144,10 @@ pub fn system_prompt(o: &SystemOpts) -> String {
     };
     let graph = tools
         .map_or_else(|| GRAPH_BLOCK.to_owned(), |t| stub("graph", "Branch graph: merge conflicts, a rebase, where branches diverged.", t));
-    let out = PROTOCOL.replacen("{{ASK}}", &ask_text, 1).replacen("{{GRAPH}}", &graph, 1);
+    let mut out = PROTOCOL.replacen("{{ASK}}", &ask_text, 1).replacen("{{GRAPH}}", &graph, 1);
+    if o.chat_mode {
+        out = chatify(&out, o.blocks);
+    }
     if !o.blocks {
         return plain(&out);
     }

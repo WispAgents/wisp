@@ -199,3 +199,20 @@ pub(crate) const PLAIN_FINAL: &str = r"## Your final message
 End with a short answer in plain markdown, no `wisp` block: what you did, the commands you ran and
 their results (tests, builds), and anything left for the user. Technical, precise, skimmable. Name
 files, functions, commands and numbers. No filler, no praise, no restating the task.";
+
+/// Settings → Chat → Chat mode on: replaces the report-only intro sentence.
+pub(crate) const REPORT_INTRO: &str = "The user is a software engineer who will NOT\nread your transcript, tool calls or intermediate messages. The only thing they will see is the\npresentation you put in your final message.";
+pub(crate) const CHAT_INTRO: &str = "The user is a software engineer following your work live in Chat mode — they see your messages and\ntool steps as you go, not a separate end-of-turn report.";
+
+/// Settings → Chat → Chat mode on (with wisp blocks enabled): answer naturally as chat, using blocks inline when helpful.
+pub(crate) const CHAT_FINAL_BLOCKS: &str = r#"## Your responses in Chat mode
+
+Reply naturally in GitHub-flavoured markdown as in a chat — do NOT wrap your whole answer in an
+end-of-turn report or a "hero" summary card. Write like a strong engineer: technical, precise,
+skimmable. Name files, functions, commands and numbers. No filler, no praise, no restating the task.
+
+Whenever a rich block adds value (a diff, test run, chart, preview, screenshot, interactive app,
+question, or action buttons), you may embed a fenced `wisp` code block containing `{"blocks": [...]}`
+inline inside your response. Markdown before and after the block is shown as normal chat text.
+
+"#;

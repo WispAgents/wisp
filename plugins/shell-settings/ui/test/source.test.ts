@@ -13,7 +13,7 @@ test('a_switch_on_a_bool_setting_writes_true_or_false_not_v1s_on_and_off', () =>
   expect(wrote).toEqual([true, false, 'on']);
   expect((onOff(row('on'), false).value as () => boolean)()).toBe(true);
   expect((onOff(row(true), false).value as () => boolean)()).toBe(true);
-  expect([...BOOL_KEYS].sort()).toEqual(['channels.acceptChannels', 'crew.tint', 'runtime.apps', 'runtime.blocks', 'runtime.watch', 'ship.fixConflicts']);
+  expect([...BOOL_KEYS].sort()).toEqual(['channels.acceptChannels', 'crew.tint', 'runtime.apps', 'runtime.blocks', 'runtime.watch', 'settings.chatThinking', 'ship.fixConflicts']);
 });
 
 test('wisp blocks off writes the false the runtime reads as plain markdown answers; unset is on_v1_blocks_switch', () => {

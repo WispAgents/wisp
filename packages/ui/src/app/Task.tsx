@@ -20,6 +20,7 @@ import { Icon } from '../content/Icon.tsx';
 import { Wrap } from '../layout/Stack.tsx';
 import { growTextarea } from '../core/autosize.ts';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
+import { shouldSendOnKey, type SendShortcut } from '../composer/send-shortcut.ts';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
 import type { IconName } from '../content/icons.ts';
 import { TaskUsage, type TaskUsageProps } from './TaskUsage.tsx';
@@ -53,6 +54,8 @@ export interface TaskHeadProps {
    *  Changes +n −n, Ship ▾, Done, ⋯; after what plugins put there, before the panel toggle. A narrow pane keeps their
    *  icons (the words in the tooltip). Additive (2026-11-18). */
   readonly bar?: readonly HeadAction[];
+  /** Settings → Chat → Chat width: aligns the head's horizontal inset with the body. Additive. */
+  readonly chatWidth?: 'comfortable' | 'wide' | 'full';
 }
 
 /** One of the head's actions: a TaskAction, with a diff's figures after its words (Changes) or a ▾ (a menu). */
@@ -114,7 +117,7 @@ function HeadBar(props: { readonly items: readonly HeadAction[] }): JSX.Element 
 export function TaskHead(props: TaskHeadProps): JSX.Element {
   const [editing, setEditing] = createSignal(false);
   return (
-    <header data-kit="split-head" data-part="split.head" data-color={props.color} data-drag="">
+    <header data-kit="split-head" data-part="split.head" data-color={props.color} data-width={props.chatWidth} data-drag="">
       <div data-kit="sh-row">
         <Show when={props.onBack} fallback={<span data-kit="q-dot" />}>
           <button type="button" data-kit="sh-back" data-part="split.back" aria-label={props.backLabel} title={props.backLabel} onClick={() => props.onBack?.()}>
@@ -459,6 +462,8 @@ export interface TurnViewProps {
   readonly rate?: JSX.Element;
   /** under the trail bar: what a trail button opened (after 👎, the WhyForm). Additive (2026-11-12). */
   readonly trailBody?: JSX.Element;
+  /** Settings → Chat → Chat mode: render as a chat conversation message instead of a presentation card. Additive. */
+  readonly chat?: boolean;
 }
 
 /** v1 .turn: the ask, the answer's brief, and the trail under it. */
@@ -469,7 +474,7 @@ export function TurnView(props: TurnViewProps): JSX.Element {
   const kitT = useT();
   const menu = useTurnMenu(props);
   return (
-    <article ref={menu.bind} data-kit="turn" data-turn={props.id} data-live={flag(props.live !== undefined || props.working !== undefined)} data-latest={flag(props.latest)}>
+    <article ref={menu.bind} data-kit="turn" data-turn={props.id} data-live={flag(props.live !== undefined || props.working !== undefined)} data-latest={flag(props.latest)} data-chat={flag(props.chat)}>
       <div data-kit="ask">
         <Show when={(props.askNotes ?? []).length > 0}>
           <ol data-kit="ask-notes" data-part="turn.notes">
@@ -710,6 +715,8 @@ export interface ReplyBoxProps {
   readonly onSend: () => void;
   /** the box's own keys after its menus (↑ history, Shift+Tab mode): true when taken */
   readonly onKey?: (e: KeyboardEvent) => boolean;
+  /** Settings → Chat → Send shortcut: when Enter sends vs inserts a new line. Additive. */
+  readonly sendShortcut?: SendShortcut;
   /** the @ and / menus: what the host offers for what's typed (over the box) */
   readonly suggest?: PromptSuggest | undefined;
   /** TRY-22: the rest of a suggested follow-up after what's typed, faded behind the caret with its key ("Tab"); Tab
@@ -852,7 +859,7 @@ function ReplyBoxIn(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Element {
       return;
     }
     if (props.onKey?.(e)) return;
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    if (shouldSendOnKey(e, props.value, props.sendShortcut)) {
       e.preventDefault();
       props.onSend();
     }
@@ -1186,6 +1193,10 @@ export function TaskBody(props: {
   readonly turns: JSX.Element;
   readonly dock: JSX.Element;
   readonly wide?: boolean;
+  /** Settings → Chat → Chat width. Additive. */
+  readonly chatWidth?: 'comfortable' | 'wide' | 'full';
+  /** Settings → Chat → Chat mode. Additive. */
+  readonly chat?: boolean;
   /** the scroller (a task's kept place) */ readonly bodyRef?: (el: HTMLElement) => void;
 }): JSX.Element {
   let stop: (() => void) | undefined;
@@ -1200,6 +1211,8 @@ export function TaskBody(props: {
       data-kit="it-body"
       data-part="split.body card.body"
       data-details={flag(props.details !== undefined)}
+      data-width={props.chatWidth}
+      data-chat={flag(props.chat)}
     >
       {props.details}
       <div data-kit="turns">{props.turns}</div>

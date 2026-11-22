@@ -152,6 +152,9 @@ impl Harness for Fake {
         if run.system_prompt.contains("no `wisp` block") {
             args.push("--plain".into());
         }
+        if run.system_prompt.contains("Chat mode") {
+            args.push("--chat".into());
+        }
         if run.env.contains_key("WISP_WATCH") {
             args.push("--watch".into());
         }

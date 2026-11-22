@@ -20,7 +20,7 @@ export const rank = (g: string): number => {
 
 /** v1's Settings, in its order (v1 web/js/features/settings.js SECTIONS): one flat list, no headings. A pane v1
  * didn't have follows them, by its group and `order` (Theme, Keyboard shortcuts, Updates, All settings, …). */
-export const V1_ORDER = ['general', 'notifications', 'agents', 'connectors', 'auto', 'machines', 'cloud', 'memory', 'automations', 'plugins', 'machine', 'worktrees', 'usage', 'privacy'] as const;
+export const V1_ORDER = ['general', 'chat', 'notifications', 'agents', 'connectors', 'auto', 'machines', 'cloud', 'memory', 'automations', 'plugins', 'machine', 'worktrees', 'usage', 'privacy'] as const;
 
 const v1Rank = (id: string): number => {
   const i = (V1_ORDER as readonly string[]).indexOf(id);

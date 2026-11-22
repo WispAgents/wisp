@@ -46,7 +46,7 @@ export function onOff(s: SettingSource<Json>, dflt: boolean, key?: string): Sett
 }
 
 /** The rows' keys their plugins declare as `bool` (wisp-plugin.json settings); the rest keep v1's 'on' / 'off'. */
-export const BOOL_KEYS: ReadonlySet<string> = new Set(['runtime.blocks', 'ship.fixConflicts', 'runtime.watch', 'runtime.apps', 'channels.acceptChannels', 'crew.tint']);
+export const BOOL_KEYS: ReadonlySet<string> = new Set(['runtime.blocks', 'ship.fixConflicts', 'runtime.watch', 'runtime.apps', 'channels.acceptChannels', 'crew.tint', 'settings.chatThinking']);
 
 /** A text or enum setting as a string; `dflt` when unset. */
 export function text(s: SettingSource<Json>, dflt: string): SettingSource<string> {

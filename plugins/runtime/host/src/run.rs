@@ -472,12 +472,15 @@ impl Runtime {
     fn harness_run(&self, s: &Session, t: &Turn, ctx: &BeforeRunCtx, h: &dyn Harness) -> HarnessRun {
         let info = h.info();
         let parts: Vec<String> = self.host.prompt_parts().iter().map(|p| p.part(s)).filter(|p| !p.is_empty()).collect();
-        // v1 runner.js:1379: the app block and wisp_watch unless switched off; a plain markdown answer when wisp
-        // blocks are off, never for a crew job or a subagent (their reader reads the blocks)
+        // v1 runner.js:1379: the app block and wisp_watch unless switched off; blocks (`runtime.blocks`) and Chat mode
+        // (`settings.transcript`) are independent: Chat mode drops the end-of-turn report while still allowing inline
+        // blocks when `runtime.blocks` is enabled (never for a crew job or a subagent, whose reader expects reports)
         let (apps, watch) = (self.on_unless_off("runtime.apps"), self.on_unless_off("runtime.watch"));
-        let plain = !self.on_unless_off("runtime.blocks") && s.parent_id.is_none() && !s.ext.contains_key("wisp.crew");
+        let user_task = s.parent_id.is_none() && !s.ext.contains_key("wisp.crew");
+        let plain = !self.on_unless_off("runtime.blocks") && user_task;
+        let chat_mode = self.on_unless_switched_off("settings.transcript") && user_task;
         let mut system =
-            system_prompt(&SystemOpts { ask_tool: info.ask_tool.clone(), apps, watch, blocks: !plain, ..SystemOpts::default() });
+            system_prompt(&SystemOpts { ask_tool: info.ask_tool.clone(), apps, watch, blocks: !plain, chat_mode, ..SystemOpts::default() });
         // a lead hears about its team (v1 runner.js:1379 `teamNote`): Delegate's rows, a preset, a crew member's
         // linked delegates (orch #2); only where wisp's MCP server (and so `delegate`) is there to use it
         if s.parent_id.is_none() && self.host.agent_access().is_some() {

@@ -52,6 +52,90 @@ pub fn parse(text: &str) -> Parsed {
     Parsed { fallback: true, blocks: vec![markdown(if md.is_empty() { EMPTY.to_owned() } else { md })], ..Parsed::default() }
 }
 
+/// Chat mode parser: prose outside ` ```wisp ` blocks stays visible as markdown in reading order, and any valid
+/// inline ` ```wisp ` blocks are spliced in place. Plain markdown with no blocks is normal (`fallback: false`).
+pub fn parse_chat(text: &str) -> Parsed {
+    let opens = openers(text);
+    if opens.is_empty() {
+        let md = js::trim(text).to_owned();
+        return Parsed { blocks: vec![markdown(if md.is_empty() { EMPTY.to_owned() } else { md })], ..Parsed::default() };
+    }
+    let mut blocks: Vec<Value> = Vec::new();
+    let mut topic: Option<String> = None;
+    let mut cursor = 0_usize;
+    for &(at, body) in &opens {
+        if at < cursor {
+            continue;
+        }
+        let Some((list, block_topic, next)) = read_inline_block(text, body) else {
+            continue;
+        };
+        let before = js::trim(&text[cursor..at]);
+        if !before.is_empty() {
+            blocks.push(markdown(before.to_owned()));
+        }
+        if topic.is_none() {
+            topic = block_topic;
+        }
+        blocks.extend(list);
+        cursor = next;
+    }
+    if blocks.is_empty() {
+        let md = js::trim(text).to_owned();
+        return Parsed { blocks: vec![markdown(if md.is_empty() { EMPTY.to_owned() } else { md })], ..Parsed::default() };
+    }
+    let tail = js::trim(&text[cursor..]);
+    if !tail.is_empty() {
+        blocks.push(markdown(tail.to_owned()));
+    }
+    Parsed { blocks, topic, notes: None, fallback: false }
+}
+
+/// Parses one inline ` ```wisp ` block starting at `body`, returning its valid block objects, optional topic,
+/// and the byte index just past its closing fence.
+fn read_inline_block(text: &str, body: usize) -> Option<(Vec<Value>, Option<String>, usize)> {
+    let src = &text[body..];
+    let (json, json_len) = if let Some(end) = json_end(src)
+        && let Some(v) = try_json(&src[..end]).filter(|v| js::truthy(Some(v)))
+    {
+        (v, end)
+    } else if let Some(fence) = src.find(FENCE)
+        && let Some(v) = try_json(&src[..fence]).filter(|v| js::truthy(Some(v)))
+    {
+        (v, fence)
+    } else {
+        return None;
+    };
+    let topic = match &json {
+        Value::Object(o) => o.get("topic").and_then(Value::as_str).map(js::trim).filter(|t| !t.is_empty()).map(str::to_owned),
+        _ => None,
+    };
+    let list = match json {
+        Value::Array(a) => a,
+        Value::Object(mut o) => match o.remove("blocks") {
+            Some(Value::Array(a)) => a,
+            _ => Vec::new(),
+        },
+        _ => return None,
+    };
+    let valid: Vec<Value> = list.into_iter().filter(|b| b.get("type").is_some_and(Value::is_string)).collect();
+    if valid.is_empty() && topic.is_none() {
+        return None;
+    }
+    let rest = &src[json_len..];
+    let after = match rest.find(FENCE) {
+        Some(f) => {
+            let past = body + json_len + f + FENCE.len();
+            match text[past..].find('\n') {
+                Some(nl) => past + nl + 1,
+                None => text.len(),
+            }
+        }
+        None => body + json_len,
+    };
+    Some((valid, topic, after))
+}
+
 /// The first `hero` block.
 pub fn hero_of(blocks: &[Value]) -> Option<&Value> {
     blocks.iter().find(|b| b.get("type").and_then(Value::as_str) == Some("hero"))

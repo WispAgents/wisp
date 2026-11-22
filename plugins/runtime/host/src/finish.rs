@@ -61,7 +61,14 @@ impl Runtime {
             signed_out: auth_failed,
         };
         let blocks = self.host.blocks();
-        let (status, mut presentation) = land::end_presentation(&ending, |t| wisp_runtime_core::blocks::presentation(t, &blocks));
+        let chat_mode = self.on_unless_switched_off("settings.transcript") && s.parent_id.is_none() && !s.ext.contains_key("wisp.crew");
+        let (status, mut presentation) = land::end_presentation(&ending, |t| {
+            if chat_mode {
+                wisp_runtime_core::blocks::presentation_chat(t, &blocks)
+            } else {
+                wisp_runtime_core::blocks::presentation(t, &blocks)
+            }
+        });
         // a usage limit first (v1 `#atLimit`), then a refusal (v1 `#refused`, never at a limit)
         let ours = s.parent_id.is_none() && !(stopped || stopping);
         let limited = ours && is_error && self.at_limit(&s, &mut turn, &text, &mut presentation).await;

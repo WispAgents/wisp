@@ -136,9 +136,6 @@ export default function General(props: { readonly client: PluginClient }): JSX.E
         />
         <OnOffRow client={props.client} k={KEYS.crewTint} dflt title="shell-settings.crew-tint" hint="shell-settings.crew-tint.hint" />
       </SettingsGroup>
-      <SettingsGroup part="settings.general.transcript">
-        <OnOffRow client={props.client} k={KEYS.transcript} dflt={false} title="shell-settings.transcript" hint="shell-settings.transcript.hint" keys={['V']} />
-      </SettingsGroup>
       {/* what other plugins put at the end of General (wisp.update's Updates row, as v1 had it here) */}
       <Slot input="shell.settings:general" layout="contents" />
     </>

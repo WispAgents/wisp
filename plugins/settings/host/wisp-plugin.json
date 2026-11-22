@@ -73,8 +73,59 @@
           "on",
           "off"
         ],
-        "default": "off",
-        "title": "Open tasks on their transcript instead of the answer"
+        "default": "on",
+        "title": "Chat mode: show tasks as a chat without an end-of-turn report (wisp blocks can still be used inside responses)"
+      },
+      {
+        "key": "settings.chatToolCalls",
+        "type": "enum",
+        "values": [
+          "showAll",
+          "hideSuccessful",
+          "hideAll",
+          "zen"
+        ],
+        "default": "showAll",
+        "title": "Tool calls in chat: show all, hide successful, hide all, or zen (final answers only)"
+      },
+      {
+        "key": "settings.chatThinking",
+        "type": "bool",
+        "default": true,
+        "title": "Show thinking: display agent reasoning steps inline in chat"
+      },
+      {
+        "key": "settings.sendShortcut",
+        "type": "enum",
+        "values": [
+          "enter",
+          "mod-enter-multiline",
+          "mod-enter"
+        ],
+        "default": "enter",
+        "title": "Send shortcut: Enter, modifier+Enter for multiline prompts, or modifier+Enter always"
+      },
+      {
+        "key": "settings.chatWidth",
+        "type": "enum",
+        "values": [
+          "comfortable",
+          "wide",
+          "full"
+        ],
+        "default": "comfortable",
+        "title": "Chat width: comfortable, wide, or full"
+      },
+      {
+        "key": "settings.timeFormat",
+        "type": "enum",
+        "values": [
+          "locale",
+          "12-hour",
+          "24-hour"
+        ],
+        "default": "locale",
+        "title": "Time format: system default, 12-hour, or 24-hour"
       }
     ]
   }
