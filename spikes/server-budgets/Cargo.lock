@@ -1055,7 +1055,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-accounts-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1065,7 +1065,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-automations-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "regex",
  "schemars",
@@ -1078,7 +1078,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-budget-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1088,7 +1088,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-claude-core"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1097,7 +1097,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-crew-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "schemars",
  "serde",
@@ -1109,7 +1109,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-envmask"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "regex",
  "serde_json",
@@ -1117,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-harness-kit"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "regex",
  "serde",
@@ -1126,7 +1126,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-issues-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1136,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-kernel"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "futures",
  "serde",
@@ -1150,7 +1150,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-later-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1160,7 +1160,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-machine-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1171,7 +1171,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-machines-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1182,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-proc"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "libc",
  "portable-pty",
@@ -1197,7 +1197,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-resources-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "schemars",
  "serde",
@@ -1209,7 +1209,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-router-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1219,7 +1219,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-runtime"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "base64",
  "blake3",
@@ -1255,7 +1255,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-runtime-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "schemars",
  "serde",
@@ -1266,7 +1266,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-runtime-core"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "regex",
  "serde",
@@ -1277,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-sandbox-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1287,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-store"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "blake3",
  "rusqlite",
@@ -1303,7 +1303,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-stuff-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1313,7 +1313,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-telemetry-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1323,7 +1323,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-terminal-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1334,7 +1334,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-threads-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "schemars",
  "serde",
@@ -1345,7 +1345,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-worktrees-api"
-version = "1.0.0-alpha.6"
+version = "1.0.0-alpha.7"
 dependencies = [
  "serde",
  "serde_json",
