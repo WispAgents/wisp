@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.9] - 2026-11-23
+
 ### Fixed
 
 - Phone app + wisp Cloud: a cloud computer no longer flips online/offline several times a second. The box refused every sync write from the phone (its webview's `Origin: https://localhost`, 403 `forbidden origin`), and each refusal reopened the stream at once. The grid now forwards a device token's or API key's request without the caller's Origin (a bearer token can't be sent cross-site), and a peer that keeps refusing writes is reopened on the 2/5/15/30/60 s backoff with its stream left open instead of in a loop.

@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.events",
   "name": "Events",
-  "version": "1.0.0-alpha.8",
+  "version": "1.0.0-alpha.9",
   "api": "^1",
   "description": "The durable event log from outside the process: tail, why, retry, the catalogue, the events topic, MCP wisp_events, and sinks (a signed webhook) (ADR-0044)",
   "kind": "plugin",

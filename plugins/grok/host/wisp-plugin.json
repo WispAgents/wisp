@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.grok",
   "name": "Grok CLI",
-  "version": "1.0.0-alpha.8",
+  "version": "1.0.0-alpha.9",
   "api": "^1",
   "description": "wisp.grok host: Grok CLI as a runtime.harness@1 contribution (detect, setup, launch, resume, trust)",
   "server": {
