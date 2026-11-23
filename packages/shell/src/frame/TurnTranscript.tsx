@@ -14,6 +14,7 @@ import '../i18n/lazy.ts';
 const ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', thinking: 'spark', tool: 'tool', search: 'search' };
 
 function groupIcon(c: ClusterCounts): IconName {
+  if ((c.edits ?? 0) > 0) return 'pen';
   if (c.reads > 0) return 'read';
   if (c.searches > 0) return 'search';
   if (c.commands > 0) return 'terminal';
@@ -119,6 +120,8 @@ export function TurnTranscript(props: {
   readonly status: string;
   /** Chat mode: inline stream without the Transcript head or Finished footer. */
   readonly chat?: boolean;
+  /** Chat mode with Transcript off: fold every run of actions between messages into a compact expandable pill. */
+  readonly quiet?: boolean;
   /** Block host context so mid-chat messages containing ```wisp fences render rich blocks inline. */
   readonly answerCtx?: BlockContext;
   readonly t: ShellContext['t'];
@@ -127,7 +130,7 @@ export function TurnTranscript(props: {
   const live = (): boolean => props.status === 'running' || props.status === 'starting';
   const msgs = (): number => props.steps.filter((a) => a.kind === 'text').length;
   const steps = (): number => props.steps.length - msgs();
-  const entries = createMemo(() => groupFinishedSteps(props.steps, live(), props.here));
+  const entries = createMemo(() => groupFinishedSteps(props.steps, live(), props.here, props.quiet === true));
   const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set());
   const toggleGroup = (key: string): void => {
     setOpened((prev) => {

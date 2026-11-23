@@ -1477,10 +1477,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const delegating = createMemo(() => allRows().some((x) => (x.parent_id === key || x.parent_id === bare) && x.state === 'running'));
           const count = (k: string): number => steps().filter((a) => a.kind === k).length;
           const blocks = () => b.presentation?.blocks ?? [];
-          // Chat mode with its Transcript off: the agent's messages (and errors) only
-          const quietChat = (rows: TranscriptStepRow[]): TranscriptStepRow[] => (chat.chatMode() && !stepsShown() ? rows.filter((r) => r.kind === 'text' || r.bad === true) : rows);
           const streamSteps = createMemo(() =>
-            quietChat(buildChatSteps(turnEvents(), b.activity ?? [], {
+            buildChatSteps(turnEvents(), b.activity ?? [], {
               chatMode: chat.chatMode(),
               toolCalls: chat.toolCalls(),
               showThinking: chat.showThinking(),
@@ -1494,7 +1492,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 finalMarkdownOf(blocks() as readonly { readonly type: string; readonly text?: string }[]),
               ],
               notes: (b as { presentation?: { notes?: string } }).presentation?.notes,
-            })),
+            }),
           );
           const stubbed = () => isStub(b);
           const changes = () => b.ext?.['wisp.runtime']?.changes ?? b.changes ?? [];
@@ -1541,7 +1539,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const liveTx = (): JSX.Element =>
             (madeTx ??= runWithOwner(owner, () => (
               <Show when={showStream() && (!chat.chatMode() || streamSteps().length > 0)}>
-                <TurnTranscript steps={streamSteps()} changes={changes()} env={env} here={here} status={turn.status ?? ''} chat={chat.chatMode()} answerCtx={turnAnswerCtx} t={t} />
+                <TurnTranscript steps={streamSteps()} changes={changes()} env={env} here={here} status={turn.status ?? ''} chat={chat.chatMode()} quiet={chat.chatMode() && !stepsShown()} answerCtx={turnAnswerCtx} t={t} />
               </Show>
             )));
           const working = (): JSX.Element =>
@@ -1603,6 +1601,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                           here={here}
                           status={turn.status ?? ''}
                           chat={chat.chatMode()}
+                          quiet={chat.chatMode() && !stepsShown()}
                           answerCtx={turnAnswerCtx}
                           t={t}
                         />

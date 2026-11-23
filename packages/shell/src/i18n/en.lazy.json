@@ -502,6 +502,8 @@
   "shell.task.steps.other": "{n} steps",
   "shell.task.group.reads.one": "Read 1 file",
   "shell.task.group.reads.other": "Read {n} files",
+  "shell.task.group.edits.one": "Edited 1 file",
+  "shell.task.group.edits.other": "Edited {n} files",
   "shell.task.group.searches.one": "1 search",
   "shell.task.group.searches.other": "{n} searches",
   "shell.task.group.commands.one": "1 command",
