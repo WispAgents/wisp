@@ -195,6 +195,8 @@ interface TurnRow {
   readonly prompt: string;
   readonly started_at: number;
   readonly status?: string;
+  /** the agent's final message as it wrote it (the presentation's blocks are parsed from it) */
+  readonly answer?: string | null;
   readonly body: TurnBody;
 }
 
@@ -1416,7 +1418,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               toolCalls: chat.toolCalls(),
               showThinking: chat.showThinking(),
               running: turn.status === 'running' || turn.status === 'starting',
-              finalText: finalMarkdownOf(blocks() as readonly { readonly type: string; readonly text?: string }[]),
+              // the answer as the agent wrote it is what its last message says; the last markdown block alone differs
+              // as soon as the answer carries a wisp block (it is cut around it), so both are tried
+              finalText: [turn.answer ?? undefined, (b as { answer?: string }).answer, finalMarkdownOf(blocks() as readonly { readonly type: string; readonly text?: string }[])],
               notes: (b as { presentation?: { notes?: string } }).presentation?.notes,
             }),
           );

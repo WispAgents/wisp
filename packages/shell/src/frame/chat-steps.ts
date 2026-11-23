@@ -26,13 +26,17 @@ export interface ChatStepOpts {
   readonly toolCalls: ToolCallVisibility;
   readonly showThinking: boolean;
   readonly running: boolean;
-  /** The final answer's markdown text (used to avoid duplicating the final assistant message in Chat mode). */
-  readonly finalText?: string | undefined;
+  /** The final answer's text, or the ways it may be written (the raw answer, its last markdown block): the last
+   *  message matching any of them is the answer itself, rendered under the steps, so it isn't shown twice in Chat mode. */
+  readonly finalText?: string | readonly (string | undefined)[] | undefined;
   /** Presentation notes (appended in non-chat Transcript mode). */
   readonly notes?: string | undefined;
 }
 
 const kindOf = (e: RawTurnEvent): string => e.kind ?? e.body?.kind ?? '';
+
+/** Text compared as words: line ends and runs of spaces don't make two messages different. */
+const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
 const firstLine = (s: string): string => {
   const line = s.split('\n').find((l) => l.trim().length > 0)?.trim() ?? '';
@@ -99,11 +103,11 @@ export function buildChatSteps(
     });
   }
 
-  // Drop a trailing text event if it duplicates the final rendered answer.
+  // Drop a trailing text event if it duplicates the final rendered answer (whitespace aside).
   if (opts.chatMode && !opts.running && opts.finalText) {
-    const norm = opts.finalText.trim();
+    const finals = (typeof opts.finalText === 'string' ? [opts.finalText] : opts.finalText).filter((x): x is string => !!x?.trim()).map(squash);
     const last = out.at(-1);
-    if (last?.kind === 'text' && (last.label ?? '').trim() === norm) out.pop();
+    if (last?.kind === 'text' && finals.includes(squash(last.label ?? ''))) out.pop();
   }
   if (!opts.chatMode && opts.notes) {
     out.push({ kind: 'text', label: opts.notes });

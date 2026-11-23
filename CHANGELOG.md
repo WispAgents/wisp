@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Task view (Chat mode): a finished turn no longer shows its last message twice, once as the last step and again as the answer under it. The check compared the message with only the answer's last paragraph, so it missed every answer carrying a wisp block; it now compares the whole answer.
+
 ## [1.0.0-alpha.7] - 2026-11-23
 
 ### Fixed
