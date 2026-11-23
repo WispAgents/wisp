@@ -124,6 +124,8 @@ impl Grid {
             let here = req.uri().path_and_query().map_or(answer::WAITING, |p| p.as_str()).to_owned();
             return Ok(self.offline(&answer::Asker { page: true, viewer: None }, c, &here));
         }
+        let mut req = req;
+        bearer_has_no_origin(cred, &mut req);
         let (mut head, body) = req.into_parts();
         let path = head.uri.path_and_query().map_or("/", |p| p.as_str()).to_owned();
         head.uri = format!("http://{}{path}", c.label).parse().map_err(|_| bad("Bad path.", 400))?;
@@ -187,6 +189,7 @@ impl Grid {
             return self.preview_link(&q, &user, cred);
         }
         let mut req = req;
+        bearer_has_no_origin(cred, &mut req);
         if key.is_some() {
             // the box's wisp speaks for a key with the `apikey` set (wisp-api auth.rs): never key management
             req.extensions_mut().insert(Via("key"));
@@ -254,5 +257,16 @@ impl Grid {
             f
         });
         Ok(http::Response::from_parts(parts, b.boxed()))
+    }
+}
+
+/// A device token or an API key was checked here, and a bearer token is never sent by a browser on its own, so the
+/// request can't be a forged cross-site one: it goes on without the caller's Origin. The phone app's webview says
+/// `Origin: https://localhost`, which the box's wisp refuses on every write (`forbidden origin`, 403): its sync POSTs
+/// failed, the client reopened the stream for each, and the box showed online/offline over and over (2026-11-23).
+/// A cookie keeps its Origin (`foreign_origin` and the box's own check are what stop CSRF there).
+fn bearer_has_no_origin<B>(cred: Credential, req: &mut http::Request<B>) {
+    if matches!(cred, Credential::Device | Credential::Key) {
+        req.headers_mut().remove(http::header::ORIGIN);
     }
 }

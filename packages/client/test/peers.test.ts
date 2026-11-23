@@ -357,3 +357,39 @@ test('a_watch_on_a_peer_added_later_starts_when_it_is_added_and_one_whose_scope_
   assert.ok(said.includes('session:t1'), said);
   assert.ok(!said.includes('session:t2'), 'its view had closed');
 });
+
+test('a_peer_that_refuses_every_write_is_not_reopened_in_a_loop (grid box 403 on the phone, 2026-11-23)', async () => {
+  const { peers, t, conn, clock } = await setup();
+  // the box answered every sync POST from the phone's webview `forbidden origin`: each failure reopened the stream at
+  // once, the new welcome sent the subs again, and the computer flipped online/offline ~4 times a second
+  t.post = () => Promise.reject(new PeerDown('unreachable', 'sub: HTTP 403'));
+  peers.add({ peer: A, name: 'laptop', transport: t });
+  // a write waiting for an answer is sent again after every welcome
+  peers.mutate(A, { mid: 'm1', cmd: 'session.markRead', args: {} });
+  await settle();
+  conn()?.push(welcome());
+  await settle();
+  assert.equal(t.connections.length, 2, 'the first failure reopens at once (a stream the peer dropped)');
+  conn()?.push(welcome());
+  await settle();
+  clock.advance(1_999);
+  await settle();
+  assert.equal(t.connections.length, 2, 'failing again after the reopen: it waits out the backoff');
+  assert.equal(peers.status(A)().kind, 'online', 'the open stream still reads: no offline flash');
+  clock.advance(1);
+  await settle();
+  assert.equal(t.connections.length, 3, 'reopened once the first wait is over');
+  conn()?.push(welcome());
+  await settle();
+  clock.advance(4_999);
+  await settle();
+  assert.equal(t.connections.length, 3, 'and the next wait is longer');
+  clock.advance(1);
+  await settle();
+  assert.equal(t.connections.length, 4);
+  // writes get through again: the next failure is a first one
+  t.post = async (m) => void t.posted.push(m);
+  conn()?.push(welcome());
+  await settle();
+  assert.equal(t.connections.length, 4, 'nothing to reopen');
+});
