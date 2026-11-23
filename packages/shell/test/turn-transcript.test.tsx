@@ -35,3 +35,47 @@ test('an_opened_step_shows_its_whole_title_not_the_label_cut_for_the_row', () =>
   host.querySelector<HTMLButtonElement>('button[data-kit="timeline-row"]')?.click();
   expect(labels()[0]).toBe(whole);
 });
+
+test('a_finished_turn_collapses_long_exploration_runs_and_keeps_edits_visible', () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const tMap: Record<string, string> = {
+    'shell.task.group.reads.other': 'Read {n} files',
+    'shell.task.group.searches.one': '1 search',
+  };
+  const t = (k: string, v?: Record<string, string | number>): string => {
+    let s = tMap[k] ?? k;
+    for (const [a, b] of Object.entries(v ?? {})) s = s.replace(`{${a}}`, String(b));
+    return s;
+  };
+  dispose = render(
+    () => (
+      <TurnTranscript
+        chat
+        steps={[
+          { kind: 'read', label: 'Reading src/a.ts', file: 'src/a.ts' },
+          { kind: 'read', label: 'Reading src/b.ts', file: 'src/b.ts' },
+          { kind: 'search', label: 'Searching for “foo”' },
+          { kind: 'read', label: 'Reading src/c.ts', file: 'src/c.ts' },
+          { kind: 'edit', label: 'Editing src/a.ts', file: 'src/a.ts' },
+        ]}
+        changes={[]}
+        here={(s) => s}
+        status="done"
+        t={t}
+      />
+    ),
+    host,
+  );
+  // Collapsed by default: 1 group row + 1 visible edit row (2 rows instead of 5)
+  const topSteps = host.querySelectorAll('[data-kit="timeline-list"] > [data-kit="timeline-step"]');
+  expect(topSteps.length).toBe(2);
+  const groupBtn = host.querySelector<HTMLButtonElement>('[data-part="turn.transcript.group"] > button[data-kit="timeline-row"]');
+  expect(groupBtn?.textContent).toContain('Read 3 files · 1 search');
+  expect(host.querySelector('[data-part="turn.transcript.group.body"]')).toBeNull();
+
+  // Clicking expands compact file chips + the search row in place
+  groupBtn?.click();
+  expect(host.querySelectorAll('[data-kit="timeline-file"]').length).toBe(3);
+  expect(host.querySelector('[data-kit="timeline-sublist"]')?.textContent).toContain('Searching for “foo”');
+});

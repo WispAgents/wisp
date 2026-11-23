@@ -3,14 +3,23 @@
 // already its label, what it printed or the error in full behind a chevron), the agent's messages as prose, and
 // where the turn ended. The answer follows it (TaskView). What a step printed of a .env file (`cat .env`) reads
 // KEY=•••• under v1's Reveal line (env-reveal.ts keeps what's shown, per task).
-import { For, Index, Show, createSignal, type JSX } from 'solid-js';
-import { Answer, EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type BlockContext, type EnvReveal, type IconName } from '@wisp/ui';
+import { Index, Show, createMemo, createSignal, type JSX } from 'solid-js';
+import { Answer, EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineGroup, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type BlockContext, type EnvReveal, type IconName } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { parseInlineChatBlocks } from './chat-blocks.ts';
 import { changeFigures } from './rows-view.ts';
+import { clusterLabel, groupFinishedSteps, type ClusterCounts } from './transcript-group.ts';
 import '../i18n/lazy.ts';
 
 const ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', thinking: 'spark', tool: 'tool', search: 'search' };
+
+function groupIcon(c: ClusterCounts): IconName {
+  if (c.reads > 0) return 'read';
+  if (c.searches > 0) return 'search';
+  if (c.commands > 0) return 'terminal';
+  if (c.thoughts > 0) return 'spark';
+  return 'tool';
+}
 
 export interface TranscriptStepRow {
   readonly kind: string;
@@ -115,8 +124,19 @@ export function TurnTranscript(props: {
   readonly t: ShellContext['t'];
 }): JSX.Element {
   const t = props.t;
+  const live = (): boolean => props.status === 'running' || props.status === 'starting';
   const msgs = (): number => props.steps.filter((a) => a.kind === 'text').length;
   const steps = (): number => props.steps.length - msgs();
+  const entries = createMemo(() => groupFinishedSteps(props.steps, live(), props.here));
+  const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set());
+  const toggleGroup = (key: string): void => {
+    setOpened((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   const count = (): string =>
     [
       msgs() ? t(msgs() === 1 ? 'shell.task.messages.one' : 'shell.task.messages.other', { n: msgs() }) : '',
@@ -127,7 +147,7 @@ export function TurnTranscript(props: {
   return (
     <Timeline
       part="turn.transcript"
-      live={props.status === 'running' || props.status === 'starting'}
+      live={live()}
       {...(props.chat !== undefined && { chat: props.chat })}
       {...(!props.chat && {
         head: (
@@ -145,25 +165,55 @@ export function TurnTranscript(props: {
     >
       {/* by place, updated in place: the steps are made again as new objects whenever the turn's row changes (a 👍),
           and a list keyed by object made every step again */}
-      <Index each={props.steps}>
-        {(a, i) => (
+      <Index each={entries()}>
+        {(entry) => (
           <Show
-            when={a().kind === 'text'}
-            fallback={<Step a={a()} index={i} changes={props.changes} here={props.here} env={props.env} t={t} />}
+            when={entry().kind === 'group'}
+            fallback={(() => {
+              const s = (): TranscriptStepRow => (entry() as { kind: 'step'; step: TranscriptStepRow; index: number }).step;
+              const idx = (): number => (entry() as { kind: 'step'; step: TranscriptStepRow; index: number }).index;
+              return (
+                <Show
+                  when={s().kind === 'text'}
+                  fallback={<Step a={s()} index={idx()} changes={props.changes} here={props.here} env={props.env} t={t} />}
+                >
+                  <TimelineMessage>
+                    {(() => {
+                      const raw = props.here(s().label ?? '');
+                      const ctx = props.answerCtx;
+                      const inline = props.chat && ctx ? parseInlineChatBlocks(raw) : undefined;
+                      return inline && ctx ? <Answer blocks={inline} ctx={ctx} /> : <Markdown source={raw} />;
+                    })()}
+                  </TimelineMessage>
+                </Show>
+              );
+            })()}
           >
-            <TimelineMessage>
-              {(() => {
-                const raw = props.here(a().label ?? '');
-                const ctx = props.answerCtx;
-                const inline = props.chat && ctx ? parseInlineChatBlocks(raw) : undefined;
-                return inline && ctx ? <Answer blocks={inline} ctx={ctx} /> : <Markdown source={raw} />;
-              })()}
-            </TimelineMessage>
+            {(() => {
+              const g = () => entry() as Extract<ReturnType<typeof entries>[number], { kind: 'group' }>;
+              return (
+                <TimelineGroup
+                  part="turn.transcript.group"
+                  icon={groupIcon(g().counts)}
+                  label={clusterLabel(g().counts, g().items.length, t)}
+                  count={g().items.length}
+                  files={g().files}
+                  expanded={opened().has(g().key)}
+                  onToggle={() => toggleGroup(g().key)}
+                >
+                  {g().rest.length > 0 ? (
+                    <Index each={g().rest}>
+                      {(it) => <Step a={it().step} index={it().index} changes={props.changes} here={props.here} env={props.env} t={t} />}
+                    </Index>
+                  ) : undefined}
+                </TimelineGroup>
+              );
+            })()}
           </Show>
         )}
       </Index>
       {/* a running turn's timeline so far (v1 renderLiveTranscript) has no end yet; Chat mode omits Finished */}
-      <Show when={!props.chat && props.status !== 'running' && props.status !== 'starting'}>
+      <Show when={!props.chat && !live()}>
         <TimelineEnd
           icon={props.status === 'error' ? 'warn' : 'done'}
           label={t(props.status === 'error' ? 'shell.task.endedError' : 'shell.task.finished')}
