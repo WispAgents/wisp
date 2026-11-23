@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.threads",
   "name": "Threads",
-  "version": "1.0.0-alpha.6",
+  "version": "1.0.0-alpha.7",
   "api": "^1",
   "description": "Long threads (ADR-0079): a task's Notes kept outside the conversation (wisp_notes, the Thread tab, wisp notes), the note before each follow-up, the thread's health, and where long command output goes",
   "kind": "plugin",

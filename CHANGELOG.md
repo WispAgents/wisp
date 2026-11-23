@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.7] - 2026-11-23
+
 ### Fixed
 
 - Task view (Chat mode): when a turn finishes while you follow the end, the view no longer jumps back up to the turn's start (it could be screens up). It stays at the end, or pages down one view when the answer is taller than the screen, so it reads from where you were.
