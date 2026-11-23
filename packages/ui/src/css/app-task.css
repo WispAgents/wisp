@@ -815,6 +815,38 @@
     padding: 14px 0 var(--space-7);
     background: linear-gradient(transparent, var(--bg) 22px);
   }
+  /* Jump to latest: over the dock, centred on the column, once the reader scrolled away from the end (the view no longer
+     follows); a dot when more came in since */
+  [data-kit='to-latest'] {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    translate: -50% 0;
+    margin-bottom: var(--space-3);
+    border-radius: var(--radius-pill);
+    box-shadow: var(--shadow-2);
+    animation: kit-rise var(--dur-base) var(--ease) both;
+  }
+  [data-kit='to-latest'] > [data-kit='icon-button'] {
+    width: var(--size-control-md);
+    height: var(--size-control-md);
+    border: var(--size-hairline) solid var(--line-2);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    color: var(--ink);
+  }
+  [data-kit='to-latest'][data-fresh]::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: var(--size-dot);
+    height: var(--size-dot);
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    box-shadow: 0 0 0 var(--size-hairline) var(--bg);
+    pointer-events: none;
+  }
   [data-kit='overlap-strip'] {
     display: flex;
     flex-direction: column;

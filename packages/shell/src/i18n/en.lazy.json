@@ -495,6 +495,7 @@
   "shell.pick.close": "to close",
   "shell.task.lean": "Lean runs",
   "shell.task.transcript": "Transcript",
+  "shell.task.toLatest": "Jump to latest",
   "shell.task.messages.one": "1 message",
   "shell.task.messages.other": "{n} messages",
   "shell.task.steps.one": "1 step",

@@ -42,7 +42,19 @@ export function dockShift(o: { readonly scrollHeight: number; readonly scrollTop
  *  ('land'), anything else growing keeps the end in view ('end'). A reader further up stays on what they read (F-page-44):
  *  browsers with scroll anchoring already hold it (`anchors`); without (WebKit) the turn under the reading line moved
  *  from `held.from` to `held.to` (px from the view's top), so that is the shift to undo. Pure. */
-export function turnsShift(o: { readonly tail: boolean; readonly anchors: boolean; readonly landed: boolean; readonly held?: { readonly from: number; readonly to: number } | undefined }): 'land' | 'end' | number {
+export function turnsShift(o: {
+  readonly tail: boolean;
+  readonly anchors: boolean;
+  readonly landed: boolean;
+  readonly held?: { readonly from: number; readonly to: number } | undefined;
+  /** Chat mode: the turn is one conversation, its start may be screens up, so a landing never goes back to it. */
+  readonly chat?: boolean;
+  /** what grew (px) and what the reader sees between the bar and the dock (px): Chat mode pages down by `room` when
+   *  more came at once than fits, so the answer that landed reads from where the reader was ('page') */
+  readonly grew?: number;
+  readonly room?: number;
+}): 'land' | 'end' | 'page' | number {
+  if (o.tail && o.chat) return o.landed && o.grew !== undefined && o.room !== undefined && o.room > 0 && o.grew > o.room ? 'page' : 'end';
   if (o.tail) return o.landed ? 'land' : 'end';
   if (o.anchors || !o.held) return 0;
   return o.held.to - o.held.from;
