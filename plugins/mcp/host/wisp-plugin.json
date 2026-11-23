@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.mcp",
   "name": "MCP server",
-  "version": "1.0.0-alpha.9",
+  "version": "1.0.0-alpha.10",
   "api": "^1",
   "description": "wisp.mcp host: the MCP server for agents and editors over POST /api/mcp and stdio, each tool a kernel command",
   "server": {
