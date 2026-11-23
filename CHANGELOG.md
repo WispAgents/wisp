@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- New task (Factory picker): **How factories work** now opens `https://trywisp.dev/docs/concepts/factories/` instead of the nonexistent `docs.trywisp.dev` subdomain.
 - Docs (guides): added a dedicated **Workflows** guide (`docs/site/guides/run/workflows.mdx`) and **Workflows** concepts page (`docs/site/concepts/workflows.md`) covering DAG steps, `needs`, `${{ … }}` outputs, `if` conditions, `matrix` fan-out, `inputs`, retries, timeouts, concurrency, budgets, triggers and Desktop app / Phone app / TUI / CLI usage, and added the missing `Run a task through a software factory`, `Workflows` and `Run a task under a formula` cards to `docs/site/guides/index.mdx`.
 
 ## [1.0.0-alpha.10] - 2026-11-23

@@ -30,7 +30,7 @@ import {
 import { AUTO, AUTO_GOALS, firstFocus, goalOf, modelGroups, pickerRows, searchShown, useHarness, varyRows, withModel, withSetting, withVary, type SubLine, type VaryKey } from './picker.ts';
 import { SUBAGENT_NAME, type Variant } from './trial.ts';
 import { AUTO_SETTING, FACTORY, autoEnabled } from './launch-pick.ts';
-import { factoryNames, factoryPane, factoryPick, factoryRow, useFactory } from './factory-pick.ts';
+import { FACTORY_HOW_URL, factoryNames, factoryPane, factoryPick, factoryRow, useFactory } from './factory-pick.ts';
 import '../i18n/lazy.ts';
 
 /** v1 effortLabel: "X-High", else the level capitalised */
@@ -222,7 +222,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
         props.value,
         t as never,
         (name) => (change(factoryPick(name)), closeBack()),
-        () => (close(), window.open('https://docs.trywisp.dev/concepts/factories/', '_blank', 'noopener')),
+        () => (close(), window.open(FACTORY_HOW_URL, '_blank', 'noopener')),
       );
     if (id === AUTO) {
       return {

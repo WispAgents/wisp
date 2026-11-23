@@ -3,7 +3,7 @@
 // launch sends `factory` with no harness of its own.
 
 import { describe, expect, it } from 'vitest';
-import { factoryPane, factoryPick, factoryRow, useFactory, type FactoryRow } from '../src/frame/factory-pick.ts';
+import { FACTORY_HOW_URL, factoryPane, factoryPick, factoryRow, useFactory, type FactoryRow } from '../src/frame/factory-pick.ts';
 import { FACTORY, factoryOf } from '../src/frame/launch-pick.ts';
 import { create } from '../src/frame/commands.ts';
 import { agentName } from '../src/frame/pickers.ts';
@@ -32,6 +32,7 @@ describe('the_picker_offers_a_factory_and_the_launch_sends_it', () => {
     expect(picked).toEqual(['default']);
     expect(factoryPane(rows, { agent: 'claude', model: 'opus', effort: '', account: '' }, t, () => undefined, () => undefined).value).toBe('');
     expect(factoryRow('Factory', 'Spec, build, checks, review, ship')).toEqual({ id: FACTORY, name: 'Factory', sub: 'Spec, build, checks, review, ship', icon: 'queue' });
+    expect(FACTORY_HOW_URL).toBe('https://trywisp.dev/docs/concepts/factories/');
   });
 
   it('pressing the row uses the factory in use, else default', () => {

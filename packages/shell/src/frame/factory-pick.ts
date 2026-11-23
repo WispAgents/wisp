@@ -20,6 +20,9 @@ export interface FactoryRow {
 /** Every factory the peer can run a task through; none when it has no wisp.factory. */
 export const factoryNames = defineCommand<{ peer: string }, FactoryRow[]>({ id: 'factory.names', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the factories' });
 
+/** Where the picker's "How factories work" link opens on trywisp.dev/docs (ADR-0039: base `/docs`). */
+export const FACTORY_HOW_URL = 'https://trywisp.dev/docs/concepts/factories/';
+
 /** The left list's Factory row. */
 export const factoryRow = (name: string, sub: string): HarnessPickerRow => ({ id: FACTORY, name, sub, icon: 'queue' });
 
