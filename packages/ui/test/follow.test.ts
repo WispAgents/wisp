@@ -11,6 +11,8 @@ test('streaming_never_pauses_following_our_own_write_is_caught_up_even_when_the_
   expect(run(FOLLOWING, { type: 'pinned', top: 1000, max: 1000 }, { type: 'scroll', top: 1000, max: 1040, moved: 0 }).following).toBe(true);
   // two pins coalesced (1050 then 1100), scroll event arrives for 1050 (moving down toward 1100): still following
   expect(run(FOLLOWING, { type: 'pinned', top: 1050, max: 1050 }, { type: 'pinned', top: 1100, max: 1100 }, { type: 'scroll', top: 1050, max: 1140, moved: 50 }).following).toBe(true);
+  // pin wrote top=1000 (flight=1000), then turns shrank or grew while our scroll event fired with moved=0: still following
+  expect(run(FOLLOWING, { type: 'pinned', top: 1000, max: 1000 }, { type: 'scroll', top: 960, max: 960, moved: 0 }).following).toBe(true);
   // the browser clamping a shrink leaves the view at the end: still following
   expect(run(FOLLOWING, { type: 'scroll', top: 800, max: 800, moved: -40 }).following).toBe(true);
   // macOS rubber-band overscroll settling back to exact max: still following

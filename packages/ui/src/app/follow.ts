@@ -45,10 +45,13 @@ export function follow(s: FollowState, e: FollowEvent): FollowState {
     case 'scroll': {
       const dist = Math.max(0, e.max - e.top);
       const shrank = s.max !== undefined && e.max < s.max - 0.5;
-      // 1. Our own pin in flight: reaching it (or progressing downward toward it across coalesced frames) keeps following
+      // 1. Our own pin in flight: reaching it (or progressing downward toward it across coalesced frames) keeps following;
+      //    and if the page grew while our pin was in flight (moved === 0 after hold-view updated lastTop on write),
+      //    any scroll event at or below the new max that didn't move upward is still our pin catching up
       if (s.following && s.flight !== undefined) {
         if (Math.abs(e.top - s.flight) <= NUDGE_PX) return stateOf(true, e.max);
         if (e.moved >= 0 && e.top < s.flight) return stateOf(true, e.max, s.flight);
+        if (e.moved >= -NUDGE_PX) return stateOf(true, e.max);
       }
       // 2. Upward move (away from the end): pauses immediately — even inside END_PX so small flicks or scrollbar drags
       //    are never yanked back — except a browser shrink-clamp / macOS rubber-band settle at the exact bottom

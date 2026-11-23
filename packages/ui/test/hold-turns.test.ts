@@ -182,3 +182,48 @@ test('holdMedia_chat_mode_follows_streaming_ignores_horizontal_and_nonscrollable
 
   held.stop();
 });
+
+test('holdMedia_keeps_following_when_already_at_bottom_across_async_scroll_events_and_early_growth_before_rAF_arming', () => {
+  let roCb: ResizeObserverCallback | undefined;
+  class FakeRO {
+    constructor(cb: ResizeObserverCallback) {
+      roCb = cb;
+    }
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  vi.stubGlobal('ResizeObserver', FakeRO);
+  const emitResize = (target: Element, blockSize: number): void => {
+    roCb?.([{ target, borderBoxSize: [{ blockSize }] } as unknown as ResizeObserverEntry], {} as ResizeObserver);
+  };
+
+  // Start already at the bottom (scrollTop=0, scrollHeight=500, clientHeight=500), before rAF arming has run
+  const p = page({ scrollHeight: 500, clientHeight: 500, scrollTop: 0, chat: true });
+  p.add('t1', 0);
+  const held = holdMedia(p.body, p.dock);
+  expect(held.following()).toBe(true);
+
+  // Content grows BEFORE flush() (before turnFollower's initial rAF callback fires):
+  // holdMedia must still pin to the new bottom immediately!
+  p.m.scrollHeight = 900;
+  emitResize(p.turns, 800);
+  expect(p.m.scrollTop).toBe(400);
+  expect(held.following()).toBe(true);
+
+  // Now another streaming chunk lands BEFORE the browser fires the async scroll event for scrollTop=400:
+  // If lastTop wasn't updated when pin() wrote scrollTop=400, the delayed scroll event after a slight layout shift
+  // or browser clamp could compute a negative `moved` and kill following. Verify following survives!
+  p.m.scrollHeight = 880; // routine steps collapsed or layout settled by -20px, browser clamps scrollTop to 380
+  p.m.scrollTop = 380;
+  p.body.dispatchEvent(new Event('scroll'));
+  expect(held.following()).toBe(true);
+
+  // Next streaming chunk grows the page to 1200 -> scrolls straight to 700 because we never lost following
+  p.m.scrollHeight = 1200;
+  emitResize(p.turns, 1100);
+  expect(p.m.scrollTop).toBe(700);
+  expect(held.following()).toBe(true);
+
+  held.stop();
+});

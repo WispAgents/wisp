@@ -159,13 +159,20 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
     if (state.following !== was) body.toggleAttribute('data-following', state.following);
   };
   body.toggleAttribute('data-following', state.following);
+  // keep `turns`'s height in `held` current after our own writes so aResizeObserver firing in the next frame after an
+  // initial mount, place(), or toEnd() doesn't mistake already-rendered turns for a fresh growth delta
+  const syncHeldTurns = (): void => {
+    if (turnsEl) held.set(turnsEl, turnsEl.offsetHeight);
+  };
   const pin = (): void => {
     const before = body.scrollTop;
     body.scrollTop = body.scrollHeight;
     const top = body.scrollTop;
     const max = maxOf(body);
+    lastTop = top;
     if (Math.abs(top - before) >= 0.5) set({ type: 'pinned', top, max });
-    else lastTop = top;
+    else set({ type: 'end', max });
+    syncHeldTurns();
   };
   const toEnd = (): void => {
     turns?.armNow();
@@ -174,11 +181,10 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
     body.scrollTop = body.scrollHeight;
     const top = body.scrollTop;
     const max = maxOf(body);
+    lastTop = top;
     if (Math.abs(top - before) >= 0.5) set({ type: 'end', top, max });
-    else {
-      lastTop = top;
-      set({ type: 'end', max });
-    }
+    else set({ type: 'end', max });
+    syncHeldTurns();
     tail = atTail(body);
     turns?.onScroll();
     tell(false);
@@ -186,11 +192,19 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
   const place = (target: number, shouldFollow = false): void => {
     turns?.armNow();
     turns?.clearHand();
+    const before = body.scrollTop;
     body.scrollTop = target;
     const actual = body.scrollTop;
     const max = maxOf(body);
     lastTop = actual;
-    set(shouldFollow ? { type: 'end', max } : { type: 'pause', max });
+    set(
+      shouldFollow
+        ? Math.abs(actual - before) >= 0.5
+          ? { type: 'end', top: actual, max }
+          : { type: 'end', max }
+        : { type: 'pause', max },
+    );
+    syncHeldTurns();
     tail = atTail(body);
     turns?.onScroll();
     tell(false);
@@ -223,12 +237,16 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
       tell(false);
       return void (tail = atTail(body));
     }
-    if (state.following && turns?.armed() === true && !scrollbarDrag) {
-      if (grew.length === 0 && Math.abs(by.turns) >= 1 && turns.grew(by.turns)) {
-        if (atTail(body)) set({ type: 'pinned', top: body.scrollTop, max: maxOf(body) });
+    if (state.following && !scrollbarDrag) {
+      // even before turnFollower's initial rAF arming finishes, any growth while following must pin the end immediately
+      if (turns?.armed() !== true) turns?.armNow();
+      if (grew.length === 0 && Math.abs(by.turns) >= 1 && turns?.grew(by.turns)) {
+        const top = body.scrollTop;
+        const max = maxOf(body);
+        lastTop = top;
+        if (atTail(body)) set({ type: 'pinned', top, max });
         else {
-          lastTop = body.scrollTop;
-          set({ type: 'pause', max: maxOf(body) });
+          set({ type: 'pause', max });
           tell(false);
         }
         return void (tail = atTail(body));
@@ -238,11 +256,13 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
         return void (tail = atTail(body));
       }
     }
-    if (grew.length === 0 && Math.abs(by.turns) >= 1) turns?.grew(by.turns);
+    if (grew.length === 0 && Math.abs(by.turns) >= 1 && turns?.grew(by.turns)) {
+      lastTop = body.scrollTop;
+    }
     if (by.turns >= 1 && !state.following) tell(true);
     const dockEnd = (by.dock !== 0 || by.view !== 0) && dockShift({ scrollHeight: body.scrollHeight, scrollTop: body.scrollTop, clientHeight: body.clientHeight, dock: by.dock, view: by.view }) === 'end';
     if (grew.length === 0 && !dockEnd) return;
-    const dy = grew.length === 0 ? 0 : mediaShift({ tail: tail && body.scrollTop > 0, anchors, inset: body.getBoundingClientRect().top + barOf(body), grew });
+    const dy = grew.length === 0 ? 0 : mediaShift({ tail: state.following || (tail && body.scrollTop > 0), anchors, inset: body.getBoundingClientRect().top + barOf(body), grew });
     if (dy === 'end' || dockEnd) pin();
     else if (Math.abs(dy) >= 1) {
       body.scrollTop += dy;
