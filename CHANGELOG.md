@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - Task view (Chat mode): a finished turn no longer shows its last message twice, once as the last step and again as the answer under it. The check compared the message with only the answer's last paragraph, so it missed every answer carrying a wisp block; it now compares the whole answer.
+- Task view (both modes): following the end is now an explicit state, as in t3code and opencode. Only you leave it (a wheel or key up, dragging or touching away from the end, selecting text while output streams), so a streamed chunk never pulls you back while you read. Coming back near the end, sending a follow-up or **Jump to latest** follows again. While following, the end is pinned in the same frame the page grows (no jump-then-catch-up).
+- Task view (both modes): **Jump to latest** (↓) shows whenever you've scrolled up from the end (after 150 ms), not only half a screen away, with a dot once new output arrived. It now jumps at once instead of animating, which could read as leaving the end again.
+- Task view (Chat mode): **Transcript** (V, and in the ⋯ menu) is back as a switch: on shows the steps as *Tool calls in chat* sets them, off shows only the agent's messages and the answer, with the activity summary under it.
 
 ## [1.0.0-alpha.7] - 2026-11-23
 

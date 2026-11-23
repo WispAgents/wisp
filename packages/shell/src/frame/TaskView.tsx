@@ -116,7 +116,7 @@ import type { PickOptions } from '../platform/types.ts';
 import { harnessOf } from './harness.ts';
 import { placeIn, taskSteps, type TaskSteps } from './task-step.ts';
 import { RunnerPicker } from './RunnerPicker.tsx';
-import { TurnTranscript } from './TurnTranscript.tsx';
+import { TurnTranscript, type TranscriptStepRow } from './TurnTranscript.tsx';
 import { isStub, turnOpener } from './turn-window.ts';
 import { NOTICE_KINDS, ledgerTurn } from './ledger-turns.ts';
 import type { LedgerTurn } from '@wisp/ui/pure';
@@ -510,7 +510,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const chat = useChatSettings(shell.client, ownerOf(key));
   const clock = (at: number): string => turnClock(at, undefined, chat.timeFormat());
   const [stepsOpen, setStepsOpen] = createSignal(false);
+  // Chat mode's own Transcript switch (V): on, the steps show as Tool calls in chat says; off, only the agent's
+  // messages and the answer (a quiet chat). Cards keeps v1's: off until V opens the steps above each answer
+  const [chatSteps, setChatSteps] = createSignal(true);
   const showStream = (): boolean => chat.chatMode() || stepsOpen();
+  const stepsShown = (): boolean => (chat.chatMode() ? chatSteps() : stepsOpen());
   // the phone apps: the details column as a sheet from the menu, and Rename as a dialog (the bar's title isn't edited)
   const phone = shell.platform.phone;
   const [detailsOpen, setDetailsOpen] = createSignal(false);
@@ -939,8 +943,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const own: TaskMenuEntry[] = [];
     // the head's bar keeps Changes, Ship, Done (docs/ux/2026-11-18-desktop.md #4): Transcript, Rerun and Open in are
     // here, with their keys, on every width
-    // Chat mode always shows the stream, so View transcript (V) is a Cards-mode control only
-    if (!chat.chatMode()) own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: stepsOpen() } });
+    own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: stepsShown() } });
     if (!row()?.summary['sideOf'])
       own.push(
         { section: 'open', order: -20, entry: { value: 'rerun', label: t('shell.task.rerun'), icon: 'rerun', keys: '⇧R' } },
@@ -1006,7 +1009,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // caret to the menu giving focus back to ⋯); a click on the title still edits it in place
   const startRename = (): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.rename' as never, params: { id: key } } });
   const toggleTranscript = (): void => {
-    if (!chat.chatMode()) setStepsOpen(!stepsOpen());
+    if (chat.chatMode()) setChatSteps(!chatSteps());
+    else setStepsOpen(!stepsOpen());
   };
   const onMore = (v: string): void => {
     if (v === 'next-task') stepTo(steps().next);
@@ -1135,10 +1139,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const onKey = (e: Event): void => {
     const act = (e as CustomEvent<TaskKey>).detail;
     const did = ((): boolean => {
-      if (act === 'transcript') {
-        if (chat.chatMode()) return false;
-        toggleTranscript();
-      }
+      if (act === 'transcript') toggleTranscript();
       else if (act === 'rerun' || act === 'fork' || act === 'archive' || act === 'delete') onMore(act);
       else if (act === 'openIn') takeOver();
       else if (act === 'shell') side('shell');
@@ -1412,8 +1413,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const delegating = createMemo(() => allRows().some((x) => (x.parent_id === key || x.parent_id === bare) && x.state === 'running'));
           const count = (k: string): number => steps().filter((a) => a.kind === k).length;
           const blocks = () => b.presentation?.blocks ?? [];
+          // Chat mode with its Transcript off: the agent's messages (and errors) only
+          const quietChat = (rows: TranscriptStepRow[]): TranscriptStepRow[] => (chat.chatMode() && !chatSteps() ? rows.filter((r) => r.kind === 'text' || r.bad === true) : rows);
           const streamSteps = createMemo(() =>
-            buildChatSteps(turnEvents(), b.activity ?? [], {
+            quietChat(buildChatSteps(turnEvents(), b.activity ?? [], {
               chatMode: chat.chatMode(),
               toolCalls: chat.toolCalls(),
               showThinking: chat.showThinking(),
@@ -1422,7 +1425,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               // as soon as the answer carries a wisp block (it is cut around it), so both are tried
               finalText: [turn.answer ?? undefined, (b as { answer?: string }).answer, finalMarkdownOf(blocks() as readonly { readonly type: string; readonly text?: string }[])],
               notes: (b as { presentation?: { notes?: string } }).presentation?.notes,
-            }),
+            })),
           );
           const stubbed = () => isStub(b);
           const changes = () => b.ext?.['wisp.runtime']?.changes ?? b.changes ?? [];
@@ -1594,7 +1597,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 {...(turn.status === 'held' && { untold: true })}
                 {...(live() && { working: [liveTx(), working()] })}
                 actsTitle={t('shell.task.activity')}
-                acts={trailActs(showStream() ? 0 : steps().length, { read: count('read'), edit: count('edit'), run: count('run') }, t)}
+                acts={trailActs(stepsShown() ? 0 : steps().length, { read: count('read'), edit: count('edit'), run: count('run') }, t)}
                 stats={[
                   // v1 renderTrail: each only when there is something to say; a turn refused before it ran (no stats,
                   // no steps) took no time worth a figure ("1ms": B9)

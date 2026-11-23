@@ -11,7 +11,8 @@ import { usePlatform } from '../platform/PlatformLook.tsx';
 import { useT } from '../core/i18n.tsx';
 import { Menu, SheetMenus } from '../controls/Menu.tsx';
 import { useTurnMenu, type TurnPhoneMenu, type TurnTool } from './turn-menu.ts';
-import { holdMedia } from './hold-view.ts';
+import { holdMedia, type Held } from './hold-view.ts';
+import { createTimer } from '../blocks/content-scope.ts';
 import { useBarLabels } from './bar-labels.ts';
 import { Tool } from './launcher-tool.tsx';
 import { foldOrder, foldTail, type LauncherTool } from './launcher-fold.ts';
@@ -1203,13 +1204,25 @@ export function TaskBody(props: {
   readonly toLatest?: string;
 }): JSX.Element {
   let stop: (() => void) | undefined;
+  let held: Held | undefined;
   let body!: HTMLDivElement;
   onCleanup(() => stop?.());
   // away from the end (the view no longer follows) and whether more came in since: hold-view says when it changes
   const [away, setAway] = createSignal({ away: false, fresh: false });
+  // shown 150 ms after the reader left the end (t3code), gone at once when they're back
+  const later = createTimer();
+  const onAway = (o: { readonly away: boolean; readonly fresh: boolean }): void => {
+    if (o.away && !away().away) return later.after(150, () => setAway(o));
+    later.clear();
+    setAway(o);
+  };
+  // at once, not smooth: a smooth scroll's steps read as the reader leaving the end again (and the click answers in
+  // the frame, ADR-0017)
   const toLatest = (): void => {
+    later.clear();
     setAway({ away: false, fresh: false });
-    body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
+    if (held) held.toEnd();
+    else body.scrollTop = body.scrollHeight;
   };
   return (
     <div
@@ -1229,11 +1242,12 @@ export function TaskBody(props: {
         ref={(dock) => {
           // a child's ref runs after its parent's: the body is known here
           stop?.();
-          const held = typeof ResizeObserver === 'undefined' ? undefined : holdMedia(body, dock, setAway);
+          held = typeof ResizeObserver === 'undefined' ? undefined : holdMedia(body, dock, onAway);
           // the dock's height for what stops above it (a live question, UX 2026-11-18 #1)
           const ro = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => body.style.setProperty('--dock-h', `${dock.offsetHeight}px`));
           ro?.observe(dock);
-          stop = () => (held?.(), ro?.disconnect());
+          const h = held;
+          stop = () => (h?.stop(), ro?.disconnect());
         }}
         data-kit="it-dock"
       >
