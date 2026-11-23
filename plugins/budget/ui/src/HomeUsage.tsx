@@ -15,16 +15,10 @@ export const plans = { ...plansCmd, quiet: true };
 export const accountNames = { ...accountNamesCmd, quiet: true };
 import { pct } from './drain.ts';
 import { holdLine, homeTone, homeUsage, type HomeHarness } from './home-usage.ts';
-import { stopLine, windowLine } from './plan.ts';
+import { plannedHarnesses, stopKeyOf, stopLine, windowLine } from './plan.ts';
 import { t } from './i18n.ts';
 import { fromRow } from './source.ts';
 import './i18n/lazy.ts';
-
-const PLANNED = [
-  { agent: 'claude', name: 'Claude Code', key: 'autoStopClaude' },
-  { agent: 'codex', name: 'Codex', key: 'autoStopCodex' },
-  { agent: 'antigravity', name: 'Antigravity', key: 'autoStopAntigravity' },
-] as const;
 
 export default function HomeUsage(props: ExtensionProps): JSX.Element {
   const c = props.client;
@@ -43,9 +37,9 @@ export default function HomeUsage(props: ExtensionProps): JSX.Element {
   const [setUp] = createResource(() => c.run(agents, { peer }).catch(() => [] as { id: string; available: boolean }[]));
   const [read] = createResource(
     () => ({ n: accs().length, rows: accs() }),
-    async () =>
+    async ({ rows }) =>
       Promise.all(
-        PLANNED.map(async (p) => {
+        plannedHarnesses(rows).map(async (p) => {
           const [accounts, names] = await Promise.all([
             c.run(plans, { peer, agent: p.agent }).catch(() => [] as AccountPlan[]),
             c.run(accountNames, { peer, agent: p.agent }).catch(() => ({ accounts: [] })),
@@ -61,7 +55,7 @@ export default function HomeUsage(props: ExtensionProps): JSX.Element {
     const body = meta()?.body ?? {};
     const hold = holdLine(holdAt());
     return homeUsage(list).map((r) => {
-      const stop = stopLine(body[PLANNED.find((p) => p.agent === r.agent)?.key ?? ''], body['autoStop']);
+      const stop = stopLine(body[stopKeyOf(r.agent)], body['autoStop']);
       const who = r.accountLabel ? t('budget.home.who', { name: r.name, account: r.accountLabel }) : r.name;
       return {
         key: `${r.agent}:${r.account}`,

@@ -16,6 +16,7 @@ pub struct KitDriver<P> {
     track: bool,
     pinned: bool,
     events: Vec<kit::HarnessEvent>,
+    usage_file: Option<String>,
 }
 
 impl<P> std::fmt::Debug for KitDriver<P> {
@@ -27,8 +28,8 @@ impl<P> std::fmt::Debug for KitDriver<P> {
 impl<P: LineParser + 'static> KitDriver<P> {
     /// `track`: the parser emits tracker steps (`Remember`/`Changed`), so git is pinned before the
     /// first line is parsed. The runtime gives a driver no start-of-run call, so that is the earliest.
-    pub fn boxed(parser: P, paths: RunPaths, track: bool) -> Box<dyn RunDriver> {
-        Box::new(Self { inner: Driver::new(parser, paths), track, pinned: false, events: Vec::new() })
+    pub fn boxed(parser: P, paths: RunPaths, track: bool, usage_file: Option<String>) -> Box<dyn RunDriver> {
+        Box::new(Self { inner: Driver::new(parser, paths), track, pinned: false, events: Vec::new(), usage_file })
     }
 }
 
@@ -59,7 +60,23 @@ impl<P: LineParser + 'static> RunDriver for KitDriver<P> {
             if self.inner.take_stop() {
                 out.stop = Some(StopHow::Terminate);
             }
-            for e in events.drain(..) {
+            for mut e in events.drain(..) {
+                if let kit::HarnessEvent::Result(ref mut r) = e
+                    && let Some(path) = self.usage_file.as_deref()
+                    && let Some(text) = sys.read_file(path).await
+                    && let Ok(usage) = serde_json::from_str::<Value>(&text)
+                {
+                    let mut map = r
+                        .stats
+                        .as_ref()
+                        .and_then(|s| serde_json::to_value(s).ok())
+                        .and_then(|v| v.as_object().cloned())
+                        .unwrap_or_default();
+                    wisp_copilot_core::apply_usage(&usage, &mut map);
+                    if !map.is_empty() {
+                        r.stats = serde_json::from_value(Value::Object(map)).ok().map(Box::new);
+                    }
+                }
                 if let Some(m) = to_runtime(&e) {
                     out.emit(m);
                 }

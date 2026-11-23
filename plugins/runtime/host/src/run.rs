@@ -763,9 +763,13 @@ pub(crate) fn side_main(s: &Session) -> Option<&str> {
 /// off), or at once when the run never spawned.
 pub(crate) struct LaunchDir(Option<std::path::PathBuf>);
 
+fn uses_tmp(launch: &Launch) -> bool {
+    !launch.files.is_empty() || launch.args.iter().any(|a| a.contains("{tmp}")) || launch.env.values().any(|v| v.contains("{tmp}"))
+}
+
 impl LaunchDir {
     pub(crate) fn of(launch: &Launch, dir: &str) -> Self {
-        Self((!launch.files.is_empty()).then(|| std::path::PathBuf::from(dir)))
+        Self(uses_tmp(launch).then(|| std::path::PathBuf::from(dir)))
     }
 }
 
@@ -800,7 +804,7 @@ pub(crate) async fn sweep_launch_dirs() {
 /// OS temp folder). Returns the folder, which the launch's `{tmp}` stands for.
 pub(crate) async fn write_files(name: &str, launch: &Launch) -> Result<String> {
     let dir = std::env::temp_dir().join(name);
-    if launch.files.is_empty() {
+    if !uses_tmp(launch) {
         return Ok(dir.to_string_lossy().into_owned());
     }
     tokio::fs::create_dir_all(&dir).await.map_err(|e| RuntimeError::Invalid(e.to_string()))?;

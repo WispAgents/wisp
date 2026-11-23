@@ -26,6 +26,18 @@ pub struct BudgetSpec {
     /// Antigravity's own line (same | off | 50 | 75 | 90)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub antigravity: String,
+    /// opencode's own line (same | off | 50 | 75 | 90)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub opencode: String,
+    /// Cursor's own line (same | off | 50 | 75 | 90)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub cursor: String,
+    /// Copilot's own line (same | off | 50 | 75 | 90)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub copilot: String,
+    /// Grok's own line (same | off | 50 | 75 | 90)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub grok: String,
     /// at most this many dollars per task
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_usd: Option<f64>,
@@ -37,11 +49,15 @@ pub struct BudgetSpec {
 struct BudgetKind(Arc<StoredKind>);
 
 /// Each stop line: its field in the spec, its key in the plugin's settings, and its default.
-const LINES: [(&str, &str, &str); 4] = [
+const LINES: [(&str, &str, &str); 8] = [
     ("stopAt", "autoStop", "off"),
     ("claude", "autoStopClaude", "same"),
     ("codex", "autoStopCodex", "same"),
     ("antigravity", "autoStopAntigravity", "same"),
+    ("opencode", "autoStopOpencode", "same"),
+    ("cursor", "autoStopCursor", "same"),
+    ("copilot", "autoStopCopilot", "same"),
+    ("grok", "autoStopGrok", "same"),
 ];
 
 impl ResourceKind for BudgetKind {

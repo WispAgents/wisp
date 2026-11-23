@@ -146,6 +146,7 @@ impl CopilotParser {
             .map_or_else(|| js::json_num((now - self.started.unwrap_or(now)) as f64), js::json_num);
         let mut stats = Map::new();
         stats.insert("durationMs".into(), ms);
+        apply_usage(&result["usage"], &mut stats);
         let stats: Option<Box<Stats>> = serde_json::from_value(Value::Object(stats)).ok().map(Box::new);
         out.push(HarnessEvent::Result(TurnResult { text, is_error: !ok, stats, ..TurnResult::default() }).into());
     }
@@ -284,6 +285,91 @@ impl LineParser for CopilotParser {
     }
 }
 
+/// Applies token, cache, cost and per-model usage from Copilot's `result.usage` or `--usage-output-file` JSON
+/// onto `stats`. Only positive/non-null token and cost fields are added, so runs that report only `sessionDurationMs`
+/// keep their minimal stats shape.
+pub fn apply_usage(raw: &Value, stats: &mut Map<String, Value>) {
+    let u = if raw["usage"].is_object() && !raw.get("inputTokens").is_some_and(truthy) && !raw.get("modelMetrics").is_some_and(truthy) {
+        &raw["usage"]
+    } else {
+        raw
+    };
+    let cost = [&u["costUsd"], &u["cost_usd"], &u["totalCostUsd"], &u["total_cost_usd"], &raw["costUsd"], &raw["totalCostUsd"]]
+        .into_iter()
+        .find_map(|v| v.as_f64().filter(|c| c.is_finite() && *c > 0.0));
+    if let Some(c) = cost {
+        stats.insert("costUsd".into(), js::json_num(c));
+    }
+    for (k, candidates) in [
+        ("inputTokens", [&u["inputTokens"], &u["input_tokens"], &u["totalInputTokens"], &u["promptTokens"], &u["prompt_tokens"]]),
+        (
+            "outputTokens",
+            [&u["outputTokens"], &u["output_tokens"], &u["totalOutputTokens"], &u["completionTokens"], &u["completion_tokens"]],
+        ),
+        (
+            "cacheReadTokens",
+            [
+                &u["cacheReadTokens"],
+                &u["cache_read_tokens"],
+                &u["cacheReadInputTokens"],
+                &u["cachedInputTokens"],
+                &u["cached_input_tokens"],
+            ],
+        ),
+        (
+            "cacheWriteTokens",
+            [
+                &u["cacheWriteTokens"],
+                &u["cache_write_tokens"],
+                &u["cacheCreationInputTokens"],
+                &u["cache_creation_input_tokens"],
+                &Value::Null,
+            ],
+        ),
+    ] {
+        if let Some(v) = candidates.into_iter().find(|v| !v.is_null() && v.as_f64().is_some_and(|n| n.is_finite() && n >= 0.0)) {
+            stats.insert(k.into(), (*v).clone());
+        }
+    }
+    if let Some(metrics) = u["modelMetrics"].as_object().or_else(|| raw["modelMetrics"].as_object()) {
+        let mut in_sum = 0.0;
+        let mut out_sum = 0.0;
+        let mut cr_sum = 0.0;
+        let mut cw_sum = 0.0;
+        let mut models = Vec::new();
+        for (model, entry) in metrics {
+            let mu = if entry["usage"].is_object() { &entry["usage"] } else { entry };
+            let i = js::number_or_zero(js::or(&mu["inputTokens"], &mu["input_tokens"]));
+            let o = js::number_or_zero(js::or(&mu["outputTokens"], &mu["output_tokens"]));
+            let cr = js::number_or_zero(js::or(&mu["cacheReadTokens"], js::or(&mu["cache_read_tokens"], &mu["cachedInputTokens"])));
+            let cw = js::number_or_zero(js::or(&mu["cacheWriteTokens"], &mu["cache_write_tokens"]));
+            if i + o + cr + cw > 0.0 {
+                in_sum += i;
+                out_sum += o;
+                cr_sum += cr;
+                cw_sum += cw;
+                models.push(json!({ "model": model, "input": js::json_num(i), "output": js::json_num(o), "cacheRead": js::json_num(cr), "cacheWrite": js::json_num(cw) }));
+            }
+        }
+        if !stats.contains_key("inputTokens") && in_sum > 0.0 {
+            stats.insert("inputTokens".into(), js::json_num(in_sum));
+        }
+        if !stats.contains_key("outputTokens") && out_sum > 0.0 {
+            stats.insert("outputTokens".into(), js::json_num(out_sum));
+        }
+        if !stats.contains_key("cacheReadTokens") && cr_sum > 0.0 {
+            stats.insert("cacheReadTokens".into(), js::json_num(cr_sum));
+        }
+        if !stats.contains_key("cacheWriteTokens") && cw_sum > 0.0 {
+            stats.insert("cacheWriteTokens".into(), js::json_num(cw_sum));
+        }
+        if !models.is_empty() {
+            stats.insert("models".into(), Value::Array(models));
+            stats.entry("totals").or_insert_with(|| json!({}));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,5 +408,27 @@ mod tests {
         assert_eq!(cfg["mcpServers"]["wisp"]["type"], "http");
         assert_eq!(cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"], "t");
         assert!(a.iter().any(|x| x == "--allow-tool=wisp") && a.iter().any(|x| x == "--allow-all"));
+    }
+
+    #[test]
+    fn apply_usage_reads_direct_tokens_and_model_metrics() {
+        let mut s = Map::new();
+        apply_usage(&json!({ "sessionDurationMs": 6, "premiumRequests": 1 }), &mut s);
+        assert!(s.is_empty(), "duration-only result adds no token keys");
+
+        apply_usage(
+            &json!({
+                "modelMetrics": {
+                    "claude-sonnet-4.5": {
+                        "usage": { "inputTokens": 1200, "outputTokens": 300, "cacheReadTokens": 800, "cacheWriteTokens": 100 }
+                    }
+                }
+            }),
+            &mut s,
+        );
+        assert_eq!(s.get("inputTokens"), Some(&json!(1200)));
+        assert_eq!(s.get("outputTokens"), Some(&json!(300)));
+        assert_eq!(s.get("cacheReadTokens"), Some(&json!(800)));
+        assert_eq!(s.get("cacheWriteTokens"), Some(&json!(100)));
     }
 }

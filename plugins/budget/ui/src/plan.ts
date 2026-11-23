@@ -1,11 +1,219 @@
 // Plan budget's words past the bars (v1 features/budget.js windowLine, bankedHtml, overHtml, whereHtml, compareHtml;
 // banked.js; receipt.js compareWords/compareParts), DOM-free so tests read them.
 
+import type { AccountPlan, Usage, UsageDay, UsageRow } from './commands.ts';
 import { pct } from './drain.ts';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
 
 const DAY = 24 * 3600_000;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const money = (n: number): string => `$${n.toFixed(2)}`;
+/** "Nov 12" of a `YYYY-MM-DD` */
+export const dayLabel = (d: string): string => `${MONTHS[Number(d.slice(5, 7)) - 1] ?? ''} ${Number(d.slice(8, 10))}`;
+
+export type ChartMetric = 'cost' | 'tokens' | 'turns';
+
+/** The chart from one answer: pure, so a test reads it. */
+export function usageModel(
+  u: Usage,
+  metric?: ChartMetric,
+): {
+  byCost: boolean;
+  byTokens: boolean;
+  active: ChartMetric;
+  bars: { key: string; share: number; tip: string }[];
+  max: string;
+  first: string;
+  unpriced: number;
+  tokens: number;
+  harnesses: readonly UsageRow[];
+} {
+  const byCost = (u.priced ?? 0) > 0;
+  const harnesses = harnessesOf(u);
+  const tokens = u.tokens ?? harnesses.reduce((s, r) => s + (r.tokens ?? 0), 0);
+  const daily = u.daily ?? [];
+  const byTokens = tokens > 0 && daily.some((d) => (d.tokens ?? 0) > 0);
+  const active: ChartMetric =
+    metric === 'cost' && byCost ? 'cost' : metric === 'tokens' && byTokens ? 'tokens' : metric === 'turns' ? 'turns' : byCost ? 'cost' : byTokens ? 'tokens' : 'turns';
+  const val = (d: UsageDay): number => (active === 'cost' ? d.cost : active === 'tokens' ? (d.tokens ?? 0) : d.turns);
+  const top = Math.max(0, ...daily.map(val)) || 1;
+  const maxStr = active === 'cost' ? money(top) : active === 'tokens' ? tokenWords(top) : String(top);
+  return {
+    byCost,
+    byTokens,
+    active,
+    bars: daily.map((d) => {
+      const parts: string[] = [];
+      if (byCost && d.cost > 0) parts.push(money(d.cost));
+      if ((d.tokens ?? 0) > 0) parts.push(t('budget.usage.harness.tokens', { n: tokenWords(d.tokens ?? 0) }));
+      parts.push(t('budget.view.turns', { count: d.turns }));
+      return { key: d.date, share: val(d) / top, tip: `${dayLabel(d.date)}: ${parts.join(' · ')}` };
+    }),
+    max: t('budget.view.max', { v: maxStr }),
+    first: daily[0] ? dayLabel(daily[0].date) : '',
+    unpriced: u.turns - (u.priced ?? 0),
+    tokens,
+    harnesses,
+  };
+}
+
+export interface HarnessBudgetMeta {
+  readonly agent: string;
+  readonly name: string;
+  readonly key: string;
+  readonly planned: boolean;
+  readonly priced: boolean;
+}
+
+/** Every harness wisp runs, with its per-harness stop-line setting key and whether it reports plan quota windows. */
+export const HARNESSES: readonly HarnessBudgetMeta[] = [
+  { agent: 'claude', name: 'Claude Code', key: 'autoStopClaude', planned: true, priced: true },
+  { agent: 'codex', name: 'Codex', key: 'autoStopCodex', planned: true, priced: false },
+  { agent: 'antigravity', name: 'Antigravity', key: 'autoStopAntigravity', planned: true, priced: false },
+  { agent: 'opencode', name: 'opencode', key: 'autoStopOpencode', planned: false, priced: true },
+  { agent: 'cursor', name: 'Cursor', key: 'autoStopCursor', planned: false, priced: false },
+  { agent: 'copilot', name: 'Copilot', key: 'autoStopCopilot', planned: false, priced: false },
+  { agent: 'grok', name: 'Grok', key: 'autoStopGrok', planned: false, priced: true },
+] as const;
+
+export const PLANNED: readonly HarnessBudgetMeta[] = HARNESSES.filter((h) => h.planned);
+
+/** The setting key (`autoStopClaude`, etc.) for a harness id. */
+export const stopKeyOf = (agent: string): string => HARNESSES.find((h) => h.agent === agent)?.key ?? '';
+
+/** Harnesses to read `budget.view` for: the planned ones plus any other harness with a `budget_acc` row on the topic. */
+export function plannedHarnesses(accs: readonly unknown[] = []): readonly HarnessBudgetMeta[] {
+  if (!accs.length) return PLANNED;
+  const withRows = new Set(
+    accs.flatMap((r) => {
+      if (!r || typeof r !== 'object') return [];
+      const rec = r as { readonly id?: unknown; readonly agent?: unknown };
+      if (typeof rec.agent === 'string' && rec.agent) return [rec.agent];
+      if (typeof rec.id !== 'string' || !rec.id) return [];
+      const colon = rec.id.indexOf(':');
+      const key = colon >= 0 ? rec.id.slice(colon + 1) : rec.id;
+      const slash = key.indexOf('/');
+      return [slash >= 0 ? key.slice(0, slash) : key];
+    }),
+  );
+  return HARNESSES.filter((h) => h.planned || withRows.has(h.agent));
+}
+
+/** Per-harness usage rows from `runtime.usage`: uses `u.harnesses` when present, or rolls `u.runners` up by `agent`. */
+export function harnessesOf(u: Usage | undefined): readonly UsageRow[] {
+  if (!u) return [];
+  if (u.harnesses && u.harnesses.length > 0) return u.harnesses;
+  const byAgent = new Map<
+    string,
+    {
+      cost: number;
+      priced: number;
+      turns: number;
+      sessions: number;
+      tokens: number;
+      inputTokens: number;
+      outputTokens: number;
+      cacheTokens: number;
+      workedSum: number;
+      workedTurns: number;
+      questions: number;
+      msSum: number;
+      msTurns: number;
+    }
+  >();
+  for (const r of u.runners ?? []) {
+    const agent = (r.agent || r.key.split(' ')[0] || 'claude').trim();
+    const cur = byAgent.get(agent) ?? {
+      cost: 0,
+      priced: 0,
+      turns: 0,
+      sessions: 0,
+      tokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheTokens: 0,
+      workedSum: 0,
+      workedTurns: 0,
+      questions: 0,
+      msSum: 0,
+      msTurns: 0,
+    };
+    cur.cost += r.cost;
+    cur.priced += r.priced;
+    cur.turns += r.turns;
+    cur.sessions += r.sessions ?? 0;
+    cur.tokens += r.tokens ?? 0;
+    cur.inputTokens += r.inputTokens ?? 0;
+    cur.outputTokens += r.outputTokens ?? 0;
+    cur.cacheTokens += r.cacheTokens ?? 0;
+    if (r.worked !== null && r.worked !== undefined) {
+      cur.workedSum += r.worked * r.turns;
+      cur.workedTurns += r.turns;
+    }
+    cur.questions += r.questions;
+    if (r.avgMs !== null && r.avgMs !== undefined) {
+      cur.msSum += r.avgMs * r.turns;
+      cur.msTurns += r.turns;
+    }
+    byAgent.set(agent, cur);
+  }
+  const rows: UsageRow[] = [...byAgent.entries()].map(([agent, c]) => ({
+    key: agent,
+    name: agent,
+    agent,
+    cost: c.cost,
+    priced: c.priced,
+    turns: c.turns,
+    ...(c.sessions > 0 && { sessions: c.sessions }),
+    tokens: c.tokens,
+    inputTokens: c.inputTokens,
+    outputTokens: c.outputTokens,
+    cacheTokens: c.cacheTokens,
+    worked: c.workedTurns > 0 ? Math.round(c.workedSum / c.workedTurns) : null,
+    questions: c.questions,
+    avgMs: c.msTurns > 0 ? Math.round(c.msSum / c.msTurns) : null,
+  }));
+  return rows.sort((a, b) => b.cost - a.cost || b.turns - a.turns || (b.tokens ?? 0) - (a.tokens ?? 0) || a.key.localeCompare(b.key));
+}
+
+/** Hover breakdown for a token count: "94k in · 68k cache · 18k out". */
+export function tokenBreakdown(r: { readonly inputTokens?: number | undefined; readonly outputTokens?: number | undefined; readonly cacheTokens?: number | undefined }): string {
+  const inp = r.inputTokens ?? 0;
+  const out = r.outputTokens ?? 0;
+  const cache = r.cacheTokens ?? 0;
+  if (inp + out <= 0) return '';
+  const parts = [t('budget.plan.tokIn', { n: tokenWords(inp) })];
+  if (cache > 0) parts.push(t('budget.plan.tokCache', { pct: pct(cache / Math.max(1, inp)) }));
+  parts.push(t('budget.plan.tokOut', { n: tokenWords(out) }));
+  return parts.join(' · ');
+}
+
+/** One harness's 7-day usage + plan status line for its row in Settings → Usage. */
+export function harnessUsageDescription(h: HarnessBudgetMeta, row: UsageRow | undefined, accounts: readonly AccountPlan[] = []): string {
+  const parts: string[] = [];
+  if (row && row.turns > 0) {
+    parts.push(t('budget.plan.turns', { count: row.turns }));
+    if ((row.tokens ?? 0) > 0) parts.push(t('budget.usage.harness.tokens', { n: tokenWords(row.tokens ?? 0) }));
+    if (row.priced > 0) parts.push(`$${row.cost.toFixed(2)}`);
+    if (row.worked !== null && row.worked !== undefined) parts.push(t('budget.usage.harness.worked', { pct: `${Math.round(row.worked)}%` }));
+  }
+  const fullest = accounts
+    .flatMap((a) => a.windows)
+    .reduce<{ label: string; used: number } | undefined>((best, w) => (!best || w.used > best.used ? { label: w.label, used: w.used } : best), undefined);
+  if (fullest) parts.push(t('budget.usage.harness.window', { label: fullest.label, pct: pct(fullest.used) }));
+  const note =
+    h.agent === 'codex'
+      ? t('budget.usage.stop.codex')
+      : h.agent === 'antigravity'
+        ? t('budget.usage.stop.antigravity')
+        : h.planned
+          ? t('budget.usage.stop.own')
+          : h.priced
+            ? t('budget.usage.stop.priced')
+            : t('budget.usage.stop.tokens');
+  return parts.length > 0 ? `${parts.join(' · ')} — ${note}` : note;
+}
 
 /** A window as `budget.view` gives it, with what the line under its bar reads. */
 export interface WindowLike {

@@ -762,8 +762,37 @@ export const COMMANDS: Record<string, CommandFn> = {
   'runtime.usage': (a) => {
     const days = Number((obj(a) as { days?: number }).days ?? 7);
     const today = Date.UTC(2026, 10, 12);
-    const daily = Array.from({ length: days + 1 }, (_, i) => ({ date: new Date(today - (days - i) * 86_400_000).toISOString().slice(0, 10), cost: i === days ? 0.09 : 0, turns: i === days ? 9 : 0 }));
-    const row = { cost: 0.09, priced: 9, turns: 9, worked: 100, questions: 0, avgMs: 41_000 };
+    const daily = Array.from({ length: days + 1 }, (_, i) => ({
+      date: new Date(today - (days - i) * 86_400_000).toISOString().slice(0, 10),
+      cost: i === days ? 0.09 : 0,
+      turns: i === days ? 9 : 0,
+      tokens: i === days ? 184_000 : 0,
+    }));
+    const projectRow = {
+      cost: 0.09,
+      priced: 5,
+      turns: 9,
+      sessions: 5,
+      tokens: 184_000,
+      inputTokens: 152_000,
+      outputTokens: 32_000,
+      cacheTokens: 96_000,
+      worked: 100,
+      questions: 0,
+      avgMs: 36_000,
+    };
+    const harnesses = [
+      { key: 'claude', name: 'claude', agent: 'claude', cost: 0.09, priced: 5, turns: 5, sessions: 3, tokens: 112_000, inputTokens: 94_000, outputTokens: 18_000, cacheTokens: 68_000, worked: 100, questions: 0, avgMs: 41_000 },
+      { key: 'codex', name: 'codex', agent: 'codex', cost: 0, priced: 0, turns: 2, sessions: 1, tokens: 44_000, inputTokens: 36_000, outputTokens: 8_000, cacheTokens: 28_000, worked: 100, questions: 0, avgMs: 34_000 },
+      { key: 'antigravity', name: 'antigravity', agent: 'antigravity', cost: 0, priced: 0, turns: 1, sessions: 1, tokens: 16_000, inputTokens: 12_000, outputTokens: 4_000, cacheTokens: 0, worked: 100, questions: 0, avgMs: 28_000 },
+      { key: 'opencode', name: 'opencode', agent: 'opencode', cost: 0, priced: 0, turns: 1, sessions: 1, tokens: 12_000, inputTokens: 10_000, outputTokens: 2_000, cacheTokens: 0, worked: 100, questions: 0, avgMs: 22_000 },
+    ];
+    const runners = [
+      { key: 'claude claude-opus-4', name: 'claude-opus-4', agent: 'claude', cost: 0.09, priced: 5, turns: 5, sessions: 3, tokens: 112_000, inputTokens: 94_000, outputTokens: 18_000, cacheTokens: 68_000, worked: 100, questions: 0, avgMs: 41_000 },
+      { key: 'codex gpt-5.5-codex', name: 'gpt-5.5-codex', agent: 'codex', cost: 0, priced: 0, turns: 2, sessions: 1, tokens: 44_000, inputTokens: 36_000, outputTokens: 8_000, cacheTokens: 28_000, worked: 100, questions: 0, avgMs: 34_000 },
+      { key: 'antigravity ', name: '', agent: 'antigravity', cost: 0, priced: 0, turns: 1, sessions: 1, tokens: 16_000, inputTokens: 12_000, outputTokens: 4_000, cacheTokens: 0, worked: 100, questions: 0, avgMs: 28_000 },
+      { key: 'opencode anthropic/claude-sonnet-5-5', name: 'anthropic/claude-sonnet-5-5', agent: 'opencode', cost: 0, priced: 0, turns: 1, sessions: 1, tokens: 12_000, inputTokens: 10_000, outputTokens: 2_000, cacheTokens: 0, worked: 100, questions: 0, avgMs: 22_000 },
+    ];
     return {
       ops: [],
       result: {
@@ -772,11 +801,16 @@ export const COMMANDS: Record<string, CommandFn> = {
         turns: 9,
         worked: 100,
         questions: 0,
-        priced: 9,
+        priced: 5,
         sessions: 5,
+        tokens: 184_000,
+        inputTokens: 152_000,
+        outputTokens: 32_000,
+        cacheTokens: 96_000,
         daily,
-        projects: [{ key: '~/code/wisp', name: 'wisp', ...row }],
-        runners: [{ key: 'claude claude-opus-4', name: 'claude-opus-4', agent: 'claude', ...row }],
+        harnesses,
+        projects: [{ key: '~/code/wisp', name: 'wisp', ...projectRow }],
+        runners,
       },
     };
   },

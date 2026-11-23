@@ -9,15 +9,11 @@ import { englishT, SpareCards, timeLabel, useSignal, type SpareCard } from '@wis
 import { dismissNotice, plans, TOPIC, type AccountPlan } from './commands.ts';
 import { noticeWords } from './drain.ts';
 import { t } from './i18n.ts';
+import { plannedHarnesses } from './plan.ts';
 import { fromRow } from './source.ts';
 import { pruneSeen, spareKey, spareOf, spareWhose } from './spare.ts';
 import './i18n/lazy.ts';
 
-const PLANNED = [
-  { agent: 'claude', name: 'Claude Code' },
-  { agent: 'codex', name: 'Codex' },
-  { agent: 'antigravity', name: 'Antigravity' },
-] as const;
 const EVERY = 5 * 60_000;
 
 const on = (v: unknown, dflt: boolean): boolean => (v === true || v === 'on' ? true : v === false || v === 'off' ? false : dflt);
@@ -28,6 +24,7 @@ export default function Spare(props: ExtensionProps): JSX.Element {
   const scope = c.scope.child('home-spare');
   onCleanup(() => scope.dispose());
   c.watch(peer, TOPIC, scope, { passive: true });
+  const accs = useSignal(c.entities.list('budget_acc'));
   const marks = useSignal(useShell().harnesses());
   const logoOf = (id: string): string | undefined => marks().find((m) => m.id === id)?.logo;
   const spareOn = useSignal(fromRow(c, 'budget.spareCard', true).value as () => unknown);
@@ -41,11 +38,14 @@ export default function Spare(props: ExtensionProps): JSX.Element {
   });
   const seen = useSignal(seenStore.value);
   const now = (): number => c.scope.timers.now();
-  const [windows, { refetch: again }] = createResource(async () => {
-    const out: { agent: string; name: string; accounts: AccountPlan[] }[] = [];
-    for (const p of PLANNED) out.push({ ...p, accounts: await c.run(plans, { peer, agent: p.agent }).catch(() => []) });
-    return out;
-  });
+  const [windows, { refetch: again }] = createResource(
+    () => ({ n: accs().length, rows: accs() }),
+    async ({ rows }) => {
+      const out: { agent: string; name: string; accounts: AccountPlan[] }[] = [];
+      for (const p of plannedHarnesses(rows)) out.push({ ...p, accounts: await c.run(plans, { peer, agent: p.agent }).catch(() => []) });
+      return out;
+    },
+  );
   // read again every few minutes: a reset comes closer, a window resets (the cards follow)
   scope.interval(EVERY, () => void again());
   const when = (at: number): string => timeLabel(at, now(), englishT);

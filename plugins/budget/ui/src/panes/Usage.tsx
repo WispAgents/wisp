@@ -23,11 +23,11 @@ import {
   useSignal,
   type SettingSource,
 } from '@wisp/ui';
-import { accountNames, compare, dismissDrain, dismissNotice, META, plans, setStop, TOPIC, usage, type AccountPlan } from '../commands.ts';
+import { accountNames, compare, dismissDrain, dismissNotice, META, plans, setStop, TOPIC, usage, type AccountPlan, type UsageRow } from '../commands.ts';
 import { AccountPlanView, HarnessCompare } from '../PlanRows.tsx';
-import { dayWhen, stopLine } from '../plan.ts';
+import { dayWhen, HARNESSES, harnessesOf, harnessUsageDescription, plannedHarnesses, stopKeyOf, stopLine } from '../plan.ts';
 import type { Compare } from '../plan.ts';
-import { drainLines, drainReport, noticeWords, pct } from '../drain.ts';
+import { drainLines, drainReport, noticeWords } from '../drain.ts';
 import { VIEW_USAGE } from '../views.ts';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
@@ -51,11 +51,6 @@ function subagentSource(c: PluginClient): SettingSource<string> {
 
 const STOPS = ['off', '50', '75', '90'] as const;
 type Stop = 'same' | (typeof STOPS)[number];
-const PLANNED = [
-  { agent: 'claude', name: 'Claude Code', key: 'autoStopClaude' },
-  { agent: 'codex', name: 'Codex', key: 'autoStopCodex' },
-  { agent: 'antigravity', name: 'Antigravity', key: 'autoStopAntigravity' },
-] as const;
 
 const money = (n: number): string => `$${n.toFixed(2)}`;
 
@@ -70,9 +65,9 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
   const [line] = createResource(() => c.run(usage, { peer }).catch(() => undefined));
   const [windows, { refetch: again }] = createResource(
     () => ({ n: accs().length, rows: accs() }),
-    async () => {
+    async ({ rows }) => {
       const out: { agent: string; name: string; accounts: AccountPlan[]; names: Map<string, string>; compare: Compare[] }[] = [];
-      for (const p of PLANNED) {
+      for (const p of plannedHarnesses(rows)) {
         const [accounts, names, cmp] = await Promise.all([
           c.run(plans, { peer, agent: p.agent, named: true }).catch(() => [] as AccountPlan[]),
           c.run(accountNames, { peer, agent: p.agent }).catch(() => ({ accounts: [] })),
@@ -86,6 +81,8 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
     },
   );
   const planRows = () => windows.latest ?? [];
+  const harnessRows = (): Map<string, UsageRow> => new Map(harnessesOf(line()).map((r) => [r.agent || r.key, r]));
+  const accountsOf = (agent: string): readonly AccountPlan[] => planRows().find((h) => h.agent === agent)?.accounts ?? [];
   const stop = (key: string, dflt: string) => ({
     value: () => meta()?.body?.[key] ?? dflt,
     set: (v: string) => void c.run(setStop, { peer, key, value: v }).catch(() => {}),
@@ -124,7 +121,7 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
   // the share where automations stop on this harness (v1 stopAt): its own line, else Automations stop at
   const stopOf = (agent: string): number | null => {
     const body = meta()?.body ?? {};
-    return stopLine(body[PLANNED.find((p) => p.agent === agent)?.key ?? ''], body['autoStop']);
+    return stopLine(body[stopKeyOf(agent)], body['autoStop']);
   };
   const nameOf = (h: { names: Map<string, string> }, account: string): string => h.names.get(account) ?? (account && account !== 'default' ? account : '');
   const worked = (): string => {
@@ -221,13 +218,6 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
             </For>
           )}
         </For>
-        <SelectSetting
-          part="settings.subagentModel"
-          title={t('budget.usage.subagents.title')}
-          description={t('budget.usage.subagents.description')}
-          source={subagentSource(c)}
-          items={(['task', 'haiku', 'sonnet'] as const).map((v) => ({ value: v, label: t(`budget.usage.subagents.${v}`) }))}
-        />
         <ChoiceSetting
           part="settings.autoStop"
           fieldset
@@ -236,23 +226,6 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
           source={stop('autoStop', 'off')}
           items={STOPS.map((v) => ({ value: v, label: t(`budget.usage.stop.${v}`) }))}
         />
-        <For each={PLANNED}>
-          {(p) => (
-            <ChoiceSetting
-              part="settings.autoStopBy"
-              fieldset
-              title={p.name}
-              logo={logoOf(p.agent)}
-              description={p.agent === 'codex' ? t('budget.usage.stop.codex') : t('budget.usage.stop.own')}
-              source={stop(p.key, 'same')}
-              items={(['same', ...STOPS] as Stop[]).map((v) => ({ value: v, label: t(`budget.usage.stop.${v}`) }))}
-            />
-          )}
-        </For>
-        <SwitchSetting part="settings.liveLimits" title={t('budget.usage.live.title')} description={t('budget.usage.live.description')} source={onOff('budget.liveLimits', false)} />
-        <SwitchSetting part="settings.spareCard" title={t('budget.usage.spare.title')} description={t('budget.usage.spare.description')} source={onOff('budget.spareCard', true)} />
-        <SwitchSetting part="settings.windowNotice" title={t('budget.usage.notices.title')} description={t('budget.usage.notices.description')} source={onOff('budget.windowNotice', true)} />
-        <SwitchSetting part="settings.drainWatch" title={t('budget.usage.drain.title')} description={t('budget.usage.drain.description')} source={drainWatch} />
         <ChoiceSetting
           part="settings.limitHold"
           title={t('budget.usage.hold.title')}
@@ -268,6 +241,35 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
           source={silent}
           items={(['off', '1', '2', '4', '8'] as const).map((v) => ({ value: v, label: v === 'off' ? t('budget.usage.stop.off') : t('budget.usage.silent.hours', { count: Number(v) }) }))}
         />
+      </SettingsGroup>
+      <SettingsGroup part="budget.usage.harnesses" title={t('budget.usage.harnesses.title')} description={t('budget.usage.harnesses.description')}>
+        <For each={HARNESSES}>
+          {(p) => (
+            <ChoiceSetting
+              part="settings.autoStopBy"
+              fieldset
+              title={p.name}
+              logo={logoOf(p.agent)}
+              description={harnessUsageDescription(p, harnessRows().get(p.agent), accountsOf(p.agent))}
+              source={stop(p.key, 'same')}
+              items={(['same', ...STOPS] as Stop[]).map((v) => ({ value: v, label: t(`budget.usage.stop.${v}`) }))}
+            />
+          )}
+        </For>
+        <SelectSetting
+          part="settings.subagentModel"
+          title={t('budget.usage.subagents.title')}
+          logo={logoOf('claude')}
+          description={t('budget.usage.subagents.description')}
+          source={subagentSource(c)}
+          items={(['task', 'haiku', 'sonnet'] as const).map((v) => ({ value: v, label: t(`budget.usage.subagents.${v}`) }))}
+        />
+      </SettingsGroup>
+      <SettingsGroup part="budget.usage.alerts" title={t('budget.usage.alerts.title')} description={t('budget.usage.alerts.description')}>
+        <SwitchSetting part="settings.liveLimits" title={t('budget.usage.live.title')} description={t('budget.usage.live.description')} source={onOff('budget.liveLimits', false)} />
+        <SwitchSetting part="settings.spareCard" title={t('budget.usage.spare.title')} description={t('budget.usage.spare.description')} source={onOff('budget.spareCard', true)} />
+        <SwitchSetting part="settings.windowNotice" title={t('budget.usage.notices.title')} description={t('budget.usage.notices.description')} source={onOff('budget.windowNotice', true)} />
+        <SwitchSetting part="settings.drainWatch" title={t('budget.usage.drain.title')} description={t('budget.usage.drain.description')} source={drainWatch} />
       </SettingsGroup>
       {/* v1 Machine load (wisp.machine), and anything else other plugins put at the end */}
       <Slot input="shell.settings:usageEnd" layout="contents" />

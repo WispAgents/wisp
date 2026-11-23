@@ -44,6 +44,7 @@ pub struct OpencodeParser {
     text: Vec<String>,
     error: Option<String>,
     tokens: (f64, f64),
+    cache: (f64, f64),
     cost: f64,
     limit_at: Option<i64>,
     limited: bool,
@@ -60,6 +61,7 @@ impl OpencodeParser {
             text: Vec::new(),
             error: None,
             tokens: (0.0, 0.0),
+            cache: (0.0, 0.0),
             cost: 0.0,
             limit_at: None,
             limited: false,
@@ -187,6 +189,8 @@ impl LineParser for OpencodeParser {
             "step_finish" => {
                 self.tokens.0 += js::number_or_zero(&part["tokens"]["input"]);
                 self.tokens.1 += js::number_or_zero(&part["tokens"]["output"]);
+                self.cache.0 += js::number_or_zero(js::or(&part["tokens"]["cache"]["read"], &part["tokens"]["cacheRead"]));
+                self.cache.1 += js::number_or_zero(js::or(&part["tokens"]["cache"]["write"], &part["tokens"]["cacheWrite"]));
                 self.cost += js::number_or_zero(&part["cost"]);
             }
             "error" => {
@@ -267,6 +271,12 @@ impl LineParser for OpencodeParser {
         }
         stats.insert("inputTokens".into(), js::json_num(self.tokens.0));
         stats.insert("outputTokens".into(), js::json_num(self.tokens.1));
+        if self.cache.0 > 0.0 {
+            stats.insert("cacheReadTokens".into(), js::json_num(self.cache.0));
+        }
+        if self.cache.1 > 0.0 {
+            stats.insert("cacheWriteTokens".into(), js::json_num(self.cache.1));
+        }
         let stats: Option<Box<Stats>> = serde_json::from_value(Value::Object(stats)).ok().map(Box::new);
         out.push(
             HarnessEvent::Result(TurnResult { text, is_error: !ok, stopped: Some(exit.stopped), stats, ..TurnResult::default() }).into(),

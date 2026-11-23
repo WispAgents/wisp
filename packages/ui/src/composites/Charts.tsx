@@ -49,6 +49,23 @@ export function DayBars(props: DayBarsProps): JSX.Element {
   );
 }
 
+export interface DataCellLeadProps {
+  readonly logo?: string | undefined;
+  readonly label: string;
+  readonly sub?: string | undefined;
+}
+
+/** First cell of a breakdown row: optional 14px harness logo, name, and quiet secondary note. */
+export function DataCellLead(props: DataCellLeadProps): JSX.Element {
+  return (
+    <span data-kit="data-cell-lead">
+      <Show when={props.logo}>{(src) => <img data-kit="data-cell-logo" src={src()} alt="" />}</Show>
+      <span data-kit="data-cell-label">{props.label}</span>
+      <Show when={props.sub}>{(s) => <small data-kit="data-cell-sub">{s()}</small>}</Show>
+    </span>
+  );
+}
+
 export interface DataTableProps extends KitProps {
   readonly columns: readonly string[];
   readonly rows: readonly { readonly key: string; readonly cells: readonly JSX.Element[] }[];

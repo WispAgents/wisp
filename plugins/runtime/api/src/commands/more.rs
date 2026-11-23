@@ -714,6 +714,7 @@ pub struct UsageArgs {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]
 pub struct UsageSummary {
     /// the window's start (ms)
@@ -732,9 +733,28 @@ pub struct UsageSummary {
     /// added 2026-11-12: tasks the turns belong to
     #[serde(default)]
     pub sessions: u32,
+    /// added 2026-11-23 (TRY-32, additive): total tokens (read + output) across all harnesses
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub tokens: u64,
+    /// added 2026-11-23 (TRY-32, additive): total input/read tokens (cache reads and writes included)
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub input_tokens: u64,
+    /// added 2026-11-23 (TRY-32, additive): total output tokens written
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub output_tokens: u64,
+    /// added 2026-11-23 (TRY-32, additive): total input tokens read from prompt cache
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub cache_tokens: u64,
     /// added 2026-11-12: one per day of the window, oldest first (v1 usage.js "Spend per day")
     #[serde(default)]
     pub daily: Vec<UsageDay>,
+    /// added 2026-11-23 (TRY-32, additive): by harness (all models of each harness rolled up)
+    #[serde(default)]
+    pub harnesses: Vec<UsageRow>,
     /// added 2026-11-12: by project (the task's folder), most spent first
     #[serde(default)]
     pub projects: Vec<UsageRow>,
@@ -751,23 +771,46 @@ pub struct UsageDay {
     pub date: String,
     pub cost: f64,
     pub turns: u32,
+    /// added 2026-11-23 (TRY-32, additive): total tokens (read + output) on this day
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub tokens: u64,
 }
 
-/// One row of a breakdown: a project, or a harness · model.
+/// One row of a breakdown: a harness, a project, or a harness · model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]
 pub struct UsageRow {
-    /// the project's folder, or `agent model`
+    /// the harness id, the project's folder, or `agent model`
     pub key: String,
-    /// the project's name, or the model
+    /// the harness id, the project's name, or the model
     pub name: String,
-    /// a runner row's harness
+    /// a harness or runner row's harness
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub agent: String,
     pub cost: f64,
     pub priced: u32,
     pub turns: u32,
+    /// added 2026-11-23 (TRY-32, additive): tasks the turns in this row belong to
+    #[serde(default)]
+    pub sessions: u32,
+    /// added 2026-11-23 (TRY-32, additive): total tokens (read + output)
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub tokens: u64,
+    /// added 2026-11-23 (TRY-32, additive): input/read tokens (cache included)
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub input_tokens: u64,
+    /// added 2026-11-23 (TRY-32, additive): output tokens
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub output_tokens: u64,
+    /// added 2026-11-23 (TRY-32, additive): cache-read tokens
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub cache_tokens: u64,
     /// 0–100 of the ended ones; null when none ended
     pub worked: Option<f64>,
     pub questions: u32,

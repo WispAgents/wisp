@@ -229,6 +229,55 @@ impl GrokParser {
         // a batch may be streamed after it ran: the tracker has the side before the write
         out.push(Out::Io(IoStep::ChangedElse { file, otherwise: Box::new(output) }));
     }
+
+    fn finish(&mut self, msg: &Value, out: &mut Vec<Out>) {
+        self.saw_result = true;
+        let failed = truthy(&msg["is_error"]);
+        let text = if failed {
+            let errs = js::arr(&msg["errors"]).iter().map(js::string).collect::<Vec<_>>().join("\n");
+            if !errs.is_empty() {
+                errs
+            } else if truthy(&msg["result"]) {
+                js::string(&msg["result"])
+            } else {
+                format!("grok stopped: {}", js::string(&msg["subtype"]))
+            }
+        } else {
+            js::str(&msg["result"])
+        };
+        let sub = js::str(&msg["subtype"]);
+        let mut stats = Map::new();
+        if truthy(&msg["total_cost_usd"]) {
+            stats.insert("costUsd".into(), msg["total_cost_usd"].clone()); // 0 means "not reported"
+        }
+        let usage = &msg["usage"];
+        for (k, v) in [
+            ("durationMs", &msg["duration_ms"]),
+            ("turns", &msg["num_turns"]),
+            ("inputTokens", js::or(&usage["input_tokens"], &usage["inputTokens"])),
+            ("outputTokens", js::or(&usage["output_tokens"], &usage["outputTokens"])),
+            ("cacheReadTokens", js::or(&usage["cache_read_input_tokens"], js::or(&usage["cache_read_tokens"], &usage["cacheReadTokens"]))),
+            (
+                "cacheWriteTokens",
+                js::or(&usage["cache_creation_input_tokens"], js::or(&usage["cache_write_tokens"], &usage["cacheWriteTokens"])),
+            ),
+            ("cachedInputTokens", js::or(&usage["cached_input_tokens"], &usage["cachedInputTokens"])),
+        ] {
+            if !v.is_null() {
+                stats.insert(k.into(), v.clone());
+            }
+        }
+        let stats: Option<Box<Stats>> = serde_json::from_value(Value::Object(stats)).ok().map(Box::new);
+        out.push(
+            HarnessEvent::Result(TurnResult {
+                text,
+                is_error: failed || (!sub.is_empty() && sub != "success"),
+                stats,
+                ..TurnResult::default()
+            })
+            .into(),
+        );
+    }
 }
 
 impl LineParser for GrokParser {
@@ -284,47 +333,7 @@ impl LineParser for GrokParser {
                     }
                 }
             }
-            "result" => {
-                self.saw_result = true;
-                let failed = truthy(&msg["is_error"]);
-                let text = if failed {
-                    let errs = js::arr(&msg["errors"]).iter().map(js::string).collect::<Vec<_>>().join("\n");
-                    if !errs.is_empty() {
-                        errs
-                    } else if truthy(&msg["result"]) {
-                        js::string(&msg["result"])
-                    } else {
-                        format!("grok stopped: {}", js::string(&msg["subtype"]))
-                    }
-                } else {
-                    js::str(&msg["result"])
-                };
-                let sub = js::str(&msg["subtype"]);
-                let mut stats = Map::new();
-                if truthy(&msg["total_cost_usd"]) {
-                    stats.insert("costUsd".into(), msg["total_cost_usd"].clone()); // 0 means "not reported"
-                }
-                for (k, v) in [
-                    ("durationMs", &msg["duration_ms"]),
-                    ("turns", &msg["num_turns"]),
-                    ("inputTokens", &msg["usage"]["input_tokens"]),
-                    ("outputTokens", &msg["usage"]["output_tokens"]),
-                ] {
-                    if !v.is_null() {
-                        stats.insert(k.into(), v.clone());
-                    }
-                }
-                let stats: Option<Box<Stats>> = serde_json::from_value(Value::Object(stats)).ok().map(Box::new);
-                out.push(
-                    HarnessEvent::Result(TurnResult {
-                        text,
-                        is_error: failed || (!sub.is_empty() && sub != "success"),
-                        stats,
-                        ..TurnResult::default()
-                    })
-                    .into(),
-                );
-            }
+            "result" => self.finish(&msg, out),
             "error" => {
                 self.error = Some(if truthy(&msg["message"]) { js::string(&msg["message"]) } else { "grok reported an error.".into() });
             }

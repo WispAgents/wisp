@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Usage & Settings → Usage (every harness): `runtime.usage` now aggregates total, input, cache and output tokens plus a per-harness breakdown (`harnesses`) alongside projects and `harness · model` rows; the **Usage** dialog adds a **By harness** table with harness logos, task counts and token breakdowns, a **Tokens** column across every table, and a daily chart metric switcher (**Spend** / **Tokens** / **Turns**); **Settings → Usage** is organized into **Plan budget**, **Harnesses** (7-day activity and per-harness stop lines for all 7 harnesses: Claude Code, Codex, Antigravity, opencode, Cursor, Copilot, and Grok, plus Claude's subagent model), and **Checks and notifications**; and Copilot (`--usage-output-file` and `result.usage`), opencode, Cursor, and Grok parsers now record cache and token usage fields when reported.
+
 ### Fixed
 
 - Task view: fixed auto-scroll dropping out of `following` when already at the bottom. Programmatic bottom pins (`pin()`, `toEnd()`, `place()`, and `turns.grew()`) now update `lastTop` and sync the observed `[data-kit="turns"]` height at the moment of the write, so asynchronous `scroll` events and `ResizeObserver` callbacks that fire after subsequent streaming growth or routine-step folding never compute a false negative `moved` delta and pause auto-scroll. Also auto-arms `turnFollower` when content grows while following before the initial `requestAnimationFrame` callback fires.

@@ -228,6 +228,10 @@ pub mod settings {
     pub const AUTO_STOP_CLAUDE: &str = "autoStopClaude";
     pub const AUTO_STOP_CODEX: &str = "autoStopCodex";
     pub const AUTO_STOP_ANTIGRAVITY: &str = "autoStopAntigravity";
+    pub const AUTO_STOP_OPENCODE: &str = "autoStopOpencode";
+    pub const AUTO_STOP_CURSOR: &str = "autoStopCursor";
+    pub const AUTO_STOP_COPILOT: &str = "autoStopCopilot";
+    pub const AUTO_STOP_GROK: &str = "autoStopGrok";
     /// 'on' | 'off' (off unless on)
     pub const DRAIN_WATCH: &str = "drainWatch";
     /// 'on' | 'off' (on unless off)
