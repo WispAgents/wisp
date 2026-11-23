@@ -7,9 +7,9 @@ sidebar:
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-A **workflow** chains several agent tasks into a directed acyclic graph (DAG): steps run in parallel when they can, wait
-on the steps they `need`, branch on earlier results with `if`, fan out across harnesses or models with `matrix`, and
-stop when a spend `budget` is reached.
+A [workflow](../../../concepts/workflows/) chains several agent tasks into a directed acyclic graph (DAG): steps run in
+parallel when they can, wait on the steps they `need`, branch on earlier results with `if`, fan out across harnesses or
+models with `matrix`, and stop when a spend `budget` is reached.
 
 Use a [factory](../software-factory/) when one task should go through stations (`spec → build → checks → review → ship`)
 and loop back to build until checks and review pass. Use a **workflow** when a job is a graph of distinct tasks that pass
