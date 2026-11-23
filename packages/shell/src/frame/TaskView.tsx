@@ -937,7 +937,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const own: TaskMenuEntry[] = [];
     // the head's bar keeps Changes, Ship, Done (docs/ux/2026-11-18-desktop.md #4): Transcript, Rerun and Open in are
     // here, with their keys, on every width
-    own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: showStream() } });
+    // Chat mode always shows the stream, so View transcript (V) is a Cards-mode control only
+    if (!chat.chatMode()) own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: stepsOpen() } });
     if (!row()?.summary['sideOf'])
       own.push(
         { section: 'open', order: -20, entry: { value: 'rerun', label: t('shell.task.rerun'), icon: 'rerun', keys: '⇧R' } },
@@ -1002,10 +1003,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // Rename (⋯, M): a dialog on every screen, as the row's (QA round 14 desktop #3: the head's in-place edit lost its
   // caret to the menu giving focus back to ⋯); a click on the title still edits it in place
   const startRename = (): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.rename' as never, params: { id: key } } });
+  const toggleTranscript = (): void => {
+    if (!chat.chatMode()) setStepsOpen(!stepsOpen());
+  };
   const onMore = (v: string): void => {
     if (v === 'next-task') stepTo(steps().next);
     else if (v === 'previous-task') stepTo(steps().previous);
-    else if (v === 'transcript') setStepsOpen(!stepsOpen());
+    else if (v === 'transcript') toggleTranscript();
     else if (v === 'rerun') openRerun();
     else if (v === 'openIn') takeOver();
     else if (v === 'shell') side('shell');
@@ -1129,7 +1133,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const onKey = (e: Event): void => {
     const act = (e as CustomEvent<TaskKey>).detail;
     const did = ((): boolean => {
-      if (act === 'transcript') setStepsOpen(!stepsOpen());
+      if (act === 'transcript') {
+        if (chat.chatMode()) return false;
+        toggleTranscript();
+      }
       else if (act === 'rerun' || act === 'fork' || act === 'archive' || act === 'delete') onMore(act);
       else if (act === 'openIn') takeOver();
       else if (act === 'shell') side('shell');
@@ -1598,7 +1605,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 })}
                 activity={{
                   open: false,
-                  onToggle: () => setStepsOpen(!stepsOpen()),
+                  onToggle: toggleTranscript,
                   items: steps().map((a) => ({
                     icon: ACT_ICON[a.kind] ?? 'tool',
                     text: here(a.label ?? a.kind),

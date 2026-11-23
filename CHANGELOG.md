@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Task view (Chat mode): **View transcript** in the ⋯ menu and the **V** key are hidden in Chat mode, where the chat already shows every turn's steps. Before, they stayed ticked and did nothing. Cards mode keeps them as before.
+
 ## [1.0.0-alpha.6] - 2026-11-23
 
 ### Added
