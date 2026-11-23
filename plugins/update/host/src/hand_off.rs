@@ -6,6 +6,20 @@ use wisp_update_core::deferred::{self, Files, Outcome, Pending};
 
 use crate::{St, lock};
 
+/// Options for the detached relaunch waiter:
+/// - leaves the desktop app's job so it survives wisp quitting (DESK2-05),
+/// - drops the old launcher's `WISP_WEB_DIR` so the new launcher sets its own `web/` bundle instead of
+///   inheriting the previous version's (which otherwise causes UI/server version mismatches where the
+///   new UI writes settings the old server doesn't declare, or the new server serves the old UI).
+fn relaunch_opts() -> wisp_proc::SpawnOpts {
+    wisp_proc::SpawnOpts {
+        no_stdin: true,
+        leave_every_job: true,
+        env: wisp_proc::Env::default().without("WISP_WEB_DIR"),
+        ..wisp_proc::SpawnOpts::default()
+    }
+}
+
 /// Hands off to the detached waiter that stops this wisp and starts the new one (`Updater::hand_off`: `sh` on Unix,
 /// `PowerShell` on Windows), through the proc service. False: it couldn't start, and the user restarts it.
 pub(crate) fn relaunch(ctx: &Ctx, st: &St) -> bool {
@@ -13,10 +27,8 @@ pub(crate) fn relaunch(ctx: &Ctx, st: &St) -> bool {
     let files = files(ctx, st).unwrap_or_else(|| Files { dir: String::new(), exe: st.exe.clone() });
     let Some(h) = lock(&st.up).hand_off(std::process::id(), &files) else { return false };
     let Ok(proc) = ctx.service::<wisp_proc::Proc>() else { return false };
-    // it stops wisp and the desktop app quits with it, so it leaves the app's job too (the one start that does:
-    // everything else wisp starts ends when the window closes, DESK2-05). Err: the user restarts it by hand.
-    let opts = wisp_proc::SpawnOpts { no_stdin: true, leave_every_job: true, ..wisp_proc::SpawnOpts::default() };
-    proc.spawn_detached(h.bin, &h.args, opts).is_ok()
+    // Err: the user restarts it by hand.
+    proc.spawn_detached(h.bin, &h.args, relaunch_opts()).is_ok()
 }
 
 /// Where the Windows hand-off and the next start meet: `<home>/plugins/wisp.update`.
@@ -53,4 +65,19 @@ pub async fn read_hand_off(dir: &std::path::Path, current: &str) -> Option<Outco
         let _ = tokio::fs::remove_file(dir.join(f)).await;
     }
     Some(deferred::outcome(&p, exit.as_deref(), &log, current))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relaunch_drops_inherited_web_dir() {
+        let resolved = relaunch_opts().env.resolve([
+            ("WISP_WEB_DIR".into(), "/old/.npm/_npx/abc/node_modules/wisp-agents/web".into()),
+            ("PATH".into(), "/usr/bin".into()),
+        ]);
+        assert!(!resolved.iter().any(|(k, _)| k == "WISP_WEB_DIR"), "relaunch must drop WISP_WEB_DIR: {resolved:?}");
+        assert!(resolved.iter().any(|(k, v)| k == "PATH" && v == "/usr/bin"));
+    }
 }

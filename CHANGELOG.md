@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Updates (relaunch): self-update relaunch (`wisp.update`) now clears `WISP_WEB_DIR` from the spawned child environment so the relaunched launcher serves its own matching `web/` bundle instead of inheriting an older `npx` cache's `WISP_WEB_DIR` (which caused UI/server version mismatches such as `no plugin declares the setting settings.chatWidth`).
 - New task (Factory picker): **How factories work** now opens `https://trywisp.dev/docs/concepts/factories/` instead of the nonexistent `docs.trywisp.dev` subdomain.
 - Docs (guides): added a dedicated **Workflows** guide (`docs/site/guides/run/workflows.mdx`) and **Workflows** concepts page (`docs/site/concepts/workflows.md`) covering DAG steps, `needs`, `${{ … }}` outputs, `if` conditions, `matrix` fan-out, `inputs`, retries, timeouts, concurrency, budgets, triggers and Desktop app / Phone app / TUI / CLI usage, and added the missing `Run a task through a software factory`, `Workflows` and `Run a task under a formula` cards to `docs/site/guides/index.mdx`.
 
