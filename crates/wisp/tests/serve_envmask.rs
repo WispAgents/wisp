@@ -538,6 +538,8 @@ async fn a_turns_own_prose_quoting_a_env_value_reaches_no_topic_read_share_or_ag
     let (serve, port) = start_with(&dir, &env);
     let http = reqwest::Client::new();
     let api = Api { http: http.clone(), port, n: 0.into() };
+    // the report path (a hero card) is what it checks: Chat mode, on by default since alpha.6, ends a turn without one
+    api.cmd("settings.set", json!({ "key": "settings.transcript", "value": "off" })).await;
     let id = api.cmd("runtime.create", json!({ "prompt": "check the key", "cwd": proj, "agent": "claude" })).await["id"]
         .as_str()
         .unwrap()

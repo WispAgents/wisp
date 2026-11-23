@@ -103,6 +103,10 @@
       "additionalProperties": false,
       "description": "Where unattended work stops on a usage window, and what a task or workflow may spend.",
       "properties": {
+        "antigravity": {
+          "description": "Antigravity's own line (same | off | 50 | 75 | 90)",
+          "type": "string"
+        },
         "claude": {
           "description": "Claude Code's own line (same | off | 50 | 75 | 90)",
           "type": "string"
@@ -1268,7 +1272,7 @@
           "type": "string"
         },
         "budget.liveLimits": {
-          "description": "Check Codex while work waits: read its usage every 10 minutes while work waits for its plan (spends nothing)",
+          "description": "Check Codex & Antigravity while waiting: read their usage every 10 minutes while work waits for a plan (spends nothing)",
           "type": "boolean"
         },
         "budget.silentStop": {

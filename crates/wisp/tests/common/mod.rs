@@ -370,6 +370,8 @@ pub fn ended(t: &Value) -> bool {
 
 /// Runs one task on `agent` to its end and returns (the turn, the task). The project has `math.js`.
 pub async fn run_task(api: &Api, dir: &Path, agent: &str) -> (Value, Value) {
+    // the report path (a hero card) is what it checks: Chat mode, on by default since alpha.6, ends a turn without one
+    api.cmd("settings.set", json!({ "key": "settings.transcript", "value": "off" })).await;
     let made =
         api.cmd("runtime.create", json!({ "prompt": "fix the add bug TOPIC[Fix add]", "cwd": dir.join("proj"), "agent": agent })).await;
     let id = made["id"].as_str().unwrap().to_owned();

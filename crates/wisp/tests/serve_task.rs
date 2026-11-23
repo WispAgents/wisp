@@ -22,6 +22,8 @@ async fn serve_runs_a_task_through_the_fake_claude_to_finished() {
     let (serve, port) = start(&dir);
     let http = reqwest::Client::new();
 
+    // the report path (a hero card) is what it checks: Chat mode, on by default since alpha.6, ends a turn without one
+    cmd(&http, port, "cards-1", "settings.set", json!({ "key": "settings.transcript", "value": "off" })).await;
     let made =
         cmd(&http, port, "create-1", "runtime.create", json!({ "prompt": "fix add TOPIC[Fix add]", "cwd": proj, "agent": "claude" })).await;
     let id = made["id"].as_str().unwrap().to_owned();

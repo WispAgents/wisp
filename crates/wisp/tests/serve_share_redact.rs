@@ -51,6 +51,8 @@ async fn the_share_dialogs_preview_is_the_golden_its_readers_are_tested_on() {
     let dir = temp("serve-share-preview");
     let (serve, port) = start(&dir);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    // the report path (a hero card) is what it checks: Chat mode, on by default since alpha.6, ends a turn without one
+    api.cmd("settings.set", json!({ "key": "settings.transcript", "value": "off" })).await;
     let made = api
         .cmd(
             "runtime.create",
