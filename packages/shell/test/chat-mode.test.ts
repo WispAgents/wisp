@@ -57,3 +57,19 @@ test('chat mode is on by default and only an explicit off brings back the cards 
   expect([undefined, null, 'on', true].map(asChatMode)).toEqual([true, true, true, true]);
   expect(['off', false].map(asChatMode)).toEqual([false, false]);
 });
+
+test('chat mode drops the last message when it is the answer, even when the answer carries wisp blocks', () => {
+  const answer = 'Fixed the timeout.\n\n```wisp\n{"blocks":[{"type":"hero","title":"Done"}]}\n```\n\nThe test passes now.';
+  const events: RawTurnEvent[] = [
+    { seq: 1, kind: 'tool', body: { kind: 'tool', tool: 'read', label: 'Read auth.ts', output: 'x' } },
+    { seq: 2, kind: 'text', body: { kind: 'text', text: answer } },
+  ];
+  const opts = { chatMode: true, toolCalls: 'showAll' as const, showThinking: true, running: false };
+  // the last markdown block alone ("The test passes now.") never matched: the answer showed twice
+  expect(buildChatSteps(events, [], { ...opts, finalText: 'The test passes now.' }).map((s) => s.kind)).toEqual(['read', 'text']);
+  expect(buildChatSteps(events, [], { ...opts, finalText: [answer, 'The test passes now.'] }).map((s) => s.kind)).toEqual(['read']);
+  // whitespace aside
+  expect(buildChatSteps(events, [], { ...opts, finalText: `${answer.replace(/\n\n/g, '\n')}  ` }).map((s) => s.kind)).toEqual(['read']);
+  // while it runs, the message stays (the answer isn't there yet)
+  expect(buildChatSteps(events, [], { ...opts, running: true, finalText: answer }).map((s) => s.kind)).toEqual(['read', 'text']);
+});
