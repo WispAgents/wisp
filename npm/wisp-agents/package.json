@@ -1,6 +1,6 @@
 {
   "name": "wisp-agents",
-  "version": "1.0.0-alpha.7",
+  "version": "1.0.0-alpha.8",
   "description": "wisp: run and watch coding agents (Claude Code, Codex, and more) from one place, in the browser or the terminal.",
   "license": "MIT",
   "repository": {
@@ -37,12 +37,12 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "wisp-agents-darwin-arm64": "npm:wisp-agents@1.0.0-alpha.7-darwin-arm64",
-    "wisp-agents-darwin-x64": "npm:wisp-agents@1.0.0-alpha.7-darwin-x64",
-    "wisp-agents-linux-x64": "npm:wisp-agents@1.0.0-alpha.7-linux-x64",
-    "wisp-agents-linux-arm64": "npm:wisp-agents@1.0.0-alpha.7-linux-arm64",
-    "wisp-agents-linux-arm": "npm:wisp-agents@1.0.0-alpha.7-linux-arm",
-    "wisp-agents-win32-x64": "npm:wisp-agents@1.0.0-alpha.7-win32-x64",
-    "wisp-agents-win32-arm64": "npm:wisp-agents@1.0.0-alpha.7-win32-arm64"
+    "wisp-agents-darwin-arm64": "npm:wisp-agents@1.0.0-alpha.8-darwin-arm64",
+    "wisp-agents-darwin-x64": "npm:wisp-agents@1.0.0-alpha.8-darwin-x64",
+    "wisp-agents-linux-x64": "npm:wisp-agents@1.0.0-alpha.8-linux-x64",
+    "wisp-agents-linux-arm64": "npm:wisp-agents@1.0.0-alpha.8-linux-arm64",
+    "wisp-agents-linux-arm": "npm:wisp-agents@1.0.0-alpha.8-linux-arm",
+    "wisp-agents-win32-x64": "npm:wisp-agents@1.0.0-alpha.8-win32-x64",
+    "wisp-agents-win32-arm64": "npm:wisp-agents@1.0.0-alpha.8-win32-arm64"
   }
 }
