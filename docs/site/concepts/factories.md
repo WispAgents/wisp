@@ -60,4 +60,5 @@ everywhere you work, is in [Run a task through a software factory](../../guides/
 A factory uses what wisp already does: each station is an ordinary task (budgets cap it, worktrees hold its changes),
 the review counts votes as goals do (a task's goal is what every reviewer judges against, and a declared goal's judges
 review when the station names none), every wait is a question on the task, and shipping is wisp's own Ship and Merge.
-A run from an agent (`wisp_launch`) never runs a station above its own mode and never merges without you.
+A run from an agent (`wisp_launch`) never runs a station above its own mode and never merges without you. For a forward
+DAG of distinct tasks (`needs`, `if`, `matrix`, `inputs`), see [Workflows](../workflows/).

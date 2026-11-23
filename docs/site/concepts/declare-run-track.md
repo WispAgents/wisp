@@ -20,7 +20,9 @@ and `wisp plan` shows what changed in the app since.
 Any coding agent, many at once, each [task](../tasks/) in its own git worktree, on this computer, your
 [other computers or the cloud](../machines-and-cloud/). You drive it from wherever you are: the desktop app, a
 browser, the terminal (`wisp`), your phone, Slack or Telegram, your own agent over MCP, or your own code through
-the SDK. A [crew](../crew/) of long-lived agents can check in on a schedule and wake on events.
+the SDK. Put a task through a [factory](../factories/) of stations (`spec → build → checks → review → ship`), chain
+tasks into a [workflow](../workflows/) DAG, or let a [crew](../crew/) of long-lived agents check in on a schedule and
+wake on events.
 
 ## Track
 
