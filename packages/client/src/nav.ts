@@ -76,12 +76,13 @@ export function sameNav(a: Nav, b: Nav): boolean {
 
 /**
  * A new main is a new context. Overlays over the old one close, and a side pane bound to another
- * task closes too: the shell of task A must never sit beside task B.
+ * task closes too: the shell of task A must never sit beside task B. Leaving tasks (Home, Crew,
+ * a main view) closes the side pane too so an empty panel column never stays beside the composer.
  */
 function toMain(nav: Nav, main: Main): Nav {
-  if (same(nav.main, main) && nav.overlays.length === 0) return nav;
   const st = sideTask(nav.side);
-  const side = st !== undefined && st !== mainTask(main) ? NO_SIDE : nav.side;
+  const side = main.kind !== 'task' || (st !== undefined && st !== mainTask(main)) ? NO_SIDE : nav.side;
+  if (same(nav.main, main) && same(nav.side, side) && nav.overlays.length === 0) return nav;
   return { ...nav, main, side, overlays: [] };
 }
 
@@ -89,6 +90,8 @@ function toSide(nav: Nav, side: Side): Nav {
   const st = sideTask(side);
   // a task's pane opens beside that task: from anywhere else it brings the task along
   const main: Main = st !== undefined && mainTask(nav.main) !== st ? { kind: 'task', id: st } : nav.main;
+  // Home (the composer) never has a side pane
+  if (main.kind === 'home') return nav;
   const next = { ...nav, main, side };
   return same(next, nav) ? nav : next;
 }
@@ -174,7 +177,8 @@ export function navigate(nav: Nav, intent: Intent): Nav {
       return layout === nav.layout ? nav : { ...nav, layout };
     }
     case 'restore': {
-      const next = { layout: nav.layout, main: intent.to.main, side: intent.to.side, overlays: intent.to.overlays };
+      const side = intent.to.main.kind === 'home' ? NO_SIDE : intent.to.side;
+      const next = { layout: nav.layout, main: intent.to.main, side, overlays: intent.to.overlays };
       return same(next, nav) ? nav : next;
     }
     default:

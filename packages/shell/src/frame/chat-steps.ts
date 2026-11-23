@@ -38,6 +38,21 @@ const kindOf = (e: RawTurnEvent): string => e.kind ?? e.body?.kind ?? '';
 /** Text compared as words: line ends and runs of spaces don't make two messages different. */
 const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
+/** Matches the server's activity.rs MAX_TEXT cap (20,000 UTF-16 code units). */
+const MAX_EVENT_TEXT = 20_000;
+
+/** Drop a trailing text step if it duplicates the final rendered answer (whitespace aside, including MAX_TEXT-clipped events). */
+function dropTrailingFinal(out: TranscriptStepRow[], opts: ChatStepOpts, rawLen?: number): void {
+  if (!opts.chatMode || opts.running || !opts.finalText) return;
+  const finals = (typeof opts.finalText === 'string' ? [opts.finalText] : opts.finalText).filter((x): x is string => !!x?.trim()).map(squash);
+  const last = out.at(-1);
+  if (last?.kind !== 'text' || finals.length === 0) return;
+  const label = squash(last.label ?? '');
+  if (!label) return;
+  const clipped = (rawLen ?? (last.label ?? '').length) >= MAX_EVENT_TEXT;
+  if (finals.some((f) => f === label || (clipped && f.startsWith(label)))) out.pop();
+}
+
 const firstLine = (s: string): string => {
   const line = s.split('\n').find((l) => l.trim().length > 0)?.trim() ?? '';
   return line.length > 90 ? `${line.slice(0, 89)}…` : line;
@@ -66,6 +81,7 @@ export function buildChatSteps(
 
   const lastToolSeq = opts.running ? findLastOpenToolSeq(relevant, outputs) : -1;
   const out: TranscriptStepRow[] = [];
+  let lastTextRawLen: number | undefined;
   for (const e of relevant) {
     const k = kindOf(e);
     if (k === 'tool_error') {
@@ -82,10 +98,12 @@ export function buildChatSteps(
       continue;
     }
     if (k === 'text') {
-      const msg = (e.body?.text ?? '').trim();
+      const raw = e.body?.text ?? '';
+      const msg = raw.trim();
       if (!msg) continue;
       if (!opts.chatMode) continue;
       if (opts.toolCalls === 'zen') continue;
+      lastTextRawLen = raw.length;
       out.push({ kind: 'text', label: msg, seq: e.seq });
       continue;
     }
@@ -103,12 +121,7 @@ export function buildChatSteps(
     });
   }
 
-  // Drop a trailing text event if it duplicates the final rendered answer (whitespace aside).
-  if (opts.chatMode && !opts.running && opts.finalText) {
-    const finals = (typeof opts.finalText === 'string' ? [opts.finalText] : opts.finalText).filter((x): x is string => !!x?.trim()).map(squash);
-    const last = out.at(-1);
-    if (last?.kind === 'text' && finals.includes(squash(last.label ?? ''))) out.pop();
-  }
+  dropTrailingFinal(out, opts, lastTextRawLen);
   if (!opts.chatMode && opts.notes) {
     out.push({ kind: 'text', label: opts.notes });
   }
@@ -144,6 +157,7 @@ function filterFallback(activity: readonly TranscriptStepRow[], opts: ChatStepOp
       out.push(a);
     }
   }
+  dropTrailingFinal(out, opts);
   if (!opts.chatMode && opts.notes) out.push({ kind: 'text', label: opts.notes });
   return out;
 }

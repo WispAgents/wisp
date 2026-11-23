@@ -72,4 +72,22 @@ test('chat mode drops the last message when it is the answer, even when the answ
   expect(buildChatSteps(events, [], { ...opts, finalText: `${answer.replace(/\n\n/g, '\n')}  ` }).map((s) => s.kind)).toEqual(['read']);
   // while it runs, the message stays (the answer isn't there yet)
   expect(buildChatSteps(events, [], { ...opts, running: true, finalText: answer }).map((s) => s.kind)).toEqual(['read', 'text']);
+  // pure wisp-block answer (no surrounding prose)
+  const blockOnly = '```wisp\n{"blocks":[{"type":"hero","title":"Done"}]}\n```';
+  const blockEvents: RawTurnEvent[] = [
+    { seq: 1, kind: 'tool', body: { kind: 'tool', tool: 'read', label: 'Read nav.ts', output: 'x' } },
+    { seq: 2, kind: 'text', body: { kind: 'text', text: blockOnly } },
+  ];
+  expect(buildChatSteps(blockEvents, [], { ...opts, finalText: [blockOnly, undefined] }).map((s) => s.kind)).toEqual(['read']);
+  // clipped at MAX_TEXT (20,000 UTF-16 code units) while turn.answer holds the full unclipped message
+  const longAnswer = `${'a'.repeat(20_050)} end`;
+  const clippedEvents: RawTurnEvent[] = [
+    { seq: 1, kind: 'tool', body: { kind: 'tool', tool: 'read', label: 'Read big.ts', output: 'x' } },
+    { seq: 2, kind: 'text', body: { kind: 'text', text: longAnswer.slice(0, 20_000) } },
+  ];
+  expect(buildChatSteps(clippedEvents, [], { ...opts, finalText: longAnswer }).map((s) => s.kind)).toEqual(['read']);
+  // fallback activity (turns without runtime_event rows) also deduplicates trailing text matching the answer
+  expect(
+    buildChatSteps([], [{ kind: 'read', label: 'Read nav.ts' }, { kind: 'text', label: blockOnly }], { ...opts, finalText: blockOnly }).map((s) => s.kind),
+  ).toEqual(['read']);
 });

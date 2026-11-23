@@ -7,7 +7,7 @@
 //   /crew/<id>                a crew member   ?p=<json params>                  (a view's params)
 //   /view/<ext>               a plugin view
 
-import { initialNav, navigate, pushes, sameNav, type Intent, type Main, type Nav, type Overlay, type Side } from './nav.ts';
+import { NO_SIDE, initialNav, navigate, pushes, sameNav, type Intent, type Main, type Nav, type Overlay, type Side } from './nav.ts';
 import type { Scope } from './scope.ts';
 import { signal, untracked, type Readable } from './signals.ts';
 import type { CrewId, ExtensionId, Json, SessionId, Warn } from './types.ts';
@@ -238,11 +238,14 @@ export function createNavigation(o: NavigationOptions): Navigation {
   const warn = o.warn ?? (() => {});
   const url0 = o.history?.read() ?? '/';
   const home = (): string | undefined => (typeof o.home === 'function' ? o.home() : o.home);
-  const start = knownViews(homed(decodeNav(url0), home()), o.views);
+  const raw0 = decodeNav(url0);
+  const decoded = knownViews(homed(raw0, home()), o.views);
+  const start = decoded.main.kind === 'home' && decoded.side.kind !== 'none' ? { ...decoded, side: NO_SIDE } : decoded;
   const state = signal<Nav>({ ...initialNav(o.width), ...start });
   // a share link to carry into New task: taken once, and gone from the URL (a reload or a Back doesn't bring it again)
   let share = shareLinkOf(url0);
-  if (o.history && withoutShare(url0) !== url0) o.history.replace(withoutShare(url0));
+  const clean0 = raw0.main.kind === 'home' && raw0.side.kind !== 'none' ? encodeNav(start) : withoutShare(url0);
+  if (o.history && clean0 !== url0) o.history.replace(clean0);
 
   const commit = (next: Nav, push: boolean): void => {
     const cur = untracked(state);
