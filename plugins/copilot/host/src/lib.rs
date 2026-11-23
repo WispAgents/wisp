@@ -208,7 +208,10 @@ impl Harness for CopilotHarness {
 
     fn driver(&self, run: &HarnessRun) -> Box<dyn RunDriver> {
         let paths = RunPaths::same(run.cwd.clone());
-        driver::KitDriver::boxed(CopilotParser::new(paths.clone(), session_of(run)), paths, true)
+        let usage_file = (!run.turn_id.is_empty()).then(|| {
+            std::env::temp_dir().join(format!("wisp-run-{}", run.turn_id)).join("copilot-usage.json").to_string_lossy().into_owned()
+        });
+        driver::KitDriver::boxed(CopilotParser::new(paths.clone(), session_of(run)), paths, true, usage_file)
     }
 
     fn setup(&self, _platform: &str) -> Option<SetupTip> {

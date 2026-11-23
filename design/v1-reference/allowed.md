@@ -147,6 +147,13 @@ A place where v2 does better than v1 on purpose. Each names its rule below and i
   tokens, `data-part` `<menu>.flyout`), its first item level with its row. Touch screens and the phone apps keep v1's
   drill-in unchanged. Masked: already covered by `task.right-click list.menu.*`.
 
+- **Per-harness usage and settings in Settings → Usage** (TRY-32, the owner's ask 2026-11-23; tests in
+  `plugins/budget/ui/test/plan.test.ts` and `plugins/runtime/core/src/usage.rs`). v1 only listed Claude Code and Codex
+  in one flat Plan budget box. v2 groups Settings → Usage into **Plan budget** (usage windows and global limit behavior),
+  **Harnesses** (per-harness 7-day usage summary, stop lines for all 7 harnesses, and Claude subagent model), and
+  **Checks and notifications**, and adds a **By harness** breakdown and token metrics to the Usage dialog. Masked:
+  `settings.usage` groups (`settings.budget`, `budget.usage.*`).
+
 ## Rules (read by `qa/parity.mjs`)
 
 One rule a line: `<view glob> <part glob> <kind> [widths]` (widths: `390` or `320,390`; none means every width). `wrap` is §1, `pending` is §2, `fold` is §4
@@ -184,5 +191,7 @@ task.ship  ship.write  owner
 settings*  settings.nav  owner
 settings*  settings.group  owner
 settings*  settings.item  owner
+settings.usage  settings.budget  owner
+settings.usage  budget.usage.*  owner
 home*  split.next  owner
 ```

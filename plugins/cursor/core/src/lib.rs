@@ -209,10 +209,23 @@ impl LineParser for CursorParser {
                 self.saw_result = true;
                 let usage = &msg["usage"];
                 let mut stats = Map::new();
+                let cost = js::or(&msg["total_cost_usd"], js::or(&usage["costUsd"], &usage["cost_usd"]));
+                if truthy(cost) {
+                    stats.insert("costUsd".into(), cost.clone());
+                }
                 for (k, v) in [
                     ("durationMs", &msg["duration_ms"]),
                     ("inputTokens", js::or(&usage["inputTokens"], &usage["input_tokens"])),
                     ("outputTokens", js::or(&usage["outputTokens"], &usage["output_tokens"])),
+                    (
+                        "cacheReadTokens",
+                        js::or(&usage["cacheReadTokens"], js::or(&usage["cache_read_tokens"], &usage["cache_read_input_tokens"])),
+                    ),
+                    (
+                        "cacheWriteTokens",
+                        js::or(&usage["cacheWriteTokens"], js::or(&usage["cache_write_tokens"], &usage["cache_creation_input_tokens"])),
+                    ),
+                    ("cachedInputTokens", js::or(&usage["cachedInputTokens"], &usage["cached_input_tokens"])),
                 ] {
                     if !v.is_null() {
                         stats.insert(k.into(), v.clone());

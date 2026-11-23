@@ -28,9 +28,29 @@ priced: number,
  */
 sessions: number, 
 /**
+ * added 2026-11-23 (TRY-32, additive): total tokens (read + output) across all harnesses
+ */
+tokens: number, 
+/**
+ * added 2026-11-23 (TRY-32, additive): total input/read tokens (cache reads and writes included)
+ */
+inputTokens: number, 
+/**
+ * added 2026-11-23 (TRY-32, additive): total output tokens written
+ */
+outputTokens: number, 
+/**
+ * added 2026-11-23 (TRY-32, additive): total input tokens read from prompt cache
+ */
+cacheTokens: number, 
+/**
  * added 2026-11-12: one per day of the window, oldest first (v1 usage.js "Spend per day")
  */
 daily: Array<UsageDay>, 
+/**
+ * added 2026-11-23 (TRY-32, additive): by harness (all models of each harness rolled up)
+ */
+harnesses: Array<UsageRow>, 
 /**
  * added 2026-11-12: by project (the task's folder), most spent first
  */

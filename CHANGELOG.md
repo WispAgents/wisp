@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Usage & Settings → Usage (every harness): `runtime.usage` now aggregates total, input, cache and output tokens plus a per-harness breakdown (`harnesses`) alongside projects and `harness · model` rows; the **Usage** dialog adds a **By harness** table with harness logos, task counts and token breakdowns, a **Tokens** column across every table, and a daily chart metric switcher (**Spend** / **Tokens** / **Turns**); **Settings → Usage** is organized into **Plan budget**, **Harnesses** (7-day activity and per-harness stop lines for all 7 harnesses: Claude Code, Codex, Antigravity, opencode, Cursor, Copilot, and Grok, plus Claude's subagent model), and **Checks and notifications**; and Copilot (`--usage-output-file` and `result.usage`), opencode, Cursor, and Grok parsers now record cache and token usage fields when reported.
+
 ### Fixed
 
 - Checks, budgets & CI stability: sped up `npm run check` by ~2.3× (caching Rust workspace discovery, file reads, stripped code lines, TS comment ranges, and top-level import extraction); coalesced running tasks' live-step row updates (`/summary/live`) onto the shared 100 ms activity coalescer instead of opening separate SQLite transactions per task step (cutting stream WAL write amplification back under the 44× ratchet); deferred `wisp.stuff.homePanes` with `drawnLater` and split `StoryViewer` out of `Stories.tsx` to bring desktop (156.9 / 173.0 KB br) and phone (165.0 / 167.0 KB br) first-screen JS back under the ADR-0105 ratchet; made the first POST on an idle peer synchronous in `@wisp/client` while keeping in-flight POSTs strictly FIFO; preloaded `TaskView` and core task/list extensions in `apps/web/test/home-chunk.ts` to prevent cold dynamic-import timeouts on Windows CI; closed the `runtime.release` / `hold_turn` race in `wisp-runtime` and the two-round detection barrier race in `detect.rs`; added missing `lazy.ts` i18n imports and the root `test:real` script; and bumped `url` 2.5.9 / `form_urlencoded` 1.2.3 across workspace and spike lockfiles (`RUSTSEC-2026-0009`).

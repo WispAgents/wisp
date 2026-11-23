@@ -148,9 +148,12 @@ pub fn pct(x: f64) -> String {
 pub fn window_name(id: &str) -> String {
     match id {
         "five_hour" => "5-hour".into(),
+        "five_hour_3p" => "5-hour 3P".into(),
         "seven_day" => "weekly".into(),
         "seven_day_opus" => "weekly Opus".into(),
         "seven_day_sonnet" => "weekly Sonnet".into(),
+        "seven_day_3p" => "weekly 3P".into(),
+        "seven_day_argon" => "weekly Argon".into(),
         _ => match codex_mins(id) {
             0 => "plan".into(),
             m if m >= 1440 => format!("{}-day", js_round(m as f64 / 1440.0)),
@@ -174,7 +177,10 @@ pub fn length_of(id: &str) -> i64 {
         "seven_day" => 7 * DAY,
         "seven_day_opus" => 7 * DAY - 1,
         "seven_day_sonnet" => 7 * DAY - 2,
+        "seven_day_3p" => 7 * DAY - 3,
+        "seven_day_argon" => 7 * DAY - 4,
         "five_hour" => 5 * 3_600_000,
+        "five_hour_3p" => 5 * 3_600_000 - 1,
         _ => codex_mins(id) * 60_000,
     }
 }

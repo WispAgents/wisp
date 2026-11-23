@@ -98,6 +98,10 @@ fn stop_for(settings: &Value, agent: &str) -> Option<f64> {
         "claude" => settings.get(settings::AUTO_STOP_CLAUDE),
         "codex" => settings.get(settings::AUTO_STOP_CODEX),
         "antigravity" => settings.get(settings::AUTO_STOP_ANTIGRAVITY),
+        "opencode" => settings.get(settings::AUTO_STOP_OPENCODE),
+        "cursor" => settings.get(settings::AUTO_STOP_CURSOR),
+        "copilot" => settings.get(settings::AUTO_STOP_COPILOT),
+        "grok" => settings.get(settings::AUTO_STOP_GROK),
         _ => None,
     }
     .and_then(Value::as_str)
@@ -465,7 +469,16 @@ fn commands(s: &mut Setup, slot: &Slot) {
         Ok(c::Done { ok })
     });
     on!(s, slot, c::SetStop, |st, ctx, a| {
-        let keys = [settings::AUTO_STOP, settings::AUTO_STOP_CLAUDE, settings::AUTO_STOP_CODEX, settings::AUTO_STOP_ANTIGRAVITY];
+        let keys = [
+            settings::AUTO_STOP,
+            settings::AUTO_STOP_CLAUDE,
+            settings::AUTO_STOP_CODEX,
+            settings::AUTO_STOP_ANTIGRAVITY,
+            settings::AUTO_STOP_OPENCODE,
+            settings::AUTO_STOP_CURSOR,
+            settings::AUTO_STOP_COPILOT,
+            settings::AUTO_STOP_GROK,
+        ];
         if !keys.contains(&a.key.as_str()) || !(STOP_AT.contains(&a.value.as_str()) || (a.value == "same" && a.key != settings::AUTO_STOP))
         {
             return Err(WireError::invalid("Automations stop at: off, 50, 75 or 90 (or same)."));
@@ -579,8 +592,17 @@ mod tests {
 
     #[test]
     fn stop_lines_as_v1() {
-        let s = json!({ "autoStop": "90", "autoStopCodex": "50", "autoStopClaude": "same" });
-        assert_eq!((stop_for(&s, "codex"), stop_for(&s, "claude"), stop_for(&s, "cursor")), (Some(0.5), Some(0.9), Some(0.9)));
+        let s = json!({
+            "autoStop": "90",
+            "autoStopCodex": "50",
+            "autoStopClaude": "same",
+            "autoStopCursor": "75",
+            "autoStopCopilot": "off"
+        });
+        assert_eq!(
+            (stop_for(&s, "codex"), stop_for(&s, "claude"), stop_for(&s, "cursor"), stop_for(&s, "copilot"), stop_for(&s, "grok")),
+            (Some(0.5), Some(0.9), Some(0.75), None, Some(0.9))
+        );
         assert_eq!(stop_for(&json!({ "autoStop": "off" }), "codex"), None);
     }
 }

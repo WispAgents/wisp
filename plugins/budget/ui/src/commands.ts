@@ -5,6 +5,13 @@ import { defineCommand, entityKey, type PeerId } from '@wisp/client';
 export const TOPIC = 'plugin:wisp.budget:plan';
 export const META = 'budget_meta';
 
+export interface UsageDay {
+  readonly date: string;
+  readonly cost: number;
+  readonly turns: number;
+  readonly tokens?: number;
+}
+
 export interface Usage {
   readonly from: number;
   readonly spend: number;
@@ -14,7 +21,13 @@ export interface Usage {
   /** v1's Charts and breakdowns (runtime-api UsageSummary, additive 2026-11-12) */
   readonly priced?: number;
   readonly sessions?: number;
-  readonly daily?: readonly { readonly date: string; readonly cost: number; readonly turns: number }[];
+  /** TRY-32: token totals and per-harness rollup across all harnesses */
+  readonly tokens?: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly cacheTokens?: number;
+  readonly daily?: readonly UsageDay[];
+  readonly harnesses?: readonly UsageRow[];
   readonly projects?: readonly UsageRow[];
   readonly runners?: readonly UsageRow[];
 }
@@ -26,6 +39,11 @@ export interface UsageRow {
   readonly cost: number;
   readonly priced: number;
   readonly turns: number;
+  readonly sessions?: number;
+  readonly tokens?: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly cacheTokens?: number;
   readonly worked: number | null;
   readonly questions: number;
   readonly avgMs: number | null;

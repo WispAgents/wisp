@@ -73,6 +73,10 @@ pub fn stop_key(agent: &str) -> Option<&'static str> {
         "claude" => Some(settings::AUTO_STOP_CLAUDE),
         "codex" => Some(settings::AUTO_STOP_CODEX),
         "antigravity" => Some(settings::AUTO_STOP_ANTIGRAVITY),
+        "opencode" => Some(settings::AUTO_STOP_OPENCODE),
+        "cursor" => Some(settings::AUTO_STOP_CURSOR),
+        "copilot" => Some(settings::AUTO_STOP_COPILOT),
+        "grok" => Some(settings::AUTO_STOP_GROK),
         _ => None,
     }
 }

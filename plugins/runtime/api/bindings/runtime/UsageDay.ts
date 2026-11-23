@@ -7,4 +7,8 @@ export type UsageDay = {
 /**
  * `YYYY-MM-DD`
  */
-date: string, cost: number, turns: number, };
+date: string, cost: number, turns: number, 
+/**
+ * added 2026-11-23 (TRY-32, additive): total tokens (read + output) on this day
+ */
+tokens: number, };
