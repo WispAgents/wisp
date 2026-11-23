@@ -554,7 +554,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       if (!el || !el.isConnected) return;
       const p = (places.value() as unknown as Readonly<Record<string, Place>> | undefined)?.[key];
       if (p) {
-        if (p.end) {
+        if (p.end || (isChat && p.turn === undefined && p.top <= 1)) {
           if (scrollCtrl) scrollCtrl.toEnd();
           else el.scrollTop = el.scrollHeight;
         } else {
@@ -570,6 +570,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // Cards mode opens at top; follow if the whole page fits at the end
         scrollCtrl?.place(el.scrollTop, el.scrollHeight - el.scrollTop - el.clientHeight <= 2);
       }
+      // record the initial placed state so closing a Chat task before scrolling never drops it back to undefined/top
+      placeSeen = { place: placeOf(el, turnTops(el), { following: scrollCtrl?.following() === true, chat: isChat }) };
       keepShown(el);
     };
     // once places finished loading (every task switch after boot), place in a microtask before the turns' frame paints
