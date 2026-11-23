@@ -1,7 +1,6 @@
-// UX 2026-11-18 desktop #1 (v1 design/ux.md: "they stop above the reply box"): at 1280 with the panel open a question's
-// options sat under the reply box. The live question sticks above the dock (its height in --dock-h) when the window is
-// at least 560 px tall; Answer in my own words is gone (the reply box says it); keys 1–9 pick an option while the reply
-// box is empty, never while you type somewhere.
+// The `question` block ("Needs your call") renders in chat flow at the end of the turn (not sticky/fixed over the
+// answer); Answer in my own words is gone (the reply box says it); keys 1–9 pick an option while the reply box is
+// empty, never while you type somewhere.
 import { expect, test } from 'vitest';
 import css from '../src/css/answer-rich.css?raw';
 import { mount, part } from './helpers.tsx';
@@ -9,10 +8,8 @@ import { Answer } from '../src/index.ts';
 
 const key = (k: string, o: KeyboardEventInit = {}): void => void document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...o }));
 
-test('a_live_question_sticks_above_the_reply_box_on_a_tall_enough_window', () => {
-  const rule = /@media \(min-height: 560px\) \{\s*\[data-kit='turn'\]\[data-latest\] \[data-kit='answer-block'\]\[data-type='question'\] \{([^}]*)\}/.exec(css);
-  expect(rule?.[1]).toMatch(/position: sticky/);
-  expect(rule?.[1]).toMatch(/bottom: calc\(var\(--dock-h, 0px\)/);
+test('a_live_question_stays_in_chat_flow_not_sticky', () => {
+  expect(css).not.toMatch(/\[data-type='question'\][^}]*position:\s*sticky/);
 });
 
 test('the_question_has_no_own_words_chip_and_keys_pick_its_options_while_the_reply_box_is_empty', () => {

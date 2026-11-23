@@ -94,7 +94,7 @@ pub fn describe_tool(name: &str, p: &Value, paths: &RunPaths) -> Tool {
     if EDIT_TOOL.is_match(&n) && !f.is_empty() {
         return t(ToolKind::Edit, format!("{} {f}", if n.contains("delete") { "Deleting" } else { "Editing" })).file(f);
     }
-    if n.starts_with("view_") && !f.is_empty() {
+    if (n.starts_with("view_") || n == "read_file" || n == "read") && !f.is_empty() {
         return t(ToolKind::Read, format!("Reading {f}")).file(f);
     }
     let or = |a: &str, b: &str| js::or(&p[a], &p[b]).clone();
@@ -278,6 +278,10 @@ mod tests {
         let p = RunPaths::same("/w");
         assert_eq!(describe_tool("grep_search", &json!({ "Query": "add" }), &p).label, "Searching for “add”");
         assert_eq!(describe_tool("write_to_file", &json!({ "TargetFile": "/w/a.js" }), &p).label, "Editing a.js");
+        let read = describe_tool("read_file", &json!({ "Path": "/w/src/a.ts" }), &p);
+        assert_eq!(read.kind, ToolKind::Read);
+        assert_eq!(read.label, "Reading src/a.ts");
+        assert_eq!(read.file.as_deref(), Some("src/a.ts"));
         assert_eq!(describe_tool("read_url_content", &json!({ "Url": "https://x.dev" }), &p).label, "Reading https://x.dev");
         // v1 adapters.test.js "antigravity: detect lists agy models"
         let m = list_models("Fetching models…\ngemini-3-pro-high\tGemini 3 Pro (High)\nclaude-sonnet-4-5   Claude Sonnet 4.5\n");

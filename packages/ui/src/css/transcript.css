@@ -74,6 +74,25 @@
   [data-kit='timeline-step']:hover [data-kit='timeline-time'], [data-kit='timeline-msg']:hover [data-kit='timeline-time'], [data-kit='timeline-step'][data-open] [data-kit='timeline-time'] { opacity: 1; }
   [data-kit='timeline-chev'] { flex: none; display: inline-flex; color: var(--faint); transition: transform var(--dur-base) var(--ease); }
   [data-kit='timeline-chev'][data-open] { transform: rotate(90deg); }
+  [data-kit='timeline-group-count'] {
+    flex: none; margin-left: auto; padding: 0 var(--space-3); min-width: var(--size-avatar-sm); height: var(--space-7);
+    display: inline-grid; place-items: center; border-radius: var(--radius-pill); background: var(--bg-2);
+    font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap;
+  }
+  [data-kit='timeline-group-body'] {
+    grid-column: 1 / -1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3);
+    margin: var(--space-1) 0 var(--space-4) var(--space-9); padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-md); background: var(--surface-2); border: var(--size-hairline) solid var(--line);
+    animation: kit-rise var(--dur-base) var(--ease);
+  }
+  [data-kit='timeline-file'] {
+    display: inline-flex; align-items: center; max-width: 100%; height: var(--size-pill); padding: 0 var(--space-4);
+    border-radius: var(--radius-sm); background: var(--surface); border: var(--size-hairline) solid var(--line);
+    font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  [data-kit='timeline-sublist'] { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
+  [data-kit='timeline-sublist'] [data-kit='timeline-icon'] { background: var(--surface-2); }
   [data-kit='timeline-end-slot'] { flex: none; margin-left: var(--space-3); }
   [data-kit='timeline-detail'] { grid-column: 1 / -1; min-width: 0; margin: var(--space-1) 0 var(--space-4) var(--space-9); animation: kit-rise var(--dur-base) var(--ease); }
   /* a step's output (v1 .tx-out): a mono box that wraps long lines and scrolls past 340px, never wider than the transcript */

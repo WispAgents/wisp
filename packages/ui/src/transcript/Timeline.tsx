@@ -1,10 +1,11 @@
 // Timeline: everything the agent said and did in a turn, oldest first (v1 .tx): a head with the
 // counts, steps (one line each, opening to their detail), messages (content), folds over long runs,
 // and where it ended. Step labels are control text: one line, ellipsis, the whole label in the title.
-import { Show, type JSX } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
+import { Wrap } from '../layout/Stack.tsx';
 import '../css/transcript.css';
 
 export interface TimelineProps extends KitProps {
@@ -149,6 +150,63 @@ export function TimelineFold(props: KitProps & { readonly label: string; readonl
           {props.label}
         </span>
       </button>
+    </li>
+  );
+}
+
+export interface TimelineFileChip {
+  readonly name: string;
+  readonly title: string;
+}
+
+export interface TimelineGroupProps extends KitProps {
+  readonly icon?: IconName;
+  readonly label: string;
+  readonly count: number;
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
+  /** Compact read-file chips shown at the top of the expanded group (instead of one tall row per file). */
+  readonly files?: readonly TimelineFileChip[];
+  readonly children?: JSX.Element;
+}
+
+/** A collapsed cluster of routine steps on a finished turn's timeline: one quiet row that unfolds in place. */
+export function TimelineGroup(props: TimelineGroupProps): JSX.Element {
+  const part = (): PartName => props.part ?? 'ui.timeline.group';
+  return (
+    <li data-kit="timeline-step" data-group="" data-part={part()} data-tone="quiet" data-open={flag(props.expanded)}>
+      <button type="button" data-kit="timeline-row" aria-expanded={props.expanded ? 'true' : 'false'} onClick={() => props.onToggle()}>
+        <span data-kit="timeline-icon">
+          <Icon name={props.icon ?? 'read'} size="sm" />
+        </span>
+        <span data-kit="timeline-label" data-part={sub(part(), 'label')} data-text="control" title={props.label}>
+          {props.label}
+        </span>
+        <span data-kit="timeline-group-count" data-text="control">
+          {props.count}
+        </span>
+        <span data-kit="timeline-chev" data-open={flag(props.expanded)}>
+          <Icon name="chevron" size="sm" />
+        </span>
+      </button>
+      <Show when={props.expanded}>
+        <div data-kit="timeline-group-body" data-part={sub(part(), 'body')}>
+          <Show when={(props.files?.length ?? 0) > 0}>
+            <Wrap gap="2" part={sub(part(), 'files')}>
+              <For each={props.files}>
+                {(f) => (
+                  <span data-kit="timeline-file" data-text="control" title={f.title}>
+                    {f.name}
+                  </span>
+                )}
+              </For>
+            </Wrap>
+          </Show>
+          <Show when={props.children}>
+            <ol data-kit="timeline-sublist">{props.children}</ol>
+          </Show>
+        </div>
+      </Show>
     </li>
   );
 }

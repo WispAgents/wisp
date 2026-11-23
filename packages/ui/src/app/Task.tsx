@@ -1265,11 +1265,8 @@ export function TaskBody(props: {
           stop?.();
           held = typeof ResizeObserver === 'undefined' ? undefined : holdMedia(body, dock, onAway);
           if (held) props.scrollRef?.({ toEnd: held.toEnd, place: held.place, following: held.following });
-          // the dock's height for what stops above it (a live question, UX 2026-11-18 #1)
-          const ro = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => body.style.setProperty('--dock-h', `${dock.offsetHeight}px`));
-          ro?.observe(dock);
           const h = held;
-          stop = () => (h?.stop(), ro?.disconnect());
+          stop = () => h?.stop();
         }}
         data-kit="it-dock"
       >

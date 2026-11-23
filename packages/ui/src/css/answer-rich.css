@@ -24,13 +24,6 @@
   [data-kit='rb-opt-k'] { display: grid; place-items: center; width: var(--size-avatar-sm); height: var(--size-avatar-sm); border-radius: var(--radius-sm); background: var(--bg-2); font: var(--fw-medium) var(--fs-xs) var(--mono); color: var(--muted); flex: none; }
   [data-kit='rb-opt']:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
   [data-kit='rb-opt']:disabled { cursor: default; }
-  /* UX 2026-11-18 #1 (v1 design/ux.md): the latest answer's question stops above the reply box (the dock: --dock-h
-     from TaskBody) and the answer scrolls under it; under 560px of window height it stays in the text, where it would
-     cover it. Its block's box sticks (the question alone has no room inside it). */
-  @media (min-height: 560px) {
-    [data-kit='turn'][data-latest] [data-kit='answer-block'][data-type='question'] { position: sticky; bottom: calc(var(--dock-h, 0px) + var(--space-4)); z-index: 1; }
-    [data-kit='turn'][data-latest] [data-kit='answer-block'][data-type='question'] > [data-kit='rb-question']:not([data-answered]) { box-shadow: var(--shadow-2); }
-  }
 
   /* blocked (v1 .b-blocked): the refused tool calls, Allow & retry / Deny */
   [data-kit='rb-blocked'] { padding: 14px var(--space-7); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
