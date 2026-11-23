@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.channels",
   "name": "Channels",
-  "version": "1.0.0-alpha.8",
+  "version": "1.0.0-alpha.9",
   "api": "^1",
   "description": "wisp.channels: the hub every way of reaching wisp from outside goes through (plan \u00a76.11.3): the channel and notification kinds",
   "server": {
