@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.posthog",
   "name": "PostHog",
-  "version": "1.0.0-alpha.9",
+  "version": "1.0.0-alpha.10",
   "api": "^1",
   "description": "Sends wisp's anonymous usage stats to PostHog: a telemetry.sink for wisp.telemetry (ADR-0021)",
   "server": {
