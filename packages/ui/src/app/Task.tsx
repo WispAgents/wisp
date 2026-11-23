@@ -17,6 +17,7 @@ import { Tool } from './launcher-tool.tsx';
 import { foldOrder, foldTail, type LauncherTool } from './launcher-fold.ts';
 import { useTailFold } from './launcher-fold-measure.ts';
 import { Icon } from '../content/Icon.tsx';
+import { IconButton } from '../controls/Button.tsx';
 import { Wrap } from '../layout/Stack.tsx';
 import { growTextarea } from '../core/autosize.ts';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
@@ -1198,10 +1199,18 @@ export function TaskBody(props: {
   /** Settings → Chat → Chat mode. Additive. */
   readonly chat?: boolean;
   /** the scroller (a task's kept place) */ readonly bodyRef?: (el: HTMLElement) => void;
+  /** Jump to latest's name: the button over the dock once the reader scrolled away from the end. Additive. */
+  readonly toLatest?: string;
 }): JSX.Element {
   let stop: (() => void) | undefined;
   let body!: HTMLDivElement;
   onCleanup(() => stop?.());
+  // away from the end (the view no longer follows) and whether more came in since: hold-view says when it changes
+  const [away, setAway] = createSignal({ away: false, fresh: false });
+  const toLatest = (): void => {
+    setAway({ away: false, fresh: false });
+    body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
+  };
   return (
     <div
       ref={(el) => {
@@ -1220,7 +1229,7 @@ export function TaskBody(props: {
         ref={(dock) => {
           // a child's ref runs after its parent's: the body is known here
           stop?.();
-          const held = typeof ResizeObserver === 'undefined' ? undefined : holdMedia(body, dock);
+          const held = typeof ResizeObserver === 'undefined' ? undefined : holdMedia(body, dock, setAway);
           // the dock's height for what stops above it (a live question, UX 2026-11-18 #1)
           const ro = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => body.style.setProperty('--dock-h', `${dock.offsetHeight}px`));
           ro?.observe(dock);
@@ -1228,6 +1237,11 @@ export function TaskBody(props: {
         }}
         data-kit="it-dock"
       >
+        <Show when={props.toLatest !== undefined && away().away}>
+          <span data-kit="to-latest" data-part="task.toLatest" data-fresh={flag(away().fresh)}>
+            <IconButton icon="arrow-down" variant="secondary" label={props.toLatest ?? ''} onClick={toLatest} />
+          </span>
+        </Show>
         {props.dock}
       </div>
     </div>

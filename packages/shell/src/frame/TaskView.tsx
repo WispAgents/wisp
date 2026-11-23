@@ -1654,6 +1654,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
             <TaskBody
               chatWidth={chat.chatWidth()}
               chat={chat.chatMode()}
+              toLatest={t('shell.task.toLatest')}
               bodyRef={(el) => {
                 bodyEl = el;
                 el.addEventListener('scroll', onBodyScroll, { passive: true });

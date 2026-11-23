@@ -7,6 +7,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Task view (Chat mode): when a turn finishes while you follow the end, the view no longer jumps back up to the turn's start (it could be screens up). It stays at the end, or pages down one view when the answer is taller than the screen, so it reads from where you were.
+- Task view (both modes): scrolling away from the end stops the view following new output, and a round **Jump to latest** button (↓) appears over the reply box, with a dot when new output arrived meanwhile. A follow-up still takes you to the end.
+- Task view (Chat mode): the working orb sits on its status line's centre and the step rail runs down into it, instead of floating a few pixels high and apart from the steps.
 - Task view (Chat mode): **View transcript** in the ⋯ menu and the **V** key are hidden in Chat mode, where the chat already shows every turn's steps. Before, they stayed ticked and did nothing. Cards mode keeps them as before.
 
 ## [1.0.0-alpha.6] - 2026-11-23

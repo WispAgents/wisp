@@ -10,18 +10,27 @@ import { atTail, dockShift, mediaShift, turnsShift, type Grew } from './media-sh
  *  comes before the one write. */
 const PENDING = Symbol('pending');
 
-export function holdMedia(body: HTMLElement, dock: HTMLElement): () => void {
+export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { readonly away: boolean; readonly fresh: boolean }) => void): () => void {
   const anchors = typeof CSS !== 'undefined' && CSS.supports?.('overflow-anchor', 'auto') === true;
   // a picture's height at the last layout; `PENDING` until the observer's first report (watch() never measures: it runs
   // on a mutation, right after the writes, where a read forces a layout: 14 ms of a Mark done's frame)
   const sizes = new WeakMap<Element, number | null | typeof PENDING>();
   const size = (m: Element): number | null => (m.getClientRects().length > 0 ? (m as HTMLElement).offsetHeight : null);
   const turnsEl = body.querySelector<HTMLElement>(':scope > [data-kit="turns"]');
-  const turns = turnsEl ? turnFollower(body, turnsEl, anchors) : undefined;
+  const turns = turnsEl ? turnFollower(body, turnsEl, anchors, dock) : undefined;
   let tail = atTail(body);
+  // Jump to latest: shown once the reader is more than half a view from the end (they scrolled away, so nothing
+  // follows), with a dot when the turns grew since (new below). Told only when it changes.
+  let shown = { away: false, fresh: false };
+  const tell = (grewAway: boolean): void => {
+    const isAway = body.scrollHeight - body.scrollTop - body.clientHeight > body.clientHeight / 2;
+    const next = { away: isAway, fresh: isAway && (shown.fresh || grewAway) };
+    if (next.away !== shown.away || next.fresh !== shown.fresh) away?.((shown = next));
+  };
   const onScroll = (): void => {
     tail = atTail(body);
     turns?.onScroll();
+    tell(false);
   };
   const held = new Map<Element, number>(); // the dock's, the view's and the turns' heights, at the last frame
   const ro = new ResizeObserver((entries) => {
@@ -48,6 +57,7 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement): () => void {
     if (!body.isConnected || body.clientHeight === 0) return;
     // a picture growing is mediaShift's; the turns growing otherwise (a turn landed, steps came in) is the follower's
     if (grew.length === 0 && Math.abs(by.turns) >= 1 && turns?.grew(by.turns)) return void (tail = atTail(body));
+    if (by.turns >= 1) tell(true);
     const dockEnd = (by.dock !== 0 || by.view !== 0) && dockShift({ scrollHeight: body.scrollHeight, scrollTop: body.scrollTop, clientHeight: body.clientHeight, dock: by.dock, view: by.view }) === 'end';
     if (grew.length === 0 && !dockEnd) return;
     // a task that fit on screen is at its end and its start at once: a picture there pulls nothing
@@ -87,7 +97,7 @@ const barOf = (body: HTMLElement): number => body.querySelector<HTMLElement>('[d
  *  the end you're taken to it, from its start (a new turn, or the running one once it has finished: `data-live` goes).
  *  Not while the task opens (its kept place is the frame's), and not for what the reader did themselves (a fold they
  *  opened: v1's `byHand`). */
-export function turnFollower(body: HTMLElement, turnsEl: HTMLElement, anchors: boolean): { onScroll: () => void; changed: (r: readonly MutationRecord[]) => void; grew: (by: number) => boolean; stop: () => void } {
+export function turnFollower(body: HTMLElement, turnsEl: HTMLElement, anchors: boolean, dock?: HTMLElement): { onScroll: () => void; changed: (r: readonly MutationRecord[]) => void; grew: (by: number) => boolean; stop: () => void } {
   let armed = false;
   let frame: number | undefined;
   let landed: HTMLElement | undefined;
@@ -159,8 +169,11 @@ export function turnFollower(body: HTMLElement, turnsEl: HTMLElement, anchors: b
       const was = reading?.el.isConnected ? reading : undefined;
       const to = landed?.isConnected ? landed : undefined;
       landed = undefined;
-      const d = turnsShift({ tail, anchors, landed: !!to, ...(was && { held: { from: was.top, to: was.el.getBoundingClientRect().top - top } }) });
+      const chat = body.hasAttribute('data-chat');
+      const room = chat ? body.clientHeight - barOf(body) - (dock?.offsetHeight ?? 0) : 0;
+      const d = turnsShift({ tail, anchors, landed: !!to, chat, grew: by, room, ...(was && { held: { from: was.top, to: was.el.getBoundingClientRect().top - top } }) });
       if (d === 'land' && to) body.scrollTop += to.getBoundingClientRect().top - top - barOf(body);
+      else if (d === 'page') body.scrollTop += room;
       else if (d === 'end') body.scrollTop = body.scrollHeight;
       else if (typeof d === 'number' && Math.abs(d) >= 1) body.scrollTop += d;
       else return false;

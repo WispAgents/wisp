@@ -89,6 +89,12 @@
   [data-kit='timeline-step'][data-kind='thinking'] [data-kit='timeline-label'] { color: var(--muted); font-style: italic; }
   [data-kit='timeline'][data-chat] { margin-bottom: var(--space-3); }
   [data-kit='timeline'][data-chat] [data-kit='timeline-list']::before { top: var(--space-5); bottom: var(--space-5); }
+  /* Chat mode, live: the rail runs on into the working line under it (as the live rule above), so the orb reads as
+     the timeline's next step, not a mark floating on its own */
+  [data-kit='timeline'][data-chat][data-live] { margin-bottom: 0; }
+  [data-kit='timeline'][data-chat][data-live] [data-kit='timeline-list']::before { bottom: 0; }
+  /* and the orb sits on the status line's centre (its 24 px box was top-aligned in the taller row with Stop) */
+  [data-kit='turn'][data-chat] [data-kit='working'][data-inline] { align-items: center; }
   [data-kit='timeline-step'][data-end='good'] [data-kit='timeline-icon'] { color: var(--good); }
   [data-kit='timeline-msg'] { flex-wrap: nowrap; align-items: flex-start; gap: var(--space-5); padding: var(--space-3) 0; }
   [data-kit='timeline-dot'] {
