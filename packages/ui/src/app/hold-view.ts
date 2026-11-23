@@ -1,46 +1,152 @@
 // Where the task's page holds the reader while it changes under them (v1 tail.js, turns.js renderBody): pictures growing,
-// the reply box growing, a turn landing. Every read comes before the one write in a frame.
+// the reply box growing, a turn landing, streaming output. Every read comes before the one write in a frame.
 import { atTail, dockShift, mediaShift, turnsShift, type Grew } from './media-shift.ts';
-import { awayFromEnd, follow, FOLLOWING, PAUSED, type FollowEvent, type FollowState } from './follow.ts';
+import { awayFromEnd, END_PX, follow, FOLLOWING, PAUSED, type FollowEvent, type FollowState } from './follow.ts';
 
-/** Pictures and videos in the turns load lazily with no box kept for them, so each grows when it arrives: the view
- *  stays where the reader had it (v1 #776, `mediaShift`). A ResizeObserver runs after layout and before paint, so the
- *  shift is never seen. A media box that had no size (a closed fold) opening is the reader's own doing: it moves nothing.
- *  The dock and the view are watched by the same observer: when the reply box grows, or the keyboard shortens the view,
- *  at the tail the view goes back to the end, so the last block never sits under the box (`dockShift`). Every read
- *  comes before the one write. */
 const PENDING = Symbol('pending');
-
-/** The reader's own moves toward older output (follow.ts 'up'): a wheel up, PageUp / Home / ↑ on the page. A wheel in a
- *  box that scrolls by itself (a code block, a step's output) moves that box, not the page: it leaves nothing. */
 const UP_KEYS = new Set(['PageUp', 'Home', 'ArrowUp']);
+const DOWN_KEYS = new Set(['PageDown', 'ArrowDown']);
+
 const editable = (t: EventTarget | null): boolean => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
-function nestedScrollsUp(target: EventTarget | null, body: HTMLElement): boolean {
+const maxOf = (el: HTMLElement): number => Math.max(0, el.scrollHeight - el.clientHeight);
+const distOf = (el: HTMLElement): number => Math.max(0, maxOf(el) - el.scrollTop);
+const barOf = (body: HTMLElement): number => body.querySelector<HTMLElement>('[data-kit="it-bar"]')?.offsetHeight ?? 0;
+
+/** A wheel or touch inside a nested scroller (a code block, a step's output, the reply textarea) moves that box when it
+ *  still has travel in `dir` or isolates overscroll — it never chains to the task page. */
+function nestedCanScroll(target: EventTarget | null, body: HTMLElement, dir: 'up' | 'down'): boolean {
   for (let el = target instanceof Element ? target : null; el && el !== body; el = el.parentElement) {
-    if (el.scrollTop > 0 && el.scrollHeight > el.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) return true;
+    if (el.scrollHeight <= el.clientHeight + 1) continue;
+    const cs = getComputedStyle(el);
+    if (!/(auto|scroll)/.test(cs.overflowY)) continue;
+    if (cs.overscrollBehaviorY === 'contain' || cs.overscrollBehaviorY === 'none') return true;
+    if (dir === 'up' && el.scrollTop > 0) return true;
+    if (dir === 'down' && el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
   }
   return false;
 }
 
-export interface Held {
-  readonly stop: () => void;
-  /** Jump to latest: to the end at once, following from there */
-  readonly toEnd: () => void;
+/** Only clicks/keys on interactive disclosure controls inside the turns can open a fold by hand; clicking plain text
+ *  to focus the window or clear a selection never suspends streaming follow. */
+function isInteractiveIn(target: EventTarget | null, root: HTMLElement): boolean {
+  if (!(target instanceof Element) || !root.contains(target)) return false;
+  const hit = target.closest('button, summary, [role="button"], [aria-expanded], details');
+  return hit !== null && root.contains(hit);
 }
 
+export interface Held {
+  readonly stop: () => void;
+  /** Pin to the bottom at once and follow from here (Jump to latest, follow-up, initial Chat landing). */
+  readonly toEnd: () => void;
+  /** Place the view at `top` without fighting follow state (kept place restore, Jump to top). */
+  readonly place: (top: number, shouldFollow?: boolean) => void;
+  /** Whether the view is currently following the end. */
+  readonly following: () => boolean;
+}
+
+interface InputBindings {
+  readonly isFollowing: () => boolean;
+  readonly onUp: () => void;
+  readonly onEnd: () => void;
+  readonly onScroll: () => void;
+  readonly onScrollbar: (dragging: boolean) => void;
+}
+
+function bindScrollInputs(body: HTMLElement, turnsEl: HTMLElement | null, b: InputBindings): () => void {
+  let touchY: number | undefined;
+  let draggingBar = false;
+  const onWheel = (e: WheelEvent): void => {
+    if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    if (e.deltaY < 0) {
+      if (body.scrollTop > 0 && !nestedCanScroll(e.target, body, 'up')) b.onUp();
+    } else if (e.deltaY > 0 && !b.isFollowing() && distOf(body) <= END_PX && !nestedCanScroll(e.target, body, 'down')) {
+      b.onEnd();
+    }
+  };
+  const onTouchStart = (e: TouchEvent): void => {
+    touchY = e.touches.length === 1 ? e.touches[0]?.clientY : undefined;
+  };
+  const onTouchMove = (e: TouchEvent): void => {
+    const t = e.touches[0];
+    if (touchY === undefined || e.touches.length !== 1 || !t) return void (touchY = undefined);
+    const dy = t.clientY - touchY;
+    touchY = t.clientY;
+    // dragging finger down scrolls content up toward older output; dragging finger up scrolls down toward latest
+    if (dy > 2 && body.scrollTop > 0 && !nestedCanScroll(e.target, body, 'up')) b.onUp();
+    else if (dy < -2 && !b.isFollowing() && distOf(body) <= END_PX && !nestedCanScroll(e.target, body, 'down')) b.onEnd();
+  };
+  const onTouchEnd = (): void => {
+    touchY = undefined;
+  };
+  const onPointerDown = (e: PointerEvent): void => {
+    if (e.target !== body || e.pointerType === 'touch') return;
+    const r = body.getBoundingClientRect();
+    if (e.clientX >= r.left + body.clientWidth || e.clientX <= r.left + body.clientLeft) {
+      draggingBar = true;
+      b.onScrollbar(true);
+    }
+  };
+  const onPointerUp = (): void => {
+    if (!draggingBar) return;
+    draggingBar = false;
+    b.onScrollbar(false);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.altKey || e.metaKey || e.ctrlKey || e.isComposing || editable(e.target) || !body.isConnected) return;
+    const t = e.target;
+    if (t !== document.body && t !== document.documentElement && !(t instanceof Node && body.contains(t))) return;
+    if (UP_KEYS.has(e.key) || (e.key === ' ' && e.shiftKey)) {
+      if (body.scrollTop > 0) b.onUp();
+    } else if (e.key === 'End') {
+      b.onEnd();
+    } else if ((DOWN_KEYS.has(e.key) || (e.key === ' ' && !e.shiftKey)) && !b.isFollowing() && distOf(body) <= END_PX) {
+      b.onEnd();
+    }
+  };
+  // selecting words while output streams under them: the page stops moving them away (opencode)
+  const onSelect = (): void => {
+    if (!b.isFollowing() || !turnsEl?.querySelector('[data-live]')) return;
+    const sel = document.getSelection();
+    if (sel && !sel.isCollapsed && sel.anchorNode && turnsEl.contains(sel.anchorNode)) b.onUp();
+  };
+  body.addEventListener('scroll', b.onScroll, { passive: true });
+  body.addEventListener('wheel', onWheel, { passive: true });
+  body.addEventListener('touchstart', onTouchStart, { passive: true });
+  body.addEventListener('touchmove', onTouchMove, { passive: true });
+  body.addEventListener('touchend', onTouchEnd, { passive: true });
+  body.addEventListener('touchcancel', onTouchEnd, { passive: true });
+  body.addEventListener('pointerdown', onPointerDown, { passive: true });
+  window.addEventListener('pointerup', onPointerUp, { passive: true });
+  window.addEventListener('pointercancel', onPointerUp, { passive: true });
+  document.addEventListener('keydown', onKey, { capture: true });
+  document.addEventListener('selectionchange', onSelect);
+  return () => {
+    body.removeEventListener('scroll', b.onScroll);
+    body.removeEventListener('wheel', onWheel);
+    body.removeEventListener('touchstart', onTouchStart);
+    body.removeEventListener('touchmove', onTouchMove);
+    body.removeEventListener('touchend', onTouchEnd);
+    body.removeEventListener('touchcancel', onTouchEnd);
+    body.removeEventListener('pointerdown', onPointerDown);
+    window.removeEventListener('pointerup', onPointerUp);
+    window.removeEventListener('pointercancel', onPointerUp);
+    document.removeEventListener('keydown', onKey, { capture: true });
+    document.removeEventListener('selectionchange', onSelect);
+  };
+}
+
+/** Pictures, dock, viewport and turns watched by one ResizeObserver: every read comes before the one write in a frame. */
 export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { readonly away: boolean; readonly fresh: boolean }) => void): Held {
   const anchors = typeof CSS !== 'undefined' && CSS.supports?.('overflow-anchor', 'auto') === true;
-  // a picture's height at the last layout; `PENDING` until the observer's first report (watch() never measures: it runs
-  // on a mutation, right after the writes, where a read forces a layout: 14 ms of a Mark done's frame)
   const sizes = new WeakMap<Element, number | null | typeof PENDING>();
   const size = (m: Element): number | null => (m.getClientRects().length > 0 ? (m as HTMLElement).offsetHeight : null);
   const turnsEl = body.querySelector<HTMLElement>(':scope > [data-kit="turns"]');
-  // following the end or not (follow.ts): the page opens following when it opens at its end
-  let state: FollowState = atTail(body) ? FOLLOWING : PAUSED;
+  const barEl = body.querySelector<HTMLElement>(':scope > [data-kit="it-bar"]');
+  let state: FollowState = atTail(body) ? { ...FOLLOWING, max: maxOf(body) } : { ...PAUSED, max: maxOf(body) };
   const turns = turnsEl ? turnFollower(body, turnsEl, anchors, dock, () => state.following) : undefined;
   let tail = atTail(body);
-  // Jump to latest (t3code's scroll-to-bottom): told when the reader is away from the end (TaskBody shows it a moment
-  // later, so a scroll that comes right back never flashes it), with a dot once output came in since (new below)
+  let scrollbarDrag = false;
+  let lastTop = body.scrollTop;
   let shown = { away: false, fresh: false };
   const tell = (grewAway: boolean): void => {
     const isAway = awayFromEnd(state, body);
@@ -53,45 +159,52 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
     if (state.following !== was) body.toggleAttribute('data-following', state.following);
   };
   body.toggleAttribute('data-following', state.following);
-  // the page's own write to the end: its scroll event is ours (follow.ts `flight`)
   const pin = (): void => {
     const before = body.scrollTop;
     body.scrollTop = body.scrollHeight;
-    if (Math.abs(body.scrollTop - before) >= 1) set({ type: 'pinned', top: body.scrollTop });
-  };
-  let lastTop = body.scrollTop;
-  const onScroll = (): void => {
     const top = body.scrollTop;
-    set({ type: 'scroll', top, max: body.scrollHeight - body.clientHeight, moved: top - lastTop });
-    lastTop = top;
+    const max = maxOf(body);
+    if (Math.abs(top - before) >= 0.5) set({ type: 'pinned', top, max });
+    else lastTop = top;
+  };
+  const toEnd = (): void => {
+    turns?.armNow();
+    turns?.clearHand();
+    const before = body.scrollTop;
+    body.scrollTop = body.scrollHeight;
+    const top = body.scrollTop;
+    const max = maxOf(body);
+    if (Math.abs(top - before) >= 0.5) set({ type: 'end', top, max });
+    else {
+      lastTop = top;
+      set({ type: 'end', max });
+    }
     tail = atTail(body);
     turns?.onScroll();
     tell(false);
   };
-  const onWheel = (e: WheelEvent): void => {
-    if (e.deltaY < 0 && !e.ctrlKey && !nestedScrollsUp(e.target, body)) set({ type: 'up' });
+  const place = (target: number, shouldFollow = false): void => {
+    turns?.armNow();
+    turns?.clearHand();
+    body.scrollTop = target;
+    const actual = body.scrollTop;
+    const max = maxOf(body);
+    lastTop = actual;
+    set(shouldFollow ? { type: 'end', max } : { type: 'pause', max });
+    tail = atTail(body);
+    turns?.onScroll();
+    tell(false);
   };
-  const onKey = (e: KeyboardEvent): void => {
-    if (!UP_KEYS.has(e.key) || e.altKey || e.metaKey || e.ctrlKey || e.isComposing || editable(e.target) || !body.isConnected) return;
-    const t = e.target;
-    if (t === document.body || t === document.documentElement || (t instanceof Node && body.contains(t))) set({ type: 'up' });
-  };
-  // selecting words while output streams under them: the page stops moving them away (opencode)
-  const onSelect = (): void => {
-    if (!state.following || !turnsEl?.querySelector('[data-live]')) return;
-    const sel = document.getSelection();
-    if (sel && !sel.isCollapsed && sel.anchorNode && turnsEl.contains(sel.anchorNode)) set({ type: 'up' });
-  };
-  const held = new Map<Element, number>(); // the dock's, the view's and the turns' heights, at the last frame
+  const held = new Map<Element, number>();
   const ro = new ResizeObserver((entries) => {
     const grew: Grew[] = [];
-    const by = { dock: 0, view: 0, turns: 0 };
+    const by = { dock: 0, view: 0, turns: 0, bar: 0 };
     for (const { target: m, borderBoxSize } of entries) {
-      if (m === dock || m === body || m === turnsEl) {
+      if (m === dock || m === body || m === turnsEl || m === barEl) {
         const to = borderBoxSize[0]?.blockSize ?? (m as HTMLElement).offsetHeight;
         const from = held.get(m);
         held.set(m, to);
-        if (from !== undefined) by[m === dock ? 'dock' : m === body ? 'view' : 'turns'] = to - from;
+        if (from !== undefined) by[m === dock ? 'dock' : m === body ? 'view' : m === turnsEl ? 'turns' : 'bar'] = to - from;
         continue;
       }
       if (!m.isConnected) {
@@ -101,29 +214,40 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
       const from = sizes.get(m);
       const to = size(m);
       sizes.set(m, to);
-      // its first report is where it was laid out before anything was painted: nothing to hold
       if (from !== PENDING && from != null && to != null && Math.abs(to - from) >= 1) grew.push({ top: m.getBoundingClientRect().top, from, to });
     }
     if (!body.isConnected || body.clientHeight === 0) return;
-    // a picture growing is mediaShift's; the turns growing otherwise (a turn landed, steps came in) is the follower's
-    if (grew.length === 0 && Math.abs(by.turns) >= 1 && turns?.grew(by.turns)) {
-      // its write to the end is ours; a landing shown from its start (or a page down) leaves the reader there
-      if (atTail(body)) set({ type: 'pinned', top: body.scrollTop });
+    if (turns?.byHand()) {
+      // reader expanded a fold by hand: never yank past it; if the end moved out of view, pause so streaming stays put
+      if (state.following && distOf(body) > END_PX) set({ type: 'pause', max: maxOf(body) });
+      tell(false);
       return void (tail = atTail(body));
     }
-    if (by.turns >= 1) tell(true);
-    // following: whatever grew (a picture, the reply box, the view shortened by the keyboard), the end stays in view;
-    // not while the task opens (its kept place is the frame's) nor for what the reader opened themselves
-    if (state.following && turns?.armed() === true && !turns.byHand() && (grew.length > 0 || by.dock !== 0 || by.view !== 0 || by.turns >= 1)) {
-      pin();
-      return void (tail = atTail(body));
+    if (state.following && turns?.armed() === true && !scrollbarDrag) {
+      if (grew.length === 0 && Math.abs(by.turns) >= 1 && turns.grew(by.turns)) {
+        if (atTail(body)) set({ type: 'pinned', top: body.scrollTop, max: maxOf(body) });
+        else {
+          lastTop = body.scrollTop;
+          set({ type: 'pause', max: maxOf(body) });
+          tell(false);
+        }
+        return void (tail = atTail(body));
+      }
+      if (distOf(body) > 0.5) {
+        pin();
+        return void (tail = atTail(body));
+      }
     }
+    if (grew.length === 0 && Math.abs(by.turns) >= 1) turns?.grew(by.turns);
+    if (by.turns >= 1 && !state.following) tell(true);
     const dockEnd = (by.dock !== 0 || by.view !== 0) && dockShift({ scrollHeight: body.scrollHeight, scrollTop: body.scrollTop, clientHeight: body.clientHeight, dock: by.dock, view: by.view }) === 'end';
     if (grew.length === 0 && !dockEnd) return;
-    // a task that fit on screen is at its end and its start at once: a picture there pulls nothing
     const dy = grew.length === 0 ? 0 : mediaShift({ tail: tail && body.scrollTop > 0, anchors, inset: body.getBoundingClientRect().top + barOf(body), grew });
-    if (dy === 'end' || dockEnd) body.scrollTop = body.scrollHeight;
-    else if (Math.abs(dy) >= 1) body.scrollTop += dy;
+    if (dy === 'end' || dockEnd) pin();
+    else if (Math.abs(dy) >= 1) {
+      body.scrollTop += dy;
+      lastTop = body.scrollTop;
+    }
     tail = atTail(body);
   });
   const watch = (root: ParentNode): void => {
@@ -137,54 +261,69 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
   ro.observe(dock);
   ro.observe(body);
   if (turnsEl) ro.observe(turnsEl);
+  if (barEl) ro.observe(barEl);
   const mo = new MutationObserver((records) => {
     watch(body);
     turns?.changed(records);
   });
   mo.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-live'] });
-  body.addEventListener('scroll', onScroll, { passive: true });
-  body.addEventListener('wheel', onWheel, { passive: true });
-  document.addEventListener('keydown', onKey, { capture: true });
-  document.addEventListener('selectionchange', onSelect);
+  const unbind = bindScrollInputs(body, turnsEl, {
+    isFollowing: () => state.following,
+    onUp: () => {
+      set({ type: 'up' });
+      tell(false);
+    },
+    onEnd: toEnd,
+    onScroll: () => {
+      const top = body.scrollTop;
+      set({ type: 'scroll', top, max: maxOf(body), moved: top - lastTop });
+      lastTop = top;
+      tail = atTail(body);
+      turns?.onScroll();
+      tell(false);
+    },
+    onScrollbar: (dragging) => {
+      scrollbarDrag = dragging;
+      if (!dragging && state.following && distOf(body) > 0.5) pin();
+    },
+  });
   return {
     stop: () => {
       turns?.stop();
       ro.disconnect();
       mo.disconnect();
-      body.removeEventListener('scroll', onScroll);
-      body.removeEventListener('wheel', onWheel);
-      document.removeEventListener('keydown', onKey, { capture: true });
-      document.removeEventListener('selectionchange', onSelect);
+      unbind();
     },
-    toEnd: () => {
-      set({ type: 'end' });
-      pin();
-      tell(false);
-    },
+    toEnd,
+    place,
+    following: () => state.following,
   };
 }
 
-const barOf = (body: HTMLElement): number => body.querySelector<HTMLElement>('[data-kit="it-bar"]')?.offsetHeight ?? 0;
-
 /** F-page-44 (v1 turns.js renderBody `follow` / `place` / `land`): a turn landing while you read doesn't move you; at
- *  the end you're taken to it, from its start (a new turn, or the running one once it has finished: `data-live` goes).
- *  Not while the task opens (its kept place is the frame's), and not for what the reader did themselves (a fold they
- *  opened: v1's `byHand`). */
+ *  the end Cards mode takes you to its start, while Chat mode keeps pinning the end. Not while the task opens (its
+ *  initial placement is the frame's), and not for a fold the reader opened themselves (`byHand`). */
 export function turnFollower(
   body: HTMLElement,
   turnsEl: HTMLElement,
   anchors: boolean,
   dock?: HTMLElement,
-  /** the page's follow state (follow.ts); without it, at the end is read from where the view sits */
   following?: () => boolean,
-): { onScroll: () => void; changed: (r: readonly MutationRecord[]) => void; grew: (by: number) => boolean; armed: () => boolean; byHand: () => boolean; stop: () => void } {
+): {
+  onScroll: () => void;
+  changed: (r: readonly MutationRecord[]) => void;
+  grew: (by: number) => boolean;
+  armed: () => boolean;
+  armNow: () => void;
+  byHand: () => boolean;
+  clearHand: () => void;
+  stop: () => void;
+} {
   let armed = false;
   let frame: number | undefined;
   let landed: HTMLElement | undefined;
   let byHand = false;
-  // at the end, as the last scroll left it (a shrink moves scrollTop, so then this is the one to trust)
   let atEnd = atTail(body);
-  // WebKit (no scroll anchoring): the turn under the reading line and its top (px from the view's top)
   let reading: { el: HTMLElement; top: number } | undefined;
   const all = (): HTMLElement[] => [...turnsEl.querySelectorAll<HTMLElement>('[data-turn]')];
   const readLine = (): void => {
@@ -193,20 +332,22 @@ export function turnFollower(
     const el = all().find((t) => t.getBoundingClientRect().bottom > top + 1);
     reading = el ? { el, top: el.getBoundingClientRect().top - top } : undefined;
   };
-  // armed a frame after the first turns are in: what the task opens on is the frame's (its kept place, its top)
   const arm = (): void => {
     if (armed || frame !== undefined || !turnsEl.querySelector('[data-turn]')) return;
     frame = requestAnimationFrame(() => {
+      frame = undefined;
       armed = true;
       readLine();
     });
   };
-  // a click or key in the page: what grows in the next two frames is the reader's own doing (the layout it changed
-  // comes in the next frame's ResizeObserver, after that frame's rAF callbacks, so the flag outlives one of them)
   let clear: number | undefined;
+  const clearHand = (): void => {
+    if (clear !== undefined) cancelAnimationFrame(clear);
+    clear = undefined;
+    byHand = false;
+  };
   const hand = (e: Event): void => {
-    // typing or sending in the reply box (the dock, in the same scroller) changes no turn by hand
-    if (!turnsEl.contains(e.target as Node)) return;
+    if (!isInteractiveIn(e.target, turnsEl)) return;
     byHand = true;
     if (clear !== undefined) cancelAnimationFrame(clear);
     clear = requestAnimationFrame(() => {
@@ -231,20 +372,16 @@ export function turnFollower(
       const last = turns[turns.length - 1];
       if (!last) return;
       for (const r of records) {
-        // the last turn added (older ones loading go first), or the last turn's run finishing
         if (r.type === 'childList' && [...r.addedNodes].some((n) => n === last || (n instanceof HTMLElement && n.contains(last)))) landed = last;
         if (r.type === 'attributes' && r.target === last && !last.hasAttribute('data-live')) landed = last;
       }
     },
     grew: (by) => {
-      // a shrink only matters with a turn that landed (older turns folding away as it came)
       if (!armed || byHand || (by < 0 && !landed)) {
-        landed = undefined; // a landing not followed now never comes back as a late jump
+        landed = undefined;
         return false;
       }
       const top = body.getBoundingClientRect().top;
-      // where the reader was before: after a growth the end then is the end minus what grew (exact even when the
-      // frame restored a place this frame); after a shrink the browser has clamped, so the last scroll's word
       const tail = following ? following() : by > 0 ? atTail({ scrollHeight: body.scrollHeight - by, scrollTop: body.scrollTop, clientHeight: body.clientHeight }) : atEnd;
       const was = reading?.el.isConnected ? reading : undefined;
       const to = landed?.isConnected ? landed : undefined;
@@ -253,7 +390,6 @@ export function turnFollower(
       const room = chat ? body.clientHeight - barOf(body) - (dock?.offsetHeight ?? 0) : 0;
       const d = turnsShift({ tail, anchors, landed: !!to, chat, grew: by, room, ...(was && { held: { from: was.top, to: was.el.getBoundingClientRect().top - top } }) });
       if (d === 'land' && to) body.scrollTop += to.getBoundingClientRect().top - top - barOf(body);
-      else if (d === 'page') body.scrollTop += room;
       else if (d === 'end') body.scrollTop = body.scrollHeight;
       else if (typeof d === 'number' && Math.abs(d) >= 1) body.scrollTop += d;
       else return false;
@@ -262,7 +398,14 @@ export function turnFollower(
       return true;
     },
     armed: () => armed,
+    armNow: () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = undefined;
+      armed = true;
+      readLine();
+    },
     byHand: () => byHand,
+    clearHand,
     stop: () => {
       if (frame !== undefined) cancelAnimationFrame(frame);
       if (clear !== undefined) cancelAnimationFrame(clear);

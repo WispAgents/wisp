@@ -1,7 +1,8 @@
-// F-page-44 (v1 turns.js renderBody follow / place / land): a turn landing while you read keeps the view put; at the end
-// you're taken to its start; not while the task opens, and not for what you did yourself.
+// F-page-44 (v1 turns.js renderBody follow / place / land) + holdMedia Chat-mode auto-scroll integration tests:
+// a turn landing while you read keeps the view put; at the end Cards goes to its start and Chat stays pinned;
+// wheel/touch/scrollbar-drag/fold/toEnd/place all coordinate through one follow state machine.
 import { afterEach, expect, test, vi } from 'vitest';
-import { turnFollower } from '../src/app/hold-view.ts';
+import { holdMedia, turnFollower } from '../src/app/hold-view.ts';
 
 const frames: FrameRequestCallback[] = [];
 const flush = (): void => {
@@ -13,18 +14,27 @@ afterEach(() => {
   frames.length = 0;
 });
 
-function page(o: { scrollHeight: number; clientHeight: number; scrollTop: number }) {
+function page(o: { scrollHeight: number; clientHeight: number; scrollTop: number; chat?: boolean }) {
   vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => frames.push(f));
   vi.stubGlobal('cancelAnimationFrame', () => {});
   const body = document.createElement('div');
+  if (o.chat) body.setAttribute('data-chat', '');
   const turns = document.createElement('div');
-  body.append(turns);
+  turns.setAttribute('data-kit', 'turns');
+  const dock = document.createElement('div');
+  dock.setAttribute('data-kit', 'it-dock');
+  body.append(turns, dock);
   document.body.append(body);
-  const m = { ...o };
+  const m = { scrollHeight: o.scrollHeight, clientHeight: o.clientHeight, scrollTop: o.scrollTop };
   Object.defineProperty(body, 'scrollHeight', { get: () => m.scrollHeight });
   Object.defineProperty(body, 'clientHeight', { get: () => m.clientHeight });
-  Object.defineProperty(body, 'scrollTop', { get: () => m.scrollTop, set: (v: number) => (m.scrollTop = v) });
-  body.getBoundingClientRect = () => ({ top: 0, bottom: m.clientHeight }) as DOMRect;
+  Object.defineProperty(body, 'scrollTop', {
+    get: () => m.scrollTop,
+    set: (v: number) => {
+      m.scrollTop = Math.max(0, Math.min(Math.max(0, m.scrollHeight - m.clientHeight), v));
+    },
+  });
+  body.getBoundingClientRect = () => ({ left: 0, right: 800, top: 0, bottom: m.clientHeight, width: 800, height: m.clientHeight }) as DOMRect;
   const add = (id: string, top: number): HTMLElement => {
     const t = document.createElement('article');
     t.dataset['turn'] = id;
@@ -32,7 +42,7 @@ function page(o: { scrollHeight: number; clientHeight: number; scrollTop: number
     turns.append(t);
     return t;
   };
-  return { body, turns, m, add };
+  return { body, turns, dock, m, add };
 }
 
 test('a_turn_landing_at_the_end_shows_from_its_start_and_one_landing_while_you_read_moves_nothing', () => {
@@ -58,13 +68,19 @@ test('a_turn_landing_at_the_end_shows_from_its_start_and_one_landing_while_you_r
   f.stop();
 });
 
-test('what_the_reader_opened_themselves_never_moves_the_view_and_webkit_holds_the_turn_being_read', () => {
+test('what_the_reader_opened_themselves_never_moves_the_view_plain_clicks_never_pause_and_webkit_holds_the_turn_being_read', () => {
   const p = page({ scrollHeight: 1000, clientHeight: 500, scrollTop: 500 });
   const t1 = p.add('t1', 0);
+  const foldBtn = document.createElement('button');
+  const plainText = document.createElement('p');
+  t1.append(foldBtn, plainText);
   const f = turnFollower(p.body, p.turns, false);
   flush();
-  // a click (a fold opening) at the end: its growth is the reader's
-  t1.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  // clicking plain text (focusing window / clearing selection) does NOT suppress streaming follow
+  plainText.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(f.byHand()).toBe(false);
+  // clicking a fold button inside a turn suppresses growth for 2 frames so the fold stays in view
+  foldBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   p.m.scrollHeight = 1400;
   expect(f.grew(400)).toBe(false);
   flush();
@@ -74,7 +90,7 @@ test('what_the_reader_opened_themselves_never_moves_the_view_and_webkit_holds_th
   p.m.scrollTop = 900; // at the end of 1400
   p.m.scrollHeight = 1500;
   expect(f.grew(100)).toBe(true);
-  expect(p.m.scrollTop).toBe(1500);
+  expect(p.m.scrollTop).toBe(1000);
   // WebKit, reading further up: what pushed the turn under the reading line down is undone
   p.m.scrollTop = 100;
   f.onScroll(); // t1 is under the reading line at 0
@@ -83,4 +99,86 @@ test('what_the_reader_opened_themselves_never_moves_the_view_and_webkit_holds_th
   expect(f.grew(60)).toBe(true);
   expect(p.m.scrollTop).toBe(160);
   f.stop();
+});
+
+test('holdMedia_chat_mode_follows_streaming_ignores_horizontal_and_nonscrollable_wheels_and_resumes_on_toEnd_or_scroll_down', () => {
+  let roCb: ResizeObserverCallback | undefined;
+  class FakeRO {
+    constructor(cb: ResizeObserverCallback) {
+      roCb = cb;
+    }
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  vi.stubGlobal('ResizeObserver', FakeRO);
+  const emitResize = (target: Element, blockSize: number): void => {
+    roCb?.([{ target, borderBoxSize: [{ blockSize }] } as unknown as ResizeObserverEntry], {} as ResizeObserver);
+  };
+
+  const p = page({ scrollHeight: 500, clientHeight: 500, scrollTop: 0, chat: true });
+  p.add('t1', 0);
+  const awayStates: Array<{ away: boolean; fresh: boolean }> = [];
+  const held = holdMedia(p.body, p.dock, (o) => awayStates.push(o));
+  // initial measurements
+  emitResize(p.turns, 400);
+  emitResize(p.body, 500);
+  emitResize(p.dock, 80);
+
+  // wheel up while page doesn't even scroll (scrollTop === 0) must NOT kill following!
+  p.body.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 }));
+  expect(held.following()).toBe(true);
+
+  // toEnd() arms immediately (e.g. Chat mode initial landing / follow-up) and pins as content overflows
+  p.m.scrollHeight = 1500;
+  held.toEnd();
+  expect(held.following()).toBe(true);
+  expect(p.m.scrollTop).toBe(1000);
+
+  // horizontal trackpad swipe with tiny negative deltaY must NOT pause following
+  p.body.dispatchEvent(new WheelEvent('wheel', { deltaX: 30, deltaY: -2 }));
+  expect(held.following()).toBe(true);
+
+  // streaming chunk grows turns -> ResizeObserver pins straight to new bottom in same frame
+  p.m.scrollHeight = 1700;
+  emitResize(p.turns, 1600);
+  expect(p.m.scrollTop).toBe(1200);
+  expect(held.following()).toBe(true);
+
+  // user scrolls up via wheel -> pauses immediately; streaming chunk does NOT yank back and lights fresh dot
+  p.body.dispatchEvent(new WheelEvent('wheel', { deltaY: -10 }));
+  p.m.scrollTop = 900;
+  p.body.dispatchEvent(new Event('scroll'));
+  expect(held.following()).toBe(false);
+  expect(awayStates.at(-1)).toEqual({ away: true, fresh: false });
+
+  p.m.scrollHeight = 1900;
+  emitResize(p.turns, 1800);
+  expect(p.m.scrollTop).toBe(900);
+  expect(awayStates.at(-1)).toEqual({ away: true, fresh: true });
+
+  // clicking a reply button inside turns (sets byHand) then calling toEnd() clears byHand and re-pins immediately
+  const replyBtn = document.createElement('button');
+  p.turns.append(replyBtn);
+  replyBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  held.toEnd();
+  expect(held.following()).toBe(true);
+  expect(p.m.scrollTop).toBe(1400);
+  p.m.scrollHeight = 2000;
+  emitResize(p.turns, 1900);
+  expect(p.m.scrollTop).toBe(1500);
+
+  // place(top, false) restores a saved mid-page reading position, paused, with Jump to latest available
+  held.place(300, false);
+  expect(held.following()).toBe(false);
+  expect(p.m.scrollTop).toBe(300);
+  expect(awayStates.at(-1)).toEqual({ away: true, fresh: false });
+
+  // wheeling DOWN at the bottom when paused re-engages following even if scrollTop didn't move
+  held.place(1500, false);
+  expect(held.following()).toBe(false);
+  p.body.dispatchEvent(new WheelEvent('wheel', { deltaY: 20 }));
+  expect(held.following()).toBe(true);
+
+  held.stop();
 });

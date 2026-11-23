@@ -27,6 +27,20 @@ test('a task reopens where it was read, held by its turn, so a new turn above it
   expect(scrollFor({ end: false, turn: 'gone', dy: 10, top: 700 }, { clientHeight: 600, scrollHeight: 3000 }, turns)).toBe(700);
 });
 
+test('chat_mode_saves_following_as_end_and_preserves_an_explicit_top_scroll_on_a_long_task', () => {
+  // following near the bottom (even > 4 px away while streaming settles) always saves end: true
+  expect(placeOf({ scrollTop: 2370, clientHeight: 600, scrollHeight: 3000 }, turns, { following: true, chat: true })?.end).toBe(true);
+  // scrolled all the way up to turn 1 in Chat mode: preserved explicitly so reopening restores turn 1 instead of jumping to end
+  expect(placeOf({ scrollTop: 0, clientHeight: 600, scrollHeight: 3000 }, turns, { following: false, chat: true })).toEqual({
+    end: false,
+    turn: 't1',
+    dy: 0,
+    top: 0,
+  });
+  // a short task that fits on screen still keeps nothing
+  expect(placeOf({ scrollTop: 0, clientHeight: 600, scrollHeight: 600 }, turns, { following: true, chat: true })).toBeUndefined();
+});
+
 test('the most recent hundred tasks keep theirs, the oldest go first_v1_max_places', () => {
   let all = {};
   for (let i = 0; i < MAX_PLACES + 5; i++) all = keep(all, `s${i}`, { end: false, dy: 0, top: i + 1 });
