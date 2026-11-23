@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.telemetry",
   "name": "Telemetry",
-  "version": "1.0.0-alpha.7",
+  "version": "1.0.0-alpha.8",
   "api": "^1",
   "description": "wisp.telemetry: anonymous usage stats (v1's 52 events): the catalogue, opt-out, scrubbing, batching and the distinct id, delivered to every telemetry.sink (ADR-0021)",
   "server": {
