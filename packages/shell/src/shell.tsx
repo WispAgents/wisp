@@ -178,7 +178,7 @@ export function createShell(o: ShellOptions): Shell {
         const n = untracked(nav);
         // the side panel has the list's place (a window under 1180): [ and the sidebar button bring the list back by
         // putting the panel away, as v1's toggleSidebar did; there's room for one of the two
-        if (n.layout === 'split' && n.side.kind !== 'none' && !listShown(true, true, o.window.innerWidth) && untracked(settings.get('shell.sidebar.open')) !== false) {
+        if (n.layout === 'split' && n.main.kind !== 'home' && n.side.kind !== 'none' && !listShown(true, true, o.window.innerWidth) && untracked(settings.get('shell.sidebar.open')) !== false) {
           client.nav.navigate({ t: 'closeSide' });
           return;
         }

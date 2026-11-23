@@ -76,10 +76,34 @@ test('a side pane belongs to its task: opening another task closes it, opening i
   assert.deepEqual(run(withShell, { t: 'openTask', id: T2 }).side, { kind: 'none' });
   const fromHome = run(wide, { t: 'openSide', side: { kind: 'changes', id: T2 } });
   assert.deepEqual(fromHome.main, { kind: 'task', id: T2 });
-  // a plugin's side view is not bound to a task and stays
+  // a plugin's side view stays across tasks, but closes when leaving tasks for Home, Crew or a main view
   const view: Side = { kind: 'view', id: 'git.graph' as ExtensionId };
-  assert.deepEqual(run(openT1, { t: 'openSide', side: view }, { t: 'openTask', id: T2 }).side, view);
+  const withView = run(openT1, { t: 'openSide', side: view });
+  assert.deepEqual(run(withView, { t: 'openTask', id: T2 }).side, view);
+  assert.deepEqual(run(withView, { t: 'home' }).side, { kind: 'none' });
+  assert.deepEqual(run(withView, { t: 'openCrew', id: 'laptop:c1' as CrewId }).side, { kind: 'none' });
+  assert.deepEqual(run(withView, { t: 'openView', id: 'stuff.page' as ExtensionId, params: null }).side, { kind: 'none' });
+  // Home (the composer) never opens or restores a side pane
+  assert.equal(run(wide, { t: 'openSide', side: view }), wide);
+  assert.deepEqual(run(withView, { t: 'restore', to: { main: { kind: 'home' }, side: view, overlays: [] } }).side, { kind: 'none' });
   assert.equal(run(withShell, { t: 'toggleSide', side: { kind: 'shell', id: T1 } }).side.kind, 'none');
+});
+
+test('home_url_with_stale_side_param_starts_without_a_side_pane_and_cleans_the_url', () => {
+  const scope = createScope('t');
+  const history = memoryHistory('/?side=view%3Ashell-task.tab');
+  const views = createViews();
+  views.register(scope, { id: 'shell-task.tab', slot: 'side', parse: () => null });
+  const nav = createNavigation({ scope, width: 1440, history, views });
+  assert.deepEqual(nav.nav().main, { kind: 'home' });
+  assert.deepEqual(nav.nav().side, { kind: 'none' });
+  assert.equal(history.read(), '/');
+  // even before plugins register their side views
+  const early = memoryHistory('/?side=view%3Ashell-task.tab');
+  const navEarly = createNavigation({ scope, width: 1440, history: early, views: createViews() });
+  assert.deepEqual(navEarly.nav().side, { kind: 'none' });
+  assert.equal(early.read(), '/');
+  scope.dispose();
 });
 
 test('overlays: a double open is one, closing by id closes what sits above it', () => {
@@ -100,6 +124,7 @@ function randomIntent(r: ReturnType<typeof prng>): Intent {
     { t: 'openView', id: 'git.graph' as ExtensionId, params: { repo: 'r1' } },
     { t: 'home' },
     { t: 'openSide', side: { kind: r.pick(['changes', 'shell', 'pr'] as const), id } },
+    { t: 'openSide', side: { kind: 'view', id: 'shell-task.tab' as ExtensionId } },
     { t: 'closeSide' },
     { t: 'openOverlay', overlay: r.pick([viewer, dialog]) },
     { t: 'closeOverlay' },
@@ -122,6 +147,7 @@ test('model: after any intents, a task pane sits beside its own task, a toast le
       if (next.side.kind === 'changes' || next.side.kind === 'shell' || next.side.kind === 'pr') {
         assert.deepEqual(next.main, { kind: 'task', id: next.side.id }, `seed ${seed}: ${intent.t}`);
       }
+      if (next.main.kind === 'home') assert.equal(next.side.kind, 'none', `seed ${seed}: ${intent.t} left a side pane on Home`);
       if (intent.t === 'openFromToast') assert.deepEqual(next.overlays, []);
       if (intent.t === 'rename') assert.equal(next, nav);
       if (intent.t === 'markDone' && nav.main.kind === 'task' && nav.main.id === intent.id) assert.equal(next.main.kind, 'home');

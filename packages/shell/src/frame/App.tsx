@@ -116,14 +116,15 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
     onCleanup(() => window.removeEventListener('resize', onResize));
   });
   // the list as you left it, unless the side panel has its place (a window under 1180, v1 panelSqueeze)
+  const hasSide = (): boolean => nav().main.kind !== 'home' && nav().side.kind !== 'none';
   const listSet = useSignal(() => shell.sidebar.open() !== false);
-  const listOpen = (): boolean => listShown(listSet(), nav().layout === 'split' && nav().side.kind !== 'none', win());
+  const listOpen = (): boolean => listShown(listSet(), nav().layout === 'split' && hasSide(), win());
   const savedList = useSignal(() => shell.sidebar.width());
   const savedPanel = useSignal(() => shell.client.settings.get('shell.panel.width')());
   const [dragList, setDragList] = createSignal<number>();
   const [dragPanel, setDragPanel] = createSignal<number>();
   const railPx = (): number => (shell.platform.phone ? 0 : 64);
-  const sideOpen = (): boolean => nav().layout === 'split' && nav().side.kind !== 'none';
+  const sideOpen = (): boolean => nav().layout === 'split' && hasSide();
   const wantList = (): number => dragList() ?? (typeof savedList() === 'number' ? (savedList() as number) : SIDE_W);
   const wantPanel = (): number => {
     const saved = savedPanel();
@@ -173,7 +174,7 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         main={<MainPane onBack={() => setLauncher(false)} launcher={launcher()} />}
         // a plain prop, not a spread: a reactive spread rebuilds every prop (the task page too) when the side opens
         // the phone apps' stack: the side pane is a sheet over the task (UX 2026-11-18 phone #3), not a page of its own
-        side={nav().side.kind !== 'none' && !(phone && nav().layout === 'stack') ? <SidePane /> : undefined}
+        side={hasSide() && !(phone && nav().layout === 'stack') ? <SidePane /> : undefined}
         gripLabel={shell.t('shell.side.grip')}
         panelGripLabel={shell.t('shell.panel.grip')}
         listWidth={listPx()}
@@ -185,7 +186,7 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         onPanelReset={() => void shell.client.settings.set('shell.panel.width', PANEL_W).catch(() => undefined)}
         listBehind={view().listBehind}
         // the phone apps: a task and its side pane are pushed pages, the destinations give way (UX 2026-11-18 phone #2)
-        pushed={phone && (nav().main.kind === 'task' || nav().side.kind !== 'none')}
+        pushed={phone && (nav().main.kind === 'task' || hasSide())}
         tint={tint()}
         // the phone apps (ADR-0065 step 8): Tasks · Crew · Stuff · Computers; the browser passes none
         nav={phone ? <PhoneNav /> : undefined}
@@ -193,7 +194,7 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         sideLabel={shell.t('shell.side')}
         {...(titlebar && { titlebar })}
       />
-      <Show when={phone && nav().layout === 'stack' && nav().side.kind !== 'none'}>
+      <Show when={phone && nav().layout === 'stack' && hasSide()}>
         <Sheet
           title={shell.t('shell.side.sheet')}
           open

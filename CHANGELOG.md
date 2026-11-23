@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Composer (Home): returning from a task with a right-panel view tab open (Thread, Watch, Terminal, Team, or a pinned My Stuff app) now closes the side panel instead of leaving an empty panel column taking up the right side of the composer page.
+- Task view (Chat mode): hardened trailing-message deduplication against `body.text` (not only `turn.answer`), `MAX_TEXT`-clipped (`20,000` UTF-16 unit) final messages, and activity-only fallback turns.
+
 ## [1.0.0-alpha.8] - 2026-11-23
 
 ### Fixed

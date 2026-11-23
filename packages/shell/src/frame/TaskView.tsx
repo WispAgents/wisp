@@ -1422,8 +1422,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               showThinking: chat.showThinking(),
               running: turn.status === 'running' || turn.status === 'starting',
               // the answer as the agent wrote it is what its last message says; the last markdown block alone differs
-              // as soon as the answer carries a wisp block (it is cut around it), so both are tried
-              finalText: [turn.answer ?? undefined, (b as { answer?: string }).answer, finalMarkdownOf(blocks() as readonly { readonly type: string; readonly text?: string }[])],
+              // as soon as the answer carries a wisp block (it is cut around it), so raw answer/body.text and last markdown are tried
+              finalText: [
+                turn.answer ?? undefined,
+                (b as { text?: string }).text,
+                (b as { answer?: string }).answer,
+                finalMarkdownOf(blocks() as readonly { readonly type: string; readonly text?: string }[]),
+              ],
               notes: (b as { presentation?: { notes?: string } }).presentation?.notes,
             })),
           );
