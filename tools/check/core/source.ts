@@ -58,6 +58,15 @@ export function importsOf(sf: ts.SourceFile): Import[] {
   const add = (lit: ts.Expression | undefined, typeOnly: boolean, dynamic: boolean): void => {
     if (lit && ts.isStringLiteralLike(lit)) out.push({ spec: lit.text, line: lineOf(sf, lit), typeOnly, dynamic });
   };
+  const text = sf.text;
+  if (!/(?:\bimport|\brequire)\s*\(/.test(text) && !text.includes('namespace ') && !text.includes('module ')) {
+    for (const n of sf.statements) {
+      if (ts.isImportDeclaration(n)) add(n.moduleSpecifier, importTypeOnly(n), false);
+      else if (ts.isExportDeclaration(n)) add(n.moduleSpecifier, exportTypeOnly(n), false);
+      else if (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference)) add(n.moduleReference.expression, n.isTypeOnly, false);
+    }
+    return out;
+  }
   visit(sf, (n) => {
     if (ts.isImportDeclaration(n)) add(n.moduleSpecifier, importTypeOnly(n), false);
     else if (ts.isExportDeclaration(n)) add(n.moduleSpecifier, exportTypeOnly(n), false);
@@ -72,8 +81,12 @@ export function importsOf(sf: ts.SourceFile): Import[] {
   return out;
 }
 
+const commentsCache = new WeakMap<ts.SourceFile, { text: string; pos: number }[]>();
+
 /** Comments of the file, each once, with their position. */
 export function commentsOf(sf: ts.SourceFile): { text: string; pos: number }[] {
+  const cached = commentsCache.get(sf);
+  if (cached) return cached;
   const seen = new Map<number, string>();
   const text = sf.getFullText();
   const take = (ranges: ts.CommentRange[] | undefined): void => {
@@ -83,7 +96,9 @@ export function commentsOf(sf: ts.SourceFile): { text: string; pos: number }[] {
     take(ts.getLeadingCommentRanges(text, n.pos));
     take(ts.getTrailingCommentRanges(text, n.end));
   });
-  return [...seen].sort((a, b) => a[0] - b[0]).map(([pos, t]) => ({ text: t, pos }));
+  const res = [...seen].sort((a, b) => a[0] - b[0]).map(([pos, t]) => ({ text: t, pos }));
+  commentsCache.set(sf, res);
+  return res;
 }
 
 /** Names declared anywhere in the file (variables, parameters, imports, functions). */

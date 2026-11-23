@@ -35,6 +35,7 @@ function customPropsOnly(e: ts.Expression): boolean {
 
 function jsxAttrs(ctx: Ctx, file: string): Finding[] {
   const out: Finding[] = [];
+  if (!/\b(?:class|className|style)\s*=/.test(ctx.read(file))) return out;
   const sf = ctx.source(file);
   visit(sf, (n) => {
     if (!ts.isJsxAttribute(n)) return;

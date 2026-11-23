@@ -89,26 +89,53 @@ function readCrate(root: string, dir: string): Crate {
   return crate;
 }
 
+const cratesCache = new Map<string, Crate[]>();
+const rustFilesCache = new Map<string, string[]>();
+const rustTextCache = new Map<string, string>();
+const codeLinesCache = new WeakMap<{ text: string }, string[]>();
+const codeLinesByStr = new Map<string, string[]>();
+
+/** Read a repo-relative file under `root`, cached per `(root, file)`. */
+export function readRust(root: string, file: string): string {
+  const key = `${root}\0${file}`;
+  let t = rustTextCache.get(key);
+  if (t === undefined) {
+    t = readFileSync(join(root, file), 'utf8');
+    rustTextCache.set(key, t);
+  }
+  return t;
+}
+
 export function crates(root: string): Crate[] {
-  if (!existsSync(join(root, 'Cargo.toml'))) return [];
-  return members(root).map((d) => readCrate(root, d));
+  let c = cratesCache.get(root);
+  if (!c) {
+    c = existsSync(join(root, 'Cargo.toml')) ? members(root).map((d) => readCrate(root, d)) : [];
+    cratesCache.set(root, c);
+  }
+  return c;
 }
 
 /** Every .rs file under `dir` (repo-relative), skipping build output. */
 export function rustFiles(root: string, dir: string): string[] {
+  const key = `${root}\0${dir}`;
+  let cached = rustFilesCache.get(key);
+  if (cached) return cached;
   const out: string[] = [];
   const walk = (d: string): void => {
     const at = join(root, d);
     if (!existsSync(at)) return;
-    for (const n of readdirSync(at)) {
+    for (const e of readdirSync(at, { withFileTypes: true })) {
+      const n = e.name;
       if (n === 'target' || n === 'node_modules' || n.startsWith('.')) continue;
       const rel = posix.join(d, n);
-      if (statSync(join(root, rel)).isDirectory()) walk(rel);
+      if (e.isDirectory()) walk(rel);
       else if (n.endsWith('.rs')) out.push(rel);
     }
   };
   walk(dir);
-  return out.sort();
+  cached = out.sort();
+  rustFilesCache.set(key, cached);
+  return cached;
 }
 
 /** A test file: under tests/, or a `*_tests.rs` / `tests.rs` module beside the code. */
@@ -120,60 +147,88 @@ export const isTestFile = (file: string): boolean => /(^|\/)tests\//.test(file) 
  * keyword and brace scanning, not a parser.
  */
 export function codeLines(text: string): string[] {
+  void codeLinesCache;
+  const hit = codeLinesByStr.get(text);
+  if (hit) return hit;
   const out: string[] = [];
   let block = 0;
   let raw: string | undefined;
   for (const line of text.split('\n')) {
     let code = '';
-    for (let i = 0; i < line.length; i++) {
-      const rest = line.slice(i);
+    const len = line.length;
+    for (let i = 0; i < len; i++) {
       if (raw !== undefined) {
-        if (rest.startsWith(raw)) {
+        if (line.startsWith(raw, i)) {
           i += raw.length - 1;
           raw = undefined;
         }
         continue;
       }
+      const c0 = line.charCodeAt(i);
       if (block) {
-        if (rest.startsWith('*/')) {
+        if (c0 === 42 && line.charCodeAt(i + 1) === 47) {
           block--;
           i++;
-        } else if (rest.startsWith('/*')) {
+        } else if (c0 === 47 && line.charCodeAt(i + 1) === 42) {
           block++;
           i++;
         }
         continue;
       }
-      if (rest.startsWith('//')) break;
-      if (rest.startsWith('/*')) {
-        block++;
-        i++;
-        continue;
+      if (c0 === 47) {
+        const c1 = line.charCodeAt(i + 1);
+        if (c1 === 47) break;
+        if (c1 === 42) {
+          block++;
+          i++;
+          continue;
+        }
       }
-      const r = /^b?r(#*)"/.exec(rest);
-      if (r && !/[A-Za-z0-9_]$/.test(code)) {
-        raw = `"${r[1] ?? ''}`;
-        i += r[0].length - 1;
+      if (c0 === 114 || (c0 === 98 && line.charCodeAt(i + 1) === 114)) {
+        const prev = code.length > 0 ? code.charCodeAt(code.length - 1) : 0;
+        const isIdent = (prev >= 48 && prev <= 57) || (prev >= 65 && prev <= 90) || (prev >= 97 && prev <= 122) || prev === 95;
+        if (!isIdent) {
+          let j = c0 === 98 ? i + 2 : i + 1;
+          let hashes = 0;
+          while (j < len && line.charCodeAt(j) === 35) {
+            hashes++;
+            j++;
+          }
+          if (j < len && line.charCodeAt(j) === 34) {
+            raw = `"${'#'.repeat(hashes)}`;
+            i = j;
+            code += '""';
+            continue;
+          }
+        }
+      }
+      if (c0 === 34) {
+        let j = i + 1;
+        while (j < len && line.charCodeAt(j) !== 34) j += line.charCodeAt(j) === 92 ? 2 : 1;
+        i = j;
         code += '""';
         continue;
       }
-      if (rest[0] === '"') {
-        let j = 1;
-        while (j < rest.length && rest[j] !== '"') j += rest[j] === '\\' ? 2 : 1;
-        i += j;
-        code += '""';
-        continue;
+      if (c0 === 39) {
+        if (line.charCodeAt(i + 1) === 92) {
+          const j = i + 2;
+          if (j < len && line.charCodeAt(j + 1) === 39) {
+            i = j + 1;
+            code += "' '";
+            continue;
+          }
+        } else if (i + 2 < len && line.charCodeAt(i + 1) !== 39 && line.charCodeAt(i + 2) === 39) {
+          i += 2;
+          code += "' '";
+          continue;
+        }
       }
-      const ch = /^'(?:\\.|[^'\\])'/.exec(rest);
-      if (ch) {
-        i += ch[0].length - 1;
-        code += "' '";
-        continue;
-      }
-      code += rest[0];
+      code += line[i];
     }
     out.push(code);
   }
+  if (codeLinesByStr.size > 4000) codeLinesByStr.clear();
+  codeLinesByStr.set(text, out);
   return out;
 }
 

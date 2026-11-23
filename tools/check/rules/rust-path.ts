@@ -6,8 +6,6 @@
 // `// path: inherited <why>` comment on its line or the line above. crates/wisp-proc (the PATH's home) and tests
 // are exempt.
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { finding } from '../core/report.ts';
 import { codeLines, crates, isTestFile, rustFiles } from '../core/rust.ts';
 import type { Finding, Rule } from '../core/types.ts';
@@ -56,7 +54,7 @@ export const rustPath: Rule = {
     const out: Finding[] = [];
     for (const c of crates(ctx.root).filter((x) => !`${x.dir}/`.startsWith(HOME))) {
       for (const f of rustFiles(ctx.root, `${c.dir}/src`).filter((x) => !isTestFile(x))) {
-        out.push(...pathReads(f, readFileSync(join(ctx.root, f), 'utf8')));
+        out.push(...pathReads(f, ctx.read(f)));
       }
     }
     return out;

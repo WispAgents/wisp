@@ -19,6 +19,7 @@ const PHONES = new Set(['android', 'ios']);
 const ATTR = /data-platform/;
 const KIT_READERS = new Set(['usePlatform', 'lookOf', 'documentLook', 'LOOK_ATTR', 'PlatformLookProvider']);
 const WHY = "features don't know the platform (ADR-0065 §5): use a kit component (its variant draws Material 3 or HIG), or the kit's usePlatform() inside packages/ui";
+const MAYBE_PLATFORM = /data-platform|\bplatform\b|\bkind\b|usePlatform|lookOf|documentLook|LOOK_ATTR|PlatformLookProvider/;
 
 function inScope(ctx: Ctx, file: string): boolean {
   return ctx.pkgOf(file) !== undefined && !isTest(file) && !ALLOWED.some((p) => file.startsWith(p));
@@ -46,6 +47,7 @@ const EQUALITY = new Set([
 ]);
 
 function codeFindings(ctx: Ctx, file: string, out: Finding[]): void {
+  if (!MAYBE_PLATFORM.test(ctx.read(file))) return;
   const sf = ctx.source(file);
   const add = (n: ts.Node, what: string): void => void out.push(finding(file, lineOf(sf, n), ID, `${what}: ${WHY}`));
   visit(sf, (n) => {

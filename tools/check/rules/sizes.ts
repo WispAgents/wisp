@@ -38,10 +38,12 @@ export const sizes: Rule = {
     const out: Finding[] = [];
     for (const file of ctx.files.filter(isCode)) {
       const text = ctx.read(file);
-      const head = text.split('\n', 10).join('\n');
-      const lines = text.endsWith('\n') ? text.split('\n').length - 1 : text.split('\n').length;
+      const rawLines = text.split('\n');
+      const head = rawLines.slice(0, 10).join('\n');
+      const lines = text.endsWith('\n') ? rawLines.length - 1 : rawLines.length;
       const fileOk = REASON.test(head);
       if (lines > MAX_FILE && !fileOk) out.push(finding(file, 1, ID, `${lines} lines (soft cap ${MAX_FILE}): split it, or say why with // size-ok:`, 'warn'));
+      if (lines <= MAX_FUNCTION) continue;
       const sf = ctx.source(file);
       visit(sf, (n) => {
         if (!ts.isFunctionLike(n) || !('body' in n) || !n.body) return;

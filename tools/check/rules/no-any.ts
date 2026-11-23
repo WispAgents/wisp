@@ -10,6 +10,7 @@ import type { Finding, Rule } from '../core/types.ts';
 const ID = 'no-any';
 const LINE_DIRECTIVE = /^\/\/\/?\s*@ts-(ignore|nocheck)\b/;
 const BLOCK_DIRECTIVE = /^\/\*+\s*@ts-(ignore|nocheck)\b|\n\s*\*?\s*@ts-(ignore|nocheck)\b/;
+const MAYBE_ANY = /\bany\b|@ts-(?:ignore|nocheck)\b/;
 
 export function directive(comment: string): string | undefined {
   const m = (comment.startsWith('//') ? LINE_DIRECTIVE : BLOCK_DIRECTIVE).exec(comment);
@@ -22,6 +23,7 @@ export const noAny: Rule = {
   run(ctx) {
     const out: Finding[] = [];
     for (const file of ctx.files.filter(isCode)) {
+      if (!MAYBE_ANY.test(ctx.read(file))) continue;
       const sf = ctx.source(file);
       visit(sf, (n) => {
         if (n.kind === ts.SyntaxKind.AnyKeyword) out.push(finding(file, lineOf(sf, n), ID, 'explicit any: use unknown and narrow it'));

@@ -18,6 +18,7 @@ const TIMED = new Set(['test', 'it', 'beforeEach', 'beforeAll', 'afterEach', 'af
 const MOCKS = new Set(['mock', 'doMock']);
 const VI_IMPORTS = new Set(['importActual', 'importMock']);
 const ALLOW = new RegExp(`check:allow\\s+${ID}\\s+\\S`);
+const MAYBE_DYN_IMPORT = /\bimport\s*\(|\bvi\.(?:importActual|importMock)\b/;
 
 /** The identifier a call chain starts from: `test`, `it.only`, `test.each(rows)`, `vi.mock` → test, it, test, vi. */
 function rootName(e: ts.Expression): string | undefined {
@@ -62,6 +63,7 @@ export const dynamicImportInTest: Rule = {
     const out: Finding[] = [];
     for (const file of ctx.files) {
       if (!/(^|\/)test\/(.+\/)?[^/]+\.test\.tsx?$/.test(file) || !ctx.pkgOf(file)) continue;
+      if (!MAYBE_DYN_IMPORT.test(ctx.read(file))) continue;
       const sf = ctx.source(file);
       let allowed: Set<number> | undefined;
       visit(sf, (n) => {

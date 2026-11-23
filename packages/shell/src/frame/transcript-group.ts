@@ -5,6 +5,7 @@
 // quiet expandable cluster with compact read-file chips and coalesced duplicate labels. DOM-free.
 import type { TimelineFileChip } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
+import '../i18n/lazy.ts';
 import type { TranscriptStepRow } from './TurnTranscript.tsx';
 
 /** Minimum consecutive routine steps before folding into a quiet cluster. */

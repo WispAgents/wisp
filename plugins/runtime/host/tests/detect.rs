@@ -154,6 +154,20 @@ async fn the_harnesses_topic_shows_every_harness_checking_at_once_then_each_as_i
     assert_eq!(rows[1].3.as_deref(), Some("hung 1.0"));
 }
 
+/// Waits (≤ 5 s) until `h.detect()` has started at least `want` times, so a second round can't race ahead and
+/// take the earlier round's gate (`gates[0]`), which would deadlock the test when it releases `old_go` first.
+async fn wait_runs(h: &Gated, want: usize) {
+    let at = std::time::Instant::now();
+    while h.runs.load(std::sync::atomic::Ordering::SeqCst) < want {
+        assert!(
+            at.elapsed() < Duration::from_secs(5),
+            "expected {want} detect runs to start; only {} started",
+            h.runs.load(std::sync::atomic::Ordering::SeqCst)
+        );
+        tokio::task::yield_now().await;
+    }
+}
+
 /// Settings' Re-check while the picker's ask still waits on a hung CLI: the older round's late answer never
 /// overwrites the Re-check's; and a plain round over a settled harness leaves its row as it was (no `checking` flash).
 #[tokio::test(flavor = "multi_thread")]
@@ -164,11 +178,14 @@ async fn an_older_rounds_late_answer_never_overwrites_a_newer_one() {
     let rt = r.rt.clone();
     let old = tokio::spawn(async move { rt.agents(&AgentsArgs::default()).await });
     topic_is(&r.store, &[("h", "checking")]).await;
-    let fresh = r.rt.agents(&AgentsArgs { fresh: Some("h".into()) }).await;
+    wait_runs(&h, 1).await;
+    let fresh = tokio::time::timeout(Duration::from_secs(5), r.rt.agents(&AgentsArgs { fresh: Some("h".into()) }))
+        .await
+        .expect("fresh round timed out");
     assert_eq!(fresh[0].version.as_deref(), Some("h 2.0"));
     assert_eq!(topic_is(&r.store, &[("h", "installed")]).await[0].3.as_deref(), Some("h 2.0"));
     old_go.send(true).unwrap();
-    let old = old.await.unwrap();
+    let old = tokio::time::timeout(Duration::from_secs(5), old).await.expect("old round timed out").unwrap();
     assert_eq!(old[0].version.as_deref(), Some("h 1.0"), "the older round still answers its own caller");
     assert_eq!(topic(&r.store).await[0].3.as_deref(), Some("h 2.0"), "the older round's answer overwrote the Re-check's");
     // a plain round: the row never goes back to checking, and lands in place
@@ -199,19 +216,19 @@ async fn an_older_answer_never_lands_over_a_newer_rounds_checking() {
     let rt = r.rt.clone();
     let old = tokio::spawn(async move { rt.agents(&AgentsArgs::default()).await });
     topic_is(&r.store, &[("h", "checking")]).await;
+    // wait until `old` is actually blocked on `old_rx` before spawning `recheck` (otherwise `recheck` can grab `old_rx`)
+    wait_runs(&h, 1).await;
     let rt = r.rt.clone();
     let recheck = tokio::spawn(async move { rt.agents(&AgentsArgs { fresh: Some("all".into()) }).await });
     // both rounds are waiting on their detects (the Re-check's wrote its checking before its detect started)
-    let at = std::time::Instant::now();
-    while h.runs.load(std::sync::atomic::Ordering::SeqCst) < 2 {
-        assert!(at.elapsed() < Duration::from_secs(5), "the Re-check's round never started");
-        tokio::task::yield_now().await;
-    }
+    wait_runs(&h, 2).await;
     old_go.send(true).unwrap();
-    assert_eq!(old.await.unwrap()[0].version.as_deref(), Some("h 1.0"));
+    let old_res = tokio::time::timeout(Duration::from_secs(5), old).await.expect("old round timed out").unwrap();
+    assert_eq!(old_res[0].version.as_deref(), Some("h 1.0"));
     assert_eq!(topic(&r.store).await[0].2, "checking", "the older round's answer landed over the Re-check's checking");
     new_go.send(true).unwrap();
-    assert_eq!(recheck.await.unwrap()[0].version.as_deref(), Some("h 2.0"));
+    let recheck_res = tokio::time::timeout(Duration::from_secs(5), recheck).await.expect("recheck round timed out").unwrap();
+    assert_eq!(recheck_res[0].version.as_deref(), Some("h 2.0"));
     assert_eq!(topic_is(&r.store, &[("h", "installed")]).await[0].3.as_deref(), Some("h 2.0"));
 }
 

@@ -16,7 +16,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { finding } from '../core/report.ts';
-import { rustFiles, testStart } from '../core/rust.ts';
+import { readRust, rustFiles, testStart } from '../core/rust.ts';
 import type { Finding, Rule } from '../core/types.ts';
 
 const ID = 'v1-coverage';
@@ -82,7 +82,7 @@ function readV2(root: string): V2 {
     rustFiles(root, dir)
       .filter((f) => !f.includes('/tests/'))
       .map((f) => {
-        const lines = readFileSync(join(root, f), 'utf8').split('\n');
+        const lines = readRust(root, f).split('\n');
         return lines.slice(0, testStart(lines)).join('\n');
       })
       .join('\n');

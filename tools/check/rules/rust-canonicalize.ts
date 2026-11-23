@@ -6,8 +6,6 @@
 // (comments and strings blanked) outside crates/wisp-proc/src/canon.rs, unless a `// canonicalize: <why>`
 // comment on its line or the line above says why (a crate that may not depend on wisp-proc, Unix-only code).
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { finding } from '../core/report.ts';
 import { codeLines, crates, rustFiles } from '../core/rust.ts';
 import type { Finding, Rule } from '../core/types.ts';
@@ -46,7 +44,7 @@ export const rustCanonicalize: Rule = {
     const out: Finding[] = [];
     for (const c of crates(ctx.root)) {
       for (const f of rustFiles(ctx.root, c.dir).filter((x) => x !== HOME)) {
-        out.push(...canonicalizes(f, readFileSync(join(ctx.root, f), 'utf8')));
+        out.push(...canonicalizes(f, ctx.read(f)));
       }
     }
     return out;

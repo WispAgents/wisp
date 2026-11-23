@@ -351,6 +351,11 @@ impl Runtime {
         extra: impl FnOnce(&mut wisp_store::Writer<'_>) -> wisp_store::Result<()> + Send + 'static,
         also: impl FnOnce(&Summary) -> Vec<Emitted> + Send,
     ) -> Result<Arc<Summary>> {
+        if s.state != SessionState::Running
+            && let Some(c) = self.coal.get().filter(|c| !c.is_empty())
+        {
+            c.flush().await;
+        }
         self.keep_open_ask(s).await;
         s.rev += 1;
         // what the task read, in memory from here on: its row keeps where its text quotes it (ADR-0050)

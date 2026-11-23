@@ -6,7 +6,7 @@
 // until something wakes it: opening its task or sending it a command (plan §7.2.3).
 // size-ok: one factory whose closures share each peer's runtime; the watch refcount (perf r2 #14) sits with watch()
 
-import type { Ack, Notice, PeerInfo, Reject, Topic } from '@wisp/protocol';
+import type { Ack, ClientMessage, Notice, PeerInfo, Reject, Topic } from '@wisp/protocol';
 import type { Devtools } from './devtools.ts';
 import type { EntityWriter } from './entities.ts';
 import { hasFeature, updateCommand, updateReason, type FeatureAnswer, type FeatureNeed } from './features.ts';
@@ -93,8 +93,9 @@ interface PeerRuntime {
   readonly info: WritableSignal<PeerInfo | undefined>;
   conn?: Scope;
   cancelRetry?: () => void;
-  /** serialized FIFO queue for POST /api/events so unsub+sub never race out of order on the wire */
-  postQueue: Promise<void>;
+  /** FIFO queue for POST /api/events so unsub+sub never race out of order on the wire; `posting` while one is in flight */
+  postQueue: { conn: Scope | undefined; msg: ClientMessage }[];
+  posting: boolean;
   asleep: boolean;
   waking: boolean;
   lastError: string;
@@ -198,38 +199,10 @@ export function createPeers(o: PeersOptions): Peers {
         return void connect(p, out.params);
       case 'send': {
         if (out.message.t === 'mutate') for (const fn of on.sent) fn(peer, out.message.mid);
-        const conn = p.conn;
-        const msg = out.message;
-        // Serialize POST /api/events per peer so back-to-back unsub+sub never arrive out of order.
-        // If a POST fails while the same stream is still open (e.g. HTTP 404 or broken socket), reopen so
-        // subscriptions and mutations recover instead of silently stalling until reload.
-        p.postQueue = p.postQueue.then(async () => {
-          if (!p.scope.alive || (conn && (!conn.alive || p.conn !== conn))) return;
-          try {
-            await p.cfg.transport.post(msg, conn?.signal ?? p.scope.signal);
-            p.postFails = 0;
-            p.cancelReopen?.();
-          } catch (err: unknown) {
-            if (!p.scope.alive || (conn && (!conn.alive || p.conn !== conn))) return;
-            warn(`${msg.t} to ${peer} not sent`, message(err));
-            if (untracked(p.status).kind !== 'online') return;
-            // The first failure reopens now (a stream the peer already dropped). One that keeps failing after the
-            // reopen (a peer that refuses the write: the grid's box answered the phone's POSTs 403) waits out the
-            // backoff with the stream left open, so the computer doesn't flip online/offline several times a second.
-            const fails = ++p.postFails;
-            if (fails === 1) return feed(p, { kind: 'reopen' });
-            if (p.cancelReopen) return; // one is already on its way
-            const wait = BACKOFF_MS[Math.min(fails - 1, BACKOFF_MS.length) - 1] ?? 0;
-            const cancel = p.scope.timeout(wait, () => {
-              delete p.cancelReopen;
-              if (untracked(p.status).kind === 'online') feed(p, { kind: 'reopen' });
-            });
-            p.cancelReopen = () => {
-              cancel();
-              delete p.cancelReopen;
-            };
-          }
-        });
+        // Serialize POST /api/events per peer so back-to-back unsub+sub never arrive out of order. An idle peer posts
+        // synchronously (callers and tests see the POST start at once); one with a POST in flight queues behind it.
+        p.postQueue.push({ conn: p.conn, msg: out.message });
+        drainPosts(p);
         return; // a lost mutate is resent after the next welcome, with the same mid
       }
       case 'reset':
@@ -272,6 +245,66 @@ export function createPeers(o: PeersOptions): Peers {
         delete p.conn;
         return;
     }
+  }
+
+  /** a POST that went through: the failure count starts over and a pending backoff reopen is called off */
+  function onPostOk(p: PeerRuntime): void {
+    p.postFails = 0;
+    p.cancelReopen?.();
+  }
+
+  /** A POST that failed while its stream is still the open one (HTTP 404, a broken socket, a refused write). */
+  function onPostError(p: PeerRuntime, conn: Scope | undefined, msg: ClientMessage, err: unknown): void {
+    if (!p.scope.alive || (conn && (!conn.alive || p.conn !== conn))) return;
+    warn(`${msg.t} to ${p.cfg.peer} not sent`, message(err));
+    if (untracked(p.status).kind !== 'online') return;
+    // The first failure reopens now (a stream the peer already dropped). One that keeps failing after the
+    // reopen (a peer that refuses the write: the grid's box answered the phone's POSTs 403) waits out the
+    // backoff with the stream left open, so the computer doesn't flip online/offline several times a second.
+    const fails = ++p.postFails;
+    if (fails === 1) return feed(p, { kind: 'reopen' });
+    if (p.cancelReopen) return; // one is already on its way
+    const wait = BACKOFF_MS[Math.min(fails - 1, BACKOFF_MS.length) - 1] ?? 0;
+    const cancel = p.scope.timeout(wait, () => {
+      delete p.cancelReopen;
+      if (untracked(p.status).kind === 'online') feed(p, { kind: 'reopen' });
+    });
+    p.cancelReopen = () => {
+      cancel();
+      delete p.cancelReopen;
+    };
+  }
+
+  /** Posts the queue in order, one at a time: the first synchronously, each next one when the previous settles. */
+  function drainPosts(p: PeerRuntime): void {
+    if (p.posting) return;
+    p.posting = true;
+    const step = (): void => {
+      for (let next = p.postQueue.shift(); next; next = p.postQueue.shift()) {
+        const { conn, msg } = next;
+        if (!p.scope.alive || (conn && (!conn.alive || p.conn !== conn))) continue;
+        let res: Promise<void>;
+        try {
+          res = p.cfg.transport.post(msg, conn?.signal ?? p.scope.signal);
+        } catch (err: unknown) {
+          onPostError(p, conn, msg, err);
+          continue;
+        }
+        void res.then(
+          () => {
+            onPostOk(p);
+            step();
+          },
+          (err: unknown) => {
+            onPostError(p, conn, msg, err);
+            step();
+          },
+        );
+        return;
+      }
+      p.posting = false;
+    };
+    step();
   }
 
   function onFrame(p: PeerRuntime, frame: Frame): void {
@@ -319,7 +352,7 @@ export function createPeers(o: PeersOptions): Peers {
       if (peers.has(cfg.peer)) throw new Error(`peer ${cfg.peer} is added twice`);
       const scope = o.scope.child(`peer:${cfg.peer}`);
       const link = cfg.link ?? syncLink({ peer: cfg.peer, clientId: o.clientId, build: o.build, ...(cfg.saved && { saved: cfg.saved }) });
-      const p: PeerRuntime = { cfg, link, scope, status: statusSig(cfg.peer), info: infoSig(cfg.peer), postQueue: Promise.resolve(), asleep: false, waking: false, lastError: 'not connected', postFails: 0 };
+      const p: PeerRuntime = { cfg, link, scope, status: statusSig(cfg.peer), info: infoSig(cfg.peer), postQueue: [], posting: false, asleep: false, waking: false, lastError: 'not connected', postFails: 0 };
       peers.set(cfg.peer, p);
       ids([...untracked(ids), cfg.peer]);
       scope.add(() => {

@@ -5,10 +5,10 @@
 // at run time (`format!` in an `owner(…)`/`run_json(…)` call: the check can't see it, and that's how
 // `wisp mcp`'s crew tools reached `crew.crew` and `crew.edit`).
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { finding } from '../core/report.ts';
-import { crates, rustFiles } from '../core/rust.ts';
+import { crates, readRust, rustFiles } from '../core/rust.ts';
 import type { Finding, Rule } from '../core/types.ts';
 import { commandTypes, registered } from './rust-mcp.ts';
 
@@ -21,14 +21,14 @@ export function registrations(root: string): { ids: Set<string>; types: Map<stri
   const types = new Map<string, Map<string, string>>();
   for (const c of all.filter((x) => x.plugin && (x.role === 'api' || x.role === 'host'))) {
     const m = types.get(c.plugin ?? '') ?? new Map<string, string>();
-    for (const f of rustFiles(root, `${c.dir}/src`)) for (const [t, id] of commandTypes(readFileSync(join(root, f), 'utf8'))) m.set(t, id);
+    for (const f of rustFiles(root, `${c.dir}/src`)) for (const [t, id] of commandTypes(readRust(root, f))) m.set(t, id);
     types.set(c.plugin ?? '', m);
   }
   const ids = new Set<string>();
   for (const h of all.filter((x) => x.role === 'host')) {
     const own = types.get(h.plugin ?? '') ?? new Map<string, string>();
     for (const f of rustFiles(root, `${h.dir}/src`)) {
-      for (const t of registered(readFileSync(join(root, f), 'utf8'))) {
+      for (const t of registered(readRust(root, f))) {
         const id = own.get(t);
         if (id) ids.add(id);
       }
@@ -47,14 +47,15 @@ export const rustMcpOwners: Rule = {
     if (!existsSync(join(ctx.root, OWNERS))) return [];
     const out: Finding[] = [];
     const { ids, types } = registrations(ctx.root);
-    readFileSync(join(ctx.root, OWNERS), 'utf8')
+    ctx
+      .read(OWNERS)
       .split('\n')
       .forEach((line, i) => {
         const m = /^\s*pub const (\w+): &str = "([^"]+)"/.exec(line);
         if (m && !ids.has(m[2] ?? '')) out.push(finding(OWNERS, i + 1, 'rust-mcp-owners', `owners::${m[1]} = "${m[2]}": no host registers it, so its MCP tool fails for every agent (register it in its plugin's host and manifest, or remove the tool)`));
       });
     for (const f of rustFiles(ctx.root, HOST)) {
-      const text = readFileSync(join(ctx.root, f), 'utf8');
+      const text = ctx.read(f);
       // `use wisp_runtime_api::commands as rt;` → rt is runtime's
       const alias = new Map<string, string>();
       for (const m of text.matchAll(/use\s+(wisp_\w+_api)(?:::\w+)*\s+as\s+(\w+)\s*;/g)) alias.set(m[2] ?? '', m[1] ?? '');

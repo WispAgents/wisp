@@ -427,7 +427,10 @@ impl Runtime {
         let guard = self.task_lock(id).await;
         let mut s = self.repo.session(id).await?;
         let mut t = self.repo.turn(turn).await?;
-        if t.status != TurnStatus::Held {
+        // Refuse while a previous release is mid-start (before:run / hold_turn): otherwise `kick` sees
+        // `run_state != Idle`, returns `Ok(None)`, and a caller retrying after a fast worktree setup
+        // (`held_setup::start`) thinks the release succeeded while `hold_turn` still writes `setup: "running"`.
+        if t.status != TurnStatus::Held || self.run_state(id) != queue::Run::Idle {
             return Err(RuntimeError::Conflict("that turn isn't waiting".into()));
         }
         if action != A::Skip {

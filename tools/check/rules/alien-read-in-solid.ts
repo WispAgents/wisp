@@ -157,26 +157,31 @@ function summarize(sf: ts.SourceFile, seed: Summary): Summary {
       if (!ks.has(k)) (ks.add(k), s.decls.set(node, ks), (changed = true));
     };
     for (const { node, init } of decls) {
-      const shape = shapeOfDecl(node, node === init ? undefined : init, s);
-      if (shape && !s.shapes.has(node)) (s.shapes.set(node, shape), (changed = true));
+      if (!s.shapes.has(node)) {
+        const shape = shapeOfDecl(node, node === init ? undefined : init, s);
+        if (shape) (s.shapes.set(node, shape), (changed = true));
+      }
       if (ts.isParameter(init)) continue;
+      const ks = s.decls.get(node);
       if (ts.isCallExpression(init)) {
         const c = calleeName(init);
         if (c === 'settings' && ts.isPropertyAccessExpression(unwrap(init.expression))) add(node, 'settings');
         if (c === 'defineStore') add(node, 'store');
         if (c === 'family') add(node, 'family');
         if (c === 'useShell') add(node, 'shell');
-        if (has(init.expression, s, 'readerMaker')) add(node, 'reader');
+        if (!ks?.has('reader') && has(init.expression, s, 'readerMaker')) add(node, 'reader');
       }
       // `const e = c.entities`: its row(…)/list(…) are the store's
       if (ts.isPropertyAccessExpression(init) && (init.name.text === 'entities' || init.name.text === 'peers')) add(node, init.name.text as Kind);
       if (ts.isFunctionDeclaration(init) || isFn(init)) {
-        if (returnsReadable(init, s)) add(node, 'maker');
-        const reads: ts.CallExpression[] = [];
-        if (init.body) readsIn(init.body, s, reads);
-        if (reads.length > 0) add(node, 'reader');
-        if (returnsReader(init, s)) add(node, 'readerMaker');
-      } else if (ts.isExpression(init) && isReadable(init, s)) add(node, 'readable');
+        if (!ks?.has('maker') && returnsReadable(init, s)) add(node, 'maker');
+        if (!ks?.has('reader') && init.body) {
+          const reads: ts.CallExpression[] = [];
+          readsIn(init.body, s, reads);
+          if (reads.length > 0) add(node, 'reader');
+        }
+        if (!ks?.has('readerMaker') && returnsReader(init, s)) add(node, 'readerMaker');
+      } else if (!ks?.has('readable') && ts.isExpression(init) && isReadable(init, s)) add(node, 'readable');
     }
   }
   return s;
@@ -298,12 +303,15 @@ function scopesOf(sf: ts.SourceFile, solid: ReadonlyMap<string, string>): ts.Nod
 
 /** The alien reads inside Solid reactive scopes of one file, each call once (nested scopes overlap). */
 export function alienReads(ctx: Ctx, file: string, memo: Memo = new Map()): ts.CallExpression[] {
+  if (!file.endsWith('.tsx') && !ctx.read(file).includes('solid-js')) return [];
   const sf = ctx.source(file);
   const solid = solidNames(sf);
   if (solid.size === 0 && !file.endsWith('.tsx')) return [];
+  const scopes = scopesOf(sf, solid);
+  if (scopes.length === 0) return [];
   const s = summarize(sf, seedFromImports(ctx, file, sf, memo));
   const found = new Set<ts.CallExpression>();
-  for (const root of scopesOf(sf, solid)) {
+  for (const root of scopes) {
     // `createMemo(compute)`: a reader handed over by name runs as the scope
     if (ts.isIdentifier(root) && has(root, s, 'reader') && ts.isCallExpression(root.parent)) found.add(root.parent);
     const reads: ts.CallExpression[] = [];

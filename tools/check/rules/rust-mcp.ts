@@ -40,7 +40,7 @@ export const rustMcp: Rule = {
     const idsOf = (plugin: string | undefined): Map<string, string> => {
       const ids = new Map<string, string>();
       for (const c of all.filter((x) => x.plugin === plugin && (x.role === 'api' || x.role === 'host'))) {
-        for (const f of rustFiles(ctx.root, `${c.dir}/src`)) for (const [t, id] of commandTypes(readFileSync(join(ctx.root, f), 'utf8'))) ids.set(t, id);
+        for (const f of rustFiles(ctx.root, `${c.dir}/src`)) for (const [t, id] of commandTypes(ctx.read(f))) ids.set(t, id);
       }
       return ids;
     };
@@ -50,12 +50,12 @@ export const rustMcp: Rule = {
       if (!existsSync(join(ctx.root, file))) continue;
       let m: Record<string, unknown>;
       try {
-        m = JSON.parse(readFileSync(join(ctx.root, file), 'utf8')) as Record<string, unknown>;
+        m = JSON.parse(ctx.read(file)) as Record<string, unknown>;
       } catch {
         continue;
       }
       const reg = new Set<string>();
-      for (const f of rustFiles(ctx.root, `${c.dir}/src`)) for (const t of registered(readFileSync(join(ctx.root, f), 'utf8'))) reg.add(ids.get(t) ?? '');
+      for (const f of rustFiles(ctx.root, `${c.dir}/src`)) for (const t of registered(ctx.read(f))) reg.add(ids.get(t) ?? '');
       const cmds = (m['contributes'] as { commands?: unknown } | undefined)?.commands;
       for (const cmd of Array.isArray(cmds) ? (cmds as { id?: unknown; uiOnly?: unknown }[]) : []) {
         const id = typeof cmd?.id === 'string' ? cmd.id : '';

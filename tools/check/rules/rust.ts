@@ -83,7 +83,7 @@ export const rustSansIo: Rule = {
     for (const c of crates(ctx.root).filter((x) => x.role === 'core' || SANS_IO_CRATES.has(x.name))) {
       for (const name of c.deps.filter((d) => IO_DEPS.has(d))) out.push(finding(manifestOf(c), c.depLine.get(name) ?? 1, 'rust-sans-io', `${c.name} is sans-IO and depends on ${name}: inject it instead`));
       for (const file of rustFiles(ctx.root, `${c.dir}/src`).filter((f) => !isTestFile(f))) {
-        const lines = codeLines(readFileSync(join(ctx.root, file), 'utf8'));
+        const lines = codeLines(ctx.read(file));
         const end = testStart(lines);
         for (let i = 0; i < end; i++) {
           for (const [re, what] of IO_CODE) if (re.test(lines[i] ?? '')) out.push(finding(file, i + 1, 'rust-sans-io', `${c.name} is sans-IO: no ${what}`));
@@ -103,7 +103,7 @@ export const rustUnsafe: Rule = {
     const out: Finding[] = [];
     for (const c of crates(ctx.root)) {
       for (const file of rustFiles(ctx.root, c.dir).filter((f) => !f.startsWith(UNSAFE_OK))) {
-        codeLines(readFileSync(join(ctx.root, file), 'utf8')).forEach((l, i) => {
+        codeLines(ctx.read(file)).forEach((l, i) => {
           if (/\bunsafe\b/.test(l)) out.push(finding(file, i + 1, 'rust-unsafe', `unsafe outside ${UNSAFE_OK} (the one reviewed module)`));
         });
       }
@@ -156,7 +156,7 @@ export const rustSizes: Rule = {
     const out: Finding[] = [];
     for (const c of crates(ctx.root)) {
       for (const file of rustFiles(ctx.root, `${c.dir}/src`).filter((f) => !isTestFile(f))) {
-        const text = readFileSync(join(ctx.root, file), 'utf8');
+        const text = ctx.read(file);
         const n = text.endsWith('\n') ? text.split('\n').length - 1 : text.split('\n').length;
         if (n > RUST_MAX_FILE && !REASON.test(header(text))) out.push(finding(file, 1, 'rust-sizes', `${n} lines (soft cap ${RUST_MAX_FILE}): split it, or say why with //! size-ok: in its header`, 'warn'));
         for (const [line, name, len] of longFns(text)) out.push(finding(file, line, 'rust-sizes', `fn ${name} is ${len} lines (soft cap ${RUST_MAX_FN})`, 'warn'));
@@ -198,14 +198,14 @@ export const rustManifests: Rule = {
     const manifests: { c: Crate; file: string; m: Record<string, unknown> }[] = [];
     for (const c of hosts) {
       const file = `${c.dir}/wisp-plugin.json`;
-      const isPlugin = rustFiles(ctx.root, `${c.dir}/src`).some((f) => /impl\s+(?:wisp_kernel::)?Plugin\s+for\b/.test(readFileSync(join(ctx.root, f), 'utf8')));
+      const isPlugin = rustFiles(ctx.root, `${c.dir}/src`).some((f) => /impl\s+(?:wisp_kernel::)?Plugin\s+for\b/.test(ctx.read(f)));
       // every host crate is a plugin: a manifest beside its Cargo.toml and an `impl Plugin`
       if (!isPlugin) out.push(finding(manifestOf(c), 1, 'rust-manifests', `${c.name} is a plugin host but implements no Plugin`));
       if (!existsSync(join(ctx.root, file))) {
         out.push(finding(manifestOf(c), 1, 'rust-manifests', `${c.name} is a plugin host but has no wisp-plugin.json beside its Cargo.toml`));
         continue;
       }
-      const m = manifestJson(file, readFileSync(join(ctx.root, file), 'utf8'), out);
+      const m = manifestJson(file, ctx.read(file), out);
       if (m) manifests.push({ c, file, m });
     }
     // a plugin's own permissions (its plugin:<id> set) name commands too, for every manifest
@@ -262,7 +262,7 @@ export const rustResourceKinds: Rule = {
     for (const c of crates(ctx.root).filter((x) => x.role === 'host' && x.plugin)) {
       const plugin = c.plugin ?? '';
       const files = rustFiles(ctx.root, `${c.dir}/src`).filter((f) => !isTestFile(f));
-      const text = files.map((f) => readFileSync(join(ctx.root, f), 'utf8')).join('\n');
+      const text = files.map((f) => ctx.read(f)).join('\n');
       // declared settings are wisp.settings' `setting` kind already; tables are the plugin's own to declare
       const tables = /Migration::sql\(/.test(text);
       // a plugin whose tables hold only data (history, queues, ids) says so, with why (ADR-0028/0029)
@@ -316,14 +316,14 @@ export const rustEvents: Rule = {
       if (!existsSync(join(ctx.root, file))) continue;
       let m: Record<string, unknown>;
       try {
-        m = JSON.parse(readFileSync(join(ctx.root, file), 'utf8')) as Record<string, unknown>;
+        m = JSON.parse(ctx.read(file)) as Record<string, unknown>;
       } catch {
         continue;
       }
       const code = new Map<string, boolean>();
       for (const c of all.filter((x) => x.plugin === plugin)) {
         for (const f of rustFiles(ctx.root, `${c.dir}/src`).filter((x) => !isTestFile(x))) {
-          for (const [t, d] of eventsInCode(stripTests(readFileSync(join(ctx.root, f), 'utf8')))) code.set(t, d || (code.get(t) ?? false));
+          for (const [t, d] of eventsInCode(stripTests(ctx.read(f)))) code.set(t, d || (code.get(t) ?? false));
         }
       }
       const listed = eventsInManifest(m);
