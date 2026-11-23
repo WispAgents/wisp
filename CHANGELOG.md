@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Task view (Chat mode): when **Transcript** view is off, contiguous runs of actions (reads, edits, searches, commands, thoughts) between agent messages now fold inline into a compact pill button on the timeline rail (e.g. `Edited 1 file · Read 3 files · 1 command` with an action count badge and chevron) both while running and when finished, so users see what is happening between messages and can expand any pill in place to inspect the actions taken.
 - Task view (Chat mode): **Transcript** view (steps) is now off by default in Chat mode (showing the agent's messages, errors, and final answer, with the activity summary pill in the trail), and its on/off state is persisted per task alongside the task's scroll position in `shell.places` so switching tasks or reloading restores both the same view and scroll position.
 - Task view: fixed auto-scroll dropping out of `following` when already at the bottom. Programmatic bottom pins (`pin()`, `toEnd()`, `place()`, and `turns.grew()`) now update `lastTop` and sync the observed `[data-kit="turns"]` height at the moment of the write, so asynchronous `scroll` events and `ResizeObserver` callbacks that fire after subsequent streaming growth or routine-step folding never compute a false negative `moved` delta and pause auto-scroll. Also auto-arms `turnFollower` when content grows while following before the initial `requestAnimationFrame` callback fires.
 

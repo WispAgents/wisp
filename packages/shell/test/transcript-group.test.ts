@@ -6,6 +6,8 @@ import type { TranscriptStepRow } from '../src/frame/TurnTranscript.tsx';
 const T_STRINGS: Record<string, string> = {
   'shell.task.group.reads.one': 'Read 1 file',
   'shell.task.group.reads.other': 'Read {n} files',
+  'shell.task.group.edits.one': 'Edited 1 file',
+  'shell.task.group.edits.other': 'Edited {n} files',
   'shell.task.group.searches.one': '1 search',
   'shell.task.group.searches.other': '{n} searches',
   'shell.task.group.commands.one': '1 command',
@@ -91,11 +93,57 @@ test('legacy "Using read file" tool rows classify as reads and coalesce duplicat
   }
 });
 
-test('runs shorter than MIN_CLUSTER stay ungrouped', () => {
+test('runs shorter than MIN_CLUSTER stay ungrouped when transcript is on', () => {
   expect(MIN_CLUSTER).toBe(3);
   const two: TranscriptStepRow[] = [
     { kind: 'run', label: 'Searching for foo' },
     { kind: 'read', label: 'Reading a.ts', file: 'a.ts' },
   ];
   expect(groupFinishedSteps(two, false).map((e) => e.kind)).toEqual(['step', 'step']);
+});
+
+test('quiet mode (Transcript off) folds every run of 1+ actions between messages, including edits and while running', () => {
+  const steps: TranscriptStepRow[] = [
+    { kind: 'text', label: 'Inspecting the auth handler and tests.' },
+    { kind: 'read', label: 'Reading src/auth.ts', file: 'src/auth.ts', seq: 2 },
+    { kind: 'run', label: 'Searching for “login” in src/', detail: 'grep -n login src/', seq: 3 },
+    { kind: 'text', label: 'Found the timeout issue, patching now.' },
+    { kind: 'edit', label: 'Editing src/auth.ts', file: 'src/auth.ts', seq: 5 },
+    { kind: 'run', label: 'Running tests', detail: 'npm test', seq: 6 },
+    { kind: 'error', label: '1 test failed', bad: true, seq: 7 },
+    { kind: 'edit', label: 'Editing test/auth.test.ts', file: 'test/auth.test.ts', seq: 8 },
+  ];
+
+  // Even while running, quiet mode folds contiguous actions between agent messages/errors into compact expandable pills
+  const liveQuiet = groupFinishedSteps(steps, true, (s) => s, true);
+  expect(liveQuiet.map((e) => e.kind)).toEqual(['step', 'group', 'step', 'group', 'step', 'group']);
+
+  const g1 = liveQuiet[1];
+  expect(g1?.kind).toBe('group');
+  if (g1?.kind === 'group') {
+    expect(g1.items).toHaveLength(2);
+    expect(clusterLabel(g1.counts, g1.items.length, t)).toBe('Read 1 file · 1 search');
+    expect(g1.files).toEqual([{ name: 'auth.ts', title: 'src/auth.ts' }]);
+    expect(g1.rest).toHaveLength(1);
+    // stable key based on first step so streaming new steps into an open group preserves its expanded state
+    expect(g1.key).toBe('group:2');
+  }
+
+  const g2 = liveQuiet[3];
+  expect(g2?.kind).toBe('group');
+  if (g2?.kind === 'group') {
+    expect(g2.items).toHaveLength(2);
+    expect(clusterLabel(g2.counts, g2.items.length, t)).toBe('Edited 1 file · 1 command');
+    expect(g2.rest.map((r) => r.step.kind)).toEqual(['edit', 'run']);
+  }
+
+  const errStep = liveQuiet[4];
+  expect(errStep?.kind === 'step' && errStep.step.bad).toBe(true);
+
+  const g3 = liveQuiet[5];
+  expect(g3?.kind).toBe('group');
+  if (g3?.kind === 'group') {
+    expect(g3.items).toHaveLength(1);
+    expect(clusterLabel(g3.counts, g3.items.length, t)).toBe('Edited 1 file');
+  }
 });

@@ -58,6 +58,22 @@
   }
   button[data-kit='timeline-row'] { cursor: pointer; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
   button[data-kit='timeline-row']:hover, [data-kit='timeline-step'][data-open] > [data-kit='timeline-row'] { background: var(--bg-2); color: var(--ink); }
+  /* An action cluster pill between messages: self-sized capsule on the timeline rail with a subtle border & count badge */
+  [data-kit='timeline-step'][data-group] { padding-top: var(--space-1); padding-bottom: var(--space-1); }
+  [data-kit='timeline-step'][data-group] > button[data-kit='timeline-row'] {
+    flex: 0 1 auto; width: fit-content; max-width: 100%; gap: var(--space-4); min-height: var(--size-pill);
+    padding: var(--space-1) var(--space-4) var(--space-1) var(--space-1);
+    border-radius: var(--radius-pill); background: var(--surface-2); border: var(--size-hairline) solid var(--line);
+    font-size: var(--fs-sm); color: var(--muted);
+    transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  [data-kit='timeline-step'][data-group] > button[data-kit='timeline-row']:hover,
+  [data-kit='timeline-step'][data-group][data-open] > button[data-kit='timeline-row'] {
+    background: var(--bg-2); border-color: var(--line-2); color: var(--ink);
+  }
+  [data-kit='timeline-step'][data-group] > button[data-kit='timeline-row'] > [data-kit='timeline-icon'] { background: transparent; color: var(--muted); }
+  [data-kit='timeline-step'][data-group] > button[data-kit='timeline-row']:hover > [data-kit='timeline-icon'],
+  [data-kit='timeline-step'][data-group][data-open] > button[data-kit='timeline-row'] > [data-kit='timeline-icon'] { color: var(--accent); }
   [data-kit='timeline-icon'] {
     position: relative; z-index: var(--z-raised); flex: none; display: grid; place-items: center; width: var(--size-avatar-sm); height: var(--size-avatar-sm);
     border-radius: var(--radius-pill); background: var(--surface); color: var(--faint);
