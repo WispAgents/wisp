@@ -1,0 +1,200 @@
+---
+title: Workflows
+description: Chain agent tasks as a DAG with needs, if conditions, matrix fan-out, inputs, retries, timeouts, concurrency and budgets.
+sidebar:
+  order: 7
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A **workflow** chains several agent tasks into a directed acyclic graph (DAG): steps run in parallel when they can, wait
+on the steps they `need`, branch on earlier results with `if`, fan out across harnesses or models with `matrix`, and
+stop when a spend `budget` is reached.
+
+Use a [factory](../software-factory/) when one task should go through stations (`spec → build → checks → review → ship`)
+and loop back to build until checks and review pass. Use a **workflow** when a job is a graph of distinct tasks that pass
+outputs forward.
+
+## 1. Declare a workflow
+
+Declare workflows under `workflows:` in any `*.wisp.yml` file in `.wisp/` (or a stand-alone formula file):
+
+```yaml
+# .wisp/workflows.wisp.yml
+wisp: 1
+agents:
+  builder:  { harness: claude, model: opus, mode: auto }
+  reviewer: { harness: codex, effort: high, mode: plan }
+goals:
+  green: { text: "npm test passes with zero failures", judges: [reviewer] }
+workflows:
+  release-check:
+    description: Test, fix failures, audit on two harnesses and draft release notes
+    inputs:
+      version: null          # null has no default: wisp run must pass version=…
+      branch: main           # default used when branch=… isn't passed
+    concurrency: 2           # at most 2 steps run at once
+    budget: { usd: 20 }      # no new step starts once the run has spent $20
+    tasks:
+      tests:
+        agent: builder
+        prompt: "Run the test suite on ${{ inputs.branch }} for ${{ inputs.version }} and report any failures."
+
+      triage:
+        needs: [tests]
+        if: "${{ tasks.tests.output.failed > 0 }}"
+        agent: builder
+        worktree: true
+        goal: green
+        retries: 1
+        timeout: 15
+        prompt: "Fix these failing tests for ${{ inputs.version }}: ${{ tasks.tests.output.failures }}"
+
+      audit:
+        needs: [tests]
+        matrix:
+          agent: [claude, codex]
+        mode: plan
+        prompt: "Audit the diff for ${{ inputs.version }} on ${{ matrix.agent }}."
+
+      notes:
+        needs: [triage, audit]
+        agent: reviewer
+        optional: true
+        prompt: "Write the release notes for ${{ inputs.version }} from the audit: ${{ tasks.audit.output }}"
+```
+
+`wisp validate` checks the graph before anything runs:
+
+- Every step has a `prompt`, and every name in `needs:` is a step of the workflow.
+- The steps have no cycle (`these tasks need each other: a → b → a`).
+- Every `${{ tasks.<step>… }}` expression names a step that exists **and** is in the step's `needs:` (directly or
+  transitively), so a step never reads an output that hasn't finished yet.
+- Every `${{ inputs.<name> }}` names a declared input and every `${{ matrix.<key> }}` names a key of that step's own
+  `matrix`.
+- Every `agent`, `project`, machine (`on`) and trigger (`on.trigger`) reference resolves.
+
+## 2. Steps, `needs` and outputs (`${{ … }}`)
+
+Steps without `needs` start right away (up to `concurrency`). A step with `needs: [tests]` waits until `tests` has
+ended. If a required step in `needs` fails, downstream steps that depend on it are marked **skipped**
+(`a task it needs failed`). If a step in `needs` was skipped because its `if:` was false, downstream steps still run.
+
+Each step's prompt, `steps` (queued follow-up turns on that step's task) and `if` condition can read earlier steps with
+`${{ … }}`:
+
+| Path | What it holds |
+| --- | --- |
+| `tasks.<step>.state` | `'done'`, `'failed'` or `'skipped'` |
+| `tasks.<step>.task` | The child task's id |
+| `tasks.<step>.output.status` | The `hero` block's status (`'done'`, `'partial'`, `'blocked'`, `'info'`) |
+| `tasks.<step>.output.title` / `.summary` | The `hero` block's title and summary |
+| `tasks.<step>.output.passed` / `.failed` / `.skipped` / `.failures` | Counts and failures from the step's `tests` block |
+| `tasks.<step>.output.<stat_label>` | Any number from a `stats` block (spaces in the label become `_`) |
+| `tasks.<step>.output.text` | The turn's text |
+| `inputs.<name>` | The input value passed to `wisp run` (or its default in `inputs:`) |
+| `matrix.<key>` | This combination's value in a `matrix` step |
+
+To send multiple turns inside one step, add `steps:` after `prompt:`: each string is sent as a follow-up turn on the
+same task when the turn before it finishes.
+
+## 3. Conditions (`if`) and `matrix` fan-out
+
+`if:` takes an expression over `tasks`, `inputs` and `matrix`, with `==`, `!=`, `>`, `<`, `>=`, `<=`, `&&`, `||`, `!`,
+parentheses, numbers, `'strings'`, `true`, `false` and `null`:
+
+```yaml
+# .wisp/conditions.wisp.yml
+workflows:
+  ci-followup:
+    inputs:
+      env: staging
+    tasks:
+      check:
+        agent: builder
+        prompt: "Run smoke checks against ${{ inputs.env }}."
+      rollback:
+        needs: [check]
+        if: "${{ tasks.check.output.status != 'done' && inputs.env == 'prod' }}"
+        agent: builder
+        prompt: "Draft a rollback plan: ${{ tasks.check.output.summary }}"
+```
+
+When `if:` evaluates to false (or falsy, such as `0`, `""` or `null`), the step is skipped (`if: … was false`).
+
+`matrix:` expands a step into one child task per combination of its keys, named `<step>[<key>=<val>,…]` (for example
+`audit[agent=claude]` and `audit[agent=codex]`). When a matrix key is `agent`, `model`, `effort`, `mode` or `on`, it
+also sets that field on the child task. In a later step that `needs` a matrix step, `${{ tasks.audit.output }}` is the
+list of `{ matrix, state, output }` objects from every combination.
+
+## 4. Bounds: retries, timeouts, concurrency and budgets
+
+| Field | Where | What it does |
+| --- | --- | --- |
+| `inputs` | workflow | Map of input names to defaults (`null` makes `key=value` required when starting a run) |
+| `concurrency` | workflow | Maximum steps running at once across the run (`0` or omitted = unlimited) |
+| `budget` | workflow | `{ usd: 20 }` — once completed turns reach this spend, waiting steps are skipped and no new step starts |
+| `project` | workflow or step | Folder the steps run in (a step's `project` overrides the workflow's) |
+| `retries` | step | Number of times to retry the step with a fresh task when its turn fails or times out |
+| `timeout` | step | Minutes a step may run before wisp stops its task and counts the attempt as failed |
+| `optional` | step | `true` lets downstream steps run and the workflow finish `done` even if this step fails |
+| `worktree` | step | `true` or `false` to override whether the step gets its own git worktree |
+| `goal` | step | A declared goal's name (`green`) or inline `{ text: "…" }` that judges the step before it ends |
+
+## 5. Apply and run a workflow
+
+A workflow run is one parent task (`<name> (workflow)`) whose children are its steps (`<name> · <step>`). The parent
+never runs an agent itself; it tracks each step's state, task id, attempts, output and total cost, and finishes in
+**Review** when every required step succeeded (or **Error** when one failed).
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+1. Apply the formula from **⌘K** → **Settings** → Advanced → **Setup** → **Import** (paste the formula, press **See
+   what it changes**, then **Apply**), or run `wisp apply` in a repo with `.wisp/`.
+2. Start a run from **⌘K** → **Run a workflow**, or attach the workflow to a trigger in **Settings** → Agents →
+   **Automations**.
+3. The run appears in the task list as `release-check (workflow)`, with each step's task nested under it. Click any
+   step to read its report, diff and transcript.
+</TabItem>
+<TabItem label="Phone app">
+Apply the formula in Settings → Advanced → **Setup** → **Import** (or from a computer with `wisp apply`). Runs started
+from the CLI, a schedule or a trigger appear in **Tasks** with their step tasks under them.
+</TabItem>
+<TabItem label="TUI">
+Run `wisp tui`, press **i** in any reply box, and run:
+
+```text
+/workflows list
+wisp run release-check version=2.1.0
+```
+Press **g t** to watch the parent task and its step tasks in the list.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp validate                                       # check the DAG, references and ${{ }} expressions
+wisp apply                                          # apply .wisp/*.wisp.yml
+wisp workflows list                                 # list applied workflows (or: wisp export workflows)
+wisp run release-check version=2.1.0                # start a run; prints the parent task id
+wisp run release-check version=2.1.0 --wait         # wait for every step and print ✓ / ✗ / – per step
+wisp ls --workflow release-check                    # list runs of this workflow
+wisp task history <id>                              # the parent run and every step task under it
+```
+With `--wait`, `wisp run` prints each step as it ends (`✓ tests`, `– triage  if: … was false`,
+`✓ audit[agent=claude]`, `✓ audit[agent=codex]`, `✓ notes`) and exits `1` if the workflow ended `failed`.
+</TabItem>
+</Tabs>
+
+## 6. Start a workflow from a schedule or event
+
+Point a [trigger](../schedules-and-triggers/) at `workflow: <name>` to run a workflow on a schedule, a red CI run, a
+labelled issue or a webhook. The trigger passes its event as `inputs.event`:
+
+```yaml
+# .wisp/triggers.wisp.yml
+triggers:
+  nightly-release-check:
+    on: schedule
+    cron: "every weekday at 2"
+    workflow: ci-followup
+    budget: { perRun: 20, perDay: 40 }
+```
