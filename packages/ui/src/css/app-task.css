@@ -815,6 +815,11 @@
     padding: 14px 0 var(--space-7);
     background: linear-gradient(transparent, var(--bg) 22px);
   }
+  /* following the end (hold-view, follow.ts): the page pins the end itself, so the browser's scroll anchoring stays out
+     of it (it would hold a line above the end as chunks land); a reader who left keeps it, which holds their line */
+  [data-kit='it-body'][data-following] {
+    overflow-anchor: none;
+  }
   /* Jump to latest: over the dock, centred on the column, once the reader scrolled away from the end (the view no longer
      follows); a dot when more came in since */
   [data-kit='to-latest'] {
