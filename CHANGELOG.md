@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Phone app + wisp Cloud: a cloud computer no longer flips online/offline several times a second. The box refused every sync write from the phone (its webview's `Origin: https://localhost`, 403 `forbidden origin`), and each refusal reopened the stream at once. The grid now forwards a device token's or API key's request without the caller's Origin (a bearer token can't be sent cross-site), and a peer that keeps refusing writes is reopened on the 2/5/15/30/60 s backoff with its stream left open instead of in a loop.
 - wisp Cloud: a new account's box opens again. Since the v2 grid went live (2026-11-21) Caddy's certificate check (`/_grid/tls-ask` on `127.0.0.1`) got a 421, so no account made after it got an HTTPS certificate and its wisp stayed offline. The check is also no longer answered for requests from outside.
 - Task view (Chat & Transcript): finished turns now fold runs of 3+ routine exploration steps (reads, searches, commands, thoughts) into a single quiet expandable row (with compact file chips and coalesced duplicate labels) while keeping edits, errors, and mid-turn messages directly visible; Antigravity's `read_file` tool now reports `Reading <path>` instead of generic `"Using read file"`.
 - Task view (**Needs your call**): `question` blocks now render in normal chat flow at the end of the answer instead of sticking above the reply box and covering the transcript.

@@ -13,6 +13,7 @@ import { hasFeature, updateCommand, updateReason, type FeatureAnswer, type Featu
 import { syncLink, type ClientInput, type ClientOutput, type LinkSaved, type PeerLink } from './peer.ts';
 import type { Scope } from './scope.ts';
 import { batch, signal, untracked, type Readable, type WritableSignal } from './signals.ts';
+import { BACKOFF_MS } from '@wisp/sync';
 import { PeerDown, type Frame, type PeerHttp, type Transport } from './transport.ts';
 import type { PeerId, Warn } from './types.ts';
 
@@ -97,6 +98,9 @@ interface PeerRuntime {
   asleep: boolean;
   waking: boolean;
   lastError: string;
+  /** POSTs that failed since the last one that got through: past the first, the reopen waits out BACKOFF_MS */
+  postFails: number;
+  cancelReopen?: () => void;
 }
 
 const listen = <F>(set: Set<F>, fn: F): (() => void) => {
@@ -203,10 +207,27 @@ export function createPeers(o: PeersOptions): Peers {
           if (!p.scope.alive || (conn && (!conn.alive || p.conn !== conn))) return;
           try {
             await p.cfg.transport.post(msg, conn?.signal ?? p.scope.signal);
+            p.postFails = 0;
+            p.cancelReopen?.();
           } catch (err: unknown) {
             if (!p.scope.alive || (conn && (!conn.alive || p.conn !== conn))) return;
             warn(`${msg.t} to ${peer} not sent`, message(err));
-            if (untracked(p.status).kind === 'online') feed(p, { kind: 'reopen' });
+            if (untracked(p.status).kind !== 'online') return;
+            // The first failure reopens now (a stream the peer already dropped). One that keeps failing after the
+            // reopen (a peer that refuses the write: the grid's box answered the phone's POSTs 403) waits out the
+            // backoff with the stream left open, so the computer doesn't flip online/offline several times a second.
+            const fails = ++p.postFails;
+            if (fails === 1) return feed(p, { kind: 'reopen' });
+            if (p.cancelReopen) return; // one is already on its way
+            const wait = BACKOFF_MS[Math.min(fails - 1, BACKOFF_MS.length) - 1] ?? 0;
+            const cancel = p.scope.timeout(wait, () => {
+              delete p.cancelReopen;
+              if (untracked(p.status).kind === 'online') feed(p, { kind: 'reopen' });
+            });
+            p.cancelReopen = () => {
+              cancel();
+              delete p.cancelReopen;
+            };
           }
         });
         return; // a lost mutate is resent after the next welcome, with the same mid
@@ -298,7 +319,7 @@ export function createPeers(o: PeersOptions): Peers {
       if (peers.has(cfg.peer)) throw new Error(`peer ${cfg.peer} is added twice`);
       const scope = o.scope.child(`peer:${cfg.peer}`);
       const link = cfg.link ?? syncLink({ peer: cfg.peer, clientId: o.clientId, build: o.build, ...(cfg.saved && { saved: cfg.saved }) });
-      const p: PeerRuntime = { cfg, link, scope, status: statusSig(cfg.peer), info: infoSig(cfg.peer), postQueue: Promise.resolve(), asleep: false, waking: false, lastError: 'not connected' };
+      const p: PeerRuntime = { cfg, link, scope, status: statusSig(cfg.peer), info: infoSig(cfg.peer), postQueue: Promise.resolve(), asleep: false, waking: false, lastError: 'not connected', postFails: 0 };
       peers.set(cfg.peer, p);
       ids([...untracked(ids), cfg.peer]);
       scope.add(() => {
