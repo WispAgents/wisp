@@ -36,6 +36,7 @@ import {
   type Act,
   type LauncherTool,
   type TaskPlaceChip,
+  type TaskScroll,
 } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { blockStrings } from '../block-strings.ts';
@@ -70,7 +71,7 @@ import { noOutputLine } from './no-output.ts';
 import { completionOf, suggestedFollowUps } from './follow-ghost.ts';
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { draftValue, replyDraft } from './drafts.ts';
-import { keep, placeOf, placesStore, scrollFor, type Place } from './place.ts';
+import { keep, placeOf, placesLoaded, placesStore, scrollFor, type Place } from './place.ts';
 import { dismiss, dismissedStore, shownOverlaps, type Dismissed } from './overlap-dismiss.ts';
 import { menuEntryOf, taskMenu, type TaskMenuEntry } from '../task-menu.ts';
 import {
@@ -325,6 +326,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // each task keeps its place (v1 split.js keepPlace/backToPlace, F-task-17): written when it closes or the page hides,
   // read once on opening it, after its turns are there
   let bodyEl: HTMLElement | undefined;
+  let scrollCtrl: TaskScroll | undefined;
+  let appliedPlace = false;
+  let userScrolledBeforePlace = false;
   const places = placesStore(shell.client);
   const turnTops = (el: HTMLElement): { id: string; top: number }[] => {
     const at = el.getBoundingClientRect().top - el.scrollTop;
@@ -340,14 +344,14 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // (the flicker gate's profile). Never scrolled since it opened: the kept place stands as it was.
   let placeSeen: { place: Place | undefined } | undefined;
   let reading = 0;
-  const notePlace = (el: HTMLElement): void => {
+  const notePlace = (el: HTMLElement, isChat: boolean): void => {
     if (reading) return;
     reading = requestAnimationFrame(() => {
       reading = 0;
       // a page already hidden (a phone's Back through history hides the main pane first) has no place to read: every
       // turn would measure 0 and the kept place would become the top
       if (!el.isConnected || el.checkVisibility?.() === false || !el.querySelector('[data-turn]')) return;
-      placeSeen = { place: placeOf(el, turnTops(el)) };
+      placeSeen = { place: placeOf(el, turnTops(el), { following: scrollCtrl?.following() === true, chat: isChat }) };
     });
   };
   onCleanup(() => cancelAnimationFrame(reading));
@@ -375,21 +379,6 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   onCleanup(() => {
     removeEventListener('pagehide', keepPlace);
     document.removeEventListener('visibilitychange', onHide);
-  });
-  let placed = false;
-  createEffect(() => {
-    if (placed || !built() || turns().length === 0) return;
-    placed = true;
-    // after a reload the kept places are still loading from disk
-    void places.ready.then(() => {
-      const p = (places.value() as unknown as Readonly<Record<string, Place>> | undefined)?.[key];
-      requestAnimationFrame(() => {
-        const el = bodyEl;
-        if (el && p) el.scrollTop = scrollFor(p, el, turnTops(el));
-        // placed away from the end (its kept place, or its top): what shows stays as turns land (F-page-44)
-        if (el) keepShown(el);
-      });
-    });
   });
   const [rKey, rField] = replyDraft(key);
   const reply$ = useSignal(shell.client.drafts.get<string>(rKey, rField));
@@ -538,19 +527,62 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const keepShown = (el: HTMLElement): void => {
     if (keepFrom() === undefined && el.scrollHeight - el.scrollTop - el.clientHeight >= 2) setKeepFrom(fold().shown[0]?.id);
   };
-  // a follow-up sent goes to the end: the new turn shows whole and the view follows it from there, even
-  // when the reader had scrolled up (the hold-view then keeps the tail, as for any reader at the end). A frame later, so
-  // the optimistic turn is in the page
+  // a follow-up sent goes to the end: immediately re-engages hold-view's follow state (clearing any byHand fold flag)
+  // so the optimistic turn and streamed output stay pinned from the very first frame
   const toEnd = (): void => {
     setKeepFrom(undefined);
-    requestAnimationFrame(() => {
-      if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
-    });
+    if (scrollCtrl) {
+      scrollCtrl.toEnd();
+      requestAnimationFrame(() => {
+        if (scrollCtrl?.following()) scrollCtrl.toEnd();
+      });
+    } else {
+      requestAnimationFrame(() => {
+        if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+      });
+    }
   };
+  let placed = false;
+  createEffect(() => {
+    if (placed || !built() || turns().length === 0) return;
+    placed = true;
+    const isChat = untrack(chat.chatMode);
+    const apply = (): void => {
+      appliedPlace = true;
+      if (userScrolledBeforePlace) return;
+      const el = bodyEl;
+      if (!el || !el.isConnected) return;
+      const p = (places.value() as unknown as Readonly<Record<string, Place>> | undefined)?.[key];
+      if (p) {
+        if (p.end) {
+          if (scrollCtrl) scrollCtrl.toEnd();
+          else el.scrollTop = el.scrollHeight;
+        } else {
+          const top = scrollFor(p, el, turnTops(el));
+          if (scrollCtrl) scrollCtrl.place(top, false);
+          else el.scrollTop = top;
+        }
+      } else if (isChat) {
+        // Chat mode with no saved reading position opens at the bottom, pinned & following
+        if (scrollCtrl) scrollCtrl.toEnd();
+        else el.scrollTop = el.scrollHeight;
+      } else {
+        // Cards mode opens at top; follow if the whole page fits at the end
+        scrollCtrl?.place(el.scrollTop, el.scrollHeight - el.scrollTop - el.clientHeight <= 2);
+      }
+      keepShown(el);
+    };
+    // once places finished loading (every task switch after boot), place in a microtask before the turns' frame paints
+    // so Chat mode lands at the bottom with zero flash of turn 1; on hard reload wait for persisted places first
+    if (placesLoaded(places)) queueMicrotask(apply);
+    else void places.ready.then(() => requestAnimationFrame(apply));
+  });
   const onBodyScroll = (e: Event): void => {
     kept = false;
-    keepShown(e.currentTarget as HTMLElement);
-    notePlace(e.currentTarget as HTMLElement);
+    if (built() && !appliedPlace) userScrolledBeforePlace = true;
+    const el = e.currentTarget as HTMLElement;
+    keepShown(el);
+    notePlace(el, untrack(chat.chatMode));
   };
   // the older turns came as stubs (v1 #788): opening one asks for only that turn
   const opener = turnOpener({
@@ -1161,7 +1193,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       else if (act === 'collapse') {
         setStepsOpen(false);
         setOpenTurn(undefined);
-      } else if (act === 'top') document.querySelector('[data-kit="turns"]')?.firstElementChild?.scrollIntoView({ block: 'start' });
+      } else if (act === 'top') {
+        if (scrollCtrl) scrollCtrl.place(0, false);
+        else document.querySelector('[data-kit="turns"]')?.firstElementChild?.scrollIntoView({ block: 'start' });
+      }
       else if (act.startsWith('answer:')) {
         // the question waiting over the reply box, else the latest answer's question block: its Nth choice
         const n = Number(act.slice(7)) - 1;
@@ -1667,6 +1702,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               chatWidth={chat.chatWidth()}
               chat={chat.chatMode()}
               toLatest={t('shell.task.toLatest')}
+              scrollRef={(ctrl) => {
+                scrollCtrl = ctrl;
+              }}
               bodyRef={(el) => {
                 bodyEl = el;
                 el.addEventListener('scroll', onBodyScroll, { passive: true });

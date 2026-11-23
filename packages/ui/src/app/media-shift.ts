@@ -23,7 +23,7 @@ export function mediaShift(o: { readonly tail: boolean; readonly anchors: boolea
 }
 
 /** At the end of a scroller (within a pixel or two). */
-export const atTail = (el: { readonly scrollHeight: number; readonly scrollTop: number; readonly clientHeight: number }): boolean => el.scrollHeight - el.scrollTop - el.clientHeight < 2;
+export const atTail = (el: { readonly scrollHeight: number; readonly scrollTop: number; readonly clientHeight: number }): boolean => el.scrollHeight - el.scrollTop - el.clientHeight <= 2;
 
 /** The reply box docked at the task's foot grew (focus shows its bar, a queued follow-up, a longer draft) by `dock`, or
  *  the scroller's view changed height (the keyboard) by `view`, both in px since the last frame; the rest is the
@@ -47,14 +47,13 @@ export function turnsShift(o: {
   readonly anchors: boolean;
   readonly landed: boolean;
   readonly held?: { readonly from: number; readonly to: number } | undefined;
-  /** Chat mode: the turn is one conversation, its start may be screens up, so a landing never goes back to it. */
+  /** Chat mode: a continuous conversation — while following the end, stay pinned to the end even when a turn finishes
+   *  (never jump back to the turn's start nor stop mid-answer and pause following). */
   readonly chat?: boolean;
-  /** what grew (px) and what the reader sees between the bar and the dock (px): Chat mode pages down by `room` when
-   *  more came at once than fits, so the answer that landed reads from where the reader was ('page') */
   readonly grew?: number;
   readonly room?: number;
-}): 'land' | 'end' | 'page' | number {
-  if (o.tail && o.chat) return o.landed && o.grew !== undefined && o.room !== undefined && o.room > 0 && o.grew > o.room ? 'page' : 'end';
+}): 'land' | 'end' | number {
+  if (o.tail && o.chat) return 'end';
   if (o.tail) return o.landed ? 'land' : 'end';
   if (o.anchors || !o.held) return 0;
   return o.held.to - o.held.from;

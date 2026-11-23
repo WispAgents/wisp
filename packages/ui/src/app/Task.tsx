@@ -1189,6 +1189,10 @@ function ReplyBoxIn(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Element {
   );
 }
 
+/** Imperative scroll control exposed by TaskBody so the host (TaskView) coordinates follow-ups, initial landing and
+ *  kept-place restore with hold-view's follow state instead of writing raw scrollTop behind its back. */
+export type TaskScroll = Pick<Held, 'toEnd' | 'place' | 'following'>;
+
 /** v1 .it-body: the task's page under its head: the details column, the turns, the dock. */
 export function TaskBody(props: {
   readonly details?: JSX.Element;
@@ -1200,6 +1204,8 @@ export function TaskBody(props: {
   /** Settings → Chat → Chat mode. Additive. */
   readonly chat?: boolean;
   /** the scroller (a task's kept place) */ readonly bodyRef?: (el: HTMLElement) => void;
+  /** coordinated scroll controller (follow-ups, place restore, Chat initial landing). Additive. */
+  readonly scrollRef?: (ctrl: TaskScroll) => void;
   /** Jump to latest's name: the button over the dock once the reader scrolled away from the end. Additive. */
   readonly toLatest?: string;
 }): JSX.Element {
@@ -1209,16 +1215,31 @@ export function TaskBody(props: {
   onCleanup(() => stop?.());
   // away from the end (the view no longer follows) and whether more came in since: hold-view says when it changes
   const [away, setAway] = createSignal({ away: false, fresh: false });
-  // shown 150 ms after the reader left the end (t3code), gone at once when they're back
+  // shown 150 ms after the reader left the end (t3code), gone at once when they're back; updates to `fresh` during the
+  // delay piggyback on the running timer instead of restarting it
   const later = createTimer();
+  let pendingAway: { readonly away: boolean; readonly fresh: boolean } | undefined;
   const onAway = (o: { readonly away: boolean; readonly fresh: boolean }): void => {
-    if (o.away && !away().away) return later.after(150, () => setAway(o));
+    if (o.away && !away().away) {
+      const waiting = pendingAway !== undefined;
+      pendingAway = o;
+      if (!waiting) {
+        later.after(150, () => {
+          const next = pendingAway;
+          pendingAway = undefined;
+          if (next) setAway(next);
+        });
+      }
+      return;
+    }
+    pendingAway = undefined;
     later.clear();
     setAway(o);
   };
   // at once, not smooth: a smooth scroll's steps read as the reader leaving the end again (and the click answers in
   // the frame, ADR-0017)
   const toLatest = (): void => {
+    pendingAway = undefined;
     later.clear();
     setAway({ away: false, fresh: false });
     if (held) held.toEnd();
@@ -1243,6 +1264,7 @@ export function TaskBody(props: {
           // a child's ref runs after its parent's: the body is known here
           stop?.();
           held = typeof ResizeObserver === 'undefined' ? undefined : holdMedia(body, dock, onAway);
+          if (held) props.scrollRef?.({ toEnd: held.toEnd, place: held.place, following: held.following });
           // the dock's height for what stops above it (a live question, UX 2026-11-18 #1)
           const ro = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => body.style.setProperty('--dock-h', `${dock.offsetHeight}px`));
           ro?.observe(dock);

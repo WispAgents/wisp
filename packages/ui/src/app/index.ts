@@ -54,6 +54,7 @@ export {
   type TaskDetailsProps,
   type TaskPlaceChip,
   type TaskHeadProps,
+  type TaskScroll,
   type TrailItem,
   type TurnViewProps,
 } from './Task.tsx';

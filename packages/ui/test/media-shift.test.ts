@@ -45,12 +45,12 @@ test('a_turn_that_lands_while_you_read_keeps_the_view_put_and_at_the_end_you_go_
   expect(turnsShift({ tail: true, anchors: false, landed: false })).toBe('end');
 });
 
-test('chat_mode_never_goes_back_to_a_landed_turns_start_it_follows_the_end_or_pages_down_when_more_came_than_fits', () => {
-  // following the end: a turn finishing keeps the end in view (Cards shows it from its start)
+test('chat_mode_stays_pinned_to_the_end_even_when_a_tall_answer_lands_while_cards_mode_shows_the_turn_from_its_start', () => {
+  // following the end: a turn finishing in Chat mode keeps pinning the end (Cards shows it from its start)
   expect(turnsShift({ tail: true, anchors: true, landed: true, chat: true, grew: 200, room: 600 })).toBe('end');
   expect(turnsShift({ tail: true, anchors: true, landed: true, chat: false, grew: 200, room: 600 })).toBe('land');
-  // an answer taller than the view lands at once: one view down, so it reads from where the reader was
-  expect(turnsShift({ tail: true, anchors: true, landed: true, chat: true, grew: 1056, room: 600 })).toBe('page');
+  // even an answer taller than the view stays pinned to the end in Chat mode (never stops mid-answer and pauses follow)
+  expect(turnsShift({ tail: true, anchors: true, landed: true, chat: true, grew: 1056, room: 600 })).toBe('end');
   // streaming (nothing landed) follows the end however much came
   expect(turnsShift({ tail: true, anchors: true, landed: false, chat: true, grew: 1056, room: 600 })).toBe('end');
   // a reader who scrolled away is never moved, in either mode

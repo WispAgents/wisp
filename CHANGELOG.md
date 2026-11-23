@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Task view (Chat mode): audited and fixed auto-scrolling across opening, streaming, turn completion, follow-ups, wheel/trackpad, touch, and scrollbar drag. Tasks in Chat mode now land pinned at the bottom on open (unless restoring a saved mid-thread reading position); follow-ups and reply chips coordinate with the follow state machine instead of writing raw `scrollTop`; finished turns stay pinned to the bottom instead of stopping mid-answer; downward scrolls, horizontal trackpad swipes, plain clicks, and non-scrollable wheels never pause auto-scroll; small upward scrolls/drags are never fought; the bottom re-attach zone widens from 16 px to 48 px; and touch drags and scrollbar thumb drags are tracked explicitly.
 - Composer (Home): returning from a task with a right-panel view tab open (Thread, Watch, Terminal, Team, or a pinned My Stuff app) now closes the side panel instead of leaving an empty panel column taking up the right side of the composer page.
 - Task view (Chat mode): hardened trailing-message deduplication against `body.text` (not only `turn.answer`), `MAX_TEXT`-clipped (`20,000` UTF-16 unit) final messages, and activity-only fallback turns.
 
