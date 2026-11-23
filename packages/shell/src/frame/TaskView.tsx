@@ -344,6 +344,16 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // (the flicker gate's profile). Never scrolled since it opened: the kept place stands as it was.
   let placeSeen: { place: Place | undefined } | undefined;
   let reading = 0;
+  const currentPlace = (el: HTMLElement | undefined, isChat: boolean, tx: boolean): Place | undefined => {
+    if (!el || !el.isConnected || el.checkVisibility?.() === false || !el.querySelector('[data-turn]')) {
+      const prev = placeSeen?.place ?? (untrack(places.value) as unknown as Readonly<Record<string, Place>> | undefined)?.[key];
+      if (!prev) return tx ? { end: isChat, dy: 0, top: 0, transcript: true } : undefined;
+      if (tx) return { ...prev, transcript: true };
+      const { transcript: _drop, ...rest } = prev;
+      return rest.end || rest.turn !== undefined || rest.top > 0 ? rest : undefined;
+    }
+    return placeOf(el, turnTops(el), { following: scrollCtrl?.following() === true, chat: isChat, transcript: tx });
+  };
   const notePlace = (el: HTMLElement, isChat: boolean): void => {
     if (reading) return;
     reading = requestAnimationFrame(() => {
@@ -351,7 +361,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       // a page already hidden (a phone's Back through history hides the main pane first) has no place to read: every
       // turn would measure 0 and the kept place would become the top
       if (!el.isConnected || el.checkVisibility?.() === false || !el.querySelector('[data-turn]')) return;
-      placeSeen = { place: placeOf(el, turnTops(el), { following: scrollCtrl?.following() === true, chat: isChat }) };
+      placeSeen = { place: placeOf(el, turnTops(el), { following: scrollCtrl?.following() === true, chat: isChat, transcript: untrack(stepsShown) }) };
     });
   };
   onCleanup(() => cancelAnimationFrame(reading));
@@ -498,12 +508,30 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // Chat width, Time format — all reactive so changing a setting updates open tasks immediately.
   const chat = useChatSettings(shell.client, ownerOf(key));
   const clock = (at: number): string => turnClock(at, undefined, chat.timeFormat());
-  const [stepsOpen, setStepsOpen] = createSignal(false);
-  // Chat mode's own Transcript switch (V): on, the steps show as Tool calls in chat says; off, only the agent's
-  // messages and the answer (a quiet chat). Cards keeps v1's: off until V opens the steps above each answer
-  const [chatSteps, setChatSteps] = createSignal(true);
+  // Transcript view (V): off by default in both Chat mode (messages + answer only) and Cards mode, persisted per task
+  // with its scroll place so returning to a task restores the same view and scroll position.
+  const initialPlace = (untrack(places.value) as unknown as Readonly<Record<string, Place>> | undefined)?.[key];
+  const [stepsOpen, setStepsOpen] = createSignal(initialPlace?.transcript === true);
+  let stepsTouched = false;
+  if (!placesLoaded(places)) {
+    void places.ready.then(() => {
+      if (stepsTouched) return;
+      const saved = (untrack(places.value) as unknown as Readonly<Record<string, Place>> | undefined)?.[key];
+      if (saved?.transcript !== undefined) setStepsOpen(saved.transcript);
+    });
+  }
+  const setTaskTranscript = (next: boolean): void => {
+    stepsTouched = true;
+    const wasFollowing = scrollCtrl?.following() === true;
+    setStepsOpen(next);
+    kept = false;
+    if (wasFollowing && scrollCtrl) scrollCtrl.toEnd();
+    const p = currentPlace(bodyEl, untrack(chat.chatMode), next);
+    placeSeen = { place: p };
+    places.set((cur) => keep(cur as unknown as Record<string, Place>, key, p) as unknown as Json);
+  };
   const showStream = (): boolean => chat.chatMode() || stepsOpen();
-  const stepsShown = (): boolean => (chat.chatMode() ? chatSteps() : stepsOpen());
+  const stepsShown = (): boolean => stepsOpen();
   // the phone apps: the details column as a sheet from the menu, and Rename as a dialog (the bar's title isn't edited)
   const phone = shell.platform.phone;
   const [detailsOpen, setDetailsOpen] = createSignal(false);
@@ -571,7 +599,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         scrollCtrl?.place(el.scrollTop, el.scrollHeight - el.scrollTop - el.clientHeight <= 2);
       }
       // record the initial placed state so closing a Chat task before scrolling never drops it back to undefined/top
-      placeSeen = { place: placeOf(el, turnTops(el), { following: scrollCtrl?.following() === true, chat: isChat }) };
+      placeSeen = { place: placeOf(el, turnTops(el), { following: scrollCtrl?.following() === true, chat: isChat, transcript: untrack(stepsShown) }) };
       keepShown(el);
     };
     // once places finished loading (every task switch after boot), place in a microtask before the turns' frame paints
@@ -1043,8 +1071,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // caret to the menu giving focus back to ⋯); a click on the title still edits it in place
   const startRename = (): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.rename' as never, params: { id: key } } });
   const toggleTranscript = (): void => {
-    if (chat.chatMode()) setChatSteps(!chatSteps());
-    else setStepsOpen(!stepsOpen());
+    setTaskTranscript(!stepsOpen());
   };
   const onMore = (v: string): void => {
     if (v === 'next-task') stepTo(steps().next);
@@ -1193,7 +1220,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       else if (act === 'reply') input?.focus();
       else if (act === 'rename') startRename();
       else if (act === 'collapse') {
-        setStepsOpen(false);
+        setTaskTranscript(false);
         setOpenTurn(undefined);
       } else if (act === 'top') {
         if (scrollCtrl) scrollCtrl.place(0, false);
@@ -1451,7 +1478,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const count = (k: string): number => steps().filter((a) => a.kind === k).length;
           const blocks = () => b.presentation?.blocks ?? [];
           // Chat mode with its Transcript off: the agent's messages (and errors) only
-          const quietChat = (rows: TranscriptStepRow[]): TranscriptStepRow[] => (chat.chatMode() && !chatSteps() ? rows.filter((r) => r.kind === 'text' || r.bad === true) : rows);
+          const quietChat = (rows: TranscriptStepRow[]): TranscriptStepRow[] => (chat.chatMode() && !stepsShown() ? rows.filter((r) => r.kind === 'text' || r.bad === true) : rows);
           const streamSteps = createMemo(() =>
             quietChat(buildChatSteps(turnEvents(), b.activity ?? [], {
               chatMode: chat.chatMode(),

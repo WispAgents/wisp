@@ -37,8 +37,36 @@ test('chat_mode_saves_following_as_end_and_preserves_an_explicit_top_scroll_on_a
     dy: 0,
     top: 0,
   });
-  // a short task that fits on screen still keeps nothing
+  // a short task that fits on screen still keeps nothing when transcript view is off
   expect(placeOf({ scrollTop: 0, clientHeight: 600, scrollHeight: 600 }, turns, { following: true, chat: true })).toBeUndefined();
+});
+
+test('transcript_view_is_off_by_default_and_persisted_per_task_alongside_scroll_position', () => {
+  // short Chat task at scrollTop 0 with Transcript turned on keeps transcript: true and end: true
+  const shortChatTx = placeOf({ scrollTop: 0, clientHeight: 600, scrollHeight: 400 }, turns, { following: true, chat: true, transcript: true });
+  expect(shortChatTx).toEqual({ end: true, dy: 0, top: 0, transcript: true });
+
+  // short Cards task at scrollTop 0 with Transcript turned on keeps transcript: true and end: true (fits on screen)
+  const shortCardsTx = placeOf({ scrollTop: 0, clientHeight: 600, scrollHeight: 400 }, turns, { following: false, chat: false, transcript: true });
+  expect(shortCardsTx).toEqual({ end: true, dy: 0, top: 0, transcript: true });
+
+  // long Cards task at scrollTop 0 with Transcript turned on keeps transcript: true and end: false
+  const longCardsTx = placeOf({ scrollTop: 0, clientHeight: 600, scrollHeight: 3000 }, turns, { following: false, chat: false, transcript: true });
+  expect(longCardsTx).toEqual({ end: false, dy: 0, top: 0, transcript: true });
+  expect(scrollFor(longCardsTx!, { clientHeight: 600, scrollHeight: 3000 }, turns)).toBe(0);
+
+  // mid-page scroll in Chat mode with Transcript turned on preserves both turn offset and transcript: true
+  const midChatTx = placeOf({ scrollTop: 950, clientHeight: 600, scrollHeight: 3000 }, turns, { following: false, chat: true, transcript: true });
+  expect(midChatTx).toEqual({ end: false, turn: 't2', dy: 150, top: 950, transcript: true });
+  expect(scrollFor(midChatTx!, { clientHeight: 600, scrollHeight: 3000 }, turns)).toBe(950);
+
+  // scrolled to top of long Chat task with Transcript turned on preserves turn 1 and transcript: true
+  const topChatTx = placeOf({ scrollTop: 0, clientHeight: 600, scrollHeight: 3000 }, turns, { following: false, chat: true, transcript: true });
+  expect(topChatTx).toEqual({ end: false, turn: 't1', dy: 0, top: 0, transcript: true });
+
+  // turning Transcript back off at default position returns undefined so keep() drops the entry
+  const offAtDefault = placeOf({ scrollTop: 0, clientHeight: 600, scrollHeight: 400 }, turns, { following: true, chat: true, transcript: false });
+  expect(offAtDefault).toBeUndefined();
 });
 
 test('the most recent hundred tasks keep theirs, the oldest go first_v1_max_places', () => {

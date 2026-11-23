@@ -11,6 +11,8 @@ export interface Place {
   readonly dy: number;
   /** the raw offset, when no turn can say */
   readonly top: number;
+  /** whether the task's Transcript view (V) was opened on this task */
+  readonly transcript?: boolean;
 }
 
 export interface Box {
@@ -24,23 +26,26 @@ export interface PlaceOptions {
   readonly following?: boolean;
   /** Chat mode opens at the end by default, so scrolling up to the very top of a long conversation is kept explicitly. */
   readonly chat?: boolean;
+  /** Whether the task's Transcript view (V) is on (off by default in both Chat and Cards modes). */
+  readonly transcript?: boolean;
 }
 
 /** The place to keep, or undefined at the default start (nothing to come back to). `turns`: each turn's top in the box's content. */
 export function placeOf(box: Box, turns: readonly { readonly id: string; readonly top: number }[], opts?: PlaceOptions): Place | undefined {
   const scrollable = box.scrollHeight - box.clientHeight > 1;
   const end = opts?.following === true || box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+  const tx = opts?.transcript === true ? { transcript: true as const } : {};
   if (box.scrollTop < 1) {
     // In Chat mode, scrolling all the way up to turn 1 on a scrollable conversation is an explicit reading position
     if (opts?.chat && scrollable && !end) {
       const at = turns[0];
-      return { end: false, ...(at && { turn: at.id }), dy: 0, top: 0 };
+      return { end: false, ...(at && { turn: at.id }), dy: 0, top: 0, ...tx };
     }
-    return undefined;
+    return opts?.transcript === true ? { end: Boolean(opts?.chat || end), dy: 0, top: 0, transcript: true } : undefined;
   }
   // the last turn whose top is at or above the pane's top
   const at = [...turns].reverse().find((t) => t.top <= box.scrollTop + 1);
-  return { end, ...(at && { turn: at.id }), dy: at ? box.scrollTop - at.top : 0, top: box.scrollTop };
+  return { end, ...(at && { turn: at.id }), dy: at ? box.scrollTop - at.top : 0, top: box.scrollTop, ...tx };
 }
 
 /** Where to scroll to on coming back. */
