@@ -1,5 +1,6 @@
 // wisp.stuff's UI: My Stuff (what you and your agents kept), opened from the sidebar.
 import { lazy } from 'solid-js';
+import { drawnLater } from '@wisp/ui';
 import { defineExtension, type PluginUiDef } from '@wisp/shell';
 import { parseShareParams } from './share/params.ts';
 import catalogue from './i18n/en.json' with { type: 'json' };
@@ -35,7 +36,7 @@ const ui: PluginUiDef = {
   // the tabs beside a task and Share… in its row menu: loaded as the first screen draws (ADR-0067)
   later: () => import('./later.ts'),
   extensions: [
-    defineExtension({ id: 'wisp.stuff.homePanes', attachTo: { id: 'shell.home:cards' }, order: 50, component: lazy(() => import('./HomePanes.tsx')) }),
+    defineExtension({ id: 'wisp.stuff.homePanes', attachTo: { id: 'shell.home:cards' }, order: 50, component: drawnLater(lazy(() => import('./HomePanes.tsx'))) }),
   ],
 };
 export default ui;

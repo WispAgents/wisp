@@ -222,7 +222,36 @@ test('two views of one task share one subscription; the last to go ends it', asy
   v1.dispose();
   assert.equal(unsubs(), 0);
   v2.dispose();
+  await settle(); // queued behind the sub's POST, which is still in flight (FIFO per peer)
   assert.equal(unsubs(), 1);
+});
+
+test('back-to-back posts on a peer stay strictly FIFO while a previous post is in flight', async () => {
+  const { peers, t, conn, scope } = await setup();
+  const order: string[] = [];
+  const gates: (() => void)[] = [];
+  const origPost = t.post.bind(t);
+  t.post = (msg, sig) => {
+    order.push(`${msg.t}:${'topic' in msg ? msg.topic : ''}`);
+    void origPost(msg, sig);
+    return new Promise<void>((resolve) => {
+      gates.push(resolve);
+    });
+  };
+  peers.add({ peer: A, name: 'laptop', transport: t });
+  await settle();
+  conn()?.push(welcome());
+  await settle();
+  const topic: Topic = 'session:fifo';
+  const v1 = scope.child('v1');
+  peers.watch(A, topic, v1);
+  v1.dispose();
+  // `sub` started synchronously; `unsub` waits until `sub` settles
+  assert.deepEqual(order, ['sub:session:fifo']);
+  gates.shift()?.();
+  await settle();
+  assert.deepEqual(order, ['sub:session:fifo', 'unsub:session:fifo']);
+  gates.shift()?.();
 });
 
 test('a_closed_tasks_rows_leave_memory_a_while_after_its_last_watch_and_a_reopen_by_then_keeps_them (perf r2 #14)', async () => {

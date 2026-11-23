@@ -659,7 +659,9 @@ async fn a_running_tasks_row_says_its_latest_step_not_starting_up() {
     let id = r.rt.create(start("slow work")).await.unwrap().id;
     // its CLI ran a tool and is still at work: the list row says so (it read Starting up for the whole turn)
     until("the row to say its step", || async {
-        r.rt.list(&ListArgs::default()).iter().find(|s| s.id == id).is_some_and(|s| s.live == "Run tests")
+        let in_mem = r.rt.list(&ListArgs::default()).iter().find(|s| s.id == id).is_some_and(|s| s.live == "Run tests");
+        let in_db = r.rt.repo.summaries().await.unwrap().iter().find(|s| s.id == id).is_some_and(|s| s.live == "Run tests");
+        in_mem && in_db
     })
     .await;
     let s = r.rt.get(id.as_str()).await.unwrap();

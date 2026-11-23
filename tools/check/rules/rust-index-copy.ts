@@ -8,8 +8,6 @@
 // `--git-path`). A copy that is no git index says why in a `// index-copy: not git's <why>` comment on its line or
 // the line above. crates/wisp-proc (the helper's home) and tests are exempt.
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { finding } from '../core/report.ts';
 import { codeLines, crates, isTestFile, rustFiles, testStart } from '../core/rust.ts';
 import type { Finding, Rule } from '../core/types.ts';
@@ -65,7 +63,7 @@ export const rustIndexCopy: Rule = {
     const out: Finding[] = [];
     for (const c of crates(ctx.root).filter((x) => !`${x.dir}/`.startsWith(HOME))) {
       for (const f of rustFiles(ctx.root, `${c.dir}/src`).filter((x) => !isTestFile(x))) {
-        out.push(...indexCopies(f, readFileSync(join(ctx.root, f), 'utf8')));
+        out.push(...indexCopies(f, ctx.read(f)));
       }
     }
     return out;

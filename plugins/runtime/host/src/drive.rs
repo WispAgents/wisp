@@ -283,22 +283,24 @@ impl Runtime {
     }
 
     /// Rewrites the task's row with the run's live line (the list says what the agent does, not Starting up for the
-    /// whole turn). Off the drive's loop: it takes the task's lock, and output keeps being read meanwhile.
-    fn refresh_row(self: &Arc<Self>, d: &mut Drive) {
-        d.row_label = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&d.sid).and_then(|l| l.label.clone());
+    /// whole turn). Updates the in-memory list row at once and buffers `/summary/live` on the shared activity
+    /// coalescer (ADR-0083), so it rides the window's commit instead of opening a transaction of its own.
+    fn refresh_row(&self, d: &mut Drive) {
+        let Some(label) = self.live_label(&d.sid) else { return };
+        d.row_label = Some(label.clone());
         d.row_at = Instant::now();
-        let (rt, sid) = (self.clone(), d.sid.clone());
-        tokio::spawn(async move {
-            let _guard = rt.task_lock(&sid).await;
-            // only a task still running: the turn's end writes its own row
-            let Ok(mut s) = rt.repo.session(&sid).await else { return };
-            if s.state != wisp_runtime_api::model::SessionState::Running || rt.live_label(&sid).is_none() {
+        {
+            let mut list = self.lock_list();
+            let Some(sum) = list.get_mut(&d.sid).filter(|s| s.state == wisp_runtime_api::model::SessionState::Running) else {
                 return;
-            }
-            if let Err(e) = rt.persist(&mut s, Vec::new()).await {
-                tracing::warn!(task = %sid, error = %e, "runtime: the row's live line wasn't written");
-            }
-        });
+            };
+            Arc::make_mut(sum).live.clone_from(&label);
+        }
+        let _ = d.coal.patch(
+            "session",
+            d.sid.as_str(),
+            vec![wisp_store::PatchOp::Replace { path: "/summary/live".into(), value: serde_json::Value::String(label) }],
+        );
     }
 
     /// Publishes the pending steps when `now`, or when the last batch is old enough.

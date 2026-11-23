@@ -12,6 +12,7 @@ const ID = 'state';
 const FETCH = new Set(['fetch']);
 const NAV = new Set(['history', 'location']);
 const TIMERS = new Set(['setTimeout', 'setInterval']);
+const MAYBE_STATE = /\b(?:let|var|fetch|history|location|setTimeout|setInterval)\b/;
 
 function exempt(file: string): { fetch: boolean; nav: boolean; timers: boolean } {
   const base = file.split('/').pop() ?? '';
@@ -24,6 +25,7 @@ function exempt(file: string): { fetch: boolean; nav: boolean; timers: boolean }
 
 function checkFile(ctx: Ctx, file: string): Finding[] {
   const out: Finding[] = [];
+  if (!MAYBE_STATE.test(ctx.read(file))) return out;
   const sf = ctx.source(file);
   const skip = exempt(file);
   const shadowed = declaredNames(sf);

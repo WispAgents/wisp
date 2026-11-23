@@ -7,8 +7,6 @@
 // hides which it is, so it counts as whole too: spell `expect: Some(ExtExpect { … })` or `expect: None` at the
 // literal. Tests and the api crates (the type's home) are exempt.
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { finding } from '../core/report.ts';
 import { codeLines, crates, isTestFile, rustFiles, testStart } from '../core/rust.ts';
 import type { Finding, Rule } from '../core/types.ts';
@@ -76,7 +74,7 @@ export const rustSetExt: Rule = {
     const out: Finding[] = [];
     for (const c of crates(ctx.root).filter((x) => x.plugin && x.role !== 'api')) {
       for (const f of rustFiles(ctx.root, `${c.dir}/src`).filter((x) => !isTestFile(x))) {
-        out.push(...wholeWrites(f, readFileSync(join(ctx.root, f), 'utf8')));
+        out.push(...wholeWrites(f, ctx.read(f)));
       }
     }
     return out;

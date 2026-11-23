@@ -4,8 +4,6 @@
 // `Command` gets a finding naming the type to call instead. A call that must stay by name (a peer's command over its
 // HTTP edge, an id only known at run time) says why in a `// by-name: <why>` comment on its line or the line above.
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { finding } from '../core/report.ts';
 import { crates, isTestFile, rustFiles } from '../core/rust.ts';
 import type { Finding, Rule } from '../core/types.ts';
@@ -35,13 +33,13 @@ export const rustTypedCommands: Rule = {
     for (const c of all.filter((x) => x.plugin && x.role === 'api')) {
       const crate = c.name.replaceAll('-', '_');
       for (const f of rustFiles(ctx.root, `${c.dir}/src`)) {
-        for (const [t, id] of commandTypes(readFileSync(join(ctx.root, f), 'utf8'))) typed.set(id, { plugin: c.plugin ?? '', name: `${crate}::${t}` });
+        for (const [t, id] of commandTypes(ctx.read(f))) typed.set(id, { plugin: c.plugin ?? '', name: `${crate}::${t}` });
       }
     }
     const out: Finding[] = [];
     for (const c of all.filter((x) => x.plugin && x.role !== 'api')) {
       for (const f of rustFiles(ctx.root, `${c.dir}/src`).filter((x) => !isTestFile(x))) {
-        const raw = readFileSync(join(ctx.root, f), 'utf8');
+        const raw = ctx.read(f);
         const lines = raw.split('\n');
         const text = code(raw);
         for (const m of text.matchAll(CALL)) {

@@ -14,8 +14,6 @@
 // store's Result (`let _ = self.save(…)`) is not seen: name such wrappers' callers in review.
 // Tests (`#[cfg(test)]` modules, tests/ files) are exempt.
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { finding } from '../core/report.ts';
 import { codeLines, crates, isTestFile, rustFiles, testStart } from '../core/rust.ts';
 import type { Finding, Rule } from '../core/types.ts';
@@ -118,7 +116,7 @@ export const rustSwallowedWrite: Rule = {
     const out: Finding[] = [];
     for (const c of crates(ctx.root)) {
       for (const f of rustFiles(ctx.root, `${c.dir}/src`).filter((x) => !isTestFile(x))) {
-        out.push(...swallowedWrites(f, readFileSync(join(ctx.root, f), 'utf8')));
+        out.push(...swallowedWrites(f, ctx.read(f)));
       }
     }
     return out;

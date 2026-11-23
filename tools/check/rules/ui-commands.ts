@@ -75,39 +75,43 @@ export const uiCommands: Rule = {
     const served = new Map<string, string>(); // plugin folder → its host+core Rust (where handlers live)
     const types = new Map<string, string>(); // command id → its api type
     for (const p of dirs(join(root, 'plugins'))) {
-      const m = join(root, 'plugins', p, 'host', 'wisp-plugin.json');
-      if (existsSync(m)) {
+      const m = `plugins/${p}/host/wisp-plugin.json`;
+      if (existsSync(join(root, m))) {
         try {
-          const j = JSON.parse(readFileSync(m, 'utf8')) as { contributes?: { commands?: { id?: string }[] } };
+          const j = JSON.parse(ctx.read(m)) as { contributes?: { commands?: { id?: string }[] } };
           for (const c of j.contributes?.commands ?? []) if (c.id) listed.set(c.id, p);
         } catch {
           // a broken manifest is rust-manifests' finding
         }
       }
-      const read = (k: string): string => walk(join(root, 'plugins', p, k, 'src'), (f) => f.endsWith('.rs')).map((f) => readFileSync(f, 'utf8')).join('\n');
+      const read = (k: string): string => walk(join(root, 'plugins', p, k, 'src'), (f) => f.endsWith('.rs')).map((f) => ctx.read(rel(f))).join('\n');
       const api = read('api');
       for (const [id, type] of commandTypes(api)) types.set(id, type);
       served.set(p, `${read('host')}\n${read('core')}`);
       rust.set(p, `${api}\n${served.get(p) ?? ''}`);
     }
-    const crates = walk(join(root, 'crates'), (f) => f.endsWith('.rs')).map((f) => readFileSync(f, 'utf8')).join('\n');
+    const crates = walk(join(root, 'crates'), (f) => f.endsWith('.rs')).map((f) => ctx.read(rel(f))).join('\n');
+    const cratesWords = new Set(crates.match(/\b[A-Za-z_]\w*\b/g) ?? []);
     const allRust = [...rust.values()].join('\n') + crates;
     // the UI side
     const uiRoots = [...dirs(join(root, 'packages')).map((d) => join(root, 'packages', d, 'src')), ...dirs(join(root, 'plugins')).map((d) => join(root, 'plugins', d, 'ui', 'src'))];
     for (const file of uiRoots.flatMap((d) => walk(d, (f) => /\.tsx?$/.test(f)))) {
-      const text = readFileSync(file, 'utf8');
+      const text = ctx.read(rel(file));
+      if (!text.includes('defineCommand') && !text.includes("'plugin:")) continue;
       for (const { id, line } of commandsIn(text)) {
         const owner = listed.get(id);
+        const type = types.get(id);
         if (!owner) out.push(finding(rel(file), line, RULE, `the UI sends ${id}, which no plugin manifest lists: rename it to the server's id or add the command`));
         else if (!(rust.get(owner) ?? '').includes(`"${id}"`)) out.push(finding(rel(file), line, RULE, `the UI sends ${id}: plugins/${owner} lists it but its Rust never names it (no handler)`));
-        else if (!handles(`${served.get(owner) ?? ''}\n${crates}`, id, types.get(id))) out.push(finding(rel(file), line, RULE, `the UI sends ${id}: plugins/${owner} declares it but nothing registers a handler (its host never names ${types.get(id) ?? id})`));
+        else if (!handles(served.get(owner) ?? '', id, type) && !crates.includes(`"${id}"`) && !(type !== undefined && cratesWords.has(type)))
+          out.push(finding(rel(file), line, RULE, `the UI sends ${id}: plugins/${owner} declares it but nothing registers a handler (its host never names ${type ?? id})`));
       }
       for (const { topic, line } of topicsIn(text)) {
         if (!allRust.includes(`"${topic}"`)) out.push(finding(rel(file), line, RULE, `the UI watches ${topic}, which no server writes`));
       }
     }
     // every plugin UI is registered by apps/web
-    const web = walk(join(root, 'apps', 'web', 'src'), (f) => /\.tsx?$/.test(f)).map((f) => readFileSync(f, 'utf8')).join('\n');
+    const web = walk(join(root, 'apps', 'web', 'src'), (f) => /\.tsx?$/.test(f)).map((f) => ctx.read(rel(f))).join('\n');
     for (const p of dirs(join(root, 'plugins'))) {
       const ui = join(root, 'plugins', p, 'ui');
       if (!existsSync(join(ui, 'package.json'))) continue;
