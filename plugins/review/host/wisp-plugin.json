@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.review",
   "name": "review",
-  "version": "1.0.0-alpha.11",
+  "version": "1.0.0-alpha.12",
   "api": "^1",
   "description": "review by another harness: a task's PR head read by a harness other than the author, the tests run again on it",
   "kind": "plugin",
