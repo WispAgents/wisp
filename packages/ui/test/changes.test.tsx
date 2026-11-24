@@ -215,3 +215,85 @@ test('a_lines_number_comments_on_it_the_target_on_touch_audit_e_3', () => {
   nos[2]?.click();
   expect(added).toEqual(['math.js   return a + b;']);
 });
+
+test('large_files_cap_rows_and_call_comment_marks_once_per_file_not_per_line', () => {
+  const bigRows: ChangeRow[] = Array.from({ length: 650 }, (_, i) => ({ op: '+', text: `line ${i + 1}`, b: i + 1 }));
+  const file: ChangeFile = { path: 'big.ts', status: 'M', add: 650, del: 0, binary: false, revertable: true, rows: bigRows };
+  let marksCalls = 0;
+  const host = mount(() => (
+    <ChangesList
+      files={[file]}
+      labels={{ ...L, showMore: (n) => `Show ${n} more lines` }}
+      open={() => true}
+      viewed={() => false}
+      onToggle={() => {}}
+      onViewed={() => {}}
+      allOpen
+      onAll={() => {}}
+      onRevertHunk={() => {}}
+      comment={{
+        label: () => 'Comment',
+        onAdd: () => {},
+        marks: () => {
+          marksCalls += 1;
+          return new Map();
+        },
+      }}
+    />
+  ));
+  expect(host.querySelectorAll('[data-kit="cx-line"]').length).toBe(300);
+  // a hunk cut short by the 300-row cap hides Revert until expanded
+  expect(host.querySelector('[data-part="panel.changes.revertHunk"]')).toBeNull();
+  expect(marksCalls).toBe(1);
+  const more = host.querySelector<HTMLButtonElement>('[data-part="panel.changes.moreRows"]');
+  expect(more?.textContent).toBe('Show 350 more lines');
+  more?.click();
+  expect(host.querySelectorAll('[data-kit="cx-line"]').length).toBe(650);
+  expect(host.querySelector('[data-part="panel.changes.moreRows"]')).toBeNull();
+  expect(host.querySelector('[data-part="panel.changes.revertHunk"]')).not.toBeNull();
+  expect(marksCalls).toBe(1);
+});
+
+test('file_rows_key_by_path_so_updating_files_patches_in_place_without_remounting_diffs', () => {
+  const [files, setFiles] = createSignal<ChangeFile[]>([FILE]);
+  const host = mount(() => (
+    <ChangesList files={files()} labels={L} open={() => true} viewed={() => false} onToggle={() => {}} onViewed={() => {}} allOpen onAll={() => {}} />
+  ));
+  const rowNode = host.querySelector('[data-kit="cx-file"]');
+  const tableNode = host.querySelector('[data-kit="cx-diff"] table');
+  // fresh object reference with flipped stage state (as ChangesPane's memo produces)
+  setFiles([{ ...FILE, stage: 'staged' }]);
+  expect(host.querySelector('[data-kit="cx-file"]')).toBe(rowNode);
+  expect(host.querySelector('[data-kit="cx-diff"] table')).toBe(tableNode);
+  expect(host.querySelector('[data-part~="panel.changes.stage"]')?.getAttribute('aria-pressed')).toBe('true');
+});
+
+test('many_files_cap_initial_rows_and_unfold_in_batches', () => {
+  const many: ChangeFile[] = Array.from({ length: 250 }, (_, i) => ({
+    path: `src/f${i}.ts`,
+    status: 'M',
+    add: 1,
+    del: 0,
+    binary: false,
+    revertable: false,
+    rows: [{ op: '+', text: 'x', b: 1 }],
+  }));
+  const host = mount(() => (
+    <ChangesList
+      files={many}
+      labels={{ ...L, moreFiles: (n) => `Show ${n} more files` }}
+      open={() => false}
+      viewed={() => false}
+      onToggle={() => {}}
+      onViewed={() => {}}
+      allOpen={false}
+      onAll={() => {}}
+    />
+  ));
+  expect(host.querySelectorAll('[data-kit="cx-file"]').length).toBe(200);
+  const more = host.querySelector<HTMLButtonElement>('[data-part="panel.changes.moreFiles"]');
+  expect(more?.textContent).toBe('Show 50 more files');
+  more?.click();
+  expect(host.querySelectorAll('[data-kit="cx-file"]').length).toBe(250);
+  expect(host.querySelector('[data-part="panel.changes.moreFiles"]')).toBeNull();
+});

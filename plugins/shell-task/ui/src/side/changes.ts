@@ -40,10 +40,50 @@ export function relative(file: string, cwd: string): string {
   return c && f.startsWith(`${c}/`) ? f.slice(c.length + 1) : file;
 }
 
+/** Files over this many diff rows stay collapsed on auto-open and Expand all (design/side-panel.md). */
+export const LARGE_DIFF_ROWS = 300;
+/** Up to this many eligible files auto-open together; past it, only the first eligible file opens (v1 opensNow). */
+export const AUTO_OPEN_MAX = 3;
+
+export interface OpenableFile {
+  readonly path: string;
+  readonly binary: boolean;
+  readonly generated?: boolean;
+  readonly rows: readonly unknown[];
+}
+
+/** Whether auto-open and Expand all open this file: skips binary, empty, generated, >300-row and viewed files. */
+export function autoOpenable(f: OpenableFile, viewed: boolean): boolean {
+  return !f.binary && !f.generated && f.rows.length > 0 && f.rows.length <= LARGE_DIFF_ROWS && !viewed;
+}
+
+/** Files opened by default before the user opens, folds or views any file (v1 opensNow, design/side-panel.md):
+ *  all eligible files when there are 3 or fewer, else only the first eligible file. */
+export function defaultOpen(files: readonly OpenableFile[], viewed: ReadonlySet<string>): Set<string> {
+  const eligible = files.filter((f) => autoOpenable(f, viewed.has(f.path)));
+  if (eligible.length === 0) return new Set();
+  if (eligible.length <= AUTO_OPEN_MAX) return new Set(eligible.map((f) => f.path));
+  return new Set([eligible[0]!.path]);
+}
+
+/** True when `relative` left a path absolute (outside the task's folder). */
+export const isOutsidePath = (path: string): boolean => /^([A-Za-z]:)?[\\/]/.test(path);
+
 /** The files wisp saw edited outside the task's folder (`relative` left them absolute): git's diff of the folder can't
  *  see them, so the pane shows them beside git's (QA r1 #2: an agent's own worktree read "No changes yet"). */
 export function outsideFolder<F extends { readonly path: string }>(seen: readonly F[]): F[] {
-  return seen.filter((f) => /^([A-Za-z]:)?[\\/]/.test(f.path));
+  return seen.filter((f) => isOutsidePath(f.path));
+}
+
+/** Fast check (no line diffing) for whether any turn of `session` edited a file outside `cwd`. */
+export function hasOutsideFolder(turns: readonly ChangeTurn[], session: string, cwd = ''): boolean {
+  for (const turn of turns) {
+    if (!ofTask(turn.session_id, session)) continue;
+    for (const raw of changesOf(turn)) {
+      if (isOutsidePath(relative(raw.file, cwd))) return true;
+    }
+  }
+  return false;
 }
 
 const lines = (s: string): string[] => (s === '' ? [] : s.replace(/\n$/, '').split('\n'));
@@ -79,11 +119,14 @@ export function filesOf(
   cwd = '',
   mask: (path: string) => boolean = () => false,
   shown: (turn: string, file: string) => Edits | undefined = () => undefined,
+  include?: (path: string) => boolean,
 ): DiffFile[] {
   const byFile = new Map<string, { status: DiffStatus; hunks: DiffHunk[] }>();
   for (const turn of [...turns].filter((t) => ofTask(t.session_id, session)).sort((x, y) => x.idx - y.idx)) {
     for (const raw of changesOf(turn)) {
-      const c = { ...raw, file: relative(raw.file, cwd) };
+      const path = relative(raw.file, cwd);
+      if (include && !include(path)) continue;
+      const c = { ...raw, file: path };
       const f = byFile.get(c.file) ?? { status: STATUS[c.op ?? ''] ?? 'modified', hunks: [] };
       const hide = mask(c.file);
       const edits = (!hide && turn.id !== undefined ? shown(turn.id, raw.file) : undefined) ?? c.edits ?? [];

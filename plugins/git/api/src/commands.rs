@@ -16,6 +16,7 @@ pub struct PathArgs {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)] // independent wire flags on git.changes
 pub struct ChangesArgs {
     pub path: String,
     /// the ref the work left from (`origin/main`, a base branch, a sha)
@@ -32,6 +33,9 @@ pub struct ChangesArgs {
     /// files inline whatever their size (v1 routes); else past 512 KB they go as a blob ref
     #[serde(default)]
     pub inline: bool,
+    /// omit diff rows from `body` and return only `stats` (task head figures, background tab count)
+    #[serde(default)]
+    pub stats_only: bool,
 }
 
 fn yes() -> bool {

@@ -116,9 +116,9 @@ export function gitChanges(a: Args, g: GitCtx): unknown {
     base: g.base(dir),
     at: '0000000',
     stats: out.map((f) => ({ path: f.path, status: f.status, add: f.add, del: f.del, binary: false, generated: false })),
-    body: { kind: 'inline', files: out },
+    body: { kind: 'inline', files: a['statsOnly'] === true ? [] : out },
     untracked: 0,
-    staged: out.filter((f) => f.staged).length,
+    staged: a['statsOnly'] === true ? undefined : out.filter((f) => f.staged).length,
   };
 }
 

@@ -85,11 +85,22 @@ pub async fn changes(svc: &Arc<GitServiceImpl>, a: ChangesArgs) -> Result<Option
         r => r?,
     };
     let me = &repo.inner;
+    // stats-only callers (task head figures, background tab count) need neither stage state nor diff rows
+    let want_stage = a.stage_state && !a.stats_only;
     // the stage reads run beside the Changes diff: each is ~one full diff on a big change
-    let (collected, reads) = tokio::join!(me.collect(&a.base), async { if a.stage_state { Some(me.stage_reads().await) } else { None } });
+    let (collected, reads) = tokio::join!(me.collect(&a.base), async { if want_stage { Some(me.stage_reads().await) } else { None } });
     let Some(mut c) = collected? else {
         return Ok(None);
     };
+    if a.stats_only {
+        let (stats, base, at, untracked) = tokio::task::spawn_blocking(move || {
+            let stats = c.files.iter().map(wisp_git_api::FileDiff::stat).collect();
+            (stats, c.base, c.at, c.untracked)
+        })
+        .await
+        .map_err(|e| GitError::Io(e.to_string()))?;
+        return Ok(Some(Changes { base, at, stats, body: wisp_git_api::Body::Inline { files: Vec::new() }, untracked, staged: None }));
+    }
     // per-file work over a big change runs on the blocking pool, never a runtime worker
     let (mask, reveal) = (a.mask, a.reveal);
     let c = tokio::task::spawn_blocking(move || {

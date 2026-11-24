@@ -146,5 +146,11 @@
   @media (pointer: coarse) { [data-kit='env-mask-btn'] { min-height: 44px; } }
   [data-kit='cx-from'] { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 12px; color: var(--muted); font-size: 12.5px; background: var(--surface-2); }
   [data-kit='cx-from'] code { font: 11.5px var(--mono); }
-  @media (prefers-reduced-motion: reduce) { [data-kit='cx-chev'] > [data-kit='icon'], [data-kit='cx-hk-rev'], [data-kit='cx-hk-stage'] { transition: none; } }
+  [data-kit='cx-more'] {
+    display: block; width: 100%; height: 32px; padding: 0 12px; border: 0; border-top: 1px solid var(--line);
+    background: var(--surface-2); color: var(--muted); font: 500 12px var(--sans); text-align: center; cursor: pointer;
+    white-space: nowrap; transition: background var(--dur-fast), color var(--dur-fast);
+  }
+  [data-kit='cx-more']:hover { background: var(--bg-2); color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) { [data-kit='cx-chev'] > [data-kit='icon'], [data-kit='cx-hk-rev'], [data-kit='cx-hk-stage'], [data-kit='cx-more'] { transition: none; } }
 }

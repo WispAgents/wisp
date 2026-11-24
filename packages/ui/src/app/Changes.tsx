@@ -3,7 +3,8 @@
 // staged, Commit), then one row per file (its status badge, the path cut from its start, +/−, Stage, Viewed, Edit,
 // ⋯) opening in place to its diff: one block per hunk with its own head row (Line n, Stage / Unstage, Revert), the
 // unchanged runs between folded to a line. A file or hunk being reverted is hidden until the diff comes back.
-import { For, Show, createSignal, type JSX } from 'solid-js';
+import { Key } from '@zag-js/solid';
+import { For, Show, createMemo, createSelector, createSignal, type Accessor, type JSX } from 'solid-js';
 import { flag, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import { EnvMask } from '../content/EnvMask.tsx';
@@ -36,6 +37,10 @@ export interface ChangeFile {
   readonly hunkStage?: readonly ('stage' | 'unstage' | undefined)[];
   /** git's diff of a file changed in place: each hunk can be put back */
   readonly revertable: boolean;
+  /** lockfiles, dist/, *.min.js: folded from auto-open and Expand all */
+  readonly generated?: boolean;
+  /** rows past the server's per-file cap (wisp-git's DIFF_LINES) */
+  readonly more?: number;
   /** a .env file (v1 env-mask.js): its values read KEY=•••• ('hidden') until Reveal shows them ('shown') */
   readonly env?: 'hidden' | 'shown';
 }
@@ -69,6 +74,10 @@ export interface ChangesLabels {
   readonly envShown?: (name: string) => string;
   readonly reveal?: string;
   readonly hide?: string;
+  /** "Show N more lines" under a diff capped at rowLimit */
+  readonly showMore?: (n: number) => string;
+  /** "Show N more files" under a list capped at fileLimit */
+  readonly moreFiles?: (n: number) => string;
 }
 
 export interface ChangesListProps {
@@ -103,8 +112,17 @@ export interface ChangesListProps {
     /** the line a card is open on, and the card */
     readonly open?: { readonly path: string; readonly key: string; readonly card: JSX.Element } | undefined;
   };
+  /** rows rendered initially per open file before "Show N more lines" (default 300; 0 disables capping) */
+  readonly rowLimit?: number;
+  /** files rendered initially before "Show N more files" (default 200; 0 disables capping) */
+  readonly fileLimit?: number;
   readonly part?: PartName;
 }
+
+const DEFAULT_ROW_LIMIT = 300;
+const ROW_STEP = 500;
+const DEFAULT_FILE_LIMIT = 200;
+const FILE_STEP = 200;
 
 const BADGE: Readonly<Record<string, string>> = { A: 'add', M: 'mod', D: 'del', R: 'ren' };
 
@@ -164,58 +182,57 @@ export const rowKey = (o: ChangeRow): string | undefined => {
 };
 
 interface LineCtx {
-  readonly path: string;
+  readonly path: () => string;
   readonly p: ChangesListProps;
-  /** the row the + sits on (the pointer's, else the diff's last) */
-  readonly at: () => ChangeRow | undefined;
+  /** true only for the row the + sits on (the pointer's, else the diff's last), O(1) via createSelector */
+  readonly isAt: (o: ChangeRow) => boolean;
   readonly hover: (o: ChangeRow) => void;
+  /** pre-computed comment marks for this file (evaluated once per file, not per line) */
+  readonly marks: Accessor<ReadonlyMap<string, number> | undefined>;
+  /** true only for the row key whose comment card is open in this file */
+  readonly isOpen: (key: string) => boolean;
+  readonly openCard: Accessor<JSX.Element | undefined>;
 }
 
 function Line(props: { readonly o: ChangeRow; readonly c?: LineCtx | undefined }): JSX.Element {
-  const kind = (): string => (props.o.op === '+' ? 'add' : props.o.op === '-' ? 'del' : 'ctx');
+  const o = props.o;
+  const kind = o.op === '+' ? 'add' : o.op === '-' ? 'del' : 'ctx';
+  const key = rowKey(o);
+  const lineNo = (o.op === '-' ? o.a : o.b) ?? '';
+  const sign = o.op === ' ' ? '' : o.op === '-' ? '−' : '+';
+  const text = o.text || ' ';
   const cm = (): ChangesListProps['comment'] => props.c?.p.comment;
-  const key = (): string | undefined => rowKey(props.o);
-  const mark = (): number | undefined =>
-    key()
-      ? cm()
-          ?.marks(props.c?.path ?? '')
-          .get(key() as string)
-      : undefined;
-  const open = (): JSX.Element | undefined => {
-    const o = cm()?.open;
-    return o && o.path === props.c?.path && o.key === key() ? o.card : undefined;
-  };
+  const mark = (): number | undefined => (key ? props.c?.marks()?.get(key) : undefined);
+  const isOpen = (): boolean => key !== undefined && (props.c?.isOpen(key) ?? false);
   return (
     <>
-      <tr data-kit="cx-line" data-op={kind()} data-lit={flag(mark() !== undefined || open() !== undefined)} onPointerEnter={() => props.c?.hover(props.o)}>
+      <tr data-kit="cx-line" data-op={kind} data-lit={flag(mark() !== undefined || isOpen())} onPointerEnter={() => props.c?.hover(o)}>
         {/* the number is the target on touch (v1 comments.css): there's no pointer to bring the + over the line */}
-        <td data-kit="cx-no" data-cmt={flag(!!cm() && key() !== undefined)} onClick={() => cm() && key() !== undefined && cm()?.onAdd(props.c?.path ?? '', props.o)}>
+        <td data-kit="cx-no" data-cmt={flag(!!cm() && key !== undefined)} onClick={() => cm() && key !== undefined && cm()?.onAdd(props.c?.path() ?? '', o)}>
           <Show when={mark()}>{(n) => <span data-kit="cx-mark">{n()}</span>}</Show>
-          {(props.o.op === '-' ? props.o.a : props.o.b) ?? ''}
+          {lineNo}
         </td>
         <td data-kit="cx-sign">
-          {props.o.op === ' ' ? '' : props.o.op === '-' ? '−' : '+'}
-          <Show when={cm() && key() && props.c?.at() === props.o}>
+          {sign}
+          <Show when={cm() && key !== undefined && props.c?.isAt(o)}>
             <button
               type="button"
               data-kit="cx-cmt"
               data-part="panel.changes.comment"
-              aria-label={cm()?.label(props.o)}
-              title={cm()?.label(props.o)}
-              onClick={() => cm()?.onAdd(props.c?.path ?? '', props.o)}
+              aria-label={cm()?.label(o)}
+              title={cm()?.label(o)}
+              onClick={() => cm()?.onAdd(props.c?.path() ?? '', o)}
             >
               <Icon name="plus" size="sm" />
             </button>
           </Show>
         </td>
-        <td data-kit="cx-src">{props.o.text || ' '}</td>
+        <td data-kit="cx-src">{text}</td>
       </tr>
-      <Show when={open()}>
-        {(card) => (
-          <tr data-kit="cx-cmt-row">
-            <td colSpan={3}>{card()}</td>
-          </tr>
-        )}
+      <Show when={isOpen()}>
+        <tr data-kit="cx-cmt-row">
+          <td colSpan={3}>{props.c?.openCard()}</td>
+        </tr>
       </Show>
     </>
   );
@@ -230,13 +247,47 @@ function live(labels: () => ChangesLabels): ChangesLabels {
 /** A row between two edits wisp saw (v1 changes.js `{op: 'sep'}`, blocks.css tr.sep): each is a snippet, so nothing in
  *  between is counted; a gap whose count is 0 says nothing either (audit E #10: "⋯ 0 unchanged lines"). */
 const isSep = (o: ChangeRow): boolean => o.op === 'sep' || (o.op === '…' && !o.count);
+const isGap = (o: ChangeRow | undefined): boolean => o !== undefined && (o.op === '…' || o.op === 'sep');
 
 function FileDiff(props: { readonly f: ChangeFile; readonly p: ChangesListProps }): JSX.Element {
   const L = live(() => props.p.labels);
+  const [expanded, setExpanded] = createSignal(false);
+  const shownRows = createMemo((): readonly ChangeRow[] => {
+    const rows = props.f.rows;
+    const cap = props.p.rowLimit ?? DEFAULT_ROW_LIMIT;
+    if (expanded() || cap <= 0 || rows.length <= cap) return rows;
+    return rows.slice(0, cap);
+  });
+  const remaining = (): number => props.f.rows.length - shownRows().length;
+  const runs = createMemo(() => hunkRuns(shownRows()));
   // one + per diff, on the line under the pointer; before any, on the last numbered line (as v1's sat where it was left)
   const [hovered, setHovered] = createSignal<ChangeRow | undefined>();
-  const last = (): ChangeRow | undefined => [...props.f.rows].reverse().find((o) => rowKey(o) !== undefined);
-  const ctx: LineCtx = { path: props.f.path, p: props.p, at: () => hovered() ?? last(), hover: (o) => rowKey(o) && setHovered(o) };
+  const last = createMemo((): ChangeRow | undefined => {
+    const rows = shownRows();
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const r = rows[i];
+      if (r && rowKey(r) !== undefined) return r;
+    }
+    return undefined;
+  });
+  const isAt = createSelector<ChangeRow | undefined>(() => (props.p.comment ? (hovered() ?? last()) : undefined));
+  const marks = createMemo(() => props.p.comment?.marks(props.f.path));
+  const openInFile = createMemo(() => {
+    const o = props.p.comment?.open;
+    return o && o.path === props.f.path ? o : undefined;
+  });
+  const isOpenRow = createSelector<string | undefined>(() => openInFile()?.key);
+  const ctx: LineCtx = {
+    path: () => props.f.path,
+    p: props.p,
+    isAt: (o) => isAt(o),
+    hover: (o) => {
+      if (props.p.comment && rowKey(o) !== undefined) setHovered(o);
+    },
+    marks,
+    isOpen: (k) => isOpenRow(k),
+    openCard: () => openInFile()?.card,
+  };
   const gap = (o: ChangeRow): JSX.Element =>
     isSep(o) ? (
       <tr data-kit="cx-sep">
@@ -278,14 +329,15 @@ function FileDiff(props: { readonly f: ChangeFile; readonly p: ChangesListProps 
             when={props.f.revertable}
             fallback={
               <tbody>
-                <For each={props.f.rows}>{(o) => (o.op === '…' || o.op === 'sep' ? gap(o) : <Line o={o} c={ctx} />)}</For>
+                <For each={shownRows()}>{(o) => (o.op === '…' || o.op === 'sep' ? gap(o) : <Line o={o} c={ctx} />)}</For>
               </tbody>
             }
           >
-            <For each={hunkRuns(props.f.rows)}>
+            <For each={runs()}>
               {(h, i) => {
-                const key = hunkKey(h.rows);
                 const st = (): 'stage' | 'unstage' | undefined => props.f.hunkStage?.[i()];
+                // a hunk cut short by the row cap has no hunk Stage / Revert until expanded (design/side-panel.md)
+                const cut = (): boolean => remaining() > 0 && i() === runs().length - 1 && !isGap(props.f.rows[shownRows().length]);
                 return (
                   <>
                     <Show when={h.gap}>{(g) => <tbody data-kit="cx-gapb">{gap(g())}</tbody>}</Show>
@@ -294,19 +346,19 @@ function FileDiff(props: { readonly f: ChangeFile; readonly p: ChangesListProps 
                         <td colSpan={3}>
                           <div data-kit="cx-hk-bar">
                             <span>{L.line(firstLine(h.rows))}</span>
-                            <Show when={st() && props.p.onHunkStage}>
+                            <Show when={!cut() && st() && props.p.onHunkStage}>
                               <button
                                 type="button"
                                 data-kit="cx-hk-stage"
                                 data-part="panel.changes.stageHunk"
                                 data-un={flag(st() === 'unstage')}
-                                onClick={() => props.p.onHunkStage?.(props.f.path, i(), key, st() === 'unstage')}
+                                onClick={() => props.p.onHunkStage?.(props.f.path, i(), hunkKey(h.rows), st() === 'unstage')}
                               >
                                 {st() === 'unstage' ? L.unstageHunk : L.stageHunk}
                               </button>
                             </Show>
-                            <Show when={props.p.onRevertHunk}>
-                              <button type="button" data-kit="cx-hk-rev" data-part="panel.changes.revertHunk" title={L.revertTitle} onClick={() => props.p.onRevertHunk?.(props.f.path, i(), key)}>
+                            <Show when={!cut() && props.p.onRevertHunk}>
+                              <button type="button" data-kit="cx-hk-rev" data-part="panel.changes.revertHunk" title={L.revertTitle} onClick={() => props.p.onRevertHunk?.(props.f.path, i(), hunkKey(h.rows))}>
                                 {L.revert}
                               </button>
                             </Show>
@@ -322,6 +374,11 @@ function FileDiff(props: { readonly f: ChangeFile; readonly p: ChangesListProps 
           </Show>
         </table>
       </div>
+      <Show when={remaining() > 0}>
+        <button type="button" data-kit="cx-more" data-part="panel.changes.moreRows" onClick={() => setExpanded(true)}>
+          {L.showMore ? L.showMore(remaining()) : `Show ${remaining()} more lines`}
+        </button>
+      </Show>
     </div>
   );
 }
@@ -450,6 +507,13 @@ export function ChangesList(props: ChangesListProps): JSX.Element {
   const L = live(() => props.labels);
   const add = (): number => props.files.reduce((n, f) => n + f.add, 0);
   const del = (): number => props.files.reduce((n, f) => n + f.del, 0);
+  const [extraFiles, setExtraFiles] = createSignal(0);
+  const visibleFiles = createMemo((): readonly ChangeFile[] => {
+    const cap = props.fileLimit ?? DEFAULT_FILE_LIMIT;
+    if (cap <= 0 || props.files.length <= cap + extraFiles()) return props.files;
+    return props.files.slice(0, cap + extraFiles());
+  });
+  const moreFiles = (): number => props.files.length - visibleFiles().length;
   return (
     <section data-kit="cx" data-part={props.part ?? 'panel.changes'}>
       <div data-kit="cx-sum" data-part="panel.changes.summary">
@@ -479,7 +543,14 @@ export function ChangesList(props: ChangesListProps): JSX.Element {
       </div>
       <Show when={props.commit}>{(c) => <CommitRow c={c()} label={L.commit} />}</Show>
       <div data-kit="cx-list" data-part="panel.changes.list">
-        <For each={props.files}>{(f) => <FileRow f={f} p={props} />}</For>
+        <Key each={visibleFiles()} by={(f: ChangeFile) => f.path}>
+          {(f) => <FileRow f={f()} p={props} />}
+        </Key>
+        <Show when={moreFiles() > 0}>
+          <button type="button" data-kit="cx-more" data-part="panel.changes.moreFiles" onClick={() => setExtraFiles((n) => n + FILE_STEP)}>
+            {L.moreFiles ? L.moreFiles(moreFiles()) : `Show ${moreFiles()} more files`}
+          </button>
+        </Show>
       </div>
     </section>
   );

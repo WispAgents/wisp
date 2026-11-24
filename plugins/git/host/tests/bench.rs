@@ -84,6 +84,7 @@ async fn bench_status_and_changes_on_1000_files() {
         mask: true,
         stage_state: true,
         inline: true,
+        ..Default::default()
     };
     let (mut st, mut ch) = (Vec::new(), Vec::new());
     for _ in 0..15 {

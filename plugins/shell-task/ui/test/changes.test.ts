@@ -1,6 +1,23 @@
 // The Changes pane's model (side/changes.ts).
 import { expect, test } from 'vitest';
-import { envState, filesOf, gitFiles, hunkOf, outsideFolder, revealedOf, seenMasked, setRevealed, worktreeDir, ofTask, type ChangeTurn } from '../src/side/changes.ts';
+import {
+  LARGE_DIFF_ROWS,
+  autoOpenable,
+  defaultOpen,
+  envState,
+  filesOf,
+  gitFiles,
+  hasOutsideFolder,
+  hunkOf,
+  isOutsidePath,
+  outsideFolder,
+  revealedOf,
+  seenMasked,
+  setRevealed,
+  worktreeDir,
+  ofTask,
+  type ChangeTurn,
+} from '../src/side/changes.ts';
 
 test('a task\'s turns become one diff per file, edits in turn order, kept lines as context', () => {
   const h = hunkOf('a\nb\nc\n', 'a\nB\nc\n');
@@ -103,4 +120,43 @@ test('a_turn_belongs_to_its_task_by_the_bare_id_or_the_peers_key', () => {
   expect(ofTask('local:s1', 's1'), 'a synced row keyed by its peer').toBe(true);
   expect(ofTask('local:s11', 's1')).toBe(false);
   expect(ofTask(undefined, 's1')).toBe(false);
+});
+
+test('defaultOpen_opens_at_most_three_or_only_the_first_and_skips_generated_large_and_viewed', () => {
+  const mk = (path: string, rows = 5, extra: { binary?: boolean; generated?: boolean } = {}) => ({
+    path,
+    binary: extra.binary ?? false,
+    ...(extra.generated ? { generated: true } : {}),
+    rows: Array.from({ length: rows }, () => ({ op: '+' })),
+  });
+  expect([...defaultOpen([mk('a.ts'), mk('b.ts'), mk('c.ts')], new Set())]).toEqual(['a.ts', 'b.ts', 'c.ts']);
+  expect([...defaultOpen([mk('a.ts'), mk('b.ts'), mk('c.ts'), mk('d.ts')], new Set())]).toEqual(['a.ts']);
+  // skips generated, >300-row, binary, empty, and viewed files
+  const mixed = [
+    mk('Cargo.lock', 10, { generated: true }),
+    mk('huge.ts', LARGE_DIFF_ROWS + 1),
+    mk('img.png', 0, { binary: true }),
+    mk('seen.ts', 5),
+    mk('first-real.ts', 12),
+    mk('second.ts', 12),
+    mk('third.ts', 12),
+    mk('fourth.ts', 12),
+  ];
+  expect([...defaultOpen(mixed, new Set(['seen.ts']))]).toEqual(['first-real.ts']);
+  expect([...defaultOpen([mk('Cargo.lock', 10, { generated: true }), mk('huge.ts', LARGE_DIFF_ROWS + 1)], new Set())]).toEqual([]);
+  expect(autoOpenable(mk('ok.ts', LARGE_DIFF_ROWS), false)).toBe(true);
+  expect(autoOpenable(mk('over.ts', LARGE_DIFF_ROWS + 1), false)).toBe(false);
+});
+
+test('hasOutsideFolder_and_include_filter_skip_worktree_files_when_git_already_has_them', () => {
+  const insideOnly: ChangeTurn[] = [
+    { session_id: 's', idx: 0, body: { changes: [{ file: '/w/task/src/a.ts', op: 'modify', edits: [{ before: '1', after: '2' }] }] } },
+  ];
+  expect(hasOutsideFolder(insideOnly, 's', '/w/task')).toBe(false);
+  const withOutside: ChangeTurn[] = [
+    ...insideOnly,
+    { session_id: 's', idx: 1, body: { changes: [{ file: '/other/doc.md', op: 'modify', edits: [{ before: 'a', after: 'b' }] }] } },
+  ];
+  expect(hasOutsideFolder(withOutside, 's', '/w/task')).toBe(true);
+  expect(filesOf(withOutside, 's', '/w/task', undefined, undefined, isOutsidePath).map((f) => f.path)).toEqual(['/other/doc.md']);
 });
