@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.connectors",
   "name": "Connectors",
-  "version": "1.0.0-alpha.11",
+  "version": "1.0.0-alpha.12",
   "api": "^1",
   "description": "The MCP servers agents get: the connector resource kind, what each run gets, and Settings → Connectors (add, test, import from the harnesses' configs, OAuth sign-in).",
   "server": {

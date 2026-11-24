@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.stuff",
   "name": "My Stuff",
-  "version": "1.0.0-alpha.11",
+  "version": "1.0.0-alpha.12",
   "api": "^1",
   "description": "My Stuff: what you and your agents kept from tasks (pictures, videos, docs, code, files, links and apps), the apps' launches and databases, the panes wisp ships, and uploads",
   "kind": "plugin",

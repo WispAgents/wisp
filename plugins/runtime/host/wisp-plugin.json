@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.runtime",
   "name": "Tasks",
-  "version": "1.0.0-alpha.11",
+  "version": "1.0.0-alpha.12",
   "api": "1",
   "description": "Tasks (sessions), their turns and activity, the follow-up queue and the harness lifecycle",
   "author": "wisp",
