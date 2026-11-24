@@ -155,6 +155,12 @@ impl Harness for Fake {
         if run.system_prompt.contains("Chat mode") {
             args.push("--chat".into());
         }
+        if run.system_prompt.contains("You are a subagent:") {
+            args.push("--subagent-ask".into());
+        }
+        if run.system_prompt.contains("## Subagents") {
+            args.push("--subagents-note".into());
+        }
         if run.env.contains_key("WISP_WATCH") {
             args.push("--watch".into());
         }

@@ -85,3 +85,22 @@ async fn an_unknown_harness_alone_is_refused_naming_the_harnesses_audit_h_hs11()
     assert_eq!((out[0].subagent.as_str(), out[0].error.as_deref()), ("frob", Some("no harness frob: name one of fake")), "{out:?}");
     open("adhoc-u");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn subagent_gets_subagent_ask_prompt() {
+    let r = rig().await;
+    let id = lone_lead(&r, "sub-ask-lead").await;
+    let out =
+        r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task(Some("fake"), Some("Helper"), "say --subagent-ask")] })
+            .await
+            .unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].error, None, "{out:?}");
+    let child = out[0].id.clone();
+    until("the subagent ended", || async { last(&r, child.as_str()).await.is_some_and(|t| t.status != TurnStatus::Running) }).await;
+    let t = last(&r, child.as_str()).await.unwrap();
+    let text = t.text.as_deref().unwrap_or_default();
+    assert!(text.contains("--subagent-ask"), "expected SUBAGENT_ASK in subagent system prompt, got: {text}");
+    assert!(!text.contains("--subagents-note"), "subagent should not get lead subagents note: {text}");
+    open("sub-ask-lead");
+}

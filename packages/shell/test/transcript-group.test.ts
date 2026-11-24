@@ -147,3 +147,20 @@ test('quiet mode (Transcript off) folds every run of 1+ actions between messages
     expect(clusterLabel(g3.counts, g3.items.length, t)).toBe('Edited 1 file');
   }
 });
+
+test('delegation (agent) steps stay surfaced in both finished transcript mode and quiet Chat mode', () => {
+  const steps: TranscriptStepRow[] = [
+    { kind: 'read', label: 'Reading a.ts', file: 'a.ts', seq: 1 },
+    { kind: 'read', label: 'Reading b.ts', file: 'b.ts', seq: 2 },
+    { kind: 'read', label: 'Reading c.ts', file: 'c.ts', seq: 3 },
+    { kind: 'agent', label: 'Delegated to codex', seq: 4 },
+    { kind: 'read', label: 'Reading d.ts', file: 'd.ts', seq: 5 },
+  ];
+  const finished = groupFinishedSteps(steps, false);
+  expect(finished.map((e) => e.kind)).toEqual(['group', 'step', 'step']);
+  expect(finished[1]?.kind === 'step' && finished[1].step.kind).toBe('agent');
+
+  const quiet = groupFinishedSteps(steps, false, (s) => s, true);
+  expect(quiet.map((e) => e.kind)).toEqual(['group', 'step', 'group']);
+  expect(quiet[1]?.kind === 'step' && quiet[1].step.kind).toBe('agent');
+});
