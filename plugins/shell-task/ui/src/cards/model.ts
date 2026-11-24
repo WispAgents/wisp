@@ -24,10 +24,26 @@ export interface TurnDoc {
   /** it hit its account's usage limit (runtime's TurnLimit, v1 `turn.limit`) */
   readonly limit?: { readonly account?: string; readonly until?: number; readonly others?: readonly { readonly id: string; readonly label: string; readonly kind?: string }[]; readonly kind?: string; readonly extra?: string; readonly waiting?: boolean } | null;
   readonly ext?: {
-    readonly 'wisp.runtime'?: { readonly authFailed?: boolean; readonly overage?: { readonly kind?: string } | null; readonly cli?: { readonly version?: string; readonly catalog?: string; readonly models?: Record<string, unknown> } | null };
+    readonly 'wisp.runtime'?: {
+      readonly authFailed?: boolean;
+      readonly overage?: { readonly kind?: string } | null;
+      readonly cli?: { readonly version?: string; readonly catalog?: string; readonly models?: Record<string, unknown> } | null;
+      readonly delegations?: readonly TurnDelegationDoc[];
+    };
     /** wisp.budget's shares of the plan windows this turn moved (v1 `turn.plan`) */
     readonly 'wisp.budget'?: { readonly plan?: readonly Share[] };
   };
+}
+
+/** One delegation recorded on a lead's turn (`ext['wisp.runtime'].delegations`). */
+export interface TurnDelegationDoc {
+  readonly name: string;
+  readonly sessionId: string;
+  readonly turnId?: string;
+  readonly agent?: string;
+  readonly model?: string;
+  readonly startedAt?: number;
+  readonly place?: string;
 }
 
 /** A `turn` row's runtime Turn: `body` when the row carries one, else the row itself. */

@@ -110,9 +110,10 @@ export function buildChatSteps(
     // k === 'tool'
     const o = e.body?.callId ? outputs.get(e.body.callId) : undefined;
     const active = opts.running && e.seq === lastToolSeq && !e.body?.output && !o;
-    if (opts.chatMode && !keepTool(opts.toolCalls, active)) continue;
+    const toolKind = e.body?.tool ?? 'tool';
+    if (opts.chatMode && !(toolKind === 'agent' && opts.toolCalls !== 'zen') && !keepTool(opts.toolCalls, active)) continue;
     out.push({
-      kind: e.body?.tool ?? 'tool',
+      kind: toolKind,
       label: e.body?.label ?? '',
       ...(e.body?.title && { title: e.body.title }),
       ...(e.body?.detail && { detail: e.body.detail }),
@@ -152,6 +153,8 @@ function filterFallback(activity: readonly TranscriptStepRow[], opts: ChatStepOp
     } else if (a.kind === 'thinking') {
       if (opts.showThinking && (!opts.chatMode || opts.toolCalls !== 'zen')) out.push(a);
     } else if (a.kind === 'text') {
+      if (!opts.chatMode || opts.toolCalls !== 'zen') out.push(a);
+    } else if (a.kind === 'agent') {
       if (!opts.chatMode || opts.toolCalls !== 'zen') out.push(a);
     } else if (!opts.chatMode || opts.toolCalls === 'showAll') {
       out.push(a);

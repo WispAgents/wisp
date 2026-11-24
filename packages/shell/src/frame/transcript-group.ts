@@ -44,12 +44,12 @@ const READING_PREFIX = /^reading\s+(.+)$/i;
 
 /** High-signal steps stay surfaced directly on a finished turn's rail (when Transcript is on). */
 export function isSignalStep(s: TranscriptStepRow): boolean {
-  return s.kind === 'text' || s.kind === 'edit' || s.kind === 'error' || s.bad === true;
+  return s.kind === 'text' || s.kind === 'edit' || s.kind === 'agent' || s.kind === 'error' || s.bad === true;
 }
 
-/** In quiet Chat mode (Transcript off), only agent messages and errors stay surfaced; all actions between messages fold into an expandable pill. */
+/** In quiet Chat mode (Transcript off), agent messages, delegations and errors stay surfaced; routine actions between messages fold into an expandable pill. */
 export function isQuietSignalStep(s: TranscriptStepRow): boolean {
-  return s.kind === 'text' || s.kind === 'error' || s.bad === true;
+  return s.kind === 'text' || s.kind === 'agent' || s.kind === 'error' || s.bad === true;
 }
 
 function classify(s: TranscriptStepRow): keyof ClusterCounts {

@@ -259,10 +259,25 @@ pub const SUBAGENT_ASK: &str = "- You are a subagent: a lead agent delegated thi
   block, and finish. Don't commit unless the task says to.";
 
 /// Appended to the lead's system prompt. `tool`: how its harness names the delegate tool.
+/// Even with no pre-configured team, tells the lead to use wisp's `delegate` (creating subagents on the fly)
+/// instead of its harness's built-in subagent/Task/Agent tool whenever the user asks for agents.
 pub fn team_note(team: &[Member], harness: &dyn Fn(&str) -> Option<String>, tool: Option<&str>) -> String {
-    let Some(tool) = tool.filter(|t| !t.is_empty() && !team.is_empty()) else {
+    let Some(tool) = tool.filter(|t| !t.is_empty()) else {
         return String::new();
     };
+    if team.is_empty() {
+        return format!(
+            "\n\n## Subagents
+
+Whenever the user asks to use agents, subagents or helper agents (or when parallel work across harnesses or machines pays off), use wisp's `delegate` tool ({tool}) instead of your harness's built-in subagent/Task/Agent tool: don't use built-in subagents.
+
+- You don't need a pre-configured team: create subagents on the fly by passing `agent` (a harness id; call `wisp_available` to see installed harnesses and machines), optional `model`, `effort`, `machine` and a short `name` (pass that `name` or `subagent` later to continue its conversation), plus `prompt`.
+- Tasks in one `delegate` call run in parallel in your folder and the call waits until all finish, returning each report and the files it changed. With `wait: false` it returns at once; collect reports later with `subagent_results`.
+- Subagents work in your folder and see each other's edits. Give parallel subagents separate files or concerns.
+- Brief them like a colleague: goal, files, constraints, how to verify. They cannot see your conversation or ask the user.
+- You stay responsible for the result: review what they changed before you report."
+        );
+    }
     let rows: Vec<String> = team
         .iter()
         .map(|m| {
@@ -406,5 +421,21 @@ mod tests {
         assert_eq!(count_of(&json!(null)), 1);
         assert_eq!(count_of(&json!("x")), 1);
         assert!([&EFFORT, &PLACE, &CREW_ID].iter().all(|r| r.get().is_some()));
+    }
+
+    #[test]
+    fn team_note_guides_adhoc_delegation_when_no_team_is_configured() {
+        let h = |id: &str| Some(id.to_owned());
+        assert_eq!(team_note(&[], &h, None), "");
+        assert_eq!(team_note(&[], &h, Some("")), "");
+        let adhoc = team_note(&[], &h, Some("mcp__wisp__delegate"));
+        assert!(adhoc.contains("## Subagents"));
+        assert!(adhoc.contains("mcp__wisp__delegate"));
+        assert!(adhoc.contains("don't use built-in subagents"));
+        assert!(adhoc.contains("wisp_available"));
+        let member = Member { name: "codex".into(), agent: "codex".into(), count: 1, ..Member::default() };
+        let with_team = team_note(&[member], &h, Some("mcp__wisp__delegate"));
+        assert!(with_team.contains("The user gave you a team of subagents"));
+        assert!(with_team.contains("`codex`"));
     }
 }

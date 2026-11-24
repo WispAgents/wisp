@@ -34,13 +34,12 @@ fn roster_line(m: &TeamEntry) -> String {
 
 fn description(team: &[TeamEntry]) -> String {
     let mut d = String::from(HEAD);
-    if team.is_empty() {
-        d.push_str(MID);
-        d.push_str("\n\nNo team yet.");
-        return d;
-    }
     d.push_str(USE_THIS);
     d.push_str(MID);
+    if team.is_empty() {
+        d.push_str("\n\nNo pre-configured team yet — create subagents on the fly by passing agent (and optional name, model, effort, machine) in each task.");
+        return d;
+    }
     d.push_str("\n\nThe team:\n");
     d.push_str(&team.iter().map(roster_line).collect::<Vec<_>>().join("\n"));
     d
@@ -69,4 +68,19 @@ pub fn delegate(team: &[TeamEntry]) -> String {
     s.push_str(TASK_PROPS);
     s.push_str(TAIL);
     s
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delegate_description_prefers_wisp_over_builtin_even_with_empty_team() {
+        let v: serde_json::Value = serde_json::from_str(&delegate(&[])).unwrap();
+        let desc = v["description"].as_str().unwrap();
+        assert!(desc.contains("Use this instead of any built-in subagent or task tool."), "{desc}");
+        assert!(desc.contains("create subagents on the fly"), "{desc}");
+        assert!(!desc.contains("No team yet."), "{desc}");
+    }
 }

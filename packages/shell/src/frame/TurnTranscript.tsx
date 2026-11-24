@@ -11,7 +11,7 @@ import { changeFigures } from './rows-view.ts';
 import { clusterLabel, groupFinishedSteps, type ClusterCounts } from './transcript-group.ts';
 import '../i18n/lazy.ts';
 
-const ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', thinking: 'spark', tool: 'tool', search: 'search' };
+const ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', thinking: 'spark', tool: 'tool', search: 'search', agent: 'agent' };
 
 function groupIcon(c: ClusterCounts): IconName {
   if ((c.edits ?? 0) > 0) return 'pen';

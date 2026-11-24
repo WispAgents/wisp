@@ -12,6 +12,7 @@ import { HeldCard } from './HeldCard.tsx';
 import { agentsOf, type AgentStats } from './agents.ts';
 import { cwdOf, docOf, haltOf, heldOf, whatChanged, type TurnDoc } from './model.ts';
 import { Receipt } from './Receipt.tsx';
+import { TurnDelegations } from './TurnDelegations.tsx';
 import { handoffTargets, limitTarget, type AgentLike, type Target } from './vendors.ts';
 import { WhatChanged } from './WhatChanged.tsx';
 
@@ -101,6 +102,7 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
     <Show when={doc()}>
       {(d) => (
         <Stack gap="2" part="turn.foot">
+          <TurnDelegations client={c} turnKey={turnKey} doc={d()} nameOf={nameOf} />
           <Show when={heldOf(d(), t, nameOf(d().agent ?? ''))}>
             {(h) => (
               <HeldCard

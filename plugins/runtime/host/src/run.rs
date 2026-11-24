@@ -479,11 +479,20 @@ impl Runtime {
         let user_task = s.parent_id.is_none() && !s.ext.contains_key("wisp.crew");
         let plain = !self.on_unless_off("runtime.blocks") && user_task;
         let chat_mode = self.on_unless_switched_off("settings.transcript") && user_task;
-        let mut system =
-            system_prompt(&SystemOpts { ask_tool: info.ask_tool.clone(), apps, watch, blocks: !plain, chat_mode, ..SystemOpts::default() });
+        let ask = s.parent_id.is_some().then(|| wisp_runtime_core::prompt::subagents::SUBAGENT_ASK.to_owned());
+        let mut system = system_prompt(&SystemOpts {
+            ask_tool: info.ask_tool.clone(),
+            ask,
+            apps,
+            watch,
+            blocks: !plain,
+            chat_mode,
+            ..SystemOpts::default()
+        });
         // a lead hears about its team (v1 runner.js:1379 `teamNote`): Delegate's rows, a preset, a crew member's
-        // linked delegates (orch #2); only where wisp's MCP server (and so `delegate`) is there to use it
-        if s.parent_id.is_none() && self.host.agent_access().is_some() {
+        // linked delegates (orch #2), or ad-hoc delegation guidance when no team is pre-configured yet; only where
+        // wisp's MCP server (and so `delegate`) is offered (never a subagent or read-only side discussion)
+        if s.parent_id.is_none() && !is_side(s) && self.host.agent_access().is_some() {
             system.push_str(&self.team_note(s, info.ask_tool.as_deref()));
         }
         // a side discussion: what it is and what it may do (v1 sideNote)
