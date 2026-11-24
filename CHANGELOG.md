@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.11] - 2026-11-24
+
 ### Fixed
 
 - Subagents & Chat mode: wired `SUBAGENT_ASK` into delegated subagent system prompts so subagents know they report to their lead and cannot ask the user directly; updated the lead system prompt (`team_note`) and `delegate` MCP tool description so main agents use wisp's `delegate` tool (creating subagents on the fly) instead of built-in subagent tools even when no team is pre-configured; and surfaced delegated agents inline in Chat mode (keeping `agent` steps visible with the `agent` icon and rendering clickable live delegate cards on each turn).
