@@ -3,7 +3,7 @@
 // staged is committed (nothing staged: everything changed), and a hunk or a whole file is reverted. Each answers at
 // once (design/feedback.md): the toggle flips, the reverted hunk goes, the committed files go; then git's own read
 // comes back. A refusal puts it back as it was, with the error. Without git, the edits wisp saw, per file.
-import { Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { defineCommand, entityKey, ownerOf, type EntityKey, type SettingRow } from '@wisp/client';
 import { Button, ChangesList, CommentCard, Dialog, EmptyState, Inline, isEnvFile, rowKey, useSignal, type ChangeFile, type ChangeRow, type StageState } from '@wisp/ui';
 import { openFinder } from './open-file.ts';
@@ -13,7 +13,7 @@ import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { setChangeStat } from './changes-stat.ts';
 import { baseName, revertAsk, undoSteps, type UndoStep } from './revert.ts';
-import { changesOf, envState, filesOf, outsideFolder, relative, revealedOf, seenMasked, setRevealed, worktreeDir, ofTask, type ChangeTurn } from './changes.ts';
+import { autoOpenable, changesOf, defaultOpen, envState, filesOf, hasOutsideFolder, isOutsidePath, relative, revealedOf, seenMasked, setRevealed, worktreeDir, ofTask, type ChangeTurn } from './changes.ts';
 import '../i18n/lazy.ts';
 
 interface GitFileRow {
@@ -24,6 +24,8 @@ interface GitFileRow {
   readonly del: number;
   readonly binary: boolean;
   readonly rows: readonly ChangeRow[];
+  readonly more?: number;
+  readonly generated?: boolean;
   readonly staged?: boolean | null;
   readonly unstaged?: boolean | null;
   readonly hunkStage?: readonly { readonly staged: boolean; readonly unstaged: boolean }[] | null;
@@ -101,10 +103,20 @@ type Raw = { cwd?: string; title?: string; summary?: { worktree?: Wt | null }; b
 
 const stageOf = (f: GitFileRow): StageState => (!f.staged && !f.unstaged ? 'none' : f.staged && !f.unstaged ? 'staged' : f.staged ? 'part' : 'stage');
 
+const EMPTY_MARKS: ReadonlyMap<string, number> = new Map();
+
 /** The edits wisp saw (no git), as the list's rows: each hunk's lines, a plain separator between hunks. A .env file's values read
  *  KEY=•••• under the Reveal line until it's revealed (v1 maskChange; git masks its own rows). */
-function seenFiles(turns: readonly ChangeTurn[], id: string, cwd: string, maskOn: boolean, revealed: ReadonlySet<string>, shown: ReadonlyMap<string, Edits>): ChangeFile[] {
-  return filesOf(turns, id, cwd, (p) => seenMasked(p, maskOn, revealed), (turn, file) => shown.get(shownKey(turn, file))).map((f) => ({
+function seenFiles(
+  turns: readonly ChangeTurn[],
+  id: string,
+  cwd: string,
+  maskOn: boolean,
+  revealed: ReadonlySet<string>,
+  shown: ReadonlyMap<string, Edits>,
+  include?: (path: string) => boolean,
+): ChangeFile[] {
+  return filesOf(turns, id, cwd, (p) => seenMasked(p, maskOn, revealed), (turn, file) => shown.get(shownKey(turn, file)), include).map((f) => ({
     path: f.path,
     status: f.status === 'added' ? 'A' : f.status === 'deleted' ? 'D' : 'M',
     add: f.additions,
@@ -127,15 +139,28 @@ export function ChangesPane(): JSX.Element {
   // every comment waiting (an answer's too): the numbers are the tray's; the lines' are those with a file
   const list = createMemo(() => waiting(all(), task.key));
   const mine = createMemo(() => list().flatMap((c, k) => (isLine(c) ? [{ ...c, n: k + 1 }] : [])));
+  // pre-indexed by file path so ChangesList looks up marks in O(1) per file instead of scanning per line
+  const marksByPath = createMemo(() => {
+    const out = new Map<string, Map<string, number>>();
+    for (const c of mine()) {
+      let m = out.get(c.file);
+      if (!m) {
+        m = new Map();
+        out.set(c.file, m);
+      }
+      m.set(lineKey(c.side, c.line), c.n);
+    }
+    return out;
+  });
   const [draft, setDraft] = createSignal<{ path: string; key: string; at: NonNullable<ReturnType<typeof placeOf>>; note: string } | undefined>();
   const raw = (): Raw | undefined => task.task() as Raw | undefined;
   // the task's worktree: wisp.worktrees' own ext, or the list row's summary (a task from v1's data has it there)
   const wt = (): Wt | undefined => raw()?.body?.ext?.['wisp.worktrees'] ?? raw()?.summary?.worktree ?? undefined;
   // git reads the worktree only (v1 GET /sessions/:id/changes; audit 2026-11-19: in place it diffed the shared checkout,
-  // 198 files of every session's); the folder the edits wisp saw are relative to is the task's own either way
-  const dir = (): string => worktreeDir(wt());
-  const folder = (): string => String(wt()?.path ?? wt()?.cwd ?? raw()?.body?.cwd ?? raw()?.cwd ?? '');
-  const base = (): string => wt()?.baseRef || wt()?.base || 'HEAD';
+  // 198 files of every session's); memoized as primitives so streaming patches on the task row never re-run `files`
+  const dir = createMemo((): string => worktreeDir(wt()));
+  const folder = createMemo((): string => String(wt()?.path ?? wt()?.cwd ?? raw()?.body?.cwd ?? raw()?.cwd ?? ''));
+  const base = createMemo((): string => wt()?.baseRef || wt()?.base || 'HEAD');
   // .env files shown as they are (v1 Reveal): the button flips at once, git's unmasked read follows
   const [revealed, setRevealedHere] = createSignal(revealedOf(task.id));
   // why the last read was refused: said where the files go, in words (a phone since UX 2026-11-18 phone #14, the browser
@@ -160,6 +185,12 @@ export function ChangesPane(): JSX.Element {
   );
   // every turn whole while the pane is open: the task's topic sends older turns as stubs, without their edits (v1 #788)
   const turns = useSignal(task.client.entities.list<ChangeTurn>('turn'));
+  // filtered to this task with shallow equality so turns updating in other tasks never trigger diff work here
+  const taskTurns = createMemo(
+    () => (turns() as readonly ChangeTurn[]).filter((x) => ofTask(x.session_id, task.id)),
+    undefined,
+    { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) },
+  );
   // git read again in place when the task settles (a running turn ends) or its uncommitted/ahead counts move; not on
   // every row patch (a turn streaming), nor after a refused read (a gone folder doesn't come back: Retry is there)
   const moved = createMemo(() => {
@@ -182,17 +213,17 @@ export function ChangesPane(): JSX.Element {
     scope: whole,
     bare: task.id,
     watch: (topic, sc) => task.client.watch(ownerOf(task.key), topic, sc),
-    stubbed: () => turns().some((x) => ofTask(x.session_id, task.id) && isStub(x.body)),
+    stubbed: () => taskTurns().some((x) => isStub(x.body)),
   });
   // Settings → Privacy's Hide .env values (git masks its own rows by it; the edits wisp saw follow it here)
   const maskSetting = useSignal(task.client.entities.row<SettingRow>('setting', entityKey(ownerOf(task.key), 'git.maskEnvFiles')));
-  const maskOn = (): boolean => !(maskSetting()?.value === false || maskSetting()?.value === 'off');
+  const maskOn = createMemo((): boolean => !(maskSetting()?.value === false || maskSetting()?.value === 'off'));
   // what you did before git answers again: a toggle flipped, a hunk or file reverted, files committed
   const [flipped, setFlipped] = createSignal(new Map<string, StageState>());
   const [going, setGoing] = createSignal(new Set<string>());
   const [open, setOpen] = createSignal<Set<string> | undefined>(undefined);
   const [viewed, setViewed] = createSignal(new Set<string>());
-  const staging = (): boolean => !!wt()?.path || !!wt()?.cwd;
+  const staging = createMemo((): boolean => !!wt()?.path || !!wt()?.cwd);
   // Hide: the line says hidden at once; the file's last read was unmasked (no `masked`) until git's masked one lands
   const [hiding, setHiding] = createSignal(new Set<string>());
   createEffect(on(git, () => setHiding(new Set<string>()), { defer: true }));
@@ -201,10 +232,14 @@ export function ChangesPane(): JSX.Element {
   const [seenShown, setSeenShown] = createSignal<ReadonlyMap<string, Edits>>(new Map());
   const files = createMemo((): ChangeFile[] => {
     const g = git();
-    const seen = seenFiles(turns() as readonly ChangeTurn[], task.id, folder(), maskOn(), revealed(), seenShown());
-    if (!g || g.body.kind !== 'inline') return seen;
-    const fromGit = g.body.files
-      .filter((f) => !going().has(f.path))
+    const myTurns = taskTurns();
+    const cwd = folder();
+    if (!g || g.body.kind !== 'inline') return seenFiles(myTurns, task.id, cwd, maskOn(), revealed(), seenShown());
+    const st = staging();
+    const fl = flipped();
+    const go = going();
+    const fromGit: ChangeFile[] = g.body.files
+      .filter((f) => !go.has(f.path))
       .map((f) => ({
         path: f.path,
         status: f.status,
@@ -212,33 +247,35 @@ export function ChangesPane(): JSX.Element {
         del: f.del,
         binary: f.binary,
         rows: f.rows,
+        ...(f.more ? { more: f.more } : {}),
+        ...(f.generated ? { generated: true } : {}),
         ...(f.from ? { from: f.from } : {}),
         revertable: (f.status === 'M' || f.status === 'R') && !f.binary && f.rows.length > 0,
         ...(envOf(f) ? { env: envOf(f) as 'hidden' | 'shown' } : {}),
-        ...(staging() ? { stage: flipped().get(f.path) ?? stageOf(f) } : {}),
-        ...(staging() && f.hunkStage ? { hunkStage: f.hunkStage.map((h) => (h.unstaged ? ('stage' as const) : h.staged ? ('unstage' as const) : undefined)) } : {}),
+        ...(st ? { stage: fl.get(f.path) ?? stageOf(f) } : {}),
+        ...(st && f.hunkStage ? { hunkStage: f.hunkStage.map((h) => (h.unstaged ? ('stage' as const) : h.staged ? ('unstage' as const) : undefined)) } : {}),
       }));
-    // what wisp saw edited outside the folder git reads (an agent's own worktree): git can't see it
-    return [...fromGit, ...outsideFolder(seen)];
+    // what wisp saw edited outside the folder git reads (an agent's own worktree): skip line diffing unless any exist
+    if (!hasOutsideFolder(myTurns, task.id, cwd)) return fromGit;
+    return [...fromGit, ...seenFiles(myTurns, task.id, cwd, maskOn(), revealed(), seenShown(), isOutsidePath)];
   });
   // the side panel's Changes tab counts what this read found (UX 2026-11-18 #5)
   createEffect(() => !git.loading && setChangeStat(task.key, { files: files().length }));
-  // every diff opens by itself until you open, fold or view one (v1 opensNow)
-  const isOpen = (p: string): boolean => open()?.has(p) ?? !viewed().has(p);
-  const touch = (): Set<string> =>
-    new Set(
-      open() ??
-        files()
-          .filter((f) => !viewed().has(f.path))
-          .map((f) => f.path),
-    );
+  // v1 opensNow (design/side-panel.md): all eligible files when ≤3, else only the first eligible (skipping generated, >300-row, viewed)
+  const openSet = createMemo(() => open() ?? defaultOpen(files(), viewed()));
+  const isOpen = (p: string): boolean => openSet().has(p);
+  const touch = (): Set<string> => new Set(openSet());
   const toggle = (p: string): void => {
     const s = touch();
     if (s.has(p)) s.delete(p);
     else s.add(p);
     setOpen(s);
   };
-  const allOpen = (): boolean => files().every((f) => isOpen(f.path));
+  const expandable = createMemo(() => files().filter((f) => autoOpenable(f, viewed().has(f.path))));
+  const allOpen = (): boolean => {
+    const e = expandable();
+    return e.length > 0 ? e.every((f) => isOpen(f.path)) : files().some((f) => isOpen(f.path));
+  };
   const failed = (e: unknown): void => {
     shell.toast.show(e instanceof Error ? e.message : String(e), { tone: 'error' });
   };
@@ -353,6 +390,56 @@ export function ChangesPane(): JSX.Element {
     const n = files().filter((f) => viewed().has(f.path)).length;
     return n ? t('shell-task.changes.viewedOf', { n, total: files().length }) : undefined;
   };
+  // keyed by (path, key) so typing in CommentCard updates its value in place without remounting the card or lines
+  const draftSlot = createMemo(() => {
+    const d = draft();
+    return d ? `${d.path}\n${d.key}` : undefined;
+  });
+  const commentOpen = createMemo(() => {
+    if (!draftSlot()) return undefined;
+    const d = untrack(draft);
+    if (!d) return undefined;
+    return {
+      path: d.path,
+      key: d.key,
+      card: (
+        <CommentCard
+          n={(() => {
+            const cur = draft();
+            const had = mine().find((c) => cur && c.file === cur.path && lineKey(c.side, c.line) === cur.key);
+            return had ? had.n : list().length + 1;
+          })()}
+          where={draft() ? lineLabel({ file: draft()?.path ?? '', line: draft()?.at.line ?? 0, side: draft()?.at.side ?? 'new' }) : ''}
+          code={draft()?.at.code ?? ''}
+          value={draft()?.note ?? ''}
+          placeholder={t('shell-task.comment.placeholder')}
+          onInput={(v) => {
+            const cur = draft();
+            if (cur) setDraft({ ...cur, note: v });
+          }}
+          onSave={() => {
+            const cur = draft();
+            if (!cur || !cur.note.trim()) return;
+            comments.set((c) => added(c, task.key, { ...cur.at, note: cur.note.trim() }) as never);
+            setDraft(undefined);
+          }}
+          onCancel={() => setDraft(undefined)}
+          labels={{ save: t('shell-task.comment.save'), cancel: t('shell-task.comment.cancel'), hint: t('shell-task.comment.hint') }}
+        />
+      ),
+    };
+  });
+  const commentProp = {
+    label: (o: ChangeRow) => t(o.op === '-' ? 'shell-task.comment.onRemoved' : 'shell-task.comment.onLine', { n: (o.op === '-' ? o.a : o.b) ?? 0 }),
+    onAdd: (path: string, o: ChangeRow) => {
+      const at = placeOf(path, o);
+      if (at) setDraft({ path, key: rowKey(o) ?? '', at, note: mine().find((c) => c.file === path && lineKey(c.side, c.line) === rowKey(o))?.note ?? '' });
+    },
+    marks: (path: string) => marksByPath().get(path) ?? EMPTY_MARKS,
+    get open() {
+      return commentOpen();
+    },
+  };
   return (
     <>
     <Show when={files().length > 0} fallback={<ChangesEmpty loading={git.loading} {...(refused() && { refused: refused() as { code: string; message: string }, onRetry: () => void refetch() })} />}>
@@ -373,7 +460,11 @@ export function ChangesPane(): JSX.Element {
           setOpen(o);
         }}
         allOpen={allOpen()}
-        onAll={() => setOpen(allOpen() ? new Set<string>() : new Set(files().map((f) => f.path)))}
+        onAll={() => {
+          if (allOpen()) return setOpen(new Set<string>());
+          const e = expandable();
+          setOpen(new Set((e.length > 0 ? e : files().filter((f) => !f.binary && f.rows.length > 0 && !viewed().has(f.path))).map((f) => f.path)));
+        }}
         // Open file… lists the worktree's files: only on git's diff, as v1 (audit 2026-11-19: on a folder git can't list
         // the palette closed at once, and the next keys ran as shortcuts: E marked the task done)
         {...(git() && {
@@ -396,45 +487,7 @@ export function ChangesPane(): JSX.Element {
         onHunkStage={onHunkStage}
         onRevertHunk={onRevertHunk}
         onReveal={onReveal}
-        comment={{
-          label: (o) => t(o.op === '-' ? 'shell-task.comment.onRemoved' : 'shell-task.comment.onLine', { n: (o.op === '-' ? o.a : o.b) ?? 0 }),
-          onAdd: (path, o) => {
-            const at = placeOf(path, o);
-            if (at) setDraft({ path, key: rowKey(o) ?? '', at, note: mine().find((c) => c.file === path && lineKey(c.side, c.line) === rowKey(o))?.note ?? '' });
-          },
-          marks: (path) => new Map(mine().flatMap((c) => (c.file === path ? [[lineKey(c.side, c.line), c.n] as const] : []))),
-          open: draft()
-            ? {
-                path: draft()?.path ?? '',
-                key: draft()?.key ?? '',
-                card: (
-                  <CommentCard
-                    n={(() => {
-                      const d = draft();
-                      const had = mine().find((c) => d && c.file === d.path && lineKey(c.side, c.line) === d.key);
-                      return had ? had.n : list().length + 1;
-                    })()}
-                    where={draft() ? lineLabel({ file: draft()?.path ?? '', line: draft()?.at.line ?? 0, side: draft()?.at.side ?? 'new' }) : ''}
-                    code={draft()?.at.code ?? ''}
-                    value={draft()?.note ?? ''}
-                    placeholder={t('shell-task.comment.placeholder')}
-                    onInput={(v) => {
-                      const d = draft();
-                      if (d) setDraft({ ...d, note: v });
-                    }}
-                    onSave={() => {
-                      const d = draft();
-                      if (!d || !d.note.trim()) return;
-                      comments.set((cur) => added(cur, task.key, { ...d.at, note: d.note.trim() }) as never);
-                      setDraft(undefined);
-                    }}
-                    onCancel={() => setDraft(undefined)}
-                    labels={{ save: t('shell-task.comment.save'), cancel: t('shell-task.comment.cancel'), hint: t('shell-task.comment.hint') }}
-                  />
-                ),
-              }
-            : undefined,
-        }}
+        comment={commentProp}
         fileMenu={(path) => ({
           menu: {
             items: [
@@ -482,6 +535,8 @@ export function ChangesPane(): JSX.Element {
           envShown: (name) => t('shell-task.changes.envShown', { name }),
           reveal: t('shell-task.changes.reveal'),
           hide: t('shell-task.changes.hide'),
+          showMore: (n) => t(n === 1 ? 'shell-task.changes.showMoreOne' : 'shell-task.changes.showMore', { n }),
+          moreFiles: (n) => t(n === 1 ? 'shell-task.changes.moreFilesOne' : 'shell-task.changes.moreFiles', { n }),
         }}
       />
     </Show>

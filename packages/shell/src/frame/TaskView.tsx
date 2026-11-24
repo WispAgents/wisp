@@ -251,11 +251,11 @@ function TurnsSkeleton(): JSX.Element {
   );
 }
 
-/** git's read of the task's folder (wisp.git's `git.changes`): its files' stats are the head's Changes figures */
+/** git's read of the task's folder (wisp.git's `git.changes`): stats only, for the head's Changes figures */
 const changesNow = defineCommand<{ key: string; path: string; base: string }, { readonly stats?: readonly { readonly add: number; readonly del: number }[] } | null>({
   id: 'git.changes',
   owner: (a) => a.key as EntityKey,
-  wire: (a) => ({ path: a.path, base: a.base, stageState: false }),
+  wire: (a) => ({ path: a.path, base: a.base, stageState: false, statsOnly: true }),
   optimistic: 'none',
   quiet: true,
   pending: 'what changed',

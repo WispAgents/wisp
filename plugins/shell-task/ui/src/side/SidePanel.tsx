@@ -13,7 +13,7 @@ import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { PrPane } from './PrPane.tsx';
 import { ShellPane, askShellFocus, shellWalkedTo, walksTabs } from './ShellPane.tsx';
-import { ChangesPane, read as readChanges, readHere as readChangesQuiet } from './ChangesPane.tsx';
+import { ChangesPane } from './ChangesPane.tsx';
 import { changeStat, setChangeStat } from './changes-stat.ts';
 import { changesOf, outsideFolder, relative, type ChangeTurn } from './changes.ts';
 import { sideStrip, tabCount } from './strip.ts';
@@ -40,6 +40,18 @@ const openApp = defineCommand<{ key: EntityKey; cwd: string }, { ok: boolean }>(
   wire: (a) => ({ cwd: a.cwd, argv: [] }),
   optimistic: 'none',
   pending: 'Open in terminal app',
+});
+/** Background Changes tab file count while another pane is open: stats only, no stage reads or diff rows. */
+const readChangesCount = defineCommand<
+  { key: EntityKey; path: string; base: string },
+  { readonly stats?: readonly unknown[]; readonly body?: { readonly kind: 'inline'; readonly files: readonly unknown[] } | { readonly kind: 'blob' } } | null
+>({
+  id: 'git.changes',
+  owner: (a) => a.key,
+  wire: (a) => ({ path: a.path, base: a.base, stageState: false, statsOnly: true }),
+  optimistic: 'none',
+  quiet: true,
+  pending: 'the Changes tab count',
 });
 
 
@@ -148,7 +160,12 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
   const folder = (): string => String(wt()?.path ?? wt()?.cwd ?? raw()?.body?.cwd ?? raw()?.cwd ?? '');
   // a folder git can't read (no repo, too big a diff): the files the task's turns edited, as Changes then lists them
   const turns = useSignal(task.client.entities.list<ChangeTurn>('turn'));
-  const edited = createMemo(() => [...new Set(turns().filter((x) => ofTask(x.session_id, task.id)).flatMap((x) => changesOf(x).map((c) => relative(c.file, folder()))))]);
+  const taskTurns = createMemo(
+    () => turns().filter((x) => ofTask(x.session_id, task.id)),
+    undefined,
+    { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) },
+  );
+  const edited = createMemo(() => [...new Set(taskTurns().flatMap((x) => changesOf(x).map((c) => relative(c.file, folder()))))]);
   const touched = (): number => edited().length;
   // what wisp saw edited outside the folder git reads: the Changes pane lists those beside git's, so the count does too
   const outside = (): number => outsideFolder(edited().map((path) => ({ path }))).length;
@@ -166,8 +183,12 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
         // the tab's count is a look in the background: its refusal is no toast (a phone since UX 2026-11-18 phone #14;
         // the browser too since the audit of 2026-11-19: a worktree cleaned up after the task toasted "no such folder:
         // /Users/…" on every open); the Changes pane says it in words
-        .run(readChangesQuiet, { key: task.key as EntityKey, path, base, reveal: [] })
-        .then((g) => g?.body.kind === 'inline' && untrack(() => props.pane) !== 'changes' && setChangeStat(task.key, { files: g.body.files.length + untrack(outside) }))
+        .run(readChangesCount, { key: task.key as EntityKey, path, base })
+        .then((g) => {
+          if (!g || untrack(() => props.pane) === 'changes') return;
+          const n = g.stats ? g.stats.length : g.body?.kind === 'inline' ? g.body.files.length : undefined;
+          if (n !== undefined) setChangeStat(task.key, { files: n + untrack(outside) });
+        })
         .catch(() => undefined);
     },
   );

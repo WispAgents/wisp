@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Task view (side panel → Changes): fixed app freezes when opening the right panel on tasks with large diffs. Removed an O(N²) per-line array copy/reverse in `FileDiff`, switched hover and open-comment tracking to `createSelector` with per-file memoized comment marks and lazy hunk hashing, keyed file rows by `path` so streaming updates never teardown/remount open diffs, restored v1 auto-open rules (opening at most 3 eligible files or only the first, skipping generated and >300-line files) with per-file (300 rows) and per-list (200 files) expansion caps, skipped redundant turn-diffing for worktree files when `git.changes` is present, and added `statsOnly` to `git.changes` so the task head and background tab count no longer transfer full diff payloads.
+
 ## [1.0.0-alpha.11] - 2026-11-24
 
 ### Fixed
