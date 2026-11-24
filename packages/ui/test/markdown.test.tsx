@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import { Markdown, parseInline, parseMarkdown, safeHref, type MarkdownBlock as Block, type MarkdownInline as Inline } from '../src/content/rich.ts';
+import { sameBlock } from '../src/content/markdown/Markdown.tsx';
 
 let dispose: (() => void) | undefined;
 afterEach(() => {
@@ -210,5 +211,17 @@ describe('<Markdown>', () => {
     setSrc('First paragraph.\n\nSecond, longer now');
     expect(host.querySelector('p')).toBe(first);
     expect(host.querySelectorAll('p')[1]?.textContent).toBe('Second, longer now');
+  });
+
+  test('sameBlock compares headings, lists, quotes, code and tables structurally without JSON.stringify', () => {
+    const src = '# H1\n\n- [x] a\n- [ ] b\n\n> q\n\n```ts\nconst x = 1;\n```\n\n| A | B |\n|:--|:--|\n| 1 | `2` |\n\n---';
+    const a = parseMarkdown(src);
+    const b = parseMarkdown(src);
+    expect(a.length).toBe(b.length);
+    for (let i = 0; i < a.length; i++) expect(sameBlock(a[i]!, b[i]!)).toBe(true);
+    const c = parseMarkdown(src.replace('const x = 1;', 'const x = 2;').replace('| 1 |', '| 9 |'));
+    expect(sameBlock(a[3]!, c[3]!)).toBe(false);
+    expect(sameBlock(a[4]!, c[4]!)).toBe(false);
+    expect(sameBlock(a[0]!, a[1]!)).toBe(false);
   });
 });

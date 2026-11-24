@@ -107,13 +107,26 @@ export function builtinRows(
 ): SubRow[] {
   const id = bare(lead);
   const mine = steps.filter((e) => e.session_id === lead || e.session_id === id).slice().sort((a, b) => a.seq - b.seq);
-  const calls = mine.filter((e) => e.kind === 'tool' && e.body['tool'] === 'agent' && str(e.body['callId']));
+  const calls: StepRowLike[] = [];
+  const outputs = new Map<string, StepRowLike>();
+  const latestChild = new Map<string, StepRowLike>();
+  // single O(N) pass instead of scanning and reversing `mine` per subagent call
+  for (const e of mine) {
+    if (e.kind === 'tool') {
+      if (e.body['tool'] === 'agent' && str(e.body['callId'])) calls.push(e);
+      const parent = str(e.body['parent']);
+      if (parent) latestChild.set(parent, e);
+    } else if (e.kind === 'tool_output') {
+      const cid = str(e.body['callId']);
+      if (cid && !outputs.has(cid)) outputs.set(cid, e);
+    }
+  }
   const harness = harnessName(agent);
   return calls.map((c) => {
     const call = str(c.body['callId']);
-    const answer = mine.find((e) => e.kind === 'tool_output' && e.body['callId'] === call);
+    const answer = outputs.get(call);
     const output = str(c.body['output']) || str(answer?.body['text']);
-    const now = [...mine].reverse().find((e) => e.kind === 'tool' && e.body['parent'] === call);
+    const now = latestChild.get(call);
     const back = !!answer || !!str(c.body['output']);
     // no answer: still working while the lead works, else it was cut off with it
     const st = back ? stateOf('done', '', say) : running ? stateOf('running', '', say) : stateOf('done', 'stopped', say);
@@ -144,6 +157,22 @@ export const hasSubagents = (tasks: readonly TaskRowLike[], steps: readonly Step
   tasks.some((r) => !!r.parent_id && (r.parent_id === lead || bare(r.parent_id) === bare(lead)) && !isCrewJob(r)) ||
   steps.some((e) => (e.session_id === lead || e.session_id === bare(lead)) && e.kind === 'tool' && e.body['tool'] === 'agent');
 
+/** Fast check over raw entity-store `'event'` rows (no flattening/dedup Map): used by SidePanel's tab strip. */
+function hasRawBuiltin(rows: readonly (StepRowLike | readonly StepRowLike[])[], lead: string): boolean {
+  const id = bare(lead);
+  for (const r of rows) {
+    if (Array.isArray(r)) {
+      for (const e of r as readonly StepRowLike[]) {
+        if (e && (e.session_id === lead || e.session_id === id) && e.kind === 'tool' && e.body['tool'] === 'agent') return true;
+      }
+    } else if (r) {
+      const e = r as StepRowLike;
+      if ((e.session_id === lead || e.session_id === id) && e.kind === 'tool' && e.body['tool'] === 'agent') return true;
+    }
+  }
+  return false;
+}
+
 /** A built-in subagent's own steps (its view): every call that names it as parent, oldest first, and its answer. */
 export function builtinSteps(steps: readonly StepRowLike[], lead: string, call: string, cwd = ''): { readonly steps: readonly string[]; readonly answer: string } {
   const mine = steps.filter((e) => e.session_id === lead || e.session_id === bare(lead)).slice().sort((a, b) => a.seq - b.seq);
@@ -157,12 +186,15 @@ export function builtinSteps(steps: readonly StepRowLike[], lead: string, call: 
 export interface SubagentData {
   readonly tasks: Readable<readonly TaskRowLike[]>;
   readonly steps: Readable<readonly StepRowLike[]>;
+  /** Memoized boolean per lead task: checks raw events with early exit so SidePanel never triggers full Map dedup. */
+  readonly hasFor: (lead: string) => Readable<boolean>;
 }
 const madeFor = new WeakMap<PluginClient, SubagentData>();
 export function subagentData(client: PluginClient): SubagentData {
   const had = madeFor.get(client);
   if (had) return had;
   // a task's steps come as one list row per task while it's open (its live tail: an array), or one row per step
+  const tasks = client.entities.list<TaskRowLike>('session');
   const rows = client.entities.list<StepRowLike | readonly StepRowLike[]>('event');
   const steps = computed(() => {
     const seen = new Map<string, StepRowLike>();
@@ -175,7 +207,20 @@ export function subagentData(client: PluginClient): SubagentData {
     }
     return [...seen.values()];
   });
-  const d: SubagentData = { tasks: client.entities.list<TaskRowLike>('session'), steps };
+  const byLead = new Map<string, Readable<boolean>>();
+  const hasFor = (lead: string): Readable<boolean> => {
+    const hit = byLead.get(lead);
+    if (hit) return hit;
+    if (byLead.size >= 200) byLead.clear();
+    const id = bare(lead);
+    const sig = computed(() =>
+      tasks().some((r) => !!r.parent_id && (r.parent_id === lead || bare(r.parent_id) === id) && !isCrewJob(r)) ||
+      hasRawBuiltin(rows() as readonly (StepRowLike | readonly StepRowLike[])[], lead),
+    );
+    byLead.set(lead, sig);
+    return sig;
+  };
+  const d: SubagentData = { tasks, steps, hasFor };
   madeFor.set(client, d);
   return d;
 }

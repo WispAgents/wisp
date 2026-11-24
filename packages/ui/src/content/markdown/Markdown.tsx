@@ -117,8 +117,84 @@ function blocks(list: readonly Block[], ctx: Ctx, tight: boolean): JSX.Element[]
   return list.map((b) => block(b, ctx, tight));
 }
 
-/** Two parses of the same text give equal trees; compare by content so unchanged blocks stay put. */
-const sameBlock = (a: Block, b: Block): boolean => a === b || JSON.stringify(a) === JSON.stringify(b);
+function sameInlines(a: readonly Inline[], b: readonly Inline[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!sameInline(a[i]!, b[i]!)) return false;
+  return true;
+}
+
+function sameInline(a: Inline, b: Inline): boolean {
+  if (a === b) return true;
+  if (a.t !== b.t) return false;
+  switch (a.t) {
+    case 'text':
+    case 'code':
+      return a.v === (b as typeof a).v;
+    case 'strong':
+    case 'em':
+    case 'del':
+      return sameInlines(a.c, (b as typeof a).c);
+    case 'link': {
+      const o = b as typeof a;
+      return a.href === o.href && a.title === o.title && sameInlines(a.c, o.c);
+    }
+    case 'br':
+      return true;
+  }
+}
+
+function sameBlocks(a: readonly Block[], b: readonly Block[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!sameBlock(a[i]!, b[i]!)) return false;
+  return true;
+}
+
+/** Structural AST equality without JSON.stringify allocations, so streaming keeps unchanged blocks in place fast. */
+export function sameBlock(a: Block, b: Block): boolean {
+  if (a === b) return true;
+  if (a.t !== b.t) return false;
+  switch (a.t) {
+    case 'hr':
+      return true;
+    case 'heading': {
+      const o = b as typeof a;
+      return a.level === o.level && sameInlines(a.c, o.c);
+    }
+    case 'paragraph':
+      return sameInlines(a.c, (b as typeof a).c);
+    case 'code': {
+      const o = b as typeof a;
+      return a.lang === o.lang && a.v === o.v;
+    }
+    case 'quote':
+      return sameBlocks(a.c, (b as typeof a).c);
+    case 'list': {
+      const o = b as typeof a;
+      if (a.ordered !== o.ordered || a.start !== o.start || a.tight !== o.tight || a.items.length !== o.items.length) return false;
+      for (let i = 0; i < a.items.length; i++) {
+        const x = a.items[i]!;
+        const y = o.items[i]!;
+        if (x.task !== y.task || !sameBlocks(x.c, y.c)) return false;
+      }
+      return true;
+    }
+    case 'table': {
+      const o = b as typeof a;
+      if (a.align.length !== o.align.length || a.head.length !== o.head.length || a.rows.length !== o.rows.length) return false;
+      for (let i = 0; i < a.align.length; i++) if (a.align[i] !== o.align[i]) return false;
+      for (let i = 0; i < a.head.length; i++) if (!sameInlines(a.head[i]!, o.head[i]!)) return false;
+      for (let r = 0; r < a.rows.length; r++) {
+        const ra = a.rows[r]!;
+        const rb = o.rows[r]!;
+        if (ra.length !== rb.length) return false;
+        for (let c = 0; c < ra.length; c++) if (!sameInlines(ra[c]!, rb[c]!)) return false;
+      }
+      return true;
+    }
+  }
+}
 
 function TopBlock(props: { readonly block: Accessor<Block>; readonly ctx: Ctx }): JSX.Element {
   const stable = createMemo(() => props.block(), undefined, { equals: sameBlock });

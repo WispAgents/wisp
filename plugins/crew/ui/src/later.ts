@@ -8,7 +8,7 @@ import { t } from './i18n.ts';
 import { VIEW } from './views.ts';
 import { crewData } from './data.ts';
 import { hasTeam } from './team.ts';
-import { hasSubagents, subagentData } from './subagents.ts';
+import { subagentData } from './subagents.ts';
 import './i18n/lazy.ts';
 
 interface RowLike {
@@ -25,8 +25,7 @@ const later: PluginUiLater = {
       id: 'wisp.crew.team',
       // and beside one with subagents of its own: wisp's delegates, the harness's own (TRY-24)
       tabs: ({ client, task }) =>
-        hasTeam(crewData(client).jobs(), task) ||
-        hasSubagents(subagentData(client).tasks(), subagentData(client).steps(), task)
+        hasTeam(crewData(client).jobs(), task) || subagentData(client).hasFor(task)()
           ? [{ value: 'team', label: t('wisp.crew.team.tab'), title: t('wisp.crew.team.tip') }]
           : [],
       component: lazy(() => import('./TeamPane.tsx')),

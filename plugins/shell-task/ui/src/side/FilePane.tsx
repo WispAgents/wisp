@@ -4,7 +4,7 @@
 // saved back only if it hasn't changed since (`worktrees.save`), never while the agent works on the task.
 import { Show, createEffect, createMemo, createResource, createSignal, on, type JSX } from 'solid-js';
 import { defineCommand, entityKey, type EntityKey } from '@wisp/client';
-import { Box, Button, EmptyState, FileView, IconButton, Inline, Stack, Text, langOfPath, useSignal } from '@wisp/ui';
+import { Box, Button, EmptyState, FileView, IconButton, Inline, Stack, Text, langOfPath } from '@wisp/ui';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { askText, gutterOf, placeOf, statusOf, type BlameLine } from './file-view.ts';
@@ -88,15 +88,20 @@ export function FilePane(props: { readonly path: string }): JSX.Element {
   const text = (): string => draft() ?? loaded()?.text ?? '';
   const saved = (): string => savedText() ?? loaded()?.text ?? '';
   const dirty = (): boolean => draft() !== undefined && draft() !== saved();
+  const lineCount = createMemo(() => {
+    const s = text();
+    let n = 1;
+    for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
+    return n;
+  });
   const [why] = createResource(
     () => loaded(),
     (f) => task.client.run(blame, { key: task.key, repo: f.root, path: f.path }).catch(() => ({ byLine: [] as BlameLine[] })),
   );
-  const sessions = useSignal(task.client.entities.keys('session'));
   const gutter = createMemo(() => {
     const lines = why()?.byLine ?? [];
     if (!lines.some((l) => l.task)) return undefined;
-    return gutterOf(lines, text().split('\n').length).map((m) =>
+    return gutterOf(lines, lineCount()).map((m) =>
       m
         ? {
             label: m.label,
@@ -104,8 +109,9 @@ export function FilePane(props: { readonly path: string }): JSX.Element {
             first: m.first,
             onOpen: () => {
               const key = entityKey(task.peer, m.task);
-              // a task of this wisp opens; one from someone else's history shows what it was
-              if (sessions().includes(key as never)) shell.navigate({ t: 'openTask', id: key as never });
+              // a task of this wisp opens; one from someone else's history shows what it was (read on click, not per keystroke)
+              const known = task.client.entities.keys('session')();
+              if (known.includes(key as never)) shell.navigate({ t: 'openTask', id: key as never });
               else shell.toast.show(m.title);
             },
           }

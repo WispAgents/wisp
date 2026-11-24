@@ -88,3 +88,18 @@ test('a_working_job_with_no_start_to_tick_from_says_its_state_and_keeps_no_empty
   expect(q('[data-part="crew.team.time"]')).toEqual([]);
   expect(q('[data-part~="crew.team.row"]')[0]?.hasAttribute('data-time')).toBe(false);
 });
+
+test('updating_team_rows_patches_in_place_by_id_without_remounting_dom_nodes', () => {
+  const [rows, setRows] = createSignal<TeamRow[]>([row('j1', { line: 'Reading a.ts' }), row('j2', { line: 'Running tests' })]);
+  const [now] = createSignal(134_000);
+  const host = document.createElement('div');
+  document.body.append(host);
+  dispose = render(() => <TeamList rows={rows()} now={now} open={() => undefined} />, host);
+  const before = [...host.querySelectorAll('[data-part~="crew.team.row"]')];
+  setRows([row('j1', { line: 'Editing b.ts' }), row('j2', { line: 'Running tests' })]);
+  const after = [...host.querySelectorAll('[data-part~="crew.team.row"]')];
+  expect(after.length).toBe(2);
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(before[1]);
+  expect(after[0]?.textContent).toContain('Editing b.ts');
+});

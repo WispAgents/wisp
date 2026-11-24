@@ -81,6 +81,17 @@
     color: var(--ink);
     pointer-events: none;
   }
+  [data-kit='fv-chunk'] {
+    display: block;
+  }
+  [data-kit='fv-chunk'][data-lazy] {
+    content-visibility: auto;
+    contain-intrinsic-size: auto calc(var(--k-lines) * var(--fs-sm) * var(--lh-loose));
+  }
+  [data-kit='fv-line'] {
+    display: block;
+    height: calc(var(--fs-sm) * var(--lh-loose));
+  }
   [data-kit='fv-input'] {
     position: absolute;
     inset: 0;

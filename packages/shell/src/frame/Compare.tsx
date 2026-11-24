@@ -11,6 +11,7 @@ import { blockStrings } from '../block-strings.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { answerContext } from './answer-ctx.ts';
 import { isStub, keepTurnsWhole } from './turn-window.ts';
+import { NO_EVENTS, eventsByTurn } from './turn-events.ts';
 import { archive, stopRun, trialKeep } from './commands.ts';
 import { differsWords, trialOf, variantOf, variantWords } from './trial.ts';
 import { compareGroup } from './compare-group.ts';
@@ -36,6 +37,7 @@ interface TurnRow {
 }
 
 interface EventRow {
+  readonly seq: number;
   readonly turn_id: string;
   readonly kind?: string;
   readonly body?: { readonly kind?: string };
@@ -81,22 +83,27 @@ export default function Compare(props: { readonly params: { readonly id: string 
       runWithOwner(owner, () => keepTurnsWhole({ scope, bare: bareOf(run.id), watch: (topic, sc) => shell.client.peers.watch(ownerOf(run.id as EntityKey), topic, sc), stubbed: () => turnsOf(run).some((x) => isStub(x.body)) }));
     }
   });
-  const turnsOf = (s: SessionRow): TurnRow[] =>
-    allTurns()
-      .filter((x) => x.session_id === s.id || x.session_id === bareOf(s.id))
-      .sort((a, b) => a.idx - b.idx);
-  const flatEvents = createMemo(() => {
-    const out: EventRow[] = [];
-    for (const item of allEvents()) {
-      if (Array.isArray(item)) for (const e of item as readonly EventRow[]) out.push(e);
-      else out.push(item as EventRow);
+  // group turns and events once per change instead of linearly scanning all turns/events per run on every tick
+  const turnsBySession = createMemo(() => {
+    const by = new Map<string, TurnRow[]>();
+    for (const x of allTurns()) {
+      let list = by.get(x.session_id);
+      if (!list) by.set(x.session_id, (list = []));
+      list.push(x);
     }
-    return out;
+    for (const list of by.values()) list.sort((a, b) => a.idx - b.idx);
+    return by;
   });
-  const stepsOf = (turnId: string): string[] =>
-    flatEvents()
-      .filter((e) => e.turn_id === turnId)
-      .map((e) => e.kind ?? e.body?.kind ?? '');
+  const turnsOf = (s: SessionRow): TurnRow[] => {
+    const bare = bareOf(s.id);
+    const a = turnsBySession().get(s.id);
+    const b = bare !== s.id ? turnsBySession().get(bare) : undefined;
+    if (!a) return b ?? [];
+    if (!b) return a;
+    return [...a, ...b].sort((x, y) => x.idx - y.idx);
+  };
+  const byTurn = createMemo<Map<string, readonly EventRow[]>>((prev) => eventsByTurn(allEvents(), prev));
+  const stepsOf = (turnId: string): string[] => (byTurn().get(turnId) ?? NO_EVENTS).map((e) => e.kind ?? e.body?.kind ?? '');
   const runs = createMemo((): CompareRun[] =>
     group().map((s) => ({
       id: s.id,
@@ -119,11 +126,18 @@ export default function Compare(props: { readonly params: { readonly id: string 
     return turn?.prompt ?? turn?.body.prompt ?? '';
   };
   const live = (s: SessionRow): boolean => s.state === 'running' || s.state === 'waiting';
+  // keep a finished run's <Answer> node across live updates of sibling runs so streaming in one column never remounts others
+  const answerCache = new Map<string, { readonly turnId: string; readonly blocks: unknown; readonly el: JSX.Element }>();
   const answerOf = (s: SessionRow): JSX.Element => {
     const last = turnsOf(s).at(-1);
     const blocks = last?.body.presentation?.blocks ?? [];
-    if (!last || live(s) || last.status === 'running' || blocks.length === 0) return <p>{String(s.summary.live || t('shell.compare.working'))}</p>;
-    return (
+    if (!last || live(s) || last.status === 'running' || blocks.length === 0) {
+      answerCache.delete(s.id);
+      return <p>{String(s.summary.live || t('shell.compare.working'))}</p>;
+    }
+    const cached = answerCache.get(s.id);
+    if (cached && cached.turnId === last.id && cached.blocks === blocks) return cached.el;
+    const el = runWithOwner(owner, () => (
       <Answer
         blocks={blocks as never}
         ctx={answerContext({
@@ -139,7 +153,9 @@ export default function Compare(props: { readonly params: { readonly id: string 
           apps: () => (last.body.ext?.['wisp.apps'] ?? {}) as Record<string, unknown>,
         })}
       />
-    );
+    ));
+    answerCache.set(s.id, { turnId: last.id, blocks, el });
+    return el;
   };
   /** Try it two ways: what differed, against run A (v1 compare.js trialLine), under the ask */
   const differs = createMemo(() => {
