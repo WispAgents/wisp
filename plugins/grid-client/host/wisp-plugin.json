@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.grid-client",
   "name": "wisp Grid",
-  "version": "1.0.0-alpha.10",
+  "version": "1.0.0-alpha.11",
   "api": "^1",
   "description": "Sign in to a wisp Grid (RFC 8628), the grid and grid-tunnel transports, this computer's tunnel, and wisp Cloud as a share destination (ADR-0010, 0038, 0041)",
   "kind": "plugin",
