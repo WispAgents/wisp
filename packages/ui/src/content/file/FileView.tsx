@@ -2,12 +2,64 @@
 // highlighted text with an editable layer over it (a textarea whose text is transparent, so the colours show and
 // the caret, selection and typing are the browser's own), and an optional why-gutter: each line's task, a click
 // opens it. The gutter and the numbers scroll with the text; nothing reflows on a keystroke but the text itself.
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { For, Index, Show, createEffect, createMemo, createSelector, createSignal, on, onCleanup, onMount, untrack, type Accessor, type JSX } from 'solid-js';
 import { flag, sub, type KitProps, type PartName } from '../../core/props.ts';
-import { highlight } from '../highlight.ts';
+import { highlight, type Token } from '../highlight.ts';
 import { hoverWords, lineAt, nameAt, nameCellAt } from './file-text.ts';
 import { useTimeout } from '../../blocks/rich-scope.ts';
 import '../../css/file-view.css';
+
+const CHUNK = 100;
+
+function countLines(s: string): number {
+  let n = 1;
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
+  return n;
+}
+
+function offsetOfLine(s: string, line: number): number {
+  if (line <= 1) return 0;
+  let seen = 1;
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) === 10 && ++seen === line) return i + 1;
+  }
+  return s.length;
+}
+
+function sameLine(a: readonly Token[], b: readonly Token[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]?.kind !== b[i]?.kind || a[i]?.text !== b[i]?.text) return false;
+  }
+  return true;
+}
+
+/** Tokenize per line, reusing unchanged line arrays from `prev` so typing only updates the edited line's DOM. */
+function tokenLines(code: string, lang: string | undefined, prev?: readonly (readonly Token[])[]): (readonly Token[])[] {
+  const out: Token[][] = [[]];
+  for (const tk of highlight(code, lang)) {
+    const parts = tk.text.split('\n');
+    for (let i = 0; i < parts.length; i++) {
+      if (i > 0) out.push([]);
+      const text = parts[i];
+      if (text) out[out.length - 1]?.push({ kind: tk.kind, text });
+    }
+  }
+  if (!prev) return out;
+  return out.map((line, i) => {
+    const old = prev[i];
+    return old && sameLine(old, line) ? old : line;
+  });
+}
+
+function LineTokens(props: { readonly line: Accessor<readonly Token[]> }): JSX.Element {
+  const stable = createMemo(() => props.line());
+  return (
+    <div data-kit="fv-line">
+      <For each={stable()}>{(tk) => (tk.kind ? <span data-tk={tk.kind}>{tk.text}</span> : tk.text)}</For>
+    </div>
+  );
+}
 
 /** One line's mark in the why-gutter: who wrote it (a short label) and why (its title). */
 export interface GutterMark {
@@ -46,9 +98,16 @@ export interface FileViewProps extends KitProps {
 
 export function FileView(props: FileViewProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.file-view';
-  const lines = createMemo(() => props.text.split('\n').length);
-  const tokens = createMemo(() => highlight(props.text, props.lang));
+  const lines = createMemo(() => countLines(props.text));
+  const byLine = createMemo<(readonly Token[])[]>((prev) => tokenLines(props.text, props.lang, prev));
+  const chunks = createMemo(() => {
+    const all = byLine();
+    const out: (readonly (readonly Token[])[])[] = [];
+    for (let i = 0; i < all.length; i += CHUNK) out.push(all.slice(i, i + CHUNK));
+    return out;
+  });
   const numbers = createMemo(() => Array.from({ length: lines() }, (_, i) => i + 1));
+  const isActiveLine = createSelector(() => props.line);
   let box: HTMLDivElement | undefined;
   let area: HTMLTextAreaElement | undefined;
   const selected = (): void => {
@@ -61,16 +120,19 @@ export function FileView(props: FileViewProps): JSX.Element {
     const name = nameAt(area.value, area.selectionStart);
     if (name) props.onDefinition(name);
   };
-  // Go to definition's line: in view, its number marked, the caret at its start
-  createEffect(() => {
-    const n = props.line;
-    if (!n || !area || !box) return;
-    const lines = props.text.split('\n');
-    const at = lines.slice(0, n - 1).reduce((sum, l) => sum + l.length + 1, 0);
-    area.setSelectionRange(at, at);
-    const row = box.querySelector<HTMLElement>(`[data-kit="fv-nums"] > span:nth-child(${n})`);
-    if (row) box.scrollTop = Math.max(0, row.offsetTop - box.clientHeight / 3);
-  });
+  // Go to definition's line: track only `props.line` so editing text never jumps the caret back or forces layout
+  createEffect(
+    on(
+      () => props.line,
+      (n) => {
+        if (!n || !area || !box) return;
+        const at = offsetOfLine(untrack(() => props.text), n);
+        area.setSelectionRange(at, at);
+        const row = box.querySelector<HTMLElement>(`[data-kit="fv-nums"] > [data-line="${n}"]`);
+        if (row) box.scrollTop = Math.max(0, row.offsetTop - box.clientHeight / 3);
+      },
+    ),
+  );
   onMount(() => {
     if (!props.autofocus || !area) return;
     // the caret at the top (a new value leaves it after the last line, v1 editor.js), unless a line is asked for
@@ -129,13 +191,18 @@ export function FileView(props: FileViewProps): JSX.Element {
           )}
         </Show>
         <div data-kit="fv-nums" data-part={sub(part(), 'numbers')} aria-hidden="true">
-          <For each={numbers()}>{(n) => <span data-on={flag(n === props.line)}>{n}</span>}</For>
+          <For each={numbers()}>{(n) => <span data-line={n} data-on={flag(isActiveLine(n))}>{n}</span>}</For>
         </div>
         <div data-kit="fv-text">
           <pre data-kit="fv-pre" aria-hidden="true">
             <code data-lang={props.lang}>
-              <For each={tokens()}>{(tk) => (tk.kind ? <span data-tk={tk.kind}>{tk.text}</span> : tk.text)}</For>
-              {'\n'}
+              <Index each={chunks()}>
+                {(chunk) => (
+                  <div data-kit="fv-chunk" data-lazy={flag(lines() > CHUNK * 2)} style={{ '--k-lines': String(chunk().length) }}>
+                    <Index each={chunk()}>{(line) => <LineTokens line={line} />}</Index>
+                  </div>
+                )}
+              </Index>
             </code>
           </pre>
           <textarea

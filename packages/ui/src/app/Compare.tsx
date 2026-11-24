@@ -2,10 +2,11 @@
 // (a row label, then a cell per run under its letter and harness), the totals line, then the runs side by side: each
 // a head (letter, harness logo, harness and model, its state), its last answer, and Open card / Keep this. Value for
 // value; the owner computes the numbers and renders the answers.
-import { For, Show, type JSX } from 'solid-js';
+import { Index, Show, type JSX } from 'solid-js';
 import type { Tone } from '@wisp/tokens';
 import { Button } from '../controls/Button.tsx';
 import { Pill } from '../content/Pill.tsx';
+import { Each } from '../layout/VirtualList.tsx';
 import '../css/app-compare.css';
 
 export interface CompareCellView {
@@ -86,29 +87,29 @@ export function CompareRuns(props: CompareRunsProps): JSX.Element {
           <thead>
             <tr>
               <td />
-              <For each={props.runs}>
+              <Each items={props.runs} key={(r) => r.id}>
                 {(r) => (
                   <th scope="col">
                     <span data-kit="cmp-run">
-                      <b data-kit="cmp-letter">{r.letter}</b>
-                      <span title={r.harness}>{r.harness}</span>
+                      <b data-kit="cmp-letter">{r().letter}</b>
+                      <span title={r().harness}>{r().harness}</span>
                     </span>
                   </th>
                 )}
-              </For>
+              </Each>
             </tr>
           </thead>
           <tbody>
-            <For each={props.rows}>
+            <Each items={props.rows} key={(row) => row.key}>
               {(row) => (
                 <tr>
-                  <th scope="row" title={row.tip ?? ''}>
-                    {row.label}
+                  <th scope="row" title={row().tip ?? ''}>
+                    {row().label}
                   </th>
-                  <For each={props.runs}>{(_, i) => <Cell cell={row.cells[i()]} row={row.key} />}</For>
+                  <Index each={props.runs}>{(_, i) => <Cell cell={row().cells[i]} row={row().key} />}</Index>
                 </tr>
               )}
-            </For>
+            </Each>
           </tbody>
         </table>
       </div>
@@ -116,23 +117,23 @@ export function CompareRuns(props: CompareRunsProps): JSX.Element {
         <span data-kit="cmp-total">{props.total ?? ''}</span> <span>{props.sentence ?? ''}</span>
       </p>
       <div data-kit="cmp-grid" data-part="compare.runs">
-        <For each={props.runs}>
+        <Each items={props.runs} key={(r) => r.id}>
           {(r) => (
-            <section data-kit="cmp-col" data-id={r.id} data-part="compare.run">
+            <section data-kit="cmp-col" data-id={r().id} data-part="compare.run">
               <div data-kit="cmp-head">
-                <b data-kit="cmp-letter">{r.letter}</b>
-                <Show when={r.logo}>{(src) => <img data-kit="cmp-logo" src={src()} alt="" />}</Show>
+                <b data-kit="cmp-letter">{r().letter}</b>
+                <Show when={r().logo}>{(src) => <img data-kit="cmp-logo" src={src()} alt="" />}</Show>
                 <span data-kit="cmp-who">
-                  <b>{r.harness}</b>
-                  <small title={r.base}>{r.base}</small>
+                  <b>{r().harness}</b>
+                  <small title={r().base}>{r().base}</small>
                 </span>
-                <Pill tone={PILL[r.state.tone] ?? 'neutral'} dot live={r.state.live === true} size="sm">
-                  {r.state.label}
+                <Pill tone={PILL[r().state.tone] ?? 'neutral'} dot live={r().state.live === true} size="sm">
+                  {r().state.label}
                 </Pill>
               </div>
-              <div data-kit="cmp-body">{r.body}</div>
+              <div data-kit="cmp-body">{r().body}</div>
               <div data-kit="cmp-foot">
-                <Button variant="ghost" size="xs" icon="chevron" onClick={() => props.onOpen(r.id)} part="compare.open">
+                <Button variant="ghost" size="xs" icon="chevron" onClick={() => props.onOpen(r().id)} part="compare.open">
                   {props.labels.open}
                 </Button>
                 <span data-kit="cmp-grow" />
@@ -140,9 +141,9 @@ export function CompareRuns(props: CompareRunsProps): JSX.Element {
                   variant="primary"
                   size="sm"
                   icon="check"
-                  disabled={r.working === true}
-                  title={r.working ? props.labels.stillWorking : ''}
-                  onClick={(e) => props.onKeep(r.id, e.currentTarget as HTMLElement)}
+                  disabled={r().working === true}
+                  title={r().working ? props.labels.stillWorking : ''}
+                  onClick={(e) => props.onKeep(r().id, e.currentTarget as HTMLElement)}
                   part="compare.keep"
                 >
                   {props.labels.keep}
@@ -150,7 +151,7 @@ export function CompareRuns(props: CompareRunsProps): JSX.Element {
               </div>
             </section>
           )}
-        </For>
+        </Each>
       </div>
     </div>
   );

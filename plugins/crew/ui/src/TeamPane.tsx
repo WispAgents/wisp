@@ -6,7 +6,7 @@
 import { createMemo, createSignal, createEffect, For, Show, onCleanup, type Accessor, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Avatar, Button, Dialog, Face, ListRow, Markdown, Pill, Stack, TeamPlace, TeamTime, Text, useSignal } from '@wisp/ui';
+import { Avatar, Button, Dialog, Each, Face, ListRow, Markdown, Pill, Stack, TeamPlace, TeamTime, Text, useSignal } from '@wisp/ui';
 import { crewData } from './data.ts';
 import { t } from './i18n.ts';
 import { builtinRows, builtinSteps, delegateRows, subagentData, type SubRow, type TaskRowLike } from './subagents.ts';
@@ -18,10 +18,20 @@ export const TICK_MS = 1000;
 
 /** A row's lead: a member's face, or a subagent's harness logo (TRY-24). */
 function RowLead(props: { readonly row: TeamRow; readonly logo?: (agent: string) => string | undefined }): JSX.Element {
-  const r = props.row;
-  if (!('kind' in r)) return <Face avatar={r.avatar} name={r.name} color={r.color} size="sm" mood={r.live ? 'live' : 'idle'} />;
-  const src = props.logo?.((r as SubRow).agent);
-  return <Avatar part="crew.team.harness" name={r.name} {...(src && { src })} size="sm" shape="square" />;
+  return (
+    <Show
+      when={'kind' in props.row}
+      fallback={<Face avatar={props.row.avatar} name={props.row.name} color={props.row.color} size="sm" mood={props.row.live ? 'live' : 'idle'} />}
+    >
+      <Avatar
+        part="crew.team.harness"
+        name={props.row.name}
+        {...((src) => (src ? { src } : {}))(props.logo?.((props.row as SubRow).agent))}
+        size="sm"
+        shape="square"
+      />
+    </Show>
+  );
 }
 
 /** The rows, laid out. `now` is read only by each row's time, so a tick repaints those text nodes and nothing else. */
@@ -44,41 +54,41 @@ export function TeamList(props: TeamListProps): JSX.Element {
   return (
     <Stack gap="1" part="crew.team">
       <Show when={props.rows.length} fallback={<Text tone="muted">{t('wisp.crew.team.none')}</Text>}>
-        <For each={visible()}>
+        <Each items={visible()} key={(r) => r.id}>
           {(r) => {
-            const ms = (): number | undefined => timeOf(r, props.now());
+            const ms = (): number | undefined => timeOf(r(), props.now());
             // whether it has a time at all: a boolean, so a tick doesn't rebuild the row's cells, only the time's text
             const timed = createMemo(() => ms() !== undefined);
             return (
               <ListRow
                 part="crew.team.row"
-                title={r.handle}
-                lead={<RowLead row={r} {...(props.logo && { logo: props.logo })} />}
+                title={r().handle}
+                lead={<RowLead row={r()} {...(props.logo && { logo: props.logo })} />}
                 sub={
                   <>
-                    <Show when={r.place.name}>
-                      <TeamPlace part="crew.team.place" name={r.place.name} icon={r.place.icon} away={r.place.away} title={r.place.tip} />
+                    <Show when={r().place.name}>
+                      <TeamPlace part="crew.team.place" name={r().place.name} icon={r().place.icon} away={r().place.away} title={r().place.tip} />
                     </Show>
-                    {r.line}
+                    {r().line}
                   </>
                 }
-                subTone={r.live ? 'accent-ink' : r.tone === 'warn' ? 'warn' : 'muted'}
+                subTone={r().live ? 'accent-ink' : r().tone === 'warn' ? 'warn' : 'muted'}
                 // v1 .tl-row: a working delegate shows its time, not a pill; one still being made, asking, back, or with no
                 // start to tick from (a far wisp's older row) says its state
                 pills={
-                  <Show when={!r.live || r.pending || !timed()}>
-                    <Pill tone={r.tone} dot live={r.live} size="sm">
-                      {r.status}
+                  <Show when={!r().live || r().pending || !timed()}>
+                    <Pill tone={r().tone} dot live={r().live} size="sm">
+                      {r().status}
                     </Pill>
                   </Show>
                 }
                 // no time, no time column (the sub keeps its width on a 320 px phone)
                 {...(timed() && { time: <TeamTime part="crew.team.time" ms={ms() ?? 0} /> })}
-                {...(!r.pending && { onOpen: () => props.open(r.id) })}
+                {...(!r().pending && { onOpen: () => props.open(r().id) })}
               />
             );
           }}
-        </For>
+        </Each>
         <Show when={shown()}>
           {(keep) => (
             <Button variant="link" size="xs" icon="chevron" part="crew.team.more" onClick={() => setUnfolded(true)}>

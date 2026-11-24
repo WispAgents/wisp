@@ -1,7 +1,8 @@
 // A transcript step whose label the harness had to cut (frame/TurnTranscript.tsx, v1 #779/#780).
 import { afterEach, expect, test } from 'vitest';
+import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import { TurnTranscript } from '../src/frame/TurnTranscript.tsx';
+import { TurnTranscript, type TranscriptStepRow } from '../src/frame/TurnTranscript.tsx';
 
 let dispose: (() => void) | undefined;
 afterEach(() => {
@@ -78,4 +79,22 @@ test('a_finished_turn_collapses_long_exploration_runs_and_keeps_edits_visible', 
   groupBtn?.click();
   expect(host.querySelectorAll('[data-kit="timeline-file"]').length).toBe(3);
   expect(host.querySelector('[data-kit="timeline-sublist"]')?.textContent).toContain('Searching for “foo”');
+});
+
+test('streaming_more_steps_keeps_earlier_mid_turn_markdown_dom_nodes_intact', () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const [steps, setSteps] = createSignal<TranscriptStepRow[]>([
+    { kind: 'text', label: 'Checking the diff first.', seq: 1 },
+    { kind: 'read', label: 'Reading src/a.ts', seq: 2 },
+  ]);
+  dispose = render(() => <TurnTranscript chat steps={steps()} changes={[]} here={(s) => s} status="running" t={(k) => k} />, host);
+  const msgBefore = host.querySelector('[data-kit="markdown"] p');
+  expect(msgBefore?.textContent).toBe('Checking the diff first.');
+  setSteps([
+    { kind: 'text', label: 'Checking the diff first.', seq: 1 },
+    { kind: 'read', label: 'Reading src/a.ts', seq: 2 },
+    { kind: 'run', label: 'Running tests', seq: 3 },
+  ]);
+  expect(host.querySelector('[data-kit="markdown"] p')).toBe(msgBefore);
 });

@@ -49,16 +49,28 @@ export function stepOutput(a: TranscriptStepRow, maskOn: boolean, shown: boolean
   return { text: shown ? (raw ?? (a.out.includes(DOTS) ? masked : a.out)) : masked, env };
 }
 
+type FileFigures = ReadonlyMap<string, { readonly plus: number; readonly minus: number }>;
+
+function MessageBody(props: { readonly text: string; readonly here: (s: string) => string; readonly chat: boolean; readonly answerCtx?: BlockContext | undefined }): JSX.Element {
+  const raw = createMemo(() => props.here(props.text));
+  const inline = createMemo(() => (props.chat && props.answerCtx ? parseInlineChatBlocks(raw()) : undefined));
+  return (
+    <Show when={inline() && props.answerCtx} fallback={<Markdown source={raw()} />}>
+      <Answer blocks={inline() ?? []} ctx={props.answerCtx!} />
+    </Show>
+  );
+}
+
 function Step(props: {
   readonly a: TranscriptStepRow;
   readonly index: number;
-  readonly changes: readonly Change[];
+  readonly figures: FileFigures;
   readonly here: (s: string) => string;
   readonly env: EnvReveal | undefined;
   readonly t: ShellContext['t'];
 }): JSX.Element {
   const [open, setOpen] = createSignal(false);
-  // Read props.a and props.changes reactively: <Index> keeps this Step mounted while live tool_output/changes arrive.
+  // Read props.a and props.figures reactively: <Index> keeps this Step mounted while live tool_output/changes arrive.
   const id = (): string => (props.a.seq !== undefined ? `step:${props.a.seq}` : `index:${props.index}`);
   const shown = (): boolean => props.env?.shown(id()) ?? false;
   const rawOut = (): string | undefined => {
@@ -68,11 +80,7 @@ function Step(props: {
   };
   const out = () => stepOutput(props.a, props.env?.on() ?? true, shown(), rawOut());
   const t = props.t;
-  const nums = () => {
-    if (props.a.kind !== 'edit') return undefined;
-    const change = props.changes.find((c) => (c as { file?: string }).file === props.a.file);
-    return change ? changeFigures([change]) : undefined;
-  };
+  const nums = () => (props.a.kind === 'edit' && props.a.file ? props.figures.get(props.a.file) : undefined);
   const command = (): string | undefined =>
     props.a.kind === 'run' && props.a.detail && !(props.a.label ?? '').includes(props.a.detail.slice(0, 24)) ? props.here(props.a.detail) : undefined;
   const more = (): string | undefined => props.a.out ?? (props.a.kind === 'error' ? props.a.label : undefined);
@@ -131,6 +139,18 @@ export function TurnTranscript(props: {
   const msgs = (): number => props.steps.filter((a) => a.kind === 'text').length;
   const steps = (): number => props.steps.length - msgs();
   const entries = createMemo(() => groupFinishedSteps(props.steps, live(), props.here, props.quiet === true));
+  // pre-index per-file +/− counts once per turn change update instead of scanning & splitting inside every edit Step
+  const figuresByFile = createMemo((): FileFigures => {
+    const out = new Map<string, { readonly plus: number; readonly minus: number }>();
+    for (const c of props.changes) {
+      const f = (c as { file?: string }).file;
+      if (f && !out.has(f)) {
+        const fig = changeFigures([c]);
+        out.set(f, { plus: fig.plus, minus: fig.minus });
+      }
+    }
+    return out;
+  });
   const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set());
   const toggleGroup = (key: string): void => {
     setOpened((prev) => {
@@ -178,15 +198,10 @@ export function TurnTranscript(props: {
               return (
                 <Show
                   when={s().kind === 'text'}
-                  fallback={<Step a={s()} index={idx()} changes={props.changes} here={props.here} env={props.env} t={t} />}
+                  fallback={<Step a={s()} index={idx()} figures={figuresByFile()} here={props.here} env={props.env} t={t} />}
                 >
                   <TimelineMessage>
-                    {(() => {
-                      const raw = props.here(s().label ?? '');
-                      const ctx = props.answerCtx;
-                      const inline = props.chat && ctx ? parseInlineChatBlocks(raw) : undefined;
-                      return inline && ctx ? <Answer blocks={inline} ctx={ctx} /> : <Markdown source={raw} />;
-                    })()}
+                    <MessageBody text={s().label ?? ''} here={props.here} chat={props.chat === true} answerCtx={props.answerCtx} />
                   </TimelineMessage>
                 </Show>
               );
@@ -206,7 +221,7 @@ export function TurnTranscript(props: {
                 >
                   {g().rest.length > 0 ? (
                     <Index each={g().rest}>
-                      {(it) => <Step a={it().step} index={it().index} changes={props.changes} here={props.here} env={props.env} t={t} />}
+                      {(it) => <Step a={it().step} index={it().index} figures={figuresByFile()} here={props.here} env={props.env} t={t} />}
                     </Index>
                   ) : undefined}
                 </TimelineGroup>

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { builtinRows, builtinSteps, delegateRows, hasSubagents, relative, type StepRowLike, type TaskRowLike } from '../src/subagents.ts';
+import { signal, type PluginClient } from '@wisp/client';
+import { builtinRows, builtinSteps, delegateRows, hasSubagents, relative, subagentData, type StepRowLike, type TaskRowLike } from '../src/subagents.ts';
 import type { Say } from '../src/team.ts';
 
 const say: Say = (k) => k;
@@ -57,4 +58,23 @@ test('a_subagents_line_names_files_from_the_tasks_folder', () => {
   expect(relative('The first line of `/Users/me/.wisp/worktrees/app-1/README.md` is:', '/Users/me/.wisp/worktrees/app-1')).toBe('The first line of `README.md` is:');
   expect(relative('Reading /private/tmp/w/src/a.ts', '/tmp/w')).toBe('Reading src/a.ts');
   expect(relative('No paths here', '')).toBe('No paths here');
+});
+
+test('subagentData_hasFor_tracks_delegates_and_nested_event_arrays_reactively', () => {
+  seq = 0;
+  const sessions = signal<TaskRowLike[]>([]);
+  const events = signal<(StepRowLike | readonly StepRowLike[])[]>([]);
+  const fakeClient = {
+    entities: {
+      list: (kind: string) => (kind === 'session' ? sessions : events),
+    },
+  } as unknown as PluginClient;
+  const data = subagentData(fakeClient);
+  const has = data.hasFor('me:lead1');
+  expect(has()).toBe(false);
+  events([step('tool', 1, { tool: 'read', label: 'Reading a.ts' })]);
+  expect(has()).toBe(false);
+  // live Append array containing an agent tool call flips hasFor to true
+  events([[step('tool', 2, { tool: 'agent', label: 'Delegating: review', callId: 'c1' })]]);
+  expect(has()).toBe(true);
 });

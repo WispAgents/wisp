@@ -300,11 +300,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const byTurn = createMemo<Map<string, readonly EventRow[]>>((prev) => eventsByTurn(allEvents(), prev));
   const stepsOf = (turnId: string): readonly EventRow[] => byTurn().get(turnId) ?? NO_EVENTS;
   const sessions = useSignal(shell.client.entities.list<SessionRow>(SESSION));
-  // a turn names its session by the bare id the server gave it, or by the key (an optimistic one)
-  const realTurns = createMemo(() =>
-    allTurns()
-      .filter((x) => x.session_id === key || x.session_id === bare)
-      .sort((a, b) => a.idx - b.idx),
+  // a turn names its session by the bare id the server gave it, or by the key (an optimistic one); shallow equality so
+  // unrelated tasks' turn updates never re-run turns / fold / ledger here
+  const realTurns = createMemo(
+    () =>
+      allTurns()
+        .filter((x) => x.session_id === key || x.session_id === bare)
+        .sort((a, b) => a.idx - b.idx),
+    undefined,
+    { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) },
   );
   // a task whose first prompt hasn't started yet (just sent, made held, waiting for its worktree) shows that prompt as
   // its first turn, starting (v1: the prompt card at once), never as a queued follow-up (B16, B17): its first queued item
@@ -448,11 +452,12 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // Stop asks first (v1 #781): what else stops (its running subagents, a subagent's report), and that queued follow-ups stay
   const [stopAsk, setStopAsk] = createSignal<(StopQuestion & { readonly factory?: true }) | undefined>();
   const [stopping, setStopping] = createSignal(false);
-  const allRows = useSignal(shell.client.entities.list<SessionRow>(SESSION));
+  // hoisted once per task (not once per rendered turn) and reuses `sessions` above
+  const delegating = createMemo(() => sessions().some((x) => (x.parent_id === key || x.parent_id === bare) && x.state === 'running'));
   const askStop = (): void => {
     const r = row();
     if (!r) return;
-    const live = allRows().filter((x) => (x.parent_id === key || x.parent_id === bare) && x.state === 'running').length;
+    const live = sessions().filter((x) => (x.parent_id === key || x.parent_id === bare) && x.state === 'running').length;
     setStopAsk(stopQuestion({ sub: !!r.parent_id, name: harnessView(r.agent).name, live, queued: Number(r.summary.queued ?? 0) }, t));
   };
   // Restore to before a turn asks first (orch #17): it undoes every change made in the folder since that turn
@@ -1471,10 +1476,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           // the task's folder out of a step's words: one expression for the turn, not one per line per token
           const inFolder = cwd ? new RegExp(`(/private)?${cwd.replace(/^\/private/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`, 'g') : undefined;
           const here = (text: string): string => (inFolder ? text.replace(inFolder, '') : text);
-          // the quiet note's view of the steps and whether a delegate still works: memos, not work done on every token (a
-          // scan of every task's row per token, perf r1 #15)
+          // the quiet note's view of the steps: a memo, not work done on every token (perf r1 #15)
           const quietSteps = createMemo(() => turnEvents().map((e) => ({ kind: e.kind ?? e.body?.kind, t: e.t, outAt: e.body?.outAt, call: e.body?.callId, output: e.body?.output })));
-          const delegating = createMemo(() => allRows().some((x) => (x.parent_id === key || x.parent_id === bare) && x.state === 'running'));
           const count = (k: string): number => steps().filter((a) => a.kind === k).length;
           const blocks = () => b.presentation?.blocks ?? [];
           const streamSteps = createMemo(() =>
