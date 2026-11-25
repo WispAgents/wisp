@@ -41,7 +41,7 @@ export const cameBack = (from: string | undefined, u: Pick<UpdateState, 'current
   from !== undefined && u !== undefined && u.current !== from;
 
 /** One row change while watching a restart. `from` is the version that was restarting: set as the row enters
- * `restarting` (again, on a retry: a new wait), reload once another version answers, and let go when the same
+ * `restarting` after this page saw it otherwise (again, on a retry: a new wait), reload once another version answers, and let go when the same
  * version comes back idle (the restart didn't take), so a later, unrelated version change never reloads. */
 export function restartStep(
   from: string | undefined,
@@ -50,6 +50,10 @@ export function restartStep(
 ): { readonly from: string | undefined; readonly reload: boolean; readonly wait: boolean } {
   if (cameBack(from, u)) return { from: undefined, reload: true, wait: false };
   if (!u) return { from, reload: false, wait: false }; // the row away while wisp restarts
+  // the page's first look: a `restarting` row now is the one saved on disk before the update (first-paint.ts), not a
+  // restart this page watched. Armed by it, the new wisp's row reloaded the page before that row was saved over the
+  // old one, so every open restored it again and reloaded forever.
+  if (from === undefined && prev === undefined) return { from: undefined, reload: false, wait: false };
   if (u.status === 'restarting') return prev?.status === 'restarting' && from !== undefined ? { from, reload: false, wait: false } : { from: u.current, reload: false, wait: true };
   return { from: undefined, reload: false, wait: false };
 }
