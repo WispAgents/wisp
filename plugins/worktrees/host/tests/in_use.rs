@@ -129,7 +129,7 @@ async fn a_shared_kept_folder_stays_while_any_task_works_in_it() {
     let out = done::apply(&e, port.as_ref(), &user(), &args).await.unwrap();
     assert!(out.removed.is_empty() && Path::new(&wt.path).is_dir(), "Done on A");
     assert_eq!(out.failed[0].error, "It’s in use.", "said in use, not a failure to remove");
-    set(&port, "a", |x| x.kept = false);
+    assert!(!port.tasks.lock().unwrap().iter().any(|x| x.id == "a" && x.kept), "in use is no failure: A isn't pinned");
 
     let r = archived::tidy(&e, &user(), &wt, e.mark()).await.unwrap();
     assert!(!r.removed && r.busy && Path::new(&wt.path).is_dir(), "archiving A: {r:?}");
@@ -156,6 +156,14 @@ async fn a_removal_keeps_the_repo_a_stray_folder_a_locked_worktree_and_one_git_c
     let itself = Worktree { path: r.clone(), cwd: r.clone(), root: r, branch: "main".into(), created_at: 1, ..Worktree::default() };
     assert!(e.remove(&user(), &itself, force, None).await.is_err(), "the main checkout: refused");
     assert!(root.join("a.txt").is_file() && root.join(".git").is_dir());
+    // a record naming a folder as its own repo (no `.git` folder to give it away), made by a task: still refused
+    let plain = t.0.join("src/plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    std::fs::write(plain.join("b.txt"), "mine\n").unwrap();
+    let p = plain.to_string_lossy().into_owned();
+    let own = Worktree { path: p.clone(), cwd: p.clone(), root: p, branch: "main".into(), created_at: 1, ..Worktree::default() };
+    assert!(e.remove(&user(), &own, force, None).await.is_err(), "path == root: refused");
+    assert!(plain.join("b.txt").is_file());
 
     let stray = Worktree { created_at: 0, ..add_tree(&root, &t.0.join("elsewhere/app-x"), "wisp/x") };
     assert!(e.remove(&user(), &stray, force, None).await.is_err(), "outside wisp's worktrees, made by no task");

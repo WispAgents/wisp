@@ -315,6 +315,11 @@ async fn worktree_adds_take_turns_and_remove_cleans_up() {
     // never the repo's own checkout
     assert!(r.worktree_remove(&user(), dir.to_str().unwrap()).await.is_err());
     assert!(dir.join(".git").is_dir());
+    // nor, from a repo opened at a linked worktree, the main checkout's `.git` (the common dir) or the checkout
+    let linked = s.repo(&user(), &o, &t.0.join("wts/w2").display().to_string()).await.unwrap();
+    assert!(linked.worktree_remove(&user(), dir.join(".git").to_str().unwrap()).await.is_err(), "the common dir");
+    assert!(linked.worktree_remove(&user(), dir.to_str().unwrap()).await.is_err(), "the main checkout");
+    assert!(dir.join(".git/HEAD").is_file(), "the repo's .git stays");
     // a folder git doesn't know as a worktree goes by hand, as before
     let stray = t.0.join("wts/stray");
     std::fs::create_dir_all(&stray).unwrap();

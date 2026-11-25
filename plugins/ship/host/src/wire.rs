@@ -108,7 +108,9 @@ pub fn tidier(ctx: &Ctx) -> crate::ops::Tidier {
                 Ok(r) if r.removed => Tidied::Removed,
                 Ok(r) if r.busy => Tidied::Busy,
                 Ok(r) if r.foreign => Tidied::Failed("it isn't wisp's".into()),
-                Ok(r) => Tidied::Dirty(r.dirty.unwrap_or(1)),
+                Ok(wt::Removed { dirty: Some(n), .. }) => Tidied::Dirty(n),
+                // kept with no reason given: in use again by the time worktrees held its lock (a turn started)
+                Ok(_) => Tidied::Busy,
                 Err(e) => Tidied::Failed(e.message),
             }
         })

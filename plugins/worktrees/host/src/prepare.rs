@@ -33,7 +33,7 @@ pub async fn included_paths(root: &str, all: bool) -> Vec<String> {
     let mut listing: Vec<String> =
         fsx::entries(root).await.into_iter().filter(|(n, _)| n != ".git").map(|(n, d)| if d { format!("{n}/") } else { n }).collect();
     for line in file.as_deref().unwrap_or("").lines().map(str::trim) {
-        let lit = line.trim_start_matches('/').trim_end_matches('/');
+        let lit = line.trim_end_matches('/');
         if lit.contains('/')
             && !lit.contains(['*', '?'])
             && !line.starts_with(['#', '!'])

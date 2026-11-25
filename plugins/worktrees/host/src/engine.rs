@@ -142,14 +142,18 @@ impl Engine {
         if tokio::fs::metadata(fsx::join(&path, ".git")).await.is_ok_and(|m| m.is_dir()) {
             return Some(format!("{} is a repository's own checkout, not a worktree: it is never removed.", wt.path));
         }
+        let ours = format!("{}/worktrees", self.home.trim_end_matches(['/', '\\']));
         if !wt.root.is_empty() {
-            // a leftover no repo knows is recorded with itself as its root: that alone isn't the repo
             let root = fsx::norm(&wt.root).await;
+            // the record names the repo as its own folder: refused, but for a leftover no repo knows, which is recorded
+            // with itself as its root and only ever lives in wisp's worktrees folder
+            if root == path && !fsx::within_real(&wt.path, &ours).await {
+                return Some(format!("{} is the repository itself, not a worktree: it is never removed.", wt.path));
+            }
             if (root != path && fsx::within(&root, &path)) || fsx::within(&path, &fsx::join(&root, ".git")) {
                 return Some(format!("{} holds the repository itself: it is never removed.", wt.path));
             }
         }
-        let ours = format!("{}/worktrees", self.home.trim_end_matches(['/', '\\']));
         if wt.created_at == 0 && !fsx::within_real(&wt.path, &ours).await {
             return Some(format!("{} isn't in wisp's worktrees folder: it is never removed.", wt.path));
         }
@@ -456,7 +460,8 @@ impl Engine {
             removal::RemoveStep::KeepDirty(n) => {
                 return Ok(Removed { dirty: Some(n), ..Removed::default() });
             }
-            removal::RemoveStep::Overtaken => return Ok(Removed::default()),
+            // in use again by the time the lock was held: kept as busy, never told as a failure
+            removal::RemoveStep::Overtaken => return Ok(Removed { busy: true, ..Removed::default() }),
             // git's refusal stands (a locked worktree, a main checkout): the folder stays and the caller hears why. A
             // folder git lost track of, `worktree_remove` removes itself.
             removal::RemoveStep::Remove => match self.repo(call, &wt.root).await {

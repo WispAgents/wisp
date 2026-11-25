@@ -121,13 +121,18 @@ pub async fn apply(e: &Engine, port: &dyn Port, call: &Call, args: &DoneApplyArg
                 out.removed.push(p.clone());
             }
             other => {
-                port.set_kept(t.id.clone(), true).await;
                 // in use: the task itself, or another working task in the same folder (a recurring run's kept one)
                 let (busy, error, dirty) = match other {
                     Some(Err(err)) => (false, Some(err.to_string()), None),
                     Some(Ok(r)) => (r.busy, None, r.dirty),
                     None => (true, None, None),
                 };
+                // A removal that failed pins the task, so the sweep never takes what it held. "In use" is not a
+                // failure: pinning then would keep a shared folder forever once its other user stops (the sweep
+                // never removes a kept task).
+                if !busy && !t.kept {
+                    port.set_kept(t.id.clone(), true).await;
+                }
                 out.failed.push(FailedRemoval { path: p.clone(), error: done::failure_text(busy, error.as_deref(), dirty) });
             }
         }
