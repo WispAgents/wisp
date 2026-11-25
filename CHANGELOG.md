@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.13] - 2026-11-25
+
 ### Fixed
 
 - Antigravity (model picker): a model whose id holds its thinking level (`gemini-…-high`, `-low`, `-medium`) no longer shows the thinking-level selector, and wisp no longer passes `--effort` with it, so agy stops refusing the run with "--model … conflicts with --effort". A model's empty level list now means "no selector" again (as in v1) instead of "use the harness's levels", which also hides the selector for Grok models that take no reasoning effort.
