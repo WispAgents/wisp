@@ -20,24 +20,39 @@ pub fn typed(prompt: &str) -> Option<&str> {
 pub const SAY_WHAT: &str =
     "Say what the workflow should do after /workflow, like “/workflow audit every route for missing auth checks”, or name a saved one.";
 
-/// `name k=v …` when `name` is a saved workflow: its name and inputs.
-fn saved<'a>(words: &'a str, names: &[String]) -> Option<(&'a str, BTreeMap<String, Value>)> {
-    let mut it = words.split_whitespace();
-    let name = it.next()?;
-    if !names.iter().any(|n| n == name) {
-        return None;
-    }
+/// A workflow that runs by name (yours or a prebuilt one), with its inputs' names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Known {
+    pub name: String,
+    pub inputs: Vec<String>,
+}
+
+/// `name k=v …` when `name` runs by name: its name and inputs. A workflow of one input takes the words after its name
+/// as that input (`/workflow two-ways make the parser faster`); words that are neither are a job in words.
+fn saved<'a>(words: &'a str, known: &[Known]) -> Option<(&'a str, BTreeMap<String, Value>)> {
+    let (name, rest) = words.split_once(char::is_whitespace).unwrap_or((words, ""));
+    let rest = rest.trim();
+    let w = known.iter().find(|k| k.name == name)?;
     let mut inputs = BTreeMap::new();
-    for w in it {
-        let (k, v) = w.split_once('=')?;
-        inputs.insert(k.to_owned(), json!(v));
+    let pairs: Option<Vec<(&str, &str)>> = rest.split_whitespace().map(|x| x.split_once('=')).collect();
+    match pairs {
+        Some(p) if !rest.is_empty() => {
+            for (k, v) in p {
+                inputs.insert(k.to_owned(), json!(v));
+            }
+        }
+        _ if rest.is_empty() => {}
+        _ if w.inputs.len() == 1 => {
+            inputs.insert(w.inputs[0].clone(), json!(rest));
+        }
+        _ => return None,
     }
     Some((name, inputs))
 }
 
 /// The note the agent gets in front of `/workflow <words>` (None: the words are missing); `tool`: how this harness
 /// names `workflows_run` (None: it can't reach wisp's tools, so it does the job itself).
-pub fn lead_note(words: &str, names: &[String], tool: Option<&str>) -> Option<String> {
+pub fn lead_note(words: &str, names: &[Known], tool: Option<&str>) -> Option<String> {
     if words.is_empty() {
         return None;
     }
@@ -47,7 +62,7 @@ pub fn lead_note(words: &str, names: &[String], tool: Option<&str>) -> Option<St
     if let Some((name, inputs)) = saved(words, names) {
         let inputs = if inputs.is_empty() { String::new() } else { format!(", \"inputs\": {}", json!(inputs)) };
         return Some(format!(
-            "<wisp-workflow>\nThe user's message below is wisp's /workflow command: run their saved wisp workflow `{name}` with the \
+            "<wisp-workflow>\nThe user's message below is wisp's /workflow command: run the wisp workflow `{name}` with the \
              `{tool}` tool ({{\"name\": \"{name}\"{inputs}}}). Don't do its steps yourself. Once it started, end your turn: \
              wisp sends you every step's result when the run ends; then tell the user what it found and did, with the tasks to open.\n</wisp-workflow>"
         ));
@@ -82,7 +97,10 @@ mod tests {
 
     #[test]
     fn a_saved_name_runs_that_workflow_and_words_plan_one() {
-        let names = vec!["release-check".to_owned()];
+        let names = vec![
+            Known { name: "release-check".to_owned(), inputs: vec!["version".to_owned(), "notes".to_owned()] },
+            Known { name: "two-ways".to_owned(), inputs: vec!["change".to_owned()] },
+        ];
         let tool = Some("mcp__wisp__workflows_run");
         let p = lead_note("release-check version=2.1", &names, tool).unwrap_or_default();
         assert!(
@@ -95,5 +113,8 @@ mod tests {
         assert!(lead_note("release-check the docs", &names, tool).unwrap_or_default().contains("Look around"));
         assert!(lead_note("audit", &names, None).unwrap_or_default().contains("yourself"), "no wisp tools: it does the job");
         assert_eq!(lead_note("", &names, tool), None);
+        // one input: the words after its name are it
+        let p = lead_note("two-ways make the parser faster", &names, tool).unwrap_or_default();
+        assert!(p.contains(r#""inputs": {"change":"make the parser faster"}"#), "{p}");
     }
 }

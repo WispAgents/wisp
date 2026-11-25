@@ -55,6 +55,8 @@ export interface RunView {
 export interface SessionRow {
   readonly id: string;
   readonly parentId?: string | null;
+  /** a synced row's own column */
+  readonly parent_id?: string | null;
   readonly workflowRuns?: readonly RunView[];
   readonly workflowStep?: { readonly run: string; readonly node: string };
   readonly summary?: Record<string, unknown>;

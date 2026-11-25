@@ -35,6 +35,15 @@ subagents and the conductor's after-a-run pipeline.
 - UI (`ui/`): the band on `shell.task:band` (the kit's `RunBoard`: lanes, cards, fan-out dots), `/workflow` in the `/`
   menu with the saved workflows.
 
+## Changing a run, prebuilt workflows (ADR-0120, ADR-0121)
+
+- The task's details show each run as a row (`RunChip`); it opens the board in the main area (task → board → step).
+- The task stays in Working while its run goes (`runtime.after`); `workflow.started` / `workflow.ended` are durable.
+- `workflows.edit` (`workflows_edit`, the board's ⋯ on a step): skip, retry, add, change a step that hasn't started,
+  concurrency and budget; all or nothing; an ended run starts again on a retry or an add. A step that fails for good
+  is told to the agent at once.
+- `starters.json`: prebuilt workflows run by name, never exported; `workflows.starters` lists them.
+
 ## Not yet
 
 - `on:` another machine: steps run here, and the run says so.
