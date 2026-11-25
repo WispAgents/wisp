@@ -16,6 +16,7 @@
     "runtime:signInDone",
     "store:write{owner:accounts}",
     "telemetry:track",
+    "net:connect{host:registry.npmjs.org}",
     "git:read",
     "machines:recheckAgents",
     "store:write{owner:accounts_view}"

@@ -4162,8 +4162,11 @@ dependencies = [
 name = "wisp-accounts-core"
 version = "1.0.0-alpha.13"
 dependencies = [
+ "base64 0.22.1",
+ "flate2",
  "serde",
  "serde_json",
+ "sha2",
  "wisp-accounts-api",
  "wisp-harness-kit",
 ]

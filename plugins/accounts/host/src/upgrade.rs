@@ -28,8 +28,16 @@ pub fn checks_on(update_check: Option<&str>, ci: Option<&str>, setting: Option<&
     !off && ci.is_none_or(|c| c.trim().is_empty()) && setting.and_then(Value::as_bool) != Some(false)
 }
 
+/// A grid box (`WISP_BOX`, as `wisp serve` reads it): its harnesses are the image's, under a read-only `/usr/local`
+/// and `/opt/agents`, and the grid rebuilds that image with the latest every day (apps/grid/deploy/
+/// refresh-harnesses.sh). So a box never offers an *Update* it can't do.
+pub fn in_box(wisp_box: Option<&str>) -> bool {
+    wisp_box.is_some_and(|v| v != "0")
+}
+
 fn on(ctx: &Ctx) -> bool {
-    checks_on(std::env::var("WISP_UPDATE_CHECK").ok().as_deref(), std::env::var("CI").ok().as_deref(), ctx.setting(SETTING).as_ref())
+    !in_box(std::env::var("WISP_BOX").ok().as_deref())
+        && checks_on(std::env::var("WISP_UPDATE_CHECK").ok().as_deref(), std::env::var("CI").ok().as_deref(), ctx.setting(SETTING).as_ref())
 }
 
 /// The latest version of each harness that has an update route, from `npm view <package> version`; kept in `State`.
@@ -219,6 +227,13 @@ mod tests {
         assert!(checks_on(None, Some(""), None), "an empty CI is none");
         assert!(!checks_on(None, None, Some(&Value::Bool(false))), "Settings off");
         assert!(checks_on(None, None, Some(&Value::Bool(true))));
+    }
+
+    /// A grid box's harnesses come with its image, rebuilt daily: no Update button that fails on a read-only folder.
+    #[test]
+    fn a_grid_box_leaves_harness_updates_to_its_image() {
+        assert!(in_box(Some("1")) && in_box(Some("")), "set, as wisp serve reads WISP_BOX");
+        assert!(!in_box(Some("0")) && !in_box(None));
     }
 
     #[test]

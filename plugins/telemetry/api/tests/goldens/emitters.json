@@ -161,8 +161,10 @@
   "harness_install": {
    "props": [
     "agent",
+    "how",
     "ms",
-    "ok"
+    "ok",
+    "reason"
    ],
    "from": "plugins/accounts/host/src/ops.rs"
   },

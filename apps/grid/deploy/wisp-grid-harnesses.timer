@@ -1,0 +1,11 @@
+# Daily, at a quiet hour for Europe; a missed run (the host was down) runs at the next boot.
+[Unit]
+Description=wisp Grid: refresh the boxes' harnesses daily
+
+[Timer]
+OnCalendar=*-*-* 03:40:00 UTC
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -12,7 +12,23 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o 
  && apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*
 
 # The agents. Each person signs in to theirs inside their own wisp (or uses opencode's free models).
-RUN npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai && npm cache clean --force
+# HARNESSES_AT busts Docker's cache from here down: without a new value, a rebuild reuses the last layers and keeps
+# old harnesses (the image of 2026-11-25 still had Claude Code 2.1.306 from weeks before). Pass the build's date:
+#   docker build --build-arg HARNESSES_AT=$(date +%F) …
+ARG HARNESSES_AT=2026-11-25
+RUN echo "harnesses as of ${HARNESSES_AT}" \
+ && npm install -g @anthropic-ai/claude-code@latest @openai/codex@latest @github/copilot@latest && npm cache clean --force \
+ && claude --version && codex --version && copilot --version
+
+# opencode v2 ships only as GitHub release binaries: npm's `opencode-ai` is still the 1.x line. A version, never
+# GitHub's "latest" (it can point back at a 1.x patch release): refresh-harnesses.sh passes the newest one each day.
+# Checked against the release's SHA256SUMS. v2 prints `opencode v2.4.1` (v1 printed a bare `1.19.3`).
+ARG OPENCODE_VERSION=2.4.1
+RUN arch="$(dpkg --print-architecture | sed 's/amd64/x64/')" && f="opencode-linux-${arch}.tar.gz" && cd /tmp \
+ && curl -fsSLO "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/${f}" \
+ && curl -fsSL "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/SHA256SUMS" | grep "  ${f}\$" | sha256sum -c - \
+ && tar xzf "${f}" -C /usr/local/bin opencode && rm "${f}" && chmod 755 /usr/local/bin/opencode \
+ && opencode --version | grep -qF "v${OPENCODE_VERSION}"
 
 # Cursor, Grok and Antigravity only ship install scripts that write to $HOME, which is the user's
 # own folder at run time. Install them under /opt (read-only for the user) and put them on PATH.

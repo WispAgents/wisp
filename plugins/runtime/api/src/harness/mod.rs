@@ -76,6 +76,18 @@ pub struct HarnessUpdate {
     pub self_update: Option<Vec<String>>,
 }
 
+/// A harness's self-contained binary on the npm registry (`Harness::binary_package`): one package per platform
+/// whose tarball holds the executable, so wisp can install it without npm.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BinaryPackage {
+    /// the platform package (`opencode-darwin-arm64`): `https://registry.npmjs.org/<it>/latest` says its tarball
+    pub package: String,
+    /// the executable's path inside the tarball (`package/bin/opencode`)
+    pub entry: String,
+    /// where it goes under wisp's tools folder (`opencode/bin/opencode`, `.exe` on Windows): detect looks there
+    pub dest: String,
+}
+
 pub trait HarnessSys: Send + Sync {
     fn exec(&self, req: ExecReq) -> BoxFuture<'_, Result<ExecOut>>;
     /// the first `program` on PATH (or the `WISP_<ID>_BIN` override), if any
@@ -202,6 +214,12 @@ pub trait Harness: Send + Sync + 'static {
     /// The npm package wisp can install it from into its own tools folder (opencode). Additive
     /// (2026-11-08).
     fn npm_package(&self) -> Option<String> {
+        None
+    }
+    /// Its self-contained binary for `os`/`arch` (Node's names: darwin | win32 | linux, arm64 | x64), which wisp
+    /// downloads from the npm registry and unpacks into its tools folder when npm isn't there, so a computer without
+    /// Node still gets a first task (opencode). Additive (2026-11-25).
+    fn binary_package(&self, _os: &str, _arch: &str) -> Option<BinaryPackage> {
         None
     }
     /// How to keep it up to date (TRY-17): the npm package its latest version is read from, and its own updater's
