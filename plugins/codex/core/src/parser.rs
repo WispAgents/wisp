@@ -18,6 +18,9 @@ pub struct CodexOptions {
     pub fork: bool,
     /// the thread's counters after its last turn (`stats.totals`)
     pub prior: Option<Value>,
+    /// the thread's counters before this run are unknown (adopted, brought in, restored, or stored before turns kept
+    /// their totals): its first result is the baseline, not this turn's usage
+    pub unknown_prior: bool,
 }
 
 #[derive(Debug)]
@@ -54,7 +57,7 @@ impl CodexParser {
         let mut stats = Map::new();
         #[allow(clippy::cast_precision_loss)] // a turn is far shorter than 2^53 ms
         stats.insert("durationMs".into(), js::json_num((now - self.started.unwrap_or(now)) as f64));
-        stats.extend(turn_usage(self.usage.as_ref(), self.o.prior.as_ref(), &self.thread));
+        stats.extend(turn_usage(self.usage.as_ref(), self.o.prior.as_ref(), self.o.unknown_prior, &self.thread));
         let stats: Option<Box<Stats>> = serde_json::from_value(Value::Object(stats)).ok().map(Box::new);
         let text = if ok { self.last_message.clone() } else { text };
         out.push(HarnessEvent::Result(TurnResult { text, is_error: !ok, stopped: Some(stopped), stats, ..TurnResult::default() }).into());
@@ -248,6 +251,20 @@ mod tests {
         // 600 in this turn, 400 of them from the cache
         assert_eq!((st.input_tokens.as_ref(), st.cache_read_tokens.as_ref()), (Some(&json!(200)), Some(&json!(400))));
         assert_eq!(st.extra["totals"]["inputTokens"], json!(1600), "the next resume starts from the CLI's own counters");
+    }
+
+    #[test]
+    fn an_adopted_threads_first_turn_is_the_baseline() {
+        let mut p = CodexParser::new(CodexOptions { resume_id: Some("th".into()), unknown_prior: true, ..CodexOptions::default() });
+        let mut out = Vec::new();
+        p.line(r#"{"type":"turn.completed","usage":{"input_tokens":90000,"cached_input_tokens":80000,"output_tokens":4000}}"#, 1, &mut out);
+        let Some(Out::Event(HarnessEvent::Result(r))) = out.last() else { panic!("result") };
+        let st = r.stats.as_deref().unwrap();
+        assert_eq!(
+            (st.input_tokens.as_ref(), st.output_tokens.as_ref(), st.cache_read_tokens.as_ref()),
+            (Some(&json!(0)), Some(&json!(0)), None)
+        );
+        assert_eq!(st.extra["totals"]["inputTokens"], json!(90000), "the next turn starts from here");
     }
 
     #[test]

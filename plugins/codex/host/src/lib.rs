@@ -304,6 +304,7 @@ impl Harness for CodexHarness {
             resume_id: run.resume_id.clone(),
             fork: run.fork,
             prior: run.prior.clone(),
+            unknown_prior: run.unknown_prior,
         });
         driver::KitDriver::boxed(parser, paths, true)
     }

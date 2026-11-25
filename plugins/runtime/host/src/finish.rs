@@ -224,7 +224,9 @@ impl Runtime {
             account: turn.account.clone().or_else(|| s.account.clone()),
             tokens: turn.stats.as_ref().and_then(|x| {
                 // cache reads and writes aside: harnesses count them differently, and Drain watch only compares a
-                // harness's runs with its own
+                // harness's runs with its own. Codex turns stored before cached input was split out counted their cached input in
+                // `input_tokens` (it is in `cache_read_tokens` now), so a Codex harness's history reads higher for a
+                // while after the upgrade
                 let t = x.input_tokens.unwrap_or(0) + x.output_tokens.unwrap_or(0);
                 (t > 0).then_some(t)
             }),
@@ -482,9 +484,15 @@ fn keep_facts(turn: &mut Turn, head: &Head, auth_failed: bool) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use wisp_kernel::BoxFuture;
+    use wisp_runtime_api::TurnId;
+    use wisp_runtime_api::model::{QueueItem, Session, TurnStats};
+    use wisp_runtime_api::points::RunPart;
 
     use super::cache_reads;
-    use wisp_runtime_api::model::TurnStats;
+    use crate::{Recorder, Runtime, repo::Repo, schema};
 
     #[test]
     fn cache_reads_never_count_the_writes() {
@@ -505,14 +513,6 @@ mod tests {
         // a turn stored before the two were apart: the sum is all it has
         assert_eq!(cache_reads(&TurnStats { cache_tokens: Some(7), ..TurnStats::default() }), Some(7));
     }
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use wisp_kernel::BoxFuture;
-    use wisp_runtime_api::TurnId;
-    use wisp_runtime_api::model::{QueueItem, Session};
-    use wisp_runtime_api::points::RunPart;
-
-    use crate::{Recorder, Runtime, repo::Repo, schema};
 
     /// Counts the runs whose folder was made ready.
     #[derive(Default)]
