@@ -5,7 +5,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use http::{HeaderMap, Method};
 use serde_json::{Value, json};
 
-use super::{Grid, Who, answer, query};
+use super::{Grid, Who, answer, no, query};
 use crate::error::{Result, bad};
 use crate::http::{Resp, html, json, parse_body};
 use crate::pages::{self, MessagePage, ShareCard, Tone};
@@ -143,6 +143,10 @@ impl Grid {
     }
 
     pub(super) fn teams_route(&self, method: &Method, parts: &[&str], h: &HeaderMap, bytes: &[u8], who: &Who) -> Result<Resp> {
+        let c = who.credential().ok_or_else(|| bad("Sign in first.", 401))?;
+        if let Some(r) = no(&may(c, Reach::GridTeams)) {
+            return Ok(r);
+        }
         let me = who.user().ok_or_else(|| bad("Sign in first.", 401))?;
         let b = parse_body(h, bytes).unwrap_or_default();
         let f = |k: &str| b.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();

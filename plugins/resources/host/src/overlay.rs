@@ -46,6 +46,8 @@ fn secret_name(n: &str) -> bool {
 
 const NO_FILE: &str = "an agent's formula can't read files";
 const NO_ENV: &str = "an agent's formula can't read the environment";
+/// A grid box's owner reads files as the user does, but not the box's environment: it holds the box's own secret.
+const NO_ENV_HERE: &str = "a formula from here can't read the environment";
 
 impl Access {
     fn confined(&self) -> bool {
@@ -66,13 +68,7 @@ impl Access {
         let Some(inside) = &self.inside else {
             let full = if p.is_absolute() { p.to_owned() } else { dir.join(p) };
             if self.guarded {
-                let real = wisp_proc::canonical_blocking(&full).map_err(|e| format!("{reference}: {e}"))?;
-                if self.home.as_ref().is_some_and(|h| real.starts_with(h))
-                    || real.file_name().is_some_and(|n| secret_name(&n.to_string_lossy()))
-                {
-                    return Err(format!("{reference}: a secrets file isn't read for a formula from here"));
-                }
-                return Ok(real);
+                return self.guard(&full, reference);
             }
             return Ok(full);
         };
@@ -87,9 +83,21 @@ impl Access {
         Ok(real)
     }
 
+    /// For a guarded reader: `full` after links, unless it's in wisp's home or a secrets file.
+    fn guard(&self, full: &Path, shown: &str) -> std::result::Result<PathBuf, String> {
+        let real = wisp_proc::canonical_blocking(full).map_err(|e| format!("{shown}: {e}"))?;
+        if self.home.as_ref().is_some_and(|h| real.starts_with(h)) || real.file_name().is_some_and(|n| secret_name(&n.to_string_lossy())) {
+            return Err(format!("{shown}: a secrets file isn't read for a formula from here"));
+        }
+        Ok(real)
+    }
+
     /// A folder a module is read from, if this reader may.
     fn folder(&self, at: &Path, shown: &str) -> std::result::Result<PathBuf, String> {
-        let Some(inside) = &self.inside else { return Ok(at.to_owned()) };
+        let Some(inside) = &self.inside else {
+            // a guarded reader's module folder is held to what `open` holds its files to: never in wisp's home
+            return if self.guarded { self.guard(at, shown) } else { Ok(at.to_owned()) };
+        };
         let real = wisp_proc::canonical_blocking(at).map_err(|e| format!("{shown}: {e}"))?;
         self.inside_ok(&real, shown, inside)?;
         Ok(real)
@@ -111,15 +119,22 @@ impl Access {
         Ok(())
     }
 
-    /// A confined reader's text that reads the environment: refused, saying which.
+    /// Whether this reader may read the environment: the user only (a confined reader never; a guarded one's
+    /// environment is the box's, which holds its own secret).
+    fn reads_env(&self) -> bool {
+        !self.confined() && !self.guarded
+    }
+
+    /// A text that reads the environment, from a reader that may not: refused, saying which.
     fn env_in(&self, text: &str) -> std::result::Result<(), String> {
-        if !self.confined() {
+        if self.reads_env() {
             return Ok(());
         }
+        let no = if self.confined() { NO_ENV } else { NO_ENV_HERE };
         match text.find("${env:") {
             Some(i) => {
                 let end = text[i..].find('}').map_or(text.len(), |e| i + e + 1);
-                Err(format!("{NO_ENV}: {}", &text[i..end]))
+                Err(format!("{no}: {}", &text[i..end]))
             }
             None => Ok(()),
         }
@@ -151,7 +166,7 @@ impl Source for Disk {
         Ok((text, p.display().to_string()))
     }
     fn env(&self, name: &str) -> Option<String> {
-        if self.access.confined() { None } else { std::env::var(name).ok() }
+        if self.access.reads_env() { std::env::var(name).ok() } else { None }
     }
 }
 
@@ -183,6 +198,8 @@ fn files_in(dir: &Path, access: &Access) -> std::result::Result<Vec<(String, Str
                 access.inside_ok(&real, &n, inside)?;
                 real
             }
+            // a link in the folder is followed to where it leads, and held to the guard there
+            None if access.guarded => access.guard(&e.path(), &n)?,
             None => e.path(),
         };
         if let Ok(t) = std::fs::read_to_string(path) {
@@ -198,8 +215,15 @@ impl Env for Folders {
         if self.access.confined() {
             return Err(if f == "file" { format!("{NO_FILE}: file(\"{arg}\")") } else { format!("{NO_ENV}: {f}(\"{arg}\")") });
         }
+        let shown = format!("{f}(\"{arg}\")");
         match f {
-            "file" => std::fs::read_to_string(self.root.join(arg)).map(Value::String).map_err(|e| format!("file(\"{arg}\"): {e}")),
+            "file" => {
+                // an absolute `arg` replaces `root`: a guarded reader's file() is held to what `open` is
+                let at = self.root.join(arg);
+                let at = if self.access.guarded { self.access.guard(&at, &shown)? } else { at };
+                std::fs::read_to_string(at).map(Value::String).map_err(|e| format!("{shown}: {e}"))
+            }
+            _ if !self.access.reads_env() => Err(format!("{NO_ENV_HERE}: {shown}")),
             _ => Ok(std::env::var(arg).map_or(Value::Null, Value::String)),
         }
     }
@@ -768,6 +792,49 @@ mod tests {
         let agent = access_for("agent:session", vec![real.clone()], home);
         assert!(agent.open(Path::new("/"), &f).unwrap_err().contains("no absolute paths"));
         assert!(agent.open(&real, "f.yml").is_ok());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Audit grid-r1: a box's owner's formula reaches wisp's home and the box's environment no other way either: not
+    /// through `file()`, `${env:}`/`env()`, or a module folder (`module:` source) in the home.
+    #[test]
+    fn a_boxs_owner_reads_no_secret_through_file_env_or_a_module() {
+        let d = std::env::temp_dir().join(format!("wisp-access-box-fn-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("home/mod")).unwrap();
+        std::fs::create_dir_all(d.join("proj/mod")).unwrap();
+        std::fs::write(d.join("home/secrets.json"), r#"{"k":"v"}"#).unwrap();
+        std::fs::write(d.join("home/mod/m.yml"), "wisp: 1").unwrap();
+        std::fs::write(d.join("proj/mod/m.yml"), "wisp: 1").unwrap();
+        std::fs::write(d.join("proj/notes.txt"), "hello").unwrap();
+        let real = wisp_proc::canonical_blocking(&d).unwrap();
+        let (home, proj) = (real.join("home"), real.join("proj"));
+        let secrets = home.join("secrets.json").display().to_string();
+        let b = access_for("box", Vec::new(), Some(home.clone()));
+        let user = access_for("user:full", Vec::new(), Some(home.clone()));
+        let folders = |a: &Access| Folders { root: proj.clone(), access: a.clone() };
+
+        // file(): the home's secrets never, its own project's files still
+        assert!(folders(&b).outside("file", &secrets).unwrap_err().contains("a secrets file isn't read"));
+        assert!(folders(&b).outside("file", "../home/secrets.json").unwrap_err().contains("a secrets file isn't read"));
+        assert_eq!(folders(&b).outside("file", "notes.txt").unwrap(), json!("hello"));
+        // the environment: neither env() nor ${env:}
+        assert!(folders(&b).outside("env", "HOME").unwrap_err().contains("can't read the environment"));
+        let disk = Disk { cwd: proj.clone(), given: None, access: b.clone() };
+        assert_eq!(disk.env("HOME"), None);
+        assert!(b.env_in("a: ${env:HOME}").unwrap_err().contains("${env:HOME}"));
+        // a module whose source is in the home (absolute, or by ..) is refused; one in the project is read
+        let from = proj.join("main.wisp.yml").display().to_string();
+        let e = folders(&b).module("m", &home.join("mod").display().to_string(), &from).unwrap_err();
+        assert!(e.contains("a secrets file isn't read"), "{e}");
+        assert!(folders(&b).module("m", "../home/mod", &from).is_err());
+        assert_eq!(folders(&b).module("m", "mod", &from).unwrap().len(), 1);
+
+        // the user reads them all, as their CLI does
+        assert_eq!(folders(&user).outside("file", &secrets).unwrap(), json!(r#"{"k":"v"}"#));
+        assert_eq!(folders(&user).outside("env", "HOME").unwrap(), json!(std::env::var("HOME").unwrap()));
+        assert!(user.env_in("a: ${env:HOME}").is_ok());
+        assert_eq!(folders(&user).module("m", "../home/mod", &from).unwrap().len(), 1);
         let _ = std::fs::remove_dir_all(&d);
     }
 }

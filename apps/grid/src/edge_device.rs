@@ -77,6 +77,10 @@ impl Grid {
                 Ok(json(200, &self.computer_view(&comp)))
             }
             ("GET", ["api", "computers"]) => {
+                // a person's own list, from wisp or their pages; never a box's (it gets no computers: `trust`)
+                if let Some(r) = who.credential().filter(|c| *c == Credential::Box).and_then(|c| no(&may(c, Reach::GridDevice))) {
+                    return Ok(r);
+                }
                 let Some(u) = who.user() else { return Err(bad("Sign in first.", 401)) };
                 let list: Vec<Value> = self.accounts.computers(&u.id)?.iter().map(|c| self.computer_view(c)).collect();
                 Ok(json(200, &json!(list)))

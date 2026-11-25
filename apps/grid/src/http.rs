@@ -72,8 +72,14 @@ pub fn header_str<'a>(h: &'a HeaderMap, name: &str) -> &'a str {
     h.get(name).and_then(|v| v.to_str().ok()).unwrap_or("")
 }
 
+/// The request's cookies by name. A name sent twice is read as absent: a page on a sibling name (a published app at
+/// `<slug>--app--<handle>`, which runs its own JS) can set `Domain=<domain>` cookies, and the browser sends that copy
+/// beside the grid's own, so whichever came last would win and the visitor would be signed in as whoever set it
+/// (login CSRF). Signed out is the safe answer.
 pub fn cookies(h: &HeaderMap) -> HashMap<String, String> {
     let mut out = HashMap::new();
+    let mut twice = std::collections::HashSet::new();
+    let mut seen = std::collections::HashSet::new();
     for line in h.get_all(header::COOKIE) {
         let Ok(line) = line.to_str() else { continue };
         for part in line.split(';') {
@@ -84,12 +90,16 @@ pub fn cookies(h: &HeaderMap) -> HashMap<String, String> {
             if k.is_empty() {
                 continue;
             }
+            if !seen.insert(k.to_owned()) {
+                twice.insert(k.to_owned());
+            }
             // a cookie someone else's page set, badly encoded: not ours to read
             if let Ok(v) = percent_decode(v.trim()) {
                 out.insert(k.to_owned(), v);
             }
         }
     }
+    out.retain(|k, _| !twice.contains(k));
     out
 }
 
@@ -294,6 +304,23 @@ mod tests {
         assert_eq!(got["grid"], "a b;c");
         assert!(!got.contains_key("bad"));
         assert_eq!(got["x"], "1");
+    }
+
+    #[test]
+    fn a_cookie_name_sent_twice_is_absent_never_the_last_copy() {
+        let mut h = HeaderMap::new();
+        h.insert("cookie", HeaderValue::from_static("wisp_grid=a; wisp_grid=b; x=1"));
+        let got = cookies(&h);
+        assert!(!got.contains_key("wisp_grid"), "{got:?}");
+        assert_eq!(got["x"], "1");
+        // across two Cookie lines too, and with one copy badly encoded
+        let mut h = HeaderMap::new();
+        h.append("cookie", HeaderValue::from_static("wisp_grid=a"));
+        h.append("cookie", HeaderValue::from_static("wisp_grid=%zz"));
+        assert!(!cookies(&h).contains_key("wisp_grid"));
+        let mut h = HeaderMap::new();
+        h.insert("cookie", HeaderValue::from_static("wisp_grid=a"));
+        assert_eq!(cookies(&h)["wisp_grid"], "a");
     }
 
     #[test]

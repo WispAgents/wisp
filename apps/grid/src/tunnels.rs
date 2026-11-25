@@ -61,6 +61,18 @@ pub fn host_only(v: &str) -> bool {
     !v.to_ascii_lowercase().split(';').any(|p| p.trim_start().starts_with("domain"))
 }
 
+/// An answer from behind the grid (a box, a preview) keeps only its host-only cookies (`host_only`).
+pub fn host_only_cookies(h: &mut HeaderMap) {
+    let all: Vec<_> = h.get_all("set-cookie").iter().cloned().collect();
+    if all.iter().all(|v| v.to_str().is_ok_and(host_only)) {
+        return;
+    }
+    h.remove("set-cookie");
+    for v in all.into_iter().filter(|v| v.to_str().is_ok_and(host_only)) {
+        h.append("set-cookie", v);
+    }
+}
+
 #[derive(Default)]
 pub struct Tunnels {
     live: Mutex<HashMap<String, Live>>,
