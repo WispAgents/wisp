@@ -305,6 +305,21 @@ async fn worktree_adds_take_turns_and_remove_cleans_up() {
     assert!(!std::path::Path::new(&gone).exists());
     assert_eq!(r.worktrees(&user()).await.unwrap().len(), 5);
     assert!(r.branch_delete(&user(), "wisp/t-0").await.unwrap());
+
+    // git refuses (a locked worktree): its error, and the folder stays (it was deleted by hand anyway)
+    let locked = t.0.join("wts/w1").display().to_string();
+    let lock = std::process::Command::new("git").args(["worktree", "lock", &locked]).current_dir(&dir).output().unwrap();
+    assert!(lock.status.success());
+    assert!(r.worktree_remove(&user(), &locked).await.is_err());
+    assert!(std::path::Path::new(&locked).is_dir(), "git said no: the folder stays");
+    // never the repo's own checkout
+    assert!(r.worktree_remove(&user(), dir.to_str().unwrap()).await.is_err());
+    assert!(dir.join(".git").is_dir());
+    // a folder git doesn't know as a worktree goes by hand, as before
+    let stray = t.0.join("wts/stray");
+    std::fs::create_dir_all(&stray).unwrap();
+    r.worktree_remove(&user(), stray.to_str().unwrap()).await.unwrap();
+    assert!(!stray.exists());
 }
 
 /// Edge case Git 9 and v1 overlaps: merge-tree's exit codes, touched files, base_merged's checks.

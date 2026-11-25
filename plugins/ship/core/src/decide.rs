@@ -108,6 +108,32 @@ pub fn cleans_up(wt: &Worktree) -> bool {
     !wt.foreign
 }
 
+/// How a merged task's folder removal went (the worktrees plugin's strict removal, `worktrees.remove`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Tidied {
+    Removed,
+    /// Keep worktree is on (Done → Keep)
+    Kept,
+    /// the task, or another task in the same folder, is working (running, asking, queued, shipping, a /btw)
+    Busy,
+    /// it holds this many things only it has
+    Dirty(u32),
+    /// it couldn't be removed: git's refusal, or no worktrees plugin to ask
+    Failed(String),
+}
+
+/// What a merge says when the task's folder stays (its branch then stays too, here and on the remote). None: it went.
+pub fn tidy_note(path: &str, t: &Tidied) -> Option<String> {
+    let why = match t {
+        Tidied::Removed => return None,
+        Tidied::Kept => "Keep worktree is on for its task".to_owned(),
+        Tidied::Busy => "its task is still working in it".to_owned(),
+        Tidied::Dirty(n) => format!("it has {n} change{} only it holds", if *n == 1 { "" } else { "s" }),
+        Tidied::Failed(e) => format!("it couldn't be removed ({e})"),
+    };
+    Some(format!("The worktree {path} was kept: {why}."))
+}
+
 /// The head of the branch's merged PR, from which commits are new again (edge case Git 6).
 pub fn merged_head(pr: Option<&PrSummary>) -> Option<&str> {
     pr.filter(|p| p.is_merged() && !p.head.is_empty()).map(|p| p.head.as_str())

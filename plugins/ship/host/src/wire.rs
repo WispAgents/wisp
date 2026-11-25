@@ -76,6 +76,45 @@ pub(crate) async fn session(ctx: &Ctx, call: &Call, id: &str) -> Option<Session>
     ctx.run::<rt::Get>(call, rt::IdArgs { id: id.into() }).await.ok()
 }
 
+/// A merged task's folder goes the way every removal does, through the worktrees plugin (`worktrees.remove`: strict,
+/// its per-folder lock, the turns' claims, the folders working tasks are in), never by git behind its back. Keep
+/// worktree on (`kept` in worktrees' slot) keeps it; the branch is left to ship (it deletes it only once the folder
+/// went). The record removed is the task's own slot when it is that folder (with when wisp made it).
+pub fn tidier(ctx: &Ctx) -> crate::ops::Tidier {
+    use wisp_ship_core::decide::Tidied;
+    use wisp_worktrees_api as wt;
+    let ctx = ctx.clone();
+    Arc::new(move |call, id, w| {
+        let ctx = ctx.clone();
+        Box::pin(async move {
+            let slot = session(&ctx, &call, &id).await.map_or(Value::Null, |s| s.ext_of(WORKTREES).clone());
+            if slot.get("kept").and_then(Value::as_bool) == Some(true) {
+                return Tidied::Kept;
+            }
+            let worktree = serde_json::from_value::<wt::Worktree>(slot).ok().filter(|x| x.path == w.path).unwrap_or_else(|| wt::Worktree {
+                cwd: w.path.clone(),
+                path: w.path.clone(),
+                branch: w.branch.clone(),
+                base: w.base.clone(),
+                base_ref: w.base_ref.clone(),
+                head: w.head.clone(),
+                remote: w.remote.clone(),
+                root: w.root.clone(),
+                foreign: w.foreign,
+                ..wt::Worktree::default()
+            });
+            let opts = wt::RemoveOpts { strict: true, branch: wt::BranchMode::Keep, force: false };
+            match ctx.run::<wt::Remove>(&call, wt::RemoveArgs { worktree, opts }).await {
+                Ok(r) if r.removed => Tidied::Removed,
+                Ok(r) if r.busy => Tidied::Busy,
+                Ok(r) if r.foreign => Tidied::Failed("it isn't wisp's".into()),
+                Ok(r) => Tidied::Dirty(r.dirty.unwrap_or(1)),
+                Err(e) => Tidied::Failed(e.message),
+            }
+        })
+    })
+}
+
 /// `runtime.summary@1`: Ship it's fields on the task's row.
 struct Row;
 

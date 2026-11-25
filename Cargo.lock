@@ -5810,6 +5810,7 @@ dependencies = [
  "wisp-runtime-api",
  "wisp-ship-api",
  "wisp-ship-core",
+ "wisp-worktrees-api",
 ]
 
 [[package]]

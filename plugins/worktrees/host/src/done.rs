@@ -122,12 +122,13 @@ pub async fn apply(e: &Engine, port: &dyn Port, call: &Call, args: &DoneApplyArg
             }
             other => {
                 port.set_kept(t.id.clone(), true).await;
-                let (error, dirty) = match other {
-                    Some(Err(err)) => (Some(err.to_string()), None),
-                    Some(Ok(r)) => (None, r.dirty),
-                    None => (None, None),
+                // in use: the task itself, or another working task in the same folder (a recurring run's kept one)
+                let (busy, error, dirty) = match other {
+                    Some(Err(err)) => (false, Some(err.to_string()), None),
+                    Some(Ok(r)) => (r.busy, None, r.dirty),
+                    None => (true, None, None),
                 };
-                out.failed.push(FailedRemoval { path: p.clone(), error: done::failure_text(t.busy, error.as_deref(), dirty) });
+                out.failed.push(FailedRemoval { path: p.clone(), error: done::failure_text(busy, error.as_deref(), dirty) });
             }
         }
     }

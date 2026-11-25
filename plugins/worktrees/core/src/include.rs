@@ -14,10 +14,18 @@ pub struct Pattern {
     dir_only: bool,
 }
 
+/// A line that would name something outside the repo: a `..` segment, or a path absolute on its own (`C:\x`, `\\srv`,
+/// `~/x`). A leading `/` is gitignore's anchor at the repo's root (`/etc/passwd` is `<root>/etc/passwd`), so it stays.
+pub fn leaves_repo(line: &str) -> bool {
+    let p = line.trim();
+    p.split(['/', '\\']).any(|s| s == "..") || p.starts_with('\\') || p.starts_with('~') || p.as_bytes().get(1) == Some(&b':')
+}
+
 impl Pattern {
+    /// None also for a line that leaves the repo (`leaves_repo`): `rejected` names those for the task to say.
     pub fn parse(line: &str) -> Option<Self> {
         let p = line.trim();
-        if p.is_empty() || p.starts_with('#') || p.starts_with('!') {
+        if p.is_empty() || p.starts_with('#') || p.starts_with('!') || leaves_repo(p) {
             return None;
         }
         let dir_only = p.ends_with('/');
@@ -69,6 +77,11 @@ pub fn patterns(file: Option<&str>) -> Vec<Pattern> {
         Some(text) => text.lines().filter_map(Pattern::parse).collect(),
         None => DEFAULT_INCLUDE.iter().filter_map(|l| Pattern::parse(l)).collect(),
     }
+}
+
+/// The lines of a `.worktreeinclude` dropped because they leave the repo (`leaves_repo`), as written.
+pub fn rejected(file: Option<&str>) -> Vec<String> {
+    file.unwrap_or("").lines().map(str::trim).filter(|l| !l.starts_with('#') && leaves_repo(l)).map(str::to_owned).collect()
 }
 
 /// The ignored paths (from `ls-files ... -z`) the patterns name, as listed (folders keep their '/').
@@ -128,6 +141,19 @@ mod tests {
         assert_eq!(included(&patterns(None), ls), [".env", ".env.local"]);
         assert_eq!(included(&patterns(Some("local/\n# not big\n")), ls), ["local/"]);
         assert!(included(&patterns(Some("# nothing\n")), ls).is_empty());
+    }
+
+    #[test]
+    fn lines_that_leave_the_repo_name_nothing() {
+        for line in ["../x/.env", "a/../../b", "..", "C:\\secrets", "\\\\srv\\share", "~/.ssh/id_rsa"] {
+            assert_eq!(Pattern::parse(line), None, "{line}");
+        }
+        assert_eq!(rejected(Some("../x/.env\n.env\n# ../not this\n~/.aws\n")), ["../x/.env", "~/.aws"]);
+        assert!(!m("../x/.env", "../x/.env", false));
+        // a leading '/' anchors at the repo's root: `/etc/passwd` names `<root>/etc/passwd`, never the system's
+        assert!(m("/etc/passwd", "etc/passwd", false));
+        assert!(!m("/etc/passwd", "/etc/passwd", false) && !m("/etc/passwd", "a/etc/passwd", false));
+        assert!(m("a..b", "a..b", false), "dots inside a name are fine");
     }
 
     #[test]

@@ -10,7 +10,7 @@ use wisp_git_core::{SNAPSHOT_ENV, porcelain};
 
 use crate::error::{GitError, Result};
 use crate::repo::Inner;
-use crate::run::{Opts, args, read_args};
+use crate::run::{Opts, args, check, read_args};
 
 fn snapshot_env(index: &Path) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = SNAPSHOT_ENV.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
@@ -54,10 +54,27 @@ impl Inner {
     }
 
     /// Removes the worktree and its folder, then forgets what git calls prunable. A large `node_modules`
-    /// takes a while: five minutes.
+    /// takes a while: five minutes. git's refusal (a locked worktree, the main one) is the answer, and the folder
+    /// stays; only a folder git doesn't know as a worktree (or one already gone) is removed by hand, and never the
+    /// repo's own checkout or `.git`.
     pub async fn worktree_remove(&self, path: &str) -> Result<()> {
         let _turn = self.shared.worktrees.lock().await;
-        let _ = self.git.exec(&self.root, &args(&["worktree", "remove", "--force", path]), Opts::timeout(300)).await?;
+        let real = wisp_proc::canonical(path).await.ok();
+        let root = wisp_proc::canonical(&self.root).await.unwrap_or_else(|_| self.root.clone());
+        if let Some(real) = &real
+            && (root.starts_with(real)
+                || real.starts_with(root.join(".git"))
+                || tokio::fs::metadata(real.join(".git")).await.is_ok_and(|m| m.is_dir()))
+        {
+            return Err(GitError::Refused(format!("{path} is a repository's own checkout, not a worktree: it is never removed.")));
+        }
+        let r = self.git.exec(&self.root, &args(&["worktree", "remove", "--force", path]), Opts::timeout(300)).await?;
+        if let Err(e) = check(&r) {
+            let why = r.stderr_text();
+            if real.is_some() && !why.contains("is not a working tree") {
+                return Err(e);
+            }
+        }
         match tokio::fs::remove_dir_all(path).await {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
             _ => {}

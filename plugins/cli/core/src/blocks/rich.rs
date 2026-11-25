@@ -40,20 +40,39 @@ pub fn files(b: &Value, st: &Style) -> Vec<String> {
     out
 }
 
-/// A unified diff's lines, coloured: hunk headers, removals, additions.
+/// `@@ -a[,n] +b[,m] @@`: how many old and new lines the hunk holds (a missing count means 1).
+fn hunk_counts(line: &str) -> Option<(u32, u32)> {
+    let rest = line.strip_prefix("@@ -")?;
+    let (old, rest) = rest.split_once(' ')?;
+    let new = rest.strip_prefix('+')?.split(' ').next()?;
+    let count = |s: &str| s.split_once(',').map_or(Some(1), |(_, n)| n.parse().ok());
+    Some((count(old)?, count(new)?))
+}
+
+/// A unified diff's lines, coloured: hunk headers, removals, additions. Inside a hunk whose header counts its
+/// lines, a `---…`/`+++…` line is a removal or an addition, not a file header.
 fn unified(st: &Style, text: &str) -> Vec<String> {
+    let (mut old_left, mut new_left) = (0u32, 0u32);
     text.lines()
         .map(|l| {
             let l2 = term::truncate(l, st.width);
-            if l.starts_with("@@") {
+            let in_hunk = old_left > 0 || new_left > 0;
+            if !in_hunk && l.starts_with("@@") {
+                (old_left, new_left) = hunk_counts(l).unwrap_or((0, 0));
                 paint(st, CYAN, &l2)
-            } else if l.starts_with("+++") || l.starts_with("---") {
+            } else if !in_hunk && (l.starts_with("+++") || l.starts_with("---")) {
                 paint(st, BOLD, &l2)
             } else if l.starts_with('+') {
+                new_left = new_left.saturating_sub(1);
                 paint(st, GREEN, &l2)
             } else if l.starts_with('-') {
+                old_left = old_left.saturating_sub(1);
                 paint(st, RED, &l2)
             } else {
+                if l.starts_with(' ') {
+                    old_left = old_left.saturating_sub(1);
+                    new_left = new_left.saturating_sub(1);
+                }
                 l2
             }
         })
@@ -68,7 +87,8 @@ pub fn diff(b: &Value, st: &Style) -> Vec<String> {
     if let Some(p) = patch {
         out.extend(unified(st, p));
     } else if b.get("before").is_some() || b.get("after").is_some() {
-        let mut u = String::from("@@\n");
+        let (before, after) = (s(b, "before").lines().count(), s(b, "after").lines().count());
+        let mut u = format!("@@ -1,{before} +1,{after} @@\n");
         for l in s(b, "before").lines() {
             let _ = writeln!(u, "-{l}");
         }
@@ -381,4 +401,20 @@ pub fn map(b: &Value, st: &Style) -> Vec<String> {
 pub fn app(b: &Value, st: &Style) -> Vec<String> {
     let t = if s(b, "title").is_empty() { "An app" } else { s(b, "title") };
     pointer(st, "▣", t, s(b, "url"), s(b, "description"), "Open it in wisp")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dash_and_plus_lines_inside_a_hunk_are_changes() {
+        let st = Style { width: 80, color: true, links: false, images: Images::None };
+        let out = unified(&st, "--- a/n.md\n+++ b/n.md\n@@ -1,2 +1,2 @@\n----\n+++x\n end\n");
+        assert_eq!(out[0], paint(&st, BOLD, "--- a/n.md"));
+        assert_eq!(out[3], paint(&st, RED, "----"), "a removed '---' line");
+        assert_eq!(out[4], paint(&st, GREEN, "+++x"), "an added '++x' line");
+        let b = serde_json::json!({"type": "diff", "file": "n.md", "before": "---\nkeep", "after": "keep"});
+        assert!(diff(&b, &st).contains(&paint(&st, RED, "----")));
+    }
 }
