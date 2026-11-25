@@ -103,7 +103,7 @@ function block(b: Block, ctx: Ctx, tight: boolean): JSX.Element {
       return isDiagram(b) ? (
         <Mermaid source={b.v} part={sub(ctx.part, 'mermaid')} />
       ) : (
-        <Code block lang={b.lang} part={sub(ctx.part, 'code-block')}>{b.v}</Code>
+        <Code block copy lang={b.lang} part={sub(ctx.part, 'code-block')}>{b.v}</Code>
       );
     case 'list': {
       const items = b.items.map((it) => item(it, ctx, b.tight));

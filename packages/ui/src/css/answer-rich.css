@@ -302,6 +302,24 @@
   @container (max-width: 520px) { [data-kit='rb-g-meta'] { display: none; } }
   @keyframes kit-draw { to { stroke-dashoffset: 0; } }
 
+  /* chart (v1 .b-chart): a bar per item, label | track | value. The bars are aria-hidden; the table under them holds the
+     same numbers for a screen reader, so it is clipped out of sight but stays in the accessibility tree (fields.css). */
+  [data-kit='rb-chart'] { position: relative; padding: var(--space-7) 18px 14px; }
+  [data-kit='rb-chart-bars'] { display: flex; flex-direction: column; gap: var(--space-5); }
+  [data-kit='rb-chart-row'] { display: grid; grid-template-columns: minmax(76px, 28%) minmax(0, 1fr) auto; align-items: center; gap: var(--space-6); animation: kit-rise 0.5s var(--ease) calc(150ms + var(--k, 0) * 90ms) both; }
+  [data-kit='rb-chart-label'] { min-width: 0; font-size: var(--fs-md); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-kit='rb-chart-track'] { height: var(--space-4); border-radius: 3px; background: var(--bg-2); overflow: hidden; }
+  [data-kit='rb-chart-bar'] { display: block; height: 100%; width: var(--k-w); border-radius: 3px; background: var(--accent); transform-origin: left; animation: rb-chart-grow 0.8s var(--ease) calc(200ms + var(--k, 0) * 100ms) both; }
+  [data-kit='rb-chart-row']:nth-child(2n) [data-kit='rb-chart-bar'] { background: color-mix(in srgb, var(--accent) 55%, var(--surface)); }
+  [data-kit='rb-chart-value'] { min-width: 48px; font: var(--fw-medium) var(--fs-md) var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; color: var(--ink); }
+  [data-kit='rb-chart-unit'] { margin-left: var(--space-1); font-size: var(--fs-xs); color: var(--muted); }
+  [data-kit='rb-chart-table'], [data-kit='rb-chart-table'] > caption {
+    position: absolute; width: var(--size-hairline); height: var(--size-hairline); overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  [data-kit='answer'][data-still] [data-kit='rb-chart-row'], [data-kit='answer'][data-still] [data-kit='rb-chart-bar'] { animation: none; }
+  @media (prefers-reduced-motion: reduce) { [data-kit='rb-chart-row'], [data-kit='rb-chart-bar'] { animation: none; } }
+  @keyframes rb-chart-grow { from { transform: scaleX(0); } }
+
   /* app (v1 .b-app): the agent's small page, sandboxed */
   [data-kit='rb-app'] { overflow: hidden; }
   [data-kit='rb-app-head'] { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-4) var(--space-4) 14px; border-bottom: var(--size-hairline) solid var(--line); }

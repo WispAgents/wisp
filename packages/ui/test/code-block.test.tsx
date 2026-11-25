@@ -2,6 +2,7 @@
 import { expect, test } from 'vitest';
 import { mount } from './helpers.tsx';
 import { Answer } from '../src/index.ts';
+import { Markdown } from '../src/content/rich.ts';
 
 test('code block: head with file:line that opens it and Copy, numbered lines from `line`, highlighted lines, the gutter width, the caption', () => {
   const opened: Array<[string, number | undefined]> = [];
@@ -43,4 +44,23 @@ test('code block: no file shows the language in the head, and lines number from 
   const nos = [...root.querySelectorAll('[data-kit="cb-code-no"]')].map((n) => n.textContent);
   expect(nos).toEqual(['1', '2', '3']);
   expect(root.querySelector('[data-part="block.code.caption"]')).toBeNull();
+});
+
+test('a_fenced_markdown_block_has_its_language_and_a_copy_button_that_copies_the_raw_code_render_r1', async () => {
+  // render audit r1: a fenced block in prose had no way to copy it, while the answer's code block had Copy
+  const wrote: string[] = [];
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (t: string) => void wrote.push(t) } });
+  const root = mount(() => <Markdown source={'```ts\nconst x = 1;\n```'} />);
+  const head = root.querySelector('[data-kit="code-head"]');
+  expect(head?.querySelector('[data-kit="code-lang"]')?.textContent).toBe('ts');
+  const copy = head?.querySelector<HTMLButtonElement>('button[aria-label="Copy"]');
+  expect(copy).not.toBeNull();
+  copy?.click();
+  await new Promise((r) => setTimeout(r, 0));
+  expect(wrote).toEqual(['const x = 1;']);
+  expect(head?.querySelector('button[aria-label="Copied"]')).not.toBeNull();
+  // inline code gets no head and no button
+  const inline = mount(() => <Markdown source={'run `npm test` first'} />);
+  expect(inline.querySelector('code[data-kit="code"]')?.textContent).toBe('npm test');
+  expect(inline.querySelector('[data-kit="code-head"], button')).toBeNull();
 });

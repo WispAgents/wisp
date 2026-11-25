@@ -5,7 +5,8 @@
 // (which would remount the prose above it) once the JSON closes.
 
 const OPEN = '```wisp';
-const FENCE = '```';
+/** A closing fence at the start of what follows the JSON: blank before it, and the rest of its line blank. */
+const CLOSE = /^\s*```[ \t]*(\r?\n|$)/;
 
 /** Finds the end index (exclusive) of a JSON object/array starting at `start`, respecting strings and escapes. */
 function jsonEnd(src: string, start: number): number {
@@ -89,14 +90,11 @@ export function parseInlineChatBlocks(text: string): readonly Record<string, unk
     const before = text.slice(cursor, at).trim();
     if (before) out.push({ type: 'markdown', text: before });
     out.push(...valid);
-    const closeFence = text.indexOf(FENCE, end);
-    if (closeFence >= 0) {
-      const afterClose = text.indexOf('\n', closeFence + FENCE.length);
-      cursor = afterClose >= 0 ? afterClose + 1 : text.length;
-    } else {
-      // the closer is still arriving: a lone ` or `` after the JSON is its start, not prose
-      cursor = /^\s*`{0,2}\s*$/.test(text.slice(end)) ? text.length : end;
-    }
+    // The closing fence is the one right after the JSON (only whitespace between, nothing after it on its line). A
+    // block left unclosed keeps the prose after it: searching on for any ``` would swallow it up to the next fence.
+    // While the closer is still arriving, a lone ` or `` after the JSON is its start, not prose.
+    const close = CLOSE.exec(text.slice(end));
+    cursor = close ? end + close[0].length : /^\s*`{0,2}\s*$/.test(text.slice(end)) ? text.length : end;
     search = cursor;
   }
   if (out.length === 0) return undefined;
