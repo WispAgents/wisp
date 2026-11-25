@@ -37,7 +37,7 @@ pub fn info() -> HarnessInfo {
             id: String::new(),
             label: "Default".into(),
             hint: Some("Whatever opencode is set to".into()),
-            efforts: Vec::new(),
+            efforts: None,
             resolves: None,
         }],
         ask_tool: Some("wisp_ask_user".into()),
@@ -108,7 +108,13 @@ async fn output(sys: &dyn HarnessSys, bin: &str, args: &[&str]) -> Option<String
 
 fn model(id: &str, efforts: Vec<String>) -> HarnessModel {
     let (provider, name) = id.split_once('/').unwrap_or(("", id));
-    HarnessModel { id: id.to_owned(), label: name.to_owned(), hint: Some(provider.to_owned()), efforts, resolves: None }
+    HarnessModel {
+        id: id.to_owned(),
+        label: name.to_owned(),
+        hint: Some(provider.to_owned()),
+        efforts: (!efforts.is_empty()).then_some(efforts),
+        resolves: None,
+    }
 }
 
 /// `opencode models --verbose`: each id then its JSON, whose `variants` are the efforts it takes.
@@ -327,7 +333,7 @@ mod tests {
         let out = "fake/model-a\n{\n  \"id\": \"model-a\",\n  \"variants\": { \"low\": {}, \"high\": {} }\n}\nfake/model-b\n{\n  \"id\": \"model-b\"\n}\n";
         let m = verbose_models(out);
         assert_eq!(
-            m.iter().map(|x| (x.id.as_str(), x.label.as_str(), x.efforts.len())).collect::<Vec<_>>(),
+            m.iter().map(|x| (x.id.as_str(), x.label.as_str(), x.efforts.as_ref().map_or(0, Vec::len))).collect::<Vec<_>>(),
             [("fake/model-a", "model-a", 2), ("fake/model-b", "model-b", 0)]
         );
         assert_eq!(plain_models("fake/a\nnot a model\nx/y-1\n").len(), 2);

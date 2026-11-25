@@ -32,7 +32,7 @@ pub fn info() -> HarnessInfo {
             id: String::new(),
             label: "Default".into(),
             hint: Some("Whatever Copilot is set to".into()),
-            efforts: Vec::new(),
+            efforts: None,
             resolves: None,
         }],
         efforts: ["low", "medium", "high", "xhigh"].map(str::to_owned).to_vec(),
@@ -189,7 +189,7 @@ impl Harness for CopilotHarness {
                     label: model_label(&id),
                     hint: Some(id.clone()),
                     id,
-                    efforts: Vec::new(),
+                    efforts: None,
                     resolves: None,
                 }));
                 found.models = Some(all);

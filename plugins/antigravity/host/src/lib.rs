@@ -11,7 +11,7 @@ pub mod sessions;
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
-use wisp_antigravity_core::{AgyParser, args, list_models, stdin_event};
+use wisp_antigravity_core::{AgyParser, args, effort_in_id, list_models, stdin_event};
 use wisp_harness_kit::RunPaths;
 use wisp_harness_kit::detect::{help_efforts, version_in};
 use wisp_harness_kit::protocol::{FileNote, attachment_note};
@@ -33,7 +33,7 @@ pub fn info() -> HarnessInfo {
             id: String::new(),
             label: "Default".into(),
             hint: Some("Whatever Antigravity is set to".into()),
-            efforts: Vec::new(),
+            efforts: None,
             resolves: None,
         }],
         efforts: ["low", "medium", "high"].map(str::to_owned).to_vec(),
@@ -152,11 +152,12 @@ impl Harness for AntigravityHarness {
             let help = help.map(|(o, e)| format!("{o}\n{e}")).unwrap_or_default();
             let efforts = help_efforts(&help);
             let mut models = vec![self.info.models[0].clone()];
-            models.extend(list_models(&listed.map(|(o, _)| o).unwrap_or_default()).into_iter().map(|(id, label, _)| HarnessModel {
+            models.extend(list_models(&listed.map(|(o, _)| o).unwrap_or_default()).into_iter().map(|(id, label, baked)| HarnessModel {
                 hint: Some(id.clone()),
                 id,
                 label,
-                efforts: Vec::new(),
+                // `gemini-…-high` holds its level: no selector (agy refuses it with --effort)
+                efforts: baked.then(Vec::new),
                 resolves: None,
             }));
             let v = version_in(&line);
@@ -272,7 +273,7 @@ impl Harness for AntigravityHarness {
         if !o.model.is_empty() {
             argv.extend(["--model".to_owned(), o.model.clone()]);
         }
-        if !o.effort.is_empty() {
+        if !o.effort.is_empty() && !effort_in_id(&o.model) {
             argv.extend(["--effort".to_owned(), o.effort.clone()]);
         }
         if o.trusted && !o.cwd.is_empty() {

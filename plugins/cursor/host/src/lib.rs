@@ -32,7 +32,7 @@ pub fn info() -> HarnessInfo {
             id: String::new(),
             label: "Default".into(),
             hint: Some("Whatever Cursor is set to".into()),
-            efforts: Vec::new(),
+            efforts: None,
             resolves: None,
         }],
         ..HarnessInfo::default()
@@ -155,7 +155,7 @@ impl Harness for CursorHarness {
                 hint: Some(id.clone()),
                 id,
                 label,
-                efforts: Vec::new(),
+                efforts: None,
                 resolves: None,
             }));
             let v = version_in(&line);

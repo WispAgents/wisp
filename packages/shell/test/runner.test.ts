@@ -19,6 +19,10 @@ test('the_harness_model_picker_searches_every_harnesses_models_and_offers_the_pi
   // a model's own levels, else the harness's
   expect(effortsFor(AGENTS, { agent: 'claude', model: 'opus', effort: '' })).toEqual(['low', 'medium', 'high', 'max']);
   expect(effortsFor(AGENTS, { agent: 'claude', model: 'haiku', effort: '' })).toEqual(['low', 'high']);
+  // an empty list is "none" (the level is in the model's id: Antigravity's gemini-…-high), not "the harness's"
+  const agy: AgentOffer = { id: 'antigravity', name: 'Antigravity', available: true, models: [{ id: 'gemini-3-flash-high', label: 'Flash (High)', efforts: [] }, { id: 'gemini-3-pro', label: 'Pro' }], efforts: ['low', 'max'] };
+  expect(effortsFor([agy], { agent: 'antigravity', model: 'gemini-3-flash-high', effort: '' })).toEqual([]);
+  expect(effortsFor([agy], { agent: 'antigravity', model: 'gemini-3-pro', effort: '' })).toEqual(['low', 'max']);
   expect(runnerWords(AGENTS, { agent: 'claude', model: 'opus', effort: 'high' }, (id) => (id === 'claude' ? 'Claude Code' : id))).toBe('Claude Code · Opus 5.5 · High');
 });
 

@@ -102,6 +102,9 @@ test('a_harness_press_uses_it_at_once_a_model_pick_carries_the_level_over_settin
   // the pill's words: the model's name, never its id
   expect(withModel(v, 'claude', 'sonnet', ALL)).toEqual({ agent: 'claude', model: 'sonnet', effort: '', account: 'work', modelLabel: 'Sonnet 5.5' });
   expect(withModel({ ...v, effort: 'high' }, 'claude', 'sonnet', ALL).effort).toBe('high');
+  // a model whose id holds its level (efforts: []) drops the picked one: agy refuses --effort with it (grid 2026-11-24)
+  const agy = [...ALL, { id: 'antigravity', name: 'Antigravity', available: true, models: [{ id: 'gemini-3-flash-high', label: 'Flash (High)', efforts: [] }], efforts: ['low', 'max'] }];
+  expect(withModel({ agent: 'antigravity', model: '', effort: 'max', account: '' }, 'antigravity', 'gemini-3-flash-high', agy).effort).toBe('');
   // a model on another harness's pane moves to it, with its own account
   expect(withModel(v, 'codex', '', ALL)).toEqual({ agent: 'codex', model: '', effort: '', account: '' });
   expect(withModel(v, 'auto', 'cheap', ALL)).toEqual({ agent: 'auto', model: 'cheap', effort: '', account: '' });

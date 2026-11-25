@@ -10,10 +10,10 @@ use wisp_runtime_core::prompt::handoff::{Handoff, PastTurn, Render, handoff_note
 
 use crate::runtime::Runtime;
 
-/// The thinking levels `h` offers for `model` (the model's own, else the harness's).
+/// The thinking levels `h` offers for `model` (the model's own, else the harness's; none when its id holds the level).
 pub(crate) fn levels_of<'a>(h: &'a dyn Harness, model: &str) -> &'a [String] {
     let info = h.info();
-    info.models.iter().find(|m| m.id == model && !m.efforts.is_empty()).map_or(info.efforts.as_slice(), |m| m.efforts.as_slice())
+    info.models.iter().find(|m| m.id == model).and_then(|m| m.efforts.as_deref()).unwrap_or(info.efforts.as_slice())
 }
 
 /// After a follow-up switched `s` to another harness (`was`): its model is the new one's default unless picked, and
