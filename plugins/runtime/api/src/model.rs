@@ -300,6 +300,11 @@ pub struct TurnStats {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub compactions: Option<u32>,
+    /// the premium requests the turn used (Copilot's result `usage.premiumRequests`); absent: the harness doesn't
+    /// count them. Additive (2026-11-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub premium_requests: Option<u32>,
 }
 
 /// One subagent type's part of a turn (v1 `stats.subagents[]`).

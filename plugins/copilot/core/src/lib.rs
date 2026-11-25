@@ -285,6 +285,19 @@ impl LineParser for CopilotParser {
     }
 }
 
+/// Gate (ADR-0119): the premium-request count goes on a turn's stats only once a run of the real CLI is captured. The
+/// G6 fixtures are a fake `copilot` (their hero says "Fake copilot finished"), and Copilot isn't installed where this
+/// was written, so until then a Copilot turn's plan use reads as not reported, never a number from an invented format.
+pub const PREMIUM_VERIFIED: bool = false;
+
+/// The premium requests a result counts (`usage.premiumRequests`, as the fake CLI writes it); see [`PREMIUM_VERIFIED`].
+pub fn premium_requests(raw: &Value) -> Option<u32> {
+    [&raw["usage"]["premiumRequests"], &raw["premiumRequests"]]
+        .into_iter()
+        .find_map(|v| v.as_u64().filter(|p| *p > 0))
+        .and_then(|p| u32::try_from(p).ok())
+}
+
 /// Applies token, cache, cost and per-model usage from Copilot's `result.usage` or `--usage-output-file` JSON
 /// onto `stats`. Only positive/non-null token and cost fields are added, so runs that report only `sessionDurationMs`
 /// keep their minimal stats shape.
@@ -299,6 +312,9 @@ pub fn apply_usage(raw: &Value, stats: &mut Map<String, Value>) {
         .find_map(|v| v.as_f64().filter(|c| c.is_finite() && *c > 0.0));
     if let Some(c) = cost {
         stats.insert("costUsd".into(), js::json_num(c));
+    }
+    if PREMIUM_VERIFIED && let Some(p) = premium_requests(raw) {
+        stats.insert("premiumRequests".into(), Value::from(p));
     }
     for (k, candidates) in [
         ("inputTokens", [&u["inputTokens"], &u["input_tokens"], &u["totalInputTokens"], &u["promptTokens"], &u["prompt_tokens"]]),
@@ -413,7 +429,7 @@ mod tests {
     #[test]
     fn apply_usage_reads_direct_tokens_and_model_metrics() {
         let mut s = Map::new();
-        apply_usage(&json!({ "sessionDurationMs": 6, "premiumRequests": 1 }), &mut s);
+        apply_usage(&json!({ "sessionDurationMs": 6 }), &mut s);
         assert!(s.is_empty(), "duration-only result adds no token keys");
 
         apply_usage(
@@ -430,5 +446,18 @@ mod tests {
         assert_eq!(s.get("outputTokens"), Some(&json!(300)));
         assert_eq!(s.get("cacheReadTokens"), Some(&json!(800)));
         assert_eq!(s.get("cacheWriteTokens"), Some(&json!(100)));
+    }
+
+    /// The gate holds: the fake CLI's `usage.premiumRequests` parses, but no turn gets it until a real capture lands.
+    #[test]
+    fn copilot_premium_requests_are_gated_until_a_real_capture() {
+        let raw = include_str!("../tests/fixtures/ask.jsonl");
+        let result: Value =
+            raw.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).find(|v| v["type"] == "result").unwrap_or_default();
+        assert_eq!(premium_requests(&result), Some(1));
+        let mut s = Map::new();
+        apply_usage(&result["usage"], &mut s);
+        assert_eq!(s.get("premiumRequests").is_some(), PREMIUM_VERIFIED, "unverified: reported as unknown, not a number");
+        assert_eq!(s.get("costUsd"), None, "Copilot reports no dollar cost: none is made up");
     }
 }

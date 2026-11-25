@@ -11,4 +11,8 @@ date: string, cost: number, turns: number,
 /**
  * added 2026-11-23 (TRY-32, additive): total tokens (read + output) on this day
  */
-tokens: number, };
+tokens: number, 
+/**
+ * added 2026-11-25 (additive, ADR-0119): `cost` holds a list-price estimate
+ */
+cost_estimated: boolean, };

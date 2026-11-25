@@ -11,4 +11,8 @@ date: string, agent: string, cost: number, tokens: number,
 /**
  * input tokens read from prompt cache
  */
-cache_read: number, turns: number, };
+cache_read: number, turns: number, 
+/**
+ * `cost` holds a list-price estimate (ADR-0119)
+ */
+cost_estimated: boolean, };

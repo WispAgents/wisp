@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 use wisp_runtime_api::commands::{UsageDay, UsageHarnessDay, UsageRow, UsageSummary, UsageWeek};
 use wisp_runtime_api::model::{Turn, TurnStatus};
 
+use crate::prices::turn_cost;
+
 /// A turn that ended by asking (a `question` block in its answer, or held for an answer).
 fn asked(t: &Turn) -> bool {
     t.presentation.as_ref().is_some_and(|p| p.blocks.iter().any(|b| b.get("type").and_then(serde_json::Value::as_str) == Some("question")))
@@ -53,7 +55,7 @@ pub fn summarize(turns: &[Turn], from: i64) -> UsageSummary {
     });
     UsageSummary {
         from,
-        spend: mine.iter().filter_map(|t| t.stats.as_ref().and_then(|s| s.cost_usd)).sum(),
+        spend: mine.iter().filter_map(|t| turn_cost(t)).map(|(c, _)| c).sum(),
         turns: u32::try_from(mine.len()).unwrap_or(u32::MAX),
         worked,
         questions: u32::try_from(mine.iter().filter(|t| asked(t)).count()).unwrap_or(u32::MAX),
@@ -124,7 +126,8 @@ fn row(key: String, name: String, agent: String, turns: &[&Turn]) -> UsageRow {
         (!done.is_empty()).then(|| (ok as f64 * 100.0 / done.len() as f64).round()),
         (!lens.is_empty()).then(|| lens.iter().sum::<i64>() as f64 / lens.len() as f64),
     );
-    let costs: Vec<f64> = turns.iter().filter_map(|t| t.stats.as_ref().and_then(|s| s.cost_usd)).collect();
+    let costs: Vec<(f64, bool)> = turns.iter().filter_map(|t| turn_cost(t)).collect();
+    let estimated = costs.iter().filter(|(_, e)| *e).count();
     let mut sids: Vec<&str> = turns.iter().map(|t| t.session_id.as_str()).filter(|s| !s.is_empty()).collect();
     sids.sort_unstable();
     sids.dedup();
@@ -136,8 +139,11 @@ fn row(key: String, name: String, agent: String, turns: &[&Turn]) -> UsageRow {
         key,
         name,
         agent,
-        cost: costs.iter().sum(),
+        cost: costs.iter().map(|(c, _)| c).sum(),
         priced: u32::try_from(costs.len()).unwrap_or(u32::MAX),
+        estimated: u32::try_from(estimated).unwrap_or(u32::MAX),
+        cost_estimated: estimated > 0,
+        premium_requests: turns.iter().filter_map(|t| t.stats.as_ref().and_then(|s| s.premium_requests)).sum(),
         turns: u32::try_from(turns.len()).unwrap_or(u32::MAX),
         sessions: u32::try_from(sids.len()).unwrap_or(u32::MAX),
         tokens: input_tokens.saturating_add(output_tokens),
@@ -168,14 +174,17 @@ pub fn breakdown(turns: &[Turn], from: i64, now: i64, tz_offset_min: i32, cwd_of
     let off = i64::from(tz_offset_min) * 60_000;
     let mut out = summarize(turns, from);
     let mine: Vec<&Turn> = turns.iter().filter(|t| t.started_at >= from).collect();
-    out.priced = u32::try_from(mine.iter().filter(|t| t.stats.as_ref().and_then(|s| s.cost_usd).is_some()).count()).unwrap_or(u32::MAX);
+    let costs: Vec<(f64, bool)> = mine.iter().filter_map(|t| turn_cost(t)).collect();
+    let estimated = costs.iter().filter(|(_, e)| *e).count();
+    out.priced = u32::try_from(costs.len()).unwrap_or(u32::MAX);
+    out.estimated = u32::try_from(estimated).unwrap_or(u32::MAX);
+    out.cost_estimated = estimated > 0;
     let mut ids: Vec<&str> = mine.iter().map(|t| t.session_id.as_str()).collect();
     ids.sort_unstable();
     ids.dedup();
     out.sessions = u32::try_from(ids.len()).unwrap_or(u32::MAX);
     let (first, last) = ((from + off).div_euclid(DAY), (now.max(from) + off).div_euclid(DAY));
-    let mut days: BTreeMap<i64, UsageDay> =
-        (first..=last).map(|d| (d, UsageDay { date: civil(d), cost: 0.0, turns: 0, tokens: 0 })).collect();
+    let mut days: BTreeMap<i64, UsageDay> = (first..=last).map(|d| (d, UsageDay { date: civil(d), ..UsageDay::default() })).collect();
     let mut by_harness: BTreeMap<String, Vec<&Turn>> = BTreeMap::new();
     let mut by_project: BTreeMap<String, Vec<&Turn>> = BTreeMap::new();
     let mut by_runner: BTreeMap<(String, String), Vec<&Turn>> = BTreeMap::new();
@@ -183,11 +192,12 @@ pub fn breakdown(turns: &[Turn], from: i64, now: i64, tz_offset_min: i32, cwd_of
     for t in &mine {
         let (r, c, o) = tokens_of(t);
         let day = (t.started_at + off).div_euclid(DAY);
-        let cost = t.stats.as_ref().and_then(|s| s.cost_usd).unwrap_or(0.0);
+        let (cost, guess) = turn_cost(t).unwrap_or((0.0, false));
         let agent = if t.agent.trim().is_empty() { "claude".to_owned() } else { t.agent.trim().to_owned() };
         if let Some(d) = days.get_mut(&day) {
             d.turns += 1;
             d.cost += cost;
+            d.cost_estimated |= guess;
             d.tokens = d.tokens.saturating_add(r.saturating_add(o));
             let h = by_day_harness.entry((day, agent.clone())).or_insert_with(|| UsageHarnessDay {
                 date: d.date.clone(),
@@ -196,6 +206,7 @@ pub fn breakdown(turns: &[Turn], from: i64, now: i64, tz_offset_min: i32, cwd_of
             });
             h.turns += 1;
             h.cost += cost;
+            h.cost_estimated |= guess;
             h.tokens = h.tokens.saturating_add(r.saturating_add(o));
             h.cache_read = h.cache_read.saturating_add(c);
         }
@@ -382,5 +393,31 @@ mod tests {
             breakdown(&[turn(today + 7 * H, TurnStatus::Done, 0.1, false)], window_start(now, 7, 0), now, 0, &|_| None).daily.len(),
             7
         );
+    }
+
+    #[test]
+    fn usage_estimates_a_turn_with_tokens_and_no_cost_and_flags_it_cost_estimated() {
+        let mut reported = turn(10, TurnStatus::Done, 0.5, false);
+        reported.agent = "claude".into();
+        let mut codex = turn(20, TurnStatus::Done, 0.0, false);
+        codex.agent = "codex".into();
+        codex.model = "gpt-5-codex".into();
+        codex.stats = Some(TurnStats { input_tokens: Some(1_000_000), output_tokens: Some(100_000), ..TurnStats::default() });
+        let mut unknown = turn(30, TurnStatus::Done, 0.0, false);
+        unknown.agent = "codex".into();
+        unknown.model = "gpt-9".into();
+        unknown.stats = Some(TurnStats { input_tokens: Some(10), ..TurnStats::default() });
+        let mut copilot = turn(40, TurnStatus::Done, 0.0, false);
+        copilot.agent = "copilot".into();
+        copilot.stats = Some(TurnStats { premium_requests: Some(2), ..TurnStats::default() });
+        let u = breakdown(&[reported, codex, unknown, copilot], 0, 100, 0, &|_| None);
+        assert_eq!((u.priced, u.estimated, u.cost_estimated), (2, 1, true), "the gpt-9 turn stays unpriced");
+        assert!((u.spend - (0.5 + 1.25 + 1.0)).abs() < 1e-9);
+        let cx = u.harnesses.iter().find(|h| h.agent == "codex").unwrap();
+        assert_eq!((cx.turns, cx.priced, cx.estimated, cx.cost_estimated), (2, 1, 1, true), "priced < turns: a partial row");
+        let cl = u.harnesses.iter().find(|h| h.agent == "claude").unwrap();
+        assert!(!cl.cost_estimated, "a reported cost is never an estimate");
+        assert_eq!(u.harnesses.iter().find(|h| h.agent == "copilot").unwrap().premium_requests, 2);
+        assert!(u.daily[0].cost_estimated && u.daily_by_harness.iter().any(|d| d.agent == "codex" && d.cost_estimated));
     }
 }

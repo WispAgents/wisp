@@ -173,6 +173,27 @@ impl Harness for CursorHarness {
         Some(self.bin())
     }
 
+    /// A read that spends nothing: `cursor-agent about --format json` names the plan tier. Cursor reports no usage
+    /// window, so `windows` is empty and Usage says its limits aren't reported (ADR-0119).
+    fn live_limits<'a>(
+        &'a self,
+        sys: &'a dyn HarnessSys,
+        env: &'a std::collections::BTreeMap<String, String>,
+    ) -> BoxFuture<'a, Option<serde_json::Value>> {
+        Box::pin(async move {
+            let req = ExecReq {
+                program: self.bin(),
+                args: ["about", "--format", "json"].map(str::to_owned).to_vec(),
+                env: env.clone(),
+                timeout_ms: 15_000,
+                ..ExecReq::default()
+            };
+            let out = sys.exec(req).await.ok().filter(|o| o.code == Some(0) && !o.timed_out)?;
+            let a = wisp_cursor_core::about(&out.stdout)?;
+            Some(serde_json::json!({ "windows": [], "plan": a.tier }))
+        })
+    }
+
     fn launch(&self, run: &HarnessRun) -> Result<Launch> {
         Ok(launch(run, &run.bin.clone().unwrap_or_else(|| self.bin())))
     }

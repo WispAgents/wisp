@@ -236,6 +236,27 @@ impl Harness for OpencodeHarness {
         )
     }
 
+    /// A read that spends nothing: `opencode stats --days 7` says what opencode itself counted (cost and tokens).
+    /// opencode has no plan window, so `windows` is empty and Usage says its limits aren't reported (ADR-0119).
+    fn live_limits<'a>(&'a self, sys: &'a dyn HarnessSys, env: &'a BTreeMap<String, String>) -> BoxFuture<'a, Option<Value>> {
+        Box::pin(async move {
+            let req = ExecReq {
+                program: self.program().unwrap_or_else(|| DEFAULT_BIN.to_owned()),
+                args: ["stats", "--days", "7"].map(str::to_owned).to_vec(),
+                env: env.clone(),
+                timeout_ms: 20_000,
+                ..ExecReq::default()
+            };
+            let out = sys.exec(req).await.ok().filter(|o| o.code == Some(0) && !o.timed_out)?;
+            let s = wisp_opencode_core::stats(&out.stdout)?;
+            Some(serde_json::json!({
+                "windows": [],
+                "cost": s.cost_usd,
+                "tokens": { "input": s.input, "output": s.output, "cacheRead": s.cache_read, "cacheWrite": s.cache_write },
+            }))
+        })
+    }
+
     fn launch(&self, run: &HarnessRun) -> Result<Launch> {
         let f = self.found();
         let bin = run

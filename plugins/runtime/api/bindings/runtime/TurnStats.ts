@@ -25,4 +25,9 @@ subagents?: Array<SubagentStat>,
  * mid-turn: Claude Code's `compact_boundary`); absent: none, or the harness doesn't say. Long threads count and
  * audit it (ADR-0096). Additive (2026-11-18).
  */
-compactions?: number, };
+compactions?: number, 
+/**
+ * the premium requests the turn used (Copilot's result `usage.premiumRequests`); absent: the harness doesn't
+ * count them. Additive (2026-11-25).
+ */
+premiumRequests?: number, };

@@ -738,6 +738,12 @@ pub struct UsageSummary {
     /// added 2026-11-12: tasks the turns belong to
     #[serde(default)]
     pub sessions: u32,
+    /// added 2026-11-25 (additive, ADR-0119): of `priced`, the turns whose cost is a list-price estimate of their tokens
+    /// (the harness reported none); `cost_estimated`: `spend` holds at least one, so it shows as `~$x.xx`
+    #[serde(default)]
+    pub estimated: u32,
+    #[serde(default)]
+    pub cost_estimated: bool,
     /// added 2026-11-23 (TRY-32, additive): total tokens (read + output) across all harnesses
     #[serde(default)]
     #[ts(type = "number")]
@@ -786,6 +792,9 @@ pub struct UsageDay {
     #[serde(default)]
     #[ts(type = "number")]
     pub tokens: u64,
+    /// added 2026-11-25 (additive, ADR-0119): `cost` holds a list-price estimate
+    #[serde(default)]
+    pub cost_estimated: bool,
 }
 
 /// One harness's share of one day of `runtime.usage`'s window (the viewer's local day).
@@ -802,6 +811,9 @@ pub struct UsageHarnessDay {
     #[ts(type = "number")]
     pub cache_read: u64,
     pub turns: u32,
+    /// `cost` holds a list-price estimate (ADR-0119)
+    #[serde(default)]
+    pub cost_estimated: bool,
 }
 
 /// One ISO week of `runtime.usage`'s window: its days summed (a week the window cuts holds only its days in it).
@@ -836,6 +848,15 @@ pub struct UsageRow {
     /// added 2026-11-23 (TRY-32, additive): tasks the turns in this row belong to
     #[serde(default)]
     pub sessions: u32,
+    /// added 2026-11-25 (additive, ADR-0119): of `priced`, the turns whose cost is a list-price estimate of their tokens
+    /// (the harness reported none); `cost_estimated`: `cost` holds at least one, so it shows as `~$x.xx`
+    #[serde(default)]
+    pub estimated: u32,
+    #[serde(default)]
+    pub cost_estimated: bool,
+    /// added 2026-11-25 (additive): Copilot's premium requests, summed (its result's `usage.premiumRequests`)
+    #[serde(default)]
+    pub premium_requests: u32,
     /// added 2026-11-23 (TRY-32, additive): total tokens (read + output)
     #[serde(default)]
     #[ts(type = "number")]
