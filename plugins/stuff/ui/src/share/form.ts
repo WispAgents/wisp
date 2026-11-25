@@ -42,9 +42,6 @@ export function promptOf(o: { readonly title?: string; readonly text?: string; r
 
 export const accepted = (f: { readonly type: string }): boolean => FILE_TYPES.some((t) => (t.endsWith('/*') ? f.type.startsWith(t.slice(0, -1)) : f.type === t));
 
-/** The toast for files over the caps, as a key and its vars (the count picks one/other). */
-export const leftOut = (count: number): { key: string; vars: { count: number; files: number; mb: number } } => ({ key: 'stuff.share.in.leftOut', vars: { count, files: MAX_FILES, mb: MAX_BYTES / 1024 / 1024 } });
-
 /** The Cache API, as much of it as keep/take use (the worker's `caches`; tests pass a fake). */
 export interface CacheLike {
   put(key: string, res: Response): Promise<void>;

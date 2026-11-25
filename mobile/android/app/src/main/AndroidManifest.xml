@@ -65,6 +65,11 @@
                 android:value="Keeps the user's SSH tunnel to their own machine open while connected, so task alerts arrive with the app in the background." />
         </service>
 
+        <!-- Scan the code (WispSshPlugin.scanCode): Play services fetches the scanner at install, not on the first tap. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

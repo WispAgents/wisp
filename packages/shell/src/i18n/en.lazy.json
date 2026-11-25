@@ -468,6 +468,7 @@
   "shell.peer.asleep": "{name} is asleep",
   "shell.peer.waking": "Waking {name}…",
   "shell.peer.offline": "{name} is offline",
+  "shell.peer.reload": "Reload",
   "shell.peer.retry": "Retry",
   "shell.peer.update": "Update wisp on {name}",
   "shell.peer.updateApp": "Update the app to reach {name}",

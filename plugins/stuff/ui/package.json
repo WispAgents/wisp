@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./share-in": "./src/share/share-in.ts"
   },
   "dependencies": {
     "@wisp/client": "*",

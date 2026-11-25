@@ -137,6 +137,7 @@ export function createShell(o: ShellOptions): Shell {
   const selected = signal<string | undefined>(undefined);
   const focusTargets = new Map<string, () => void>();
   const prompts = new Map<string, PromptBox>();
+  const promptFiles = new Map<string, readonly File[]>(); // for a box not shown yet (prompts.attach)
   // what may make a send wait (ADR-0091): each plugin's sendHolds, with its client, then any provided by hand
   const holdChecks = new Map<string, (a: SendHoldAsk) => Promise<SendHold | undefined>>();
   const holdDefs = (): { reason: string; check: (a: SendHoldAsk) => Promise<SendHold | undefined> }[] =>
@@ -217,11 +218,22 @@ export function createShell(o: ShellOptions): Shell {
     prompts: {
       provide(name, box) {
         prompts.set(name, box);
+        const waiting = promptFiles.get(name);
+        if (waiting && box.attach) {
+          promptFiles.delete(name);
+          box.attach(waiting);
+        }
         return () => {
           if (prompts.get(name) === box) prompts.delete(name);
         };
       },
       get: (name) => prompts.get(name),
+      attach(name, files) {
+        if (!files.length) return;
+        const box = prompts.get(name);
+        if (box?.attach) box.attach(files);
+        else promptFiles.set(name, [...(promptFiles.get(name) ?? []), ...files]);
+      },
     },
     sendHolds: {
       provide(reason, check) {

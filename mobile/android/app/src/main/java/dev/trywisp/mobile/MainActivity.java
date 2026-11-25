@@ -190,27 +190,37 @@ public class MainActivity extends BridgeActivity {
         return true;
     }
 
-    // Tells the page there's a share. wisp's page gets its token in the event, in the main frame:
-    // the only way to it, since any frame can reach the bridge. Without one, the list repaints its note.
-    // The page itself checks its origin too: the frame may have moved on since getUrl().
+    // Tells the page there's a share. The page that may take it gets its token in the event, in the
+    // main frame: the only way to it, since any frame can reach the bridge. Without one, the list
+    // repaints its note. The page itself checks its origin too: the frame may have moved on since getUrl().
     private void offerShare() {
         runOnUiThread(() -> {
             Shared s = shared;
-            boolean give = s != null && s.ready && wispPage(getBridge().getWebView().getUrl());
+            String origin = s != null && s.ready ? takerOrigin(getBridge().getWebView().getUrl()) : null;
             JSONObject detail = new JSONObject();
             try {
-                if (give) detail.put("token", s.token.toString());
+                if (origin != null) detail.put("token", s.token.toString());
             } catch (org.json.JSONException ignored) {}
             String event = "window.dispatchEvent(new CustomEvent('wisp-share', { detail: " + detail + " }))";
-            js(give ? "if (location.origin === " + JSONObject.quote(WispSshPlugin.pageOrigin()) + ") " + event : event);
+            js(origin != null ? "if (location.origin === " + JSONObject.quote(origin) + ") " + event : event);
         });
     }
 
-    // A computer on an older wisp has no page to take it: say so, and keep it for another computer.
+    // Who may take a share: wisp's page on the computer open now (v1's page), or the app's own page
+    // (v2: the bundle from the APK, mobile/web share-in.ts), which keeps it unclaimed until a computer
+    // can take tasks and says so itself. Anything else that loads here (a grid's sign-in) never is.
+    private String takerOrigin(String url) {
+        if (wispPage(url)) return WispSshPlugin.pageOrigin();
+        String own = Shared.originOf(getBridge().getLocalUrl());
+        return own != null && own.equals(Shared.originOf(url)) ? own : null;
+    }
+
+    // A computer's page on an older wisp has nothing to take it: say so, and keep it for another
+    // computer. Only on that page (the app's own says why it waits), and never once it was taken.
     private static final long STILL_SHARED_MS = 20_000;
     private void stillShared() {
         if (shared == null || !shared.ready || !wispPage(getBridge().getWebView().getUrl())) return;
-        Toast.makeText(this, "This computer didn’t take what you shared. Update wisp there, or open another computer.", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "This computer’s wisp didn’t take what you shared: it may be too old. Update wisp there, or open another computer.", Toast.LENGTH_LONG).show();
     }
 
     // The computer the app has open, at its exact origin, and nothing else that can load here.
