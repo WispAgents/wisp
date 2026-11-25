@@ -41,6 +41,16 @@ pub struct StepSpec {
     /// steps that must end first
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub needs: Vec<String>,
+    /// what the step is, in a few words, for the run's view (default: its name)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    /// the run's view groups steps by phase, in the order phases first appear (`Explore`, `Build`, `Review`)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub phase: String,
+    /// one run per item of a list an earlier step gave, made once its needs end:
+    /// `${{ tasks.plan.output.files }}`; the prompt reads the item as `${{ item }}` and its place as `${{ index }}`
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub foreach: String,
     /// run only when this is true: `${{ tasks.tests.output.failed > 0 }}` (skipped otherwise)
     #[serde(default, rename = "if", skip_serializing_if = "String::is_empty")]
     pub when: String,
@@ -123,18 +133,40 @@ pub struct NameArgs {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RunArgs {
+    /// a saved workflow's name; with `spec`, the run's name (default `workflow`)
+    #[serde(default)]
     pub name: String,
+    /// a workflow written for this run (not saved): its `tasks`, `concurrency`, `budget`, …
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spec: Option<WorkflowSpec>,
     #[serde(default)]
     pub inputs: BTreeMap<String, Value>,
     /// the folder its steps run in, over the workflow's
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
+    /// the task the run belongs to (its steps show under it, and it is told when the run ends); an agent's run is
+    /// always its own task's
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    /// false: the task isn't sent the result when the run ends (default true when the run belongs to a task)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify: Option<bool>,
 }
 
 /// `workflows.run`: the run's parent task.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Started {
+    pub id: String,
+    /// what the caller reads back (an agent: where to watch it, that it will be told)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub said: String,
+}
+
+/// `workflows.status` / `workflows.stop`: a run (its task's id).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct RunId {
     pub id: String,
 }
 
@@ -172,4 +204,27 @@ macro_rules! command {
 command!(List = "workflows.list" ["workflows:read"] read yes : Value => Vec<NamedWorkflow>; typed);
 command!(Set = "workflows.set" ["workflows:write"] : NamedWorkflow => NamedWorkflow);
 command!(Remove = "workflows.remove" ["workflows:write"] : NameArgs => Value);
-command!(Run = "workflows.run" ["workflows:run"] : RunArgs => Started);
+command!(Status = "workflows.status" ["workflows:read"] read yes : RunId => Value);
+command!(Stop = "workflows.stop" ["workflows:run"] : RunId => Value);
+
+/// `workflows.run`: its arguments as the generated CLI and the MCP tool show them, with how to write a workflow.
+pub const RUN_TS: &str = r#"/** Run a workflow: a DAG of tasks, each its own agent on any harness, under this task. Returns at once; the task is told when the run ends (each step's state and output), and the user watches it live on the task. Steps run in the task's folder.
+Write `spec` for this run, or name a saved workflow. spec = { tasks: { <step>: { prompt, needs?, phase?, title?, agent?, model?, effort?, mode?, if?, matrix?, foreach?, output?, retries?, timeout?, optional? } }, concurrency?, budget?: { usd } }.
+- needs: [steps] that end first; a step reads their results in its prompt as ${{ tasks.<step>.output }} (or .output.<field>, .output.text).
+- foreach: "${{ tasks.plan.output.items }}": one run per item of a list an earlier step gave (fan-out decided at run time); its prompt reads ${{ item }} and ${{ index }}. A later step reading ${{ tasks.<step>.output }} gets every run's [{ matrix: { item }, state, output }].
+- matrix: { agent: [claude, codex] }: one run per value (a matrix key that is a field sets it), read as ${{ matrix.agent }}.
+- output: a JSON Schema: the step is asked to end with an output block of that shape, so the next steps read fields (an items list for a foreach).
+- if: "${{ tasks.tests.output.failed > 0 }}": skipped unless true. phase: groups steps in the view (Explore, Build, Review). mode: plan | edits | auto (never above this task's).
+Make every prompt self-contained: a step sees only its prompt. */ { /** a saved workflow's name (or the run's name with spec) */ name?: string, /** the workflow to run when it isn't a saved one (see above) */ spec?: Record<string, unknown>, /** values for the workflow's inputs: { version: "2.1" } */ inputs?: Record<string, unknown>, /** the folder its steps run in (the user's runs only; an agent's run in its task's) */ project?: string, /** the task it runs under (an agent's is its own) */ task?: string, /** false: don't tell the task when it ends */ notify?: boolean }"#;
+
+#[derive(Debug)]
+pub struct Run;
+impl Command for Run {
+    const ID: &'static str = "workflows.run";
+    const PERMISSION: Option<&'static str> = Some("workflows:run");
+    type Args = RunArgs;
+    type Out = Started;
+    fn args_ts() -> Option<String> {
+        Some(RUN_TS.to_owned())
+    }
+}

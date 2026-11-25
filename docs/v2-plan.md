@@ -191,6 +191,14 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   Reached from `wisp "…" --factory`, `wisp run --factory`, declared tasks, triggers, task files, `wisp_launch` and New
   task's picker (a Factory row after the harnesses). ADR-0114. **Built 2026-11-20** (uncommitted); review r194 #1-#6 fixed and runs resume after a
   restart (ADR-0114 rules 7-14); not yet: crew members naming a factory.
+- **Workflows in a task, for every harness** (owner, 2026-11-25: "wisp should have an equivalent for workflows that run
+  inside Claude Code for all harness with a nice UI … check how agents can use it to run workflows inside a task";
+  "/workflow command … amazing UI and UX"). A task's agent runs a workflow with `workflows_run` (a spec written now, or a
+  saved name); its steps are the task's subtasks on any harness (needs, if, matrix, `foreach` fan-out over an earlier
+  step's list, phases, outputs, retries, timeouts, budget); the task's band is a live board (the kit's `RunBoard`:
+  phases as lanes, step cards, fan-out dots, Stop, Copy as workflow); the agent is sent every step's result when it
+  ends. `/workflow <words>` makes the task's agent the run's lead. ADR-0119. **Built 2026-11-25**; not yet: steps on
+  another machine, resuming a cut run, checking an `output` schema.
 - **Submenus open on hover on desktop; drill-in stays on touch** (owner, 2026-11-17: "in desktop, I don't like that I need
   to click to go to a submenu, they should show up on hover"). With a hovering fine pointer in the browser, a submenu (the
   task row's View ›, Copy ›, Files ›) is a flyout beside its row, the standard cascading menu: it opens on hover after a
@@ -1147,6 +1155,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - 0066: harness detection lands on a topic as it settles
 - 0067: the first page loads only what the first screen draws
 - 0114: a factory runs a task through stations and loops back with a limit
+- 0119: an agent runs a workflow under its own task, on any harness, and is told when it ends
 
 ## 11. Work log (recent rounds)
 
