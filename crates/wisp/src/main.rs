@@ -28,6 +28,7 @@ mod repo_cli;
 mod said;
 mod scripted;
 mod secret_cli;
+mod self_name;
 mod serve;
 mod services;
 mod settings_store;
