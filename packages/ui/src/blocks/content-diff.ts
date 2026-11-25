@@ -1,6 +1,7 @@
 // A `diff` block's own before/after (v1 web/js/diff.js): a line diff (LCS, common ends trimmed so
 // the table stays small), cut into hunks with 3 lines of context, as the kit Diff's DiffFile.
 import { parseDiff, type DiffFile, type DiffHunk, type DiffLine } from '../content/diff/parse.ts';
+import type { CapturedChange } from './types.ts';
 
 export interface LineOp {
   readonly op: ' ' | '+' | '-';
@@ -129,4 +130,36 @@ export function ownDiff(o: Readonly<Record<string, unknown>>, path: string): Dif
   const after = o['after'];
   if (typeof before !== 'string' && typeof after !== 'string') return undefined;
   return diffFileOf(path, typeof before === 'string' ? before : '', typeof after === 'string' ? after : '');
+}
+
+/** v1's findChange: the change to `file`, exact, else either path ending in the other. */
+export function findChange(changes: readonly CapturedChange[], file: string): CapturedChange | undefined {
+  if (!file) return undefined;
+  return changes.find((c) => c.file === file) ?? changes.find((c) => c.file.endsWith(`/${file}`) || file.endsWith(`/${c.file}`));
+}
+
+/**
+ * The edits wisp captured for `file` in this turn as one file of the kit Diff: each edit's hunks in order (an edit's
+ * line numbers count within its own snippet, as v1). undefined: no captured change, or none with text.
+ */
+export function capturedDiff(changes: readonly CapturedChange[], file: string): DiffFile | undefined {
+  const c = findChange(changes, file);
+  if (!c) return undefined;
+  const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+  const files = (c.edits ?? [])
+    .map((e) => (e && typeof e === 'object' ? (e as Readonly<Record<string, unknown>>) : {}))
+    .filter((e) => typeof e['before'] === 'string' || typeof e['after'] === 'string')
+    .map((e) => diffFileOf(c.file, text(e['before']), text(e['after'])));
+  const first = files[0];
+  if (!first) return undefined;
+  const status = c.op === 'create' ? 'added' : c.op === 'delete' ? 'deleted' : files.length === 1 ? first.status : 'modified';
+  return {
+    ...first,
+    oldPath: status === 'added' ? null : c.file,
+    newPath: status === 'deleted' ? null : c.file,
+    status,
+    additions: files.reduce((n, f) => n + f.additions, 0),
+    deletions: files.reduce((n, f) => n + f.deletions, 0),
+    hunks: files.flatMap((f) => f.hunks),
+  };
 }

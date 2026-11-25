@@ -1,13 +1,13 @@
 // The `diff` block (v1 R.diff): the real change to one file, through the kit's Diff (its header
 // shows the path and +N −M). The block carries it as `diff` (a unified diff) or as a hand-picked
-// `before`/`after`; the host fills `diff` from the edits wisp captured. With neither it says there
-// are no captured edits. The caption (v1 .caption) and Open in editor sit in a foot joined to the file's card.
+// `before`/`after`; else the host's `changes` give the edits wisp captured for the file this turn. With
+// none it says there are no captured edits. The caption (v1 .caption) and Open in editor sit in a foot joined to the file's card.
 import { createMemo, Show, type JSX } from 'solid-js';
 import { Button } from '../controls/Button.tsx';
 import { Diff } from '../content/diff/Diff.tsx';
 import { Icon } from '../content/Icon.tsx';
 import { useBlocks, useBlockT } from './context.tsx';
-import { ownDiff } from './content-diff.ts';
+import { capturedDiff, ownDiff } from './content-diff.ts';
 import { useEnvView } from './env-view.tsx';
 import { InlineMd, PathText } from './content-parts.tsx';
 import { str } from './read.ts';
@@ -19,7 +19,8 @@ export function DiffBlock(props: BlockProps): JSX.Element {
   // a .env file's values masked until Reveal (./env-view.tsx)
   const env = useEnvView(props, 'block.diff.envMask');
   const file = (): string => str(props.block['file']) || str(props.block['path']);
-  const diff = createMemo(() => ownDiff(env.block(), file()));
+  // the block's own diff, else the edits wisp captured for its file this turn (v1 findChange)
+  const diff = createMemo(() => ownDiff(env.block(), file()) ?? capturedDiff(ctx.changes?.() ?? [], file()));
   const path = (): string => diff()?.path || file();
   const caption = (): string => str(props.block['caption']);
   return (
