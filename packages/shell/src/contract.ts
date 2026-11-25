@@ -587,6 +587,8 @@ export interface PromptBox {
   text(): string;
   set(text: string): void;
   focus(): void;
+  /** added 2026-11-25 (additive): files as the box's attachments (chips; they go up with Send), as a pick would */
+  attach?(files: readonly File[]): void;
 }
 
 /** What every screen reads through useShell(): the shell's own state and services. */
@@ -633,7 +635,13 @@ export interface ShellContext {
   readonly focusTargets: { provide(name: string, focus: () => void): () => void; focus(name: string): boolean };
   /** added 2026-11-11 (additive): the prompt boxes ('launcher' for New task) a plugin may fill, as v1's Start from an
    * issue fills New task's prompt; the owner registers its box while it shows */
-  readonly prompts?: { provide(name: string, box: PromptBox): () => void; get(name: string): PromptBox | undefined };
+  readonly prompts?: {
+    provide(name: string, box: PromptBox): () => void;
+    get(name: string): PromptBox | undefined;
+    /** added 2026-11-25 (additive): files for the box `name`, handed to it now or, while it isn't shown (a share
+     *  opens New task, which mounts after), the moment it is */
+    attach?(name: string, files: readonly File[]): void;
+  };
   /** added 2026-11-16 (additive, ADR-0091): what may make a send wait for you (Ask near the limit, v1 hold.js). A plugin
    * provides a check under the refusal reason its server-side guard gives (`budget_hold`); the prompt boxes ask every
    * check before they send (Send shows pending meanwhile) and show the first hold as a row in the box, and a send the

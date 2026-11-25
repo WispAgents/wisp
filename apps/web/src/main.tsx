@@ -5,7 +5,7 @@
 
 import '@wisp/ui/styles';
 import { createSignal } from 'solid-js';
-import { browserHistory, createClient, defineCommand, effect, httpTransport, indexedDBPersist, peerId, untracked, uuidv7, type PeerConfig, type PeerId } from '@wisp/client';
+import { browserHistory, computed, createClient, defineCommand, effect, httpTransport, indexedDBPersist, peerId, untracked, uuidv7, type PeerConfig, type PeerId } from '@wisp/client';
 import { browserPlatform, commandErrorToast, createShell, loadPlatform, platformKind, remoteUiDefs, type Platform, type RemoteUi } from '@wisp/shell';
 import { createToaster, preloadControls } from '@wisp/ui';
 import { shellSettingsUi } from '@wisp-plugin/shell-settings-ui';
@@ -174,7 +174,9 @@ function start(platform: Platform): void {
   });
   window.addEventListener('online', () => client.peers.resume());
   platform.onResume(() => client.peers.resume());
-  if (import.meta.env.PROD) registerWorker(platform, toaster, (k) => client.i18n.t(k));
+  // the worker's listeners go with the client's scope; its stream coming back live asks the worker to look for a new build
+  const homeLive = computed(() => client.peers.status(home)().kind === 'online');
+  if (import.meta.env.PROD) client.scope.add(registerWorker(platform, toaster, (k) => client.i18n.t(k), { live: homeLive }));
 }
 
 // a browser's page carries only the browser's platform and starts at once; the apps' (Tauri's, Capacitor's code) come with
