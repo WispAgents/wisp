@@ -1,7 +1,7 @@
 // An answer's pictures load from the task's own computer (src/frame/answer-of.ts mediaUrl, v1 ctx.fileUrl).
 import { expect, test } from 'vitest';
-import { mediaUrl, uploadUrl } from '../src/frame/answer-of.ts';
-import { reveal } from '../src/frame/commands.ts';
+import { docRelativePath, mediaUrl, uploadUrl } from '../src/frame/answer-of.ts';
+import { docSource, reveal } from '../src/frame/commands.ts';
 import { wireOf } from './command.ts';
 
 test('a file comes from the tasks computer, through this wisp for another; a link stays a link_v1_media_url', () => {
@@ -17,4 +17,18 @@ test('a file sent with a prompt loads from the tasks computer by its upload id; 
   expect(uploadUrl('home', 'home:s1', 'u1')).toBe('/api/uploads/u1');
   expect(uploadUrl('home', 'studio:s2', 'u/2')).toBe('/api/peer/studio/api/uploads/u%2F2');
   expect(uploadUrl('home', 'home:s1', '')).toBeUndefined();
+});
+
+test('docRelativePath resolves in-folder paths for live worktrees.source reads and rejects outside or env files', () => {
+  expect(docRelativePath('/repo', 'docs/plan.md')).toBe('docs/plan.md');
+  expect(docRelativePath('/repo', './docs/plan.md')).toBe('docs/plan.md');
+  expect(docRelativePath('/repo', '/repo/docs/plan.md')).toBe('docs/plan.md');
+  expect(docRelativePath('/var/folders/repo', '/private/var/folders/repo/plan.md')).toBe('plan.md');
+  expect(docRelativePath('/repo', '.env.example')).toBe('.env.example');
+  expect(docRelativePath('/repo', '.env')).toBeUndefined();
+  expect(docRelativePath('/repo', 'sub/.env.local')).toBeUndefined();
+  expect(docRelativePath('/repo', '../other/plan.md')).toBeUndefined();
+  expect(docRelativePath('/repo', '/tmp/report.md')).toBeUndefined();
+  expect(docRelativePath('/repo', '~/plan.md')).toBeUndefined();
+  expect(wireOf(docSource)({ id: 'studio:s2', path: 'docs/plan.md' })).toEqual({ id: 's2', path: 'docs/plan.md' });
 });

@@ -29,3 +29,29 @@ export function uploadUrl(home: string, key: string, id: string): string | undef
   const base = peer && peer !== home ? `/api/peer/${encodeURIComponent(peer)}` : '';
   return `${base}/api/uploads/${encodeURIComponent(id)}`;
 }
+
+const stripPrivate = (p: string): string => p.replace(/\\/g, '/').replace(/^\/private(?=\/)/, '').replace(/\/+$/, '');
+
+/** Maps a `doc` block's path to a clean path relative to the task's folder `dir` for live reads (`worktrees.source`).
+ *  Returns undefined for paths outside `dir`, parent traversals, or `.env` files. */
+export function docRelativePath(dir: string, path: string): string | undefined {
+  const raw = path.trim();
+  if (!raw) return undefined;
+  const base = raw.split(/[\\/]/).pop() ?? '';
+  if (/^\.env($|\.)/i.test(base) && !/^\.env\.(example|sample|template|dist|defaults|schema)$/i.test(base)) return undefined;
+  const norm = raw.replace(/\\/g, '/');
+  let rel: string;
+  if (norm.startsWith('/') || /^[A-Za-z]:\//.test(norm)) {
+    const root = stripPrivate(dir.trim());
+    const target = stripPrivate(norm);
+    if (!root || !target.startsWith(`${root}/`)) return undefined;
+    rel = target.slice(root.length + 1);
+  } else if (norm.startsWith('~')) {
+    return undefined;
+  } else {
+    rel = norm;
+  }
+  const parts = rel.split('/').filter((s) => s !== '' && s !== '.');
+  if (parts.length === 0 || parts.some((s) => s === '..')) return undefined;
+  return parts.join('/');
+}

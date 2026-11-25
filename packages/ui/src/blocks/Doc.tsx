@@ -19,7 +19,9 @@ export function DocBlock(props: BlockProps): JSX.Element {
   const ctx = useBlocks();
   const t = useBlockT();
   const path = str(props.block['path']);
-  const own = opt(props.block['text']);
+  const revealPath = opt(props.block['abs']) ?? path;
+  // An empty file (`text: ""`) still existed when the agent finished; `opt()` treats '' as absent.
+  const own = typeof props.block['text'] === 'string' ? props.block['text'] : undefined;
   const live: Accessor<DocText> = own !== undefined ? () => ({ kind: 'ready', text: own }) : ctx.docText && path ? ctx.docText(path) : () => ({ kind: 'failed', reason: '' });
   const text = (): string | undefined => {
     const d = live();
@@ -67,8 +69,8 @@ export function DocBlock(props: BlockProps): JSX.Element {
               <Icon name={copied() ? 'check' : 'copy'} size="sm" />
             </button>
             <KeepButton keep={docKeep(path, title(), text() ?? '')} part="block.doc.keep" />
-            <Show when={ctx.revealFile && path}>
-              <button type="button" data-kit="cb-ghost-xs" title={t('block.doc.revealTip')} onClick={() => ctx.revealFile?.(path)}>
+            <Show when={ctx.revealFile && revealPath}>
+              <button type="button" data-kit="cb-ghost-xs" title={t('block.doc.revealTip')} onClick={() => ctx.revealFile?.(revealPath)}>
                 <Icon name="folder" size="sm" />
                 <span data-kit="rb-doc-label">{t('block.doc.reveal')}</span>
               </button>

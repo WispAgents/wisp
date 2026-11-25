@@ -198,6 +198,9 @@ pub fn script(prompt: &str) -> Vec<Value> {
     if let Some(p) = prompt.strip_prefix("shot ") {
         blocks.push(json!({"type":"image","path":p}));
     }
+    if let Some(p) = prompt.strip_prefix("doc ") {
+        blocks.push(json!({"type":"doc","path":p}));
+    }
     let hero = format!("```wisp\n{}\n```", json!({ "blocks": blocks }));
     if prompt.starts_with("fail") {
         return vec![json!({"type":"session","id":"conv-1"}), json!({"type":"result","text":"Error: boom\nmore","isError":true})];

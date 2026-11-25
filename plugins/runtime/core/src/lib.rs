@@ -8,6 +8,7 @@ pub mod blocks;
 pub mod cap;
 pub mod child;
 pub mod cold;
+pub mod doc;
 pub mod env_mask;
 pub mod env_other;
 pub mod env_session;

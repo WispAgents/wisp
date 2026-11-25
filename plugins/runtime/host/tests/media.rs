@@ -148,3 +148,76 @@ async fn save_to_my_stuff_copies_only_the_tasks_own_files_v1_task_file() {
     assert!(r.rt.task_file("nope", "math.js").await.is_err(), "no such task");
     std::fs::remove_dir_all(&tmp).ok();
 }
+
+/// v1 `Store.keepDocs`: when a turn finishes, every `doc` block's file is snapshotted into the turn (`text`,
+/// `abs`, and `truncated` past 512 KiB), including files in extra project dirs (`dirs`) and `.md` files outside
+/// the folder; secrets (`.env`, outside non-doc files, and symlinks to secrets) are never snapshotted.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn doc_blocks_snapshot_existing_files_on_finish_and_refuse_secrets_v1_keep_docs() {
+    let tmp = std::env::temp_dir().join(format!("wisp-keep-docs-{}", std::process::id()));
+    let (work, extra, out) = (tmp.join("work"), tmp.join("extra"), tmp.join("out"));
+    std::fs::create_dir_all(work.join("docs")).unwrap();
+    std::fs::create_dir_all(&extra).unwrap();
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(work.join("docs/plan.md"), "# Plan\n\n- step 1\n").unwrap();
+    std::fs::write(work.join(".env"), "API_KEY=secret\n").unwrap();
+    std::fs::write(work.join("big.md"), "x".repeat(600 * 1024)).unwrap();
+    std::fs::write(extra.join("notes.md"), "# Extra\n").unwrap();
+    std::fs::write(out.join("report.md"), "# Outside report\n").unwrap();
+    let secret = out.join("id_rsa");
+    std::fs::write(&secret, "-----BEGIN OPENSSH PRIVATE KEY-----\n").unwrap();
+    std::os::unix::fs::symlink(&secret, out.join("link.md")).unwrap();
+    std::os::unix::fs::symlink(&secret, work.join("inside-link.md")).unwrap();
+
+    let r = rig().await;
+    let run_doc = |path: String, dirs: Vec<String>| {
+        let (rt, work) = (r.rt.clone(), work.clone());
+        async move {
+            let id = rt
+                .create(StartArgs { prompt: format!("doc {path}"), cwd: Some(work.display().to_string()), dirs, ..StartArgs::default() })
+                .await
+                .unwrap()
+                .id
+                .0;
+            until("turn presentation", || async {
+                rt.turns(&id, None, None).await.unwrap().last().is_some_and(|t| t.presentation.is_some())
+            })
+            .await;
+            let t = rt.turns(&id, None, None).await.unwrap().pop().unwrap();
+            t.presentation.unwrap().blocks.into_iter().find(|b| b["type"] == "doc").expect("doc block")
+        }
+    };
+
+    // relative path in cwd: snapshotted with text and abs, and survives file deletion
+    let kept = run_doc("docs/plan.md".into(), vec![]).await;
+    assert_eq!(kept["text"], "# Plan\n\n- step 1\n");
+    assert_eq!(kept["abs"], work.join("docs/plan.md").display().to_string());
+    assert!(kept.get("truncated").is_none());
+
+    // extra project dir: resolved and snapshotted
+    let from_extra = run_doc("notes.md".into(), vec![extra.display().to_string()]).await;
+    assert_eq!(from_extra["text"], "# Extra\n");
+    assert_eq!(from_extra["abs"], extra.join("notes.md").display().to_string());
+
+    // outside .md file: allowed and snapshotted
+    let outside = run_doc(out.join("report.md").display().to_string(), vec![]).await;
+    assert_eq!(outside["text"], "# Outside report\n");
+
+    // large doc: truncated at 512 KiB
+    let big = run_doc("big.md".into(), vec![]).await;
+    assert_eq!(big["text"].as_str().unwrap().len(), 512 * 1024);
+    assert_eq!(big["truncated"], true);
+
+    // missing file: no text snapshotted
+    let missing = run_doc("docs/missing.md".into(), vec![]).await;
+    assert!(missing.get("text").is_none());
+
+    // security: .env, outside non-doc, and symlinks to secrets are never snapshotted
+    for bad in [".env".to_owned(), secret.display().to_string(), out.join("link.md").display().to_string(), "inside-link.md".to_owned()] {
+        let b = run_doc(bad.clone(), vec![]).await;
+        assert!(b.get("text").is_none(), "must not snapshot {bad}: {b}");
+    }
+
+    std::fs::remove_dir_all(&tmp).ok();
+}

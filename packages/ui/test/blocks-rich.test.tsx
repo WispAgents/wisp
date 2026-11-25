@@ -1,7 +1,8 @@
 // The rich blocks that were stubs (v1 R.map, R.doc, preview-frame.js, R.graph, app-frame.js): each shows what v1 did.
+import { createSignal } from 'solid-js';
 import { expect, test } from 'vitest';
 import { mount, part } from './helpers.tsx';
-import { Answer, type BlockContext } from '../src/index.ts';
+import { Answer, type BlockContext, type DocText } from '../src/index.ts';
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 const click = (el: Element | null | undefined): void => void el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -85,4 +86,33 @@ test('map_doc_preview_graph_and_app_blocks_render_and_act_as_v1s_did', async () 
   const app = part('block.app')?.querySelector('iframe');
   expect(app?.getAttribute('sandbox')).toBe('allow-scripts');
   expect(app?.getAttribute('srcdoc') ?? '').toContain('{"n":2}');
+});
+
+test('doc_block_renders_empty_files_uses_abs_for_reveal_and_loads_live_docText', () => {
+  const revealed: string[] = [];
+  const [live, setLive] = createSignal<DocText>({ kind: 'loading' });
+  const ctx: BlockContext = {
+    revealFile: (p) => void revealed.push(p),
+    docText: () => live,
+  };
+  mount(() => (
+    <Answer
+      ctx={ctx}
+      blocks={[
+        { type: 'doc', path: 'docs/empty.md', abs: '/repo/docs/empty.md', text: '' },
+        { type: 'doc', path: 'docs/live.md' },
+      ]}
+    />
+  ));
+  const docs = document.querySelectorAll('[data-part="block.doc"]');
+  // Empty file still existed: never says "wasn't there", and Show in folder uses `abs`
+  expect(docs[0]?.textContent).not.toContain('wasn’t there');
+  click(docs[0]?.querySelector('[title="Show the file in its folder"]'));
+  expect(revealed).toEqual(['/repo/docs/empty.md']);
+  // Live docText: Loading -> Ready
+  expect(docs[1]?.textContent).toContain('Loading the file');
+  setLive({ kind: 'ready', text: '# Live doc\n\nBody text.' });
+  expect(docs[1]?.textContent).toContain('Live doc');
+  expect(docs[1]?.textContent).toContain('Body text.');
+  expect(docs[1]?.textContent).not.toContain('wasn’t there');
 });
