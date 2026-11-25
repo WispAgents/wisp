@@ -122,6 +122,21 @@ fn meta(name: &str, argv: &[String]) -> Option<i32> {
         println!("{line}");
         return Some(0);
     }
+    if name == "claude" && joined == "setup-token" {
+        // Claude Code 2.1: the link as a terminal hyperlink (OSC 8), then, once the browser's localhost callback
+        // finished it (FAKE_LOGIN_MS later), the long-lived token, wrapped as a terminal prints it; no code pasted
+        let url = "https://claude.ai/oauth/authorize?code=true&client_id=fake&state=s";
+        print!(
+            "Opening browser to sign in…\r\n\r\nBrowser didn't open? Use the URL below\r\n\r\n\u{1b}]8;id=f1;{url}\u{7}{url}\u{1b}]8;;\u{7}\r\n\r\nPaste code here if prompted > "
+        );
+        let _ = std::io::stdout().flush();
+        wait_ms("FAKE_LOGIN_MS");
+        print!(
+            "\r\n✓ Long-lived authentication token created successfully!\r\n\r\nYour OAuth token (valid for 1 year):\r\n\r\nsk-ant-oat01-fake-token-for-every-sandbox\r\n-0123456789\r\n\r\nStore this token securely.\r\n"
+        );
+        let _ = std::io::stdout().flush();
+        return Some(0);
+    }
     if name == "codex" && joined == "login --device-auth" {
         // v1 agent-login: a link and a one-time code, then signed in
         println!("Open https://auth.example.dev/codex/device\nand enter this one-time code ABCD-12345");

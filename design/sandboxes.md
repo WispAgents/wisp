@@ -27,6 +27,24 @@ without touching the user's computer or their cloud computer. Three ways in:
   origin and git author kept), then launches on that machine. Deleting the task
   (`DELETE /sessions/<id>@<machine>`) deletes the sandbox.
 
+## The launch (2026-11-25, the owner's report)
+
+- `/sandbox` (and Run on → Sandbox) runs `sandbox.start {id, …}`: it answers at once, and the launch is a
+  `sandbox.launch` row on `plugin:wisp.sandbox:launches` from the first frame (optimistic in the app). The row is
+  `preparing` with its `step` (`make` → `wake` → `copy` → `start`), `signin` (Claude's sign-in for sandboxes is
+  missing), `failed` (`error`, kept until **Try again** `sandbox.retry` or **Dismiss** `sandbox.dismiss`), or `started`
+  (`peer`, `task`: the page opens the task; the row goes a minute later). A wisp that stopped mid-launch marks its
+  `preparing` rows failed at the next start.
+- The task list shows the launches on top (`shell.list:top`, only while there is one): a task row whose mark is a
+  small glowing grid (kit `GlowGrid`), *Preparing the sandbox…*, or why it didn't start.
+- The launch's page: the title and the Sandbox pill, a large `GlowGrid` (accent wave while working, a slow warn breath
+  while it waits for you, still with a few cells in the bad tone once it failed), the steps, and the error with Try
+  again. Missing Claude sign-in: **Sign in to Claude** right there (no trip to Settings). `claude setup-token` opens
+  the browser itself and finishes through its own localhost callback, so no code is pasted: the token is read as it's
+  printed and sent to the grid, and every launch waiting on it goes on by itself. The code box stays as the fallback.
+- The sign-in's progress is a row too (`sandbox.signin`, id `claude`), so Settings → Sandboxes and the launch's page
+  both follow it live.
+
 ## Rules (from the reviews)
 
 - A sandbox belongs to one owner (a task, a delegate, a crew member or their job). It is **never a
