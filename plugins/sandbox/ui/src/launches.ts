@@ -11,7 +11,6 @@ export { shown, stepsOf, type LaunchRow, type LaunchStep } from './launch-model.
 
 export const LAUNCHES_TOPIC = 'plugin:wisp.sandbox:launches' as const;
 export const LAUNCH = 'sandbox.launch';
-export const SIGNIN = 'sandbox.signin';
 
 const [count, setCount] = createSignal(0);
 const watched = new WeakSet<PluginClient>();

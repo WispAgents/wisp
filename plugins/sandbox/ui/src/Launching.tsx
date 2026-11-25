@@ -8,7 +8,8 @@ import { useShell } from '@wisp/shell';
 import { Button, Callout, GlowGrid, Icon, Inline, Input, Pill, Stack, Steps, Text, useSignal } from '@wisp/ui';
 import { claudeBegin, claudeCode, dismiss, retry, type SigninRow } from './commands.ts';
 import { t } from './i18n.ts';
-import { LAUNCH, LAUNCHES_TOPIC, SIGNIN, stepsOf, type LaunchRow } from './launches.ts';
+import { LAUNCH, LAUNCHES_TOPIC, stepsOf, type LaunchRow } from './launches.ts';
+import { SIGNIN } from './signin-kind.ts';
 import type { LaunchingParams } from './views.ts';
 import './i18n/lazy.ts';
 
