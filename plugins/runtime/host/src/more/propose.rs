@@ -115,14 +115,24 @@ pub(crate) fn take_applied(s: &mut Session) -> Option<String> {
 }
 
 impl Runtime {
-    /// The files the main task's turns changed, absolute.
+    /// The files the main task's turns changed, absolute: its ended turns' (kept on each at its end) and its running
+    /// turn's so far (`Live::changes`: the main task may be editing the file right now).
     async fn touched(&self, main: &Session) -> BTreeSet<PathBuf> {
         let turns = self.repo.turns(main.id.as_str(), None, None).await.unwrap_or_default();
+        let running: Vec<String> = self
+            .live
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(main.id.as_str())
+            .map(|l| l.changes.clone())
+            .unwrap_or_default();
         turns
             .iter()
             .filter_map(|t| t.ext.get(SLOT)?.get("changes")?.as_array().cloned())
             .flatten()
-            .filter_map(|c| c.get("file").and_then(Value::as_str).map(|f| absolute(f, &main.cwd)))
+            .filter_map(|c| c.get("file").and_then(Value::as_str).map(str::to_owned))
+            .chain(running)
+            .map(|f| absolute(&f, &main.cwd))
             .collect()
     }
 

@@ -177,3 +177,48 @@ async fn a_sides_write_to_a_file_the_main_task_changed_is_proposed_there_and_app
     assert_eq!(std::fs::read_to_string(format!("{dir}/a.ts")).unwrap(), "edited meanwhile\n");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sides_write_to_a_file_the_main_tasks_running_turn_changed_is_proposed_there() {
+    let (fake, _runs) = Recording::of(Fake::harness());
+    let r = rig_on(Recorder::default(), vec![fake]).await;
+    let dir = folder("propose-running");
+    std::fs::write(format!("{dir}/a.ts"), "main's\n").unwrap();
+    // the main task's first turn changed a.ts and is still running: nothing on its turn yet
+    let main =
+        r.rt.create(StartArgs { prompt: "editing propose-running".into(), cwd: Some(dir.clone()), ..StartArgs::default() })
+            .await
+            .unwrap()
+            .id;
+    let s = r.rt.create(side(&main, "side talk", &json!({}))).await.unwrap().id;
+    done(&r, s.as_str(), 1).await;
+    let write = |path: &str| ApprovalArgs {
+        id: s.clone(),
+        tool: "Write".into(),
+        input: json!({ "file_path": format!("{dir}/{path}"), "content": "side's\n" }),
+        tool_use_id: None,
+    };
+    // a file it never touched is written at once (allow: nothing kept), so asking again until its change is in is safe
+    let out = Arc::new(Mutex::new(Value::Null));
+    until("the main turn's change", || {
+        let (rt, out, args) = (r.rt.clone(), out.clone(), write("a.ts"));
+        async move {
+            let v = rt.approval(args).await.unwrap();
+            let denied = v["behavior"] == "deny";
+            *out.lock().unwrap() = v;
+            denied
+        }
+    })
+    .await;
+    let out = out.lock().unwrap().clone();
+    assert!(out["message"].as_str().unwrap().contains("proposed to the main task"), "{out}");
+    let t = r.rt.turns(main.as_str(), None, None).await.unwrap();
+    assert_eq!(t[0].status, TurnStatus::Running, "still running");
+    assert_eq!(std::fs::read_to_string(format!("{dir}/a.ts")).unwrap(), "main's\n", "nothing written");
+    let m = r.rt.get(main.as_str()).await.unwrap();
+    assert_eq!(m.ext["wisp.runtime"]["proposals"][0]["path"], "a.ts");
+    assert_eq!(r.rt.approval(write("b.ts")).await.unwrap()["behavior"], "allow");
+    common::open("propose-running");
+    done(&r, main.as_str(), 1).await;
+    std::fs::remove_dir_all(&dir).ok();
+}

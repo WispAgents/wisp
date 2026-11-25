@@ -12,10 +12,10 @@ use crate::error::{Result, RuntimeError};
 use crate::runtime::Runtime;
 
 /// What of its task's own slot a fork leaves behind: what belongs to one run or turn (an open question, a retry's
-/// extras, a /btw, Allow-always grants, a held queue's marks), or the task's place among others (a side discussion's
+/// extras, a /btw, Allow-always grants, a held queue's marks, side proposals and the applied ones its agent has yet to hear of), or the task's place among others (a side discussion's
 /// main task, a compare's group, a crew job, a pin). Everything else is the task's setup and carries over: its spec and
 /// the connectors it names, a formula's connector overlay, its subagents, variant, brief, `heldTo`, `startedBy`, cap.
-const NOT_FORKED: [&str; 29] = [
+const NOT_FORKED: [&str; 30] = [
     "next",
     "btw",
     "ask",
@@ -29,6 +29,7 @@ const NOT_FORKED: [&str; 29] = [
     "sideOf",
     "forkOf",
     "proposals",
+    "sideApplied",
     "terminal",
     "setupFailed",
     "spawnFailed",

@@ -355,6 +355,24 @@ async fn fake_cli(mut io: SimIo) -> Exit {
         }
         return Exit { code: Some(0), signal: None };
     }
+    // `editing <name>`: its conversation's line, a test run and its change to a.ts, then it waits at gate <name>
+    // before its answer (a turn still running that already changed a file)
+    if let Some(name) = prompt.strip_prefix("editing ").and_then(|r| r.split_whitespace().next()) {
+        let lines = script(&prompt);
+        let at = lines.iter().position(|l| l["type"] == "change").map_or(1, |i| i + 1);
+        for l in &lines[..at] {
+            io.print(format!("{l}\n").as_bytes()).await;
+        }
+        let g = gate(name);
+        tokio::select! {
+            () = g.notified() => {}
+            () = io.killed.cancelled() => return Exit { code: None, signal: Some("SIGTERM".into()) },
+        }
+        for l in &lines[at..] {
+            io.print(format!("{l}\n").as_bytes()).await;
+        }
+        return Exit { code: Some(0), signal: None };
+    }
     // `stream <name>`: its conversation's line; at gate <name>, three text lines; at <name>.tool, a tool and its
     // result; at <name>.end, its answer (ADR-0083: what the shared coalescer commits when)
     if let Some(name) = prompt.strip_prefix("stream ").and_then(|r| r.split_whitespace().next()) {

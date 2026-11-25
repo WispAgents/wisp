@@ -46,6 +46,9 @@ pub(crate) struct Live {
     pub label: Option<String>,
     /// the account the run is on (what `before:run` picked): its usage reports are that account's
     pub account: Option<String>,
+    /// the files the running turn changed so far, as its CLI named them: a side discussion's write to one is proposed
+    /// to this task before the turn's end writes them on the turn (`Runtime::touched`)
+    pub changes: Vec<String>,
     pub ctl: mpsc::UnboundedSender<Ctl>,
     /// closed once the run's drive let go: its CLI exited, its last output parsed (and the git work that does in
     /// the task's folder, `wisp_harness_kit` pin and snapshots) done. `Runtime::stop_and_wait` waits on it.
@@ -658,8 +661,18 @@ impl Runtime {
             } else if interrupting {
                 let _ = ctl.send(Ctl::Interrupt);
             }
-            let live =
-                Live { pid, resumable, finished: false, stopping, interrupting, label: None, account: t.account.clone(), ctl, ended };
+            let live = Live {
+                pid,
+                resumable,
+                finished: false,
+                stopping,
+                interrupting,
+                label: None,
+                account: t.account.clone(),
+                changes: Vec::new(),
+                ctl,
+                ended,
+            };
             all.insert(s.id.0.clone(), live);
             drop(all);
             // `live` has it now: no longer starting (cleared here, not when the start returns, so a run that ends at

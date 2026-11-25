@@ -87,6 +87,11 @@ async fn a_fork_keeps_its_tasks_connectors_team_variant_and_lean_and_none_of_its
     r.rt.set_lean(id.as_str(), Some("on".into())).await.unwrap();
     r.rt.follow_up(FollowUpArgs { id: id.clone(), text: "parent again".into(), ..FollowUpArgs::default() }).await.unwrap();
     done(&r, id.as_str(), 2).await;
+    // side proposals, and applied ones its agent has yet to hear of (its next turn takes them): the task's own
+    let mut own = r.rt.get(id.as_str()).await.unwrap().ext["wisp.runtime"].clone();
+    own["sideApplied"] = json!([{ "path": "a.ts", "side": "s1", "sideTitle": "A side" }]);
+    own["proposals"] = json!([{ "id": "p1", "path": "b.ts" }]);
+    r.rt.set_ext(id.as_str(), "wisp.runtime", own, None).await.unwrap();
 
     let fork = r.rt.fork(ForkArgs { id: id.clone(), new_id: None, turn_id: None, title: None }).await.unwrap().id;
     let s = r.rt.get(fork.as_str()).await.unwrap();
@@ -94,7 +99,7 @@ async fn a_fork_keeps_its_tasks_connectors_team_variant_and_lean_and_none_of_its
     for k in ["spec", "connectors", "subagents", "variant", "heldTo", "startedBy"] {
         assert_eq!(o[k], r.rt.get(id.as_str()).await.unwrap().ext["wisp.runtime"][k], "{k} carries over: {o}");
     }
-    for k in ["btw", "blocked", "grants", "forLater"] {
+    for k in ["btw", "blocked", "grants", "forLater", "sideApplied", "proposals"] {
         assert!(o.get(k).is_none(), "{k} is the parent's run's, not the fork's: {o}");
     }
     assert_eq!(o["next"], json!({ "fork": true }), "only the fork's own first-run extras");

@@ -52,6 +52,8 @@ pub(crate) struct Drive {
     /// the live line the task's row was last written with, and when: a newer step rewrites it (`ROW_EVERY`)
     row_label: Option<String>,
     row_at: Instant,
+    /// how many of the turn's changed files `Live::changes` has
+    changes_told: usize,
 }
 
 fn take_lines(buf: &mut Vec<u8>, data: &[u8], last: bool) -> Vec<String> {
@@ -103,6 +105,7 @@ impl Runtime {
             stderr: String::new(),
             row_label: None,
             row_at: Instant::now(),
+            changes_told: 0,
         };
         let mut linger: Option<Instant> = None;
         loop {
@@ -244,6 +247,7 @@ impl Runtime {
                 self.resumable(&d.sid, &id);
             }
         }
+        self.live_changes(d);
         if now && !d.finished {
             d.coal.step().await;
         }
@@ -326,6 +330,17 @@ impl Runtime {
             account,
             limits,
         }));
+    }
+
+    /// The running turn's newly changed files onto its `Live` (a side discussion's write checks them: `touched`).
+    fn live_changes(&self, d: &mut Drive) {
+        if d.head.changes.len() == d.changes_told {
+            return;
+        }
+        if let Some(l) = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get_mut(&d.sid) {
+            l.changes.extend(d.head.changes[d.changes_told..].iter().map(|c| c.file.clone()));
+        }
+        d.changes_told = d.head.changes.len();
     }
 
     fn resumable(&self, sid: &str, _id: &str) {

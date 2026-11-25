@@ -38,7 +38,7 @@ pub fn side_note(of: SideOf<'_>, session_tool: &str, proposes: bool) -> String {
     );
     let latest = "- Every message from the user starts with the main task's latest state (under \"The main task now\"). It may have moved on since your last answer: go by the latest one.";
     let writes = if proposes {
-        "- wisp sees each file edit or write before it happens. A file the main task hasn't changed is written at once. A file it changed is not: your change goes to the main task as a proposal (a diff the user applies or discards there) and your call answers \"proposed to the main task\". Don't retry it or write that file another way (shell, `sed -i`, `>`, `cp`); say what you proposed."
+        "- wisp sees each file edit or write before it happens. A file the main task hasn't changed is written at once. A file it changed, in an earlier turn or in the one it is running now, is not: your change goes to the main task as a proposal (a diff the user applies or discards there) and your call answers \"proposed to the main task\". Don't retry it or write that file another way (shell, `sed -i`, `>`, `cp`); say what you proposed."
     } else {
         "- Your writes land in the main task's folder as they are: nothing checks them first. Leave the files the main task changed to it unless the user asks you to change them; say what to tell the main task instead."
     };
