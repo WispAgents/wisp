@@ -1,7 +1,7 @@
 // A harness's own stop line in its Settings → Agents detail (`shell.settings:harness`, harness audit r2): where
 // unattended work stops on it (Same as Automations stop at, Off, 50, 75 or 90 %), with its week's usage line. It moved
 // here from Settings → Usage's per-harness group, which links to it. Hidden for a harness whose CLI reports no quota
-// window: its line would have nothing to stop at (ADR-0123), and the detail says so instead.
+// window: its line would have nothing to stop at (ADR-0124), and the detail says so instead.
 import { createResource, onCleanup, Show, type JSX } from 'solid-js';
 import { entityKey } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';

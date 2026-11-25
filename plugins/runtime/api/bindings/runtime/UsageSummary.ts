@@ -30,7 +30,7 @@ priced: number,
  */
 sessions: number, 
 /**
- * added 2026-11-25 (additive, ADR-0123): of `priced`, the turns whose cost is a list-price estimate of their tokens
+ * added 2026-11-25 (additive, ADR-0124): of `priced`, the turns whose cost is a list-price estimate of their tokens
  * (the harness reported none); `cost_estimated`: `spend` holds at least one, so it shows as `~$x.xx`
  */
 estimated: number, costEstimated: boolean, 

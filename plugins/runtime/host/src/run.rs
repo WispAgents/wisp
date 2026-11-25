@@ -140,7 +140,7 @@ impl Runtime {
         let capped = crate::capped::cap_of(&s);
         s.mode = wisp_runtime_core::cap::at_cap(s.mode, capped);
         let mut turn = self.next_turn(&s, &item).await?;
-        // another harness taking over: the turn says from what to what, and what it carried (ADR-0124); the Timeline
+        // another harness taking over: the turn says from what to what, and what it carried (ADR-0125); the Timeline
         // draws it as a divider
         crate::handoff::mark_turn(&mut turn, fresh, (&was, &was_model), (&s.agent, &s.model), item.opts.as_ref());
         let ctx = run_ctx(&s, &turn, &item);

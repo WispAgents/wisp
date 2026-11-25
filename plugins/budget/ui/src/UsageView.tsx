@@ -70,7 +70,7 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
   const tzOffsetMin = -new Date().getTimezoneOffset();
   const [u] = createResource(days, (d) => c.run(usage, { peer: c.home, days: d, tzOffsetMin }).catch(() => undefined));
   // each harness's plan windows (budget.view), for its card's limit and reset; none read is 'not reported'. A view of
-  // Cursor, opencode or Grok starts a background read of its CLI (ADR-0123): when it lands, the harness gets its first
+  // Cursor, opencode or Grok starts a background read of its CLI (ADR-0124): when it lands, the harness gets its first
   // budget_acc row and this reads again, so the card shows the tier or spend the CLI gave.
   const scope = c.scope.child('usage-view');
   onCleanup(() => scope.dispose());

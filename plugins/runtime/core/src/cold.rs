@@ -26,7 +26,7 @@ const COMPACT_WRITE: f64 = 30_000.0;
 const WRITE_1H: f64 = 2.0;
 const WRITE_5M: f64 = 1.25;
 
-// One price table for the whole runtime (ADR-0123): Compact now and Usage's estimates read the same numbers.
+// One price table for the whole runtime (ADR-0124): Compact now and Usage's estimates read the same numbers.
 pub use crate::prices::{bare_model, price};
 
 fn agent<'a>(s: &'a Session, t: &'a Turn) -> &'a str {

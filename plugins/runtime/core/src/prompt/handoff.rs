@@ -133,7 +133,7 @@ pub struct Handoff<'a> {
     pub shared_from: Option<SharedFrom>,
     /// the task's goal while one is in progress (wisp.goal's slot)
     pub done_when: &'a str,
-    /// Continue on…'s "summary only" (ADR-0124): of the turns it missed, only the latest goes (its report and files),
+    /// Continue on…'s "summary only" (ADR-0125): of the turns it missed, only the latest goes (its report and files),
     /// with the user's rules; the rest are counted, not written out
     pub summary_only: bool,
 }

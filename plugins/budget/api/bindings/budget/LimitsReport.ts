@@ -32,11 +32,11 @@ read?: boolean,
  */
 banked?: Banked, 
 /**
- * the plan or tier the CLI names (Cursor's `about`: "Pro"). Additive (2026-11-25, ADR-0123).
+ * the plan or tier the CLI names (Cursor's `about`: "Pro"). Additive (2026-11-25, ADR-0124).
  */
 plan?: string, 
 /**
  * what the CLI itself says was spent and used lately (opencode `stats --days 7`, grok `usage`). Additive
- * (2026-11-25, ADR-0123).
+ * (2026-11-25, ADR-0124).
  */
 spent?: CliSpend, };

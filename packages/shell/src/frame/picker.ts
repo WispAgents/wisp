@@ -19,7 +19,7 @@ export type SubLine =
   | { readonly k: 'used'; readonly label: string; readonly pct: number; readonly resetsIn?: number; readonly full?: true }
   | { readonly k: 'models'; readonly n: number }
   | { readonly k: 'default' }
-  /** its plan was read and it has no window: "limits not reported by Cursor" (harness audit r2, ADR-0123) */
+  /** its plan was read and it has no window: "limits not reported by Cursor" (harness audit r2, ADR-0124) */
   | { readonly k: 'unreported' }
   /** nothing to say yet: its usage hasn't been read (UX 2026-11-18 #9: the model count was noise when picking a harness) */
   | { readonly k: 'none' };

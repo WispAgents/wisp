@@ -1,4 +1,4 @@
-//! Harnesses with no quota windows (ADR-0123): `budget.view` reads `accounts.limits` for Cursor, opencode and Grok in
+//! Harnesses with no quota windows (ADR-0124): `budget.view` reads `accounts.limits` for Cursor, opencode and Grok in
 //! the background, and the next view carries what their CLI said: Cursor's tier (`plan`), and what opencode and Grok
 //! total as spent (`spent`). The bodies below are what each harness host's `live_limits` returns (its own tests parse
 //! them from captured CLI output).

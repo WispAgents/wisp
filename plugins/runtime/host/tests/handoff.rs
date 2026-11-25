@@ -191,10 +191,10 @@ async fn set_agent_during_a_run_keeps_the_old_conversation_off_the_new_harness()
     assert_eq!((s.agent.as_str(), s.resume_id.as_deref()), ("other", None));
 }
 
-/// Continue on… (ADR-0124): a hand-off that asks for the summary only carries the latest turn it missed, not the ones
+/// Continue on… (ADR-0125): a hand-off that asks for the summary only carries the latest turn it missed, not the ones
 /// before; the turn records the switch (from, to and the context); the preview sizes both choices with the same note.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_summary_only_handoff_carries_the_latest_turn_and_records_the_switch_adr_0124() {
+async fn a_summary_only_handoff_carries_the_latest_turn_and_records_the_switch_adr_0125() {
     use wisp_runtime_api::commands::HandoffContext;
     let r = rig_on(Recorder::default(), vec![Fake::named("fake", "Fake CLI", &["low"]), Fake::named("other", "Other CLI", &["low"])]).await;
     let start = StartArgs {

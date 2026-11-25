@@ -13,6 +13,6 @@ date: string, agent: string, cost: number, tokens: number,
  */
 cache_read: number, turns: number, 
 /**
- * `cost` holds a list-price estimate (ADR-0123)
+ * `cost` holds a list-price estimate (ADR-0124)
  */
 cost_estimated: boolean, };
