@@ -17,7 +17,9 @@ export function HaltCard(props: {
   readonly nameOf: (agent: string) => string;
   readonly onSignIn: () => void;
   readonly onRetry: () => void;
-  readonly onHand: (to: Target) => Promise<unknown>;
+  /** a hand-off offered: Continue on… opens on that harness (void, nothing locks: the dialog may be cancelled), or a
+   *  promise the buttons stay locked for */
+  readonly onHand: (to: Target) => Promise<unknown> | void;
   /** a limit's Wait until: the carry-on follow-up at the reset */
   readonly onWait?: (until: number) => Promise<unknown>;
 }): JSX.Element {
@@ -36,8 +38,10 @@ export function HaltCard(props: {
     return x.kind === 'signedOut' ? props.t('shell-task.halt.signedOutWhy') : x.text;
   };
   const hand = (to: Target): void => {
+    const p = props.onHand(to);
+    if (!p) return;
     setLocked(true);
-    props.onHand(to).catch(() => setLocked(false)); // the shell's toast says why
+    p.catch(() => setLocked(false)); // the shell's toast says why
   };
   const handButtons = (): JSX.Element => (
     <For each={props.targets}>

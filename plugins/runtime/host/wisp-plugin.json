@@ -400,6 +400,12 @@
         "readOnly": true
       },
       {
+        "id": "runtime.handoffPreview",
+        "title": "What continuing a task on another harness would carry over: the latest summary, the files, the turns it missed and each choice's size",
+        "readOnly": true,
+        "uiOnly": "Continue on…'s preview sheet; an agent hands a task on with runtime_followUp's run and handoff"
+      },
+      {
         "id": "runtime.projectTest",
         "title": "Set the command that runs a project's tests"
       },

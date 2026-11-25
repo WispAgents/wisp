@@ -91,6 +91,9 @@ export const INPUTS = {
   'shell.task:screen': 'task.screen',
   // added 2026-11-10 (additive): under each turn (its key as the id), what plugins say of it (why it stopped, held, the receipt)
   'shell.turn:foot': 'turn.foot',
+  // added 2026-11-25 (additive, ADR-0120): over each turn (its key as the id), a line before it (shell-task's harness
+  // switch divider: "Switched from Claude Code (Opus) to Codex · context: summary")
+  'shell.turn:head': 'turn.head',
   // added 2026-11-17 (additive, ADR-0095): in a turn's trail, after its token count, one line with it (its key as the id):
   // the receipt's cache and plan share (v1 receipt.js, receiptHtml inside .trail-bar)
   'shell.turn:trail': 'turn.trail',

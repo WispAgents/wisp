@@ -133,6 +133,9 @@ pub struct Handoff<'a> {
     pub shared_from: Option<SharedFrom>,
     /// the task's goal while one is in progress (wisp.goal's slot)
     pub done_when: &'a str,
+    /// Continue on…'s "summary only" (ADR-0120): of the turns it missed, only the latest goes (its report and files),
+    /// with the user's rules; the rest are counted, not written out
+    pub summary_only: bool,
 }
 
 impl Handoff<'_> {
@@ -374,7 +377,8 @@ pub fn handoff_note(h: &Handoff<'_>, render: Render<'_>) -> String {
     let missed: Vec<&PastTurn<'_>> = idx.iter().map(|&i| &h.turns[i]).collect();
     let mut parts: Vec<String> = Vec::new();
     let mut used = 0;
-    for &i in idx.iter().rev() {
+    let written: &[usize] = if h.summary_only { &idx[idx.len() - 1..] } else { &idx };
+    for &i in written.iter().rev() {
         let text = turn_text(&h.turns[i], i + 1, render);
         let len = super::text::len16(&text);
         if used + len > BUDGET && !parts.is_empty() {
@@ -391,7 +395,9 @@ pub fn handoff_note(h: &Handoff<'_>, render: Render<'_>) -> String {
         "## Earlier in this task".to_owned(),
         intro(h, &missed, &others, &places),
         keep_note(h.turns, h.done_when),
-        if dropped > 0 {
+        if dropped > 0 && h.summary_only {
+            format!("_{dropped} earlier turn{} left out: this hand-off carries the latest turn only._", if dropped > 1 { "s" } else { "" })
+        } else if dropped > 0 {
             format!("_{dropped} earlier turn{} left out for length._", if dropped > 1 { "s" } else { "" })
         } else {
             String::new()

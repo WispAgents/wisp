@@ -341,6 +341,66 @@ pub struct FollowUpArgs {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub fresh: bool,
+    /// Continue on… (ADR-0120): with a switch to another harness, what goes ahead of the prompt: the latest turn only
+    /// (`summary`) or every turn it missed (`full`, as a switch without it does). Additive (2026-11-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub handoff: Option<HandoffContext>,
+}
+
+/// What a hand-off to another harness carries (ADR-0120).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "runtime/")]
+pub enum HandoffContext {
+    /// the latest turn's report and files, and the user's rules
+    Summary,
+    /// every turn the harness taking over missed (up to the note's length budget)
+    #[default]
+    Full,
+}
+
+impl HandoffContext {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Summary => "summary",
+            Self::Full => "full",
+        }
+    }
+}
+
+/// `runtime.handoffPreview`: what Continue on… would carry to `agent` (ADR-0120). Read-only.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct HandoffPreviewArgs {
+    pub id: SessionId,
+    pub agent: String,
+}
+
+/// One choice of the preview: how many turns it writes out and about how many tokens the note is (4 chars a token).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct HandoffChoice {
+    pub turns: u32,
+    #[ts(type = "number")]
+    pub tokens: u64,
+}
+
+/// What carries over, built by the same code the hand-off runs (handoff.rs): the latest summary, the files the task
+/// touched, the turns the harness missed, and each choice's size. `missed` 0: it has seen everything.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct HandoffPreviewView {
+    /// the latest turn's hero summary ('' none)
+    pub summary: String,
+    /// files the task's reports list, latest first
+    pub files: Vec<String>,
+    /// the turns the harness taking over missed
+    pub missed: u32,
+    /// the user's rules that go along (What still holds)
+    pub rules: u32,
+    pub brief: HandoffChoice,
+    pub full: HandoffChoice,
 }
 
 /// Where a follow-up went: a new turn, or a place in the queue.

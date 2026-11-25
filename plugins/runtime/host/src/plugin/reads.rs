@@ -27,6 +27,8 @@ pub(super) fn reads(s: &mut Setup, slot: &Slot) {
             r.lock_list().values().map(|x| (x.id.as_str().to_owned(), x.cwd.clone())).collect();
         Ok(wisp_runtime_core::usage::breakdown(&turns, from, r.now(), tz, &|id| cwd.get(id).cloned()))
     });
+    // Continue on…'s preview: what a hand-off to `agent` would carry, built by the hand-off's own note (ADR-0120)
+    cmd!(s, slot, c::HandoffPreview, |r, call, a| r.handoff_preview(a.id.as_str(), &a.agent).await);
     exec(s, slot);
     cmd!(s, slot, c::AppState, |r, call, a| r.app_state(a.id.as_str(), a.turn_id.as_str(), &a.block, a.state).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::TurnSetExt, |r, call, a| {
