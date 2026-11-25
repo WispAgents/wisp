@@ -1,12 +1,14 @@
 /* Toasts (v1's palette.css): light cards bottom centre. Zag's group machine sets --x, --y,
    --scale, --opacity, --height and --z-index on each card; the newest is in front and the rest
-   peek out behind it until pointed at. The shell sets --toast-bottom to clear a pinned reply box. */
+   peek out behind it until pointed at. The dock scope (toast-dock-scope.ts) sets --toast-bottom to clear a pinned
+   reply box, and --toast-x / --toast-room to centre the stack on the main pane, not the window, so the sidebar
+   (open or collapsed) never moves it off the middle of the page. */
 @layer kit {
   [data-kit='toasts'] {
-    z-index: var(--z-toast); translate: -50% 0; width: min(var(--size-toast), calc(100vw - var(--space-8)));
+    z-index: var(--z-toast); translate: -50% 0; width: min(var(--size-toast), calc(var(--toast-room, 100vw) - var(--space-8)));
     /* !important: Zag sets inset-inline-start/-end inline (1rem from each edge), which put the centred stack half
        off the left edge; bottom centre is v1's place. */
-    left: 50% !important; right: auto !important;
+    left: var(--toast-x, 50%) !important; right: auto !important;
     /* !important: Zag sets bottom inline from its offsets; the kit owns the clearance instead. */
     bottom: calc(var(--toast-bottom, var(--space-8)) + env(safe-area-inset-bottom, 0px)) !important;
   }
