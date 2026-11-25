@@ -10,6 +10,7 @@ import { BlockHost, useBlockT } from './context.tsx';
 import { BLOCKS } from './registry.ts';
 import type { AnswerBlock, BlockContext, BlockRenderer } from './types.ts';
 import { UnknownBlock } from './Unknown.tsx';
+import { PendingBlock } from './Pending.tsx';
 import { BlockComment, CommentLayer, commentable, createCommenting } from './answer-comments.tsx';
 import '../css/answer.css';
 import '../css/answer-content.css';
@@ -34,7 +35,9 @@ export function asBlock(v: unknown): AnswerBlock {
 }
 
 export function rendererFor(type: string, ctx: BlockContext | undefined): BlockRenderer | undefined {
-  return ctx?.renderers?.[type] ?? (Object.hasOwn(BLOCKS, type) ? BLOCKS[type] : undefined);
+  // `pending`: a block a chat message is still streaming (the shell's chat-blocks.ts), held by a skeleton in its
+  // place. Not an agent's block type (not in BLOCKS): a host's own renderer for it still wins.
+  return ctx?.renderers?.[type] ?? (Object.hasOwn(BLOCKS, type) ? BLOCKS[type] : type === 'pending' ? PendingBlock : undefined);
 }
 
 function FallbackNote(): JSX.Element {

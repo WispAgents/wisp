@@ -13,5 +13,8 @@
     "dev": "node scripts/reference.mjs && astro dev",
     "build": "node scripts/reference.mjs && astro build && node scripts/check-sidebar.mjs && node scripts/llms.mjs",
     "preview": "astro preview"
+  },
+  "dependencies": {
+    "mermaid": "12.3.0"
   }
 }

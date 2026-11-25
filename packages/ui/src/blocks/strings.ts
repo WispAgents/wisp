@@ -15,6 +15,8 @@ export const BLOCK_STRINGS = {
   'block.showAll': 'Show all',
   'block.showLess': 'Show less',
   'block.open': 'Open',
+  'block.pending': 'Preparing a block…',
+  'block.pending.of': 'Preparing a {type} block…',
   'block.keep.save': 'Save to My Stuff',
   'block.keep.saved': 'In My Stuff: click to remove it',
   'block.comment': 'Comment',

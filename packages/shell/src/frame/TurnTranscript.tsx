@@ -51,7 +51,9 @@ export function stepOutput(a: TranscriptStepRow, maskOn: boolean, shown: boolean
 
 type FileFigures = ReadonlyMap<string, { readonly plus: number; readonly minus: number }>;
 
-function MessageBody(props: { readonly text: string; readonly here: (s: string) => string; readonly chat: boolean; readonly answerCtx?: BlockContext | undefined }): JSX.Element {
+/** An agent's message mid-turn: Markdown, or (chat mode) an Answer once it holds a ```wisp fence. The Answer draws
+ *  its entries by index, so the prose before a fence keeps its DOM node while the block streams in and lands. */
+export function MessageBody(props: { readonly text: string; readonly here: (s: string) => string; readonly chat: boolean; readonly answerCtx?: BlockContext | undefined }): JSX.Element {
   const raw = createMemo(() => props.here(props.text));
   const inline = createMemo(() => (props.chat && props.answerCtx ? parseInlineChatBlocks(raw()) : undefined));
   return (

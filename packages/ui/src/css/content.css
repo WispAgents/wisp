@@ -123,6 +123,11 @@
   [data-kit='skeleton'][data-shape='block'] { height: var(--k-h, var(--size-control-md)); border-radius: var(--radius-control); }
   [data-kit='skeleton'][data-shape='circle'] { display: inline-block; width: var(--k-h, var(--size-avatar-md)); height: var(--k-h, var(--size-avatar-md)); border-radius: 50%; }
   [data-kit='skeleton'][data-shape='pill'] { display: inline-block; width: var(--k-w, var(--size-time-col)); height: var(--k-h, var(--size-pill)); border-radius: var(--radius-pill); }
+  /* A labelled one says what is coming, quietly, in its corner. */
+  [data-kit='skeleton'][data-label] {
+    padding: var(--space-4) var(--space-6); color: var(--faint); font-size: var(--fs-xs); line-height: var(--lh-tight);
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
 
   /* v1 .setup-cmd: a command to copy; in a settings row's line, on its own line 6px under the text */
   [data-kit='copy-command'] {

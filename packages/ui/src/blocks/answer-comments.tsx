@@ -14,7 +14,7 @@ import { useFrame, useTimeout } from './rich-scope.ts';
 import type { AnswerBlock, AnswerCommentAt, AnswerCommentMark, AnswerComments } from './types.ts';
 
 // Blocks that are buttons already: commenting on them means nothing (v1 SKIP)
-const SKIP = new Set(['next', 'actions', 'question', 'blocked', 'spell']);
+const SKIP = new Set(['next', 'actions', 'question', 'blocked', 'spell', 'pending']);
 export const commentable = (type: string): boolean => !SKIP.has(type);
 
 /** What the card sits beside: the block's button, or the words picked (their range, kept past the selection). */

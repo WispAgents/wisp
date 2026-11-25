@@ -2,9 +2,10 @@
 // anything (`<script>`, `<img onerror>`) and it shows as text. Blocks that didn't change keep
 // their DOM nodes while the source grows (a streaming answer), so nothing flickers or replays.
 import { Dynamic } from 'solid-js/web';
-import { createMemo, Index, type Accessor, type JSX } from 'solid-js';
+import { createMemo, Index, Show, type Accessor, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../../core/props.ts';
 import { Code } from '../Code.tsx';
+import { Mermaid } from '../Mermaid.tsx';
 import type { Block, Inline, ListItem } from './ast.ts';
 import { parseMarkdown } from './block.ts';
 
@@ -86,6 +87,9 @@ function table(b: Extract<Block, { t: 'table' }>, ctx: Ctx): JSX.Element {
   );
 }
 
+/** A closed ```mermaid fence (any case): drawn as a diagram. Open, it is still arriving and stays code. */
+const isDiagram = (b: Extract<Block, { t: 'code' }>): boolean => !b.open && b.lang.toLowerCase() === 'mermaid';
+
 function block(b: Block, ctx: Ctx, tight: boolean): JSX.Element {
   switch (b.t) {
     case 'heading': {
@@ -94,7 +98,13 @@ function block(b: Block, ctx: Ctx, tight: boolean): JSX.Element {
     }
     // A tight list's paragraphs are bare text in their items, as GFM renders them.
     case 'paragraph': return tight ? <>{inlines(b.c, ctx)}</> : <p data-kit="md-p">{inlines(b.c, ctx)}</p>;
-    case 'code': return <Code block lang={b.lang} part={sub(ctx.part, 'code-block')}>{b.v}</Code>;
+    // A diagram draws once its fence has closed; while it streams it is code, so a half-written graph never errors.
+    case 'code':
+      return isDiagram(b) ? (
+        <Mermaid source={b.v} part={sub(ctx.part, 'mermaid')} />
+      ) : (
+        <Code block lang={b.lang} part={sub(ctx.part, 'code-block')}>{b.v}</Code>
+      );
     case 'list': {
       const items = b.items.map((it) => item(it, ctx, b.tight));
       return b.ordered ? (
@@ -106,6 +116,15 @@ function block(b: Block, ctx: Ctx, tight: boolean): JSX.Element {
     case 'quote': return <blockquote data-kit="md-quote">{blocks(b.c, ctx, false)}</blockquote>;
     case 'table': return table(b, ctx);
     case 'hr': return <hr data-kit="md-hr" />;
+    // Native <details>: the browser opens and closes it, with no script. One still streaming shows open.
+    case 'details':
+      return (
+        <details data-kit="md-details" data-part={sub(ctx.part, 'details')} open={b.open || !b.closed}>
+          {/* without one the browser names it itself ("Details", in the page's language) */}
+          {b.summary ? <summary data-kit="md-summary">{inlines(b.summary, ctx)}</summary> : null}
+          {blocks(b.c, ctx, false)}
+        </details>
+      );
     default: {
       const never: never = b;
       return never;
@@ -166,7 +185,12 @@ export function sameBlock(a: Block, b: Block): boolean {
       return sameInlines(a.c, (b as typeof a).c);
     case 'code': {
       const o = b as typeof a;
-      return a.lang === o.lang && a.v === o.v;
+      return a.lang === o.lang && a.v === o.v && a.open === o.open;
+    }
+    case 'details': {
+      const o = b as typeof a;
+      if (a.open !== o.open || a.closed !== o.closed || !sameBlocks(a.c, o.c)) return false;
+      return a.summary === null || o.summary === null ? a.summary === o.summary : sameInlines(a.summary, o.summary);
     }
     case 'quote':
       return sameBlocks(a.c, (b as typeof a).c);
@@ -198,7 +222,17 @@ export function sameBlock(a: Block, b: Block): boolean {
 
 function TopBlock(props: { readonly block: Accessor<Block>; readonly ctx: Ctx }): JSX.Element {
   const stable = createMemo(() => props.block(), undefined, { equals: sameBlock });
-  return <>{block(stable(), props.ctx, false)}</>;
+  // A diagram keeps its component while its source changes (an edited or re-streamed fence), so it shows the last
+  // drawing until the next one is ready instead of a fresh skeleton, and its own debounce sees every change.
+  const diagram = createMemo(() => {
+    const b = stable();
+    return b.t === 'code' && isDiagram(b) ? b.v : undefined;
+  });
+  return (
+    <Show when={diagram() !== undefined} fallback={<>{block(stable(), props.ctx, false)}</>}>
+      <Mermaid source={diagram() ?? ''} part={sub(props.ctx.part, 'mermaid')} />
+    </Show>
+  );
 }
 
 export function Markdown(props: MarkdownProps): JSX.Element {

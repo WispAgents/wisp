@@ -5,7 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Markdown (answers, transcript, docs, the docs site): ```mermaid fences draw as diagrams (ADR-0118). mermaid is bundled with wisp (no CDN, works offline and in the phone apps) and loads only when a page shows a diagram, never with the first screen; it runs at its strict security level, follows light and dark, and a fence still streaming stays code until it closes. Each diagram has a bar to copy its source, switch to its code and back, and open it full size with zoom; a source that can't render shows as code with a short note saying why.
+- Markdown: setext headings (`Title` over `=====` or `---`) are headings; `<details>` with an optional one-line `<summary>` is a native collapsible section (its body is Markdown; one still streaming shows open; every other HTML stays text); ```diff and ```patch fences colour added, removed, hunk and header lines like the diff view.
+
 ### Fixed
+
+- Chat mode: a ```wisp block streaming into a message no longer flashes its raw JSON as a code block, then swaps the whole message: the message is an answer from the opener on, the block's place holds a skeleton named by its type until its JSON closes, and the prose before it keeps its place (and its text selection).
 
 - Grid (security): a request into a box or sandbox no longer carries a client's own copy of the grid's marks (`x-wisp-preview`, `x-wisp-route`, `x-wisp-upgrade`, `x-wisp-tunnel`, `x-wisp-proxy-*`, `x-forwarded-*`), and a box's `Domain=` cookies never reach the browser; a cookie-signed write to the grid's `/api/` from another origin is refused (403); a box's secret no longer reaches `/api/teams` or `GET /api/computers`; a grid cookie sent twice signs nobody in. A grid box's formula reads no secret through `file()`, the environment or a module folder in wisp's home.
 

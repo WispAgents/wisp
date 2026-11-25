@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { after } from 'node:test';
-import { BUDGETS, FIRST_SCREEN_BUDGETS, SERVER_BUDGETS, initialFiles, measure, overBudget, summary } from '../budgets.ts';
+import { BUDGETS, FIRST_SCREEN_BUDGETS, LAZY_CHUNK_BUDGETS, SERVER_BUDGETS, initialFiles, measure, overBudget, summary } from '../budgets.ts';
 import { beforeMark } from '../first-screen.ts';
 
 const roots: string[] = [];
@@ -175,4 +175,21 @@ test('budgets: each look is gated at its own ratchet and the entry at the target
   assert.match(sum, /\| first screen JS \(desktop\) \|.*\| 3\.4 KB \|.*❌ over by/);
   assert.match(sum, /\| first screen CSS \(phone\) \|.*\| 64\.0 KB \|.*✅ \|/);
   assert.match(sum, /\| initial JS \| [\d.]+ KB \| 120\.0 KB \|.*✅ \|/);
+});
+
+test('budgets: a lazy chunk over its own ceiling is a miss that names it; mermaid is never on the first screen', () => {
+  const root = dist();
+  writeFileSync(join(root, 'assets/mermaid.core-h1.js'), randomBytes(3000));
+  writeFileSync(join(root, 'assets/elk-i2.js'), randomBytes(2000));
+  const lazyOnly = measure(root, { desktop: { js: ['/assets/index-a.js'], css: ['/assets/index-c.css'] } });
+  assert.ok(lazyOnly.lazy.some((l) => l.file === 'assets/mermaid.core-h1.js'));
+  assert.deepEqual(overBudget(lazyOnly), []);
+  const tight = overBudget(lazyOnly, BUDGETS, FIRST_SCREEN_BUDGETS, [{ name: 'mermaid', pattern: /^assets\/mermaid\.core-[\w-]+\.js$/, brMax: 1024 }], 1024);
+  assert.ok(tight.some((o) => /^lazy chunk mermaid mermaid\.core-h1\.js [\d.]+ KB br > 1\.0 KB$/.test(o)), tight.join('\n'));
+  assert.ok(tight.some((o) => /^lazy chunk elk-i2\.js /.test(o)), tight.join('\n'));
+  // the real build's mermaid entry is named, and a look that loads it first fails
+  const mermaid = LAZY_CHUNK_BUDGETS.find((b) => b.name === 'mermaid');
+  assert.ok(mermaid?.neverFirst && mermaid.pattern.test('assets/mermaid.core-Cg3TSjcw.js'));
+  const first = measure(root, { phone: { js: ['/assets/index-a.js', '/assets/mermaid.core-h1.js'], css: ['/assets/index-c.css'] } });
+  assert.deepEqual(overBudget(first), ['mermaid chunk mermaid.core-h1.js is on the first screen: it loads lazily only']);
 });

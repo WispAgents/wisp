@@ -1,8 +1,8 @@
 // A tiny highlighter for code blocks: comments, strings, numbers, keywords and capitalised type
 // names, nothing else. It makes spans (never HTML). Plain text and very large blocks render plain; a language it
-// doesn't name gets the C-like rules, as v1's did.
+// doesn't name gets the C-like rules, as v1's did. A diff or patch is coloured a line at a time, as the diff view is.
 
-export type TokenKind = 'k' | 's' | 'c' | 'n' | 't';
+export type TokenKind = 'k' | 's' | 'c' | 'n' | 't' | 'add' | 'del' | 'hunk' | 'meta';
 
 export interface Token {
   readonly kind: TokenKind | null;
@@ -49,8 +49,39 @@ function kindOf(m: RegExpExecArray): TokenKind | null {
   return /^[A-Z][\w$-]*$/.test(word) ? 't' : null;
 }
 
+const DIFF = ['diff', 'patch'];
+
+/** A diff's kind of line: `+++`/`---` file headers before `+`/`-`, so a header is never an added or removed line. */
+function diffKind(line: string): TokenKind | null {
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ') || line.startsWith('index ')) return 'meta';
+  if (line.startsWith('@@')) return 'hunk';
+  if (line.startsWith('+')) return 'add';
+  if (line.startsWith('-')) return 'del';
+  return null;
+}
+
+/** One token per line (the line ends stay plain), and nothing coloured inside a line: it's the change that matters. */
+function diffTokens(code: string): Token[] {
+  const out: Token[] = [];
+  const lines = code.split('\n');
+  lines.forEach((line, i) => {
+    const nl = i < lines.length - 1 ? '\n' : '';
+    const kind = diffKind(line);
+    const last = out[out.length - 1];
+    if (kind && line) out.push({ kind, text: line });
+    else if (last && last.kind === null) out[out.length - 1] = { kind: null, text: last.text + line };
+    else if (line) out.push({ kind: null, text: line });
+    if (!nl) return;
+    const tail = out[out.length - 1];
+    if (tail && tail.kind === null) out[out.length - 1] = { kind: null, text: tail.text + nl };
+    else out.push({ kind: null, text: nl });
+  });
+  return out.length > 0 ? out : [{ kind: null, text: code }];
+}
+
 /** Splits `code` into tokens; plain text has `kind: null`. Joining the texts gives `code` back. */
 export function highlight(code: string, lang: string | undefined): Token[] {
+  if (lang && DIFF.includes(lang.toLowerCase()) && code.length <= MAX) return diffTokens(code);
   const rules = lang ? family(lang) : null;
   if (!rules || code.length > MAX) return [{ kind: null, text: code }];
   const re = new RegExp(rules.source, 'g');

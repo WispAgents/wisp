@@ -95,6 +95,13 @@ export function RichGallery(): JSX.Element {
       <Specimen title="Markdown, streaming" note="An unclosed fence renders as code while it arrives.">
         <Markdown source={'Working on it:\n\n```sh\nnpm test\nnpm run build'} />
       </Specimen>
+      <Specimen title="Markdown, more" note="A mermaid diagram (lazy, strict, themed), a setext heading, a <details> and a coloured diff fence.">
+        <Markdown
+          source={
+            'Release\n=======\n\n```mermaid\nflowchart LR\n  A[Plan] --> B{Tests pass?}\n  B -->|yes| C[Ship]\n  B -->|no| A\n```\n\n<details>\n<summary>What changed</summary>\n\nThe **limiter** now resets.\n</details>\n\n```diff\n--- a/limiter.ts\n+++ b/limiter.ts\n@@ -1,2 +1,2 @@\n-  return x\n+  return reset(x)\n```'
+          }
+        />
+      </Specimen>
       <Specimen title="Diff" note="Modified, added, deleted, renamed and binary files.">
         <Diff diff={DIFF} binaryLabel="Binary file not shown" />
       </Specimen>

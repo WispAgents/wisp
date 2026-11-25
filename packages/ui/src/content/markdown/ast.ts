@@ -19,7 +19,8 @@ export interface ListItem {
 export type Block =
   | { readonly t: 'heading'; readonly level: 1 | 2 | 3 | 4 | 5 | 6; readonly c: readonly Inline[] }
   | { readonly t: 'paragraph'; readonly c: readonly Inline[] }
-  | { readonly t: 'code'; readonly lang: string; readonly v: string }
+  /** `open`: a fence still waiting for its closer (a streaming answer); indented code is never open. */
+  | { readonly t: 'code'; readonly lang: string; readonly v: string; readonly open: boolean }
   | { readonly t: 'list'; readonly ordered: boolean; readonly start: number; readonly tight: boolean; readonly items: readonly ListItem[] }
   | { readonly t: 'quote'; readonly c: readonly Block[] }
   | {
@@ -28,7 +29,12 @@ export type Block =
       readonly head: readonly (readonly Inline[])[];
       readonly rows: readonly (readonly (readonly Inline[])[])[];
     }
-  | { readonly t: 'hr' };
+  | { readonly t: 'hr' }
+  /**
+   * `<details>`, the one HTML block that renders (as native elements, never innerHTML). `open` is the
+   * tag's own attribute; `closed` is whether `</details>` arrived, so one still streaming shows open.
+   */
+  | { readonly t: 'details'; readonly open: boolean; readonly summary: readonly Inline[] | null; readonly c: readonly Block[]; readonly closed: boolean };
 
 const SAFE_SCHEMES = new Set(['http', 'https', 'mailto']);
 

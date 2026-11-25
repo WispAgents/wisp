@@ -71,4 +71,37 @@
   [data-tk='c'] { color: var(--tk-c); font-style: italic; }
   [data-tk='n'] { color: var(--tk-n); }
   [data-tk='t'] { color: var(--tk-t); }
+  /* ```diff / ```patch: the diff view's own colours, a line at a time. */
+  [data-tk='add'] { color: var(--add); background: var(--add-bg); }
+  [data-tk='del'] { color: var(--del); background: var(--del-bg); }
+  [data-tk='hunk'] { color: var(--faint); }
+  [data-tk='meta'] { color: var(--ink); font-weight: var(--fw-semibold); }
+
+  /* <details>: a native disclosure, drawn as a quiet card. */
+  [data-kit='md-details'] {
+    margin: 0 0 var(--space-6); padding: var(--space-3) var(--space-6); border: var(--size-hairline) solid var(--line);
+    border-radius: var(--radius-lg); background: var(--surface);
+  }
+  [data-kit='md-details'][open] { padding-bottom: var(--space-6); }
+  [data-kit='md-details'] > *:last-child { margin-bottom: 0; }
+  [data-kit='md-summary'] { color: var(--ink); font-weight: var(--fw-semibold); cursor: pointer; border-radius: var(--radius-xs); }
+  [data-kit='md-details'][open] > [data-kit='md-summary'] { margin-bottom: var(--space-4); }
+
+  /* ```mermaid: the diagram in a code block's frame, its bar on top (ADR-0118). */
+  [data-kit='mermaid'] {
+    margin: 0 0 var(--space-6); min-width: 0; overflow: hidden; border: var(--size-hairline) solid var(--line);
+    border-radius: var(--radius-lg); background: var(--surface);
+  }
+  [data-kit='mermaid-bar'] {
+    display: flex; align-items: center; gap: var(--space-2); min-height: var(--size-control-md); padding: 0 var(--space-3) 0 var(--space-6);
+    border-bottom: var(--size-hairline) solid var(--line); background: var(--surface-2);
+  }
+  [data-kit='mermaid-label'] {
+    flex: 1; min-width: 0; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  [data-kit='mermaid-svg'] { display: flex; justify-content: center; padding: var(--space-6); overflow-x: auto; }
+  [data-kit='mermaid-svg'] > svg { max-width: 100%; height: auto; }
+  [data-kit='mermaid'] > [data-kit='skeleton'] { margin: var(--space-6); width: auto; }
+  [data-kit='mermaid'] > [data-kit='code-block'] { border: 0; border-radius: 0; }
+  [data-kit='mermaid-note'] { padding: var(--space-3) var(--space-6); border-top: var(--size-hairline) solid var(--line); font-size: var(--fs-xs); color: var(--muted); }
 }
