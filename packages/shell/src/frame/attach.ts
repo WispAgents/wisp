@@ -54,11 +54,14 @@ export interface Attachments {
 
 export function useAttachments(shell: ShellContext, peer: () => PeerId): Attachments {
   const [files, setFiles] = createSignal<readonly File[]>([]);
-  const going = new Map<File, Promise<Attachment | undefined>>();
+  // each upload with the computer it went to: the launch target can change after a file is picked (New task's
+  // Run on), and an attachment ref is only an id that computer knows, so take() sends it again to the new one
+  const going = new Map<File, { peer: PeerId; up: Promise<Attachment | undefined> }>();
   const start = (f: File): void => {
-    going.set(
-      f,
-      upload(shell, peer(), [f]).then(
+    const to = peer();
+    going.set(f, {
+      peer: to,
+      up: upload(shell, to, [f]).then(
         (a) => a[0],
         (e: unknown) => {
           shell.toast.error(shell.t('shell.attach.failed', { name: f.name, why: e instanceof Error ? e.message : String(e) }));
@@ -66,7 +69,7 @@ export function useAttachments(shell: ShellContext, peer: () => PeerId): Attachm
           return undefined;
         },
       ),
-    );
+    });
   };
   const add = (list: readonly File[]): void => {
     const at = Date.now();
@@ -84,7 +87,12 @@ export function useAttachments(shell: ShellContext, peer: () => PeerId): Attachm
     take: async () => {
       const now = files();
       setFiles([]);
-      const done = await Promise.all(now.map((f) => going.get(f) ?? Promise.resolve(undefined)));
+      const to = peer();
+      for (const f of now) {
+        const g = going.get(f);
+        if (g && g.peer !== to) start(f);
+      }
+      const done = await Promise.all(now.map((f) => going.get(f)?.up ?? Promise.resolve(undefined)));
       now.forEach((f) => going.delete(f));
       return done.filter((a): a is Attachment => a !== undefined);
     },

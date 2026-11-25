@@ -587,11 +587,12 @@ export const btwOf = (row: SessionRow | undefined): readonly BtwRow[] => {
   const ext = (row?.body as { ext?: { 'wisp.runtime'?: { btw?: unknown } } } | undefined)?.ext?.['wisp.runtime']?.btw;
   return Array.isArray(ext) ? (ext as BtwRow[]) : [];
 };
-const withBtw = (row: SessionRow | undefined, list: readonly BtwRow[]): LocalOp[] => {
+// `key` is the cell's EntityKey (a.id), not row.id: on a real peer the row's own id is bare, its cell `peer:id`
+const withBtw = (key: string, row: SessionRow | undefined, list: readonly BtwRow[]): LocalOp[] => {
   if (!row?.body) return [];
   const ext = ((row.body as { ext?: Record<string, unknown> }).ext ?? {}) as Record<string, unknown>;
   const own = (ext['wisp.runtime'] ?? {}) as Record<string, unknown>;
-  return [{ e: SESSION, id: row.id as EntityKey, op: 'patch', ops: [{ op: 'add', path: '/body/ext', value: { ...ext, 'wisp.runtime': { ...own, btw: list } } as never }] }];
+  return [{ e: SESSION, id: key as EntityKey, op: 'patch', ops: [{ op: 'add', path: '/body/ext', value: { ...ext, 'wisp.runtime': { ...own, btw: list } } as never }] }];
 };
 
 /** /btw: answered on the side, the run carries on (v1 btw.js); it shows at once, answering. */
@@ -601,7 +602,7 @@ export const btw = defineCommand<{ id: string; question: string; tmp: string; at
   wire: (a) => ({ id: bare(a.id), question: a.question }),
   optimistic: (base, a) => {
     const row = base.peek<SessionRow>(SESSION, a.id as EntityKey) as SessionRow | undefined;
-    return withBtw(row, [...btwOf(row), { id: a.tmp, question: a.question, at: a.at, pending: true }]);
+    return withBtw(a.id, row, [...btwOf(row), { id: a.tmp, question: a.question, at: a.at, pending: true }]);
   },
 });
 
@@ -613,6 +614,7 @@ export const btwDrop = defineCommand<{ id: string; btwId: string }>({
   optimistic: (base, a) => {
     const row = base.peek<SessionRow>(SESSION, a.id as EntityKey) as SessionRow | undefined;
     return withBtw(
+      a.id,
       row,
       btwOf(row).filter((b) => b.id !== a.btwId),
     );
