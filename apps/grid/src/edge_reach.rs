@@ -221,16 +221,13 @@ impl Grid {
         head.uri = format!("http://127.0.0.1:{}{pq}", running.port).parse().map_err(|_| bad("Bad path.", 400))?;
         let public = self.cfg.instance_url(handle);
         let fwd_host = public.split("://").nth(1).unwrap_or_default().to_owned();
-        for k in [
-            "authorization",
-            "cookie",
-            "x-wisp-proxy-secret",
-            "x-wisp-proxy-via",
-            "x-forwarded-host",
-            "x-forwarded-proto",
-            PASSIVE,
-            "x-wisp-relay",
-        ] {
+        // every one of the grid's marks a client sent (`trust::MARKS`): the box's wisp believes x-wisp-preview
+        // from behind its proxy secret and would pass the request to that port on its loopback
+        let marks: Vec<_> = head.headers.keys().filter(|k| crate::trust::is_mark(k.as_str())).cloned().collect();
+        for k in marks {
+            head.headers.remove(k);
+        }
+        for k in ["authorization", "cookie", PASSIVE, "x-wisp-relay"] {
             head.headers.remove(k);
         }
         let set = |h: &mut HeaderMap, k: &'static str, v: &str| {
@@ -250,7 +247,9 @@ impl Grid {
             .request(http::Request::from_parts(head, incoming(body)))
             .await
             .map_err(|e| bad(format!("Your wisp didn't answer: {e}"), 502))?;
-        let (parts, b) = up.into_parts();
+        let (mut parts, b) = up.into_parts();
+        // a page in the box sets cookies for its own address only, never for the grid's other names (cookie tossing)
+        crate::tunnels::host_only_cookies(&mut parts.headers);
         // the request counts as open (and, unless passive, as use) until its answer has been read
         let b = b.map_err(std::io::Error::other).map_frame(move |f| {
             let _ = &busy;

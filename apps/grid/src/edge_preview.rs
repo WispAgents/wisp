@@ -94,7 +94,7 @@ impl Grid {
             .request(http::Request::from_parts(head, incoming(body)))
             .await
             .map_err(|e| bad(format!("Your wisp didn't answer: {e}"), 502))?;
-        host_only_cookies(up.headers_mut());
+        crate::tunnels::host_only_cookies(up.headers_mut());
         if let (Some(down), http::StatusCode::SWITCHING_PROTOCOLS) = (down, up.status()) {
             let theirs = hyper::upgrade::on(&mut up);
             tokio::spawn(async move {
@@ -183,17 +183,5 @@ impl Grid {
             set("upgrade", u);
         }
         out
-    }
-}
-
-/// A cookie the page sets stays on its own address: one with `Domain=` would reach the grid's other names.
-fn host_only_cookies(h: &mut HeaderMap) {
-    let all: Vec<_> = h.get_all("set-cookie").iter().cloned().collect();
-    if all.iter().all(|v| v.to_str().is_ok_and(crate::tunnels::host_only)) {
-        return;
-    }
-    h.remove("set-cookie");
-    for v in all.into_iter().filter(|v| v.to_str().is_ok_and(crate::tunnels::host_only)) {
-        h.append("set-cookie", v);
     }
 }

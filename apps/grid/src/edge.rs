@@ -237,6 +237,19 @@ impl Grid {
         Who::Nobody
     }
 
+    /// A write to the grid's API with its session cookie must come from the grid's own origin. The cookie is
+    /// SameSite=Lax, and a published app (`<slug>--app--<handle>`) is same-site, so its page could otherwise post a
+    /// form here (`parse_body` reads urlencoded too) and change the visitor's sandboxes, teams or keys. A bearer
+    /// (device, key, Box) can't be sent by a browser on its own, and the pages' forms have their csrf token; the
+    /// waitlist reads no sign-in at all, and trywisp.dev posts to it.
+    fn cross_site_api(&self, method: &http::Method, parts: &[&str], h: &HeaderMap, who: &Who) -> Option<Resp> {
+        let safe = matches!(*method, http::Method::GET | http::Method::HEAD | http::Method::OPTIONS);
+        if safe || !matches!(who, Who::Session(_)) || parts.first() != Some(&"api") || parts == ["api", "waitlist"] {
+            return None;
+        }
+        (header_str(h, "origin") != self.cfg.public_url).then(|| json(403, &json!({ "error": "forbidden origin" })))
+    }
+
     fn csrf(cookie: &str) -> String {
         crate::accounts::sha256_hex(&format!("csrf:{cookie}")).chars().take(24).collect()
     }
@@ -284,6 +297,9 @@ impl Grid {
         let path_q = req.uri().path_and_query().map(|p| p.as_str().to_owned()).unwrap_or_default();
         let (parts, q) = split(&path_q);
         let who = self.who(req.headers());
+        if let Some(r) = self.cross_site_api(&method, &parts, req.headers(), &who) {
+            return Ok(r);
+        }
         if parts.first() == Some(&"api") && parts.get(1) == Some(&"computers") && parts.len() == 4 && parts[3] == "tunnel" {
             return self.tunnel(req, &who, parts[2]);
         }

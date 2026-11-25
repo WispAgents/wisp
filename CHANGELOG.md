@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Grid (security): a request into a box or sandbox no longer carries a client's own copy of the grid's marks (`x-wisp-preview`, `x-wisp-route`, `x-wisp-upgrade`, `x-wisp-tunnel`, `x-wisp-proxy-*`, `x-forwarded-*`), and a box's `Domain=` cookies never reach the browser; a cookie-signed write to the grid's `/api/` from another origin is refused (403); a box's secret no longer reaches `/api/teams` or `GET /api/computers`; a grid cookie sent twice signs nobody in. A grid box's formula reads no secret through `file()`, the environment or a module folder in wisp's home.
+
 ## [1.0.0-alpha.13] - 2026-11-25
 
 ### Fixed

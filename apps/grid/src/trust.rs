@@ -69,6 +69,9 @@ pub enum Reach {
     /// /api/sites, /api/shares, /api/sandboxes: publishing from My Stuff, sharing, sandboxes
     #[serde(rename = "grid:publish")]
     GridPublish,
+    /// /api/teams: making a team, its members and their roles
+    #[serde(rename = "grid:teams")]
+    GridTeams,
     /// GET /api/computers/<id>/tunnel: a computer holding its tunnel open
     #[serde(rename = "grid:tunnel")]
     GridTunnel,
@@ -93,7 +96,7 @@ pub enum Reach {
 }
 
 impl Reach {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::GridPages,
         Self::GridRoutePage,
         Self::GridDevice,
@@ -103,6 +106,7 @@ impl Reach {
         Self::GridMailReply,
         Self::GridReport,
         Self::GridPublish,
+        Self::GridTeams,
         Self::GridTunnel,
         Self::Box,
         Self::Computer,
@@ -123,6 +127,7 @@ impl Reach {
             Self::GridMailReply => "grid:mail-reply",
             Self::GridReport => "grid:report",
             Self::GridPublish => "grid:publish",
+            Self::GridTeams => "grid:teams",
             Self::GridTunnel => "grid:tunnel",
             Self::Box => "box",
             Self::Computer => "computer",
@@ -159,7 +164,7 @@ use Reach as R;
 
 /// The table. Changing a row is a deliberate act in the PR (`tests/trust.rs` pins it).
 pub const CAPABILITIES: [CapabilitySet; 9] = [
-    CapabilitySet { credential: Credential::Session, allow: &[R::GridPages, R::GridRoutePage], deny: &[] },
+    CapabilitySet { credential: Credential::Session, allow: &[R::GridPages, R::GridRoutePage, R::GridTeams], deny: &[] },
     CapabilitySet {
         credential: Credential::Cookie,
         allow: &[R::Box, R::Computer, R::Sandbox, R::EdgeKeys],
@@ -175,7 +180,7 @@ pub const CAPABILITIES: [CapabilitySet; 9] = [
     },
     CapabilitySet {
         credential: Credential::Device,
-        allow: &[R::GridDevice, R::GridKeys, R::GridReport, R::GridPublish, R::GridTunnel, R::Box, R::Computer, R::Sandbox],
+        allow: &[R::GridDevice, R::GridKeys, R::GridReport, R::GridPublish, R::GridTeams, R::GridTunnel, R::Box, R::Computer, R::Sandbox],
         deny: &[
             deny(R::GridChannels, "a channel’s URL and key are the box’s own word, for its own address"),
             deny(R::EdgeKeys, KEYS_IN_BROWSER),
@@ -193,6 +198,7 @@ pub const CAPABILITIES: [CapabilitySet; 9] = [
             deny(R::GridKeys, "a key can’t manage keys"),
             deny(R::EdgeKeys, KEYS_IN_BROWSER),
             deny(R::GridPublish, KEY_OWN),
+            deny(R::GridTeams, KEY_OWN),
         ],
     },
     CapabilitySet {
@@ -208,6 +214,10 @@ pub const CAPABILITIES: [CapabilitySet; 9] = [
             deny(R::GridKeys, "anything on a box can read its Box secret: a cloud wisp’s person makes keys at its edge (/_grid/keys)"),
             deny(R::GridDevice, "anything on a box can read its Box secret: no sign-in links, no computers"),
             deny(R::GridRoutePage, "the bot for `on laptop` is given on the grid’s own origin, out of a box page’s reach"),
+            deny(
+                R::GridTeams,
+                "anything on a box can read its Box secret: who is in a team, and as what, is the person’s to say, from wisp or the grid’s pages",
+            ),
         ],
     },
     CapabilitySet {
@@ -259,3 +269,30 @@ pub fn may(credential: Credential, reach: Reach) -> Verdict {
 
 mod marks;
 pub use marks::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every credential's word on /api/teams: a person's (device, session) only. A box's secret is readable by
+    /// anything on the box, so it never adds a member or makes an admin.
+    #[test]
+    fn teams_are_a_persons_never_a_boxs_or_a_keys() {
+        let got: Vec<(Credential, bool)> = Credential::ALL.iter().map(|c| (*c, may(*c, Reach::GridTeams).ok())).collect();
+        let want = [
+            (Credential::Session, true),
+            (Credential::Cookie, false),
+            (Credential::Preview, false),
+            (Credential::Device, true),
+            (Credential::Key, false),
+            (Credential::Box, false),
+            (Credential::Sandbox, false),
+            (Credential::Hook, false),
+            (Credential::Webhook, false),
+        ];
+        assert_eq!(got, want);
+        let why = may(Credential::Box, Reach::GridTeams);
+        assert!(matches!(&why, Verdict::No(w) if w.contains("Box secret")), "{why:?}");
+        assert!(Reach::ALL.contains(&Reach::GridTeams));
+    }
+}
