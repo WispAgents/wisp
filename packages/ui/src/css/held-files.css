@@ -1,0 +1,39 @@
+/* HeldFiles and FoldToggle (src/content/HeldFiles.tsx): a folder's uncommitted files, read-only, and the inline
+   toggle that opens them. Badges take the `files` block's colours (answer-content.css cb-badge). */
+@layer kit {
+  [data-kit='held-files'] {
+    display: flex; flex-direction: column; gap: 2px; margin: 0; padding: var(--space-2) var(--space-3); list-style: none;
+    max-height: calc(8 * 22px + 2 * var(--space-2)); overflow-y: auto; overscroll-behavior: contain;
+    background: var(--bg-2); border-radius: var(--radius-md);
+  }
+  /* a scrolling column shrinks its children: none of them may (the "+N more" line went to 0px) */
+  [data-kit='held-files'] > * { flex: none; }
+  [data-kit='held-file'] { display: flex; align-items: center; gap: var(--space-3); min-width: 0; min-height: 20px; }
+  [data-kit='held-badge'] {
+    display: grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: var(--radius-xs);
+    font: var(--fw-semibold) var(--fs-xs) var(--mono);
+  }
+  [data-kit='held-badge'][data-change='add'], [data-kit='held-badge'][data-change='new'] { background: var(--add-bg); color: var(--add); }
+  [data-kit='held-badge'][data-change='mod'] { background: color-mix(in srgb, var(--warn) 12%, transparent); color: var(--warn); }
+  [data-kit='held-badge'][data-change='del'], [data-kit='held-badge'][data-change='conflict'] { background: var(--del-bg); color: var(--del); }
+  [data-kit='held-badge'][data-change='ren'] { background: var(--accent-soft); color: var(--accent-ink); }
+  /* the name never goes; a long folder ends in … first */
+  [data-kit='held-path'] { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; font: var(--fs-sm) var(--mono); }
+  /* short of room, a rename's old path gives way first, then the folder; the name last */
+  [data-kit='held-from'], [data-kit='held-dir'] { flex: 0 10 auto; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; color: var(--faint); }
+  [data-kit='held-from'] { flex-shrink: 100; }
+  [data-kit='held-base'] { flex: 0 1 auto; min-width: 3ch; overflow: hidden; text-overflow: ellipsis; color: var(--ink); font-weight: var(--fw-medium); }
+  [data-kit='held-more'] { padding-left: calc(18px + var(--space-3)); font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+
+  [data-kit='fold-toggle'] {
+    display: inline-flex; align-items: center; gap: var(--space-1); flex: none; min-height: 24px; margin: 0 calc(-1 * var(--space-2));
+    padding: 0 var(--space-2); border-radius: var(--radius-sm); font-size: var(--fs-sm); white-space: nowrap; color: var(--muted);
+    transition: background var(--dur-fast), color var(--dur-fast);
+  }
+  [data-kit='fold-toggle'][data-tone='warn'] { color: var(--warn); }
+  [data-kit='fold-toggle']:hover { background: var(--bg-2); color: var(--ink); }
+  [data-kit='fold-toggle'][data-tone='warn']:hover { color: var(--warn); }
+  [data-kit='fold-toggle'] > [data-kit='icon'] { flex: none; transition: transform var(--dur-fast) var(--ease); }
+  [data-kit='fold-toggle'][data-open] > [data-kit='icon'] { transform: rotate(90deg); }
+  [data-kit='fold-toggle']:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+}

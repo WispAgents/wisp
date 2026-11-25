@@ -8,6 +8,7 @@ import { Code } from '../Code.tsx';
 import { Mermaid } from '../Mermaid.tsx';
 import type { Block, Inline, ListItem } from './ast.ts';
 import { parseMarkdown } from './block.ts';
+import '../../css/markdown-blocks.css';
 
 export interface MarkdownProps extends KitProps {
   readonly source: string;

@@ -2,7 +2,7 @@
 // folders, and what the dialog says (src/done.ts, src/view.ts).
 import { describe, expect, it } from 'vitest';
 import type { EntityKey, PendingInfo, PeerId } from '@wisp/client';
-import { undone, heading, holdsWork, initiallyTicked, losesOf, newlyDone, outcome, planDone, removal, removeButton, rowStatus, stateOf, withSizes } from '../src/done.ts';
+import { undone, hasFiles, heading, holdsWork, initiallyOpen, initiallyTicked, losesOf, newlyDone, outcome, planDone, removal, removeButton, rowStatus, stateOf, withSizes } from '../src/done.ts';
 import { t } from '../src/i18n.ts';
 import type { DoneFolder } from '../src/types.ts';
 import { doneTitle, parseDone } from '../src/view.ts';
@@ -127,5 +127,19 @@ describe('the question follows the task', () => {
     expect(undone({ state: 'review' }), 'Undo put it back').toBe(true);
     expect(undone({ state: 'running' })).toBe(true);
     expect(undone(undefined), 'not loaded yet (a dialog restored from the URL): no answer, keep asking').toBe(false);
+  });
+});
+
+describe('the files a row holding work lists', () => {
+  const files = (n: number): NonNullable<DoneFolder['files']> => Array.from({ length: n }, (_, i) => ({ path: `src/f${i}.ts`, xy: '.M' }));
+  it('only_row_with_uncommitted_files_starts_open_several_wait_for_their_toggle', () => {
+    const a = folder('/a', { only: 2, uncommitted: 2, files: files(2) });
+    const b = folder('/b', { only: 1, uncommitted: 1, files: files(1) });
+    const clean = folder('/c');
+    const off = folder('/d', { only: 1, uncommitted: 0 }); // commits off its branch: no files to list
+    expect(initiallyOpen([a, clean, off])).toEqual(['/a']);
+    expect(initiallyOpen([a, b, clean])).toEqual([]);
+    expect(initiallyOpen([clean, off])).toEqual([]);
+    expect([a, clean, off, folder('/e', { only: null, uncommitted: null })].map(hasFiles)).toEqual([true, false, false, false]);
   });
 });

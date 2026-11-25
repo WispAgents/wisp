@@ -8,10 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - Prompt box: **/plugin** makes a wisp plugin from New task or a task's reply box. Type `/plugin` and what it should do: an agent writes it as a plugin of yours and installs it off, as **Cast a plugin** in Settings → Plugins does, and the new task opens. New task's agent pick goes with it. `/plugin` alone opens Settings → Plugins.
+- Mark done → *Remove its worktree?*: a folder holding uncommitted work lists its files. Click **3 uncommitted files** on the row to see each file with its change (A, M, D, R, or U for untracked) and its path. When only one folder holds work, its files show when the dialog opens. Past 100 files, the last line says how many more.
 - Task details: click the branch chip to copy the task's worktree path. A tooltip says **Worktree path copied**. Hover the chip to see the branch and the path.
 
 ### Fixed
 
+- Toasts now sit centred on the main area, not the whole window, so the sidebar no longer pushes them off-centre. They stay centred when you collapse or resize the sidebar.
 - Usage (Claude Code, Codex): a resumed turn counts only its own cost and tokens. Each turn now keeps the conversation's counters (`stats.totals`) and the next turn on the same harness and conversation starts from them, where every follow-up counted the whole conversation again. A chat brought in, adopted or restored, and a conversation whose last turn was stored before this change, takes its first result as the baseline (that turn counts 0 and the next one counts its own); another harness or a fresh conversation starts from zero.
 - Usage: the cache share counts cache reads only. A write to the prompt cache (most of Claude Code's first turn) is input, and is no longer shown as a hit; turns keep their cache reads and writes apart (`cacheReadTokens`, `cacheWriteTokens`). Codex's cached input is recorded as cache reads and no longer counted twice in the input total; a Codex turn's input now leaves its cached part out, so Drain watch's per-turn tokens for Codex read lower than its older turns for a while after the upgrade.
 - Task page (harness picker): switching a task to another harness hands it over as a follow-up's pick does: the new harness no longer resumes the old one's conversation id, gets its own default model and the nearest thinking level, and hears what it missed (the hand-off note). A turn still running when you switch no longer puts the old conversation back.
