@@ -7,7 +7,7 @@
 
 import { Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, on, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
 import { defineCommand, entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
-import { changeWhere as changeWhereOf, whereOf } from './change-where.ts';
+import { changeWhere as changeWhereOf, whereOf, worktreePath } from './change-where.ts';
 import {
   Answer,
   BtwList,
@@ -1431,6 +1431,17 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           if (m) return { name: m.name || t('shell.task.remote'), icon: 'server' };
           return { name: t('shell.card.thisComputer'), icon: 'laptop' };
         };
+        // the branch chip: a click copies the worktree's path (where the task's work is), the tooltip says so
+        const branchChip = () => {
+          const b = branch();
+          const path = worktreePath(s());
+          return {
+            head: b.replace(/-[0-9a-f]{6}$/, ''),
+            tail: b.match(/-[0-9a-f]{6}$/)?.[0] ?? '',
+            title: path ? `${b}\n${path}` : b,
+            ...(path && { copy: { text: path, done: t('shell.task.worktreeCopied') } }),
+          };
+        };
         const color = (): string => String(s().summary['color'] ?? 'slate');
         const ov = createMemo(() => (!closedReady() ? [] : shownOverlaps(overlapsOf(s()), closed() as unknown as Dismissed | undefined, s().id)));
         const mode = (): Mode => (['plan', 'edits', 'auto'].includes(String(s().summary['mode'])) ? (s().summary['mode'] as Mode) : 'auto');
@@ -1784,7 +1795,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   places={placeChips(s())}
                   status={statusOf(s(), t)}
                   machine={machine()}
-                  {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
+                  {...(branch() && { branch: branchChip() })}
                   {...((u) => (u ? { usage: u } : {}))(usage())}
                   actions={[]}
                   // pinned beside the turns, in sight however far they scroll (wisp.ship's PR card)
@@ -2033,7 +2044,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       places={placeChips(s())}
                       status={statusOf(s(), t)}
                       machine={machine()}
-                  {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
+                  {...(branch() && { branch: branchChip() })}
                       {...((u) => (u ? { usage: u } : {}))(usage())}
                       actions={[]}
                     />

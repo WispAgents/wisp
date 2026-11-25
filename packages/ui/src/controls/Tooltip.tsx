@@ -21,6 +21,8 @@ export interface TooltipProps extends KitProps, WithChildren {
   /** ms before it shows (default 400). */
   readonly openDelay?: number;
   readonly disabled?: boolean;
+  /** Held open by the caller (a click's confirmation: Copied), hover or not; with `disabled`, only then. */
+  readonly open?: boolean;
 }
 
 export function Tooltip(props: TooltipProps): JSX.Element {
@@ -58,6 +60,7 @@ function Hover(props: TooltipProps): JSX.Element {
     closeDelay: 100,
     positioning: { placement: props.placement ?? 'top', gutter: 6 },
     ...(props.disabled === undefined ? {} : { disabled: props.disabled }),
+    ...(props.open === undefined ? {} : { open: props.open }),
   }));
   const api = createMemo(() => tooltip.connect(service, normalizeProps));
   const part = (): PartName => props.part ?? 'ui.tooltip';
