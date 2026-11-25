@@ -8,12 +8,16 @@ import { t } from './i18n.ts';
 export interface Saved {
   readonly name: string;
   readonly description: string;
+  /** one of the prebuilt ones (yours of the same name win) */
+  readonly prebuilt?: boolean;
 }
 
 export const MAX = 8;
 
 /** `workflows.list`: the saved workflows (asked once per peer per page). */
 const listWorkflows = defineCommand<{ peer: PeerId }, unknown>({ id: 'workflows.list', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the workflows', quiet: true });
+/** `workflows.starters`: the prebuilt ones. */
+const listStarters = defineCommand<{ peer: PeerId }, unknown>({ id: 'workflows.starters', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the workflows', quiet: true });
 
 /** What the menu offers for what's typed after `/`: the command itself while the word could still be it, then the saved
  *  workflows for `/workflow <word>` (names that start with it first, then the ones holding it). */
@@ -30,7 +34,7 @@ export function suggestions(query: string, saved: readonly Saved[]): PromptItem[
   const byName = (a: Saved, b: Saved): number => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   const starts = saved.filter((s) => s.name.toLowerCase().startsWith(w)).sort(byName);
   const holds = w ? saved.filter((s) => !s.name.toLowerCase().startsWith(w) && `${s.name}\n${s.description}`.toLowerCase().includes(w)).sort(byName) : [];
-  return [...starts, ...holds].slice(0, MAX).map((s) => ({ value: `/workflow ${s.name}`, label: s.name, hint: s.description || t('wisp.workflows.slash.saved'), icon: 'org', insert: `/workflow ${s.name} ` }));
+  return [...starts, ...holds].slice(0, MAX).map((s) => ({ value: `/workflow ${s.name}`, label: s.name, hint: s.description || t('wisp.workflows.slash.saved'), ...(s.prebuilt ? { detail: t('wisp.workflows.slash.prebuilt') } : {}), icon: 'org', insert: `/workflow ${s.name} ` }));
 }
 
 const known = new Map<string, WritableSignal<readonly Saved[]>>();
@@ -48,8 +52,11 @@ export function savedOn(c: PluginClient, peer: string): readonly Saved[] {
     const mine = signal<readonly Saved[]>([]);
     s = mine;
     known.set(peer, mine);
-    void c.run(listWorkflows, { peer: peer as PeerId }).then(
-      (r) => mine(savedOf(r)),
+    void Promise.all([c.run(listWorkflows, { peer: peer as PeerId }), c.run(listStarters, { peer: peer as PeerId }).catch(() => [])]).then(
+      ([mineRows, pre]) => {
+        const own = savedOf(mineRows);
+        mine([...own, ...savedOf(pre).filter((p) => !own.some((o) => o.name === p.name)).map((p) => ({ ...p, prebuilt: true }))]);
+      },
       () => known.delete(peer),
     );
   }

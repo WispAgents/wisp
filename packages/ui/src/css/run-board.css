@@ -47,10 +47,20 @@
     transition: border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
     animation: kit-rise var(--dur-enter) var(--ease);
   }
-  button[data-kit='run-card'] { cursor: pointer; }
-  button[data-kit='run-card']:hover { border-color: var(--line-2); box-shadow: var(--shadow-2); transform: translateY(calc(-1 * var(--space-1))); }
-  button[data-kit='run-card']:active { transform: none; }
-  button[data-kit='run-card']:focus-visible { outline: var(--size-ring) solid var(--accent); outline-offset: var(--size-ring); }
+  /* a card that opens its task: a full-size button under its words (the ⋯ over it takes its own clicks) */
+  [data-kit='run-card'][data-open] { cursor: pointer; }
+  [data-kit='run-card'][data-open]:hover { border-color: var(--line-2); box-shadow: var(--shadow-2); transform: translateY(calc(-1 * var(--space-1))); }
+  [data-kit='run-card'][data-open]:active { transform: none; }
+  [data-kit='run-card-open'] {
+    position: absolute; inset: 0; margin: 0; padding: 0; border: 0; border-radius: inherit; background: transparent; cursor: pointer;
+  }
+  [data-kit='run-card-open']:focus-visible { outline: var(--size-ring) solid var(--accent); outline-offset: calc(-1 * var(--size-ring)); }
+  [data-kit='run-card'][data-open] > [data-kit='run-card-head'],
+  [data-kit='run-card'][data-open] > [data-kit='run-card-detail'],
+  [data-kit='run-card'][data-open] > [data-kit='run-card-foot'] { position: relative; pointer-events: none; }
+  [data-kit='run-card-menu'] { flex: none; position: relative; margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-3)) calc(-1 * var(--space-2)) 0; pointer-events: auto; }
+  [data-kit='run-card-menu'] { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+  [data-kit='run-card']:hover [data-kit='run-card-menu'], [data-kit='run-card-menu']:focus-within, [data-kit='run-card'][data-state='failed'] [data-kit='run-card-menu'] { opacity: 1; }
   [data-kit='run-card'][data-state='running'] { border-color: var(--accent); }
   [data-kit='run-card'][data-state='failed'] { border-color: var(--bad); }
   [data-kit='run-card'][data-state='waiting'] { background: transparent; box-shadow: none; border-style: dashed; color: var(--ink-2); }
@@ -103,6 +113,10 @@
     display: grid; gap: var(--space-2); padding-left: calc(var(--size-icon-sm) + var(--space-5));
     grid-template-columns: repeat(auto-fill, var(--space-6));
   }
+  [data-kit='run-dots'][data-strip] {
+    padding-left: 0; gap: var(--space-1); grid-template-columns: repeat(auto-fill, var(--space-4));
+  }
+  [data-kit='run-dots'][data-strip] [data-kit='run-dot'] { width: var(--space-4); height: var(--space-4); }
   [data-kit='run-dot-cell'] { display: contents; }
   [data-kit='run-dot'] {
     display: block; width: var(--space-6); height: var(--space-6); margin: 0; padding: 0;
@@ -117,8 +131,37 @@
   [data-kit='run-dot'][data-state='failed'] { border: none; background: var(--bad); }
   [data-kit='run-dot'][data-state='skipped'] { border-style: solid; background: var(--bg-2); }
 
+  /* RunChip: a row of a task's details (it-extra), as quiet as the harness and machine rows above it */
+  [data-kit='run-chip'] {
+    display: flex; flex-direction: column; gap: var(--space-2); width: 100%; min-width: 0;
+    margin: 0; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-sm);
+    background: none; font: inherit; font-size: var(--fs-sm); color: var(--muted); text-align: start; cursor: pointer;
+    transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  [data-kit='run-chip']:hover { background: var(--bg-2); color: var(--ink-2); }
+  [data-kit='run-chip']:focus-visible { outline: var(--size-ring) solid var(--accent); outline-offset: var(--size-hairline); }
+  [data-kit='run-chip-row'] { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+  [data-kit='run-chip-mark'] { flex: none; display: inline-flex; color: var(--muted); }
+  [data-kit='run-chip'][data-state='running'] [data-kit='run-chip-mark'] { color: var(--accent); animation: kit-pulse 1.6s ease-in-out infinite; }
+  [data-kit='run-chip'][data-state='failed'] [data-kit='run-chip-mark'] { color: var(--bad); }
+  [data-kit='run-chip'][data-state='done'] [data-kit='run-chip-mark'] { color: var(--good); }
+  [data-kit='run-chip-name'] { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+  [data-kit='run-chip-progress'] { flex: none; font-family: var(--mono); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  [data-kit='run-chip'][data-state='running'] [data-kit='run-chip-progress'] { color: var(--accent); }
+  [data-kit='run-chip-go'] { flex: none; display: inline-flex; opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+  [data-kit='run-chip']:hover [data-kit='run-chip-go'], [data-kit='run-chip']:focus-visible [data-kit='run-chip-go'] { opacity: 1; }
+  [data-kit='run-chip-bar'] {
+    display: flex; gap: var(--size-hairline); height: var(--space-1); margin-left: calc(var(--size-icon-sm) + var(--space-3));
+    border-radius: var(--radius-pill); overflow: hidden;
+  }
+  [data-kit='run-chip-seg'] { flex: 1; min-width: var(--size-hairline); background: var(--line-2); }
+  [data-kit='run-chip-seg'][data-state='done'] { background: var(--good); }
+  [data-kit='run-chip-seg'][data-state='failed'] { background: var(--bad); }
+  [data-kit='run-chip-seg'][data-state='running'] { background: var(--accent); animation: kit-pulse 1.2s ease-in-out infinite; }
+  [data-kit='run-chip-seg'][data-state='skipped'] { background: var(--line); }
+
   @media (prefers-reduced-motion: reduce) {
     [data-kit='run-card'][data-state='running']::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
-    [data-kit='run-dot'][data-state='running'], [data-kit='run-live'] { animation: none; }
+    [data-kit='run-dot'][data-state='running'], [data-kit='run-live'], [data-kit='run-chip-seg'], [data-kit='run-chip-mark'] { animation: none; }
   }
 }

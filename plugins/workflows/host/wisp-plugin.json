@@ -15,6 +15,7 @@
     "runtime:turns",
     "runtime:stop",
     "runtime:followUp",
+    "runtime:settle",
     "runtime:setExt",
     "runtime:setState",
     "runtime:slots",
@@ -31,6 +32,11 @@
       {
         "id": "workflows.list",
         "title": "Workflows",
+        "readOnly": true
+      },
+      {
+        "id": "workflows.starters",
+        "title": "Prebuilt workflows to run by name or start yours from",
         "readOnly": true
       },
       {
@@ -51,8 +57,22 @@
         "readOnly": true
       },
       {
+        "id": "workflows.edit",
+        "title": "Change a workflow run while it goes: skip, retry, add or change steps"
+      },
+      {
         "id": "workflows.stop",
         "title": "Stop a workflow run"
+      }
+    ],
+    "events": [
+      {
+        "type": "workflow.started",
+        "durable": true
+      },
+      {
+        "type": "workflow.ended",
+        "durable": true
       }
     ]
   }
