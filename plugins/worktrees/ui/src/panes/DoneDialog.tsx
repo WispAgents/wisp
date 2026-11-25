@@ -2,13 +2,13 @@
 // task marked done and what ran under it hold, clean ones ticked, one holding work unticked and saying what
 // it would lose. Remove closes at once and the removal runs behind (a toast says what went, or what was kept
 // and why); Keep pins every row. Esc, × or a click outside answers nothing: the hourly cleanup still looks.
-import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, createUniqueId, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { setSetting, type EntityKey, type ExtensionId, type PluginClient, type SettingRow } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Checkbox, Divider, Inline, Skeleton, Stack, Text, useSignal } from '@wisp/ui';
+import { Button, Checkbox, Divider, FoldToggle, HeldFiles, Inline, Skeleton, Stack, Text, useSignal, type HeldKind } from '@wisp/ui';
 import { bare, forget, peerOf, rowsFor, settingKey, VIEW } from '../ask.ts';
 import { doneApply, doneList } from '../commands.ts';
-import { heading, initiallyTicked, outcome, removal, removeButton, rowStatus, SESSION, undone, withSizes, type Said } from '../done.ts';
+import { hasFiles, heading, initiallyOpen, initiallyTicked, outcome, removal, removeButton, rowStatus, SESSION, undone, withSizes, type Said } from '../done.ts';
 import { fmtSize } from '../format.ts';
 import { t } from '../i18n.ts';
 import { SETTING, type DoneFolder } from '../types.ts';
@@ -17,9 +17,28 @@ import '../i18n/lazy.ts';
 
 const say = (s: Said): string => t(s.key, s.vars);
 
+const FILE_KIND = {
+  add: 'worktrees.folders.files.add',
+  mod: 'worktrees.folders.files.mod',
+  del: 'worktrees.folders.files.del',
+  ren: 'worktrees.folders.files.ren',
+  new: 'worktrees.folders.files.new',
+  conflict: 'worktrees.folders.files.conflict',
+} as const satisfies Record<HeldKind, string>;
+const fileLabels = { kind: (k: HeldKind): string => t(FILE_KIND[k]), more: (n: number): string => t('worktrees.folders.files.more', { n }) };
+
 // One row a folder (v1 .wd-row): its tick, the task's name over its branch taking all the width there is (the branch
 // cut only when it must), one short status at the right (warn once Remove would lose what it holds) and its size.
-function Row(props: { readonly f: DoneFolder; readonly ticked: boolean; readonly onTick: (on: boolean) => void }): JSX.Element {
+// A row holding uncommitted files makes its status a toggle that opens the files themselves under the row, so what
+// Remove would lose is one click away (none when it's the only such row: it starts open), not in the task's Changes.
+function Row(props: {
+  readonly f: DoneFolder;
+  readonly ticked: boolean;
+  readonly onTick: (on: boolean) => void;
+  readonly open: boolean;
+  readonly onOpen: (on: boolean) => void;
+}): JSX.Element {
+  const filesId = createUniqueId();
   const who = (): string => (props.f.own ? t('worktrees.folders.this') : props.f.title || props.f.branch);
   const st = () => rowStatus(props.f, props.ticked);
   // what Remove would lose, in full, on hover
@@ -28,25 +47,46 @@ function Row(props: { readonly f: DoneFolder; readonly ticked: boolean; readonly
     return x ? { title: say(x) } : {};
   };
   return (
-    <Inline gap="5" align="center" padX="6" padY="4" part="worktrees.folders.row">
-      <Checkbox checked={props.ticked} onChange={(on) => props.onTick(on)} aria-label={t('worktrees.folders.tick', { name: who() })} part="worktrees.folders.tick" />
-      <Stack gap="0" grow part="worktrees.folders.who">
-        <Text weight="medium" truncate title={props.f.title}>
-          {who()}
-        </Text>
-        <Text size="sm" tone="muted" mono truncate title={props.f.branch || props.f.path}>
-          {props.f.branch || props.f.path}
-        </Text>
-      </Stack>
-      <Text size="sm" tone={st().warn ? 'warn' : 'muted'} nowrap part="worktrees.folders.state" {...tip()}>
-        {say(st())}
-      </Text>
-      <Show when={props.f.size !== null} fallback={<Skeleton shape="line" width="time-col" part="worktrees.folders.size" />}>
-        <Text size="sm" tone="muted" numeric nowrap align="end" part="worktrees.folders.size">
-          {fmtSize(props.f.size ?? 0)}
-        </Text>
+    // the row's v1 padding is the item's, so a closed row measures what it did; open, the files sit under it
+    <Stack gap="3" padX="6" padY="4" part="worktrees.folders.item">
+      <Inline gap="5" align="center" part="worktrees.folders.row">
+        <Checkbox checked={props.ticked} onChange={(on) => props.onTick(on)} aria-label={t('worktrees.folders.tick', { name: who() })} part="worktrees.folders.tick" />
+        <Stack gap="0" grow part="worktrees.folders.who">
+          <Text weight="medium" truncate title={props.f.title}>
+            {who()}
+          </Text>
+          <Text size="sm" tone="muted" mono truncate title={props.f.branch || props.f.path}>
+            {props.f.branch || props.f.path}
+          </Text>
+        </Stack>
+        <Show
+          when={hasFiles(props.f)}
+          fallback={
+            <Text size="sm" tone={st().warn ? 'warn' : 'muted'} nowrap part="worktrees.folders.state" {...tip()}>
+              {say(st())}
+            </Text>
+          }
+        >
+          <FoldToggle
+            label={say(st())}
+            tone={st().warn ? 'warn' : 'muted'}
+            open={props.open}
+            onToggle={() => props.onOpen(!props.open)}
+            controls={filesId}
+            title={tip().title ?? t('worktrees.folders.files.show', { name: who() })}
+            part="worktrees.folders.state"
+          />
+        </Show>
+        <Show when={props.f.size !== null} fallback={<Skeleton shape="line" width="time-col" part="worktrees.folders.size" />}>
+          <Text size="sm" tone="muted" numeric nowrap align="end" part="worktrees.folders.size">
+            {fmtSize(props.f.size ?? 0)}
+          </Text>
+        </Show>
+      </Inline>
+      <Show when={props.open && hasFiles(props.f)}>
+        <HeldFiles id={filesId} files={props.f.files ?? []} total={props.f.uncommitted ?? props.f.files?.length ?? 0} labels={fileLabels} part="worktrees.folders.files" />
       </Show>
-    </Inline>
+    </Stack>
   );
 }
 
@@ -79,6 +119,7 @@ export default function DoneDialog(props: { readonly client: PluginClient; reado
   const key = props.params.key;
   const [folders, setFolders] = createSignal<readonly DoneFolder[] | undefined>(undefined);
   const [ticked, setTicked] = createSignal<readonly string[]>([]);
+  const [opened, setOpened] = createSignal<readonly string[]>([]);
   const [always, setAlways] = createSignal(false);
   const [only, setOnly] = createSignal(props.params.only);
   // followed (useSignal, round 324): a row that lands or locks after the dialog opened hides Always do this
@@ -105,6 +146,7 @@ export default function DoneDialog(props: { readonly client: PluginClient; reado
         setOnly(a.only);
         setFolders(a.folders);
         setTicked(initiallyTicked(a.folders));
+        setOpened(initiallyOpen(a.folders));
         // sizes after: du over a big node_modules takes seconds
         c.run(doneList, { peer: peerOf(key), sessionId: bare(key), sizes: true }).then(
           (full) => {
@@ -174,7 +216,13 @@ export default function DoneDialog(props: { readonly client: PluginClient; reado
                   <Show when={i() > 0}>
                     <Divider />
                   </Show>
-                  <Row f={f} ticked={ticked().includes(f.path)} onTick={(on) => setTicked(on ? [...ticked(), f.path] : ticked().filter((p) => p !== f.path))} />
+                  <Row
+                    f={f}
+                    ticked={ticked().includes(f.path)}
+                    onTick={(on) => setTicked(on ? [...ticked(), f.path] : ticked().filter((p) => p !== f.path))}
+                    open={opened().includes(f.path)}
+                    onOpen={(on) => setOpened(on ? [...opened(), f.path] : opened().filter((p) => p !== f.path))}
+                  />
                 </>
               )}
             </For>

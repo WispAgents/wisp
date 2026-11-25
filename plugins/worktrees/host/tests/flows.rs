@@ -208,6 +208,9 @@ async fn dones_list_holds_the_tasks_folder_and_its_delegates_and_apply_removes_t
     assert_eq!(list.folders[0].only, Some(0));
     assert_eq!(list.folders[0].pr.as_ref().map(|p| p.state.as_str()), Some("MERGED"));
     assert_eq!(list.folders[1].only, Some(1), "the delegate's folder holds work");
+    let held: Vec<(&str, &str)> = list.folders[1].files.iter().map(|f| (f.path.as_str(), f.xy.as_str())).collect();
+    assert_eq!(held, [("wip.txt", "??")], "the dialog lists what Remove would lose");
+    assert!(list.folders[0].files.is_empty(), "a clean folder lists nothing");
     assert_eq!(list.on_done, wisp_worktrees_api::OnDone::Ask);
 
     let args = wisp_worktrees_api::DoneApplyArgs {
