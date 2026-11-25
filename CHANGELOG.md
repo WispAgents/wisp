@@ -20,6 +20,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Phone app: New task keeps the agent you picked last. With more than one computer (your cloud computer and your own), it read the pick from another computer's settings and went back to that agent each time you opened it. The order you dragged projects into has the same fix.
 - Workflows: when a step fails, every step that depends on it, directly or not, is now skipped. Before, a step two links down still ran.
 - Toasts now sit centred on the main area, not the whole window, so the sidebar no longer pushes them off-centre. They stay centred when you collapse or resize the sidebar.
 - Usage (Claude Code, Codex): a resumed turn counts only its own cost and tokens. Each turn now keeps the conversation's counters (`stats.totals`) and the next turn on the same harness and conversation starts from them, where every follow-up counted the whole conversation again. A chat brought in, adopted or restored, and a conversation whose last turn was stored before this change, takes its first result as the baseline (that turn counts 0 and the next one counts its own); another harness or a fresh conversation starts from zero.
