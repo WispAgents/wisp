@@ -4,6 +4,7 @@
 
 import type { RunEntry, RunFan, RunLane, RunStep, RunStepState } from '@wisp/ui';
 import { t } from './i18n.ts';
+import './i18n/lazy.ts';
 import type { RunState, RunView, SessionRow, StepView } from './types.ts';
 
 export type Tone = 'accent' | 'warn' | 'good' | 'bad' | 'neutral';
