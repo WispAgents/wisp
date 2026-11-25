@@ -29,6 +29,7 @@ export type PeerStatus =
 
 export interface PeerConfig {
   peer: PeerId;
+  /** what this device calls it (shown over the peer's own name); empty: the name the peer gives itself */
   name: string;
   transport: Transport;
   /** the link state saved by an earlier run (first paint) */
@@ -185,7 +186,7 @@ export function createPeers(o: PeersOptions): Peers {
       }
       case 'incompatible': {
         const update = out.update ?? 'peer';
-        const name = untracked(p.info)?.name ?? p.cfg.name;
+        const name = p.cfg.name || (untracked(p.info)?.name ?? '');
         p.conn?.dispose();
         return p.status({ kind: 'incompatible', reason: updateReason(update, name), update: update === 'client' ? 'app' : 'peer', ...(update === 'peer' && { command: updateCommand() }) });
       }
@@ -388,7 +389,9 @@ export function createPeers(o: PeersOptions): Peers {
       const s = infoSig(peer);
       return () => s();
     },
-    name: (peer) => untracked(infoSig(peer))?.name ?? peers.get(peer)?.cfg.name ?? peer,
+    // the name this device gave the computer (the phone's "Cloud", a machine's saved name) wins over what the
+    // computer calls itself: a grid box's own name was its container id ("1959efa12b19"). Empty: the peer's own.
+    name: (peer) => peers.get(peer)?.cfg.name || untracked(infoSig(peer))?.name || peer,
     hasFeature: (peer, need) => hasFeature(untracked(infoSig(peer)), need, manager.name(peer)),
     watch(peer, topic, scope, opts = {}) {
       const p = peers.get(peer);

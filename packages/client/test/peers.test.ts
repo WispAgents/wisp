@@ -61,6 +61,20 @@ test('the peer manager learns features from the welcome', async () => {
   assert.equal(peers.info(A)()?.version, '2.0.0');
 });
 
+// A phone saved its grid box as "Cloud"; the box called itself by its container id ("1959efa12b19") and that's what
+// the phone showed. The name this device gave a computer wins; unnamed, the computer's own.
+test('a peer goes by the name this device gave it, else by its own', async () => {
+  const { peers, t, conn } = await setup();
+  peers.add({ peer: A, name: 'Cloud', transport: t });
+  const B = peerId('home');
+  peers.add({ peer: B, name: '', transport: fakeTransport() });
+  await settle();
+  conn()?.push(welcome({}, { name: '1959efa12b19' }));
+  await settle();
+  assert.equal(peers.name(A), 'Cloud');
+  assert.equal(peers.name(B), 'home', 'no name yet: its id');
+});
+
 // ---------- status ----------
 
 test('a peer outside the protocol window is incompatible, and says which side to update', async () => {
@@ -69,7 +83,7 @@ test('a peer outside the protocol window is incompatible, and says which side to
     [{ proto_min: 9, proto_max: 9 }, 'app', 'Update the app to use studio-mac'],
   ] as const) {
     const { peers, t, conn, clock } = await setup();
-    peers.add({ peer: A, name: 'laptop', transport: t });
+    peers.add({ peer: A, name: '', transport: t }); // unnamed here: the peer's own name
     await settle();
     conn()?.push(welcome({}, { ...range, name: 'studio-mac' }));
     await settle();

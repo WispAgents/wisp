@@ -45,8 +45,9 @@ fn master_token() -> String {
 /// (active, or resolved and waiting on its first event) is listed with the commands and topics its manifest
 /// contributes: the UI's `hasFeature` gates a command on this list, so an empty one refused every gated command
 /// ("Mark read needs a newer wisp.runtime").
-fn peer(kernel: &Kernel) -> wisp_protocol::PeerInfo {
-    let name = env("HOSTNAME").or_else(|| env("COMPUTERNAME")).unwrap_or_else(|| "this computer".into());
+/// `peer` stays what it was (`$HOSTNAME`): phones saved it as the computer's id. `name` is the one people read.
+fn peer(kernel: &Kernel, name: String) -> wisp_protocol::PeerInfo {
+    let id = env("HOSTNAME").or_else(|| env("COMPUTERNAME")).unwrap_or_else(|| "this computer".into());
     let manifests: std::collections::BTreeMap<String, wisp_kernel::Manifest> =
         kernel.manifests().into_iter().map(|m| (m.id.clone(), m)).collect();
     let plugins = kernel
@@ -61,15 +62,7 @@ fn peer(kernel: &Kernel) -> wisp_protocol::PeerInfo {
             wisp_protocol::PeerPlugin { id: s.id, version: s.version, commands, topics, blocks: Vec::new() }
         })
         .collect();
-    wisp_protocol::PeerInfo {
-        peer: name.clone(),
-        name,
-        build: VERSION.into(),
-        version: VERSION.into(),
-        proto_min: 2,
-        proto_max: 2,
-        plugins,
-    }
+    wisp_protocol::PeerInfo { peer: id, name, build: VERSION.into(), version: VERSION.into(), proto_min: 2, proto_max: 2, plugins }
 }
 
 /// How a task's agent reaches this wisp: the edge's address, and the task's own token (HMAC of the
@@ -269,6 +262,8 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
         tracing::warn!(error = %e, "no nursery job: a child started just as wisp is killed may outlive it");
     }
     let box_mode = env("WISP_BOX").is_some_and(|v| v != "0");
+    // asked of the OS while the kernel starts, not after it (cold start budget)
+    let name = tokio::spawn(crate::self_name::of_this_wisp(box_mode));
     let hub = Hub::new();
     let notify: NotifyService = hub.clone();
     let at = Where { home: home.to_owned(), user_home: crate::services::user_home().unwrap_or_else(|| home.to_owned()) };
@@ -329,7 +324,7 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
         .with_pages(list_pages())
         .with_views(views.clone());
     let (snaps, trimmer) = crate::trim::wrap(Arc::new(snaps));
-    let driver = wisp_api::v2::Driver::start(snaps, backend.clone(), peer(&kernel));
+    let driver = wisp_api::v2::Driver::start(snaps, backend.clone(), peer(&kernel, name.await.unwrap_or_else(|_| "this computer".into())));
     let feed = wisp_api::v2_store::feed_read(&store, driver.clone(), views, readers.into());
     hub.mount(driver);
     let edge = Edge::new(cfg, backend, hub);
