@@ -341,5 +341,9 @@
   "stuff.share.hidden.other": "taken out",
   "stuff.share.hidden.times": "{count}×",
   "stuff.share.hidden.more.one": "and {count} more",
-  "stuff.share.hidden.more.other": "and {count} more"
+  "stuff.share.hidden.more.other": "and {count} more",
+  "stuff.share.in.aboutFiles.one": "Take a look at the attached file.",
+  "stuff.share.in.aboutFiles.other": "Take a look at the attached files.",
+  "stuff.share.in.leftOut.one": "Left out {count} file: a share takes pictures, text and PDFs, {files} files and {mb} MB at most.",
+  "stuff.share.in.leftOut.other": "Left out {count} files: a share takes pictures, text and PDFs, {files} files and {mb} MB at most."
 }

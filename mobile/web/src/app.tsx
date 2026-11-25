@@ -14,6 +14,10 @@ import { followStayConnected, type StayConnected } from './stay.ts';
 import { sleepOn } from './cloud.ts';
 import type { StorageLike } from './migrate.ts';
 import type { CloudDeps } from './ui/Cloud.tsx';
+import type { ShareWindow } from './share-in.ts';
+
+/** Android's share sheet into New task (share-in.ts): its own module, loaded only where the bridge has it. */
+const shareIn = (): Promise<typeof import('./share-in.ts')> => import('./share-in.ts');
 
 export interface PhoneAppOptions {
   build: string;
@@ -94,6 +98,22 @@ export async function startPhoneApp(o: PhoneAppOptions): Promise<PhoneApp> {
       s.register(phoneUi({ bridge, launcher, toast: toaster, newId: () => crypto.randomUUID(), cloud, ...(scan && { scan }), ...(stay && { stay }) }));
     }
     stopExtend = o.extend?.(s, toaster, platform);
+    // what Android's share sheet sent: New task on this shell's computer, once it can take tasks
+    const sw = w as unknown as ShareWindow;
+    const scope = readyScope;
+    if (scope && typeof sw.wispAndroid?.takeShare === 'function') {
+      void shareIn().then((m) =>
+        m.followShares({
+          window: sw,
+          ...(ready && { ready }),
+          stuff: () => s.pluginClient('wisp.stuff'),
+          attach: (files) => s.context.prompts?.attach?.('launcher', files),
+          say: (text, tone) => void (tone === 'bad' ? toaster.error(text) : toaster.show(text)),
+          t: (k, vars) => client.i18n.t(k, vars),
+          scope,
+        }),
+      );
+    }
     return s;
   };
 

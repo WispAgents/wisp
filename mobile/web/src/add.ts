@@ -23,6 +23,13 @@ export function scanOutcome(s: Scanned): ScanOutcome {
   return c ? { kind: 'save', computer: c } : { kind: 'manual', why: 'notWisp' };
 }
 
+/** How *Add computer* opens: Scan first when the phone has a scanner; without one (an app whose native side has no
+ *  scanCode) no Scan section at all, and the typed address is the main action (the button always ended in "type it
+ *  by hand"). */
+export function addSheet(scan: unknown): { readonly scan: boolean; readonly primary: 'scan' | 'address' } {
+  return typeof scan === 'function' ? { scan: true, primary: 'scan' } : { scan: false, primary: 'address' };
+}
+
 /** Why a typed address can't be saved: an i18n key's last part (`phone.add.error.<why>`). */
 export type AddressError = 'empty' | 'noUser' | 'port';
 

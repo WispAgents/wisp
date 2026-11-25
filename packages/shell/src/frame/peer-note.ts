@@ -1,6 +1,7 @@
 // What the bar over the list says about one peer (v1 reconnecting.js, ADR-0065 §4), pure so it's tested without a
 // DOM: offline with when it was last heard from and Retry (reconnect now, skipping the backoff), asleep with Wake,
-// too old with the command that updates it. Rows from the last cursor stay on screen under it either way.
+// too old with the command that updates it, or with Reload when it's this app that is too old (the service worker has
+// the new build by then: it keeps a page only with its modules). Rows from the last cursor stay on screen under it either way.
 
 import '../i18n/lazy.ts';
 import type { PeerStatus } from '@wisp/client';
@@ -8,7 +9,7 @@ import type { PeerStatus } from '@wisp/client';
 export interface PeerNote {
   readonly tone: 'info' | 'warn' | 'bad';
   readonly text: string;
-  readonly action?: 'wake' | 'retry';
+  readonly action?: 'wake' | 'retry' | 'reload';
   /** the command that fixes it, shown as code (`npm install -g wisp-agents@latest`) */
   readonly command?: string;
 }
@@ -41,6 +42,11 @@ export function peerNote(s: PeerStatus, name: string, t: T, now: number, locale?
         action: 'retry',
       };
     case 'incompatible':
-      return { tone: 'bad', text: t(s.update === 'app' ? 'shell.peer.updateApp' : 'shell.peer.update', { name }), ...(s.command !== undefined && { command: s.command }) };
+      return {
+        tone: 'bad',
+        text: t(s.update === 'app' ? 'shell.peer.updateApp' : 'shell.peer.update', { name }),
+        ...(s.update === 'app' && { action: 'reload' as const }),
+        ...(s.command !== undefined && { command: s.command }),
+      };
   }
 }

@@ -12,6 +12,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Task page (harness picker): switching a task to another harness hands it over as a follow-up's pick does: the new harness no longer resumes the old one's conversation id, gets its own default model and the nearest thinking level, and hears what it missed (the hand-off note). A turn still running when you switch no longer puts the old conversation back.
 - Delegation: a lead told to delegate through wisp now runs with its harness's own subagent tool off (Claude Code's Task/Agent, opencode's `task`, Copilot's), as its system prompt says; subagents, side discussions and harnesses without wisp's tools keep theirs.
 - OpenCode and Grok: a permission refusal on stderr shows as a blocked card with Allow & retry again (no refusal was ever detected), and a CLI's last stderr line without a newline reaches its turn's error.
+- Android app: **Scan the code** in Add computer now opens a scanner (Google's code scanner from Play services, so the app still asks for no camera permission) and saves the computer with its key pinned. A phone without the scanner no longer shows a Scan button that always ended in "type it by hand": the typed address is the main action there.
+- Android app: something shared to wisp from the share sheet now opens New task with the shared text or link in the box and its pictures or PDFs attached. Before, nothing took it and a toast said to update wisp on the computer. With no computer open yet, the share waits on the phone and wisp says to open a computer first.
+- Android app: **Share** opens Android's share sheet. Before, it copied the link and did nothing else.
+- Installed web app (phone Home Screen, desktop): an app left open or brought back now checks for a new wisp when it comes back into view, resumes, or reconnects. It no longer waits for a page load. *Update the app to reach …* has a **Reload** button. An update whose files fail to download keeps the working version, so the app no longer opens blank offline. Old versions' files are removed from the app's cache once a new one is in.
 
 ## [1.0.0-alpha.14] - 2026-11-25
 

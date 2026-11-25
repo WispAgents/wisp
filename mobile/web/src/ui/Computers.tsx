@@ -11,7 +11,7 @@ import type { PeerId, PluginClient } from '@wisp/client';
 import type { Scanned } from '@wisp/shell/platform';
 import { Button, Dialog, IconButton, EmptyState, Field, Input, ListRow, Pill, Scroll, Section, Sheet, Switch, Text, TopAppBar, useSignal, type Toaster } from '@wisp/ui';
 import type { Tone } from '@wisp/tokens';
-import { alreadySaved, keyChanged, manualComputer, needsStay, scanOutcome, type AddressError, type NewSsh } from '../add.ts';
+import { addSheet, alreadySaved, keyChanged, manualComputer, needsStay, scanOutcome, type AddressError, type NewSsh } from '../add.ts';
 import type { Computer, NativeBridge } from '../bridge.ts';
 import { computerRows, stateOf, type ComputerRow, type ComputerState } from '../computers.ts';
 import type { Launcher } from '../launch.ts';
@@ -126,6 +126,7 @@ function AddSheet(props: {
   const [error, setError] = createSignal<AddressError | undefined>();
   const [note, setNote] = createSignal<string | undefined>();
   const [scanning, setScanning] = createSignal(false);
+  const layout = (): ReturnType<typeof addSheet> => addSheet(props.deps.scan);
   const reset = (): void => {
     setName('');
     setAddress('');
@@ -164,7 +165,7 @@ function AddSheet(props: {
   };
   return (
     <Sheet title={props.t('phone.add.title')} open={props.open} onOpenChange={(o) => (o ? props.onOpenChange(true) : close())} part="phone.add">
-      <Show when={props.deps.scan}>
+      <Show when={layout().scan}>
         <Section title={props.t('phone.add.scanTitle')} description={props.t('phone.add.scanHow')}>
           <Button variant="primary" icon="camera" loading={scanning()} part="phone.add.scan" onClick={scan}>
             {props.t('phone.add.scan')}
@@ -187,7 +188,7 @@ function AddSheet(props: {
         <Field label={props.t('phone.add.name')} hint={props.t('phone.add.nameHint')}>
           <Input value={name()} onInput={setName} part="phone.add.name" />
         </Field>
-        <Button variant={props.deps.scan ? 'secondary' : 'primary'} part="phone.add.save" onClick={save}>
+        <Button variant={layout().primary === 'address' ? 'primary' : 'secondary'} part="phone.add.save" onClick={save}>
           {props.t('phone.add.save')}
         </Button>
       </Section>

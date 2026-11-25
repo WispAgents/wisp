@@ -103,6 +103,8 @@ export interface CapacitorLike {
   nativePromise?(plugin: string, method: string, args?: object): Promise<unknown>;
   addListener?(plugin: string, event: string, fn: (data: unknown) => void): Handle | Promise<Handle>;
   Plugins?: Record<string, Record<string, ((args?: unknown) => Promise<unknown>) | undefined> | undefined>;
+  /** what the native side has (Capacitor's JSExport writes it before any page script): each plugin's methods */
+  PluginHeaders?: readonly { readonly name: string; readonly methods?: readonly { readonly name: string }[] }[];
 }
 
 export const PLUGIN = 'WispSsh';
@@ -188,7 +190,9 @@ export function capacitorBridge(cap: CapacitorLike | undefined): NativeBridge {
 
 /**
  * Fills `Capacitor.Plugins` for the native plugins the shell's androidPlatform calls (WispSsh,
- * LocalNotifications): without @capacitor/core's registerPlugin that map stays empty.
+ * LocalNotifications): without @capacitor/core's registerPlugin that map stays empty. Only the methods the native side
+ * lists (`PluginHeaders`) are there, so a seam this app's Java lacks reads as absent, never as a call that fails
+ * after the button was shown (Scan the code on an app with no scanner); without headers (a preview), every name.
  */
 export function exposePlugins(cap: CapacitorLike | undefined, names: readonly string[] = [PLUGIN, 'LocalNotifications']): void {
   const native = cap?.nativePromise;
@@ -196,8 +200,11 @@ export function exposePlugins(cap: CapacitorLike | undefined, names: readonly st
   const plugins = (cap.Plugins ??= {});
   for (const name of names) {
     if (plugins[name]) continue;
+    const header = cap.PluginHeaders ? cap.PluginHeaders.find((h) => h.name === name) : undefined;
+    if (cap.PluginHeaders && !header) continue; // not in this build
+    const has = header ? new Set((header.methods ?? []).map((m) => m.name)) : undefined;
     plugins[name] = new Proxy({} as Record<string, (args?: unknown) => Promise<unknown>>, {
-      get: (_, method) => (typeof method === 'string' ? (args?: unknown) => native.call(cap, name, method, record(args)) : undefined),
+      get: (_, method) => (typeof method === 'string' && (!has || has.has(method)) ? (args?: unknown) => native.call(cap, name, method, record(args)) : undefined),
     });
   }
 }

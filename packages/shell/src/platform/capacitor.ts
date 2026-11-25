@@ -1,6 +1,6 @@
-// What the two Capacitor phone apps (Android, iPhone: ADR-0065) share: the stock plugins (Share, Haptics,
-// LocalNotifications, Browser) when the build has them, the native Back gesture's `wisp-back` events, and
-// the browser's answer for anything a build lacks. Each app's module adds what only it has.
+// What the two Capacitor phone apps (Android, iPhone: ADR-0065) share: the app's own share sheet (WispSsh.share), the
+// stock plugins (Share, Haptics, LocalNotifications, Browser) when the build has them, the native Back gesture's
+// `wisp-back` events, and the browser's answer for anything a build lacks. Each app's module adds what only it has.
 
 import { browserPlatform } from './browser.ts';
 import type { BackEvent, CapacitorGlobal, Haptic, Platform, PlatformWindow } from './types.ts';
@@ -48,7 +48,19 @@ export function capacitorPlatform(w: PlatformWindow, kind: 'android' | 'ios', op
       await fn({ notifications: [{ id: Math.floor(Math.random() * 2 ** 31), title: n.title, body: n.body ?? '', extra: n.target ?? null }] });
       return 'shown';
     },
+    // the app's own share sheet first (WispSsh.share: Android's chooser; its System WebView has no navigator.share and
+    // the build carries no Share plugin, so every Share was a silent copy), then @capacitor/share, then the browser's
     async share(d) {
+      const own = pluginFn(cap, 'WispSsh', 'share');
+      // (text and links only: a file goes the stock plugin's or the browser's way)
+      if (own && !d.files?.length) {
+        try {
+          const r = await own({ title: d.title, text: d.text, url: d.url });
+          return r && typeof r === 'object' && (r as { cancelled?: unknown }).cancelled === true ? 'cancelled' : 'shared';
+        } catch {
+          // an older app without it (the bundle's plugin map answers any name): the next way
+        }
+      }
       if (!pluginFn(cap, 'Share', 'share')) return base.share(d);
       try {
         await call('Share', 'share', { title: d.title, text: d.text, url: d.url });

@@ -158,6 +158,73 @@ public class WispSshPlugin extends Plugin {
         call.resolve();
     }
 
+    // Share: Android's own chooser. The System WebView has no navigator.share and the app carries no
+    // Share plugin, so the page's Share was a silent copy. The chooser tells nothing of what was picked:
+    // once it is open, it's shared.
+    @PluginMethod
+    public void share(PluginCall call) {
+        String title = call.getString("title", "");
+        String text = call.getString("text", "");
+        String url = call.getString("url", "");
+        String body = text.isEmpty() ? url : url.isEmpty() || text.contains(url) ? text : text + "\n" + url;
+        if (body.isEmpty() && title.isEmpty()) {
+            call.reject("Nothing to share.");
+            return;
+        }
+        android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(android.content.Intent.EXTRA_TEXT, body.isEmpty() ? title : body);
+        if (!title.isEmpty()) send.putExtra(android.content.Intent.EXTRA_SUBJECT, title);
+        android.content.Intent chooser = android.content.Intent.createChooser(send, title.isEmpty() ? null : title);
+        getActivity().runOnUiThread(() -> {
+            try {
+                getActivity().startActivity(chooser);
+                JSObject r = new JSObject();
+                r.put("shared", true);
+                call.resolve(r);
+            } catch (android.content.ActivityNotFoundException e) {
+                call.reject("No app takes a share.", e);
+            }
+        });
+    }
+
+    // Scan the desktop's *Add to your phone* QR: Google's code scanner (Play services draws the camera
+    // screen, so the app asks for no CAMERA permission). {text} scanned, {cancelled} closed, {denied}
+    // when the scanner module is missing or can't run: the page then asks for the address by hand.
+    @PluginMethod
+    public void scanCode(PluginCall call) {
+        com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions options =
+            new com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+                .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
+                .build();
+        JSObject cancelled = new JSObject();
+        cancelled.put("cancelled", true);
+        try {
+            com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(getActivity(), options)
+                .startScan()
+                .addOnSuccessListener(code -> {
+                    String text = code.getRawValue();
+                    if (text == null || text.isEmpty()) {
+                        call.resolve(cancelled);
+                        return;
+                    }
+                    JSObject r = new JSObject();
+                    r.put("text", text);
+                    call.resolve(r);
+                })
+                .addOnCanceledListener(() -> call.resolve(cancelled))
+                .addOnFailureListener(e -> call.resolve(denied()));
+        } catch (RuntimeException e) {
+            call.resolve(denied()); // no Play services on this phone
+        }
+    }
+
+    private static JSObject denied() {
+        JSObject r = new JSObject();
+        r.put("denied", true);
+        return r;
+    }
+
     @PluginMethod
     public void listKeys(PluginCall call) {
         try {

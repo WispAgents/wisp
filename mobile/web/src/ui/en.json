@@ -86,5 +86,7 @@
   "phone.cloud.signOut": "Sign out",
   "phone.cloud.delete": "Delete your account",
   "phone.cloud.addAccount": "Add another account",
-  "phone.cloud.saveFailed": "Couldn’t update {handle}’s computers on this phone. Try again."
+  "phone.cloud.saveFailed": "Couldn’t update {handle}’s computers on this phone. Try again.",
+  "phone.share.pick": "Open a computer to start a task with what you shared.",
+  "phone.share.unread": "Couldn’t read what you shared. Share it again."
 }

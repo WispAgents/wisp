@@ -8,8 +8,13 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /** The native seams (ADR-0065 step 8) through the app's WispSsh plugin: `secureGet`/`secureSet`/`secureRemove` (the
  * Keystore / Keychain), `scanCode`, `registerPush`. A native side without a method rejects the call: that answers
- * 'unsupported' (or null), never a throw. */
-export function nativeSeams(cap: CapacitorGlobal | undefined, kind: 'android' | 'ios'): Required<Pick<Platform, 'secureStore' | 'scanCode' | 'registerPush'>> {
+ * 'unsupported' (or null), never a throw. `scanCode` is there only when the plugin has it (Capacitor lists each
+ * plugin's own methods): with none, the Computers screen offers the typed address alone, never a Scan button that
+ * always ends in "type it by hand" (the Android app had no scanner). */
+export function nativeSeams(
+  cap: CapacitorGlobal | undefined,
+  kind: 'android' | 'ios',
+): Required<Pick<Platform, 'secureStore' | 'registerPush'>> & Pick<Platform, 'scanCode'> {
   const call = async (method: string, args?: unknown): Promise<Record<string, unknown> | undefined> => {
     const fn = pluginFn(cap, 'WispSsh', method);
     if (!fn) return undefined;
@@ -27,15 +32,16 @@ export function nativeSeams(cap: CapacitorGlobal | undefined, kind: 'android' | 
     set: async (key, value) => ((await call('secureSet', { key, value })) ? 'set' : 'unsupported'),
     remove: async (key) => void (await call('secureRemove', { key })),
   };
+  const scanCode = async (): Promise<Scanned> => {
+    const r = await call('scanCode');
+    if (!r) return 'unsupported';
+    if (r['denied'] === true) return 'denied';
+    const text = str(r['text']);
+    return text ? { text } : 'cancelled';
+  };
   return {
     secureStore,
-    async scanCode(): Promise<Scanned> {
-      const r = await call('scanCode');
-      if (!r) return 'unsupported';
-      if (r['denied'] === true) return 'denied';
-      const text = str(r['text']);
-      return text ? { text } : 'cancelled';
-    },
+    ...(pluginFn(cap, 'WispSsh', 'scanCode') && { scanCode }),
     async registerPush(): Promise<PushRegistration> {
       const r = await call('registerPush');
       if (!r) return 'unsupported';

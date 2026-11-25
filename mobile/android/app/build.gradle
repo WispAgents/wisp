@@ -87,6 +87,8 @@ dependencies {
     implementation "com.hierynomus:sshj:0.41.2"
     implementation "org.bouncycastle:bcprov-jdk18on:1.84" // registered first: Android's own BC lacks Ed25519
     implementation "org.slf4j:slf4j-nop:2.0.17"
+    // Scan the code (WispSshPlugin.scanCode): Play services' scanner UI, so no CAMERA permission.
+    implementation "com.google.android.gms:play-services-code-scanner:16.1.0"
     testImplementation "junit:junit:$junitVersion"
     // Tests only, never in the APK: an in-process sshd for TunnelTest's edge cases (host keys, the
     // password once, wisp stopped there), and the real org.json for Computers (android.jar's is a stub).

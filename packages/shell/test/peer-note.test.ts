@@ -19,7 +19,8 @@ test('offline_says_when_it_was_last_updated_with_retry', () => {
 
 test('an_older_wisp_says_update_with_the_command', () => {
   expect(peerNote({ kind: 'incompatible', reason: 'Update wisp on Studio', update: 'peer', command: 'npm install -g wisp-agents@latest' }, 'Studio', t, 0)).toEqual({ tone: 'bad', text: 'Update wisp on Studio', command: 'npm install -g wisp-agents@latest' });
-  expect(peerNote({ kind: 'incompatible', reason: 'x', update: 'app' }, 'Studio', t, 0)).toEqual({ tone: 'bad', text: 'Update the app to reach Studio' });
+  // this app too old: Reload brings the build the service worker already holds (the note had no action at all)
+  expect(peerNote({ kind: 'incompatible', reason: 'x', update: 'app' }, 'Studio', t, 0)).toEqual({ tone: 'bad', text: 'Update the app to reach Studio', action: 'reload' });
 });
 
 test('offline_since_uses_the_app_locale_not_en_gb', () => {

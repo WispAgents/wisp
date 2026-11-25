@@ -197,9 +197,9 @@ describe('the phone apps’ native seams (ADR-0065 step 8)', () => {
     expect(await p.secureStore.get('k')).toBeNull();
     expect(await p.secureStore.set('k', 'v')).toBe('unsupported');
     await expect(p.secureStore.remove('k')).resolves.toBeUndefined();
-    expect(await p.scanCode()).toBe('unsupported');
+    expect(await p.scanCode?.()).toBe('unsupported');
     expect(await p.registerPush()).toBe('unsupported');
-    expect(await nativeSeams(undefined, 'ios').scanCode(), 'nor a WebView without the native side').toBe('unsupported');
+    expect(nativeSeams(undefined, 'ios').scanCode, 'nor a WebView without the native side: no scanner at all').toBeUndefined();
     const web = detectPlatform(fakeWindow());
     expect(web.secureStore ?? web.scanCode ?? web.registerPush, 'a browser has none').toBeUndefined();
   });
@@ -227,7 +227,38 @@ describe('the phone apps’ native seams (ADR-0065 step 8)', () => {
     expect(await p.secureStore.get('wisp.k')).toBe('sealed');
     await p.secureStore.remove('wisp.k');
     expect(await p.secureStore.get('wisp.k')).toBeNull();
-    expect(await p.scanCode()).toEqual({ text: 'wisp+ssh://me@studio?fp=x' });
+    expect(await p.scanCode?.()).toEqual({ text: 'wisp+ssh://me@studio?fp=x' });
     expect(await p.registerPush()).toEqual({ handle: 'h1', publicKey: 'pk', platform: 'ios' });
+  });
+
+  // the Android app had no scanCode, yet the seam was always there: Add computer's main button always ended in "type it
+  // by hand". It's there only when the plugin has the method, and it reads each answer the scanner gives
+  it('the_scanner_is_there_only_when_the_native_side_has_it_and_reads_its_answers', async () => {
+    expect(nativeSeams(cap({ secureGet: async () => ({}) }), 'android').scanCode, 'an app without it').toBeUndefined();
+    const answer = (r: unknown) => nativeSeams(cap({ scanCode: async () => r }), 'android').scanCode?.();
+    expect(await answer({ denied: true })).toBe('denied');
+    expect(await answer({})).toBe('cancelled');
+    expect(await answer({ cancelled: true })).toBe('cancelled');
+    expect(await answer({ text: '' })).toBe('cancelled');
+    expect(await answer({ text: 'wisp+ssh://me@studio?fp=x' })).toEqual({ text: 'wisp+ssh://me@studio?fp=x' });
+    const rejected = nativeSeams(cap({ scanCode: () => Promise.reject(new Error('no')) }), 'android');
+    expect(await rejected.scanCode?.()).toBe('unsupported');
+  });
+});
+
+// Android's Share had no way out (no Share plugin in the build, no navigator.share in the System WebView): every Share
+// was a silent copy. The app's own chooser (WispSsh.share) comes first; an app without it falls back as before
+describe('share in the Android app', () => {
+  it('the_app_s_own_share_sheet_takes_a_share', async () => {
+    const asked: unknown[] = [];
+    const w = fakeWindow({ cap: native('android', { WispSsh: { share: async (a) => (asked.push(a), { shared: true }) } }) });
+    expect(await detectPlatform(w).share({ title: 'PR', text: 'Look', url: 'https://github.com/x/1' })).toBe('shared');
+    expect(asked).toEqual([{ title: 'PR', text: 'Look', url: 'https://github.com/x/1' }]);
+    const told = fakeWindow({ cap: native('android', { WispSsh: { share: async () => ({ cancelled: true }) } }) });
+    expect(await detectPlatform(told).share({ text: 'x' })).toBe('cancelled');
+    // without it (or an older app refusing it): the browser's answer, as before
+    const old = fakeWindow({ cap: native('android', { WispSsh: { share: () => Promise.reject(new Error('not implemented')) } }) });
+    expect(await detectPlatform(old).share({ text: 'x' })).toBe('unsupported');
+    expect(await detectPlatform(fakeWindow({ cap: native('android') })).share({ text: 'x' })).toBe('unsupported');
   });
 });

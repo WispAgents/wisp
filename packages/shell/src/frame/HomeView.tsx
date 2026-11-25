@@ -330,8 +330,14 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   ask('', true); // v1 refresh({ now: true }): Auto's pick shows from the start
   let input: HTMLTextAreaElement | undefined;
   onCleanup(shell.focusTargets.provide('launcher', () => input?.focus()));
-  // a plugin may fill this prompt (Start from an issue): set it, the caret at its end
-  const box = { text: () => text(), set: (v: string) => (setText(v), menu.typed(v)), focus: () => (input?.focus(), input?.setSelectionRange(input.value.length, input.value.length)) };
+  // a plugin may fill this prompt (Start from an issue): set it, the caret at its end; files shared to the phone app
+  // come as its attachments
+  const box = {
+    text: () => text(),
+    set: (v: string) => (setText(v), menu.typed(v)),
+    focus: () => (input?.focus(), input?.setSelectionRange(input.value.length, input.value.length)),
+    attach: (fs: readonly File[]) => att.add(fs),
+  };
   if (shell.prompts) onCleanup(shell.prompts.provide('launcher', box));
   // v1 puts the caret in the prompt a beat after Home shows; never taken from what holds it already (a menu or a
   // dialog opened while Home was still loading kept its focus in v1, whose Home was there from the start)
