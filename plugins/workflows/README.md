@@ -23,9 +23,30 @@ subagents and the conductor's after-a-run pipeline.
   - the parent ends in review, or error when a required step failed.
 - The decisions are pure (wisp-workflows-core): checks, expansion, what starts next, outputs.
 
+## In a task (ADR-0119)
+
+- An agent runs one from its task with `workflows_run` (`spec` written now, or a saved `name`); `workflows_status` and
+  `workflows_stop` read and stop it. The user's `/workflow <words>` makes the task's agent the run's lead.
+- A run belongs to a task: its steps are that task's children, its view is `ext["wisp.workflows"].runs` (the row's
+  `workflowRuns`), and the task is sent every step's result when it ends.
+- `foreach: ${{ tasks.<step>.output.<list> }}` fans out at run time (`${{ item }}`, `${{ index }}`); `phase` and
+  `title` are for the board; an `output` schema is asked for at the end of the step's prompt.
+- An agent's steps run in its task's folder at its mode or lower.
+- UI (`ui/`): the band on `shell.task:band` (the kit's `RunBoard`: lanes, cards, fan-out dots), `/workflow` in the `/`
+  menu with the saved workflows.
+
+## Changing a run, prebuilt workflows (ADR-0120, ADR-0121)
+
+- The task's details show each run as a row (`RunChip`); it opens the board in the main area (task → board → step).
+- The task stays in Working while its run goes (`runtime.after`); `workflow.started` / `workflow.ended` are durable.
+- `workflows.edit` (`workflows_edit`, the board's ⋯ on a step): skip, retry, add, change a step that hasn't started,
+  concurrency and budget; all or nothing; an ended run starts again on a retry or an add. A step that fails for good
+  is told to the agent at once.
+- `starters.json`: prebuilt workflows run by name, never exported; `workflows.starters` lists them.
+
 ## Not yet
 
 - `on:` another machine: steps run here, and the run says so.
-- Picking a run back up after wisp stopped in the middle of it.
-- A schema-typed `output`: it is recorded but not enforced.
+- Picking a run back up after wisp stopped in the middle of it (it says it was cut).
+- A schema-typed `output`: it is asked for, not checked.
 - `on: { trigger }`: start runs by hand or from the CLI for now.

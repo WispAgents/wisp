@@ -263,6 +263,47 @@ test('the edge: no cookie → sign in; another user’s cookie doesn’t open it
   assert.equal(hook.json?.error, 'not found');
 });
 
+test('signed media URLs: the phone app’s <img> loads a file with no token; only that path, that device, an hour', async () => {
+  const b = browser();
+  await devSignIn(b, 'mia@example.com');
+  const mia = grid.accounts.byHandle('mia');
+  const code = grid.accounts.deviceCode('Mia’s phone');
+  grid.accounts.answerCode(code.user_code, mia.id, true);
+  const token = grid.accounts.pollCode(code.device_code, 5).token;
+  const edge = cfg.instanceUrl('mia');
+  const auth = { authorization: `Bearer ${token}`, accept: 'application/json', origin: 'https://localhost' };
+  const file = '/api/sessions/s1/file?path=%2Ftmp%2Fa.png';
+  const upload = '/api/uploads/u1';
+
+  const pre = await browser().go(`${edge}/_grid/media`, { method: 'OPTIONS', headers: { origin: 'https://localhost' } });
+  assert.equal(pre.status, 204);
+  assert.equal(pre.headers['access-control-allow-origin'], '*');
+  const signed = await browser().go(`${edge}/_grid/media`, { method: 'POST', body: { paths: [file, upload] }, headers: auth });
+  assert.equal(signed.status, 200, signed.text);
+  const [f, u] = signed.json.urls;
+  assert.ok(f.startsWith(`${file}&_ge=`) && u.startsWith(`${upload}?_ge=`), f);
+
+  const get = (path) => browser().go(`${edge}${path}`, { headers: { accept: 'image/*' } });
+  assert.equal((await get(file)).status, 401, 'no token, no signature: the grid refuses');
+  const through = await get(f);
+  assert.notEqual(through.status, 401, 'signed: on to her wisp');
+  assert.notEqual(through.status, 302);
+  assert.equal((await get(f.replace('a.png', 'b.png'))).status, 401, 'another file');
+  assert.equal((await get(f.replace(/_gs=./, '_gs=x'))).status, 401, 'a forged signature');
+  await devSignIn(browser(), 'ned@example.com');
+  assert.equal((await browser().go(`${cfg.instanceUrl('ned')}${f}`, { headers: { accept: 'image/*' } })).status, 401, 'another address');
+  assert.equal((await browser().go(`${edge}${f}`, { method: 'POST', body: {}, headers: { accept: 'application/json' } })).status, 401, 'GET only');
+
+  const bad = await browser().go(`${edge}/_grid/media`, { method: 'POST', body: { paths: ['/api/sessions'] }, headers: auth });
+  assert.equal(bad.status, 400, 'only a file or an upload is signed');
+  const cookie = await b.go(`${edge}/_grid/media`, { method: 'POST', body: { paths: [file] }, headers: { accept: 'application/json', origin: edge } });
+  assert.notEqual(cookie.status, 200, 'a browser with a cookie needs none');
+
+  const devId = grid.accounts.devices(mia.id)[0].id;
+  grid.accounts.revokeDevice(mia.id, devId);
+  assert.equal((await get(f)).status, 401, 'the device revoked: its links die with it');
+});
+
 test('a task runs in the user’s wisp through the edge; idle, it stops; the next request wakes it', async () => {
   const b = browser();
   await devSignIn(b, 'cyd@example.com');

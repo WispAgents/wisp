@@ -1,30 +1,30 @@
-//! wisp.workflows host (ADR-0028): the `workflow` resource kind (`workflows:` in a formula, kept in
-//! `workflows_def`) and the runner.
+//! wisp.workflows host (ADR-0028, ADR-0119): the `workflow` resource kind (`workflows:` in a formula, kept in
+//! `workflows_def`), the runner (run.rs), `/workflow` (slash.rs) and each task's line of its runs (the row summary).
 //!
-//! A run is a parent task (made held: it never runs an agent itself) whose children are its steps. The
-//! runner asks wisp-workflows-core what starts next, makes each child with `runtime.create` (its spec,
-//! `parentId` and `lineage.workflowRun` set), and wakes on `turn.ended` to read how each ended: done
-//! with its output (from its answer), or failed (tried again while it has retries). Each step's state is
-//! kept on the parent (`ext["wisp.workflows"]`), and the parent ends in review, or error when a step
-//! that had to succeed didn't.
+//! A run belongs to a task: the agent's that started it with `workflows_run`, the one the user named, or a held task
+//! made for it. The runner asks wisp-workflows-core what starts next, makes each step a child task of that owner with
+//! `runtime.create`, wakes on `turn.ended` to read how each ended, writes where the run stands on the owner
+//! (`ext["wisp.workflows"].runs`) and, when it ended, sends the owner every step's result.
 //!
-//! Not yet: `on:` another machine (steps run here, and the run says so), and picking up a run wisp was
-//! stopped in the middle of.
+//! Not yet: `on:` another machine (steps run here, and the run says so), and picking up a run wisp was stopped in the
+//! middle of (it says it was cut, and its owner can run it again).
+
+mod edit;
+mod run;
+mod slash;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use tokio::sync::broadcast;
-use wisp_kernel::{Call, Ctx, Manifest, Plugin, Result, Setup, WireError};
+use wisp_kernel::{Call, Failure, InterceptOpts, Manifest, Plugin, Result, Setup, Verdict, WireError};
 use wisp_resources_api::{CrudKind, KindInfo, RESOURCE_KIND, Resource, ResourceKind, schema_of};
 use wisp_runtime_api::commands as r;
 use wisp_runtime_api::events::TurnEnded;
-use wisp_runtime_api::spec::Lineage;
-use wisp_runtime_api::{Mode, SessionId, SessionState, Turn, TurnStatus};
+use wisp_runtime_api::hooks::{BeforeCreate, BeforeFollowUp};
 use wisp_store::{Col, EntityDef, Migration, Query, Row, Store};
-use wisp_workflows_api::{EXT, List, NamedWorkflow, Remove, Run as RunCmd, RunArgs, Set, Started, WorkflowSpec};
-use wisp_workflows_core::{Action, Run, check, output_of};
+use wisp_workflows_api::{EXT, Edit, List, NamedWorkflow, Remove, Run as RunCmd, Set, Starters, Status, Stop, WorkflowSpec};
+use wisp_workflows_core::check;
 
 pub use wisp_workflows_api::PLUGIN_ID;
 
@@ -46,15 +46,29 @@ const DEF: EntityDef = EntityDef {
     topics,
 };
 
-/// How often a run looks at its steps when nothing woke it (timeouts).
-const LOOK_MS: u64 = 2_000;
-
 #[allow(clippy::needless_pass_by_value)] // for map_err
 fn store_err(e: wisp_store::StoreError) -> WireError {
     WireError::internal(format!("store: {e}"))
 }
 
-async fn list(store: &Store) -> Result<Vec<NamedWorkflow>> {
+/// The prebuilt workflows (starters.json): run by name (`/workflow audit`, `wisp run audit`) unless one of yours has
+/// the name; read-only, and never in an export (save one to make it yours: `wisp workflows starters`, then apply it).
+pub(crate) fn starters() -> Vec<NamedWorkflow> {
+    serde_json::from_str(include_str!("../starters.json")).unwrap_or_default()
+}
+
+/// Yours, then the prebuilt ones yours don't name.
+pub(crate) async fn runnable(store: &Store) -> Result<Vec<NamedWorkflow>> {
+    let mut all = list(store).await?;
+    for s in starters() {
+        if !all.iter().any(|w| w.name == s.name) {
+            all.push(s);
+        }
+    }
+    Ok(all)
+}
+
+pub(crate) async fn list(store: &Store) -> Result<Vec<NamedWorkflow>> {
     let rows = store.read_async(|r| r.query(DEF.kind, &Query::new())).await.map_err(store_err)?;
     let mut out: Vec<NamedWorkflow> = rows.into_iter().filter_map(|r| serde_json::from_value(r.get("body")?.clone()).ok()).collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -83,195 +97,43 @@ async fn put(store: &Store, w: NamedWorkflow) -> Result<NamedWorkflow> {
     Ok(w)
 }
 
-/// `(task, cost)` of every turn that ended, for the runs to wake on.
-type Ended = broadcast::Sender<(String, f64)>;
+/// `runtime.prompt@1`: the lead's note in front of a turn whose prompt is `/workflow <words>` (slash.rs); wisp's own
+/// follow-ups (a run's result) are never read as one.
+struct Lead(wisp_kernel::Ctx);
 
-struct State {
-    ended: Ended,
-}
-
-/// A node's `mode:` as runtime names it (`plan`, `edits`, `auto`); a wrong one fails the step, as runtime's own
-/// check of the args did.
-fn mode_of(m: &str) -> std::result::Result<Option<Mode>, String> {
-    if m.is_empty() {
-        return Ok(None);
+impl wisp_runtime_api::points::PromptPart for Lead {
+    fn id(&self) -> &'static str {
+        "wisp.workflows.lead"
     }
-    serde_json::from_value(json!(m)).map(Some).map_err(|_| format!("{m:?} isn't a mode (plan, edits or auto)"))
-}
-
-fn some(v: &str) -> Option<String> {
-    (!v.is_empty()).then(|| v.to_owned())
-}
-
-/// The child task's args for a node (Err: why it can't start).
-fn child_args(
-    run: &Run,
-    name: &str,
-    parent: &str,
-    project: &str,
-    node: &str,
-    prompt: String,
-    steps: Vec<String>,
-) -> std::result::Result<r::StartArgs, String> {
-    let n = run.nodes.iter().find(|n| n.id == node).map(|n| n.spec.clone()).unwrap_or_default();
-    let cwd = if n.project.is_empty() { project } else { n.project.as_str() };
-    Ok(r::StartArgs {
-        prompt,
-        title: Some(format!("{name} · {node}")),
-        parent_id: Some(SessionId(parent.to_owned())),
-        lineage: Lineage { workflow_run: Some(parent.to_owned()), ..Lineage::default() },
-        ext: [(EXT.to_owned(), json!({ "run": parent, "node": node }))].into(),
-        agent: some(&n.agent),
-        model: some(&n.model),
-        effort: some(&n.effort),
-        mode: mode_of(&n.mode)?,
-        cwd: some(cwd),
-        steps,
-        goal: n.goal.clone(),
-        worktree: n.worktree,
-        ..r::StartArgs::default()
-    })
-}
-
-/// A wire name (`running`, `done`, …) of a runtime enum.
-fn wire_name<T: serde::Serialize>(v: T) -> String {
-    serde_json::to_value(v).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
-}
-
-async fn report(ctx: &Ctx, call: &Call, parent: &str, name: &str, run: &Run, state: &str, notes: &[String]) {
-    let value = json!({ "workflow": name, "state": state, "cost": run.cost(), "steps": run.report(), "notes": notes });
-    // set-ext: whole one writer: the run's task is made by `start` and only its own `drive` loop writes this slot
-    let a = r::SetExtArgs { id: SessionId(parent.to_owned()), plugin: EXT.into(), value, expect: None };
-    if let Err(err) = ctx.run::<r::SetExt>(call, a).await {
-        tracing::warn!(error = %err.message, task = parent, "workflows: runtime.setExt");
+    fn part(&self, _session: &wisp_runtime_api::model::Session) -> String {
+        String::new()
     }
-}
-
-async fn set_state(ctx: &Ctx, call: &Call, id: &str, state: SessionState) {
-    if let Err(err) = ctx.run::<r::SetState>(call, r::SetStateArgs { id: SessionId(id.to_owned()), state }).await {
-        tracing::warn!(error = %err.message, task = id, "workflows: runtime.setState");
-    }
-}
-
-/// How the node's task stands: None while it runs (or waits on you), or when it can't be read; else (ok, its
-/// output, why).
-async fn ended(ctx: &Ctx, call: &Call, task: &str) -> Option<(bool, Value, String)> {
-    let id = SessionId(task.to_owned());
-    let t = ctx.run::<r::Get>(call, r::IdArgs { id: id.clone() }).await.ok()?;
-    let busy = matches!(t.state, SessionState::Running | SessionState::Waiting) || !t.queue.is_empty() && !t.queue_held;
-    if busy {
-        return None;
-    }
-    let turns = ctx.run::<r::Turns>(call, r::TurnsArgs { id, before: None, limit: None, masked: None }).await.ok()?;
-    Some(outcome(t.state, turns.last()))
-}
-
-/// How a step ended, from its task's state and its last turn: done with no error is ok.
-fn outcome(state: SessionState, last: Option<&Turn>) -> (bool, Value, String) {
-    let ok = last.is_some_and(|l| l.status == TurnStatus::Done && !l.is_error);
-    let why = if ok { String::new() } else { format!("it ended {}", last.map_or_else(|| wire_name(state), |l| wire_name(l.status))) };
-    let output = last.and_then(|l| serde_json::to_value(l).ok()).map_or(Value::Null, |l| output_of(&l));
-    (ok, output, why)
-}
-
-/// Runs `w` under the parent task until every step has ended.
-#[allow(clippy::too_many_arguments)]
-async fn drive(
-    ctx: Ctx,
-    mut wake: broadcast::Receiver<(String, f64)>,
-    parent: String,
-    name: String,
-    project: String,
-    spec: WorkflowSpec,
-    inputs: BTreeMap<String, Value>,
-) {
-    let call = ctx.root_call();
-    let Ok(clock) = ctx.clock() else { return };
-    let mut run = Run::new(spec, &inputs);
-    let mut notes: Vec<String> = Vec::new();
-    for n in &run.nodes {
-        if !n.spec.on.is_empty() && !notes.iter().any(|x| x.contains(&n.step)) {
-            notes.push(format!("{} runs on this computer: steps on another machine ({}) aren't wired yet", n.step, n.spec.on));
-        }
-    }
-    let mut costs: BTreeMap<String, f64> = BTreeMap::new();
-    loop {
-        for a in run.next(clock.now_ms()) {
-            match a {
-                Action::Start { node, prompt, steps } => match child_args(&run, &name, &parent, &project, &node, prompt, steps) {
-                    Ok(args) => match ctx.run::<r::Create>(&call, args).await {
-                        Ok(made) => run.started(&node, &made.id.0),
-                        Err(e) => run.finished(&node, false, Value::Null, &e.message, 0.0),
-                    },
-                    Err(why) => run.finished(&node, false, Value::Null, &why, 0.0),
-                },
-                Action::Stop { node, task } => {
-                    if let Err(err) = ctx.run::<r::Stop>(&call, r::StopArgs { id: SessionId(task.clone()), clear_queue: false }).await {
-                        tracing::warn!(error = %err.message, task, "workflows: runtime.stop");
-                    }
-                    run.finished(&node, false, Value::Null, "it ran past its timeout", costs.remove(&task).unwrap_or(0.0));
-                }
+    fn before(&self, note: wisp_runtime_api::points::TurnNote) -> wisp_kernel::BoxFuture<'static, String> {
+        let ctx = self.0.clone();
+        Box::pin(async move {
+            if note.turn.by.as_deref().is_some_and(|b| b != "user") {
+                return String::new();
             }
-        }
-        report(&ctx, &call, &parent, &name, &run, "running", &notes).await;
-        if run.over() {
-            break;
-        }
-        // a turn ended somewhere, or it's time to look at the timeouts
-        tokio::select! {
-            got = wake.recv() => {
-                if let Ok((task, cost)) = got {
-                    *costs.entry(task).or_default() += cost;
-                }
-            }
-            () = clock.sleep(LOOK_MS) => {}
-        }
-        let running: Vec<(String, String)> = run
-            .runs
-            .iter()
-            .filter_map(|(id, r)| {
-                (r.state == wisp_workflows_api::StepState::Running).then(|| r.task.clone().map(|t| (id.clone(), t))).flatten()
-            })
-            .collect();
-        for (node, task) in running {
-            if let Some((ok, output, why)) = ended(&ctx, &call, &task).await {
-                run.finished(&node, ok, output, &why, costs.remove(&task).unwrap_or(0.0));
-            }
-        }
+            let Some(words) = slash::typed(&note.turn.prompt) else { return String::new() };
+            let names: Vec<slash::Known> = match ctx.service::<Store>() {
+                Ok(store) => runnable(&store)
+                    .await
+                    .map(|l| {
+                        l.into_iter().map(|w| slash::Known { inputs: w.spec.inputs.keys().cloned().collect(), name: w.name }).collect()
+                    })
+                    .unwrap_or_default(),
+                Err(_) => Vec::new(),
+            };
+            let tool = note.tools.map(|pre| format!("{pre}workflows_run"));
+            slash::lead_note(words, &names, tool.as_deref()).unwrap_or_default()
+        })
     }
-    let state = if run.ok() { SessionState::Review } else { SessionState::Error };
-    report(&ctx, &call, &parent, &name, &run, if run.ok() { "done" } else { "failed" }, &notes).await;
-    set_state(&ctx, &call, &parent, state).await;
 }
 
-async fn start(ctx: &Ctx, call: &Call, st: &State, a: RunArgs) -> Result<Started> {
-    let store = ctx.service::<Store>()?;
-    let all = list(&store).await?;
-    let Some(w) = all.into_iter().find(|w| w.name == a.name) else {
-        return Err(WireError::not_found(format!("no workflow named {} (wisp export workflows lists them)", a.name)));
-    };
-    let missing: Vec<&String> = w.spec.inputs.iter().filter(|(k, v)| v.is_null() && !a.inputs.contains_key(*k)).map(|(k, _)| k).collect();
-    if !missing.is_empty() {
-        return Err(WireError::invalid(format!(
-            "{} needs {}",
-            w.name,
-            missing.iter().map(|m| format!("{m}=…")).collect::<Vec<_>>().join(" ")
-        )));
-    }
-    let project = a.project.clone().unwrap_or_else(|| w.spec.project.clone());
-    let steps: Vec<String> = w.spec.tasks.keys().cloned().collect();
-    let made = r::StartArgs {
-        prompt: format!("Run the workflow {}: {}", w.name, steps.join(", ")),
-        title: Some(format!("{} (workflow)", w.name)),
-        hold: true,
-        cwd: some(&project),
-        ext: [(EXT.to_owned(), json!({ "workflow": w.name, "state": "starting" }))].into(),
-        ..r::StartArgs::default()
-    };
-    let id = ctx.run::<r::Create>(call, made).await?.id.0;
-    set_state(ctx, call, &id, SessionState::Running).await;
-    ctx.spawn(drive(ctx.clone(), st.ended.subscribe(), id.clone(), w.name, project, w.spec, a.inputs));
-    Ok(Started { id })
+const SLASH: InterceptOpts = InterceptOpts { priority: 12, failure: Failure::Open, timeout_ms: 300 };
+
+fn veto<T>(message: String) -> Verdict<T> {
+    Verdict::Veto { code: "invalid".into(), message, then: Vec::new() }
 }
 
 /// The `workflow` resource kind; a definition is checked when it's applied.
@@ -292,6 +154,118 @@ impl ResourceKind for WorkflowKind {
     }
     fn apply<'a>(&'a self, call: &'a Call, op: &'a wisp_resources_api::Op) -> wisp_kernel::BoxFuture<'a, Result<()>> {
         self.0.apply(call, op)
+    }
+}
+
+/// `runtime.after@1`: a task whose agent's turn ends while a run of its goes stays in Working on it (the list and the
+/// task say it works, not that it waits on you); the run's end lands it (wisp's message with the results starts the
+/// agent's next turn, or `runtime.settle`). You stopping the task stops its runs.
+struct Hold(wisp_kernel::Ctx, Arc<run::State>);
+
+impl wisp_runtime_api::points::AfterTurn for Hold {
+    fn id(&self) -> &'static str {
+        "wisp.workflows.hold"
+    }
+    fn order(&self) -> i32 {
+        0
+    }
+    fn wants(
+        &self,
+        session: &wisp_runtime_api::model::Session,
+        _turn: &wisp_runtime_api::model::Turn,
+        end: wisp_runtime_api::points::TurnEnd,
+    ) -> bool {
+        !end.stopped && self.1.owns_live(session.id.as_str())
+    }
+    fn run(
+        &self,
+        session: wisp_runtime_api::model::Session,
+        _turn: wisp_runtime_api::model::Turn,
+    ) -> wisp_kernel::BoxFuture<'static, Result<()>> {
+        let (ctx, st) = (self.0.clone(), self.1.clone());
+        Box::pin(async move {
+            // it ended between the turn's end and now: nothing will land the task, so it lands here
+            if !st.owns_live(session.id.as_str()) {
+                run::settle(&ctx, &ctx.root_call(), session.id.as_str()).await;
+            }
+            Ok(())
+        })
+    }
+    fn cancel(&self, session: &wisp_runtime_api::model::Session, stop: bool, _by: Option<&str>) -> bool {
+        // a follow-up moved the task on: its runs go on, and hold it again at that turn's end
+        stop && self.1.stop_owned(session.id.as_str())
+    }
+}
+
+/// `runtime.summary@1`: a task's runs on its list row (`workflowRuns`, the newest last), and a step's task names its
+/// run (`workflowStep`). The page's band reads them.
+struct Summary;
+
+impl wisp_runtime_api::points::SummaryField for Summary {
+    fn plugin(&self) -> &str {
+        PLUGIN_ID
+    }
+    fn fields(
+        &self,
+        session: &wisp_runtime_api::model::Session,
+        _last: Option<&wisp_runtime_api::model::Turn>,
+        out: &mut BTreeMap<String, Value>,
+    ) {
+        let Some(slot) = session.ext.get(EXT) else { return };
+        if let (Some(run), Some(node)) = (slot.get("run"), slot.get("node")) {
+            out.insert("workflowStep".into(), json!({ "run": run, "node": node }));
+        }
+        if let Some(runs) = slot.get("runs").filter(|r| r.as_array().is_some_and(|a| !a.is_empty())) {
+            out.insert("workflowRuns".into(), runs.clone());
+        }
+    }
+}
+
+/// A view that still says `running` at start was cut by wisp stopping: it says so (picking it back up is not yet).
+pub fn interrupted(slot: &Value) -> Option<Value> {
+    let runs = slot.get("runs")?.as_array()?;
+    if !runs.iter().any(|r| r.get("state").and_then(Value::as_str) == Some("running")) {
+        return None;
+    }
+    let mut v = slot.clone();
+    for r in v.get_mut("runs").and_then(Value::as_array_mut).into_iter().flatten() {
+        if r.get("state").and_then(Value::as_str) != Some("running") {
+            continue;
+        }
+        r["state"] = json!("stopped");
+        r["notes"] = json!(["wisp stopped while this ran: run it again to start it over"]);
+        for s in r.get_mut("steps").and_then(Value::as_array_mut).into_iter().flatten() {
+            match s.get("state").and_then(Value::as_str) {
+                Some("running") => {
+                    s["state"] = json!("failed");
+                    s["why"] = json!("wisp stopped");
+                }
+                Some("waiting") => {
+                    s["state"] = json!("skipped");
+                    s["why"] = json!("wisp stopped");
+                }
+                _ => {}
+            }
+        }
+    }
+    if v.get("state").and_then(Value::as_str) == Some("running") {
+        v["state"] = json!("stopped");
+    }
+    Some(v)
+}
+
+/// At start: every run a task still says is going was cut; each says so.
+async fn recover(ctx: &wisp_kernel::Ctx) {
+    let call = ctx.root_call();
+    let a = r::SlotsArgs { plugins: vec![EXT.into()], all: false, having: vec!["runs".into()] };
+    let Ok(found) = ctx.run::<r::Slots>(&call, a).await else { return };
+    for t in found {
+        let Some(v) = t.ext.get(EXT).and_then(interrupted) else { continue };
+        // set-ext: whole one writer: no run is going yet, so nothing else writes these slots now
+        let a = r::SetExtArgs { id: t.id.clone(), plugin: EXT.into(), value: v, expect: None };
+        if let Err(err) = ctx.run::<r::SetExt>(&call, a).await {
+            tracing::warn!(error = %err.message, task = %t.id.as_str(), "workflows: a cut run couldn't say so");
+        }
     }
 }
 
@@ -318,8 +292,11 @@ impl Plugin for WorkflowsPlugin {
                 .keyed("name", "name", "name"),
         ));
         s.contribute(&RESOURCE_KIND, kind);
-        let st = Arc::new(State { ended: broadcast::channel(256).0 });
+        s.contribute(&wisp_runtime_api::points::SUMMARY, Arc::new(Summary) as Arc<dyn wisp_runtime_api::points::SummaryField>);
+        let st = Arc::new(run::State::new());
+        s.contribute(&wisp_runtime_api::points::AFTER, Arc::new(Hold(s.ctx(), st.clone())) as Arc<dyn wisp_runtime_api::points::AfterTurn>);
         s.command::<List, _, _>(|ctx, _, _| async move { list(&*ctx.service::<Store>()?).await });
+        s.command::<Starters, _, _>(|_ctx, _, _| async move { Ok(starters()) });
         s.command::<Set, _, _>(|ctx, _, w| async move { put(&*ctx.service::<Store>()?, w).await });
         s.command::<Remove, _, _>(|ctx, _, a| async move {
             let store = ctx.service::<Store>()?;
@@ -329,8 +306,35 @@ impl Plugin for WorkflowsPlugin {
         let st2 = st.clone();
         s.command::<RunCmd, _, _>(move |ctx, call, a| {
             let st = st2.clone();
-            async move { start(&ctx, &call, &st, a).await }
+            async move { run::start(&ctx, &call, &st, a).await }
         });
+        let st2 = st.clone();
+        s.command::<Status, _, _>(move |ctx, call, a| {
+            let st = st2.clone();
+            async move { run::status(&ctx, &call, &st, &a.id).await }
+        });
+        let st2 = st.clone();
+        s.command::<Edit, _, _>(move |ctx, call, a| {
+            let st = st2.clone();
+            async move { edit::edit(&ctx, &call, &st, a).await }
+        });
+        let st2 = st.clone();
+        s.command::<Stop, _, _>(move |_ctx, call, a| {
+            let st = st2.clone();
+            async move { run::stop(&call, &st, &a.id) }
+        });
+        // `/workflow` alone: say what to type (the prompt itself stays as typed; Lead adds the note)
+        s.intercept::<BeforeCreate, _, _>(SLASH, |_ctx, _call, a| async move {
+            if a.parent_id.is_none() && slash::typed(&a.prompt) == Some("") { veto(slash::SAY_WHAT.into()) } else { Verdict::Continue }
+        });
+        s.intercept::<BeforeFollowUp, _, _>(SLASH, |_ctx, _call, a| async move {
+            if a.by.as_deref().is_none_or(|b| b == "user") && slash::typed(&a.text) == Some("") {
+                veto(slash::SAY_WHAT.into())
+            } else {
+                Verdict::Continue
+            }
+        });
+        s.contribute(&wisp_runtime_api::points::PROMPT, Arc::new(Lead(s.ctx())) as Arc<dyn wisp_runtime_api::points::PromptPart>);
         let st3 = st;
         s.on::<TurnEnded, _, _>(move |_ctx, e| {
             // no run listening (none going) is fine: nothing waits on this turn
@@ -341,6 +345,8 @@ impl Plugin for WorkflowsPlugin {
             let store = ctx.service::<Store>()?;
             store.migrate(OWNER, MIGRATIONS).map_err(store_err)?;
             store.define_entity(DEF).map_err(store_err)?;
+            let c = ctx.clone();
+            ctx.spawn(async move { recover(&c).await });
             Ok(())
         });
         Ok(())
@@ -350,6 +356,17 @@ impl Plugin for WorkflowsPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wisp_runtime_api::{Mode, SessionState, Turn, TurnStatus};
+
+    #[test]
+    fn every_prebuilt_workflow_checks() {
+        let all = starters();
+        assert!(all.len() >= 5, "{all:?}");
+        for w in all {
+            assert_eq!(wisp_workflows_core::check(&w.spec), Vec::<String>::new(), "{}", w.name);
+            assert!(!w.spec.description.is_empty(), "{} says what it's for", w.name);
+        }
+    }
 
     #[test]
     fn manifest_is_valid() {
@@ -358,9 +375,9 @@ mod tests {
 
     #[test]
     fn a_wrong_mode_fails_the_step_and_an_empty_one_is_left_out() {
-        assert_eq!(mode_of(""), Ok(None));
-        assert_eq!(mode_of("plan"), Ok(Some(Mode::Plan)));
-        assert!(mode_of("yolo").is_err_and(|e| e.contains("yolo")));
+        assert_eq!(run::mode_of(""), Ok(None));
+        assert_eq!(run::mode_of("plan"), Ok(Some(Mode::Plan)));
+        assert!(run::mode_of("yolo").is_err_and(|e| e.contains("yolo")));
     }
 
     fn turn(status: TurnStatus, is_error: bool) -> Turn {
@@ -373,13 +390,29 @@ mod tests {
     }
 
     #[test]
-    fn a_step_is_ok_only_when_its_last_turn_is_done_without_an_error() {
-        assert!(outcome(SessionState::Review, Some(&turn(TurnStatus::Done, false))).0);
-        let (ok, _, why) = outcome(SessionState::Review, Some(&turn(TurnStatus::Done, true)));
+    fn a_step_is_ok_only_when_its_last_turn_is_done_without_an_error_() {
+        assert!(run::outcome(SessionState::Review, Some(&turn(TurnStatus::Done, false))).0);
+        let (ok, _, why) = run::outcome(SessionState::Review, Some(&turn(TurnStatus::Done, true)));
         assert!(!ok);
         assert_eq!(why, "it ended done");
-        assert_eq!(outcome(SessionState::Error, Some(&turn(TurnStatus::Stopped, false))).2, "it ended stopped");
+        assert_eq!(run::outcome(SessionState::Error, Some(&turn(TurnStatus::Stopped, false))).2, "it ended stopped");
         // no turn at all: the task's own state says how it ended
-        assert_eq!(outcome(SessionState::Error, None), (false, Value::Null, "it ended error".to_owned()));
+        assert_eq!(run::outcome(SessionState::Error, None), (false, Value::Null, "it ended error".to_owned()));
+    }
+
+    #[test]
+    fn a_run_cut_by_a_restart_says_so() {
+        let slot = json!({ "runs": [
+            { "id": "r1", "state": "running", "steps": [{ "id": "a", "state": "done" }, { "id": "b", "state": "running" }, { "id": "c", "state": "waiting" }] },
+            { "id": "r0", "state": "done", "steps": [] },
+        ] });
+        let v = interrupted(&slot).unwrap_or_default();
+        assert_eq!(v["runs"][0]["state"], "stopped");
+        assert_eq!(v["runs"][0]["steps"][0]["state"], "done");
+        assert_eq!(v["runs"][0]["steps"][1]["state"], "failed");
+        assert_eq!(v["runs"][0]["steps"][2]["state"], "skipped");
+        assert_eq!(v["runs"][1]["state"], "done");
+        assert!(interrupted(&json!({ "runs": [{ "state": "done" }] })).is_none());
+        assert!(interrupted(&json!({ "run": "r1", "node": "a" })).is_none(), "a step's task isn't a run");
     }
 }

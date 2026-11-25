@@ -117,7 +117,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const placeOf = (): LaunchTargetDef | undefined => targets().find((d) => targetValue(d.id) === runOn());
   const sessions = useSignal(shell.client.entities.list<SessionRow>(SESSION));
   const { list: projects } = useProjects(shell, usePluginClient('shell').home);
-  const settings = useSignal(shell.client.entities.list<SettingRow>('setting'));
+  // this computer's settings, each read by its key under `home`: on the phone every computer's `setting` rows share one
+  // store, and the first row with the key (another computer's) put New task's kept harness back on each open
+  const keys = [LAUNCH_SETTING, AUTO_SETTING, 'runtime.subagentModel', 'runtime.subagents', TEAMS_SETTING, WORKTREE_KEY, 'settings.sendShortcut'];
+  const settingRows = new Map(keys.map((k) => [k, useSignal(shell.client.entities.row<SettingRow>('setting', entityKey(home as PeerId, k)))] as const));
+  const setting = (key: string): unknown => settingRows.get(key)?.()?.value;
   const now = useNow(shell.client);
   const harnesses = useSignal(shell.harnesses());
   // what a harness's Default runs, by name, when its config says (UX 2026-11-18 #9: "Claude Code · Opus")
@@ -141,9 +145,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // the first frame starts on what's kept already, never on Auto while it's off (owner #36, #37)
   const first = untrack(() =>
     startRunner(
-      readLaunch(settings().find((r) => r.key === LAUNCH_SETTING)?.value),
+      readLaunch(setting(LAUNCH_SETTING)),
       harnesses().map((h) => h.id),
-      autoEnabled(settings().find((r) => r.key === AUTO_SETTING)?.value),
+      autoEnabled(setting(AUTO_SETTING)),
     ),
   );
   const [agent, setAgent] = createSignal(first.agent);
@@ -158,8 +162,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const ring = usePlanRing(shell, { peer: () => target(), agent, account: () => account()?.id ?? '' });
   // Auto's one switch (`runtime.auto`, default off: owner #37) and New task's kept pick (`runtime.launch`, owner #36:
   // the pick was a plain signal, so a page change or a reload put it back on Auto)
-  const autoOn = (): boolean => autoEnabled(settings().find((r) => r.key === AUTO_SETTING)?.value);
-  const kept = (): LaunchPick => readLaunch(settings().find((r) => r.key === LAUNCH_SETTING)?.value);
+  const autoOn = (): boolean => autoEnabled(setting(AUTO_SETTING));
+  const kept = (): LaunchPick => readLaunch(setting(LAUNCH_SETTING));
   const harnessRows = useHarnessRows(shell.client.entities, () => home);
   const readyIds = (): string[] => {
     const found = harnessRows()
@@ -249,7 +253,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const [cmpPicker, setCmpPicker] = createSignal<number | undefined>();
   // Try it two ways (v1 #650, #771): the one run added with + on the lead's harness may change one setting
   const [vary, setVary] = createSignal<Variant | undefined>();
-  const subSetting = (): string => settingModel(settings().find((r) => r.key === 'runtime.subagentModel')?.value);
+  const subSetting = (): string => settingModel(setting('runtime.subagentModel'));
   /** What's different: only for a lone copy of the lead (its harness, model and thinking: one setting changes) on a
    * harness that runs variants */
   const varies = (r: Runner, i: number): readonly string[] =>
@@ -258,14 +262,14 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const [team, setTeam] = createSignal<readonly Delegate[]>([]);
   // the team new tasks start with (Settings, `runtime.subagents`): pre-filled until you pick your own
   let teamTouched = false;
-  const subagents = (): unknown => settings().find((r) => r.key === 'runtime.subagents')?.value;
+  const subagents = (): unknown => setting('runtime.subagents');
   createEffect(() => {
     const pre = teamFromSetting(subagents());
     if (!teamTouched) setTeam(pre);
   });
   // the preset the team came from (v1 teamPreset): its name is the button's
   const [preset, setPreset] = createSignal('');
-  const presetName = (): string | undefined => (preset() ? presetsOf(settings().find((r) => r.key === TEAMS_SETTING)?.value).find((p) => p.id === preset())?.name : undefined);
+  const presetName = (): string | undefined => (preset() ? presetsOf(setting(TEAMS_SETTING)).find((p) => p.id === preset())?.name : undefined);
   const pickTeam = (next: readonly Delegate[]): void => {
     teamTouched = true;
     setTeam(next);
@@ -367,7 +371,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const also = createMemo(() => (project() ? (ownAlso() ?? listPick().also).filter((id) => id !== project()?.id) : []));
   // wisp.worktrees' `worktrees.worktree` ('on' | 'off'), the same switch as Settings → General (B54: New task read and
   // wrote `defaults.worktree`, which no plugin declares, so its toggle never stuck and Settings' did nothing)
-  const worktree = createMemo(() => !['off', false].includes(settings().find((r) => r.key === WORKTREE_KEY)?.value as never));
+  const worktree = createMemo(() => !['off', false].includes(setting(WORKTREE_KEY) as never));
   // the usage row's room from last time (Reserved): it loads after the first screen and must not move Needs you
   const usageExt = useExtensions('shell.home:usage');
   // none attached (wisp.budget off): no room held for it
@@ -1011,7 +1015,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         }}
         onSend={send}
         onKey={onKey}
-        sendShortcut={sendShortcutOf(settings().find((r) => r.key === 'settings.sendShortcut')?.value)}
+        sendShortcut={sendShortcutOf(setting('settings.sendShortcut'))}
         firstRun={firstRun()}
         setup={target() === home ? setup() : undefined}
         suggest={suggest()}

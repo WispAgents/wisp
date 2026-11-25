@@ -20,19 +20,29 @@ fn n(v: Option<&serde_json::Value>) -> u64 {
     })
 }
 
-/// What one turn read (cache included), read from cache, and wrote (`(input, cached, output)`).
+/// What one turn read (cache reads and writes included), read from cache, and wrote (`(input, cached, output)`).
+/// `cached` is the reads alone: a cache write is input the provider read in full (and stored), so counting it as a
+/// hit inflated the share (Claude's first turn of a conversation is mostly writes). A turn stored before the reads
+/// and writes were kept apart (`cache_read_tokens`/`cache_write_tokens`) has only `cache_tokens`, both together:
+/// its models' `cacheRead` when it has them, else that sum, as the best it can say.
 fn tokens_of(t: &Turn) -> (u64, u64, u64) {
     let Some(st) = t.stats.as_ref() else { return (0, 0, 0) };
-    let cached = st.cache_tokens.unwrap_or(0);
-    let read = st.input_tokens.unwrap_or(0).saturating_add(cached);
+    let split = st.cache_read_tokens.is_some() || st.cache_write_tokens.is_some();
+    let (reads, writes) =
+        if split { (st.cache_read_tokens.unwrap_or(0), st.cache_write_tokens.unwrap_or(0)) } else { (st.cache_tokens.unwrap_or(0), 0) };
+    let read = st.input_tokens.unwrap_or(0).saturating_add(reads).saturating_add(writes);
     let out = st.output_tokens.unwrap_or(0);
+    let mut cached = reads;
     if let Some(m) = st.models.as_ref() {
         let (mr, mc, mo) = m.values().fold((0u64, 0u64, 0u64), |(r, c, o), x| {
             let cr = n(x.get("cacheRead"));
             (r + n(x.get("input")) + cr + n(x.get("cacheWrite")), c + cr, o + n(x.get("output")))
         });
+        if !split && !m.is_empty() {
+            cached = mc;
+        }
         if mr + mo > read + out {
-            return (mr, mc.max(cached), mo);
+            return (mr, if split { reads.max(mc) } else { mc }, mo);
         }
     }
     (read, cached, out)
@@ -276,5 +286,54 @@ mod tests {
             u.harnesses.iter().map(|h| (h.agent.as_str(), h.turns, h.sessions, h.tokens, h.cache_tokens)).collect::<Vec<_>>(),
             vec![("claude", 1, 1, 49_000, 30_000), ("codex", 1, 1, 23_000, 15_000), ("antigravity", 1, 1, 11_000, 2_000),]
         );
+    }
+
+    fn with(stats: TurnStats) -> Turn {
+        Turn { started_at: 10, status: TurnStatus::Done, stats: Some(stats), ..Turn::default() }
+    }
+
+    #[test]
+    fn the_cache_share_counts_reads_only_and_writes_stay_input() {
+        // Claude's first turn of a conversation: 30k written to the cache, none read (land: cache_tokens = 30k)
+        let models = std::collections::BTreeMap::from([(
+            "opus".to_owned(),
+            json!({ "input": 1_000, "output": 2_000, "cacheRead": 0, "cacheWrite": 30_000 }),
+        )]);
+        let first = with(TurnStats {
+            input_tokens: Some(1_000),
+            output_tokens: Some(2_000),
+            cache_tokens: Some(30_000),
+            cache_read_tokens: Some(0),
+            cache_write_tokens: Some(30_000),
+            models: Some(models),
+            ..TurnStats::default()
+        });
+        let u = summarize(&[first], 0);
+        assert_eq!((u.input_tokens, u.cache_tokens), (31_000, 0), "the writes are input, not a hit");
+        // reads 10k and writes 5k: 10k from the cache
+        let both = with(TurnStats {
+            input_tokens: Some(1_000),
+            cache_tokens: Some(15_000),
+            cache_read_tokens: Some(10_000),
+            cache_write_tokens: Some(5_000),
+            output_tokens: Some(1),
+            ..TurnStats::default()
+        });
+        let u = summarize(&[both], 0);
+        assert_eq!((u.input_tokens, u.cache_tokens), (16_000, 10_000));
+        // Copilot can say only what it wrote
+        let copilot =
+            with(TurnStats { input_tokens: Some(500), cache_write_tokens: Some(2_000), output_tokens: Some(1), ..TurnStats::default() });
+        let u = summarize(&[copilot], 0);
+        assert_eq!((u.input_tokens, u.cache_tokens), (2_500, 0));
+    }
+
+    #[test]
+    fn a_codex_turns_cached_input_is_counted_once() {
+        // Codex: 1000 in, 600 of them from the cache (its parser stores the input without them: 400, and 600 reads)
+        let codex =
+            with(TurnStats { input_tokens: Some(400), cache_read_tokens: Some(600), output_tokens: Some(50), ..TurnStats::default() });
+        let u = summarize(&[codex], 0);
+        assert_eq!((u.input_tokens, u.cache_tokens, u.tokens), (1_000, 600, 1_050));
     }
 }

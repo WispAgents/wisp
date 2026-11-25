@@ -48,7 +48,6 @@ pub struct OpencodeParser {
     cost: f64,
     limit_at: Option<i64>,
     limited: bool,
-    carry: String,
     started: Option<i64>,
 }
 
@@ -65,7 +64,6 @@ impl OpencodeParser {
             cost: 0.0,
             limit_at: None,
             limited: false,
-            carry: String::new(),
             started: None,
         }
     }
@@ -204,11 +202,9 @@ impl LineParser for OpencodeParser {
 
     fn stderr(&mut self, text: &str, now_ms: i64, out: &mut Vec<Out>) {
         self.tick(now_ms, out);
-        // whole lines only: a chunk can end mid-line
-        let all = format!("{}{text}", self.carry);
-        let mut lines: Vec<&str> = all.split('\n').collect();
-        lines.pop().unwrap_or("").clone_into(&mut self.carry);
-        let joined = ANSI.replace_all(&lines.join("\n"), "").into_owned();
+        // the drive hands whole lines, newline off (`take_lines`), and a refusal is one line: matched on what came, as
+        // it came (holding back the last part for its newline held back every line, and no refusal ever matched)
+        let joined = ANSI.replace_all(text, "").into_owned();
         if let Some(re) = REJECTED.get() {
             for c in re.captures_iter(&joined) {
                 let permission = c.get(1).map_or("", |m| m.as_str()).to_owned();
@@ -332,10 +328,13 @@ mod tests {
     fn refusals_on_stderr_are_blocked_with_their_rule() {
         let mut p = OpencodeParser::new(OpencodeOptions::default());
         let mut out = Vec::new();
-        p.stderr("\x1b[93m! \x1b[0mpermission requested: bash (npm pub", 0, &mut out);
-        assert_eq!(out, Vec::<Out>::new(), "half a line waits");
-        p.stderr("lish, npm test); auto-rejecting\n", 1, &mut out);
-        let Some(Out::Event(HarnessEvent::Blocked { tool, detail, rule })) = out.first() else { panic!("{out:?}") };
+        // the drive's `take_lines`: one line per call, its newline off
+        for i in 0..1000 {
+            p.stderr(&format!("INFO service=bus line {i}"), 0, &mut out);
+        }
+        assert_eq!(out, Vec::<Out>::new(), "nothing from lines that refuse nothing, and nothing held from them");
+        p.stderr("\x1b[93m\x1b[1m! \x1b[0mpermission requested: bash (npm publish, npm test); auto-rejecting", 1, &mut out);
+        let [Out::Event(HarnessEvent::Blocked { tool, detail, rule })] = out.as_slice() else { panic!("{out:?}") };
         assert_eq!((tool.as_str(), detail.as_str()), ("bash", "npm publish, npm test"));
         assert_eq!(rule.as_ref().map(|r| r["patterns"][1].clone()), Some(json!("npm test")));
     }

@@ -159,6 +159,13 @@ pub(crate) const ASK_TOOL: &str = r#"- If a decision would change the rest of th
 - For the user's wisp usage, crew, connectors, tasks or subagents on any harness or machine, use wisp's tools
   (`wisp_stats`, `wisp_crew*`, `wisp_connector*`, `wisp_launch`, `wisp_task`, `delegate`) when the user asks. Never ask the user to paste a key into the chat."#;
 
+/// `workflows_run` (ADR-0119): many agents on one job, as a run the user watches on the task.
+pub(crate) const WORKFLOW_TOOL: &str = r"
+- For big work that splits into parts for several agents (audit every module, fix each failing test, try two
+  approaches and compare, explore then build then review), run a workflow: `workflows_run` ({workflows_run}) starts
+  steps as subtasks of this task on any harness (needs, foreach over an earlier step's list, matrix, phases), the user
+  watches it live here, and wisp sends you every step's result when it ends. Use `delegate` for one or two quick asks.";
+
 /// `wisp_watch`, unless Settings → Watch agents work is off.
 pub(crate) const WATCH_TOOL: &str = r"
 - For long or many-step work the user would like to follow (a migration across many files, a test or benchmark

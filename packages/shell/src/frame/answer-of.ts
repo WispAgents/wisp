@@ -5,10 +5,18 @@
  *  task's own computer, this wisp's or another through it (`/api/peer/<machine>`). */
 export function mediaUrl(home: string, key: string, path: string): string | undefined {
   if (!path) return undefined;
-  if (/^(https?:|data:|blob:)/.test(path)) return path;
+  if (isLink(path)) return path;
   const peer = key.slice(0, key.indexOf(':'));
   const base = peer && peer !== home ? `/api/peer/${encodeURIComponent(peer)}` : '';
-  return `${base}/api/sessions/${encodeURIComponent(key.slice(key.indexOf(':') + 1))}/file?path=${encodeURIComponent(path)}`;
+  return `${base}${sessionFilePath(key, path)}`;
+}
+
+/** a link the page loads as it is, not a file on the task's computer */
+export const isLink = (path: string): boolean => /^(https?:|data:|blob:)/.test(path);
+
+/** The file route on the task's own computer, asked of that computer itself (its transport: the phone app). */
+export function sessionFilePath(key: string, path: string): string {
+  return `/api/sessions/${encodeURIComponent(key.slice(key.indexOf(':') + 1))}/file?path=${encodeURIComponent(path)}`;
 }
 
 /** What a turn's refusals allow (v1 #777): the server keeps them (`ext['wisp.runtime'].blocked`) only for a run that
@@ -27,8 +35,11 @@ export function uploadUrl(home: string, key: string, id: string): string | undef
   if (!id) return undefined;
   const peer = key.slice(0, key.indexOf(':'));
   const base = peer && peer !== home ? `/api/peer/${encodeURIComponent(peer)}` : '';
-  return `${base}/api/uploads/${encodeURIComponent(id)}`;
+  return `${base}${uploadPath(id)}`;
 }
+
+/** An upload's bytes on the task's own computer, asked of that computer itself. */
+export const uploadPath = (id: string): string => `/api/uploads/${encodeURIComponent(id)}`;
 
 const stripPrivate = (p: string): string => p.replace(/\\/g, '/').replace(/^\/private(?=\/)/, '').replace(/\/+$/, '');
 

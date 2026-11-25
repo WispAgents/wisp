@@ -16,17 +16,22 @@ pub(crate) fn levels_of<'a>(h: &'a dyn Harness, model: &str) -> &'a [String] {
     info.models.iter().find(|m| m.id == model).and_then(|m| m.efforts.as_deref()).unwrap_or(info.efforts.as_slice())
 }
 
-/// After a follow-up switched `s` to another harness (`was`): its model is the new one's default unless picked, and
-/// its effort the closest level the new one has unless picked (`picked_*`).
-pub(crate) fn carry_over(s: &mut Session, was: &str, picked_model: bool, picked_effort: bool, h: Option<&dyn Harness>) {
-    if s.agent == was {
+/// `s` handed to another harness (`new`, `h` its plugin), by a follow-up's pick or `runtime.setAgent`, both through
+/// here: it resumes nothing of the old one's conversation (each harness keeps its own, and the hand-off note tells the
+/// new one what it missed), its model is the new one's default unless picked, and its effort the closest level the new
+/// one has unless picked (`picked_*`; kept as it is when the harness isn't known). The same harness again: nothing
+/// changes, its conversation goes on.
+pub(crate) fn switch_agent(s: &mut Session, new: &str, picked_model: bool, picked_effort: bool, h: Option<&dyn Harness>) {
+    if s.agent == new {
         return;
     }
+    new.clone_into(&mut s.agent);
+    s.resume_id = None;
     if !picked_model {
         s.model.clear();
     }
-    if !picked_effort {
-        s.effort = h.map(|h| map_effort(&s.effort, levels_of(h, &s.model))).unwrap_or_default();
+    if !picked_effort && let Some(h) = h {
+        s.effort = map_effort(&s.effort, levels_of(h, &s.model));
     }
 }
 

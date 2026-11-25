@@ -4,7 +4,7 @@
   "name": "Workflows",
   "version": "1.0.0-alpha.14",
   "api": "^1",
-  "description": "orchestration as code: DAGs of task specs with needs, if, matrix, outputs, retries, timeouts, budget and concurrency",
+  "description": "orchestration as code: DAGs of agent tasks on any harness (needs, if, matrix, foreach fan-out, phases, outputs, retries, timeouts, budget, concurrency), run by an agent or by you under a task, watched live on it",
   "kind": "plugin",
   "server": {
     "builtin": "wisp_workflows"
@@ -14,18 +14,66 @@
     "runtime:get",
     "runtime:turns",
     "runtime:stop",
+    "runtime:followUp",
+    "runtime:settle",
     "runtime:setExt",
     "runtime:setState",
+    "runtime:slots",
     "store:write{owner:workflows}"
   ],
-  "activation": ["onStartup"],
-  "requires": {},
+  "activation": [
+    "onStartup"
+  ],
+  "requires": {
+    "wisp.runtime": "^1.0.0-0"
+  },
   "contributes": {
     "commands": [
-      { "id": "workflows.list", "title": "Workflows", "readOnly": true },
-      { "id": "workflows.set", "title": "Add or change a workflow" },
-      { "id": "workflows.remove", "title": "Remove a workflow" },
-      { "id": "workflows.run", "title": "Run a workflow" }
+      {
+        "id": "workflows.list",
+        "title": "Workflows",
+        "readOnly": true
+      },
+      {
+        "id": "workflows.starters",
+        "title": "Prebuilt workflows to run by name or start yours from",
+        "readOnly": true
+      },
+      {
+        "id": "workflows.set",
+        "title": "Add or change a workflow"
+      },
+      {
+        "id": "workflows.remove",
+        "title": "Remove a workflow"
+      },
+      {
+        "id": "workflows.run",
+        "title": "Run a workflow"
+      },
+      {
+        "id": "workflows.status",
+        "title": "Where a workflow run stands",
+        "readOnly": true
+      },
+      {
+        "id": "workflows.edit",
+        "title": "Change a workflow run while it goes: skip, retry, add or change steps"
+      },
+      {
+        "id": "workflows.stop",
+        "title": "Stop a workflow run"
+      }
+    ],
+    "events": [
+      {
+        "type": "workflow.started",
+        "durable": true
+      },
+      {
+        "type": "workflow.ended",
+        "durable": true
+      }
     ]
   }
 }

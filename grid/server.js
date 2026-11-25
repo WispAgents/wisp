@@ -71,6 +71,15 @@ const webLook = () =>
 // the device API's CORS (the phone app is another origin and signs in with a bearer token, never a cookie); the
 // headers are what @wisp/client sends a computer (x-wisp-client on every sync post: without it no task opens)
 const DEVICE_CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type, x-wisp-passkey, x-wisp-client, x-wisp-plugin, idempotency-key, last-event-id', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'access-control-max-age': '600' };
+// Signed media URLs (POST /_grid/media): a picture, video or attachment the phone app's page loads with a plain
+// <img>/<video>, which can carry neither the device's bearer token nor a cookie (the page is another origin). Only
+// these GETs: an answer's file (/api/sessions/<id>/file) or a prompt's upload (/api/uploads/<id>), on the wisp or a
+// machine through it (/api/peer/<m>/…). Bound to the address, the account, the device (revoked, the URL dies with
+// it), the exact path and query, and an hour.
+export const MEDIA_PATH = /^(?:\/api\/peer\/[\w.-]+)?\/api\/(?:sessions\/[\w.-]+\/file\?path=[^#]+|uploads\/[\w.-]+)$/;
+export const MEDIA_TTL_S = 3600;
+const MEDIA_MAX = 100;
+const SIGNED = /^(.+)[?&]_ge=(\d{1,12})&_gd=([a-f0-9]{1,32})&_gs=([\w-]{20,100})$/;
 const HOP = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'te', 'trailer']);
 
 // --- small HTTP helpers --------------------------------------------------------------------
@@ -334,7 +343,7 @@ export async function startGrid(cfg, { log = (m) => console.log(m), resolveTxt }
   // the same open CORS as the grid's own device API. Never credentials: '*' makes a browser refuse cookies with it, so a
   // signed-in page elsewhere still can't read a computer. True when this was the preflight (answered here).
   function deviceCors(req, res, p) {
-    if (!p.startsWith('/api/')) return false;
+    if (!p.startsWith('/api/') && p !== '/_grid/media') return false;
     for (const [k, v] of Object.entries(DEVICE_CORS)) res.setHeader(k, v);
     if (req.method !== 'OPTIONS') return false;
     res.writeHead(204);
@@ -960,11 +969,41 @@ export async function startGrid(cfg, { log = (m) => console.log(m), resolveTxt }
   function edgeAuth(req, user, box = user, row = null, keys = false) {
     if (row && sandboxes.byBearer(req.headers.authorization)?.id === row.id) return { via: 'sandbox', user };
     const d = accounts.device(req.headers.authorization);
-    if (d) return d.user.id === user.id ? { via: 'device', user: d.user } : null;
+    if (d) return d.user.id === user.id ? { via: 'device', user: d.user, device: d.device } : null;
     const k = keys && accounts.apiKey(req.headers.authorization);
     if (k) return k.user.id === user.id ? { via: 'key', user: k.user, key: k.key } : null;
     const s = accounts.session(cookies(req)[names.wisp], `i:${box.id}`);
-    return s ? { via: 'cookie', user: s.user } : null;
+    if (s) return { via: 'cookie', user: s.user };
+    return signedMedia(req, user);
+  }
+
+  const mediaSig = (host, userId, deviceId, exp, path) => secrets.sign(`media|${String(host).toLowerCase()}|${userId}|${deviceId}|${exp}|${path}`);
+
+  // A GET of a URL /_grid/media signed: let through as the user, with the signature taken off (the wisp never sees it).
+  function signedMedia(req, user) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return null;
+    const m = SIGNED.exec(String(req.url || ''));
+    if (!m || !MEDIA_PATH.test(m[1])) return null;
+    const exp = Number(m[2]);
+    if (exp * 1000 < Date.now() || exp * 1000 > Date.now() + (MEDIA_TTL_S + 60) * 1000) return null;
+    if (!secrets.verify(`media|${String(req.headers.host || '').toLowerCase()}|${user.id}|${m[3]}|${m[2]}|${m[1]}`, m[4])) return null;
+    if (!accounts.liveDevice(user.id, m[3])) return null;
+    req.url = m[1];
+    return { via: 'signed', user };
+  }
+
+  // POST /_grid/media {paths}: the phone app's page asks, with its device token, for URLs its <img>/<video> can load.
+  async function signMedia(req, res, who) {
+    if (who.via !== 'device') return json(res, 403, { error: 'Signed links are for the phone app.' });
+    const body = await readBody(req).catch(() => null);
+    const paths = Array.isArray(body?.paths) ? body.paths : null;
+    if (!paths || paths.length > MEDIA_MAX || !paths.every((x) => typeof x === 'string' && x.length <= 4096 && MEDIA_PATH.test(x))) {
+      return json(res, 400, { error: `Up to ${MEDIA_MAX} paths of a picture, video or upload.` });
+    }
+    const exp = Math.floor(Date.now() / 1000) + MEDIA_TTL_S;
+    const host = String(req.headers.host || '');
+    const urls = paths.map((x) => `${x}${x.includes('?') ? '&' : '?'}_ge=${exp}&_gd=${who.device.id}&_gs=${mediaSig(host, who.user.id, who.device.id, exp, x)}`);
+    return json(res, 200, { exp, urls }, { 'cache-control': 'no-store' });
   }
 
   // A channel's webhook: answered here, whatever the box is doing. It never signs in, its unguessable
@@ -1084,6 +1123,7 @@ export async function startGrid(cfg, { log = (m) => console.log(m), resolveTxt }
       return manageKeys(req, user, kp[1], send);
     }
     if (p === '/_grid/preview' && req.method === 'POST') return previewLink(res, url, user, box.handle, previews);
+    if (p === '/_grid/media' && req.method === 'POST') return signMedia(req, res, who);
 
     if (p === '/_grid/state') {
       const i = hostd.inst.get(box.id);
@@ -1143,6 +1183,7 @@ export async function startGrid(cfg, { log = (m) => console.log(m), resolveTxt }
     if (req.method !== 'GET' && req.method !== 'HEAD' && who.via === 'cookie' && req.headers.origin !== origin) return json(res, 403, { error: 'forbidden origin' });
     // The computer decides whether it shows its local pages (Show local pages in previews).
     if (p === '/_grid/preview' && req.method === 'POST') return previewLink(res, url, user, c.label, true);
+    if (p === '/_grid/media' && req.method === 'POST') return signMedia(req, res, who);
     // Whether it's connected, without asking it anything (what wisp elsewhere polls while it's off).
     if (p === '/_grid/state') return json(res, 200, { state: tunnels.online(c.id) ? 'running' : 'offline', name: c.name });
     // Like the wisp edge: the grid's own sign-in stays here; the computer only learns who asked where.

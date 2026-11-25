@@ -1,4 +1,4 @@
-# ADR-0119: A side discussion has its main task's access, and its writes to the main task's files are proposals there
+# ADR-0123: A side discussion has its main task's access, and its writes to the main task's files are proposals there
 
 - Status: accepted
 - Date: 2026-11-25

@@ -43,6 +43,13 @@ impl Fake {
         })
     }
 
+    /// A fake harness that takes wisp's tools (`HarnessInfo::ask_tool`): a lead on it hears about delegating through wisp.
+    pub fn leads(id: &str, name: &str) -> Arc<dyn Harness> {
+        let mut info = Self::named(id, name, &["low"]).info().clone();
+        info.ask_tool = Some("mcp__wisp__ask_user".into());
+        Arc::new(Self { info, program: "fake", piped: false })
+    }
+
     /// A fake harness that runs Try it two ways' variants (`HarnessInfo::variants`), as Claude Code does.
     pub fn varies(id: &str, name: &str) -> Arc<dyn Harness> {
         Arc::new(Self {
@@ -135,14 +142,27 @@ pub async fn run_of(runs: &Arc<std::sync::Mutex<Vec<HarnessRun>>>, said: &str) -
 
 struct Lines {
     done: bool,
+    /// where its counters start (`HarnessRun::prior`, `unknown_prior`): a result carrying `totals` (a `cumul…` CLI's
+    /// running total) counts what's new since, as Claude Code's and Codex's parsers do
+    prior: Option<Value>,
+    unknown_prior: bool,
 }
 
 impl HarnessParser for Lines {
     fn on(&mut self, input: ParserInput<'_>, _now: i64, out: &mut ParserOutput) {
         match input {
             ParserInput::Stdout(line) => {
-                if let Ok(e) = serde_json::from_str::<Value>(line).map_err(|_| ()).and_then(|v| HarnessEvent::from_v1(v).map_err(|_| ())) {
+                if let Ok(mut e) =
+                    serde_json::from_str::<Value>(line).map_err(|_| ()).and_then(|v| HarnessEvent::from_v1(v).map_err(|_| ()))
+                {
                     self.done |= e.is_result();
+                    if let HarnessEvent::Result { stats: Some(st), .. } = &mut e
+                        && let Some(totals) = st.extra.get("totals").cloned()
+                        && let Some(from) = self.prior.clone().or_else(|| self.unknown_prior.then(|| totals.clone()))
+                    {
+                        st.cost_usd = st.cost_usd.map(|c| c - from["costUsd"].as_f64().unwrap_or(0.0));
+                        st.input_tokens = st.input_tokens.map(|i| i - from["inputTokens"].as_u64().unwrap_or(0));
+                    }
                     out.emit(e);
                 }
             }
@@ -211,11 +231,20 @@ impl Harness for Fake {
         if run.plan_commands {
             args.push("--plan-commands".into());
         }
+        if let Some(p) = &run.prior {
+            args.push(format!("--prior={p}"));
+        }
+        if run.unknown_prior {
+            args.push("--unknown-prior".into());
+        }
+        if run.delegating {
+            args.push("--delegating".into());
+        }
         let stdin = if self.piped { Stdin::Bytes(run.prompt.clone().into_bytes()) } else { Stdin::Null };
         Ok(Launch { program: self.program.into(), args, stdin, ..Launch::default() })
     }
-    fn driver(&self, _run: &HarnessRun) -> Box<dyn RunDriver> {
-        pure(Lines { done: false })
+    fn driver(&self, run: &HarnessRun) -> Box<dyn RunDriver> {
+        pure(Lines { done: false, prior: run.prior.clone(), unknown_prior: run.unknown_prior })
     }
     /// Its file tools, as Claude Code's are named: `Write` (`file_path`, `content`) and `Edit` (`old_string`, `new_string`).
     fn file_write(&self, tool: &str, input: &Value) -> Option<wisp_runtime_api::harness::FileWrite> {
@@ -290,6 +319,17 @@ pub fn script(prompt: &str) -> Vec<Value> {
             json!({"type":"result","text":hero,"isError":false}),
         ];
     }
+    // `cumul <cost> <input>`: the conversation's running total, as Claude Code's `total_cost_usd` and Codex's usage are
+    // (or its paragraph after a hand-off note wisp put ahead of it)
+    if let Some(rest) = prompt.strip_prefix("cumul ").or_else(|| prompt.rsplit_once("\n\ncumul ").map(|(_, r)| r)) {
+        let mut n = rest.split_whitespace();
+        let cost: f64 = n.next().and_then(|x| x.parse().ok()).unwrap_or(0.0);
+        let input: u64 = n.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+        return vec![
+            json!({"type":"session","id":"conv-1"}),
+            json!({"type":"result","text":hero,"isError":false,"stats":{"costUsd":cost,"inputTokens":input,"totals":{"costUsd":cost,"inputTokens":input}}}),
+        ];
+    }
     // `envread…`: it prints a .env file, then quotes its value in its answer (ADR-0050)
     if prompt.starts_with("envread") {
         let text = format!("The key is sk-live-handoff.\n{hero}");
@@ -337,41 +377,36 @@ pub fn open(name: &str) {
     gate(name).notify_one();
 }
 
+/// Prints `lines` up to `at`, waits at gate `name` (or its kill), then prints the rest.
+async fn at_gate(io: &mut SimIo, lines: &[Value], at: usize, name: &str) -> Exit {
+    for l in &lines[..at] {
+        io.print(format!("{l}\n").as_bytes()).await;
+    }
+    let g = gate(name);
+    tokio::select! {
+        () = g.notified() => {}
+        () = io.killed.cancelled() => return Exit { code: None, signal: Some("SIGTERM".into()) },
+    }
+    for l in &lines[at..] {
+        io.print(format!("{l}\n").as_bytes()).await;
+    }
+    Exit { code: Some(0), signal: None }
+}
+
 async fn fake_cli(mut io: SimIo) -> Exit {
     let prompt = io.args.first().cloned().unwrap_or_default();
     // `gate <name> …` as the prompt, or its paragraph after a note wisp put ahead of it: it waits to be let go, then
     // answers (a report quoting it, `done: gate …`, is no gate)
     let gated = prompt.strip_prefix("gate ").or_else(|| prompt.split("\n\ngate ").nth(1));
     if let Some(name) = gated.and_then(|r| r.split_whitespace().next()) {
-        let lines = script(&prompt);
-        io.print(format!("{}\n", lines[0]).as_bytes()).await;
-        let g = gate(name);
-        tokio::select! {
-            () = g.notified() => {}
-            () = io.killed.cancelled() => return Exit { code: None, signal: Some("SIGTERM".into()) },
-        }
-        for l in &lines[1..] {
-            io.print(format!("{l}\n").as_bytes()).await;
-        }
-        return Exit { code: Some(0), signal: None };
+        return at_gate(&mut io, &script(&prompt), 1, name).await;
     }
     // `editing <name>`: its conversation's line, a test run and its change to a.ts, then it waits at gate <name>
     // before its answer (a turn still running that already changed a file)
     if let Some(name) = prompt.strip_prefix("editing ").and_then(|r| r.split_whitespace().next()) {
         let lines = script(&prompt);
         let at = lines.iter().position(|l| l["type"] == "change").map_or(1, |i| i + 1);
-        for l in &lines[..at] {
-            io.print(format!("{l}\n").as_bytes()).await;
-        }
-        let g = gate(name);
-        tokio::select! {
-            () = g.notified() => {}
-            () = io.killed.cancelled() => return Exit { code: None, signal: Some("SIGTERM".into()) },
-        }
-        for l in &lines[at..] {
-            io.print(format!("{l}\n").as_bytes()).await;
-        }
-        return Exit { code: Some(0), signal: None };
+        return at_gate(&mut io, &lines, at, name).await;
     }
     // `stream <name>`: its conversation's line; at gate <name>, three text lines; at <name>.tool, a tool and its
     // result; at <name>.end, its answer (ADR-0083: what the shared coalescer commits when)
@@ -421,6 +456,12 @@ async fn fake_cli(mut io: SimIo) -> Exit {
         io.print(format!("{}\n", json!({"type":"session","id":"conv-1"})).as_bytes()).await;
         let legacy = if prompt.contains("legacy") { " LEGACY" } else { "" };
         io.eprint(format!("unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.example/v1/responses{legacy}\n").as_bytes()).await;
+        return Exit { code: Some(1), signal: None };
+    }
+    // `errtail…`: it dies with its last words on stderr, no newline after them
+    if prompt.starts_with("errtail") {
+        io.print(format!("{}\n", json!({"type":"session","id":"conv-1"})).as_bytes()).await;
+        io.eprint(b"fatal: the last words").await;
         return Exit { code: Some(1), signal: None };
     }
     if prompt.starts_with("slowexit") {

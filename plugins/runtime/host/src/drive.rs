@@ -158,6 +158,13 @@ impl Runtime {
             let out = self.feed(driver, ParserInput::Stdout(&line), sys).await;
             self.apply(&mut d, out, handle).await;
         }
+        // stderr's last line too, when the CLI left it without a newline: its refusal or its error is often just that
+        for line in take_lines(&mut d.err, &[], true) {
+            d.stderr.push_str(&line);
+            d.stderr.push('\n');
+            let out = self.feed(driver, ParserInput::Stderr(&line), sys).await;
+            self.apply(&mut d, out, handle).await;
+        }
         if d.finished && handle.running() {
             let _ = handle.kill().await;
         }
