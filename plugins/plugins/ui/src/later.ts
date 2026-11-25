@@ -6,6 +6,7 @@ import type { LaunchPick, PluginUiLater } from '@wisp/shell';
 import { cast, castPrompt } from './commands.ts';
 import { t } from './i18n.ts';
 import { pluginAsk, pluginItems } from './slash.ts';
+import './i18n/lazy.ts';
 
 function send(text: string, ctx: { client: PluginClient; launch?: LaunchPick; restore?: (text: string) => void; say?: (text: string) => void }): boolean {
   const ask = pluginAsk(text);
