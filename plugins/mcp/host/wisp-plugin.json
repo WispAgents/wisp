@@ -39,6 +39,7 @@
     "threads:read",
     "threads:write",
     "watch:*",
+    "workflows:*",
     "worktrees:*"
   ],
   "activation": [

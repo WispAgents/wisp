@@ -760,7 +760,12 @@ async fn wake(ctx: &Ctx, call: &Call, member: &str, why: String, by: &str) -> Re
 /// `workflows.run`: the event as its `event` input, in the trigger's folder when it has one (`id` names its task).
 async fn run_workflow(ctx: &Ctx, call: &Call, name: &str, first: &TriggerEvent, cwd: &str) -> Result<Value> {
     let inputs = [("event".to_owned(), core::event_scope(first)["event"].clone())].into_iter().collect();
-    let a = wisp_workflows_api::RunArgs { name: name.to_owned(), inputs, project: (!cwd.is_empty()).then(|| cwd.to_owned()) };
+    let a = wisp_workflows_api::RunArgs {
+        name: name.to_owned(),
+        inputs,
+        project: (!cwd.is_empty()).then(|| cwd.to_owned()),
+        ..Default::default()
+    };
     let started = ctx.run::<wisp_workflows_api::Run>(call, a).await?;
     serde_json::to_value(started).map_err(|e| WireError::internal(e.to_string()))
 }

@@ -1129,6 +1129,9 @@ async fn an_agents_capability_set_writes_only_its_own_work() {
         "stuff.update",
         "threads.fresh",
         "threads.notesUpdate",
+        // its own task's workflow runs: steps under its task, in its folder, at its mode or lower (ADR-0119)
+        "workflows.run",
+        "workflows.stop",
     ]
     .iter()
     .map(|x| (*x).to_owned())
@@ -1622,14 +1625,17 @@ async fn the_users_harness_reaches_triggers_settings_channels_and_worktrees_and_
     a.serve.stop();
 }
 
-/// The commands ADR-0115 lists as an agent's writes (its fenced `agent-writes` block): the decision, read from the ADR.
+/// The commands an agent may write, as the newest ADR that lists them says (its fenced `agent-writes` block: ADR-0115,
+/// then each ADR that changes the list, ADR-0119 on): the decision, read from the ADR.
 fn adr_agent_writes() -> Vec<String> {
-    let adr = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/adr"))
+    let mut adrs: Vec<std::path::PathBuf> = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/adr"))
         .unwrap()
         .filter_map(Result::ok)
-        .find(|e| e.file_name().to_string_lossy().starts_with("0115-"))
-        .expect("ADR-0115");
-    let text = std::fs::read_to_string(adr.path()).unwrap();
+        .map(|e| e.path())
+        .filter(|p| std::fs::read_to_string(p).is_ok_and(|t| t.contains("```agent-writes\n")))
+        .collect();
+    adrs.sort();
+    let text = std::fs::read_to_string(adrs.last().expect("an ADR with an agent-writes block")).unwrap();
     let block = text.split("```agent-writes\n").nth(1).expect("an ```agent-writes block").split("```").next().unwrap();
     let mut w: Vec<String> = block.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect();
     w.sort();
@@ -1968,4 +1974,75 @@ async fn an_agent_cannot_make_a_guard_question_audit_i_is2() {
     assert!(task["ext"]["wisp.runtime"]["ask"]["guard"].is_null(), "an agent marked a guard question: {task}");
     assert!(task["ext"]["wisp.runtime"]["guardTask"].is_null(), "{task}");
     a.serve.stop();
+}
+
+/// ADR-0119: an agent runs a workflow from its task with `workflows_run` (Claude Code's workflows, on any harness): its
+/// steps are its task's children, each reads what the steps it needs gave, the task's view says where the run stands,
+/// and the agent is sent every step's result when it ends. It can't send steps to another folder.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_runs_a_workflow_under_its_own_task_and_is_told_how_it_ended() {
+    let a = Agent::start_spec(
+        "agent-workflow",
+        |dir| vec![("FAKE_DELAY".into(), "0".into()), ("FAKE_GATE".into(), common::gates(dir).to_string_lossy().into_owned())],
+        json!({ "prompt": "gate lead hi" }),
+    )
+    .await;
+    let names = a.names(true).await;
+    for t in ["workflows_run", "workflows_status", "workflows_stop"] {
+        assert!(names.iter().any(|n| n == t), "{t} for the agent: {names:?}");
+    }
+    let spec = json!({ "tasks": {
+        "look": { "prompt": "look at math.js", "phase": "Explore" },
+        "fix": { "prompt": "fix it, after: ${{ tasks.look.output.text }}", "needs": ["look"], "phase": "Build", "mode": "auto" },
+    } });
+    let (said, err) = a.call("workflows_run", json!({ "name": "audit", "spec": spec, "project": "/tmp" })).await;
+    assert!(err && said.contains("leave out project"), "{said}");
+    let (said, err) = a.call("workflows_run", json!({ "name": "audit", "spec": spec })).await;
+    assert!(!err && said.contains("Don't do its steps yourself"), "{said}");
+    let at = std::time::Instant::now();
+    let t = loop {
+        let t = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+        if t.pointer("/ext/wisp.workflows/runs/0/state").and_then(Value::as_str) == Some("done") {
+            break t;
+        }
+        assert!(at.elapsed() < std::time::Duration::from_secs(60), "the run ends: {t}");
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    };
+    let run = &t["ext"]["wisp.workflows"]["runs"][0];
+    assert_eq!(run["workflow"], "audit");
+    assert_eq!(run["phases"], json!(["Explore", "Build"]));
+    assert_eq!((run["done"].as_u64(), run["total"].as_u64()), (Some(2), Some(2)), "{run}");
+    for s in run["steps"].as_array().unwrap() {
+        let step = a.api.try_cmd("runtime.get", json!({ "id": s["task"] })).await;
+        let step = step.get("result").cloned().unwrap_or(step);
+        assert_eq!(step["parentId"], a.id.as_str(), "a step is its owner's child: {step} {run}");
+        assert_eq!(step["ext"]["wisp.workflows"]["node"], s["id"], "{step}");
+    }
+    // the task's agent is still in its turn: the result waits in its queue, as wisp's own follow-up
+    let q = t["queue"].as_array().cloned().unwrap_or_default();
+    assert!(q.iter().any(|i| i["text"].as_str().is_some_and(|x| x.starts_with("wisp: the workflow audit ended done"))), "{q:?}");
+    let (said, err) = a.call("workflows_status", json!({ "id": run["id"] })).await;
+    assert!(!err && said.contains("\"state\":\"done\""), "{said}");
+    a.serve.stop();
+}
+
+/// ADR-0119 rule 7: `/workflow <words>` reaches the harness with the lead's note in front (naming the tool as Claude
+/// names it), while the task shows what was typed; `/workflow` alone is refused, saying what to type.
+#[tokio::test(flavor = "multi_thread")]
+async fn slash_workflow_makes_the_agent_the_runs_lead_and_the_task_shows_what_was_typed() {
+    let dir = temp("slash-workflow");
+    let rec = dir.join("rec");
+    std::fs::create_dir_all(&rec).unwrap();
+    let (serve, port) = start_with(&dir, &[("FAKE_RECORD", rec.to_str().unwrap())]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let r = api.try_cmd("runtime.create", json!({ "prompt": "/workflow", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    assert!(r.to_string().contains("Say what the workflow should do"), "{r}");
+    let made = api.cmd("runtime.create", json!({ "prompt": "/workflow audit every route", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    let turns = api.until(&id, "the turn ends", |t| t.last().is_some_and(ended)).await;
+    assert_eq!(turns[0]["prompt"], "/workflow audit every route", "the task shows what was typed");
+    let runs = until_records(&rec.join("claude.jsonl"), "the run's record", |r| !r.is_empty()).await;
+    let sent = runs[0].to_string();
+    assert!(sent.contains("wisp-workflow") && sent.contains("mcp__wisp__workflows_run"), "{sent}");
+    serve.stop();
 }
