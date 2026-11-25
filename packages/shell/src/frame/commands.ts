@@ -566,10 +566,46 @@ export const sideStart = defineCommand<{ id: string; main: string; text: string;
   wire: (a) => ({ id: bare(a.id), prompt: a.text, parentId: bare(a.main), ...(a.attachments?.length && { attachments: a.attachments }) }),
   optimistic: (base, a) => {
     const main = base.peek<SessionRow>(SESSION, a.main as EntityKey) as SessionRow | undefined;
-    const row = startingRow({ id: a.id, title: a.text.split('\n')[0]?.slice(0, 80) ?? a.text, agent: main?.agent ?? '', at: a.at, mode: 'plan', ...(typeof main?.summary['cwd'] === 'string' && { cwd: main.summary['cwd'] }) });
+    // it runs with its main task's access: the main task's mode, never below Edits (runtime's side_task.rs `side_mode`)
+    const mode = main?.summary['mode'] === 'auto' ? 'auto' : 'edits';
+    const row = startingRow({ id: a.id, title: a.text.split('\n')[0]?.slice(0, 80) ?? a.text, agent: main?.agent ?? '', at: a.at, mode, ...(typeof main?.summary['cwd'] === 'string' && { cwd: main.summary['cwd'] }) });
     return [{ e: SESSION, id: a.id as EntityKey, op: 'upsert', v: { ...row, summary: { ...row.summary, sideOf: { id: bare(a.main), title: main?.title ?? '' } } } as never }];
   },
 });
+
+/** A side discussion's proposed write on its main task (`ext["wisp.runtime"].proposals`, runtime's more/propose.rs). */
+export interface ProposalRow {
+  readonly id: string;
+  readonly side: string;
+  readonly sideTitle: string;
+  readonly path: string;
+  readonly before?: string | null;
+  readonly after: string;
+  readonly at: number;
+}
+export const proposalsOf = (row: SessionRow | undefined): readonly ProposalRow[] => {
+  const ext = (row?.body as { ext?: { 'wisp.runtime'?: { proposals?: unknown } } } | undefined)?.ext?.['wisp.runtime']?.proposals;
+  return Array.isArray(ext) ? (ext as ProposalRow[]) : [];
+};
+const withoutProposal = (key: string, row: SessionRow | undefined, proposal: string): LocalOp[] => {
+  if (!row?.body) return [];
+  const ext = ((row.body as { ext?: Record<string, unknown> }).ext ?? {}) as Record<string, unknown>;
+  const own = (ext['wisp.runtime'] ?? {}) as Record<string, unknown>;
+  const proposals = proposalsOf(row).filter((p) => p.id !== proposal);
+  return [{ e: SESSION, id: key as EntityKey, op: 'patch', ops: [{ op: 'add', path: '/body/ext', value: { ...ext, 'wisp.runtime': { ...own, proposals } } as never }] }];
+};
+const proposalCommand = (id: 'runtime.proposal.apply' | 'runtime.proposal.discard') =>
+  defineCommand<{ id: string; proposal: string }>({
+    id,
+    owner: (a) => a.id,
+    wire: (a) => ({ id: bare(a.id), proposal: a.proposal }),
+    // the card goes at once; a stale one (the file changed since) comes back with the peer's Conflict as a toast
+    optimistic: (base, a) => withoutProposal(a.id, base.peek<SessionRow>(SESSION, a.id as EntityKey) as SessionRow | undefined, a.proposal),
+  });
+/** Apply: the side discussion's change written in the main task's folder, while the file still reads as it did. */
+export const proposalApply = proposalCommand('runtime.proposal.apply');
+/** Discard: the proposal goes, nothing written. */
+export const proposalDiscard = proposalCommand('runtime.proposal.discard');
 
 /** "/btw did you …": the side question, or undefined (v1 btw.js btwQuestion; runtime's prompt/btw.rs). */
 export const btwQuestion = (text: string): string | undefined => (/^\/btw(?:\s+|$)/i.test(text.trim()) ? text.trim().replace(/^\/btw\s*/i, '') : undefined);

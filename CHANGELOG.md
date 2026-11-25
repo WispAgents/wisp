@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Side discussions (`/side`) now run with their main task's access on every harness: the main task's mode (never below Edits, Full auto when it is), its account, thinking, connectors and team, and commands without an Allow card. Before, a side on Codex and the other harnesses only read, and on Claude Code every command asked. A side's write to a file the main task changed isn't made: it shows on the main task as a card with the diff, **Apply** (written while the file still reads as it did, else nothing is written) and **Discard** (ADR-0119).
+- Fork: a fork keeps its task's connectors, team, Try it two ways variant, lean setting and limits, so its first run has the same MCP servers; and none of the task's leftovers (a retry's grants, side questions, a blocked card).
+- Fork from Claude Code: the forked conversation is saved, so the fork's second follow-up resumes it. Before, it resumed a conversation that was never written.
+- Fork from an earlier turn: the fork goes on from that turn's conversation (Claude Code) and from its files as they were then, not with the later turns. A harness that can't go back to an earlier turn's conversation (Codex and others) says so, and the dialog offers the latest turn instead.
+- Allow & retry: the grants or Full auto it gives go to its own retry only. Before, a follow-up queued ahead of the retry took them.
 - Android app: **Scan the code** in Add computer now opens a scanner (Google's code scanner from Play services, so the app still asks for no camera permission) and saves the computer with its key pinned. A phone without the scanner no longer shows a Scan button that always ended in "type it by hand": the typed address is the main action there.
 - Android app: something shared to wisp from the share sheet now opens New task with the shared text or link in the box and its pictures or PDFs attached. Before, nothing took it and a toast said to update wisp on the computer. With no computer open yet, the share waits on the phone and wisp says to open a computer first.
 - Android app: **Share** opens Android's share sheet. Before, it copied the link and did nothing else.

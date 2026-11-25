@@ -166,6 +166,8 @@ line_fields! {
     #[serde(rename = "type", borrow)] ty: Option<&'a RawValue>,
     #[serde(borrow)] subtype: Option<&'a RawValue>,
     #[serde(borrow)] session_id: Option<&'a RawValue>,
+    /// the message's own id in the session: a main-thread assistant message's is where a fork may end its copy
+    #[serde(borrow)] uuid: Option<&'a RawValue>,
     #[serde(borrow)] message: Lenient<Msg<'a>>,
     #[serde(borrow)] parent_tool_use_id: Option<&'a RawValue>,
     #[serde(borrow)] error: Option<&'a RawValue>,

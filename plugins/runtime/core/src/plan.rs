@@ -1,7 +1,8 @@
 //! Whether a Plan run may run commands (v1 #794, runner.js `planRuns`/`outsideTask`): a task you start in Plan runs
-//! any command and only can't edit files; a side discussion's Plan only reads, and so does a task a channel or a
-//! trigger started (someone outside may have written it) or one carrying a mode cap, and their subagents. How a
-//! harness runs it (its flags, what its agent is told) is the harness plugin's. Pure: the host reads the tasks.
+//! any command and only can't edit files, and so does a side discussion (it has its main task's access, never below
+//! Edits: audit user-side-full-access); a task a channel or a trigger started (someone outside may have written it) or
+//! one carrying a mode cap, and their subagents, only reads. How a harness runs it (its flags, what its agent is told)
+//! is the harness plugin's. Pure: the host reads the tasks.
 
 use wisp_runtime_api::model::Mode;
 
@@ -31,7 +32,7 @@ pub fn outside(chain: &[Origin<'_>]) -> bool {
     })
 }
 
-/// The run's `plan_commands` (v1 `planRuns`): Plan, not a side discussion, not from outside.
+/// The run's `plan_commands` (v1 `planRuns`): a side discussion's run, or Plan not from outside.
 pub fn runs_commands(mode: Mode, side: bool, outside: bool) -> bool {
-    mode == Mode::Plan && !side && !outside
+    side || (mode == Mode::Plan && !outside)
 }

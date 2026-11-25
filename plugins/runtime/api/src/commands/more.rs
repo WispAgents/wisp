@@ -118,6 +118,16 @@ pub struct BtwDropArgs {
     pub btw_id: String,
 }
 
+/// A side discussion's proposed write on its main task (`ext["wisp.runtime"].proposals`), applied or discarded by the
+/// user there. `id`: the main task. Additive (2026-11-25).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct ProposalArgs {
+    pub id: SessionId,
+    pub proposal: String,
+}
+
 /// Show in folder for a picture or video an answer showed (v1 POST /sessions/:id/reveal): `path` as the block named
 /// it. Additive (2026-11-12).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

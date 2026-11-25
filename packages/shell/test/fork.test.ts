@@ -1,7 +1,7 @@
 // Fork… (v1 actions.js forkTask; QA round 14 desktop #1): the dialog's start, the turn it forks from, and the two
 // commands its confirm sends (nothing before it).
 import { expect, test } from 'vitest';
-import { forkSteps, forkTitle, forkTurn, startPick } from '../src/frame/fork.ts';
+import { forkReach, forkSteps, forkTitle, forkTurn, startPick } from '../src/frame/fork.ts';
 
 test('the_fork_starts_on_the_tasks_harness_when_its_machine_has_it_else_the_first_it_has', () => {
   expect(startPick({ agent: 'claude', model: 'opus', effort: 'high', mode: 'plan' }, ['codex', 'claude'])).toEqual({ prompt: '', mode: 'plan', agent: 'claude', model: 'opus', effort: 'high' });
@@ -28,4 +28,16 @@ test('the_fork_is_named_after_what_it_should_try_cut_at_a_word', () => {
   expect(forkTitle('Use a token bucket\nand more')).toBe('Use a token bucket');
   const long = 'Rewrite the rate limiter with a sliding window and keep the old one behind a flag';
   expect(forkTitle(long)).toBe('Rewrite the rate limiter with a sliding window and keep the…');
+});
+
+// audit fork-turn-includes-later: the dialog says what the copy carries on from, as runtime's fork does it: the latest
+// turn whole, an earlier turn up to there where its harness kept that turn's point, and none past it elsewhere
+test('the_fork_says_what_it_carries_on_from_and_an_earlier_turn_only_where_its_harness_can_go_back', () => {
+  const turns = [{ id: 'a', ext: { 'wisp.runtime': { resumeAt: 'msg-1' } } }, { id: 'b', body: { ext: { 'wisp.runtime': {} } } }, { id: 'c' }];
+  expect(forkReach(turns, turns[2])).toBe('whole');
+  expect(forkReach(turns, undefined)).toBe('whole');
+  expect(forkReach(turns, turns[0])).toBe('upTo');
+  expect(forkReach(turns, turns[1]), 'no point kept (Codex): runtime refuses it').toBe('latestOnly');
+  // a store row keeps it under body
+  expect(forkReach([{ id: 'x', body: { ext: { 'wisp.runtime': { resumeAt: 'm' } } } }, { id: 'y' }], { id: 'x', body: { ext: { 'wisp.runtime': { resumeAt: 'm' } } } })).toBe('upTo');
 });

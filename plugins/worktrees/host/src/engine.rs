@@ -188,14 +188,16 @@ impl Engine {
         let dir = naming::worktree_dir(&self.home, &info.root, &args.session_id);
         fsx::mkdirp(fsx::parent(&dir)).await?;
         // a fork: its parent's commit and a copy of its folder as it is now (snapshotted before the add)
-        let copy = match &args.from {
-            Some(from) => {
+        // a fork from an earlier turn: its folder as it was then (git's checkpoint before the turn after it)
+        let copy = match (&args.at, &args.from) {
+            (Some(at), _) if !at.head.is_empty() => Some((at.head.clone(), Some(at.to.clone()).filter(|t| !t.is_empty() && *t != at.head))),
+            (_, Some(from)) => {
                 let src = self.repo(call, from).await?;
                 let head = src.rev_parse(call, "HEAD").await?;
                 let snap = src.snapshot(call).await?;
                 head.map(|h| (h, snap))
             }
-            None => None,
+            _ => None,
         };
         let start = copy.as_ref().map_or_else(|| base.reference.clone(), |(h, _)| h.clone());
         root.worktree_add(call, WorktreeAdd { path: dir.clone(), branch: branch.clone(), start: Some(start) }).await?;

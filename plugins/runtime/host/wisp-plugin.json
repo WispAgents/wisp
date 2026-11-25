@@ -228,6 +228,16 @@
         "title": "Allow what the last turn's permissions blocked"
       },
       {
+        "id": "runtime.proposal.apply",
+        "title": "Apply a side discussion's proposed change on the main task",
+        "uiOnly": "the user's Apply on the proposal card of the main task's page; an agent never applies its own proposal"
+      },
+      {
+        "id": "runtime.proposal.discard",
+        "title": "Discard a side discussion's proposed change",
+        "uiOnly": "the user's Discard on the proposal card of the main task's page; an agent never answers its own proposal"
+      },
+      {
         "id": "runtime.btw",
         "title": "A side question on a copy of the conversation"
       },

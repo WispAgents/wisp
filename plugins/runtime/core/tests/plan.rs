@@ -1,5 +1,5 @@
-//! Plan that runs commands (v1 #794, test/plan-mode.test.js `outsideTask`): a task you start in Plan may run commands;
-//! a side discussion's, a channel's, a trigger's or a capped task's (and their subagents') Plan stays read-only.
+//! Plan that runs commands (v1 #794, test/plan-mode.test.js `outsideTask`): a task you start in Plan may run commands,
+//! and so may a side discussion; a channel's, a trigger's or a capped task's (and their subagents') Plan stays read-only.
 #![allow(clippy::unwrap_used)]
 
 use wisp_runtime_api::model::Mode;
@@ -29,28 +29,33 @@ fn a_channels_a_triggers_or_a_capped_task_and_its_subagents_count_as_outside_v1_
 }
 
 #[test]
-fn only_plan_on_a_task_of_your_own_that_is_no_side_discussion_runs_commands_v1_794() {
+fn plan_on_a_task_of_your_own_and_any_side_discussion_runs_commands_v1_794() {
     assert!(runs_commands(Mode::Plan, false, false));
-    assert!(!runs_commands(Mode::Plan, true, false), "a side discussion's Plan only reads");
+    // audit user-side-full-access: a side discussion has its main task's access, commands included
+    assert!(runs_commands(Mode::Plan, true, false), "a side discussion runs commands");
+    assert!(runs_commands(Mode::Edits, true, false));
     assert!(!runs_commands(Mode::Plan, false, true), "a channel's or trigger's Plan only reads");
     assert!(!runs_commands(Mode::Edits, false, false), "only Plan");
     assert!(!runs_commands(Mode::Auto, false, false));
 }
 
-/// v1 #794 side.js: a side discussion behind the gate is told it can do anything a task can (run commands, start
-/// tasks, use the connectors) and to run what it would suggest, not that it can't start tasks.
+/// v1 #794 side.js: a side discussion is told it can do anything a task can (run commands, start tasks, use the
+/// connectors) and to run what it would suggest. Audit user-side-edits-for-approval: what it hears about its writes is
+/// what wisp does: a write to a file the main task changed is proposed there; no clash card, no checks that don't exist.
 #[test]
-fn a_side_discussion_behind_the_gate_is_told_it_runs_commands_and_starts_tasks_v1_794() {
+fn a_side_discussion_is_told_it_has_the_main_tasks_access_and_where_its_writes_go() {
     use wisp_runtime_core::prompt::side::{SideOf, side_note};
-    let n = side_note(SideOf { id: "t1", title: "Fix login" }, "mcp__wisp__wisp_session", true, "Claude Code");
+    let n = side_note(SideOf { id: "t1", title: "Fix login" }, "mcp__wisp__wisp_session", true);
     assert!(n.contains(
-        "You can do anything a task can: run commands, tests, builds and the app, start tasks, use wisp's tools and the connectors"
+        "You have the main task's access: run commands, tests, builds and the app, start tasks, use wisp's tools and the connectors"
     ));
     assert!(n.contains(
         "Never hand the user a command to run, or tell them to ask the main task for something, that you could do here yourself"
     ));
-    assert!(!n.contains("Don't start changes of your own") && !n.contains("can't start tasks"), "{n}");
-    assert!(n.contains("Lines it changed are a clash"), "writes still go through the clash check");
-    let ro = side_note(SideOf { id: "t1", title: "Fix login" }, "", false, "Codex");
-    assert!(ro.contains("Change nothing"), "a harness that can't ask before a write still only reads");
+    assert!(n.contains("your change goes to the main task as a proposal") && n.contains("proposed to the main task"), "{n}");
+    assert!(!n.contains("clash") && !n.contains("card here") && !n.contains("with a warning"), "nothing wisp doesn't do: {n}");
+    // a harness that can't let wisp see a write first: its writes land, and it is told so (no more read-only side)
+    let open = side_note(SideOf { id: "t1", title: "Fix login" }, "", false);
+    assert!(!open.contains("Change nothing") && open.contains("nothing checks them first"), "{open}");
+    assert!(open.contains("You have the main task's access"));
 }

@@ -170,6 +170,12 @@ pub trait Harness: Send + Sync + 'static {
     fn permission(&self, _tool: &str, _input: &Value, _cwd: &str) -> Option<PermissionAsk> {
         None
     }
+    /// The file a live approval's tool call writes and how, when it is one of the harness's file-writing tools (a side
+    /// discussion's write to a file its main task changed becomes a proposal there). None: it writes no file. Additive
+    /// (2026-11-25).
+    fn file_write(&self, _tool: &str, _input: &Value) -> Option<FileWrite> {
+        None
+    }
     /// argv to continue the conversation interactively (Take over, terminal sessions).
     fn resume_command(&self, _o: &ResumeOptions) -> Option<ResumeCommand> {
         None

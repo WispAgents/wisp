@@ -11,6 +11,64 @@ use super::{SLOT, with_slot};
 use crate::error::{Result, RuntimeError};
 use crate::runtime::Runtime;
 
+/// What of its task's own slot a fork leaves behind: what belongs to one run or turn (an open question, a retry's
+/// extras, a /btw, Allow-always grants, a held queue's marks), or the task's place among others (a side discussion's
+/// main task, a compare's group, a crew job, a pin). Everything else is the task's setup and carries over: its spec and
+/// the connectors it names, a formula's connector overlay, its subagents, variant, brief, `heldTo`, `startedBy`, cap.
+const NOT_FORKED: [&str; 29] = [
+    "next",
+    "btw",
+    "ask",
+    "asks",
+    "forLater",
+    "blocked",
+    "grants",
+    "approval",
+    "rerun",
+    "readOnly",
+    "sideOf",
+    "forkOf",
+    "proposals",
+    "terminal",
+    "setupFailed",
+    "spawnFailed",
+    "guardTask",
+    "overage",
+    "trial",
+    "group",
+    "titleAuto",
+    "pinned",
+    "watch",
+    "member",
+    "machine",
+    "crewJobs",
+    "away",
+    "broughtJobs",
+    "broughtNote",
+];
+
+/// Other plugins' slots that are the task's setup, not a run's state: a fork keeps them as runtime's own is kept.
+const FORKED_SLOTS: [&str; 1] = [wisp_router_api::PLUGIN_ID];
+
+/// git's slot on a turn: the checkpoint it kept before the turn ran (`runtime.run@1` `before_turn`).
+const GIT: &str = "wisp.git";
+
+/// The fork's ext: the task's own slot without `NOT_FORKED`, and the setup slots of `FORKED_SLOTS`.
+fn forked_ext(src: &Session) -> wisp_runtime_api::model::Ext {
+    let mut ext = wisp_runtime_api::model::Ext::default();
+    if let Some(Value::Object(own)) = src.ext.get(SLOT) {
+        let kept: serde_json::Map<String, Value> =
+            own.iter().filter(|(k, v)| !NOT_FORKED.contains(&k.as_str()) && !v.is_null()).map(|(k, v)| (k.clone(), v.clone())).collect();
+        ext.insert(SLOT.to_owned(), Value::Object(kept));
+    }
+    for k in FORKED_SLOTS {
+        if let Some(v) = src.ext.get(k).filter(|v| !v.is_null()) {
+            ext.insert(k.to_owned(), v.clone());
+        }
+    }
+    ext
+}
+
 impl Runtime {
     /// `runtime.compact`: `/compact` as the next turn, by wisp (it doesn't count as your follow-up).
     pub async fn compact(self: &Arc<Self>, id: &SessionId) -> Result<FollowedUp> {
@@ -138,11 +196,33 @@ impl Runtime {
         Ok(Some(wisp_runtime_api::commands::Created { id: s.id, turn_id: None }))
     }
 
-    /// `runtime.fork`: a new task with this one's turns up to `turn_id`, resuming a copy of its conversation.
+    /// `runtime.fork`: a new task with this one's turns up to `turn_id`, resuming a copy of its conversation as it was
+    /// at that turn, with the task's setup (its connectors, team, variant, lean, limits) and none of its runs' state.
     pub async fn fork(self: &Arc<Self>, a: ForkArgs) -> Result<wisp_runtime_api::commands::Created> {
         let src = self.repo.session(a.id.as_str()).await?;
         let upto = self.turn_of(a.id.as_str(), a.turn_id.as_ref()).await?;
-        let turns: Vec<Turn> = self.repo.turns(a.id.as_str(), None, None).await?.into_iter().filter(|t| t.idx <= upto.idx).collect();
+        let all = self.repo.turns(a.id.as_str(), None, None).await?;
+        let earlier = all.iter().any(|t| t.idx > upto.idx);
+        // the copy goes on from the turn asked, never with what came after it: a harness that shares one conversation
+        // across turns ends its copy where that turn did; one that can't is refused, never forked with later context
+        let mut next = json!({ "fork": true });
+        let mut forked_at = json!({ "id": src.id, "turnId": upto.id });
+        if earlier {
+            let h = self.harness(&src.agent).ok();
+            let at = upto.ext.get(SLOT).and_then(|x| x.get("resumeAt")).and_then(Value::as_str).filter(|a| !a.is_empty());
+            let Some(at) = at.filter(|_| h.as_ref().is_some_and(|h| h.info().fork)) else {
+                let name = h.map_or_else(|| src.agent.clone(), |h| h.info().name.clone());
+                return Err(RuntimeError::Invalid(format!(
+                    "{name} can’t go back to an earlier turn’s conversation: fork from the latest turn instead."
+                )));
+            };
+            next["at"] = json!(at);
+            // its files as they were then: the checkpoint git kept just before the turn after it (`kept_before`)
+            if let Some(cp) = all.iter().find(|t| t.idx == upto.idx + 1).and_then(|t| t.ext.get(GIT)?.get("checkpoint")).cloned() {
+                forked_at["checkpoint"] = cp;
+            }
+        }
+        let turns: Vec<Turn> = all.into_iter().filter(|t| t.idx <= upto.idx).collect();
         if a.new_id.as_ref() == Some(&a.id) {
             return Err(RuntimeError::Invalid("a fork is a new task: its id isn't the one it forks".into()));
         }
@@ -154,28 +234,31 @@ impl Runtime {
         }
         let id = self.new_task_id(a.new_id.clone()).await?;
         let now = self.now();
+        let default_title =
+            if earlier { format!("{} (fork at turn {})", src.title, upto.idx + 1) } else { format!("{} (fork)", src.title) };
         let mut s = Session {
             id,
-            title: a.title.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| format!("{} (fork)", src.title)),
+            title: a.title.filter(|t| !t.trim().is_empty()).unwrap_or(default_title),
             agent: src.agent.clone(),
             model: src.model.clone(),
             effort: src.effort.clone(),
             account: src.account.clone(),
+            lean: src.lean.clone(),
             mode: src.mode,
             cwd: src.cwd.clone(),
             dirs: src.dirs.clone(),
+            tags: src.tags.clone(),
             state: SessionState::Review,
             resume_id: upto.resume_id.clone().or_else(|| src.resume_id.clone()),
             created_at: now,
             updated_at: now,
             ..Session::default()
         };
-        with_slot(&mut s.ext, |m| m.insert("forkOf".into(), json!({ "id": src.id, "turnId": upto.id })));
-        // a capped task's fork stays under its cap (v1 capped.js: copied to whatever it starts)
-        if let Some(cap) = src.ext.get("wisp.runtime").and_then(|o| o.get("capped")).filter(|c| !c.is_null()).cloned() {
-            with_slot(&mut s.ext, |m| m.insert("capped".into(), cap));
-        }
-        with_slot(&mut s.ext, |m| m.insert("next".into(), json!({ "fork": true })));
+        // the task's setup carries over whole (a capped task's fork stays under its cap, v1 capped.js; its connectors and
+        // team, so its first run has the same MCP servers), its runs' and turns' state doesn't
+        s.ext = forked_ext(&src);
+        with_slot(&mut s.ext, |m| m.insert("forkOf".into(), forked_at));
+        with_slot(&mut s.ext, |m| m.insert("next".into(), next));
         let copies: Vec<Turn> = turns.into_iter().map(|t| Turn { id: TurnId::new(), session_id: s.id.clone(), ..t }).collect();
         let summary = self.persist(&mut s, copies).await?;
         self.host.emit(crate::host::Emitted::Created(wisp_runtime_api::events::SessionCreated { session: (*summary).clone() }));

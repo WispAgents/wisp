@@ -95,6 +95,44 @@ impl Fake {
     }
 }
 
+/// A harness that keeps every run it was handed (what a test reads its mode, grants, MCP servers and fork from).
+pub struct Recording(pub Arc<dyn Harness>, pub Arc<std::sync::Mutex<Vec<HarnessRun>>>);
+
+impl Recording {
+    pub fn of(h: Arc<dyn Harness>) -> (Arc<dyn Harness>, Arc<std::sync::Mutex<Vec<HarnessRun>>>) {
+        let runs = Arc::new(std::sync::Mutex::new(Vec::new()));
+        (Arc::new(Self(h, runs.clone())), runs)
+    }
+}
+
+impl Harness for Recording {
+    fn info(&self) -> &HarnessInfo {
+        self.0.info()
+    }
+    fn detect<'a>(&'a self, sys: &'a dyn HarnessSys) -> BoxFuture<'a, HarnessFound> {
+        self.0.detect(sys)
+    }
+    fn launch(&self, run: &HarnessRun) -> wisp_kernel::Result<Launch> {
+        self.1.lock().unwrap().push(run.clone());
+        self.0.launch(run)
+    }
+    fn driver(&self, run: &HarnessRun) -> Box<dyn RunDriver> {
+        self.0.driver(run)
+    }
+    fn permission(&self, tool: &str, input: &Value, cwd: &str) -> Option<wisp_runtime_api::harness::PermissionAsk> {
+        self.0.permission(tool, input, cwd)
+    }
+    fn file_write(&self, tool: &str, input: &Value) -> Option<wisp_runtime_api::harness::FileWrite> {
+        self.0.file_write(tool, input)
+    }
+}
+
+/// The run whose prompt holds `said`, once it was launched.
+pub async fn run_of(runs: &Arc<std::sync::Mutex<Vec<HarnessRun>>>, said: &str) -> HarnessRun {
+    until(said, || async { runs.lock().unwrap().iter().any(|r| r.prompt.contains(said)) }).await;
+    runs.lock().unwrap().iter().find(|r| r.prompt.contains(said)).cloned().unwrap()
+}
+
 struct Lines {
     done: bool,
 }
@@ -179,6 +217,17 @@ impl Harness for Fake {
     fn driver(&self, _run: &HarnessRun) -> Box<dyn RunDriver> {
         pure(Lines { done: false })
     }
+    /// Its file tools, as Claude Code's are named: `Write` (`file_path`, `content`) and `Edit` (`old_string`, `new_string`).
+    fn file_write(&self, tool: &str, input: &Value) -> Option<wisp_runtime_api::harness::FileWrite> {
+        use wisp_runtime_api::harness::{FileChangeOf, FileWrite, TextEdit};
+        let s = |k: &str| input.get(k).and_then(Value::as_str).map(str::to_owned);
+        let change = match tool {
+            "Write" => FileChangeOf::Whole { text: s("content")? },
+            "Edit" => FileChangeOf::Edits { edits: vec![TextEdit { old: s("old_string")?, new: s("new_string")?, all: false }] },
+            _ => return None,
+        };
+        Some(FileWrite { path: s("file_path")?, change })
+    }
 }
 
 /// Whether the harness's own sign-in check knows a `LEGACY` 401 (a turn an older wisp saved without saying signed out).
@@ -224,6 +273,23 @@ pub fn script(prompt: &str) -> Vec<Value> {
             json!({"type":"result","text":"I can't help with that.","isError":false,"stopReason":"refusal"}),
         ];
     }
+    // `blocked…`: its permissions refused `npm publish` (a rule Allow & retry can grant), then it answers;
+    // `blockedwide…`: the refusal names no rule (only Full auto lets it through)
+    // (a side discussion's user words come after its main task's state)
+    let said = prompt.rsplit_once("## The user, in this side discussion\n\n").map_or(prompt, |(_, q)| q);
+    if said.starts_with("blocked") {
+        let refused = if said.starts_with("blockedwide") {
+            json!({"type":"blocked","tool":"Bash","detail":"npm publish"})
+        } else {
+            json!({"type":"blocked","tool":"Bash","detail":"npm publish","rule":"Bash(npm publish)"})
+        };
+        return vec![
+            json!({"type":"session","id":"conv-1"}),
+            refused,
+            json!({"type":"text","text":hero}),
+            json!({"type":"result","text":hero,"isError":false}),
+        ];
+    }
     // `envread…`: it prints a .env file, then quotes its value in its answer (ADR-0050)
     if prompt.starts_with("envread") {
         let text = format!("The key is sk-live-handoff.\n{hero}");
@@ -237,6 +303,10 @@ pub fn script(prompt: &str) -> Vec<Value> {
     }
     let cli = prompt.strip_prefix("cli ").map(|v| json!({"type":"cli","version":v}));
     let mut lines = vec![json!({"type":"session","id":"conv-1"})];
+    // `mark:<point>` in the prompt: the conversation says where it is (`Session.at`), as Claude Code's messages do
+    if let Some(at) = prompt.split_whitespace().find_map(|w| w.strip_prefix("mark:")) {
+        lines[0]["at"] = json!(at);
+    }
     lines.extend(cli);
     lines.extend([
         json!({"type":"tool","kind":"run","label":"Run tests","id":"c1"}),

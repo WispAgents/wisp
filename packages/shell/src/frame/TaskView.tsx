@@ -81,6 +81,9 @@ import {
   btwDrop,
   btwOf,
   btwQuestion,
+  proposalApply,
+  proposalDiscard,
+  proposalsOf,
   sideAsk,
   sideStart,
   setSetting,
@@ -131,6 +134,8 @@ import { plusTool } from './composer-plus.ts';
 
 // Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
 const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
+// a side discussion's proposed changes (audit user-side-edits-for-approval): their own chunk, loaded with the first one
+const Proposals = lazy(() => import('./Proposals.tsx'));
 import { capOf } from './cap.ts';
 import { shipsFromWorktree } from './ship-gate.ts';
 import { unreadLeave } from './unread-leave.ts';
@@ -1833,6 +1838,16 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     dismiss={(pending) => t(pending ? 'shell.btw.cancel' : 'shell.btw.dismiss')}
                     onDismiss={(btwId) => void run(btwDrop, { id: key, btwId }).catch(() => undefined)}
                   />
+                  {/* what its side discussions proposed for the files it changed: a diff each, Apply or Discard here */}
+                  <Show when={proposalsOf(row()).length > 0}>
+                    <Proposals
+                      items={proposalsOf(row())}
+                      t={t}
+                      onApply={(proposal) => void run(proposalApply, { id: key, proposal }).catch(() => undefined)}
+                      onDiscard={(proposal) => void run(proposalDiscard, { id: key, proposal }).catch(() => undefined)}
+                      onOpenSide={(side) => shell.navigate({ t: 'openTask', id: entityKey(ownerOf(key), side) as never })}
+                    />
+                  </Show>
                 </Show>
               }
               dock={
