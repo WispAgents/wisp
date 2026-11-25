@@ -1582,6 +1582,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               reply,
               draft,
               openChanges: () => side('changes'),
+              changes,
               apps: () => ((b as { ext?: Record<string, unknown> }).ext?.['wisp.apps'] ?? {}) as Record<string, unknown>,
               tour: s().agent === 'wisp',
             }),

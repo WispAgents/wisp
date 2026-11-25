@@ -41,6 +41,27 @@ pub struct Launched {
     pub sandbox: String,
 }
 
+/// `sandbox.start`: `sandbox.launch` that answers at once. The launch is a row of its own (`sandbox.launch` on
+/// [`LAUNCHES_TOPIC`], keyed by `id`) from the first frame: its steps while the sandbox comes up, the task once it
+/// started there, or why it couldn't (kept until dismissed or tried again).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartArgs {
+    /// the client's id for the launch (its row is shown under it at once): 1–64 of `[A-Za-z0-9_-]`
+    pub id: String,
+    #[serde(flatten)]
+    pub launch: LaunchArgs,
+}
+
+/// One launch by its id: `sandbox.retry` (start it again), `sandbox.dismiss` (forget a failed one).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaunchId {
+    pub id: String,
+}
+
+/// Where the launches' rows are (`sandbox.launch` entities).
+pub const LAUNCHES_TOPIC: &str = "plugin:wisp.sandbox:launches";
+
 /// A seeded sandbox for an owner (a delegate, a crew job or member, a goal's judges): made, or the one it has.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -232,6 +253,9 @@ macro_rules! command {
 }
 
 command!(Launch = "sandbox.launch" : LaunchArgs => Launched);
+command!(Start = "sandbox.start" : StartArgs => Empty);
+command!(Retry = "sandbox.retry" : LaunchId => Empty);
+command!(Dismiss = "sandbox.dismiss" : LaunchId => Empty);
 command!(Place = "sandbox.place" : PlaceArgs => Placed);
 command!(Seed = "sandbox.seed" : SeedArgs => Seeded);
 command!(Drop = "sandbox.drop" : DropArgs => Dropped);

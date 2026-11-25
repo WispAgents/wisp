@@ -24,12 +24,16 @@
     "machines:send",
     "proc:exec{bin:git}",
     "proc:exec{bin:sh}",
-    "proc:exec{bin:claude}"
+    "proc:exec{bin:claude}",
+    "store:write{owner:sandbox_view}"
   ],
   "activation": ["onStartup"],
   "contributes": {
     "commands": [
       { "id": "sandbox.launch", "title": "Start a task in a sandbox of its own (/sandbox)" },
+      { "id": "sandbox.start", "title": "Start a task in a sandbox of its own, answering at once: its launch is a row (plugin:wisp.sandbox:launches) until the task starts" },
+      { "id": "sandbox.retry", "title": "Try a sandbox launch that failed, or waited for a sign-in, again" },
+      { "id": "sandbox.dismiss", "title": "Forget a sandbox launch that failed" },
       { "id": "sandbox.place", "title": "A seeded sandbox for a delegate, a crew job or member, or a goal's judges" },
       { "id": "sandbox.seed", "title": "Take a project in (inside a sandbox only)" },
       { "id": "sandbox.patch", "title": "A project's changes since it came in (inside a sandbox only)", "readOnly": true },

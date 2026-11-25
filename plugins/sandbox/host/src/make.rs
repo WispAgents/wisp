@@ -34,13 +34,11 @@ pub(crate) async fn set_owner(ctx: &Ctx, call: &Call, machine: &str, owner: &Own
     calls::set_data(ctx, call, machine, BTreeMap::from([("owner".to_owned(), owner.to_value())])).await
 }
 
-/// The sign-ins every sandbox starts with (`claude` when the user signed in for sandboxes).
-pub(crate) async fn logins(ctx: &Ctx, call: &Call) -> Vec<String> {
-    let v = calls::grid_info(ctx, call).await;
-    if let Err(err) = &v {
-        tracing::warn!(error = %err.message, "sandbox: grid-client.sandboxInfo");
-    }
-    core::logins_of(v.as_ref().ok().and_then(|v| v.get("logins")))
+/// The sign-ins every sandbox starts with (`claude` when the user signed in for sandboxes). A grid that can't be
+/// asked says why, rather than passing for "not signed in" (which sent a signed-in user to Settings).
+pub(crate) async fn logins(ctx: &Ctx, call: &Call) -> Result<Vec<String>> {
+    let v = calls::grid_info(ctx, call).await?;
+    Ok(core::logins_of(v.get("logins")))
 }
 
 /// A sandbox for `owner`, up and answering: `(machine, peer, sandbox id)`. A full grid fails at once.
@@ -174,8 +172,29 @@ pub(crate) async fn place(ctx: &Ctx, call: &Call, a: &api::PlaceArgs) -> Result<
 
 /// `sandbox.launch`: `/sandbox <prompt>` in New task. Refused up front when the harness can't start there.
 pub(crate) async fn launch(ctx: &Ctx, call: &Call, a: &api::LaunchArgs) -> Result<api::Launched> {
+    launch_with(ctx, call, a, &|_| Box::pin(async {})).await
+}
+
+/// Where a launch is, for its row (`sandbox.start`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Step {
+    /// the grid makes the sandbox
+    Make,
+    /// it starts and answers
+    Wake,
+    /// the project goes in
+    Copy,
+    /// the task starts there
+    Start,
+}
+
+/// Says a [`Step`] (writes the launch's row) before the launch goes on.
+pub(crate) type StepFn = dyn Fn(Step) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync;
+
+/// [`launch`], saying each [`Step`] as it gets there.
+pub(crate) async fn launch_with(ctx: &Ctx, call: &Call, a: &api::LaunchArgs, step: &StepFn) -> Result<api::Launched> {
     let agent = a.agent.clone().unwrap_or_default();
-    core::may_start(&agent, &logins(ctx, call).await).map_err(WireError::invalid)?;
+    core::may_start(&agent, &logins(ctx, call).await?).map_err(WireError::invalid)?;
     let mode = match &a.mode {
         Some(m) => Some(
             serde_json::from_value::<wisp_runtime_api::model::Mode>(Value::String(m.clone()))
@@ -189,7 +208,22 @@ pub(crate) async fn launch(ctx: &Ctx, call: &Call, a: &api::LaunchArgs) -> Resul
         .filter(|t| !t.trim().is_empty())
         .unwrap_or_else(|| a.prompt.lines().next().unwrap_or("task").chars().take(40).collect());
     let pending = Owner::Pending { pending: now(ctx) };
-    let (machine, peer, sandbox) = make(ctx, call, &pending, &name).await?;
+    step(Step::Make).await;
+    let made = calls::grid_new(ctx, call, &name).await?;
+    let (machine, sandbox) = (made.machine, made.id);
+    if machine.is_empty() {
+        return Err(WireError::internal("the sandbox was made but no machine here keeps it"));
+    }
+    set_owner(ctx, call, &machine, &pending).await?;
+    step(Step::Wake).await;
+    let peer = match wait_up(ctx, call, &machine).await {
+        Ok(p) => p,
+        Err(e) => {
+            drop_one(ctx, call, &machine, &sandbox).await;
+            return Err(e);
+        }
+    };
+    step(Step::Copy).await;
     let cwd = match seed(ctx, call, &machine, a.cwd.as_deref()).await {
         Ok(c) => c,
         Err(e) => {
@@ -209,6 +243,7 @@ pub(crate) async fn launch(ctx: &Ctx, call: &Call, a: &api::LaunchArgs) -> Resul
         goal: a.goal.clone(),
         ..rt::StartArgs::default()
     };
+    step(Step::Start).await;
     let made = match route_up::<rt::Create>(ctx, call, &machine, args).await {
         Ok(m) => m,
         Err(e) => {
