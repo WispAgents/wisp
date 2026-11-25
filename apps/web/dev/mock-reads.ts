@@ -200,7 +200,8 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
   ]),
   ...reason('wisp Grid / cloud: needs a signed-in grid (the mock has none)', [
     'grid-client.computer', 'grid-client.revoke', 'grid-client.signin', 'grid-client.signinCancel', 'grid-client.signout',
-    'sandbox.claude.begin', 'sandbox.claude.code', 'sandbox.drop', 'sandbox.env', 'sandbox.launch', 'sandbox.logout',
+    'sandbox.claude.begin', 'sandbox.claude.code', 'sandbox.dismiss', 'sandbox.drop', 'sandbox.env', 'sandbox.launch',
+    'sandbox.logout', 'sandbox.retry', 'sandbox.start',
     'share.create', 'share.import', 'share.peek', 'share.stop', 'stuff.publish', 'stuff.unpublish', 'crew.share',
   ]),
   ...reason('another computer: the mock has one peer (?seed=computers adds a read-only Studio)', [
