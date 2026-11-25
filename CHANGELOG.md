@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.14] - 2026-11-25
+
 ### Added
 
 - Markdown (answers, transcript, docs, the docs site): ```mermaid fences draw as diagrams (ADR-0118). mermaid is bundled with wisp (no CDN, works offline and in the phone apps) and loads only when a page shows a diagram, never with the first screen; it runs at its strict security level, follows light and dark, and a fence still streaming stays code until it closes. Each diagram has a bar to copy its source, switch to its code and back, and open it full size with zoom; a source that can't render shows as code with a short note saying why.
