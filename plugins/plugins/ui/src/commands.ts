@@ -104,7 +104,7 @@ export function permissionWords(p: string, say: (k: string, v?: Readonly<Record<
 }
 
 /** Cast (v1 spell-ui.js cast): a task whose agent writes the plugin you described, as a user plugin, and installs it off. */
-export const cast = defineCommand<{ peer: PeerId; prompt: string; title: string; ext: { 'wisp.plugins': { kind: 'cast' } } }, { id: string }>({
+export const cast = defineCommand<{ peer: PeerId; prompt: string; title: string; ext: { 'wisp.plugins': { kind: 'cast' } }; agent?: string; model?: string; effort?: string }, { id: string }>({
   id: 'runtime.create',
   owner: (a) => a.peer,
   optimistic: 'none',

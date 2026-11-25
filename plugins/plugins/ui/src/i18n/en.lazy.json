@@ -40,5 +40,7 @@
   "plugins.foot.pre": "Plugins live in ",
   "plugins.foot.path": "~/.wisp/plugins",
   "plugins.foot.post": ". Turning one off puts back exactly what it changed.",
-  "plugins.allOff": "Turn every plugin off"
+  "plugins.allOff": "Turn every plugin off",
+  "plugins.slash.args": "what it should do",
+  "plugins.slash.hint": "Make a wisp plugin: an agent writes it, you switch it on"
 }
