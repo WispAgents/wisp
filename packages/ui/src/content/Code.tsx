@@ -2,6 +2,7 @@
 // that scrolls sideways rather than wrap, with a small highlighter. The text is rendered as
 // text, so code that looks like HTML stays code.
 import { For, Show, createMemo, type JSX } from 'solid-js';
+import { CopyButton } from '../blocks/content-copy.tsx';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import { highlight } from './highlight.ts';
 
@@ -18,6 +19,8 @@ export interface CodeProps extends KitProps {
   readonly wrap?: boolean;
   /** Block only: leave it plain even when the language is known. */
   readonly plain?: boolean;
+  /** Block only: a head row with the language and a Copy button (a fenced block in markdown). */
+  readonly copy?: boolean;
 }
 
 function CodeBlock(props: CodeProps & { readonly partName: PartName }): JSX.Element {
@@ -30,6 +33,12 @@ function CodeBlock(props: CodeProps & { readonly partName: PartName }): JSX.Elem
             {title()}
           </figcaption>
         )}
+      </Show>
+      <Show when={props.copy}>
+        <div data-kit="code-head" data-part={sub(props.partName, 'head')}>
+          <Show when={props.lang}>{(lang) => <span data-kit="code-lang" data-text="control">{lang()}</span>}</Show>
+          <CopyButton text={() => props.children ?? ''} part={sub(props.partName, 'copy')} />
+        </div>
       </Show>
       {/* Focusable so a keyboard can scroll a long line into view. */}
       <pre data-kit="code-pre" data-wrap={flag(props.wrap)} tabIndex={0}>

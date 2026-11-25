@@ -108,6 +108,17 @@
   [data-kit='cb-tests-failures'] > li > div { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
   [data-kit='cb-tests-failures'] b { font-weight: var(--fw-semibold); font-size: var(--fs-md); }
   [data-kit='cb-tests-failures'] pre { align-self: stretch; margin: var(--space-2) 0; padding: var(--space-4) var(--space-5); border-radius: var(--radius-md); background: var(--del-bg); font: var(--fs-sm) / 1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
+  /* tree (v1 .b-tree): one mono line per file or folder, indented by its depth; a file that opens is a button */
+  [data-kit='cb-tree'] { list-style: none; margin: 0; padding: 0; font: var(--fs-sm) / 1.5 var(--mono); }
+  [data-kit='cb-tree-item'] { padding-left: calc(var(--k-depth, 0) * 18px); min-width: 0; }
+  [data-kit='cb-tree-row'] { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-width: 0; padding: 3px var(--space-3); border-radius: 7px; }
+  button[data-kit='cb-tree-row'] { border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; transition: background var(--dur-fast); }
+  button[data-kit='cb-tree-row']:hover { background: var(--surface-2); }
+  button[data-kit='cb-tree-row']:focus-visible { outline: var(--size-ring) solid var(--accent); outline-offset: calc(-1 * var(--size-ring)); }
+  [data-kit='cb-tree-row'] > [data-kit='icon'] { flex: none; }
+  [data-kit='cb-tree-name'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-kit='cb-tree-item'][data-dir] [data-kit='cb-tree-name'] { color: var(--muted); }
+  [data-kit='cb-tree-note'] { min-width: 0; margin-left: var(--space-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); font-size: var(--fs-sm); color: var(--muted); }
   /* code (v1 .b-code card): the head (file:line that opens it, or the language; Copy), the .env line, numbered
      lines that never wrap and scroll both ways past 560px, the pointed-at lines tinted with an accent edge, the caption */
   [data-kit='cb-code'] { overflow: hidden; background: var(--surface); border: var(--size-hairline) solid var(--line); border-radius: var(--radius); }

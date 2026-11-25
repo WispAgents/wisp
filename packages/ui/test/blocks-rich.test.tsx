@@ -3,6 +3,7 @@ import { createSignal } from 'solid-js';
 import { expect, test } from 'vitest';
 import { mount, part } from './helpers.tsx';
 import { Answer, type BlockContext, type DocText } from '../src/index.ts';
+import richCss from '../src/css/answer-rich.css?raw';
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 const click = (el: Element | null | undefined): void => void el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -115,4 +116,23 @@ test('doc_block_renders_empty_files_uses_abs_for_reveal_and_loads_live_docText',
   expect(docs[1]?.textContent).toContain('Live doc');
   expect(docs[1]?.textContent).toContain('Body text.');
   expect(docs[1]?.textContent).not.toContain('wasn’t there');
+});
+
+/** The body of the kit rule whose selector list names exactly `[data-kit='key']`. */
+const ruleFor = (css: string, key: string): string =>
+  [...css.replace(/\/\*[^]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].find((m) => (m[1] ?? '').split(',').some((s) => s.trim() === `[data-kit='${key}']`))?.[2] ?? '';
+
+test('the_chart_block_is_styled_and_its_table_is_hidden_from_sight_only_render_r1', () => {
+  // render audit r1: no sheet selected rb-chart*, so the bars drew nothing and the fallback table showed under them
+  expect(ruleFor(richCss, 'rb-chart-bar')).toMatch(/width:\s*var\(--k-w\)/);
+  const table = ruleFor(richCss, 'rb-chart-table');
+  expect(table).toMatch(/clip-path:\s*inset\(50%\)/);
+  expect(table).not.toMatch(/display:\s*none|visibility:\s*hidden/);
+  mount(() => <Answer ctx={{ latest: true }} blocks={[{ type: 'chart', title: 'Turns per day', unit: 'turns', items: [{ label: '10-17', value: 2 }, { label: '10-19', value: 5 }] }]} />);
+  const chart = part('block.chart');
+  const bars = [...(chart?.querySelectorAll<HTMLElement>('[data-kit="rb-chart-bar"]') ?? [])];
+  expect(bars.map((b) => b.style.getPropertyValue('--k-w'))).toEqual(['40%', '100%']);
+  const tbl = chart?.querySelector('[data-kit="rb-chart-table"]');
+  expect(tbl?.hasAttribute('aria-hidden')).toBe(false);
+  expect([...(tbl?.querySelectorAll('tbody th, tbody td') ?? [])].map((c) => c.textContent)).toEqual(['10-17', '2 turns', '10-19', '5 turns']);
 });

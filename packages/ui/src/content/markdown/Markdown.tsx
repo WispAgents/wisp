@@ -94,7 +94,7 @@ function block(b: Block, ctx: Ctx, tight: boolean): JSX.Element {
     }
     // A tight list's paragraphs are bare text in their items, as GFM renders them.
     case 'paragraph': return tight ? <>{inlines(b.c, ctx)}</> : <p data-kit="md-p">{inlines(b.c, ctx)}</p>;
-    case 'code': return <Code block lang={b.lang} part={sub(ctx.part, 'code-block')}>{b.v}</Code>;
+    case 'code': return <Code block copy lang={b.lang} part={sub(ctx.part, 'code-block')}>{b.v}</Code>;
     case 'list': {
       const items = b.items.map((it) => item(it, ctx, b.tight));
       return b.ordered ? (

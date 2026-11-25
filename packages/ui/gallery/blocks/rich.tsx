@@ -12,6 +12,7 @@ const RICH: readonly unknown[] = [
   { type: 'terminal', command: 'npm test', output: '\u001b[32m✓\u001b[0m 48 passed\n\u001b[31m✗\u001b[0m 1 failed', exitCode: 1 },
   { type: 'tests', passed: 48, failed: 1, skipped: 2, durationMs: 5300, command: 'npm test', failures: [{ name: 'auth › rejects expired token', message: 'expected 401, got 500', file: 'test/auth.test.ts:42' }] },
   { type: 'compare', before: { items: ['Every request hit the database'] }, after: { label: 'After', items: ['Reads come from the cache', 'Writes invalidate it'] } },
+  { type: 'chart', title: 'Turns per day', unit: 'turns', items: [{ label: '10-17', value: 2 }, { label: '10-18', value: 3 }, { label: '10-19', value: 5 }, { label: 'a long label that ellipses', value: 1 }] },
   { type: 'task', id: 'a1b2c3', note: 'Picks up where this one stopped' },
   { type: 'stuff', id: '0bac5acb43c9' },
   { type: 'doc', path: 'docs/plan.md', title: 'Plan' },
