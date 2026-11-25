@@ -31,6 +31,18 @@ export function needsYou(s: SessionRow): boolean {
   return !scheduled;
 }
 
+/** A terminal task (the harness's own CLI in wisp; the summary's `tui`): its state stays `running` while its CLI is
+ *  open, but no wisp run is working, so Done is never refused (closing its CLI goes with it, server side). */
+export const isTerminalTask = (s: Pick<SessionRow, 'summary'> | undefined): boolean => !!(s?.summary as Record<string, unknown> | undefined)?.['tui'];
+
+/** Still working, so Mark as done stays put and says so (v1 actions.js, orch #18): running or asking, unless it's a
+ *  terminal task. */
+export const doneRefused = (s: Pick<SessionRow, 'state' | 'summary'> | undefined): boolean => (s?.state === 'running' || s?.state === 'waiting') && !isTerminalTask(s);
+
+/** What Undo of a Done puts back: a failed task stays failed, anything else is for review (Done was refused while it
+ *  worked; a terminal task's CLI closed with the Done, so it isn't running any more). */
+export const undoneState = (s: Pick<SessionRow, 'state'> | undefined): 'review' | 'error' => (s?.state === 'error' ? 'error' : 'review');
+
 /** Asking you something: v1's `waiting` state (a `runtime.ask` arrives as `waiting` with an empty `question`), or a
  *  question or an approval the summary carries. */
 export function asking(s: SessionRow): boolean {

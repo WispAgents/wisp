@@ -17,7 +17,7 @@ import { parseCompare } from './frame/runs-small.ts';
 import { openFeedback, parseFeedback } from './frame/feedback.ts';
 import { rowMenuItems } from './frame/row-menu.ts';
 import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, PROJECT_TAIL, placeItems, projectItems, projectShortcuts, projectTail, projectsNow } from './frame/project-switch.ts';
-import { flatRow, isSaved, projectOf, sessionKey, shortAgo, statusOf } from './frame/rows-view.ts';
+import { doneRefused, flatRow, isSaved, projectOf, sessionKey, shortAgo, statusOf, undoneState } from './frame/rows-view.ts';
 import { markStepped } from './frame/stepped.ts';
 
 
@@ -228,15 +228,16 @@ function rowAct(ctx: ShellContext, act: 'done' | 'archive' | 'delete'): boolean 
   const run = ctx.client.commands.run;
   const undo = (message: string, back: () => void): void => void ctx.toast.success(ctx.t(message), { action: { label: ctx.t('shell.toast.undo'), onClick: back } });
   if (act === 'done') {
-    const was = ctx.client.entities.peek<SessionRow>(SESSION, id as never)?.state;
-    // v1 actions.js: still working, it stays put and says so (orch #18)
-    if (was === 'running' || was === 'waiting') {
+    const was = ctx.client.entities.peek<SessionRow>(SESSION, id as never);
+    // v1 actions.js: still working, it stays put and says so (orch #18); a terminal task's Done closes its CLI
+    if (doneRefused(was)) {
       ctx.toast.show(ctx.t('shell.done.working'));
       return true;
     }
     void run(setState, { id, state: 'done' }).catch(() => undefined);
     ctx.navigate({ t: 'markDone', id: id as never });
-    undo('shell.toast.done', () => void run(setState, { id, state: was && was !== 'done' ? was : 'review' }).catch(() => undefined));
+    const back = undoneState(was);
+    undo('shell.toast.done', () => void run(setState, { id, state: back }).catch(() => undefined));
   } else {
     void run(archive, { id, archived: true }).catch(() => undefined);
     ctx.navigate({ t: 'archive', id: id as never });

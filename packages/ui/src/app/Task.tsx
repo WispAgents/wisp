@@ -1246,6 +1246,16 @@ function ReplyBoxIn(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Element {
 export type TaskScroll = Pick<Held, 'toEnd' | 'place' | 'following'>;
 
 /** v1 .it-body: the task's page under its head: the details column, the turns, the dock. */
+/** v1 term.css .tui-term (Babysitting mode): what takes the task body's place edge to edge (a terminal task's CLI), under
+ *  its head, in place of the turns, details and reply box. Nothing around it. Added 2026-11-25 (additive). */
+export function TaskScreen(props: { readonly children: JSX.Element }): JSX.Element {
+  return (
+    <div data-kit="task-screen" data-part="task.screen">
+      {props.children}
+    </div>
+  );
+}
+
 export function TaskBody(props: {
   readonly details?: JSX.Element;
   readonly turns: JSX.Element;

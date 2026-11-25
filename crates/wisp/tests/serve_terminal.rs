@@ -121,6 +121,36 @@ async fn a_terminal_task_runs_in_the_harnesss_own_cli_and_a_follow_up_resumes_it
     drop(serve);
 }
 
+/// Mark as done on a terminal task whose CLI is still open (owner, 2026-11-25: it did nothing): it goes to Done, its CLI
+/// closes with it, and the CLI's end leaves it done (not back for review).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_terminal_task_marked_done_closes_its_cli_and_stays_done() {
+    if cfg!(windows) {
+        return;
+    }
+    let dir = temp("serve-terminal-done");
+    let (serve, port) = start_with(&dir, &[]);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    let made = api.cmd("runtime.create", json!({ "prompt": "/terminal say hi", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    assert_eq!(api.cmd("runtime.get", json!({ "id": id })).await["state"], "running", "its CLI is open");
+    api.cmd("runtime.setState", json!({ "id": id, "state": "done" })).await;
+    let at = Instant::now();
+    loop {
+        let term = api.cmd("terminal.get", json!({ "kind": "takeover", "id": id })).await;
+        let t = api.cmd("runtime.get", json!({ "id": id })).await;
+        if (term.is_null() || term["state"] == "ended" || term["state"] == "failed")
+            && t["ext"]["wisp.runtime"]["terminal"]["live"] == false
+        {
+            assert_eq!(t["state"], "done", "the CLI's end keeps it done: {t}");
+            break;
+        }
+        assert!(at.elapsed() < Duration::from_secs(20), "its CLI never closed: {t}\n{term}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    drop(serve);
+}
+
 /// Terminal tasks on a harness that names no conversation by wisp's id (Codex): its own CLI opens on the prompt
 /// (`codex … <prompt>`), the task waits for the conversation the CLI keeps (found by its folder and time when it
 /// ends), and the terminal's end leaves it for review.

@@ -7,7 +7,7 @@ import { Dynamic } from 'solid-js/web';
 import { defineCommand, readonly, entityKey, type EntityKey } from '@wisp/client';
 import { IconButton, type IconName, Icon, Inline, Menu, Stack, Tabs, Text, afterNextPaint, useAfterPaint, useDerived, useSignal } from '@wisp/ui';
 import { editorUrl } from '../editor.ts';
-import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, isTui, pickedTab, tabKey, type SidePane } from '../open-task.ts';
+import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, pickedTab, tabKey, type SidePane } from '../open-task.ts';
 import { showsPlace } from './place.ts';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
@@ -140,7 +140,7 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
       shell.navigate({ t: 'openSide', side: { kind: 'view', id: TAB_VIEW as never } });
     }
   };
-  // a terminal task's CLI comes first; Watch after the panel's own while the task has one (v1 panel.js tabs)
+  // a terminal task's CLI is its body now (TermScreen), so its tab shows only on an old Terminal pane; Watch after the panel's own while the task has one (v1 panel.js tabs)
   const watched = (): boolean => !!(task.task() as { summary?: { watch?: unknown } } | undefined)?.summary?.watch || props.pane === 'watch';
   // other plugins' tabs, after the panel's own (v1 panel.js: an app from My Stuff pinned to tasks, "pane:<id>")
   // (a client computed: what the tabs read are the client's signals, the pins setting and the items)
@@ -196,7 +196,7 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
   const files = (): number => changeStat(task.key)?.files ?? Math.max(touched(), gitDir() ? (place()?.dirty ?? 0) : 0);
   const pr = () => raw()?.summary?.pr ?? undefined;
   // owner, 2026-11-19: every tab in the strip by default, labelled, in v1's fixed order (strip.ts)
-  const order = (): string[] => sideStrip({ term: isTui(task.task()) || props.pane === 'term', watch: watched(), extras: extra().map((x) => x.key) });
+  const order = (): string[] => sideStrip({ term: props.pane === 'term', watch: watched(), extras: extra().map((x) => x.key) });
   const tabOf = (p: string) => {
     const x = extra().find((e) => e.key === p);
     // last in the strip, a pinned tab goes to its icon first when the panel runs short (Tabs `fit`), so the panel's own keep
