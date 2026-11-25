@@ -5703,6 +5703,7 @@ dependencies = [
  "wisp-runtime-api",
  "wisp-sandbox-api",
  "wisp-sandbox-core",
+ "wisp-store",
  "wisp-testkit",
 ]
 

@@ -6,13 +6,16 @@
 //! member leaving the crew (`crew.left`), and a sandboxed task deleted on its sandbox's own wisp, seen by the
 //! minute's look at each task-owned sandbox (its task gone there: the sandbox goes). The sweep, at start and every
 //! 10 minutes, drops what a failed drop left and launches that never got their task.
+//!
+//! resources: data-only (its tables are launches under way and a sign-in's progress, nothing a user declares)
 
 mod calls;
 mod claude;
+mod launches;
 mod make;
 mod seed;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::Value;
 use wisp_kernel::{Ctx, Manifest, Plugin, Result, Setup, WireError};
@@ -20,6 +23,13 @@ use wisp_sandbox_api as api;
 use wisp_sandbox_core::{self as core, Owner};
 
 pub use seed::in_sandbox;
+
+/// The launches' rows, once the plugin started.
+pub(crate) type Slot = Arc<OnceLock<launches::Shared>>;
+
+pub(crate) fn launches_of(slot: &Slot) -> Result<launches::Shared> {
+    slot.get().cloned().ok_or_else(|| WireError::unavailable("wisp.sandbox is starting"))
+}
 
 #[derive(Debug, Default)]
 pub struct SandboxPlugin {
@@ -221,16 +231,41 @@ impl Plugin for SandboxPlugin {
             Ok(api::Empty {})
         });
         s.command::<api::InfoCmd, _, _>(|ctx, call, _a| async move { info(&ctx, &call).await });
-        let flow: claude::Shared = Arc::new(Mutex::new(claude::Flow::default()));
-        let f = flow.clone();
-        s.command::<api::ClaudeBegin, _, _>(move |ctx, _call, _a| {
-            let f = f.clone();
-            async move { claude::begin(&ctx, &f).await }
+        // the launches' rows (`sandbox.start`), once the store is there
+        let slot: Slot = Arc::new(OnceLock::new());
+        let l = slot.clone();
+        s.on_start(move |ctx| async move {
+            let store = ctx.service::<wisp_store::Store>()?.as_ref().clone();
+            let shared = launches::install(&store)?;
+            let _ = l.set(shared.clone());
+            ctx.spawn(async move { launches::tidy(&shared).await });
+            Ok(())
         });
-        let f = flow.clone();
+        let l = slot.clone();
+        s.command::<api::Start, _, _>(move |ctx, _call, a| {
+            let l = l.clone();
+            async move { launches::start(&ctx, &launches_of(&l)?, a).await }
+        });
+        let l = slot.clone();
+        s.command::<api::Retry, _, _>(move |ctx, _call, a| {
+            let l = l.clone();
+            async move { launches::retry(&ctx, &launches_of(&l)?, &a.id).await }
+        });
+        let l = slot.clone();
+        s.command::<api::Dismiss, _, _>(move |_ctx, _call, a| {
+            let l = l.clone();
+            async move { launches::dismiss(&launches_of(&l)?, &a.id).await }
+        });
+        let flow: claude::Shared = Arc::new(Mutex::new(claude::Flow::default()));
+        let (f, l) = (flow.clone(), slot.clone());
+        s.command::<api::ClaudeBegin, _, _>(move |ctx, _call, _a| {
+            let (f, l) = (f.clone(), l.clone());
+            async move { claude::begin(&ctx, &f, &l).await }
+        });
+        let (f, l) = (flow.clone(), slot);
         s.command::<api::ClaudeCode, _, _>(move |ctx, call, a| {
-            let f = f.clone();
-            async move { claude::code(&ctx, &call, &f, &a.code).await }
+            let (f, l) = (f.clone(), l.clone());
+            async move { claude::code(&ctx, &call, &f, &a.code, &l).await }
         });
         let f = flow;
         s.command::<api::ClaudeState, _, _>(move |_ctx, _call, _a| {
