@@ -1,7 +1,7 @@
 // New task keeps its harness, model and thinking level across navigation and reloads (owner #36, v1 launcher.js:
 // S.config.defaults.agent / models / efforts, PATCH /config on each pick), and Auto is off behind one switch (owner #37).
 import { expect, test } from 'vitest';
-import { autoEnabled, autoOn, readLaunch, startRunner, withPick } from '../src/frame/launch-pick.ts';
+import { autoEnabled, autoOn, readLaunch, startRunner, withPick, withWhere } from '../src/frame/launch-pick.ts';
 
 const ready = ['claude', 'codex', 'opencode'];
 
@@ -43,4 +43,16 @@ test('a_plugin_reads_the_one_switch_from_its_wisps_setting_row_owner_37', () => 
   expect(autoOn(client)).toBe(false);
   rows.set('home:runtime.auto', { key: 'runtime.auto', value: true });
   expect(autoOn(client)).toBe(true);
+});
+
+test('new_task_starts_on_the_computer_it_last_ran_on_v1_launch_where', () => {
+  // Run on is kept beside the harness pick, and a later harness pick keeps it (and the other way round)
+  const kept = withPick(withWhere(withPick({}, 'codex', 'gpt-6', 'GPT-6', 'high'), 'peer-mini'), 'claude', 'opus', 'Opus', 'medium');
+  expect(kept.where).toBe('peer-mini');
+  expect(kept.agent).toBe('claude');
+  expect(withWhere(kept, 'peer-box').models).toEqual({ codex: 'gpt-6', claude: 'opus' });
+  expect(readLaunch(JSON.parse(JSON.stringify(kept)))).toEqual(kept);
+  // a malformed or empty place reads as none: New task runs on this computer
+  expect(readLaunch({ where: 3 }).where).toBeUndefined();
+  expect(readLaunch({ where: '' }).where).toBeUndefined();
 });
