@@ -62,26 +62,25 @@ fn opt_str(v: Option<&Value>, k: &str) -> Option<String> {
     v.and_then(|o| o.get(k)).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
-/// A queued item's own mode and harness, from here on (v1 `#startQueued`).
-fn apply_opts(s: &mut Session, item: &QueueItem) {
+/// A queued item's own mode and harness, from here on (v1 `#startQueued`). `harness`: a harness's plugin by id.
+fn apply_opts(s: &mut Session, item: &QueueItem, harness: &dyn Fn(&str) -> Option<Arc<dyn Harness>>) {
     let opts = item.opts.as_ref();
     if let Some(m) = opts.and_then(|o| o.get("mode")).and_then(|m| serde_json::from_value::<Mode>(m.clone()).ok()) {
         s.mode = m;
     }
     let run = opts.and_then(|o| o.get("run"));
-    if let Some(agent) = opt_str(run, "agent").filter(|a| *a != s.agent) {
-        s.agent = agent;
-        // another harness keeps its own conversation and its own default model unless the run names one (a model is one
-        // harness's); the user's thinking level carries over, the new harness taking its nearest (v1 handoff: max → xhigh)
-        s.resume_id = None;
-        s.model.clear();
-    }
     // a model or thinking the run names, '' its harness's default (QA desktop r3 #1: "Default" kept the task's Opus)
     let named = |k: &str| run.and_then(|r| r.get(k)).and_then(Value::as_str).map(str::to_owned);
-    if let Some(m) = named("model") {
-        s.model = m;
+    let (model, effort) = (named("model"), named("effort"));
+    if let Some(m) = &model {
+        s.model.clone_from(m);
     }
-    if let Some(e) = named("effort") {
+    // another harness keeps its own conversation and its own default model unless the run names one (a model is one
+    // harness's); the user's thinking level carries over, the new harness taking its nearest (v1 handoff: max → xhigh)
+    if let Some(agent) = opt_str(run, "agent") {
+        crate::handoff::switch_agent(s, &agent, model.is_some(), effort.is_some(), harness(&agent).as_deref());
+    }
+    if let Some(e) = effort {
         s.effort = e;
     }
 }
@@ -133,15 +132,11 @@ impl Runtime {
         // a task that asks (or asked) whether the user's harness may lower a guard runs nothing, ever: its held prompt is
         // the question's own text (audit I IS2: Send now or a reply ran it in Full auto)
         crate::more::no_follow_up_on_guard(&s)?;
-        let was = s.agent.clone();
         let fresh = fresh_start(&mut s, &item);
-        apply_opts(&mut s, &item);
+        apply_opts(&mut s, &item, &|a| self.harness(a).ok());
         // a capped task's turn never runs above its cap, whatever its queued item asked (F-chan-10)
         let capped = crate::capped::cap_of(&s);
         s.mode = wisp_runtime_core::cap::at_cap(s.mode, capped);
-        let run = item.opts.as_ref().and_then(|o| o.get("run"));
-        let next = self.harness(&s.agent).ok();
-        crate::handoff::carry_over(&mut s, &was, opt_str(run, "model").is_some(), opt_str(run, "effort").is_some(), next.as_deref());
         let mut turn = self.next_turn(&s, &item).await?;
         if let Some(Value::Object(m)) = fresh {
             turn.ext.insert("wisp.runtime".into(), Value::Object(m));
@@ -224,6 +219,8 @@ impl Runtime {
             .map(|g| g.iter().filter_map(Value::as_str).map(str::to_owned).collect())
             .unwrap_or_default();
         run.fork = next.get("fork").and_then(Value::as_bool).unwrap_or(false) && harness.info().fork;
+        // a resumed conversation's counters are its running total: what its last turn here left comes off
+        (run.prior, run.unknown_prior) = self.prior_of(&s, &turn, run.resume_id.as_deref()).await;
         if next.get("once").and_then(Value::as_str) == Some("auto") {
             run.mode = Mode::Auto;
         }
@@ -492,7 +489,7 @@ impl Runtime {
         // a lead hears about its team (v1 runner.js:1379 `teamNote`): Delegate's rows, a preset, a crew member's
         // linked delegates (orch #2), or ad-hoc delegation guidance when no team is pre-configured yet; only where
         // wisp's MCP server (and so `delegate`) is offered (never a subagent or read-only side discussion)
-        if s.parent_id.is_none() && !is_side(s) && self.host.agent_access().is_some() {
+        if self.delegates_through_wisp(s, info) {
             system.push_str(&self.team_note(s, info.ask_tool.as_deref()));
         }
         // a side discussion: what it is and what it may do (v1 sideNote)
@@ -584,8 +581,30 @@ impl Runtime {
             // own pick (Try it two ways, `ext["wisp.runtime"].variant`) wins, '' included
             subagent_model: crate::trial::subagents_on(variant.subagent_model.as_deref(), &self.text_setting("runtime.subagentModel")),
             skills: if variant.skills.as_deref() == Some("off") { "off".into() } else { String::new() },
+            delegating: self.delegates_through_wisp(s, info),
             ..HarnessRun::default()
         }
+    }
+
+    /// A lead that delegates through wisp: told so in its system prompt (`team_note`), and its harness's own subagent
+    /// tool off (`HarnessRun::delegating`), one predicate so the two never drift apart. Never a subagent, a side
+    /// discussion, a host without wisp's MCP server, or a harness that can't take wisp's tools.
+    fn delegates_through_wisp(&self, s: &Session, info: &wisp_runtime_api::harness::HarnessInfo) -> bool {
+        s.parent_id.is_none()
+            && !is_side(s)
+            && self.host.agent_access().is_some()
+            && info.ask_tool.as_deref().is_some_and(|t| !t.is_empty())
+    }
+
+    /// Where the run's usage counters start (`HarnessRun::prior`, `unknown_prior`): Claude Code and Codex report the
+    /// conversation's running total, so a resumed turn is told the totals the conversation had after its last turn
+    /// here, or, when none is known (a chat brought in, adopted or restored), that its first result is the baseline.
+    async fn prior_of(&self, s: &Session, turn: &Turn, resume: Option<&str>) -> (Option<Value>, bool) {
+        if resume.is_none() {
+            return (None, false);
+        }
+        let turns = self.repo.turns(s.id.as_str(), Some(turn.idx), Some(PRIOR_LOOKBACK)).await.unwrap_or_default();
+        prior_from(&turns, &s.agent, resume)
     }
 
     /// `Ok(false)`: its claim was cancelled (the task deleted) before the spawn: nothing spawned.
@@ -756,6 +775,23 @@ const PINNED: &str = "pinned";
 const OWN: &str = "wisp.runtime";
 /// How long `stop_and_wait` waits for a stopped run (its CLI's kill grace and tree sweep are 2 s each).
 const STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// How many turns back `prior_of` looks for the conversation's last counters (turns that left none, a stop before its
+/// result, are passed over).
+const PRIOR_LOOKBACK: u32 = 20;
+
+/// `(prior, unknown_prior)` for a run on `agent` resuming `resume`, from the task's turns before it (oldest first): the
+/// totals of the newest one that left any, when it ran on the same harness in the same conversation. Anything else
+/// (another harness's, another conversation's, none at all: a chat brought in) leaves the counters' start unknown.
+/// Nothing to resume: a fresh conversation, counted from zero.
+pub(crate) fn prior_from(turns: &[Turn], agent: &str, resume: Option<&str>) -> (Option<Value>, bool) {
+    let Some(resume) = resume else { return (None, false) };
+    let last = turns.iter().rev().filter(|t| t.ended_at.is_some()).find_map(|t| Some((t, t.stats.as_ref()?.totals.as_ref()?)));
+    match last {
+        Some((t, totals)) if t.agent == agent && t.resume_id.as_deref() == Some(resume) => (Some(totals.clone()), false),
+        _ => (None, true),
+    }
+}
 
 /// A side discussion (`ext["wisp.runtime"].sideOf`, set by `runtime.create` for a task the user starts under another).
 pub(crate) fn is_side(s: &Session) -> bool {
@@ -1048,19 +1084,19 @@ mod tests {
     fn a_follow_ups_pick_is_its_run_default_included_and_none_keeps_the_tasks_own() {
         // nothing picked: the task's own
         let mut s = on_opus();
-        super::apply_opts(&mut s, &item(&json!({ "mode": "auto" })));
+        super::apply_opts(&mut s, &item(&json!({ "mode": "auto" })), &|_| None);
         assert_eq!((s.agent.as_str(), s.model.as_str(), s.effort.as_str()), ("claude", "opus", "high"));
         // Default picked on the same harness: the harness's default model and thinking
         let mut s = on_opus();
-        super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "claude", "model": "", "effort": "" } })));
+        super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "claude", "model": "", "effort": "" } })), &|_| None);
         assert_eq!((s.model.as_str(), s.effort.as_str()), ("", ""));
         // a model picked: that one, the thinking as it was unless named
         let mut s = on_opus();
-        super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "claude", "model": "sonnet" } })));
+        super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "claude", "model": "sonnet" } })), &|_| None);
         assert_eq!((s.model.as_str(), s.effort.as_str()), ("sonnet", "high"));
         // another harness named alone: its own default model, not Opus; the thinking level carries (v1 handoff)
         let mut s = on_opus();
-        super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "codex" } })));
+        super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "codex" } })), &|_| None);
         assert_eq!((s.agent.as_str(), s.model.as_str(), s.effort.as_str()), ("codex", "", "high"));
         assert!(s.resume_id.is_none());
     }

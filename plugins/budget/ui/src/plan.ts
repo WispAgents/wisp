@@ -177,7 +177,10 @@ export function harnessesOf(u: Usage | undefined): readonly UsageRow[] {
   return rows.sort((a, b) => b.cost - a.cost || b.turns - a.turns || (b.tokens ?? 0) - (a.tokens ?? 0) || a.key.localeCompare(b.key));
 }
 
-/** Hover breakdown for a token count: "94k in · 68k cache · 18k out". */
+/**
+ * Hover breakdown for a token count: "94k in · 72% cache · 18k out". `inputTokens` is everything the turns read (cache
+ * reads and writes in) and `cacheTokens` the reads alone, so the share is what came from the cache: a write is input.
+ */
 export function tokenBreakdown(r: { readonly inputTokens?: number | undefined; readonly outputTokens?: number | undefined; readonly cacheTokens?: number | undefined }): string {
   const inp = r.inputTokens ?? 0;
   const out = r.outputTokens ?? 0;
