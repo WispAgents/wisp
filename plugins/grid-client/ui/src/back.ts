@@ -11,8 +11,9 @@ export function gridHome(row: CloudRow | undefined): string | undefined {
   return BARE.test(h) ? `${h}/` : undefined;
 }
 
-/** "Reach this wisp from anywhere" once the row says where this wisp runs: never in a grid box, nor before it lands
- *  (a box would show it for a moment, then take it back). */
+/** "Reach this wisp from anywhere" once the row says where this wisp runs: never in a grid box, nor once this computer
+ *  is on a grid already (Home shows another tip then), nor before the row lands (a box would show it for a moment,
+ *  then take it back). */
 export function offerReach(row: CloudRow | undefined): boolean {
-  return row !== undefined && !gridHome(row);
+  return row !== undefined && !gridHome(row) && !row.computer?.on;
 }
