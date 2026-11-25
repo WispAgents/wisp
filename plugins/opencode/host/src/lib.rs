@@ -9,6 +9,7 @@
 
 mod driver;
 pub mod sessions;
+mod tools;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -24,6 +25,8 @@ use wisp_runtime_api::harness::{
 };
 use wisp_runtime_api::model::Mode;
 use wisp_runtime_api::{HARNESS, Harness};
+
+use crate::tools::{binary_dest, platform_package, tools_bins};
 
 pub const DEFAULT_BIN: &str = "opencode";
 
@@ -74,30 +77,6 @@ fn data_home() -> String {
         .ok()
         .filter(|d| !d.is_empty())
         .unwrap_or_else(|| format!("{}/.local/share", std::env::var("HOME").unwrap_or_default()))
-}
-
-/// Where `accounts.install` puts it, in wisp's own tools folder: npm's copy, then the binary it unpacks itself when
-/// there's no npm ([`binary_dest`]). wisp's home is `WISP_HOME`, else `.wisp` in the user's home (`HOME`, else
-/// `USERPROFILE`: Windows rarely sets `HOME`, and reading only `HOME` missed the copy wisp had just installed there).
-fn tools_bins(wisp_home: Option<String>, home: &str, platform: &str) -> Vec<String> {
-    let base = wisp_home.filter(|h| !h.is_empty()).unwrap_or_else(|| format!("{home}/.wisp"));
-    vec![format!("{base}/tools/node_modules/.bin/opencode"), format!("{base}/tools/{}", binary_dest(platform))]
-}
-
-/// The binary's place under the tools folder (`Harness::binary_package`'s `dest`).
-fn binary_dest(platform: &str) -> String {
-    format!("opencode/bin/opencode{}", if platform == "win32" { ".exe" } else { "" })
-}
-
-/// opencode's per-platform package on npm (`opencode-ai`'s optional dependencies): `opencode-<os>-<arch>`, with
-/// `windows` for win32; its tarball holds the one executable.
-fn platform_package(os: &str, arch: &str) -> Option<String> {
-    let os = match os {
-        "darwin" | "linux" => os,
-        "win32" => "windows",
-        _ => return None,
-    };
-    matches!(arch, "x64" | "arm64").then(|| format!("opencode-{os}-{arch}"))
 }
 
 #[derive(Debug)]
@@ -360,19 +339,6 @@ mod tests {
             [("fake/model-a", "model-a", 2), ("fake/model-b", "model-b", 0)]
         );
         assert_eq!(plain_models("fake/a\nnot a model\nx/y-1\n").len(), 2);
-    }
-
-    /// Windows rarely sets HOME: the tools folder comes from the user's home as wisp resolves it (HOME, else
-    /// USERPROFILE), so detect finds the copy accounts.install put there (was `/.wisp/tools/...`: "installed but
-    /// doesn't start").
-    #[test]
-    fn detect_looks_in_wisps_tools_folder_under_the_users_home_and_wisp_home() {
-        assert_eq!(
-            tools_bins(None, "C:/Users/ana", "win32"),
-            ["C:/Users/ana/.wisp/tools/node_modules/.bin/opencode", "C:/Users/ana/.wisp/tools/opencode/bin/opencode.exe"]
-        );
-        assert_eq!(tools_bins(Some(String::new()), "/home/a", "linux")[1], "/home/a/.wisp/tools/opencode/bin/opencode");
-        assert_eq!(tools_bins(Some("/w".into()), "/home/a", "darwin")[0], "/w/tools/node_modules/.bin/opencode");
     }
 
     /// No npm: the platform's own package from the registry, unpacked where detect looks.

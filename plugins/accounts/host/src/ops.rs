@@ -229,6 +229,12 @@ fn failed(how: &'static str, reason: &'static str, error: WireError) -> InstallF
     InstallFailed { how, reason, error }
 }
 
+/// The last `n` non-empty lines of what a command printed, on one line (npm's reason is at the end).
+fn last_lines(out: &str, n: usize) -> String {
+    let lines: Vec<&str> = out.trim().lines().filter(|l| !l.is_empty()).collect();
+    lines[lines.len().saturating_sub(n)..].join(" ")
+}
+
 /// Installs `a.agent` into wisp's tools folder: with npm, or (no npm, no pinned version) its own binary from the
 /// npm registry, so a computer without Node still gets a harness. Ok: how it got there, and it now starts.
 async fn install_one(
@@ -260,18 +266,8 @@ async fn install_one(
     let how = match st.proc.exec(&npm, &args, opts).await {
         Ok(r) if r.exit.code == Some(0) => "npm",
         Ok(r) => {
-            let tail = format!("{}{}", r.stdout_text(), r.stderr_text())
-                .trim()
-                .lines()
-                .filter(|l| !l.is_empty())
-                .rev()
-                .take(3)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .join(" ");
             let (word, reason) = if r.timed_out { ("timed out", "npm_timeout") } else { ("failed", "npm_failed") };
+            let tail = last_lines(&format!("{}{}", r.stdout_text(), r.stderr_text()), 3);
             let tail = if tail.is_empty() { String::new() } else { format!(": {tail}") };
             return Err(failed("npm", reason, WireError::invalid(format!("npm install {pkg} {word}{tail}"))));
         }
