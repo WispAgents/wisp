@@ -267,7 +267,7 @@ impl Harness for GrokHarness {
         Some(self.bin())
     }
 
-    /// No windows: what Grok's own `grok usage` records total for the last [`SPEND_DAYS`] days (ADR-0119).
+    /// No windows: what Grok's own `grok usage` records total for the last [`SPEND_DAYS`] days (ADR-0120).
     fn live_limits<'a>(&'a self, sys: &'a dyn HarnessSys, env: &'a BTreeMap<String, String>) -> BoxFuture<'a, Option<Value>> {
         Box::pin(async move {
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_millis();
@@ -416,7 +416,7 @@ mod tests {
         }
     }
 
-    /// ADR-0119: Grok reports no windows; `live_limits` runs `grok usage <id>` (captured: `core/tests/cli/usage*.json`)
+    /// ADR-0120: Grok reports no windows; `live_limits` runs `grok usage <id>` (captured: `core/tests/cli/usage*.json`)
     /// for each session updated in the time, skips one older than it and one with no usage recorded (exit 1), and sums
     /// the turns that ended in it: the cost in ticks as dollars, and the tokens.
     #[tokio::test]

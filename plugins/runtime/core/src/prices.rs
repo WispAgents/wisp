@@ -1,5 +1,5 @@
 //! API list prices by model id, and the estimate of a turn's cost from its tokens when its harness reports none
-//! (ADR-0119). Sans-IO: a static table.
+//! (ADR-0120). Sans-IO: a static table.
 //!
 //! Only exact ids are priced (after [`bare_model`]): a model this table doesn't name stays unpriced, never
 //! guessed from a family. An estimate is always flagged (`cost_estimated`) and shown with a `~`, so it never reads as
@@ -8,7 +8,7 @@
 
 use wisp_runtime_api::model::{Turn, TurnStats};
 
-/// USD per million tokens at API list price, as `[input, cache read, output]` (ADR-0119). Every row is copied from the
+/// USD per million tokens at API list price, as `[input, cache read, output]` (ADR-0120). Every row is copied from the
 /// vendor's own pricing page named above its group, read on the date given there; an id a page doesn't list (with that
 /// exact id) is not here, so it stays unpriced and shows as "not priced". Where a page prices by prompt length, the row
 /// is the short-prompt rate (said next to it): a long prompt's estimate reads low, and every estimate shows with a `~`.

@@ -1,4 +1,4 @@
-// Continue on… (continue/model.ts, ADR-0120): the preview says what each choice carries and its size, summary only
+// Continue on… (continue/model.ts, ADR-0121): the preview says what each choice carries and its size, summary only
 // never writes out the transcript, the follow-up names the harness, model and choice, and a turn's switch mark reads
 // as the Timeline's divider.
 import { expect, test } from 'vitest';

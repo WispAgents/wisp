@@ -3,6 +3,7 @@
 
 use super::protocol_text::{
     APP_BLOCK, ASK_BLOCK, ASK_TOOL, CHAT_FINAL_BLOCKS, CHAT_INTRO, GRAPH_BLOCK, PLAIN_FINAL, PROTOCOL, REPORT_INTRO, WATCH_TOOL,
+    WORKFLOW_TOOL,
 };
 use super::text::is_js_space;
 
@@ -67,6 +68,7 @@ fn ask_tool_text(tool: &str, watch: bool) -> String {
     if watch {
         out.push_str(&WATCH_TOOL.replace("{wisp_watch}", &sibling(tool, "wisp_watch")));
     }
+    out.push_str(&WORKFLOW_TOOL.replace("{workflows_run}", &sibling(tool, "workflows_run")));
     out
 }
 

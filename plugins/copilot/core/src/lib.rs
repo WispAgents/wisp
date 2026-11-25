@@ -285,7 +285,7 @@ impl LineParser for CopilotParser {
     }
 }
 
-/// Gate (ADR-0119): the premium-request count goes on a turn's stats only once a run of the real CLI is captured. The
+/// Gate (ADR-0120): the premium-request count goes on a turn's stats only once a run of the real CLI is captured. The
 /// G6 fixtures are a fake `copilot` (their hero says "Fake copilot finished"), and Copilot isn't installed where this
 /// was written, so until then a Copilot turn's plan use reads as not reported, never a number from an invented format.
 pub const PREMIUM_VERIFIED: bool = false;

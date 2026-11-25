@@ -1,0 +1,124 @@
+/* RunBoard (composites/RunBoard.tsx, ADR-0119): a workflow run's phases as lanes, its steps as cards, a fan-out as a
+   grid of dots. Lanes sit side by side while each has room for a card (one under the other in a narrow box). A card
+   that runs carries a sweep of the accent across its top edge; under reduced motion it stays still. */
+@layer kit {
+  [data-kit='run-board'] {
+    container-type: inline-size;
+    display: grid; gap: var(--space-4);
+    grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+  }
+  [data-kit='run-board'][data-lanes='1'] { grid-auto-flow: row; }
+  @container (max-width: 640px) {
+    [data-kit='run-board'] { grid-auto-flow: row; }
+  }
+  @container (max-width: 520px) {
+    [data-kit='run-lane'] + [data-kit='run-lane']::before { display: none; }
+  }
+
+  [data-kit='run-lane'] {
+    position: relative; display: flex; flex-direction: column; gap: var(--space-3); min-width: 0;
+    padding: var(--space-4); border-radius: var(--radius-md); background: var(--bg-2);
+    animation: kit-rise var(--dur-enter) var(--ease);
+  }
+  /* the hand-off from one phase to the next: a small chevron in the gap */
+  [data-kit='run-lane'] + [data-kit='run-lane']::before {
+    content: ''; position: absolute; top: var(--space-6); left: calc(-1 * var(--space-4) + var(--space-1));
+    width: var(--space-3); height: var(--space-3);
+    border-top: var(--size-ring) solid var(--line-2); border-right: var(--size-ring) solid var(--line-2);
+    transform: translateX(-50%) rotate(45deg);
+  }
+  [data-kit='run-lane'][data-state='running'] { background: var(--accent-soft); }
+  [data-kit='run-lane-head'] {
+    display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; padding: 0 var(--space-1);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-title); text-transform: uppercase; color: var(--muted);
+  }
+  [data-kit='run-lane'][data-state='running'] [data-kit='run-lane-head'] { color: var(--accent); }
+  [data-kit='run-lane'][data-state='done'] [data-kit='run-lane-head'] { color: var(--good); }
+  [data-kit='run-lane'][data-state='failed'] [data-kit='run-lane-head'] { color: var(--bad); }
+  [data-kit='run-lane-title'] { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-kit='run-lane-count'] { font-family: var(--mono); font-weight: var(--fw-medium); font-variant-numeric: tabular-nums; }
+  [data-kit='run-lane-cards'] { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+
+  [data-kit='run-card'] {
+    position: relative; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; width: 100%;
+    margin: 0; padding: var(--space-4) var(--space-5); overflow: hidden; text-align: left; font: inherit; color: var(--ink);
+    border-radius: var(--radius-sm); background: var(--surface); border: var(--size-hairline) solid var(--line);
+    box-shadow: var(--shadow-1);
+    transition: border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+    animation: kit-rise var(--dur-enter) var(--ease);
+  }
+  button[data-kit='run-card'] { cursor: pointer; }
+  button[data-kit='run-card']:hover { border-color: var(--line-2); box-shadow: var(--shadow-2); transform: translateY(calc(-1 * var(--space-1))); }
+  button[data-kit='run-card']:active { transform: none; }
+  button[data-kit='run-card']:focus-visible { outline: var(--size-ring) solid var(--accent); outline-offset: var(--size-ring); }
+  [data-kit='run-card'][data-state='running'] { border-color: var(--accent); }
+  [data-kit='run-card'][data-state='failed'] { border-color: var(--bad); }
+  [data-kit='run-card'][data-state='waiting'] { background: transparent; box-shadow: none; border-style: dashed; color: var(--ink-2); }
+  [data-kit='run-card'][data-state='skipped'] { background: transparent; box-shadow: none; color: var(--muted); }
+  [data-kit='run-card'][data-state='skipped'] [data-kit='run-card-title'] { text-decoration: line-through; text-decoration-color: var(--faint); }
+  [data-kit='run-card'][data-state='running']::after {
+    content: ''; position: absolute; top: 0; left: 0; width: 40%; height: var(--size-ring);
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: run-sweep 1.6s var(--ease) infinite;
+  }
+  @keyframes run-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+  [data-kit='run-card-head'] { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+  [data-kit='run-card-title'] {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  }
+  [data-kit='run-card-meta'] {
+    flex: none; font-family: var(--mono); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap;
+  }
+  [data-kit='run-card-foot'] { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding-left: calc(var(--size-icon-sm) + var(--space-5)); }
+  [data-kit='run-agent'] {
+    flex: none; padding: 0 var(--space-2); border-radius: var(--radius-xs); background: var(--bg-2);
+    font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-2); white-space: nowrap;
+  }
+  [data-kit='run-card-detail'] {
+    display: block; min-width: 0; padding-left: calc(var(--size-icon-sm) + var(--space-5));
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--ink-2);
+  }
+  [data-kit='run-card'][data-state='waiting'] [data-kit='run-card-detail'],
+  [data-kit='run-card'][data-state='skipped'] [data-kit='run-card-detail'] { color: var(--muted); }
+  [data-kit='run-card-foot'] [data-kit='run-card-meta'] { margin-left: auto; }
+  [data-kit='run-card'][data-state='failed'] [data-kit='run-card-detail'] { color: var(--bad); }
+
+  [data-kit='run-mark'] {
+    flex: none; display: inline-grid; place-items: center; width: calc(var(--size-icon-sm) + var(--space-2)); height: calc(var(--size-icon-sm) + var(--space-2));
+    border-radius: var(--radius-pill); border: var(--size-ring) solid var(--line-2); color: var(--muted);
+  }
+  [data-kit='run-mark'][data-state='done'] { border-color: var(--good); background: var(--good); color: var(--on-accent); }
+  [data-kit='run-mark'][data-state='failed'] { border-color: var(--bad); background: var(--bad); color: var(--on-accent); }
+  [data-kit='run-mark'][data-state='running'] { border-color: var(--accent); }
+  [data-kit='run-mark'][data-state='skipped'] { border-style: dashed; }
+  [data-kit='run-live'] {
+    width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-pill); background: var(--accent);
+    animation: kit-pulse 1.2s ease-in-out infinite;
+  }
+
+  /* a fan-out: one dot per item, in a grid that fills the card */
+  [data-kit='run-dots'] {
+    display: grid; gap: var(--space-2); padding-left: calc(var(--size-icon-sm) + var(--space-5));
+    grid-template-columns: repeat(auto-fill, var(--space-6));
+  }
+  [data-kit='run-dot-cell'] { display: contents; }
+  [data-kit='run-dot'] {
+    display: block; width: var(--space-6); height: var(--space-6); margin: 0; padding: 0;
+    border-radius: var(--radius-xs); border: var(--size-hairline) dashed var(--line-2); background: transparent;
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  button[data-kit='run-dot'] { cursor: pointer; }
+  button[data-kit='run-dot']:hover { transform: scale(1.25); }
+  button[data-kit='run-dot']:focus-visible { outline: var(--size-ring) solid var(--accent); outline-offset: var(--size-hairline); }
+  [data-kit='run-dot'][data-state='running'] { border: none; background: var(--accent); animation: kit-pulse 1.2s ease-in-out infinite; }
+  [data-kit='run-dot'][data-state='done'] { border: none; background: var(--good); }
+  [data-kit='run-dot'][data-state='failed'] { border: none; background: var(--bad); }
+  [data-kit='run-dot'][data-state='skipped'] { border-style: solid; background: var(--bg-2); }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-kit='run-card'][data-state='running']::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
+    [data-kit='run-dot'][data-state='running'], [data-kit='run-live'] { animation: none; }
+  }
+}

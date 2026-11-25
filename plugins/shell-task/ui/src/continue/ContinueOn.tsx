@@ -1,4 +1,4 @@
-// Continue on… (ADR-0120): one dialog to carry a task over to another harness. The shared runner picker (the same one
+// Continue on… (ADR-0121): one dialog to carry a task over to another harness. The shared runner picker (the same one
 // as New task and the reply box) opens on it at once unless a harness was offered (a refused or limited turn's), then
 // the preview of what carries over, built by the hand-off's own note on the runtime (`runtime.handoffPreview`): the
 // latest summary, the files, the turns it missed, the user's rules and each choice's token estimate. Summary only is

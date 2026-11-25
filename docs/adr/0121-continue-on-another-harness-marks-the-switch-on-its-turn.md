@@ -1,4 +1,4 @@
-# ADR-0120: Continue on… hands a task to another harness through one follow-up, and its turn carries the switch
+# ADR-0121: Continue on… hands a task to another harness through one follow-up, and its turn carries the switch
 
 - Status: accepted
 - Date: 2026-11-25

@@ -5,7 +5,7 @@
 //!   asynchronously after each Antigravity turn ends and when `budget.view` sees a missing or stale reading.
 //! - Cursor (its tier, `cursor-agent about`), opencode (`opencode stats --days 7`) and Grok (`grok usage` over its
 //!   sessions of the last 7 days) report no windows, only a tier or what the CLI totals as spent: `budget.view` reads
-//!   them the same way, in the background, at most every [`STALE_MS`] (ADR-0119), and the view carries `plan`/`spent`.
+//!   them the same way, in the background, at most every [`STALE_MS`] (ADR-0120), and the view carries `plan`/`spent`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

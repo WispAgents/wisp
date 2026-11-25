@@ -55,12 +55,12 @@ pub struct LimitsReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub banked: Option<Banked>,
-    /// the plan or tier the CLI names (Cursor's `about`: "Pro"). Additive (2026-11-25, ADR-0119).
+    /// the plan or tier the CLI names (Cursor's `about`: "Pro"). Additive (2026-11-25, ADR-0120).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub plan: Option<String>,
     /// what the CLI itself says was spent and used lately (opencode `stats --days 7`, grok `usage`). Additive
-    /// (2026-11-25, ADR-0119).
+    /// (2026-11-25, ADR-0120).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub spent: Option<CliSpend>,
@@ -277,11 +277,11 @@ pub struct AccountView {
     #[serde(default, rename = "where", skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub where_went: Option<crate::usage::WhereView>,
-    /// the plan or tier its CLI names (Cursor). Additive (2026-11-25, ADR-0119).
+    /// the plan or tier its CLI names (Cursor). Additive (2026-11-25, ADR-0120).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub plan: Option<String>,
-    /// what its CLI says was spent lately (opencode, Grok). Additive (2026-11-25, ADR-0119).
+    /// what its CLI says was spent lately (opencode, Grok). Additive (2026-11-25, ADR-0120).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub spent: Option<CliSpend>,

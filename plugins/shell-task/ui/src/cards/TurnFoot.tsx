@@ -126,7 +126,7 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
                 nameOf={nameOf}
                 onHand={(to) => {
                   // the refused prompt again, or carry on after the limit, on the other harness: through Continue on…,
-                  // on that harness and model, so you see what carries over first (ADR-0120: one way to hand a task on)
+                  // on that harness and model, so you see what carries over first (ADR-0121: one way to hand a task on)
                   const text = h().kind === 'refused' ? ((d() as { prompt?: string }).prompt ?? '') : CARRY_ON;
                   openContinue(c, { key: taskKey(), agent: to.agent, ...(to.model && { model: to.model }), ...(text && { text }) });
                 }}

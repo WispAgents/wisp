@@ -10,7 +10,7 @@ export interface UsageDay {
   readonly cost: number;
   readonly turns: number;
   readonly tokens?: number;
-  /** its cost holds a list-price estimate (ADR-0119, additive 2026-11-25) */
+  /** its cost holds a list-price estimate (ADR-0120, additive 2026-11-25) */
   readonly cost_estimated?: boolean;
 }
 
@@ -32,7 +32,7 @@ export interface UsageWeek {
   readonly cost: number;
   readonly turns: number;
   readonly tokens: number;
-  /** its cost holds a list-price estimate (ADR-0119, additive 2026-11-25) */
+  /** its cost holds a list-price estimate (ADR-0120, additive 2026-11-25) */
   readonly cost_estimated?: boolean;
 }
 
@@ -45,7 +45,7 @@ export interface Usage {
   /** v1's Charts and breakdowns (runtime-api UsageSummary, additive 2026-11-12) */
   readonly priced?: number;
   readonly sessions?: number;
-  /** of `priced`, the turns estimated at list price, and whether `spend` holds any (ADR-0119, additive 2026-11-25) */
+  /** of `priced`, the turns estimated at list price, and whether `spend` holds any (ADR-0120, additive 2026-11-25) */
   readonly estimated?: number;
   readonly costEstimated?: boolean;
   /** TRY-32: token totals and per-harness rollup across all harnesses */
@@ -72,7 +72,7 @@ export interface UsageRow {
   readonly sessions?: number;
   readonly estimated?: number;
   readonly costEstimated?: boolean;
-  /** Copilot's premium requests (gated until a real capture, ADR-0119) */
+  /** Copilot's premium requests (gated until a real capture, ADR-0120) */
   readonly premiumRequests?: number;
   readonly tokens?: number;
   readonly inputTokens?: number;

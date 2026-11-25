@@ -1,4 +1,4 @@
-// Continue on… (ADR-0120), DOM-free so tests read it: the dialog's params, what its preview says each choice carries
+// Continue on… (ADR-0121), DOM-free so tests read it: the dialog's params, what its preview says each choice carries
 // (summary only, the default, or the full transcript) with its token estimate, the follow-up it sends, and the
 // Timeline's divider from a turn's switch mark.
 import type { EntityKey } from '@wisp/client';
@@ -77,7 +77,7 @@ export function previewModel(p: HandoffPreview | undefined, choice: HandoffChoic
 }
 
 /** The follow-up Continue sends: the words (or carry on), the harness and model, what it carries. One call: the
- *  runtime switches the task's harness with the turn and marks it (ADR-0120). */
+ *  runtime switches the task's harness with the turn and marks it (ADR-0121). */
 export function continueArgs(key: EntityKey, to: { readonly agent: string; readonly model: string }, choice: HandoffChoiceId, text: string): {
   key: EntityKey;
   text: string;

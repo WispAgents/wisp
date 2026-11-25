@@ -21,7 +21,7 @@ export default definePluginUi({
     ...(['changes', 'pr', 'shell', 'preview'] as const).map((p) => defineExtension({ id: `shell-task.side.${p}`, attachTo: { id: `shell.side:${p}` }, component: TaskSide })),
     // under each turn: why it stopped, what holds it, what moved in the CLI, its receipt
     defineExtension({ id: 'shell-task.turn', attachTo: { id: 'shell.turn:foot' }, component: lazy(() => import('./cards/TurnFoot.tsx')) }),
-    // over a turn that switched harness: the Timeline's divider (ADR-0120)
+    // over a turn that switched harness: the Timeline's divider (ADR-0121)
     defineExtension({ id: 'shell-task.switch', attachTo: { id: 'shell.turn:head' }, component: lazy(() => import('./continue/SwitchDivider.tsx')) }),
     // in each turn's trail, after its token count: the receipt's cache and plan share (ADR-0095)
     defineExtension({ id: 'shell-task.receipt', attachTo: { id: 'shell.turn:trail' }, component: lazy(() => import('./cards/TrailReceipt.tsx')) }),
@@ -38,7 +38,7 @@ export default definePluginUi({
   // draws (ADR-0067)
   later: () => import('./later.ts'),
   views: [
-    // Continue on…: the runner picker, what carries over, one follow-up on that harness (ADR-0120)
+    // Continue on…: the runner picker, what carries over, one follow-up on that harness (ADR-0121)
     defineView({ kind: CONTINUE_VIEW, slot: 'overlay', overlay: 'dialog', parse: parseContinueParams, title: () => CATALOGUE['shell-task.continue.title'] ?? '', component: lazy(() => import('./continue/ContinueOn.tsx')) as never }),
     defineView({ kind: WATCH_VIEW, slot: 'side', parse: () => null, title: () => CATALOGUE['shell-task.side.watch'] ?? '', component: TaskSide as never }),
     defineView({ kind: TERM_VIEW, slot: 'side', parse: () => null, title: () => CATALOGUE['shell-task.side.term'] ?? '', component: TaskSide as never }),

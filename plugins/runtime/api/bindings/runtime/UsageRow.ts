@@ -21,7 +21,7 @@ agent?: string, cost: number, priced: number, turns: number,
  */
 sessions: number, 
 /**
- * added 2026-11-25 (additive, ADR-0119): of `priced`, the turns whose cost is a list-price estimate of their tokens
+ * added 2026-11-25 (additive, ADR-0120): of `priced`, the turns whose cost is a list-price estimate of their tokens
  * (the harness reported none); `cost_estimated`: `cost` holds at least one, so it shows as `~$x.xx`
  */
 estimated: number, costEstimated: boolean, 

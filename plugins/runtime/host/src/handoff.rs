@@ -5,7 +5,7 @@
 //! model doesn't go with it.
 
 //!
-//! Continue on… (ADR-0120): the follow-up may carry the latest turn only (`summary`) or every turn it missed (`full`, as
+//! Continue on… (ADR-0121): the follow-up may carry the latest turn only (`summary`) or every turn it missed (`full`, as
 //! before); the turn is marked with the switch (`ext["wisp.runtime"].switch`: from, to, context) and the preview sheet
 //! reads the same note this builds (`runtime.handoffPreview`).
 
@@ -174,7 +174,7 @@ impl Runtime {
             .iter()
             .map(|t| PastTurn { env: &known.0, ..PastTurn::new(t, name(if t.agent.is_empty() { &s.agent } else { &t.agent })) })
             .collect();
-        // Continue on…'s summary only: the latest turn the harness missed, not all of them (ADR-0120)
+        // Continue on…'s summary only: the latest turn the harness missed, not all of them (ADR-0121)
         let summary_only = marked_context(turn) == HandoffContext::Summary;
         let h = Handoff { turns: &past, agent: &s.agent, resume_id: s.resume_id.as_deref(), summary_only, ..Handoff::default() };
         let note = handoff_note(&h, Render::default());

@@ -16,10 +16,10 @@ export type AccountView = { account: string, at: number | null, windows: Array<W
  */
 where?: WhereView, 
 /**
- * the plan or tier its CLI names (Cursor). Additive (2026-11-25, ADR-0119).
+ * the plan or tier its CLI names (Cursor). Additive (2026-11-25, ADR-0120).
  */
 plan?: string, 
 /**
- * what its CLI says was spent lately (opencode, Grok). Additive (2026-11-25, ADR-0119).
+ * what its CLI says was spent lately (opencode, Grok). Additive (2026-11-25, ADR-0120).
  */
 spent?: CliSpend, };

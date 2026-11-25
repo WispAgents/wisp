@@ -2,6 +2,6 @@
 import type { SessionId } from "../SessionId";
 
 /**
- * `runtime.handoffPreview`: what Continue on… would carry to `agent` (ADR-0120). Read-only.
+ * `runtime.handoffPreview`: what Continue on… would carry to `agent` (ADR-0121). Read-only.
  */
 export type HandoffPreviewArgs = { id: SessionId, agent: string, };

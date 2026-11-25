@@ -237,7 +237,7 @@ impl Harness for OpencodeHarness {
     }
 
     /// A read that spends nothing: `opencode stats --days 7` says what opencode itself counted (cost and tokens).
-    /// opencode has no plan window, so `windows` is empty and Usage says its limits aren't reported (ADR-0119).
+    /// opencode has no plan window, so `windows` is empty and Usage says its limits aren't reported (ADR-0120).
     fn live_limits<'a>(&'a self, sys: &'a dyn HarnessSys, env: &'a BTreeMap<String, String>) -> BoxFuture<'a, Option<Value>> {
         Box::pin(async move {
             let req = ExecReq {
@@ -437,7 +437,7 @@ mod tests {
         }
     }
 
-    /// ADR-0119: `opencode stats --days 7`, as captured (`core/tests/cli/stats.txt`), gives what opencode totals as
+    /// ADR-0120: `opencode stats --days 7`, as captured (`core/tests/cli/stats.txt`), gives what opencode totals as
     /// spent and its tokens over 7 days, and no windows. A failed `stats` is no reading.
     #[tokio::test]
     async fn live_limits_reads_cost_and_tokens_from_opencode_stats() {

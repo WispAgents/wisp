@@ -145,7 +145,7 @@ export function tokenBreakdown(r: { readonly inputTokens?: number | undefined; r
 }
 
 /** One harness's 7-day usage + plan status line for its row in Settings → Usage. */
-/** What a harness's own CLI said of the plan and its recent spend (ADR-0119): "Cursor plan: Pro", "opencode says
+/** What a harness's own CLI said of the plan and its recent spend (ADR-0120): "Cursor plan: Pro", "opencode says
  *  $1.25 · 287M tokens in 7 days". Its CLI's number, so never marked `~`; '' when it said nothing. */
 export function cliLine(h: Pick<HarnessBudgetMeta, 'name'>, accounts: readonly AccountPlan[]): string {
   const parts: string[] = [];
@@ -166,7 +166,7 @@ export function harnessUsageDescription(h: HarnessBudgetMeta, row: UsageRow | un
   if (row && row.turns > 0) {
     parts.push(t('budget.plan.turns', { count: row.turns }));
     if ((row.tokens ?? 0) > 0) parts.push(t('budget.usage.harness.tokens', { n: tokenWords(row.tokens ?? 0) }));
-    // `~` an estimate at list price, `+` some turns unpriced (usage-model.ts costWords, ADR-0119)
+    // `~` an estimate at list price, `+` some turns unpriced (usage-model.ts costWords, ADR-0120)
     if (row.priced > 0) parts.push(`${row.costEstimated ? '~' : ''}$${row.cost.toFixed(2)}${row.priced < row.turns ? '+' : ''}`);
     if (row.worked !== null && row.worked !== undefined) parts.push(t('budget.usage.harness.worked', { pct: `${Math.round(row.worked)}%` }));
   }
