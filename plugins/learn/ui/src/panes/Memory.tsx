@@ -81,7 +81,7 @@ export default function Memory(props: { readonly client: PluginClient }): JSX.El
       when={open()}
       fallback={
         <SettingsGroup part="learn.home">
-          <SwitchSetting part="settings.learn" title={t('learn.on.title')} description={t('learn.on.description')} source={enabled} />
+          <SwitchSetting part="settings.learn" settingKey="learn.enabled" title={t('learn.on.title')} description={t('learn.on.description')} source={enabled} />
           <SettingsRow
             part="learn.remembered"
             title={t('learn.remembered')}

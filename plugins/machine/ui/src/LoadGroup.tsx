@@ -27,21 +27,21 @@ export default function LoadGroup(props: ExtensionProps): JSX.Element {
     <SettingsGroup part="machine.load" bodyPart="settings.load" title={t('machine.load.title')} description={t('machine.load.description')}>
       <SettingsRow part="machine.load.now" title={t('machine.load.now')} description={nowLine(load(), t)} />
       <SelectSetting
-        part="settings.memoryFloor"
+        part="settings.memoryFloor" settingKey="machine.memoryFloor"
         title={t('machine.load.memory')}
         description={t('machine.load.memoryHint')}
         source={fromRow(c, 'machine.memoryFloor', '15')}
         items={['off', '10', '15', '20', '25'].map((v) => ({ value: v, label: v === 'off' ? t('machine.load.off') : t('machine.load.memFree', { n: v }) }))}
       />
       <SelectSetting
-        part="settings.cpuCeiling"
+        part="settings.cpuCeiling" settingKey="machine.cpuCeiling"
         title={t('machine.load.cpu')}
         description={t('machine.load.cpuHint')}
         source={fromRow(c, 'machine.cpuCeiling', '200')}
         items={['off', '100', '150', '200'].map((v) => ({ value: v, label: v === 'off' ? t('machine.load.off') : `${v}%` }))}
       />
       <SelectSetting
-        part="settings.maxRuns"
+        part="settings.maxRuns" settingKey="machine.maxRuns"
         title={t('machine.load.runsTitle')}
         description={t('machine.load.runsHint')}
         source={fromRow(c, 'machine.maxRuns', 'auto')}

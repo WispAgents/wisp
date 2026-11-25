@@ -28,6 +28,7 @@ test('the_row_the_search_asked_for_scrolls_flashes_and_takes_focus_settings_audi
 
 test('the_split_list_walks_with_its_keys_and_enter_goes_into_the_detail_settings_audit_r1', () => {
   const [at, setAt] = createSignal('all');
+  const opened: string[] = [];
   const host = mount(() => (
     <SettingsSplit
       label="Harnesses"
@@ -38,6 +39,10 @@ test('the_split_list_walks_with_its_keys_and_enter_goes_into_the_detail_settings
       ]}
       current={at()}
       onPick={setAt}
+      onOpen={(id) => {
+        setAt(id);
+        opened.push(id);
+      }}
       view="list"
       onBack={() => {}}
       backLabel="Harnesses"
@@ -56,8 +61,14 @@ test('the_split_list_walks_with_its_keys_and_enter_goes_into_the_detail_settings
   expect(at()).toBe('all');
   key('ArrowUp');
   expect(at()).toBe('all');
+  // settings audit r1 review: the keys only move the pick; narrow, the list stays until Enter, Right or a click
+  expect(opened).toEqual([]);
   key('Enter');
+  expect(opened).toEqual(['all']);
   expect(document.activeElement?.getAttribute('data-kit')).toBe('settings-split-detail');
+  host.querySelector<HTMLElement>('[data-item="claude"]')?.click();
+  expect(opened).toEqual(['all', 'claude']);
+  expect(at()).toBe('claude');
   // its dot and its ring say what they mean
   expect(host.querySelector('[data-item="claude"] [data-kit="settings-split-dot"]')?.getAttribute('aria-label')).toBe('Ready');
   expect(host.querySelector('[data-item="claude"] [data-kit="meter"]')?.getAttribute('data-shape')).toBe('ring');

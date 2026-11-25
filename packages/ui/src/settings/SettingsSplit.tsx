@@ -1,7 +1,7 @@
 // SettingsSplit: a list and the one picked, inside a Settings pane (Settings → Agents: every harness, then the picked
 // one's sections). A filter box over the list; each item its mark, its name, a state dot and, when there's one, a ring
-// of how full it is. Up, Down, Home and End walk the list (the pick follows, as in the Settings list itself); Enter or
-// Right goes on into the detail. Narrower than 640px of the pane's own width it shows the list, and a pick pushes the
+// of how full it is. Up, Down, Home and End walk the list (the pick follows, as in the Settings list itself, but only
+// moves it: narrow, the list stays); Enter, Right or a click opens the detail (`onOpen`). Narrower than 640px of the pane's own width it shows the list, and a pick pushes the
 // detail over it with Back, as the phone's Settings list does.
 import { For, Show, createEffect, on, type JSX } from 'solid-js';
 import type { Tone } from '@wisp/tokens';
@@ -31,7 +31,11 @@ export interface SettingsSplitProps extends KitProps {
   readonly filter?: JSX.Element;
   readonly items: readonly SettingsSplitItem[];
   readonly current: string;
+  /** the pick moved (Up, Down, Home, End, a click): the wide detail follows; narrow, the list stays */
   readonly onPick: (id: string) => void;
+  /** go into `id`'s detail, picking it (Enter, Right, a click; a click without it only picks): narrow, the detail
+   *  pushes over the list */
+  readonly onOpen?: (id: string) => void;
   /** narrow: the list, or the picked one over it */
   readonly view: 'list' | 'detail';
   /** narrow: Back to the list */
@@ -60,9 +64,14 @@ export function SettingsSplit(props: SettingsSplitProps): JSX.Element {
     e.preventDefault();
     if (step.pick !== undefined) {
       props.onPick(step.pick);
-      focusItem(step.pick);
+      if (!step.detail) focusItem(step.pick);
     }
-    if (step.detail) detail?.focus();
+    if (step.detail) {
+      props.onOpen?.(step.pick ?? props.current);
+      detail?.focus();
+      // again once a narrow view has swapped the detail in (hidden, it couldn't take focus)
+      queueMicrotask(() => detail?.focus());
+    }
   };
   // a new pick starts the detail at its top
   createEffect(
@@ -92,7 +101,7 @@ export function SettingsSplit(props: SettingsSplitProps): JSX.Element {
                 aria-selected={props.current === item.id}
                 tabindex={props.current === item.id || (!props.items.some((i) => i.id === props.current) && props.items[0]?.id === item.id) ? 0 : -1}
                 data-current={flag(props.current === item.id)}
-                onClick={() => props.onPick(item.id)}
+                onClick={() => (props.onOpen ? props.onOpen(item.id) : props.onPick(item.id))}
               >
                 <Show when={item.logo} fallback={<Icon name={item.icon ?? 'agent'} size="md" />}>
                   {(src) => <img data-kit="settings-split-logo" src={src()} alt="" />}

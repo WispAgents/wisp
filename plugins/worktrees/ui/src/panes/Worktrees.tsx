@@ -40,7 +40,7 @@ function Rules(props: { readonly client: PluginClient }): JSX.Element {
   return (
     <>
       <SelectSetting
-        part="settings.worktrees.cleanup"
+        part="settings.worktrees.cleanup" settingKey="worktrees.cleanup"
         title={t('worktrees.cleanup.title')}
         description={t('worktrees.cleanup.description')}
         locked={locked}
@@ -48,7 +48,7 @@ function Rules(props: { readonly client: PluginClient }): JSX.Element {
         items={CLEANUP_CHOICES.map((v) => ({ value: v, label: t(`worktrees.cleanup.${v}`) }))}
       />
       <SelectSetting
-        part="worktrees.max"
+        part="worktrees.max" settingKey="worktrees.max"
         title={t('worktrees.max.title')}
         description={t('worktrees.max.description')}
         locked={locked}
@@ -56,7 +56,7 @@ function Rules(props: { readonly client: PluginClient }): JSX.Element {
         items={MAX_CHOICES.map((v) => ({ value: v, label: t(`worktrees.max.${v}`) }))}
       />
       <SelectSetting
-        part="worktrees.on-done"
+        part="worktrees.on-done" settingKey="worktrees.onDone"
         title={t('worktrees.done.title')}
         description={t('worktrees.done.description')}
         locked={locked}

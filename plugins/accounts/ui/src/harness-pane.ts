@@ -9,14 +9,23 @@ import type { DetectRow, HarnessRow } from './types.ts';
 export const ALL = 'all';
 const PREFIX = 'harness:';
 
-/** The Settings filter that opens Agents on `id` (Settings' search sends the same). */
+/** The Settings filter that opens Agents on `id`, its detail shown (Settings' search sends the same). */
 export const harnessFilter = (id: string): string => `${PREFIX}${id}`;
+
+// the list's keys move the pick without going into it: narrow, the list stays (settings audit r1 review)
+const SELECT = 'pick:';
+/** The Settings filter that keeps `id` picked but the list showing (Up, Down, Home, End). */
+export const selectFilter = (id: string): string => `${SELECT}${id}`;
 
 /** The pick a filter names: one of `ids`, else All harnesses. */
 export function pickOf(filter: string | undefined, ids: readonly string[]): string {
-  const id = filter?.startsWith(PREFIX) ? filter.slice(PREFIX.length) : undefined;
+  const id = filter?.startsWith(PREFIX) ? filter.slice(PREFIX.length) : filter?.startsWith(SELECT) ? filter.slice(SELECT.length) : undefined;
   return id !== undefined && ids.includes(id) ? id : ALL;
 }
+
+/** Narrow, whether the detail shows over the list: a harness opened (a click, Enter, the search's harness result), or
+ *  a setting the search asked for (its row is in the detail: hidden, it can't be scrolled to or focused). */
+export const showsDetail = (filter: string | undefined, focus: string | undefined): boolean => filter?.startsWith(PREFIX) === true || focus !== undefined;
 
 // ---------- the list's dot ----------
 
@@ -155,6 +164,15 @@ export type Hold = (typeof HOLDS)[number];
 export function holdOf(v: unknown, id: string): Hold {
   const own = strings(v)?.[id];
   return own !== undefined && (HOLDS as readonly string[]).includes(own) && own !== 'same' ? (own as Hold) : 'same';
+}
+
+/** A harness's Ask-near-the-limit line, 0..1 (null: off): its own (`budget.limitHoldBy`) over everyone's
+ *  (`budget.limitHold`, 90% when unset), as budget's ask and Home read it. The list's ring turns amber there. */
+export function lineOf(global: unknown, by: unknown, id: string): number | null {
+  const own = holdOf(by, id);
+  const v = own === 'same' ? String(global ?? '90') : own;
+  if (v === 'off') return null;
+  return (HOLDS as readonly string[]).includes(v) && v !== 'same' ? Number(v) / 100 : 0.9;
 }
 
 /** A harness's own line set ('same' takes it out): the other harnesses' stay. */

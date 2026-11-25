@@ -227,15 +227,15 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
           items={STOPS.map((v) => ({ value: v, label: t(`budget.usage.stop.${v}`) }))}
         />
         <ChoiceSetting
-          part="settings.limitHold"
+          part="settings.limitHold" settingKey="budget.limitHold"
           title={t('budget.usage.hold.title')}
           description={t('budget.usage.hold.description')}
           source={hold}
           items={(['off', '80', '90', '95'] as const).map((v) => ({ value: v, label: v === 'off' ? t('budget.usage.stop.off') : `${v}%` }))}
         />
-        <SwitchSetting part="settings.limitWait" title={t('budget.usage.wait.title')} description={t('budget.usage.wait.description')} source={onOff('runtime.limitWait', false)} />
+        <SwitchSetting part="settings.limitWait" settingKey="runtime.limitWait" title={t('budget.usage.wait.title')} description={t('budget.usage.wait.description')} source={onOff('runtime.limitWait', false)} />
         <ChoiceSetting
-          part="settings.silentStop"
+          part="settings.silentStop" settingKey="budget.silentStop"
           title={t('budget.usage.silent.title')}
           description={t('budget.usage.silent.description')}
           source={silent}
@@ -257,7 +257,7 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
           )}
         </For>
         <SelectSetting
-          part="settings.subagentModel"
+          part="settings.subagentModel" settingKey="runtime.subagentModel"
           title={t('budget.usage.subagents.title')}
           logo={logoOf('claude')}
           description={t('budget.usage.subagents.description')}
@@ -266,10 +266,10 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
         />
       </SettingsGroup>
       <SettingsGroup part="budget.usage.alerts" title={t('budget.usage.alerts.title')} description={t('budget.usage.alerts.description')}>
-        <SwitchSetting part="settings.liveLimits" title={t('budget.usage.live.title')} description={t('budget.usage.live.description')} source={onOff('budget.liveLimits', false)} />
-        <SwitchSetting part="settings.spareCard" title={t('budget.usage.spare.title')} description={t('budget.usage.spare.description')} source={onOff('budget.spareCard', true)} />
-        <SwitchSetting part="settings.windowNotice" title={t('budget.usage.notices.title')} description={t('budget.usage.notices.description')} source={onOff('budget.windowNotice', true)} />
-        <SwitchSetting part="settings.drainWatch" title={t('budget.usage.drain.title')} description={t('budget.usage.drain.description')} source={drainWatch} />
+        <SwitchSetting part="settings.liveLimits" settingKey="budget.liveLimits" title={t('budget.usage.live.title')} description={t('budget.usage.live.description')} source={onOff('budget.liveLimits', false)} />
+        <SwitchSetting part="settings.spareCard" settingKey="budget.spareCard" title={t('budget.usage.spare.title')} description={t('budget.usage.spare.description')} source={onOff('budget.spareCard', true)} />
+        <SwitchSetting part="settings.windowNotice" settingKey="budget.windowNotice" title={t('budget.usage.notices.title')} description={t('budget.usage.notices.description')} source={onOff('budget.windowNotice', true)} />
+        <SwitchSetting part="settings.drainWatch" settingKey="budget.drainWatch" title={t('budget.usage.drain.title')} description={t('budget.usage.drain.description')} source={drainWatch} />
       </SettingsGroup>
       {/* v1 Machine load (wisp.machine), and anything else other plugins put at the end */}
       <Slot input="shell.settings:usageEnd" layout="contents" />

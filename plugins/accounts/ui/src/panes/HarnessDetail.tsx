@@ -145,7 +145,7 @@ function Auth(props: DetailProps): JSX.Element {
 }
 
 /** The model and level a new task on it starts with: `runtime.launch`'s entries for this harness (typed, never JSON). */
-function Defaults(props: DetailProps): JSX.Element {
+export function Defaults(props: DetailProps): JSX.Element {
   const d = props.d;
   const h = props.h;
   const launch = fromRow(d.c, 'runtime.launch', {});

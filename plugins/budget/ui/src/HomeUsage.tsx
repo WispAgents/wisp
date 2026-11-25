@@ -14,7 +14,7 @@ export const agents = { ...agentsCmd, quiet: true };
 export const plans = { ...plansCmd, quiet: true };
 export const accountNames = { ...accountNamesCmd, quiet: true };
 import { pct } from './drain.ts';
-import { holdLine, homeTone, homeUsage, type HomeHarness } from './home-usage.ts';
+import { holdLineFor, homeTone, homeUsage, type HomeHarness } from './home-usage.ts';
 import { plannedHarnesses, stopKeyOf, stopLine, windowLine } from './plan.ts';
 import { t } from './i18n.ts';
 import { fromRow } from './source.ts';
@@ -31,6 +31,8 @@ export default function HomeUsage(props: ExtensionProps): JSX.Element {
   const meta = useSignal(c.entities.row<{ body: Record<string, string> }>(META, entityKey(peer, 'settings')));
   // followed while Home shows (useSignal: the setting row is an alien signal; round 324)
   const holdAt = useSignal(fromRow(c, 'budget.limitHold', '90').value as () => unknown);
+  // a harness's own line (Settings → Agents → Limits & budget) over everyone's
+  const holdBy = useSignal(fromRow(c, 'budget.limitHoldBy', {}).value as () => unknown);
   const marks = useSignal(useShell().harnesses());
   const logoOf = (id: string): string | undefined => marks().find((m) => m.id === id)?.logo;
   // which harnesses are set up here: detecting them takes a while, so the row shows before and drops one that isn't
@@ -53,8 +55,8 @@ export default function HomeUsage(props: ExtensionProps): JSX.Element {
     const known = setUp();
     const list: HomeHarness[] = (read.latest ?? []).map((h) => ({ ...h, available: known?.length ? (known.find((a) => a.id === h.agent)?.available ?? false) : undefined }));
     const body = meta()?.body ?? {};
-    const hold = holdLine(holdAt());
     return homeUsage(list).map((r) => {
+      const hold = holdLineFor(holdBy(), r.agent, holdAt());
       const stop = stopLine(body[stopKeyOf(r.agent)], body['autoStop']);
       const who = r.accountLabel ? t('budget.home.who', { name: r.name, account: r.accountLabel }) : r.name;
       return {

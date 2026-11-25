@@ -21,6 +21,7 @@ export default function CompactAuditRow(props: ExtensionProps): JSX.Element {
   return (
     <SwitchSetting
       part="threads.settings.compactAudit"
+      settingKey={COMPACT_AUDIT}
       title={t('threads.settings.compactAudit')}
       description={t('threads.settings.compactAudit.hint')}
       source={source}

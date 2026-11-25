@@ -24,6 +24,7 @@ export function Channel(props: { readonly client: PluginClient; readonly row: Ro
   return (
     <SelectSetting
       part={props.part ?? 'settings.update.channel'}
+      settingKey={KEYS.channel}
       title={props.title ?? t('update.channel')}
       description={channelHint(channel(), props.row)}
       items={channelItems()}

@@ -65,6 +65,14 @@ export function holdLine(v: unknown): number | null {
   return s === 'off' ? null : Number(s) / 100;
 }
 
+/** A harness's own line (`budget.limitHoldBy`, Settings → Agents → Limits & budget: `{ <harness>: off | 80 | 90 | 95 }`)
+ *  over everyone's (`budget.limitHold`), as the host's ask reads it (budget core ask::line_for): a harness the map
+ *  doesn't name, or names with something unknown, has everyone's. */
+export function holdLineFor(by: unknown, agent: string, global: unknown): number | null {
+  const own = by && typeof by === 'object' && !Array.isArray(by) ? (by as Record<string, unknown>)[agent] : undefined;
+  return holdLine(typeof own === 'string' && HOLDS.includes(own) ? own : global);
+}
+
 /** v1 tone(): red when used up; amber on pace to run out, at the Ask-near-the-limit line (90% when off) or past
  * where automations stop. */
 export function homeTone(w: Pick<Window, 'used' | 'hitAt'>, stop: number | null, hold: number | null): 'warn' | 'full' | undefined {

@@ -92,6 +92,10 @@ export function SettingsFocus(props: { readonly setting: string | undefined; rea
   return <FocusContext.Provider value={() => props.setting}>{props.children}</FocusContext.Provider>;
 }
 
+/** The setting Settings' search opened this pane on, if any: a pane that hides rows until something is picked (Settings
+ *  → Agents, narrow) shows them when there's one to land on. */
+export const useSettingsFocus = (): (() => string | undefined) => useContext(FocusContext);
+
 const reduced = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** The row asked for: in view (centred, at once with reduced motion), flashed, its control focused (else the row). */

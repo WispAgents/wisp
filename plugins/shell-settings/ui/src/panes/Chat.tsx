@@ -22,6 +22,7 @@ export default function Chat(props: { readonly client: PluginClient }): JSX.Elem
         <SwitchSetting
           title={t('shell-settings.chat-mode')}
           description={t('shell-settings.chat-mode.hint')}
+          settingKey={KEYS.transcript}
           source={onOff(fromRow(props.client, KEYS.transcript), true, KEYS.transcript)}
           locked={locked}
         />
@@ -31,6 +32,7 @@ export default function Chat(props: { readonly client: PluginClient }): JSX.Elem
           part="settings.chat.toolCalls"
           title={t('shell-settings.chat-tool-calls')}
           description={t('shell-settings.chat-tool-calls.hint')}
+          settingKey={KEYS.chatToolCalls}
           source={text(fromRow(props.client, KEYS.chatToolCalls), 'showAll')}
           locked={locked}
           items={[
@@ -43,6 +45,7 @@ export default function Chat(props: { readonly client: PluginClient }): JSX.Elem
         <SwitchSetting
           title={t('shell-settings.chat-thinking')}
           description={t('shell-settings.chat-thinking.hint')}
+          settingKey={KEYS.chatThinking}
           source={onOff(fromRow(props.client, KEYS.chatThinking), true, KEYS.chatThinking)}
           locked={locked}
         />
@@ -52,6 +55,7 @@ export default function Chat(props: { readonly client: PluginClient }): JSX.Elem
           part="settings.chat.followUp"
           title={t('shell-settings.chat-follow-up')}
           description={t('shell-settings.chat-follow-up.hint')}
+          settingKey={KEYS.followUp}
           source={text(fromRow(props.client, KEYS.followUp), 'interrupt')}
           locked={locked}
           items={[
@@ -63,6 +67,7 @@ export default function Chat(props: { readonly client: PluginClient }): JSX.Elem
           part="settings.chat.sendShortcut"
           title={t('shell-settings.chat-send-shortcut')}
           description={t('shell-settings.chat-send-shortcut.hint')}
+          settingKey={KEYS.sendShortcut}
           source={text(fromRow(props.client, KEYS.sendShortcut), 'enter')}
           locked={locked}
           items={[
@@ -78,6 +83,7 @@ export default function Chat(props: { readonly client: PluginClient }): JSX.Elem
           part="settings.chat.width"
           title={t('shell-settings.chat-width')}
           description={t('shell-settings.chat-width.hint')}
+          settingKey={KEYS.chatWidth}
           source={text(fromRow(props.client, KEYS.chatWidth), 'comfortable')}
           locked={locked}
           items={[
@@ -90,6 +96,7 @@ export default function Chat(props: { readonly client: PluginClient }): JSX.Elem
           part="settings.chat.timeFormat"
           title={t('shell-settings.chat-time-format')}
           description={t('shell-settings.chat-time-format.hint')}
+          settingKey={KEYS.timeFormat}
           source={text(fromRow(props.client, KEYS.timeFormat), 'locale')}
           locked={locked}
           items={[

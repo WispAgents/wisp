@@ -5,7 +5,7 @@ import type { DetectRow, HarnessRow } from '../src/types.ts';
 import { harnessLine, harnessState, howToGet, mergeHarnesses, recheckSummary, toolState, updateAllSummary } from '../src/words.ts';
 import '../src/i18n/lazy.ts';
 import { recheck, setPluginEnabled } from '../src/commands.ts';
-import { defaultsOf, fullest, harnessFilter, holdOf, pickOf, pluginOf, staleModel, STATUS_TONE, statusOf, withDisabled, withEffort, withHold, withModel } from '../src/harness-pane.ts';
+import { defaultsOf, fullest, harnessFilter, holdOf, lineOf, pickOf, pluginOf, ringTone, selectFilter, showsDetail, staleModel, STATUS_TONE, statusOf, withDisabled, withEffort, withHold, withModel } from '../src/harness-pane.ts';
 import { PANE_KEYS } from '../src/pane-keys.ts';
 import { listStep } from '@wisp/ui/pure';
 // the detail's source, as text: which setting rows it has (rendering it needs the shell)
@@ -232,6 +232,19 @@ test('the_list_walks_with_up_down_home_end_and_enter_goes_into_the_detail_settin
   expect(pickOf(undefined, ids)).toBe('all');
 });
 
+// Settings audit r1 review: narrow, the first ArrowDown pushed the detail over the list (the keys picked through
+// `harness:<id>`, which opens it); and the search's setting with no harness named showed the list, its row hidden.
+test('the_list_keys_only_move_the_pick_and_a_searched_setting_shows_the_detail_settings_audit_r1', () => {
+  const ids = ['all', 'claude', 'codex'];
+  expect(selectFilter('codex')).toBe('pick:codex');
+  expect(pickOf('pick:codex', ids)).toBe('codex');
+  expect(pickOf('pick:gone', ids)).toBe('all');
+  expect(showsDetail('pick:codex', undefined), 'a key moved the pick: the list stays').toBe(false);
+  expect(showsDetail('harness:codex', undefined), 'opened: its detail').toBe(true);
+  expect(showsDetail(undefined, 'runtime.leanRuns'), 'the search asked for a row: All harnesses, its rows').toBe(true);
+  expect(showsDetail(undefined, undefined)).toBe(false);
+});
+
 test('a_harnesss_own_ask_near_the_limit_and_its_ring_settings_audit_r1', () => {
   expect(holdOf({ codex: '80' }, 'codex')).toBe('80');
   expect(holdOf({ codex: '80' }, 'claude')).toBe('same');
@@ -239,6 +252,17 @@ test('a_harnesss_own_ask_near_the_limit_and_its_ring_settings_audit_r1', () => {
   expect(withHold({ grok: 'off' }, 'claude', '95')).toEqual({ grok: 'off', claude: '95' });
   expect(fullest([{ windows: [{ id: 'five_hour', label: '5-hour', used: 0.4 }] }, { windows: [{ id: 'seven_day', label: 'Week', used: 0.7 }] }])?.id).toBe('seven_day');
   expect(fullest([]), 'no plan reported: no ring').toBeUndefined();
+});
+
+// Settings audit r1 review: the ring read only everyone's line, so a harness set to 80% turned amber at 90%.
+test('the_ring_turns_amber_at_the_harnesss_own_line_settings_audit_r1', () => {
+  expect(lineOf('90', { codex: '80' }, 'codex')).toBe(0.8);
+  expect(lineOf('90', { codex: '80' }, 'claude')).toBe(0.9);
+  expect(lineOf('95', {}, 'claude')).toBe(0.95);
+  expect(lineOf(undefined, undefined, 'claude')).toBe(0.9);
+  expect(lineOf('90', { codex: 'off' }, 'codex')).toBeNull();
+  expect(ringTone(0.85, lineOf('90', { codex: '80' }, 'codex'))).toBe('warn');
+  expect(ringTone(0.85, lineOf('90', { codex: '80' }, 'claude'))).toBe('accent');
 });
 
 test('accounts_update_check_has_a_row_settings_search_lands_on_settings_audit_r1', () => {

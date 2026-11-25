@@ -26,9 +26,11 @@ row anywhere.
 1. **Agents is a list and the one picked** (the kit's `SettingsSplit`): a filter, **All harnesses** (Update all,
    Re-check everything, git and GitHub, the rows every harness shares), then every harness with its mark, a state dot
    (ready, signed out, missing, checking, disabled) and a ring of its fullest plan window (`budget.view`; none while no
-   plan reported). Up, Down, Home and End walk it, Enter and Right go into the detail. Narrow (under 640 px of the
-   pane), the list pushes the detail, with Back. **The pick is navigation**: the Settings params' `filter` is
-   `harness:<id>`, so a reload, Back and the search land on it.
+   plan reported; amber at that harness's own Ask-near-the-limit line, as Home's usage meters are). Up, Down, Home and
+   End move the pick, Enter, Right and a click go into the detail. Narrow (under 640 px of the pane), the list pushes
+   the detail, with Back; the keys alone never push it. **The pick is navigation**: the Settings params' `filter` is
+   `harness:<id>` (opened) or `pick:<id>` (picked by the keys, the list still showing), so a reload, Back and the
+   search land on it. A search that asks for a row (`focus`) shows the detail narrow too: its row is there.
 2. **The detail has five sections**, loaded when a harness is picked: *Account & auth* (its state, Sign in / out, the
    steps, its accounts with Add, Rename, Remove and Move, its keys), *Defaults* (its model and level, written into
    `runtime.launch`'s `models[id]` / `labels[id]` / `efforts[id]` through typed helpers, never as JSON; a saved model it
@@ -51,7 +53,9 @@ row anywhere.
    never said); else All settings, filtered to it. It sends `focus: <key>` in the params, and the kit's `SettingsRow`
    with that `settingKey` scrolls into view, flashes once (none with reduced motion) and focuses its control. Each
    built-in pane's list is a plain `src/pane-keys.ts`, so a test checks every declared setting opens where its row is,
-   or on All settings.
+   or on All settings, and that each key a pane lists has a row with that `settingKey` in its source. Agents doesn't
+   list `runtime.launch` or `budget.limitHoldBy`: their rows exist only with a harness picked, and the search can't
+   know which, so those open on All settings, filtered.
 7. **Agents is found by its words** (`accounts.pane.keywords`: sign in, api key, install, update, …) and each harness is
    a search result of its own ("Codex — Agents"), opening Agents on it.
 

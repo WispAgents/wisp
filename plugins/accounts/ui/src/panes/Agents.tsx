@@ -7,9 +7,10 @@
 import { createMemo, createSignal, For, lazy, Show, Suspense, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, EmptyState, Input, Inline, Pill, SettingsGroup, SettingsRow, SettingsSplit, Skeleton, Stack, type SettingsSplitItem } from '@wisp/ui';
+import { Button, EmptyState, Input, Inline, Pill, SettingsGroup, SettingsRow, SettingsSplit, Skeleton, Stack, useSettingsFocus, useSignal, type SettingsSplitItem } from '@wisp/ui';
 import { addAccount, removeAccount, updateAccount } from '../commands.ts';
-import { ALL, harnessFilter, pickOf, ringTone, STATUS_TONE } from '../harness-pane.ts';
+import { ALL, harnessFilter, lineOf, pickOf, ringTone, selectFilter, showsDetail, STATUS_TONE } from '../harness-pane.ts';
+import { fromRow } from '../source.ts';
 import { t } from '../i18n.ts';
 import type { AccountKind, AccountRow, HarnessRow } from '../types.ts';
 import { accOf, toolState } from '../words.ts';
@@ -30,9 +31,17 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
   const [q, setQ] = createSignal('');
   const ids = createMemo(() => d.harnesses().map((h) => h.id), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
   const pick = (): string => pickOf(props.filter, ids());
-  // the pick is navigation: it replaces Settings' place in history, so Back leaves Settings, not each harness picked
-  const open = (id: string): void =>
-    c.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'agents', filter: harnessFilter(id) } }, replace: true });
+  // the pick is navigation: it replaces Settings' place in history, so Back leaves Settings, not each harness picked.
+  // Opening one (a click, Enter) shows its detail, narrow too; the list's keys only move the pick (`pick:<id>`)
+  const go = (filter: string): void => c.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'agents', filter } }, replace: true });
+  const open = (id: string): void => go(harnessFilter(id));
+  const select = (id: string): void => go(selectFilter(id));
+  // the setting Settings' search asked for: its row is in the detail, so narrow the detail shows (All harnesses' shared
+  // rows when no harness is named)
+  const focus = useSettingsFocus();
+  // each harness's own Ask-near-the-limit line over everyone's: its ring turns amber where its runs are asked about
+  const holdAt = useSignal(fromRow(c, 'budget.limitHold', '90').value as () => unknown);
+  const holdBy = useSignal(fromRow(c, 'budget.limitHoldBy', {}).value as () => unknown);
   // keyed by id: a harness that settles updates its row in place (no remount, nothing moves)
   const byId = createMemo(() => new Map(d.harnesses().map((h) => [h.id, h])));
   const items = createMemo((): SettingsSplitItem[] => {
@@ -49,7 +58,7 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
           logo: d.logoOf(h.id),
           icon: 'agent',
           dot: { tone: STATUS_TONE[s], label: d.state(h).label },
-          ring: w && { value: w.used, label: t('accounts.ring', { window: w.label, pct: Math.round(w.used * 100) }), tone: ringTone(w.used, null) },
+          ring: w && { value: w.used, label: t('accounts.ring', { window: w.label, pct: Math.round(w.used * 100) }), tone: ringTone(w.used, lineOf(holdAt(), holdBy(), h.id)) },
         };
       });
     return words.length === 0 ? [all, ...list] : list;
@@ -86,8 +95,9 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
         filter={filter}
         items={items()}
         current={pick()}
-        onPick={open}
-        view={props.filter?.startsWith('harness:') === true ? 'detail' : 'list'}
+        onPick={select}
+        onOpen={open}
+        view={showsDetail(props.filter, focus()) ? 'detail' : 'list'}
         onBack={() => c.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'agents' } }, replace: true })}
         backLabel={t('accounts.list.back')}
         detailTitle={picked()?.name ?? t('accounts.list.all')}

@@ -69,7 +69,7 @@ export default function Automations(props: { readonly client: PluginClient; read
             }
           />
           <SwitchSetting
-            part="settings.webhookTriggers"
+            part="settings.webhookTriggers" settingKey="automations.webhookTriggers"
             title={t('automations.webhooks')}
             description={t('automations.webhooks.description')}
             source={webhooks(c)}

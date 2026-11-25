@@ -1,6 +1,6 @@
 // Usage at a glance on Home (v1 #790 test/home-usage.test.js): which windows, which accounts, how many, which tone.
 import { expect, test } from 'vitest';
-import { holdLine, homeTone, homeUsage, type HomeHarness } from '../src/home-usage.ts';
+import { holdLine, holdLineFor, homeTone, homeUsage, type HomeHarness } from '../src/home-usage.ts';
 
 const H = 3_600_000;
 const win = (id: string, label: string, used: number, more: { hitAt?: number } = {}) => ({ id, label, used, resetsAt: 10 * H, ...more });
@@ -79,4 +79,17 @@ test('home usage tone: red used up, amber at the Ask-near-the-limit line, past t
   expect(holdLine('off')).toBeNull();
   expect(homeTone({ used: 0.92 }, null, holdLine('off'))).toBe('warn');
   expect(holdLine(undefined)).toBe(0.9);
+});
+
+// Settings audit r1 review: Home read only everyone's line, so a harness set to 80% in Settings → Agents still turned
+// amber at 90%. Its own line wins, as the host's ask reads it (budget core ask::line_for).
+test('home_usage_turns_amber_at_a_harnesss_own_line_settings_audit_r1', () => {
+  const by = { codex: '80', grok: 'off', cursor: 'x' };
+  expect(holdLineFor(by, 'codex', '95')).toBe(0.8);
+  expect(holdLineFor(by, 'grok', '90')).toBeNull();
+  expect(holdLineFor(by, 'claude', '95'), 'not named: everyone').toBe(0.95);
+  expect(holdLineFor(by, 'cursor', '95'), 'unknown: everyone').toBe(0.95);
+  expect(holdLineFor(undefined, 'codex', undefined)).toBe(0.9);
+  expect(homeTone({ used: 0.85 }, null, holdLineFor(by, 'codex', '90'))).toBe('warn');
+  expect(homeTone({ used: 0.85 }, null, holdLineFor(by, 'claude', '90'))).toBeUndefined();
 });
