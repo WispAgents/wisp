@@ -6,7 +6,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -42,8 +42,18 @@ pub fn answers(port: u16, path: &str) -> bool {
 
 impl Server {
     /// `path`: the login shell's PATH for the server and the agents it starts (src/shell_path.rs); None keeps ours.
-    pub fn start(&self, app: &AppHandle, wisp: &Path, data: &Path, port: u16, path: Option<&str>) -> std::io::Result<()> {
+    /// `env`: what a shell started from the Dock was never told (src/recorded.rs): the web build and the home.
+    pub fn start(
+        &self,
+        app: &AppHandle,
+        wisp: &Path,
+        env: &[(&str, PathBuf)],
+        data: &Path,
+        port: u16,
+        path: Option<&str>,
+    ) -> std::io::Result<()> {
         let mut cmd = Command::new(wisp);
+        cmd.envs(env.iter().map(|(k, v)| (k, v)));
         cmd.arg("serve")
             .current_dir(wisp.parent().unwrap_or(data))
             .env("WISP_PORT", port.to_string())
@@ -62,8 +72,8 @@ impl Server {
         #[cfg(windows)]
         {
             std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW
-            // it joins our job only once it's started (job::Job::kill_on_close): told so, everything it starts stays in
-            // it however early, and only its update helper leaves (wisp-proc's PARENT_JOB_ENV, DESK2-05)
+                                                                                          // it joins our job only once it's started (job::Job::kill_on_close): told so, everything it starts stays in
+                                                                                          // it however early, and only its update helper leaves (wisp-proc's PARENT_JOB_ENV, DESK2-05)
             cmd.env(job::PARENT_JOB_ENV, "1");
         }
         let mut child = cmd.spawn()?;

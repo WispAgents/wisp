@@ -7,7 +7,7 @@
 
 import { Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, on, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
 import { defineCommand, entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
-import { changeWhere as changeWhereOf, whereOf } from './change-where.ts';
+import { changeWhere as changeWhereOf, whereOf, worktreePath } from './change-where.ts';
 import {
   Answer,
   BtwList,
@@ -23,6 +23,7 @@ import {
   Stack,
   TaskBody,
   TaskDetails,
+  TaskScreen,
   TaskHead,
   TurnView,
   WhyForm,
@@ -46,7 +47,7 @@ import type { SendHold } from '../contract.ts';
 import { aheadLabel, startsAt, waitable, whenTip } from './hold.ts';
 import { modelWords } from './run-words.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
-import { Slot, useClients, usePluginClient } from '../slot.tsx';
+import { Slot, useAnyShown, useClients, usePluginClient } from '../slot.tsx';
 import { TaskHeadSlot } from './slots.tsx';
 import { afterNextPaint, buildsAtOnce } from './task-paint.ts';
 import { NO_EVENTS, eventsByTurn } from './turn-events.ts';
@@ -54,7 +55,7 @@ import { sameEntries } from './same-entries.ts';
 import { useProjects } from './projects.ts';
 import { taskPlaces } from './project-pick.ts';
 import { phoneTaskMenu } from './phone-menu.ts';
-import { changeFigures, duration, foldedFrom, nextNeedsYou, overlapLine, overlapsOf, projectOfRow, statusOf, trailActs } from './rows-view.ts';
+import { changeFigures, doneRefused, duration, foldedFrom, nextNeedsYou, overlapLine, overlapsOf, projectOfRow, statusOf, trailActs, undoneState } from './rows-view.ts';
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
 import { factoryFoot, factoryReply, runFactory } from './run-factory.ts';
@@ -950,15 +951,16 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     shell.navigate({ t: 'openTask', id: to as never, replace: true });
   };
   const markDone = (): void => {
-    const was = row()?.state;
+    const was = row();
     // v1 actions.js: a task still working stays where it is and says why; never off to the next task with an
-    // error about this one shown there (orch #18)
-    if (was === 'running' || was === 'waiting') return void shell.toast.show(t('shell.done.working'));
+    // error about this one shown there (orch #18). A terminal task isn't: Done closes its CLI.
+    if (doneRefused(was)) return void shell.toast.show(t('shell.done.working'));
     void run(setState, { id: key, state: 'done' }).catch(() => undefined);
     shell.navigate({ t: 'markDone', id: key as never });
     next();
     // with Undo, as the row's Done (audit A #13)
-    shell.toast.success(t('shell.toast.done'), { action: { label: t('shell.toast.undo'), onClick: () => void run(setState, { id: key, state: was && was !== 'done' ? was : 'review' }).catch(() => undefined) } });
+    const back = undoneState(was);
+    shell.toast.success(t('shell.toast.done'), { action: { label: t('shell.toast.undo'), onClick: () => void run(setState, { id: key, state: back }).catch(() => undefined) } });
   };
   // "Open in Claude Code" (v1's Take over; owner, 2026-11-10)
   const harnessName = (): string => harnessView(row()?.agent ?? '').name;
@@ -1273,6 +1275,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // inside the reply box, over the text (the queued follow-ups, then wisp.later's, v1 .c-queued): `shell.task:composer-top`. Made once:
         // a JSX prop beside the box's reactive spread would be rebuilt (rows, an edit in progress) each time the task starts or stops
         const composerTop = <Slot input="shell.task:composer-top" layout="contents" id={key} session={() => s() as never} />;
+        // what takes the body's place (a terminal task's CLI): its extensions' `if` read the task's row
+        const screen = useAnyShown('shell.task:screen', { id: key, session: () => s() as never });
         // a factory run names its factory where another task names its harness (ADR-0114): it runs no agent of its own
         const factory = (): string | undefined => runFactory(s().summary as { factory?: unknown });
         const factoryWords = (): string => t('shell.task.factory', { name: factory() ?? '' });
@@ -1424,6 +1428,24 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           ];
         };
         const branch = (): string => String(s().summary['branch'] ?? '');
+        // where it runs (row.ts runOf's words): a sandbox, a peer by name, else this computer
+        const machine = (): { name: string; icon: 'box' | 'server' | 'laptop' } => {
+          const m = s().summary['machine'] as { name?: string; kind?: string } | null | undefined;
+          if (m?.kind === 'sandbox') return { name: m.name || t('shell.task.sandbox'), icon: 'box' };
+          if (m) return { name: m.name || t('shell.task.remote'), icon: 'server' };
+          return { name: t('shell.card.thisComputer'), icon: 'laptop' };
+        };
+        // the branch chip: a click copies the worktree's path (where the task's work is), the tooltip says so
+        const branchChip = () => {
+          const b = branch();
+          const path = worktreePath(s());
+          return {
+            head: b.replace(/-[0-9a-f]{6}$/, ''),
+            tail: b.match(/-[0-9a-f]{6}$/)?.[0] ?? '',
+            title: path ? `${b}\n${path}` : b,
+            ...(path && { copy: { text: path, done: t('shell.task.worktreeCopied') } }),
+          };
+        };
         const color = (): string => String(s().summary['color'] ?? 'slate');
         const ov = createMemo(() => (!closedReady() ? [] : shownOverlaps(overlapsOf(s()), closed() as unknown as Dismissed | undefined, s().id)));
         const mode = (): Mode => (['plan', 'edits', 'auto'].includes(String(s().summary['mode'])) ? (s().summary['mode'] as Mode) : 'auto');
@@ -1741,6 +1763,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         };
         return (
           <>
+            {/* a terminal task's CLI (shell-task's, v1 .tui-term) takes the body's place, edge to edge: `shell.task:screen` */}
+            <Show
+              when={!screen()}
+              fallback={
+                <TaskScreen>
+                  <Slot input="shell.task:screen" layout="stack" id={key} session={() => s() as never} />
+                </TaskScreen>
+              }
+            >
             <TaskBody
               chatWidth={chat.chatWidth()}
               chat={chat.chatMode()}
@@ -1776,7 +1807,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   color={color()}
                   places={placeChips(s())}
                   status={statusOf(s(), t)}
-                  {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
+                  machine={machine()}
+                  {...(branch() && { branch: branchChip() })}
                   {...((u) => (u ? { usage: u } : {}))(usage())}
                   actions={[]}
                   // pinned beside the turns, in sight however far they scroll (wisp.ship's PR card)
@@ -1979,6 +2011,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 </Show>
               }
             />
+            </Show>
             <Show
               when={phoneBar() && leave}
               fallback={
@@ -1987,7 +2020,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               actions={<TaskHeadSlot id={key} session={() => s() as never} />}
               title={s().title}
               color={color()}
-              chatWidth={chat.chatWidth()}
+              chatWidth={screen() ? 'full' : chat.chatWidth()}
               renameLabel={t('shell.task.rename')}
               panelLabel={t('shell.task.panel')}
               closeLabel={t('shell.task.close')}
@@ -2024,7 +2057,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       color={color()}
                       places={placeChips(s())}
                       status={statusOf(s(), t)}
-                      {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
+                      machine={machine()}
+                  {...(branch() && { branch: branchChip() })}
                       {...((u) => (u ? { usage: u } : {}))(usage())}
                       actions={[]}
                     />

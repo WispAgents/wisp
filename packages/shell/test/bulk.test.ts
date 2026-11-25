@@ -3,6 +3,7 @@
 import { expect, test } from 'vitest';
 import { bulkTargets, canBulk } from '../src/frame/bulk.ts';
 import { isSaved } from '../src/frame/commands.ts';
+import { doneRefused, undoneState } from '../src/frame/rows-view.ts';
 import type { SessionRow } from '../src/rows.ts';
 
 const row = (id: string, o: Partial<SessionRow> = {}): SessionRow => ({ id, title: id, state: 'review', agent: 'claude', archived: false, unread: false, created_at: 0, updated_at: 0, summary: {}, ...o }) as SessionRow;
@@ -39,4 +40,19 @@ test('a_task_the_server_says_is_saved_reads_as_saved', () => {
   expect(canBulk('later', saved)).toBe(false);
   expect(isSaved(saved.summary['forLater'])).toBe(true);
   for (const v of [undefined, null, false]) expect(isSaved(v)).toBe(false);
+});
+
+// owner, 2026-11-25: Mark as done did nothing on a terminal task (its state stays `running` while its CLI is open, but no
+// wisp run works on it); it goes to Done, and Undo puts it back for review (its CLI closed with the Done)
+test('a_terminal_task_with_its_cli_open_can_be_marked_done_and_undone_to_review', () => {
+  const term = row('term', { state: 'running', summary: { tui: true, term: true } as never });
+  expect(doneRefused(term)).toBe(false);
+  expect(canBulk('done', term)).toBe(true);
+  expect(undoneState(term)).toBe('review');
+  // a task wisp runs is still refused while it works
+  expect(doneRefused(row('run', { state: 'running' }))).toBe(true);
+  expect(doneRefused(row('ask', { state: 'waiting' }))).toBe(true);
+  expect(canBulk('done', row('run', { state: 'running' }))).toBe(false);
+  expect(undoneState(row('failed', { state: 'error' }))).toBe('error');
+  expect(undoneState(row('ready'))).toBe('review');
 });

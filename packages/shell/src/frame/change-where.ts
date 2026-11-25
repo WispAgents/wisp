@@ -12,11 +12,10 @@ interface Row {
 /** The read's key (the folder, its base, the last turn and what's left to ship), or undefined: no worktree, nothing to read. */
 export function changeWhere(r: Row | undefined, last: { readonly id?: string; readonly status?: string } | undefined): string | undefined {
   if (!r) return undefined;
-  const body = (r.body ?? {}) as { ext?: Record<string, Wt | undefined> };
-  const wt = body.ext?.['wisp.worktrees'] ?? (r.summary['worktree'] as Wt | undefined);
+  const wt = wtOf(r);
   // the worktree only, as the side panel's Changes (v1 GET /sessions/:id/changes): a task in place diffed the project
   // folder, so its head said +1962 for every session's and the user's own work (side-panel audit, 2026-11-19)
-  const dir = String(wt?.path ?? wt?.cwd ?? '');
+  const dir = worktreePath(r);
   if (!dir) return undefined;
   return JSON.stringify([dir, wt?.baseRef || wt?.base || 'HEAD', last?.id ?? '', last?.status ?? '', r.summary['toShip'] ?? null]);
 }
@@ -29,4 +28,16 @@ export function whereOf(w: string): { readonly path: string; readonly base: stri
   } catch {
     return undefined;
   }
+}
+
+/** The task's worktree folder, or '' when it has none (a task in its project's folder). */
+export function worktreePath(r: Row | undefined): string {
+  if (!r) return '';
+  const wt = wtOf(r);
+  return String(wt?.path ?? wt?.cwd ?? '');
+}
+
+function wtOf(r: Row): Wt | undefined {
+  const body = (r.body ?? {}) as { ext?: Record<string, Wt | undefined> };
+  return body.ext?.['wisp.worktrees'] ?? (r.summary['worktree'] as Wt | undefined);
 }

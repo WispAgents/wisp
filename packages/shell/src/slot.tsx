@@ -77,6 +77,23 @@ export function useExtensions(input: string): () => readonly ResolvedExtension[]
   return useSignal(useShell().extensions(input));
 }
 
+/** Whether one of the input's extensions shows for these props (its `if` holds, or it has none): an input that takes
+ *  another's place while it has something (`shell.task:screen`). */
+export function useAnyShown(input: string, s: Scoped): () => boolean {
+  const list = useExtensions(input);
+  const clients = useClients();
+  return () =>
+    list().some((ext) => {
+      const test = ext.def.if;
+      if (!test) return true;
+      try {
+        return test(extensionProps(ext, clients.client(ext.plugin), s));
+      } catch {
+        return false;
+      }
+    });
+}
+
 /** The same extension, drawn the same way: its code, its plugin and its config. Its `order` is left out: a plugin's later
  *  part (registry.extend) renumbers every later plugin's default order, and a new object for an unchanged extension
  *  remounted what it drew (the task list rebuilt twice after load, and WebKit's "ResizeObserver loop" on every page:

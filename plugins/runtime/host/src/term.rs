@@ -224,7 +224,10 @@ impl Runtime {
             self.readopt(&r, &a).await?;
             s = self.repo.session(id).await?;
         }
-        s.state = wisp_runtime_api::model::SessionState::Review;
+        // marked done (its CLI closed with it): it stays done; else it's for review
+        if s.state != wisp_runtime_api::model::SessionState::Done {
+            s.state = wisp_runtime_api::model::SessionState::Review;
+        }
         if let Some(t) = s.ext.get_mut("wisp.runtime").and_then(|v| v.get_mut("terminal")).and_then(Value::as_object_mut) {
             t.insert("live".into(), json!(false));
         }
@@ -264,6 +267,17 @@ pub async fn open(
         ctx.spawn(fut);
     }
     serde_json::to_value(out).map_err(|e| WireError::invalid(format!("terminal.open: {e}")))
+}
+
+/// Terminal task `id` was marked done: its CLI, still open, closes with it (`terminal_ended` keeps it done).
+pub async fn done(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call, rt: &Arc<Runtime>, id: &str) {
+    let live = rt.repo.session(id).await.is_ok_and(|s| term_of(&s).is_some_and(|t| t["live"] == true));
+    if !live {
+        return;
+    }
+    if let Err(err) = ctx.run::<term::Close>(call, term::KindId { kind: TermKind::Takeover, id: id.to_owned() }).await {
+        tracing::warn!(error = %err.message, task = id, "runtime: closing a terminal task's CLI as it's marked done");
+    }
 }
 
 /// `text` pasted into task `id`'s take over terminal.

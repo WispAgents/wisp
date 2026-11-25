@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Prompt box: **/plugin** makes a wisp plugin from New task or a task's reply box. Type `/plugin` and what it should do: an agent writes it as a plugin of yours and installs it off, as **Cast a plugin** in Settings → Plugins does, and the new task opens. New task's agent pick goes with it. `/plugin` alone opens Settings → Plugins.
+- Task details: click the branch chip to copy the task's worktree path. A tooltip says **Worktree path copied**. Hover the chip to see the branch and the path.
+
 ### Fixed
 
 - Usage (Claude Code, Codex): a resumed turn counts only its own cost and tokens. Each turn now keeps the conversation's counters (`stats.totals`) and the next turn on the same harness and conversation starts from them, where every follow-up counted the whole conversation again. A chat brought in, adopted or restored, and a conversation whose last turn was stored before this change, takes its first result as the baseline (that turn counts 0 and the next one counts its own); another harness or a fresh conversation starts from zero.
@@ -12,6 +17,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Task page (harness picker): switching a task to another harness hands it over as a follow-up's pick does: the new harness no longer resumes the old one's conversation id, gets its own default model and the nearest thinking level, and hears what it missed (the hand-off note). A turn still running when you switch no longer puts the old conversation back.
 - Delegation: a lead told to delegate through wisp now runs with its harness's own subagent tool off (Claude Code's Task/Agent, opencode's `task`, Copilot's), as its system prompt says; subagents, side discussions and harnesses without wisp's tools keep theirs.
 - OpenCode and Grok: a permission refusal on stderr shows as a blocked card with Allow & retry again (no refusal was ever detected), and a CLI's last stderr line without a newline reaches its turn's error.
+- Desktop app on macOS, installed with `npm i -g wisp-agents`: the app now opens when you start it from the Dock, Spotlight or Finder. Before, it showed "wisp's files aren't in this app" and quit unless `wisp` was already running in a terminal. It also works when the Dock item is left over from an older version.
+- Task list: **Mark done** on a task saved for later moves it to *Done*. Before, it stayed in *For later*. **Undo** puts it back in For later at its old place.
+- Task page: the details now name the machine the task runs on (**This computer**, a computer by its name, or **Sandbox**), above the branch.
+- Computers show by a name you know, not an id like `1959efa12b19`: the phone and the app keep the name you gave a computer (your grid box stays "Cloud"), and wisp names itself after the Mac's Computer Name or host name, never a container id (a grid box calls itself "Cloud").
+- Terminal tasks (`/terminal …`, Babysitting mode): the agent's own CLI is now the task page, full width under the task's head, as in v1. Before, it opened in the side pane beside an empty chat column.
+- Terminal tasks: **Mark as done** now moves the task to Done and closes its CLI. Before, it said the task was still working and did nothing. It works from the task's head, its row, the phone's bulk actions, and `runtime.setState` from an agent or the CLI. When the CLI later exits, the task stays in Done instead of going back to review.
+- Home: the **Reach this wisp from anywhere** tip no longer shows once this computer is on a wisp Grid. Home shows another tip in its place.
 - Android app: **Scan the code** in Add computer now opens a scanner (Google's code scanner from Play services, so the app still asks for no camera permission) and saves the computer with its key pinned. A phone without the scanner no longer shows a Scan button that always ended in "type it by hand": the typed address is the main action there.
 - Android app: something shared to wisp from the share sheet now opens New task with the shared text or link in the box and its pictures or PDFs attached. Before, nothing took it and a toast said to update wisp on the computer. With no computer open yet, the share waits on the phone and wisp says to open a computer first.
 - Android app: **Share** opens Android's share sheet. Before, it copied the link and did nothing else.

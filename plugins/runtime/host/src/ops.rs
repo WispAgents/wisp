@@ -186,6 +186,10 @@ impl Runtime {
             }
             s.state = state;
             s.unread = false;
+            // Mark done and Reopen take it out of For later (design/for-later.md); Undo saves it again with its time
+            if let Some(o) = s.ext.get_mut("wisp.runtime").and_then(Value::as_object_mut) {
+                o.remove("forLater");
+            }
             Ok(())
         })
         .await
