@@ -14,6 +14,7 @@ mod qa;
 #[cfg(all(feature = "qa", target_os = "linux"))]
 #[path = "qa_linux.rs"]
 mod qa;
+mod recorded;
 mod server;
 mod shell_path;
 #[cfg(windows)]
@@ -239,8 +240,11 @@ fn fail(app: &AppHandle, text: String) {
 fn boot(app: AppHandle, port: u16) {
     if !server::answers(port, "/api/config") {
         // Not a wisp to attach to, so ours: quitting must leave a CLI wisp running (DESK-14).
-        let Some(bin) = wisp(&app) else {
-            return fail(&app, "wisp's files aren't in this app.".into());
+        let Some((bin, env)) = wisp(&app) else {
+            return fail(
+                &app,
+                "wisp's files aren't in this app. Run wisp in a terminal once, and the app opens on its own from then on.".into(),
+            );
         };
         let data = app.path().app_data_dir().unwrap_or_default();
         // Finder's PATH has no agent CLI on it: the server starts now on the login shell's from last time (or ours, the
@@ -249,7 +253,7 @@ fn boot(app: AppHandle, port: u16) {
         let later = app.clone();
         let started = shell_path::start_then_hand(
             start,
-            |path| app.state::<Server>().start(&app, &bin, &data, port, path),
+            |path| app.state::<Server>().start(&app, &bin, &env, &data, port, path),
             move |path| later.state::<Server>().hand_path(&path),
         );
         if let Err(err) = started {
@@ -278,14 +282,22 @@ fn resources(app: &AppHandle) -> Option<PathBuf> {
     Some(dir.to_str().and_then(|p| p.strip_prefix(r"\\?\")).filter(|p| !p.starts_with("UNC")).map_or_else(|| dir.clone(), PathBuf::from))
 }
 
-// The `wisp` binary: WISP_BIN when running from a checkout (or a debug build's own target dir). A built app has it
-// under its resources with `web/` beside it (desktop/scripts/package.mjs): Contents/Resources/app on macOS; on
-// Windows the resource folder is the exe's, so resources\app; on Linux /usr/lib/wisp, so resources/app as well.
-fn wisp(app: &AppHandle) -> Option<PathBuf> {
+// The `wisp` binary and what else it needs told: WISP_BIN when `wisp` started this shell or running from a checkout
+// (or a debug build's own target dir). A built app has it under its resources with `web/` beside it
+// (desktop/scripts/package.mjs): Contents/Resources/app on macOS; on Windows the resource folder is the exe's, so
+// resources\app; on Linux /usr/lib/wisp, so resources/app as well. Last, the shell from npm started from the Dock,
+// with nothing in its env: the server `wisp` recorded for it (src/recorded.rs).
+fn wisp(app: &AppHandle) -> Option<(PathBuf, Vec<(&'static str, PathBuf)>)> {
     let name = if cfg!(windows) { "wisp.exe" } else { "wisp" };
     let packaged = resources(app).map(|r| r.join(if cfg!(target_os = "macos") { "app" } else { "resources/app" }).join(name));
     let checkout = cfg!(debug_assertions).then(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug").join(name));
-    std::env::var_os("WISP_BIN").map(PathBuf::from).into_iter().chain(packaged).chain(checkout).find(|p| p.is_file())
+    let told = std::env::var_os("WISP_BIN").map(PathBuf::from).into_iter().chain(packaged).chain(checkout).find(|p| p.is_file());
+    told.map(|bin| (bin, Vec::new())).or_else(|| {
+        let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+        let r = recorded::find(&exe, app.path().home_dir().ok().as_deref())?;
+        let env = r.env();
+        Some((r.bin, env))
+    })
 }
 
 #[tauri::command]

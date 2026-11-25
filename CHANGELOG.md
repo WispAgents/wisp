@@ -12,6 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Desktop app on macOS, installed with `npm i -g wisp-agents`: the app now opens when you start it from the Dock, Spotlight or Finder. Before, it showed "wisp's files aren't in this app" and quit unless `wisp` was already running in a terminal. It also works when the Dock item is left over from an older version.
 - Task list: **Mark done** on a task saved for later moves it to *Done*. Before, it stayed in *For later*. **Undo** puts it back in For later at its old place.
 - Task page: the details now name the machine the task runs on (**This computer**, a computer by its name, or **Sandbox**), above the branch.
 - Computers show by a name you know, not an id like `1959efa12b19`: the phone and the app keep the name you gave a computer (your grid box stays "Cloud"), and wisp names itself after the Mac's Computer Name or host name, never a container id (a grid box calls itself "Cloud").

@@ -39,6 +39,32 @@ pub fn shell_exe(dir: &Path, os: &str) -> PathBuf {
     }
 }
 
+/// `<home>/desktop/server.json`: which server the downloaded shell runs when it starts with no `WISP_BIN`, as it does
+/// from the Dock, Spotlight or Finder (`desktop/src-tauri/src/recorded.rs` reads it). Its directory holds every
+/// version's shell, so one kept in the Dock from an older version runs today's server too.
+pub fn record_file(home: &Path) -> PathBuf {
+    home.join("desktop").join("server.json")
+}
+
+/// What `record_file` holds: the server binary, the web build it serves (`WISP_WEB_DIR`, from the npm launcher) and
+/// the home it uses, so a Dock launch serves the same wisp a terminal `wisp` does.
+pub fn server_record(bin: &Path, web: Option<&Path>, home: &Path) -> serde_json::Value {
+    let mut v = serde_json::json!({ "bin": bin, "home": home });
+    if let Some(web) = web {
+        v["web"] = serde_json::json!(web);
+    }
+    v
+}
+
+/// Written whole, then moved into place: a shell starting meanwhile reads the old record or the new, never half.
+pub fn record_server(home: &Path, bin: &Path, web: Option<&Path>) -> std::io::Result<()> {
+    let file = record_file(home);
+    std::fs::create_dir_all(file.parent().unwrap_or(home))?;
+    let part = file.with_extension(format!("json.part-{}", std::process::id()));
+    let body = serde_json::to_vec_pretty(&server_record(bin, web, home)).map_err(std::io::Error::other)?;
+    std::fs::write(&part, body).and_then(|()| std::fs::rename(&part, &file)).inspect_err(|_| drop(std::fs::remove_file(&part)))
+}
+
 /// The rolling nightly is tagged `nightly`, every other release v<version>; `WISP_SHELL_URL` stands in.
 pub fn release_url(version: &str, over: Option<&str>) -> String {
     over.map_or_else(
@@ -255,6 +281,13 @@ pub async fn desktop(home: &Path, user_home: &Path, port: u16, running: bool, st
         Some(exe) => Ok((exe, None)),
         None => shell(home, crate::serve::VERSION).await.map(|exe| (exe, std::env::current_exe().ok())),
     };
+    // the shell holds no server: it's told one now (WISP_BIN), and the record is for when it starts on its own
+    if let Ok((_, Some(bin))) = &found {
+        let web = std::env::var_os("WISP_WEB_DIR").map(PathBuf::from);
+        if let Err(e) = record_server(home, bin, web.as_deref()) {
+            eprintln!("  ◌ couldn't record the server for the wisp app ({e}): from the Dock it opens only while wisp runs");
+        }
+    }
     let found = found.and_then(|(exe, server)| launch(&exe, port, server.as_deref()).map_err(|e| format!("it didn't start: {e}")));
     match found {
         Err(why) if strict => Err(CliError::said(get_app_line(&why))),
@@ -292,6 +325,23 @@ mod tests {
         );
         assert_eq!(sum_for(&format!("{h} *x.tar.gz"), "x.tar.gz"), Some(h));
         assert_eq!(sum_for("zz  x.tar.gz", "x.tar.gz"), None);
+    }
+
+    // A shell from the Dock starts with no WISP_BIN: the record names the server, its web build and home, and it's
+    // replaced whole on every launch so it names the newest install.
+    #[test]
+    fn the_server_is_recorded_for_a_shell_started_from_the_dock() {
+        let home = std::env::temp_dir().join(format!("wisp-record-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        assert_eq!(record_file(&home), home.join("desktop/server.json"));
+        record_server(&home, Path::new("/old/wisp"), None).unwrap();
+        record_server(&home, Path::new("/npm/bin/wisp"), Some(Path::new("/npm/web"))).unwrap();
+        let read: serde_json::Value = serde_json::from_slice(&std::fs::read(record_file(&home)).unwrap()).unwrap();
+        assert_eq!(read, serde_json::json!({ "bin": "/npm/bin/wisp", "web": "/npm/web", "home": home }));
+        let left: Vec<_> = std::fs::read_dir(home.join("desktop")).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(left, ["server.json"], "no part file left behind");
+        assert_eq!(server_record(Path::new("/b"), None, Path::new("/h")), serde_json::json!({ "bin": "/b", "home": "/h" }));
+        std::fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]
