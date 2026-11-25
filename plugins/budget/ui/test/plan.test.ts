@@ -300,3 +300,13 @@ test('a_harness_with_no_windows_says_its_clis_tier_and_spend', () => {
   );
   expect(limitsReported(cursor, [{ account: 'default', windows: [], plan: 'Pro' }]), 'a tier is no window').toBe(false);
 });
+
+test('token_breakdown_cache_share_is_reads_over_the_whole_input', () => {
+  // the server's rows: inputTokens is everything read (input, cache reads and writes), cacheTokens the reads alone
+  // Claude's first turn: 1k input, 30k written to the cache, nothing read from it
+  expect(tokenBreakdown({ inputTokens: 31_000, cacheTokens: 0, outputTokens: 2_000 })).toBe('31k in · 2k out');
+  // 1k input, 10k read, 5k written: 10k of 16k
+  expect(tokenBreakdown({ inputTokens: 16_000, cacheTokens: 10_000, outputTokens: 1_000 })).toBe('16k in · 63% cache · 1k out');
+  // Copilot saying only what it wrote
+  expect(tokenBreakdown({ inputTokens: 2_500, cacheTokens: 0, outputTokens: 100 })).not.toContain('cache');
+});

@@ -1,4 +1,4 @@
-# ADR-0120: One price table for the runtime, and an estimated cost is always marked (`cost_estimated`, `~$x.xx`)
+# ADR-0123: One price table for the runtime, and an estimated cost is always marked (`cost_estimated`, `~$x.xx`)
 
 - Status: accepted
 - Date: 2026-11-25

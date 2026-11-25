@@ -13,6 +13,6 @@ date: string, cost: number, turns: number,
  */
 tokens: number, 
 /**
- * added 2026-11-25 (additive, ADR-0120): `cost` holds a list-price estimate
+ * added 2026-11-25 (additive, ADR-0123): `cost` holds a list-price estimate
  */
 cost_estimated: boolean, };

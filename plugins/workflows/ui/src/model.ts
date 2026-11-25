@@ -2,7 +2,7 @@
 // first appear; a step that ran once is a card, one that fanned out (a foreach, a matrix of more than three) is one card
 // with a dot per run. Each card says how long it took or has been going, its cost, and what it gave or why not.
 
-import type { RunEntry, RunLane, RunStep, RunStepState } from '@wisp/ui';
+import type { RunEntry, RunFan, RunLane, RunStep, RunStepState } from '@wisp/ui';
 import { t } from './i18n.ts';
 import type { RunState, RunView, SessionRow, StepView } from './types.ts';
 
@@ -15,6 +15,12 @@ export const CARDS_MAX = 3;
 export function runsOf(row: SessionRow | undefined): readonly RunView[] {
   const r = (row?.workflowRuns ?? row?.summary?.['workflowRuns']) as unknown;
   return Array.isArray(r) ? (r as RunView[]).filter((x) => x && typeof x.id === 'string' && Array.isArray(x.steps)) : [];
+}
+
+/** The task a step's task is under (a synced row says `parent_id`, its summary `parentId`). */
+export function parentOf(row: SessionRow | undefined): string | undefined {
+  const p = row?.parentId ?? row?.parent_id ?? row?.summary?.['parentId'];
+  return typeof p === 'string' && p ? p : undefined;
 }
 
 /** The run a step's task is part of (`workflowStep`), or undefined. */
@@ -79,7 +85,20 @@ function meta(s: StepView, now: number): string {
 }
 
 /** One step as a card; `open` opens its task (none until it has one). */
-export function card(s: StepView, now: number, open: (task: string) => void, withStep = false): RunStep {
+/** What the board's cards do: open a step's task, and change the run (Skip, Retry; none: the cards only open). */
+export interface Hands {
+  readonly open: (task: string) => void;
+  readonly act?: (kind: 'skip' | 'retry', ids: readonly string[]) => void;
+}
+
+/** What you can do to a step in this state: skip one that waits or works, retry one that failed or was skipped. */
+export function stepActions(state: StepView['state']): { value: 'skip' | 'retry'; label: string; icon: 'skip' | 'rerun' }[] {
+  if (state === 'waiting' || state === 'running') return [{ value: 'skip', label: t('wisp.workflows.skip'), icon: 'skip' }];
+  if (state === 'failed' || state === 'skipped') return [{ value: 'retry', label: t('wisp.workflows.retry'), icon: 'rerun' }];
+  return [];
+}
+
+export function card(s: StepView, now: number, h: Hands, withStep = false): RunStep {
   const title = withStep ? `${s.title || s.step} · ${nameOf(s)}` : nameOf(s);
   const task = s.task;
   const detail = detailOf(s);
@@ -91,12 +110,25 @@ export function card(s: StepView, now: number, open: (task: string) => void, wit
     ...(s.agent ? { agent: s.agent } : {}),
     ...(detail ? { detail } : {}),
     ...(m ? { meta: m } : {}),
-    ...(task ? { onOpen: () => open(task), openLabel: t('wisp.workflows.open', { step: title }) } : {}),
+    ...(task ? { onOpen: () => h.open(task), openLabel: t('wisp.workflows.open', { step: title }) } : {}),
+    ...(h.act && stepActions(s.state).length > 0 ? { actions: stepActions(s.state), onAction: (v: string) => h.act?.(v === 'skip' ? 'skip' : 'retry', [s.id]) } : {}),
   };
 }
 
+/** A fan-out's actions: retry the runs that failed or were skipped, skip the ones that wait or work. */
+function fanActions(runs: readonly StepView[], h: Hands): Pick<RunFan, 'actions' | 'onAction'> {
+  if (!h.act) return {};
+  const again = runs.filter((r) => r.state === 'failed' || r.state === 'skipped').map((r) => r.id);
+  const rest = runs.filter((r) => r.state === 'waiting' || r.state === 'running').map((r) => r.id);
+  const actions = [
+    ...(again.length ? [{ value: 'retry', label: t('wisp.workflows.retryN', { count: again.length }), icon: 'rerun' as const }] : []),
+    ...(rest.length ? [{ value: 'skip', label: t('wisp.workflows.skipN', { count: rest.length }), icon: 'skip' as const }] : []),
+  ];
+  return actions.length ? { actions, onAction: (v: string) => h.act?.(v === 'skip' ? 'skip' : 'retry', v === 'skip' ? rest : again) } : {};
+}
+
 /** A lane's entries: steps in order, the runs of one step together. */
-function entries(steps: readonly StepView[], now: number, open: (task: string) => void): RunEntry[] {
+function entries(steps: readonly StepView[], now: number, h: Hands): RunEntry[] {
   const order: string[] = [];
   const by = new Map<string, StepView[]>();
   for (const s of steps) {
@@ -111,8 +143,8 @@ function entries(steps: readonly StepView[], now: number, open: (task: string) =
     const first = runs[0];
     if (!first) return [];
     const foreach = runs.some((r) => r.item !== undefined && r.item !== null);
-    if (runs.length === 1 && !foreach) return [{ step: card(first, now, open) }];
-    if (!foreach && runs.length <= CARDS_MAX) return runs.map((r) => ({ step: card(r, now, open, true) }));
+    if (runs.length === 1 && !foreach) return [{ step: card(first, now, h) }];
+    if (!foreach && runs.length <= CARDS_MAX) return runs.map((r) => ({ step: card(r, now, h, true) }));
     const doneN = runs.filter(ended).length;
     const failed = runs.filter((r) => r.state === 'failed').length;
     const running = runs.filter((r) => r.state === 'running').length;
@@ -126,7 +158,8 @@ function entries(steps: readonly StepView[], now: number, open: (task: string) =
           ...(first.agent ? { agent: first.agent } : {}),
           count: t('wisp.workflows.fan.count', { done: doneN, total: runs.length }),
           ...(detail ? { detail } : {}),
-          items: runs.map((r) => card(r, now, open)),
+          items: runs.map((r) => card(r, now, { open: h.open })),
+          ...fanActions(runs, h),
         },
       },
     ];
@@ -134,13 +167,13 @@ function entries(steps: readonly StepView[], now: number, open: (task: string) =
 }
 
 /** The board's lanes: one per phase, in the order phases first appear (one lane, no header, when none has a phase). */
-export function lanes(r: RunView, now: number, open: (task: string) => void): RunLane[] {
+export function lanes(r: RunView, now: number, h: Hands): RunLane[] {
   const phases: string[] = [];
   for (const s of r.steps) if (!phases.includes(s.phase ?? '')) phases.push(s.phase ?? '');
   return phases.map((p) => {
     const mine = r.steps.filter((s) => (s.phase ?? '') === p);
     const doneN = mine.filter(ended).length;
-    return { id: p || '-', title: phases.length === 1 && !p ? '' : p || t('wisp.workflows.otherPhase'), count: `${doneN}/${mine.length}`, state: stateOf(mine), entries: entries(mine, now, open) };
+    return { id: p || '-', title: phases.length === 1 && !p ? '' : p || t('wisp.workflows.otherPhase'), count: `${doneN}/${mine.length}`, state: stateOf(mine), entries: entries(mine, now, h) };
   });
 }
 
@@ -156,8 +189,7 @@ export function phaseNow(r: RunView): string {
 export function pill(r: RunView): { readonly text: string; readonly tone: Tone; readonly live: boolean } {
   const n = { done: r.done ?? r.steps.filter(ended).length, total: r.total ?? r.steps.length };
   if (live(r)) {
-    const p = phaseNow(r);
-    return { text: p ? t('wisp.workflows.at', { phase: p, ...n }) : t('wisp.workflows.progress', n), tone: TONE.running, live: true };
+    return { text: t('wisp.workflows.progress', n), tone: TONE.running, live: true };
   }
   return { text: t(`wisp.workflows.state.${r.state}`), tone: TONE[r.state] ?? 'neutral', live: false };
 }
@@ -183,4 +215,25 @@ export function share(r: RunView): number {
 export function asFormula(r: RunView): string {
   const spec = r.spec && typeof r.spec === 'object' ? r.spec : { tasks: {} };
   return JSON.stringify({ wisp: 1, workflows: [{ name: r.workflow, ...spec }] }, null, 2);
+}
+
+/** At most this many dots on the card; past it, the last says how many more. */
+export const DOTS_MAX = 48;
+
+/** The card's strip: a dot per step run, in order (a foreach's each run, a matrix's each agent). */
+export function dots(r: RunView): { id: string; title: string; state: RunStepState; detail?: string }[] {
+  const all = r.steps.map((s) => {
+    const title = s.item !== undefined && s.item !== null && s.item !== '' ? `${s.title || s.step} · ${nameOf(s)}` : nameOf(s);
+    const detail = detailOf(s);
+    return { id: s.id, title, state: s.state, ...(detail ? { detail } : {}) };
+  });
+  if (all.length <= DOTS_MAX) return all;
+  const rest = all.slice(DOTS_MAX - 1);
+  return [...all.slice(0, DOTS_MAX - 1), { id: '+', title: t('wisp.workflows.moreSteps', { count: rest.length }), state: stateOf(rest) }];
+}
+
+/** The card's quiet line: the phase it's in (while it goes), how long, what it cost, and the task's other runs. */
+export function cardLine(r: RunView, now: number, more: number): string {
+  const p = live(r) ? phaseNow(r) : '';
+  return [p, line(r, now), more > 0 ? t('wisp.workflows.moreRuns', { count: more }) : ''].filter(Boolean).join(' · ');
 }

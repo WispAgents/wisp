@@ -5,7 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import ui from '../src/index.ts';
 import '../src/i18n/lazy.ts';
-import { asFormula, detailOf, duration, lanes, line, money, pill, runsOf, share, stepOf } from '../src/model.ts';
+import { DOTS_MAX, parentOf, asFormula, cardLine, detailOf, dots, duration, lanes, line, money, phaseNow, pill, runsOf, share, stepOf } from '../src/model.ts';
+import { VIEW, parseBoard } from '../src/views.ts';
 import { suggestions } from '../src/suggest.ts';
 import type { RunView, StepView } from '../src/types.ts';
 
@@ -35,13 +36,31 @@ const run = (over: Partial<RunView> = {}): RunView => ({
 });
 
 describe('the workflow board', () => {
-  it('registers the band on the task page', () => {
-    expect(ui.extensions?.map((e) => e.attachTo.id)).toEqual(['shell.task:band']);
+  it('puts its row first in the task details and its board in the main area', () => {
+    expect(ui.extensions?.map((e) => [e.attachTo.id, (e.order ?? 0) < 0])).toEqual([['shell.task:details', true]]);
+    expect(ui.views?.map((v) => [v.kind, v.slot])).toEqual([[VIEW.board, 'main']]);
+    // a plugin's views are named under its own id, or the shell refuses the whole plugin
+    expect(VIEW.board.startsWith('workflows.')).toBe(true);
+    expect(parseBoard({ task: 'h:1', run: 'r1' })).toEqual({ task: 'h:1', run: 'r1' });
+    expect(() => parseBoard({ task: '1' })).toThrow();
+  });
+
+  it('the row: a segment per step run, its phase, time and cost in a line', () => {
+    const d = dots(run());
+    expect(d.map((x) => x.state)).toEqual(['done', 'done', 'running', 'failed', 'waiting', 'waiting', 'waiting']);
+    expect(d[2]?.title).toBe('Fix a route · /logout');
+    expect(cardLine(run(), 61_000, 1)).toBe('Build · 1m 00s · $0.42 of $5.00 · 1 earlier run');
+    expect(phaseNow(run())).toBe('Build');
+    const many = run({ steps: Array.from({ length: 80 }, (_, i) => step({ id: `x[${i}]`, step: 'x', state: 'done', item: `i${i}` })) });
+    const capped = dots(many);
+    expect(capped).toHaveLength(DOTS_MAX);
+    expect(capped[DOTS_MAX - 1]?.title).toBe('33 more steps');
   });
 
   it('lays phases out as lanes, a foreach as one fan and a small matrix as a card per run', () => {
     const opened: string[] = [];
-    const l = lanes(run(), 61_000, (t) => opened.push(t));
+    const acted: string[] = [];
+    const l = lanes(run(), 61_000, { open: (t) => opened.push(t), act: (kind, ids) => acted.push(`${kind}:${ids.join(',')}`) });
     expect(l.map((x) => [x.title, x.count, x.state])).toEqual([
       ['Explore', '1/1', 'done'],
       ['Build', '2/4', 'running'],
@@ -60,6 +79,17 @@ describe('the workflow board', () => {
     ]);
     fan.fan.items[1]?.onOpen?.();
     expect(opened).toEqual(['t3']);
+    // a fan's ⋯: retry the failed ones, skip the rest
+    expect(fan.fan.actions?.map((a) => a.label)).toEqual(['Retry the failed one', 'Skip the 2 left']);
+    fan.fan.onAction?.('retry');
+    fan.fan.onAction?.('skip');
+    // a card's ⋯: done has none, waiting skips
+    const planCard = l[0]?.entries[0];
+    expect(planCard && 'step' in planCard && planCard.step.actions).toBeUndefined();
+    const review = l[2]?.entries[0];
+    if (!review || !('step' in review)) throw new Error('review is a card');
+    review.step.onAction?.('skip');
+    expect(acted).toEqual(['retry:fix[3]', 'skip:fix[2],fix[4]', 'skip:review[agent=claude]']);
     expect(fan.fan.items[3]?.onOpen, 'no task yet: nothing to open').toBeUndefined();
     const verify = l[2]?.entries.map((e) => ('step' in e ? [e.step.title, e.step.detail] : []));
     expect(verify).toEqual([
@@ -69,12 +99,12 @@ describe('the workflow board', () => {
   });
 
   it('a run without phases is one lane with no header', () => {
-    const l = lanes(run({ steps: [step({ id: 'a', step: 'a', state: 'waiting' })] }), 0, () => undefined);
+    const l = lanes(run({ steps: [step({ id: 'a', step: 'a', state: 'waiting' })] }), 0, { open: () => undefined });
     expect(l.map((x) => x.title)).toEqual(['']);
   });
 
   it('says where the run is while it goes, then how it ended', () => {
-    expect(pill(run())).toEqual({ text: 'Build · 3/7', tone: 'accent', live: true });
+    expect(pill(run())).toEqual({ text: '3/7 steps', tone: 'accent', live: true });
     expect(line(run(), 61_000)).toBe('1m 00s · $0.42 of $5.00');
     expect(share(run())).toBeCloseTo(3 / 7);
     const done = run({ state: 'done', done: 7, endedAt: 192_000, budget: null });
@@ -92,6 +122,9 @@ describe('the workflow board', () => {
     expect(runsOf({ id: 'h:1', summary: { workflowRuns: [run()] } })).toHaveLength(1);
     expect(runsOf({ id: 'h:1', summary: { workflowRuns: 'junk' } })).toEqual([]);
     expect(stepOf({ id: 'h:2', summary: { workflowStep: { run: 'r1', node: 'fix[2]' } } })).toEqual({ run: 'r1', node: 'fix[2]' });
+    // a synced row: its parent is the row's own column, or its summary's
+    expect(parentOf({ id: 'h:2', parent_id: 'p1' })).toBe('p1');
+    expect(parentOf({ id: 'h:2', summary: { parentId: 'p2' } })).toBe('p2');
   });
 
   it('copies the run as a formula to keep', () => {

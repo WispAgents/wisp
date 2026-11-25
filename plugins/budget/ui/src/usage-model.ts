@@ -1,6 +1,6 @@
 // The Usage page's model (UsageView.tsx), DOM-free so tests read it: the tiles' label, the bars per local day or ISO
 // week (one colour, or stacked by harness), cache hit, each harness's limit line, and how a cost reads: `~$x.xx` when
-// it's a list-price estimate (ADR-0120), with `+` when only some of the turns had a price.
+// it's a list-price estimate (ADR-0123), with `+` when only some of the turns had a price.
 
 import { untilLabel } from '@wisp/ui/pure';
 import type { AccountPlan, Usage, UsageDay, UsageRow, UsageWeek } from './commands.ts';

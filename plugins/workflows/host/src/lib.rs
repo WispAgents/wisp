@@ -9,6 +9,7 @@
 //! Not yet: `on:` another machine (steps run here, and the run says so), and picking up a run wisp was stopped in the
 //! middle of (it says it was cut, and its owner can run it again).
 
+mod edit;
 mod run;
 mod slash;
 
@@ -22,7 +23,7 @@ use wisp_runtime_api::commands as r;
 use wisp_runtime_api::events::TurnEnded;
 use wisp_runtime_api::hooks::{BeforeCreate, BeforeFollowUp};
 use wisp_store::{Col, EntityDef, Migration, Query, Row, Store};
-use wisp_workflows_api::{EXT, List, NamedWorkflow, Remove, Run as RunCmd, Set, Status, Stop, WorkflowSpec};
+use wisp_workflows_api::{EXT, Edit, List, NamedWorkflow, Remove, Run as RunCmd, Set, Starters, Status, Stop, WorkflowSpec};
 use wisp_workflows_core::check;
 
 pub use wisp_workflows_api::PLUGIN_ID;
@@ -48,6 +49,23 @@ const DEF: EntityDef = EntityDef {
 #[allow(clippy::needless_pass_by_value)] // for map_err
 fn store_err(e: wisp_store::StoreError) -> WireError {
     WireError::internal(format!("store: {e}"))
+}
+
+/// The prebuilt workflows (starters.json): run by name (`/workflow audit`, `wisp run audit`) unless one of yours has
+/// the name; read-only, and never in an export (save one to make it yours: `wisp workflows starters`, then apply it).
+pub(crate) fn starters() -> Vec<NamedWorkflow> {
+    serde_json::from_str(include_str!("../starters.json")).unwrap_or_default()
+}
+
+/// Yours, then the prebuilt ones yours don't name.
+pub(crate) async fn runnable(store: &Store) -> Result<Vec<NamedWorkflow>> {
+    let mut all = list(store).await?;
+    for s in starters() {
+        if !all.iter().any(|w| w.name == s.name) {
+            all.push(s);
+        }
+    }
+    Ok(all)
 }
 
 pub(crate) async fn list(store: &Store) -> Result<Vec<NamedWorkflow>> {
@@ -97,8 +115,13 @@ impl wisp_runtime_api::points::PromptPart for Lead {
                 return String::new();
             }
             let Some(words) = slash::typed(&note.turn.prompt) else { return String::new() };
-            let names: Vec<String> = match ctx.service::<Store>() {
-                Ok(store) => list(&store).await.map(|l| l.into_iter().map(|w| w.name).collect()).unwrap_or_default(),
+            let names: Vec<slash::Known> = match ctx.service::<Store>() {
+                Ok(store) => runnable(&store)
+                    .await
+                    .map(|l| {
+                        l.into_iter().map(|w| slash::Known { inputs: w.spec.inputs.keys().cloned().collect(), name: w.name }).collect()
+                    })
+                    .unwrap_or_default(),
                 Err(_) => Vec::new(),
             };
             let tool = note.tools.map(|pre| format!("{pre}workflows_run"));
@@ -131,6 +154,46 @@ impl ResourceKind for WorkflowKind {
     }
     fn apply<'a>(&'a self, call: &'a Call, op: &'a wisp_resources_api::Op) -> wisp_kernel::BoxFuture<'a, Result<()>> {
         self.0.apply(call, op)
+    }
+}
+
+/// `runtime.after@1`: a task whose agent's turn ends while a run of its goes stays in Working on it (the list and the
+/// task say it works, not that it waits on you); the run's end lands it (wisp's message with the results starts the
+/// agent's next turn, or `runtime.settle`). You stopping the task stops its runs.
+struct Hold(wisp_kernel::Ctx, Arc<run::State>);
+
+impl wisp_runtime_api::points::AfterTurn for Hold {
+    fn id(&self) -> &'static str {
+        "wisp.workflows.hold"
+    }
+    fn order(&self) -> i32 {
+        0
+    }
+    fn wants(
+        &self,
+        session: &wisp_runtime_api::model::Session,
+        _turn: &wisp_runtime_api::model::Turn,
+        end: wisp_runtime_api::points::TurnEnd,
+    ) -> bool {
+        !end.stopped && self.1.owns_live(session.id.as_str())
+    }
+    fn run(
+        &self,
+        session: wisp_runtime_api::model::Session,
+        _turn: wisp_runtime_api::model::Turn,
+    ) -> wisp_kernel::BoxFuture<'static, Result<()>> {
+        let (ctx, st) = (self.0.clone(), self.1.clone());
+        Box::pin(async move {
+            // it ended between the turn's end and now: nothing will land the task, so it lands here
+            if !st.owns_live(session.id.as_str()) {
+                run::settle(&ctx, &ctx.root_call(), session.id.as_str()).await;
+            }
+            Ok(())
+        })
+    }
+    fn cancel(&self, session: &wisp_runtime_api::model::Session, stop: bool, _by: Option<&str>) -> bool {
+        // a follow-up moved the task on: its runs go on, and hold it again at that turn's end
+        stop && self.1.stop_owned(session.id.as_str())
     }
 }
 
@@ -231,7 +294,9 @@ impl Plugin for WorkflowsPlugin {
         s.contribute(&RESOURCE_KIND, kind);
         s.contribute(&wisp_runtime_api::points::SUMMARY, Arc::new(Summary) as Arc<dyn wisp_runtime_api::points::SummaryField>);
         let st = Arc::new(run::State::new());
+        s.contribute(&wisp_runtime_api::points::AFTER, Arc::new(Hold(s.ctx(), st.clone())) as Arc<dyn wisp_runtime_api::points::AfterTurn>);
         s.command::<List, _, _>(|ctx, _, _| async move { list(&*ctx.service::<Store>()?).await });
+        s.command::<Starters, _, _>(|_ctx, _, _| async move { Ok(starters()) });
         s.command::<Set, _, _>(|ctx, _, w| async move { put(&*ctx.service::<Store>()?, w).await });
         s.command::<Remove, _, _>(|ctx, _, a| async move {
             let store = ctx.service::<Store>()?;
@@ -247,6 +312,11 @@ impl Plugin for WorkflowsPlugin {
         s.command::<Status, _, _>(move |ctx, call, a| {
             let st = st2.clone();
             async move { run::status(&ctx, &call, &st, &a.id).await }
+        });
+        let st2 = st.clone();
+        s.command::<Edit, _, _>(move |ctx, call, a| {
+            let st = st2.clone();
+            async move { edit::edit(&ctx, &call, &st, a).await }
         });
         let st2 = st.clone();
         s.command::<Stop, _, _>(move |_ctx, call, a| {
@@ -287,6 +357,16 @@ impl Plugin for WorkflowsPlugin {
 mod tests {
     use super::*;
     use wisp_runtime_api::{Mode, SessionState, Turn, TurnStatus};
+
+    #[test]
+    fn every_prebuilt_workflow_checks() {
+        let all = starters();
+        assert!(all.len() >= 5, "{all:?}");
+        for w in all {
+            assert_eq!(wisp_workflows_core::check(&w.spec), Vec::<String>::new(), "{}", w.name);
+            assert!(!w.spec.description.is_empty(), "{} says what it's for", w.name);
+        }
+    }
 
     #[test]
     fn manifest_is_valid() {

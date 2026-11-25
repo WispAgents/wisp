@@ -174,7 +174,7 @@ impl Harness for CursorHarness {
     }
 
     /// A read that spends nothing: `cursor-agent about --format json` names the plan tier. Cursor reports no usage
-    /// window, so `windows` is empty and Usage says its limits aren't reported (ADR-0120).
+    /// window, so `windows` is empty and Usage says its limits aren't reported (ADR-0123).
     fn live_limits<'a>(
         &'a self,
         sys: &'a dyn HarnessSys,
@@ -329,7 +329,7 @@ mod tests {
         }
     }
 
-    /// ADR-0120: `cursor-agent about --format json`, as captured (`core/tests/cli/about.json`), gives the tier and no
+    /// ADR-0123: `cursor-agent about --format json`, as captured (`core/tests/cli/about.json`), gives the tier and no
     /// windows; budget carries it to the Usage page. A failed `about` is no reading.
     #[tokio::test]
     async fn live_limits_reads_the_tier_from_cursor_agent_about() {

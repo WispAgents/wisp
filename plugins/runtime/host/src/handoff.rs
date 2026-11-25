@@ -5,7 +5,7 @@
 //! model doesn't go with it.
 
 //!
-//! Continue on… (ADR-0121): the follow-up may carry the latest turn only (`summary`) or every turn it missed (`full`, as
+//! Continue on… (ADR-0124): the follow-up may carry the latest turn only (`summary`) or every turn it missed (`full`, as
 //! before); the turn is marked with the switch (`ext["wisp.runtime"].switch`: from, to, context) and the preview sheet
 //! reads the same note this builds (`runtime.handoffPreview`).
 
@@ -23,17 +23,22 @@ pub(crate) fn levels_of<'a>(h: &'a dyn Harness, model: &str) -> &'a [String] {
     info.models.iter().find(|m| m.id == model).and_then(|m| m.efforts.as_deref()).unwrap_or(info.efforts.as_slice())
 }
 
-/// After a follow-up switched `s` to another harness (`was`): its model is the new one's default unless picked, and
-/// its effort the closest level the new one has unless picked (`picked_*`).
-pub(crate) fn carry_over(s: &mut Session, was: &str, picked_model: bool, picked_effort: bool, h: Option<&dyn Harness>) {
-    if s.agent == was {
+/// `s` handed to another harness (`new`, `h` its plugin), by a follow-up's pick or `runtime.setAgent`, both through
+/// here: it resumes nothing of the old one's conversation (each harness keeps its own, and the hand-off note tells the
+/// new one what it missed), its model is the new one's default unless picked, and its effort the closest level the new
+/// one has unless picked (`picked_*`; kept as it is when the harness isn't known). The same harness again: nothing
+/// changes, its conversation goes on.
+pub(crate) fn switch_agent(s: &mut Session, new: &str, picked_model: bool, picked_effort: bool, h: Option<&dyn Harness>) {
+    if s.agent == new {
         return;
     }
+    new.clone_into(&mut s.agent);
+    s.resume_id = None;
     if !picked_model {
         s.model.clear();
     }
-    if !picked_effort {
-        s.effort = h.map(|h| map_effort(&s.effort, levels_of(h, &s.model))).unwrap_or_default();
+    if !picked_effort && let Some(h) = h {
+        s.effort = map_effort(&s.effort, levels_of(h, &s.model));
     }
 }
 
@@ -174,7 +179,7 @@ impl Runtime {
             .iter()
             .map(|t| PastTurn { env: &known.0, ..PastTurn::new(t, name(if t.agent.is_empty() { &s.agent } else { &t.agent })) })
             .collect();
-        // Continue on…'s summary only: the latest turn the harness missed, not all of them (ADR-0121)
+        // Continue on…'s summary only: the latest turn the harness missed, not all of them (ADR-0124)
         let summary_only = marked_context(turn) == HandoffContext::Summary;
         let h = Handoff { turns: &past, agent: &s.agent, resume_id: s.resume_id.as_deref(), summary_only, ..Handoff::default() };
         let note = handoff_note(&h, Render::default());

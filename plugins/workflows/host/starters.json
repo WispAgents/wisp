@@ -1,0 +1,142 @@
+[
+  {
+    "name": "audit",
+    "description": "Map the code, check each area on its own agent, then one report of what to fix",
+    "inputs": { "focus": "bugs, security holes and missing error handling" },
+    "concurrency": 6,
+    "tasks": {
+      "map": {
+        "title": "Map the code",
+        "phase": "Explore",
+        "mode": "plan",
+        "prompt": "Map this repository for an audit of: ${{ inputs.focus }}. Split it into 3 to 12 areas that one reviewer can each read in under an hour (a module, a service, a group of routes). Don't change anything.",
+        "output": { "type": "object", "required": ["areas"], "properties": { "areas": { "type": "array", "items": { "type": "string", "description": "the area: its folder or files, and what it does" } } } }
+      },
+      "check": {
+        "title": "Check an area",
+        "phase": "Audit",
+        "mode": "plan",
+        "needs": ["map"],
+        "foreach": "${{ tasks.map.output.areas }}",
+        "prompt": "Audit this area of the repository for ${{ inputs.focus }}: ${{ item }}. Read it closely. Report each problem with its file and line, why it matters, and the fix. Don't change anything.",
+        "output": { "type": "object", "required": ["findings"], "properties": { "findings": { "type": "array", "items": { "type": "object", "properties": { "file": { "type": "string" }, "line": { "type": "number" }, "severity": { "type": "string", "enum": ["high", "medium", "low"] }, "problem": { "type": "string" }, "fix": { "type": "string" } } } } } }
+      },
+      "report": {
+        "title": "Write the report",
+        "phase": "Report",
+        "mode": "plan",
+        "needs": ["check"],
+        "prompt": "Here are an audit's findings, area by area: ${{ tasks.check.output }}. Merge duplicates, drop what isn't a real problem, and write one report: the problems by severity, each with its file, line and fix."
+      }
+    }
+  },
+  {
+    "name": "fix-failing-tests",
+    "description": "Run the tests, fix each failure on its own agent, then run them all again",
+    "concurrency": 4,
+    "tasks": {
+      "find": {
+        "title": "Run the tests",
+        "phase": "Explore",
+        "prompt": "Run this project's tests and list each failing test with its error. Don't fix anything yet.",
+        "output": { "type": "object", "required": ["failures"], "properties": { "failures": { "type": "array", "items": { "type": "string", "description": "the test's name, its file, and its error" } } } }
+      },
+      "fix": {
+        "title": "Fix a failing test",
+        "phase": "Fix",
+        "needs": ["find"],
+        "foreach": "${{ tasks.find.output.failures }}",
+        "retries": 1,
+        "prompt": "This test fails: ${{ item }}. Find the cause and fix the code (not the test, unless the test is wrong). Run that test to check it passes."
+      },
+      "verify": {
+        "title": "Run every test",
+        "phase": "Verify",
+        "needs": ["fix"],
+        "prompt": "Run all of this project's tests. Report what passes and what still fails, with the errors."
+      }
+    }
+  },
+  {
+    "name": "two-ways",
+    "description": "Try a change two ways side by side, each in its own worktree, then pick the better one",
+    "inputs": { "change": null },
+    "tasks": {
+      "try": {
+        "title": "Try it",
+        "phase": "Build",
+        "worktree": true,
+        "matrix": { "approach": ["the smallest change that works", "the cleanest change, even if bigger"] },
+        "prompt": "Make this change: ${{ inputs.change }}. Take ${{ matrix.approach }}. Run the tests that cover it. End by saying what you changed and how you checked it."
+      },
+      "pick": {
+        "title": "Pick the better one",
+        "phase": "Review",
+        "mode": "plan",
+        "needs": ["try"],
+        "prompt": "Two agents made this change: ${{ inputs.change }}. Here is what each did: ${{ tasks.try.output }}. Compare them on correctness, risk and size, and say which to keep and why."
+      }
+    }
+  },
+  {
+    "name": "explore-plan-build",
+    "description": "Explore, write a plan, build it, then review the result",
+    "inputs": { "goal": null },
+    "tasks": {
+      "explore": {
+        "title": "Explore",
+        "phase": "Explore",
+        "mode": "plan",
+        "prompt": "Explore this repository for this goal: ${{ inputs.goal }}. Find the code it touches, how it works now, and what could go wrong. Don't change anything."
+      },
+      "plan": {
+        "title": "Plan",
+        "phase": "Plan",
+        "mode": "plan",
+        "needs": ["explore"],
+        "prompt": "Goal: ${{ inputs.goal }}. What exploring found: ${{ tasks.explore.output.text }}. Write a step-by-step plan: the files to change, the tests to add, and the risks."
+      },
+      "build": {
+        "title": "Build",
+        "phase": "Build",
+        "needs": ["plan"],
+        "prompt": "Goal: ${{ inputs.goal }}. Follow this plan: ${{ tasks.plan.output.text }}. Write the code and its tests, and run them."
+      },
+      "review": {
+        "title": "Review",
+        "phase": "Review",
+        "mode": "plan",
+        "needs": ["build"],
+        "prompt": "Review the change just made for this goal: ${{ inputs.goal }}. What the builder said: ${{ tasks.build.output.text }}. Read the diff, look for bugs and missed cases, and list what to fix."
+      }
+    }
+  },
+  {
+    "name": "migrate",
+    "description": "Find every file a change touches, change each on its own agent, then check the build",
+    "inputs": { "change": null },
+    "concurrency": 6,
+    "tasks": {
+      "find": {
+        "title": "Find the files",
+        "phase": "Explore",
+        "mode": "plan",
+        "prompt": "List every file this change has to touch: ${{ inputs.change }}. Don't change anything.",
+        "output": { "type": "object", "required": ["files"], "properties": { "files": { "type": "array", "items": { "type": "string" } } } }
+      },
+      "change": {
+        "title": "Change a file",
+        "phase": "Change",
+        "needs": ["find"],
+        "foreach": "${{ tasks.find.output.files }}",
+        "prompt": "Make this change in ${{ item }} only: ${{ inputs.change }}. Keep the file's style."
+      },
+      "verify": {
+        "title": "Check the build",
+        "phase": "Verify",
+        "needs": ["change"],
+        "prompt": "The change \"${{ inputs.change }}\" was just made across many files. Build the project and run its tests; fix what the change broke, and report."
+      }
+    }
+  }
+]

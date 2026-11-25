@@ -742,7 +742,7 @@ pub struct UsageSummary {
     /// added 2026-11-12: tasks the turns belong to
     #[serde(default)]
     pub sessions: u32,
-    /// added 2026-11-25 (additive, ADR-0120): of `priced`, the turns whose cost is a list-price estimate of their tokens
+    /// added 2026-11-25 (additive, ADR-0123): of `priced`, the turns whose cost is a list-price estimate of their tokens
     /// (the harness reported none); `cost_estimated`: `spend` holds at least one, so it shows as `~$x.xx`
     #[serde(default)]
     pub estimated: u32,
@@ -796,7 +796,7 @@ pub struct UsageDay {
     #[serde(default)]
     #[ts(type = "number")]
     pub tokens: u64,
-    /// added 2026-11-25 (additive, ADR-0120): `cost` holds a list-price estimate
+    /// added 2026-11-25 (additive, ADR-0123): `cost` holds a list-price estimate
     #[serde(default)]
     pub cost_estimated: bool,
 }
@@ -815,7 +815,7 @@ pub struct UsageHarnessDay {
     #[ts(type = "number")]
     pub cache_read: u64,
     pub turns: u32,
-    /// `cost` holds a list-price estimate (ADR-0120)
+    /// `cost` holds a list-price estimate (ADR-0123)
     #[serde(default)]
     pub cost_estimated: bool,
 }
@@ -832,7 +832,7 @@ pub struct UsageWeek {
     pub turns: u32,
     #[ts(type = "number")]
     pub tokens: u64,
-    /// added 2026-11-25 (additive, ADR-0120): `cost` holds a list-price estimate (one of its days does)
+    /// added 2026-11-25 (additive, ADR-0123): `cost` holds a list-price estimate (one of its days does)
     #[serde(default)]
     pub cost_estimated: bool,
 }
@@ -855,7 +855,7 @@ pub struct UsageRow {
     /// added 2026-11-23 (TRY-32, additive): tasks the turns in this row belong to
     #[serde(default)]
     pub sessions: u32,
-    /// added 2026-11-25 (additive, ADR-0120): of `priced`, the turns whose cost is a list-price estimate of their tokens
+    /// added 2026-11-25 (additive, ADR-0123): of `priced`, the turns whose cost is a list-price estimate of their tokens
     /// (the harness reported none); `cost_estimated`: `cost` holds at least one, so it shows as `~$x.xx`
     #[serde(default)]
     pub estimated: u32,

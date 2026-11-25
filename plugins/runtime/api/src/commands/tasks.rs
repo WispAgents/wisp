@@ -341,14 +341,14 @@ pub struct FollowUpArgs {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub fresh: bool,
-    /// Continue on… (ADR-0121): with a switch to another harness, what goes ahead of the prompt: the latest turn only
+    /// Continue on… (ADR-0124): with a switch to another harness, what goes ahead of the prompt: the latest turn only
     /// (`summary`) or every turn it missed (`full`, as a switch without it does). Additive (2026-11-25).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub handoff: Option<HandoffContext>,
 }
 
-/// What a hand-off to another harness carries (ADR-0121).
+/// What a hand-off to another harness carries (ADR-0124).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export, export_to = "runtime/")]
@@ -369,7 +369,7 @@ impl HandoffContext {
     }
 }
 
-/// `runtime.handoffPreview`: what Continue on… would carry to `agent` (ADR-0121). Read-only.
+/// `runtime.handoffPreview`: what Continue on… would carry to `agent` (ADR-0124). Read-only.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]
 pub struct HandoffPreviewArgs {

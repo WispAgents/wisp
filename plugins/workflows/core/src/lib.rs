@@ -12,10 +12,16 @@
 /// The expressions live in the api crate (pure), so other plugins evaluate `if:` the same way (ADR-0043).
 pub use wisp_workflows_api::expr;
 
+/// Changing a run while it goes: skip, retry, add, change, limits (ADR-0121).
+mod edit;
+
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 use wisp_workflows_api::{StepSpec, StepState, WorkflowSpec};
+
+/// Why a step was skipped when one it needs failed (it carries down the chain; a retry opens it again).
+pub const NEEDS_FAILED: &str = "a task it needs failed";
 
 /// One task to run: a step, or one combination of its matrix.
 #[derive(Debug, Clone, PartialEq)]
@@ -247,6 +253,13 @@ impl Run {
         json!({ "tasks": tasks, "inputs": self.inputs, "matrix": node.matrix, "item": item, "index": index })
     }
 
+    /// Whether node `m` keeps the steps that need it from running: it failed (and has to succeed), or it was skipped
+    /// because one it needs failed (a failure carries down the chain; a step you skip doesn't).
+    fn blocks(&self, m: &Node) -> bool {
+        let r = &self.runs[&m.id];
+        (r.state == StepState::Failed && !m.spec.optional) || (r.state == StepState::Skipped && r.why == NEEDS_FAILED)
+    }
+
     fn ended(s: StepState) -> bool {
         matches!(s, StepState::Done | StepState::Failed | StepState::Skipped)
     }
@@ -299,13 +312,10 @@ impl Run {
                 if !needs.iter().all(|r| Self::ended(r.state)) {
                     continue;
                 }
-                let failed = self
-                    .nodes
-                    .iter()
-                    .any(|m| n.spec.needs.contains(&m.step) && self.runs[&m.id].state == StepState::Failed && !m.spec.optional);
+                let failed = self.nodes.iter().any(|m| n.spec.needs.contains(&m.step) && self.blocks(m));
                 let scope = self.scope(&n);
                 let skip = if failed {
-                    Some("a task it needs failed".to_owned())
+                    Some(NEEDS_FAILED.to_owned())
                 } else if !n.spec.when.trim().is_empty() && !expr::eval(&n.spec.when, &scope).is_ok_and(|v| expr::truthy(&v)) {
                     Some(format!("if: {} was false", n.spec.when.trim()))
                 } else if self.budget().is_some_and(|b| self.cost() >= b) {
@@ -361,10 +371,7 @@ impl Run {
             n.fanout
                 && self.runs[&n.id].state == StepState::Waiting
                 && self.nodes.iter().filter(|m| n.spec.needs.contains(&m.step)).all(|m| Self::ended(self.runs[&m.id].state))
-                && !self
-                    .nodes
-                    .iter()
-                    .any(|m| n.spec.needs.contains(&m.step) && self.runs[&m.id].state == StepState::Failed && !m.spec.optional)
+                && !self.nodes.iter().any(|m| n.spec.needs.contains(&m.step) && self.blocks(m))
                 && (n.spec.when.trim().is_empty() || expr::eval(&n.spec.when, &self.scope(n)).is_ok_and(|v| expr::truthy(&v)))
         }) else {
             return false;

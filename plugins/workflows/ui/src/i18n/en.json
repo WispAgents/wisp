@@ -1,4 +1,6 @@
 {
   "wisp.workflows.slash.hint": "Many agents on one job, planned and watched live",
-  "wisp.workflows.slash.saved": "A saved workflow"
+  "wisp.workflows.slash.saved": "A saved workflow",
+  "wisp.workflows.boardTitle": "Workflow",
+  "wisp.workflows.slash.prebuilt": "Prebuilt"
 }

@@ -346,6 +346,12 @@ export function createAccounts({ db, cfg, secrets, onAudit = () => {} }) {
     return { user: u, device: d };
   }
 
+  // Whether a device is still allowed (a signed media URL it asked for dies with it).
+  function liveDevice(userId, id) {
+    const d = db.get('SELECT revoked_at FROM devices WHERE id = ? AND user_id = ?', String(id), userId);
+    return !!d && !d.revoked_at;
+  }
+
   // A revoked device's computer goes with it: it can't hold its tunnel any more.
   function revokeDevice(userId, id) {
     const r = db.run('UPDATE devices SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL', now(), id, userId);
@@ -448,5 +454,5 @@ export function createAccounts({ db, cfg, secrets, onAudit = () => {} }) {
     invite(); // their seat goes to whoever waited longest
   }
 
-  return { allowed, seats, sample, waitFor, waitlist, invite, wishMachines, machineWish, machineWishes, isAdmin, signIn, unlink, createSession, session, endSession, endAll, ticket, useTicket, deviceCode, pendingCode, answerCode, pollCode, device, revokeDevice, devices, createApiKey, apiKey, apiKeys, revokeApiKey, addComputer, computers, computer, computerByLabel, seenComputer, removeComputer, identities, byHandle, userById, instance, setDisabled, remove, audit, normalCode };
+  return { allowed, seats, sample, waitFor, waitlist, invite, wishMachines, machineWish, machineWishes, isAdmin, signIn, unlink, createSession, session, endSession, endAll, ticket, useTicket, deviceCode, pendingCode, answerCode, pollCode, device, liveDevice, revokeDevice, devices, createApiKey, apiKey, apiKeys, revokeApiKey, addComputer, computers, computer, computerByLabel, seenComputer, removeComputer, identities, byHandle, userById, instance, setDisabled, remove, audit, normalCode };
 }

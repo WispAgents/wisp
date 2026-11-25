@@ -13,6 +13,6 @@ week: string,
  */
 start: string, cost: number, turns: number, tokens: number, 
 /**
- * added 2026-11-25 (additive, ADR-0120): `cost` holds a list-price estimate (one of its days does)
+ * added 2026-11-25 (additive, ADR-0123): `cost` holds a list-price estimate (one of its days does)
  */
 cost_estimated: boolean, };

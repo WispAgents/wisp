@@ -51,6 +51,7 @@ fn g6_every_recorded_codex_run_parses_as_v1_did() {
             resume_id: o["resumeId"].as_str().map(str::to_owned),
             fork: o["fork"].as_bool().unwrap_or(false),
             prior: o.get("prior").cloned(),
+            unknown_prior: o["unknownPrior"].as_bool().unwrap_or(false),
         });
         if let Err(e) = golden::check(&mut p, CWD, &m, &read(name, "jsonl"), &read(name, "v1.json"), &mut NoDisk) {
             failed.push(format!("{name}: {e}"));

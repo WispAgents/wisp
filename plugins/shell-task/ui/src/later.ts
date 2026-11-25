@@ -23,7 +23,7 @@ const stopRun = defineCommand<{ key: string; id: string }, { ok: boolean }>({
 
 const later: PluginUiLater = {
   extensions: [
-    // Continue on… in a task's menu (its More and the row's right-click, ADR-0121): the runner picker, then what
+    // Continue on… in a task's menu (its More and the row's right-click, ADR-0124): the runner picker, then what
     // carries over, then one follow-up on that harness
     defineExtension({
       id: 'shell-task.rowContinue',
@@ -98,7 +98,7 @@ const later: PluginUiLater = {
   // a terminal task's CLI beside it (`shell-task.term`, the Terminal tab)
   // the comments go at the top of the next follow-up (v1 comment-text.js withComments)
   prompt: [
-    // `/continue` in the reply box (ADR-0121): Continue on…, with what's typed after it as the follow-up's words
+    // `/continue` in the reply box (ADR-0124): Continue on…, with what's typed after it as the follow-up's words
     {
       id: 'shell-task.continue',
       trigger: '/',
@@ -149,7 +149,7 @@ const later: PluginUiLater = {
   // Changes' Open file…: the palette on the task's files alone, then the words inside them (v1 openFileFinder)
   palette: [
     filesSource,
-    // ⌘K → This task: Continue on… (ADR-0121)
+    // ⌘K → This task: Continue on… (ADR-0124)
     {
       id: 'shell-task.continue',
       order: 20,
@@ -160,7 +160,7 @@ const later: PluginUiLater = {
       },
     },
   ],
-  // ⇧C on a task: Continue on… (ADR-0121)
+  // ⇧C on a task: Continue on… (ADR-0124)
   shortcuts: [
     {
       id: 'shell-task.continue',

@@ -16,6 +16,7 @@ use wisp_harness_kit::{
 
 static REFUSED: Re = Re::new(r"permission required: (\S+) ?(.*?) was not run\b");
 static WORKFLOW: Re = Re::new(r" \(workflow .*\)$");
+static ANSI: Re = Re::new(r"\x1b\[[0-9;]*m");
 static MODEL_LINE: Re = Re::new(r"(?m)^\s+[*-]\s+([\w.\-/:]+)");
 static DEFAULT_LINE: Re = Re::new(r"(?m)^\s+\*\s+([\w.\-/:]+)");
 const EFFORT_ORDER: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -190,7 +191,6 @@ pub struct GrokParser {
     session: Option<String>,
     saw_result: bool,
     error: Option<String>,
-    carry: String,
 }
 
 impl GrokParser {
@@ -345,10 +345,9 @@ impl LineParser for GrokParser {
     }
 
     fn stderr(&mut self, text: &str, _now_ms: i64, out: &mut Vec<Out>) {
-        let all = format!("{}{text}", self.carry);
-        let mut lines: Vec<&str> = all.split('\n').collect();
-        lines.pop().unwrap_or("").clone_into(&mut self.carry);
-        let joined = lines.join("\n");
+        // the drive hands whole lines, newline off (`take_lines`), and a refusal is one line: matched on what came, as
+        // it came (holding back the last part for its newline held back every line, and no refusal ever matched)
+        let joined = ANSI.replace_all(text, "").into_owned();
         if let Some(re) = REFUSED.get() {
             for c in re.captures_iter(&joined) {
                 let detail = c.get(2).map_or("", |m| m.as_str());
@@ -383,7 +382,7 @@ mod tests {
 
     #[test]
     fn patterns_compile_and_models_list() {
-        for p in [&REFUSED, &WORKFLOW, &MODEL_LINE, &DEFAULT_LINE] {
+        for p in [&REFUSED, &WORKFLOW, &ANSI, &MODEL_LINE, &DEFAULT_LINE] {
             assert!(p.compiles(), "{}", p.pattern());
         }
         let (ids, def) = model_ids("Models:\n  * grok-4.7 (default)\n  - grok-4.6\n");
@@ -396,13 +395,20 @@ mod tests {
     }
 
     #[test]
-    fn a_refusal_split_over_two_writes_is_one_card() {
+    fn a_refusal_line_as_the_drive_hands_it_is_a_card() {
         let mut p = GrokParser::new(RunPaths::same("/w"));
         let mut out = Vec::new();
-        p.stderr("permission required: Edit calc.py was not ", 0, &mut out);
-        assert_eq!(out, Vec::<Out>::new());
-        p.stderr("run, as a headless run cannot ask for approval (workflow x)\n", 1, &mut out);
-        let Some(Out::Event(HarnessEvent::Blocked { tool, detail, .. })) = out.first() else { panic!("{out:?}") };
+        // the drive's `take_lines`: one line per call, its newline off
+        for i in 0..1000 {
+            p.stderr(&format!("\x1b[2mdebug line {i}\x1b[0m"), i, &mut out);
+        }
+        assert_eq!(out, Vec::<Out>::new(), "nothing from lines that refuse nothing, and nothing held from them");
+        p.stderr(
+            "\x1b[33mpermission required: Edit calc.py was not run, as a headless run cannot ask for approval (workflow x)\x1b[0m",
+            1000,
+            &mut out,
+        );
+        let [Out::Event(HarnessEvent::Blocked { tool, detail, .. })] = out.as_slice() else { panic!("{out:?}") };
         assert_eq!((tool.as_str(), detail.as_str()), ("Edit", "calc.py"));
     }
 

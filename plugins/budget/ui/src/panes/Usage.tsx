@@ -152,7 +152,7 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
         compact
         part="budget.usage.stats"
         items={[
-          // `~` an estimate, `+` some turns unpriced, Tokens when nothing is priced (usage-model.ts spendTile, ADR-0120)
+          // `~` an estimate, `+` some turns unpriced, Tokens when nothing is priced (usage-model.ts spendTile, ADR-0123)
           spendTile(line()),
           { label: t('budget.usage.turns'), value: line()?.turns ?? '—' },
           { label: t('budget.usage.worked'), value: worked() },

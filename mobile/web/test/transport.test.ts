@@ -150,3 +150,31 @@ test('a route call (an attached file’s POST /uploads) goes to the computer wit
   assert.equal(up?.headers['content-type'], 'application/octet-stream');
   assert.deepEqual(bridge.connects, ['studio']);
 });
+
+test('mediaUrl: a tunnel gives its local address; the grid signs every path asked in one tick, in one POST', async () => {
+  const tunnel = fakeBridge();
+  tunnel.answers = [{ kind: 'ssh', port: 5003, token: '', name: 'Studio' }];
+  const st = bridgeTransport(tunnel, { id: 'studio', kind: 'ssh' }, { fetch: fakeServer().fetch });
+  const signal = new AbortController().signal;
+  assert.equal(await st.mediaUrl?.('/api/sessions/s1/file?path=a.png', signal), 'http://127.0.0.1:5003/api/sessions/s1/file?path=a.png');
+
+  const bridge = fakeBridge();
+  bridge.answers = [{ kind: 'grid', base: 'https://mo.grid.test', token: 'wgd_dev', name: 'wisp Cloud' }];
+  const srv = fakeServer();
+  srv.reply = (r) => {
+    if (!r.url.endsWith('/_grid/media')) return undefined;
+    const { paths } = JSON.parse(r.body ?? '{}') as { paths: string[] };
+    return { status: 200, body: JSON.stringify({ exp: 1, urls: paths.map((p) => `${p}&_gs=sig`) }) };
+  };
+  const gt = bridgeTransport(bridge, { id: 'cloud', kind: 'grid' }, { fetch: srv.fetch });
+  const [a, b] = await Promise.all([gt.mediaUrl?.('/api/sessions/s1/file?path=a.png', signal), gt.mediaUrl?.('/api/sessions/s1/file?path=b.png', signal)]);
+  assert.equal(a, 'https://mo.grid.test/api/sessions/s1/file?path=a.png&_gs=sig');
+  assert.equal(b, 'https://mo.grid.test/api/sessions/s1/file?path=b.png&_gs=sig');
+  const posts = srv.requests.filter((r) => r.url.endsWith('/_grid/media'));
+  assert.equal(posts.length, 1, 'one POST for the pictures of one answer');
+  assert.equal(posts[0]?.method, 'POST');
+  assert.equal(posts[0]?.headers['authorization'], 'Bearer wgd_dev');
+
+  srv.reply = (r) => (r.url.endsWith('/_grid/media') ? { status: 401, body: '{}' } : undefined);
+  await assert.rejects(gt.mediaUrl?.('/api/uploads/u1', signal) ?? Promise.resolve(), /HTTP 401/);
+});

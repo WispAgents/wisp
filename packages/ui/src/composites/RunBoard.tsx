@@ -7,6 +7,9 @@ import { For, Match, Show, Switch, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import { Tooltip } from '../controls/Tooltip.tsx';
+import { Menu } from '../controls/Menu.tsx';
+import { ForKeyed } from '../core/keyed.tsx';
+import type { IconName } from '../content/icons.ts';
 import '../css/run-board.css';
 
 export type RunStepState = 'waiting' | 'running' | 'done' | 'failed' | 'skipped';
@@ -24,6 +27,16 @@ export interface RunStep {
   /** the accessible name of its open action and its tooltip (`Open fix · a.rs`) */
   readonly openLabel?: string;
   readonly onOpen?: () => void;
+  /** what you can do to it (Skip, Retry), in a ⋯ on the card */
+  readonly actions?: readonly RunAction[];
+  readonly onAction?: (value: string) => void;
+}
+
+/** One thing to do to a step: its menu entry. */
+export interface RunAction {
+  readonly value: string;
+  readonly label: string;
+  readonly icon?: IconName;
 }
 
 /** A step that fans out over a list: one card, a dot per item. */
@@ -36,6 +49,9 @@ export interface RunFan {
   readonly count: string;
   readonly detail?: string;
   readonly items: readonly RunStep[];
+  /** what you can do to its runs (Retry the failed ones, Skip the rest) */
+  readonly actions?: readonly RunAction[];
+  readonly onAction?: (value: string) => void;
 }
 
 export type RunEntry = { readonly step: RunStep } | { readonly fan: RunFan };
@@ -54,6 +70,25 @@ export interface RunBoardProps extends KitProps {
   readonly lanes: readonly RunLane[];
   /** the board's accessible name */
   readonly label: string;
+  /** the accessible name of a card's ⋯ */
+  readonly actionsLabel?: string;
+}
+
+/** A card's ⋯: its actions, over the card's own open (never inside a button). */
+function Actions(props: { readonly actions?: readonly RunAction[] | undefined; readonly onAction?: ((v: string) => void) | undefined; readonly label: string; readonly part: PartName }): JSX.Element {
+  return (
+    <Show when={(props.actions?.length ?? 0) > 0 && props.onAction}>
+      <span data-kit="run-card-menu">
+        <Menu
+          part={props.part}
+          trigger={{ icon: 'dots', 'aria-label': props.label, variant: 'ghost', size: 'xs' }}
+          items={(props.actions ?? []).map((a) => ({ value: a.value, label: a.label, ...(a.icon ? { icon: a.icon } : {}) }))}
+          onSelect={(v) => props.onAction?.(v)}
+          placement="bottom-end"
+        />
+      </span>
+    </Show>
+  );
 }
 
 function Mark(props: { readonly state: RunStepState }): JSX.Element {
@@ -77,12 +112,16 @@ function Mark(props: { readonly state: RunStepState }): JSX.Element {
   );
 }
 
-function Card(props: { readonly step: RunStep; readonly part: PartName }): JSX.Element {
-  const body = (): JSX.Element => (
-    <>
+function Card(props: { readonly step: RunStep; readonly part: PartName; readonly actionsLabel: string }): JSX.Element {
+  return (
+    <div data-kit="run-card" data-part={props.part} data-state={props.step.state} data-open={props.step.onOpen ? '' : undefined}>
+      <Show when={props.step.onOpen}>
+        {(open) => <button type="button" data-kit="run-card-open" aria-label={props.step.openLabel ?? props.step.title} onClick={() => open()()} />}
+      </Show>
       <span data-kit="run-card-head">
         <Mark state={props.step.state} />
         <span data-kit="run-card-title">{props.step.title}</span>
+        <Actions actions={props.step.actions} onAction={props.step.onAction} label={props.actionsLabel} part={sub(props.part, 'more')} />
       </span>
       <Show when={props.step.detail}>{(d) => <span data-kit="run-card-detail">{d()}</span>}</Show>
       <Show when={props.step.agent || props.step.meta}>
@@ -91,46 +130,31 @@ function Card(props: { readonly step: RunStep; readonly part: PartName }): JSX.E
           <Show when={props.step.meta}>{(m) => <span data-kit="run-card-meta">{m()}</span>}</Show>
         </span>
       </Show>
-    </>
-  );
-  return (
-    <Show
-      when={props.step.onOpen}
-      fallback={
-        <div data-kit="run-card" data-part={props.part} data-state={props.step.state}>
-          {body()}
-        </div>
-      }
-    >
-      {(open) => (
-        <button type="button" data-kit="run-card" data-part={props.part} data-state={props.step.state} aria-label={props.step.openLabel} onClick={() => open()()}>
-          {body()}
-        </button>
-      )}
-    </Show>
+    </div>
   );
 }
 
-function Fan(props: { readonly fan: RunFan; readonly part: PartName }): JSX.Element {
+function Fan(props: { readonly fan: RunFan; readonly part: PartName; readonly actionsLabel: string }): JSX.Element {
   return (
     <div data-kit="run-card" data-fan="" data-part={props.part} data-state={props.fan.state}>
       <span data-kit="run-card-head">
         <Mark state={props.fan.state} />
         <span data-kit="run-card-title">{props.fan.title}</span>
         <span data-kit="run-card-meta">{props.fan.count}</span>
+        <Actions actions={props.fan.actions} onAction={props.fan.onAction} label={props.actionsLabel} part={sub(props.part, 'more')} />
       </span>
       <span data-kit="run-dots" role="list">
-        <For each={props.fan.items}>
+        <ForKeyed each={props.fan.items}>
           {(item) => (
             <span role="listitem" data-kit="run-dot-cell">
-              <Tooltip content={item.title} {...(item.detail ? { hint: item.detail } : {})}>
-                <Show when={item.onOpen} fallback={<span data-kit="run-dot" data-state={item.state} aria-label={item.title} />}>
-                  {(open) => <button type="button" data-kit="run-dot" data-state={item.state} aria-label={item.openLabel ?? item.title} onClick={() => open()()} />}
+              <Tooltip content={item().title} {...(item().detail ? { hint: item().detail as string } : {})}>
+                <Show when={item().onOpen} fallback={<span data-kit="run-dot" data-state={item().state} aria-label={item().title} />}>
+                  {(open) => <button type="button" data-kit="run-dot" data-state={item().state} aria-label={item().openLabel ?? item().title} onClick={() => open()()} />}
                 </Show>
               </Tooltip>
             </span>
           )}
-        </For>
+        </ForKeyed>
       </span>
       <Show when={props.fan.detail}>{(d) => <span data-kit="run-card-detail">{d()}</span>}</Show>
       <Show when={props.fan.agent}>
@@ -142,27 +166,89 @@ function Fan(props: { readonly fan: RunFan; readonly part: PartName }): JSX.Elem
   );
 }
 
+export interface RunDotsProps extends KitProps {
+  /** one per step run, in order; a title each for its tooltip */
+  readonly items: readonly Pick<RunStep, 'id' | 'title' | 'state' | 'detail'>[];
+  /** the strip's accessible name (`7 of 19 steps done`) */
+  readonly label: string;
+}
+
+/** A run in one strip of dots, one per step run in order (a card beside the task, where a board doesn't fit). */
+export function RunDots(props: RunDotsProps): JSX.Element {
+  return (
+    <span data-kit="run-dots" data-strip="" data-part={props.part ?? 'ui.runDots'} role="img" aria-label={props.label}>
+      <For each={props.items}>{(item) => <span data-kit="run-dot" data-state={item.state} title={item.detail ? `${item.title}: ${item.detail}` : item.title} />}</For>
+    </span>
+  );
+}
+
+export interface RunChipProps extends KitProps {
+  /** the run's name */
+  readonly name: string;
+  /** where it stands: running pulses its mark */
+  readonly state: 'running' | 'done' | 'failed' | 'stopped';
+  /** `4/9`, at the row's end */
+  readonly progress: string;
+  /** a segment per step run, in order: the bar under the row */
+  readonly segments: readonly Pick<RunStep, 'id' | 'state'>[];
+  /** its tooltip: the phase, how long, the cost */
+  readonly title?: string;
+  /** the accessible name of its open action */
+  readonly label: string;
+  readonly onOpen: () => void;
+}
+
+/** A run as a row of a task's details (its name and progress, a bar of a segment per step under it): a click opens its
+ *  board. As compact as the details' other rows (the harness, the machine). */
+export function RunChip(props: RunChipProps): JSX.Element {
+  return (
+    <button type="button" data-kit="run-chip" data-part={props.part ?? 'ui.runChip'} data-state={props.state} aria-label={props.label} title={props.title} onClick={() => props.onOpen()}>
+      <span data-kit="run-chip-row">
+        <span data-kit="run-chip-mark" aria-hidden="true">
+          <Icon name="org" size="sm" />
+        </span>
+        <span data-kit="run-chip-name">{props.name}</span>
+        <span data-kit="run-chip-progress">{props.progress}</span>
+        <span data-kit="run-chip-go" aria-hidden="true">
+          <Icon name="chevron" size="sm" />
+        </span>
+      </span>
+      <span data-kit="run-chip-bar" aria-hidden="true">
+        <For each={props.segments}>{(s) => <span data-kit="run-chip-seg" data-state={s.state} />}</For>
+      </span>
+    </button>
+  );
+}
+
 export function RunBoard(props: RunBoardProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.runBoard';
   return (
     <div id={props.id} data-kit="run-board" data-part={part()} role="group" aria-label={props.label} data-lanes={props.lanes.length}>
-      <For each={props.lanes}>
+      <ForKeyed each={props.lanes}>
         {(lane) => (
-          <section data-kit="run-lane" data-part={sub(part(), 'lane')} data-state={lane.state} aria-label={lane.title || undefined}>
-            <Show when={lane.title}>
+          <section data-kit="run-lane" data-part={sub(part(), 'lane')} data-state={lane().state} aria-label={lane().title || undefined}>
+            <Show when={lane().title}>
               <header data-kit="run-lane-head">
-                <span data-kit="run-lane-title">{lane.title}</span>
-                <span data-kit="run-lane-count">{lane.count}</span>
+                <span data-kit="run-lane-title">{lane().title}</span>
+                <span data-kit="run-lane-count">{lane().count}</span>
               </header>
             </Show>
             <div data-kit="run-lane-cards">
-              <For each={lane.entries}>
-                {(e) => ('fan' in e ? <Fan fan={e.fan} part={sub(part(), 'fan')} /> : <Card step={e.step} part={sub(part(), 'step')} />)}
-              </For>
+              {/* by the step's id: the clock that moves each card's time never makes a card again (its entry, hover, menu) */}
+              <ForKeyed each={lane().entries} by={(e) => ('fan' in e ? `fan:${e.fan.id}` : e.step.id)}>
+                {(e) => {
+                  const x = e();
+                  return 'fan' in x ? (
+                    <Fan fan={(e() as { fan: RunFan }).fan} part={sub(part(), 'fan')} actionsLabel={props.actionsLabel ?? 'Actions'} />
+                  ) : (
+                    <Card step={(e() as { step: RunStep }).step} part={sub(part(), 'step')} actionsLabel={props.actionsLabel ?? 'Actions'} />
+                  );
+                }}
+              </ForKeyed>
             </div>
           </section>
         )}
-      </For>
+      </ForKeyed>
     </div>
   );
 }

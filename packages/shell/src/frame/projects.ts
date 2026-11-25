@@ -3,6 +3,7 @@
 // kind on `config`; the order is saved at once (optimistic) and rolls back with a toast if refused.
 
 import { createMemo, type Accessor } from 'solid-js';
+import { entityKey, type PeerId } from '@wisp/client';
 import { reordered, useSignal } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { setSetting } from './commands.ts';
@@ -18,8 +19,9 @@ export function useProjects(shell: ShellContext, home: string): Projects {
   const rows = useSignal(shell.client.entities.list<unknown>('project'));
   // the rows' keys, index for index (the store builds the list from them): which computer each project is on
   const keys = useSignal(shell.client.entities.keys('project'));
-  const settings = useSignal(shell.client.entities.list<{ key: string; value: unknown }>('setting'));
-  const order = (): unknown => settings().find((s) => s.key === PROJECT_ORDER)?.value;
+  // this computer's order only: on the phone every computer's `setting` rows share one store
+  const kept = useSignal(shell.client.entities.row<{ value?: unknown }>('setting', entityKey(home as PeerId, PROJECT_ORDER)));
+  const order = (): unknown => kept()?.value;
   const list = createMemo(() => projectList(rows(), order(), keys()));
   const reorder = (id: string, before: string | undefined): void => {
     const value = reordered(

@@ -73,9 +73,66 @@ export function bridgeTransport(bridge: NativeBridge, computer: Pick<Computer, '
       const http = open ?? httpFor(await reach(), o.fetch);
       if (http.events) yield* http.events(path, signal);
     },
+    // an answer's picture or video for a plain <img>/<video>, which sends no Bearer header and isn't on this page's
+    // origin (https://localhost): through a tunnel, its local address (wisp trusts loopback); through the grid, a URL
+    // the grid signed for this device (POST /_grid/media, an hour)
+    async mediaUrl(path, signal) {
+      const r = await reach();
+      if (r.kind === 'ssh') return `http://127.0.0.1:${r.port}${path}`;
+      return sign(r, path, signal);
+    },
   };
+  const sign = gridSigner(o.fetch);
   if (computer.kind !== 'grid') return transport;
   return { ...transport, wake: (signal) => wakeGrid(reach, o.fetch, signal) };
+}
+
+const SIGN_MAX = 100; // the grid's own limit per POST /_grid/media
+
+/**
+ * Asks the grid to sign paths, the ones asked for in the same tick in one POST (an answer's pictures all render
+ * together). Resolves each with its absolute URL; a refusal rejects them all.
+ */
+export function gridSigner(fetchFn: FetchLike | undefined): (r: Extract<Reached, { kind: 'grid' }>, path: string, signal: AbortSignal) => Promise<string> {
+  const f: FetchLike = fetchFn ?? ((url, init) => globalThis.fetch(url, init));
+  interface Ask {
+    readonly path: string;
+    readonly ok: (url: string) => void;
+    readonly fail: (err: unknown) => void;
+  }
+  let queue: { r: Extract<Reached, { kind: 'grid' }>; asks: Ask[] } | undefined;
+  const flush = async (r: Extract<Reached, { kind: 'grid' }>, asks: readonly Ask[]): Promise<void> => {
+    for (let i = 0; i < asks.length; i += SIGN_MAX) {
+      const part = asks.slice(i, i + SIGN_MAX);
+      try {
+        const res = await f(`${r.base}/_grid/media`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json', ...auth(r.token) },
+          body: JSON.stringify({ paths: part.map((a) => a.path) }),
+          signal: new AbortController().signal, // shared by every ask in it: one leaving doesn't cancel the rest
+        });
+        if (res.status >= 400) throw new Error(`${r.name}: HTTP ${res.status}`);
+        const urls = (JSON.parse(await res.text()) as { urls?: unknown }).urls;
+        if (!Array.isArray(urls) || urls.length !== part.length) throw new Error(`${r.name}: no signed links`);
+        part.forEach((a, n) => a.ok(`${r.base}${String(urls[n])}`));
+      } catch (err) {
+        for (const a of part) a.fail(err);
+      }
+    }
+  };
+  return (r, path, signal) =>
+    new Promise<string>((ok, fail) => {
+      if (signal.aborted) return fail(new Error('aborted'));
+      if (!queue || queue.r.base !== r.base) {
+        const q = { r, asks: [] as Ask[] };
+        queue = q;
+        queueMicrotask(() => {
+          if (queue === q) queue = undefined;
+          void flush(q.r, q.asks);
+        });
+      }
+      queue.asks.push({ path, ok, fail });
+    });
 }
 
 /**

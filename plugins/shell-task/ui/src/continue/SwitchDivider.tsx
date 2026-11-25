@@ -1,4 +1,4 @@
-// Over a turn that switched the task to another harness (`shell.turn:head`, ADR-0121): one divider in the Timeline,
+// Over a turn that switched the task to another harness (`shell.turn:head`, ADR-0124): one divider in the Timeline,
 // "Switched from Claude Code (Opus) to Codex (GPT-5) · context: summary", from the turn's switch mark.
 import { Show, type JSX } from 'solid-js';
 import type { ExtensionProps } from '@wisp/shell/contract';

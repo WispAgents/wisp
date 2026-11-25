@@ -159,6 +159,9 @@ fn stats(v: Option<&Value>) -> Option<TurnStats> {
         subagents: crate::land::subagents_of(o.get("subagents"), o.contains_key("totals")),
         compactions: None,
         premium_requests: None,
+        cache_read_tokens: num("cacheReadTokens"),
+        cache_write_tokens: num("cacheWriteTokens"),
+        totals: o.get("totals").filter(|t| t.is_object()).cloned(),
     })
 }
 

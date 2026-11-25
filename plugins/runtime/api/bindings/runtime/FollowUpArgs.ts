@@ -34,7 +34,7 @@ team?: unknown,
  */
 fresh?: boolean, 
 /**
- * Continue on… (ADR-0121): with a switch to another harness, what goes ahead of the prompt: the latest turn only
+ * Continue on… (ADR-0124): with a switch to another harness, what goes ahead of the prompt: the latest turn only
  * (`summary`) or every turn it missed (`full`, as a switch without it does). Additive (2026-11-25).
  */
 handoff?: HandoffContext, };
