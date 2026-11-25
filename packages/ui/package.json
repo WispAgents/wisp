@@ -27,7 +27,8 @@
     "@zag-js/splitter": "^1.47.0",
     "@zag-js/switch": "^1.47.0",
     "@zag-js/checkbox": "^1.47.0",
-    "alien-signals": "^3.2.1"
+    "alien-signals": "^3.2.1",
+    "mermaid": "12.3.0"
   },
   "devDependencies": {
     "vite": "^7.0.2",

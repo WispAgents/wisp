@@ -1,6 +1,10 @@
 // Copy of the rich and interactive blocks (flow … app). Keys `block.<type>.*`.
 export const RICH_STRINGS = {
   'block.flow.label': 'Diagram',
+  'block.mermaid.viewCode': 'View code',
+  'block.mermaid.viewDiagram': 'View diagram',
+  'block.mermaid.full': 'Open full size',
+  'block.mermaid.failed': 'Diagram couldn’t render: {why}',
   'block.chart.label': 'Label',
   'block.chart.value': 'Value',
   'block.image.missing': 'This picture can’t be shown here.',

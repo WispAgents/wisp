@@ -4,6 +4,12 @@ export const FENCE = /^( {0,3})(`{3,}|~{3,})[ \t]*([^\s`]*)[^`]*$/;
 export const HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
 export const HR = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 export const QUOTE = /^ {0,3}> ?/;
+/** A setext underline: the paragraph above it is a heading, `=` level 1 and `-` level 2. */
+export const SETEXT = /^ {0,3}(=+|-+)[ \t]*$/;
+/** `<details>` on its own line (the only HTML block that renders), its one-line summary, and its closer. */
+export const DETAILS = /^ {0,3}<details( open)?>\s*$/;
+export const SUMMARY = /^ {0,3}<summary>(.*)<\/summary>\s*$/;
+export const DETAILS_END = /^ {0,3}<\/details>\s*$/;
 /** A list item: indent, marker (bullet, or number and delimiter), the spaces after it, content. */
 export const ITEM = /^( {0,3})([-*+]|(\d{1,9})([.)]))( +|$)(.*)$/;
 /** List markers that may cut a paragraph short: bullets, and an ordered list only if it starts at 1. */
@@ -13,5 +19,5 @@ export const blank = (line: string | undefined): boolean => line === undefined |
 
 /** Whether `line` opens a block other than a paragraph (so a paragraph ends before it). */
 export function startsBlock(line: string): boolean {
-  return FENCE.test(line) || HEADING.test(line) || HR.test(line) || QUOTE.test(line) || INTERRUPTING_ITEM.test(line);
+  return FENCE.test(line) || HEADING.test(line) || HR.test(line) || QUOTE.test(line) || DETAILS.test(line) || INTERRUPTING_ITEM.test(line);
 }

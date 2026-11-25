@@ -1,11 +1,12 @@
-// Block Markdown: headings, fences, indented code, rules, quotes, lists, tables, paragraphs.
+// Block Markdown: headings (ATX and setext), fences, indented code, rules, quotes, lists, tables,
+// `<details>`, paragraphs.
 // Line based and forgiving: an unclosed fence runs to the end, so a streaming answer renders
 // while it's still arriving.
 import type { Block, CellAlign, Inline } from './ast.ts';
 import { parseInline } from './inline.ts';
 import { list } from './list.ts';
 import { splitRow, DELIM } from './table.ts';
-import { blank, FENCE, HEADING, HR, QUOTE, startsBlock } from './patterns.ts';
+import { blank, DETAILS, DETAILS_END, FENCE, HEADING, HR, QUOTE, SETEXT, startsBlock, SUMMARY } from './patterns.ts';
 
 export interface Parsed {
   readonly block: Block;
@@ -22,11 +23,33 @@ function fence(lines: readonly string[], i: number): Parsed | undefined {
   let j = i + 1;
   for (; j < lines.length; j++) {
     const line = lines[j] ?? '';
-    if (closer.test(line)) return { block: { t: 'code', lang: m[3] ?? '', v: body.join('\n') }, end: j + 1 };
+    if (closer.test(line)) return { block: { t: 'code', lang: m[3] ?? '', v: body.join('\n'), open: false }, end: j + 1 };
     // Content keeps its own indentation, less the fence's.
     body.push(line.replace(new RegExp(`^ {0,${indent}}`), ''));
   }
-  return { block: { t: 'code', lang: m[3] ?? '', v: body.join('\n') }, end: j };
+  // No closer yet: the answer is still arriving, so a renderer that needs the whole body (a diagram) waits.
+  return { block: { t: 'code', lang: m[3] ?? '', v: body.join('\n'), open: true }, end: j };
+}
+
+function details(lines: readonly string[], i: number): Parsed | undefined {
+  const m = DETAILS.exec(lines[i] ?? '');
+  if (!m) return undefined;
+  let j = i + 1;
+  const s = SUMMARY.exec(lines[j] ?? '');
+  const summary = s ? parseInline((s[1] ?? '').trim()) : null;
+  if (s) j++;
+  const body: string[] = [];
+  // Nested `<details>` close their own `</details>`, so only the matching one ends this block.
+  let depth = 0;
+  for (; j < lines.length; j++) {
+    const line = lines[j] ?? '';
+    if (DETAILS_END.test(line)) {
+      if (depth === 0) return { block: { t: 'details', open: m[1] !== undefined, summary, c: parseBlocks(body), closed: true }, end: j + 1 };
+      depth--;
+    } else if (DETAILS.test(line)) depth++;
+    body.push(line);
+  }
+  return { block: { t: 'details', open: m[1] !== undefined, summary, c: parseBlocks(body), closed: false }, end: j };
 }
 
 function heading(lines: readonly string[], i: number): Parsed | undefined {
@@ -81,7 +104,7 @@ function indented(lines: readonly string[], i: number): Parsed | undefined {
   while (body.length > 0 && blank(body[body.length - 1])) body.pop();
   // Trailing blank lines belong to the gap after the block, not to the code.
   while (j > i && blank(lines[j - 1])) j--;
-  return { block: { t: 'code', lang: '', v: body.join('\n') }, end: j };
+  return { block: { t: 'code', lang: '', v: body.join('\n'), open: false }, end: j };
 }
 
 function paragraph(lines: readonly string[], i: number): Parsed {
@@ -89,6 +112,13 @@ function paragraph(lines: readonly string[], i: number): Parsed {
   let j = i;
   for (; j < lines.length; j++) {
     const line = lines[j] ?? '';
+    // A setext underline turns the lines above it into a heading; checked before the rule test,
+    // since `---` under text is an h2, not a paragraph and a rule.
+    const setext = j > i ? SETEXT.exec(line) : null;
+    if (setext) {
+      const level = (setext[1] ?? '=')[0] === '=' ? 1 : 2;
+      return { block: { t: 'heading', level, c: parseInline(body.join('\n').replace(/\s+$/, '')) }, end: j + 1 };
+    }
     if (blank(line) || (j > i && (startsBlock(line) || table(lines, j)))) break;
     body.push(line.replace(/^\s+/, ''));
   }
@@ -104,7 +134,7 @@ export function parseBlocks(lines: readonly string[]): Block[] {
       i++;
       continue;
     }
-    const r = fence(lines, i) ?? heading(lines, i) ?? rule(lines, i) ?? quote(lines, i) ?? list(lines, i, parseBlocks) ?? table(lines, i) ?? indented(lines, i) ?? paragraph(lines, i);
+    const r = fence(lines, i) ?? details(lines, i) ?? heading(lines, i) ?? rule(lines, i) ?? quote(lines, i) ?? list(lines, i, parseBlocks) ?? table(lines, i) ?? indented(lines, i) ?? paragraph(lines, i);
     out.push(r.block);
     i = r.end;
   }

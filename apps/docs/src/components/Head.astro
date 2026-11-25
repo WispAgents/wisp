@@ -89,3 +89,7 @@ if (!is404 && canonical) {
 {ogTitle && <meta name="twitter:title" content={String(ogTitle)} />}
 {ogDesc && <meta name="twitter:description" content={String(ogDesc)} />}
 {jsonLd && <script type="application/ld+json" set:html={jsonLd} />}
+<script>
+  // draws the page's ```mermaid diagrams, if it has any (ADR-0118)
+  import '../mermaid.ts';
+</script>

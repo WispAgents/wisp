@@ -1,5 +1,8 @@
 // Lightweight client-side parser for inline ```wisp blocks inside mid-turn chat messages (TimelineMessage).
 // Fast path: returns undefined when no ```wisp opener is present so ordinary messages render plain <Markdown>.
+// While a block's JSON is still streaming it is a trailing `{type:'pending', of?}` entry, so the message takes the
+// Answer path from the opener on: no raw JSON shown as a code block, and no swap from <Markdown> to <Answer>
+// (which would remount the prose above it) once the JSON closes.
 
 const OPEN = '```wisp';
 /** A closing fence at the start of what follows the JSON: blank before it, and the rest of its line blank. */
@@ -30,6 +33,21 @@ function jsonEnd(src: string, start: number): number {
   return -1;
 }
 
+/** Whether the JSON from `start` runs to the end of `src` unclosed (still streaming), not malformed: it is empty so
+ *  far or opens with `{`/`[`, and no closing fence line follows it (a closed fence of bad JSON is skipped, as before). */
+function stillStreaming(src: string, start: number): boolean {
+  const rest = src.slice(start);
+  const lead = rest.trimStart();
+  if (lead !== '' && lead[0] !== '{' && lead[0] !== '[') return false;
+  return !/\n[ \t]*```[ \t]*(\n|$)/.test(rest);
+}
+
+/** The pending entry for a block still arriving: `of` is its first block's type, once that has arrived whole. */
+function pending(partial: string): Record<string, unknown> {
+  const of = /"type"\s*:\s*"([^"\\]+)"/.exec(partial)?.[1];
+  return of ? { type: 'pending', of } : { type: 'pending' };
+}
+
 /** Splits a chat message containing ```wisp fences into ordered markdown + inline block objects, or undefined if none. */
 export function parseInlineChatBlocks(text: string): readonly Record<string, unknown>[] | undefined {
   if (!text.includes(OPEN)) return undefined;
@@ -40,10 +58,15 @@ export function parseInlineChatBlocks(text: string): readonly Record<string, unk
     const at = text.indexOf(OPEN, search);
     if (at < 0) break;
     const nl = text.indexOf('\n', at + OPEN.length);
-    if (nl < 0) break;
+    // the opener is the last thing so far: its block is on its way
+    if (nl < 0) {
+      if (text.slice(at + OPEN.length).trim() === '') return withPending(out, text.slice(cursor, at), '');
+      break;
+    }
     const body = nl + 1;
     const end = jsonEnd(text, body);
     if (end < 0) {
+      if (stillStreaming(text, body)) return withPending(out, text.slice(cursor, at), text.slice(body));
       search = body;
       continue;
     }
@@ -69,12 +92,20 @@ export function parseInlineChatBlocks(text: string): readonly Record<string, unk
     out.push(...valid);
     // The closing fence is the one right after the JSON (only whitespace between, nothing after it on its line). A
     // block left unclosed keeps the prose after it: searching on for any ``` would swallow it up to the next fence.
+    // While the closer is still arriving, a lone ` or `` after the JSON is its start, not prose.
     const close = CLOSE.exec(text.slice(end));
-    cursor = close ? end + close[0].length : end;
+    cursor = close ? end + close[0].length : /^\s*`{0,2}\s*$/.test(text.slice(end)) ? text.length : end;
     search = cursor;
   }
   if (out.length === 0) return undefined;
   const tail = text.slice(cursor).trim();
   if (tail) out.push({ type: 'markdown', text: tail });
+  return out;
+}
+
+function withPending(out: Record<string, unknown>[], before: string, partial: string): readonly Record<string, unknown>[] {
+  const prose = before.trim();
+  if (prose) out.push({ type: 'markdown', text: prose });
+  out.push(pending(partial));
   return out;
 }

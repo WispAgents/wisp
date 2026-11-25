@@ -47,3 +47,9 @@
 starlight-tabs [role='tab'] { white-space: nowrap; }
 starlight-tabs .tablist-wrapper { overflow-x: auto; scrollbar-width: none; }
 @media (max-width: 30rem) { starlight-tabs [role='tab'] { padding-inline: 0.7rem; } }
+
+/* ```mermaid (ADR-0118): src/mermaid.ts draws the diagram beside its code block, centred, and hides the code. */
+.wisp-mermaid { display: flex; justify-content: center; overflow-x: auto; margin-block: 1rem; padding: 1rem; border: 1px solid var(--sl-color-gray-5); border-radius: 0.5rem; }
+.wisp-mermaid[hidden] { display: none; }
+.wisp-mermaid > svg { max-width: 100%; height: auto; }
+.expressive-code[hidden] { display: none; }

@@ -8,7 +8,8 @@
 // index.html names (the entry and its preloads) missed every lazy chunk the first screen asks for (perf audit r1 #1:
 // 118 KB counted, 309 KB loaded): they stay gated at 120 / 30, and each look's first screen is gated at its own
 // ratchet, FIRST_SCREEN_BUDGETS (ADR-0105 §4), which only goes down toward 120 / 30. Lazy chunks that load after the
-// mark (a task's view, the palette, the plugins' later parts) are listed, not budgeted. CI
+// mark (a task's view, the palette, the plugins' later parts) are listed and each held under a ceiling of its own
+// (LAZY_CHUNK_BUDGETS, else LAZY_CHUNK_MAX_BR; ADR-0118), and mermaid's never loads with the first screen. CI
 // (.github/workflows/suite.yml) runs this after the web build and fails on a miss; under GitHub Actions the numbers
 // also go to the job summary ($GITHUB_STEP_SUMMARY). `--entry-only` counts index.html's tags alone (no browser: the
 // tool's own tests). The server half is measured by the Rust spikes and gated there: `SERVER_BUDGETS` by
@@ -38,6 +39,23 @@ export const FIRST_SCREEN_BUDGETS: Readonly<Record<Look, LookBudget>> = {
   desktop: { jsBr: 173 * 1024, cssBr: 30 * 1024 },
   phone: { jsBr: 167 * 1024, cssBr: 40.5 * 1024 },
 };
+
+/** A lazy chunk with its own ceiling: `pattern` names its file in assets/; `neverFirst` fails the build when any look's
+ *  first screen (or index.html) loads it. */
+export interface LazyChunkBudget {
+  readonly name: string;
+  readonly pattern: RegExp;
+  readonly brMax: number;
+  readonly neverFirst?: boolean;
+}
+
+/** Lazy chunks with a ceiling of their own (ADR-0118). mermaid's core is 133.9 KB br at 12.3.0 (2026-11-25): it loads
+ *  on the first diagram only, never with the first screen; its diagram types are chunks of their own, under the
+ *  general ceiling. */
+export const LAZY_CHUNK_BUDGETS: readonly LazyChunkBudget[] = [{ name: 'mermaid', pattern: /^assets\/mermaid\.core-[\w-]+\.js$/, brMax: 140 * 1024, neverFirst: true }];
+
+/** Any other lazy chunk, each on its own: the largest was mermaid's elk layout at 347.2 KB br (2026-11-25). */
+export const LAZY_CHUNK_MAX_BR = 360 * 1024;
 
 /** `wisp serve`'s budgets (plan §8) on a home of 5 000 tasks, measured and gated in PR CI by `spikes/server-budgets` (it
  * exits 1 on a miss; its constants must equal these: tools/test/budgets.test.ts). */
@@ -139,8 +157,21 @@ export function measure(dir: string, loaded?: Partial<Record<Look, Loaded>>): Me
 
 /** Each budget the build misses, in words: index.html's own files against `budgets`, each measured look's first screen
  *  against its ratchet. */
-export function overBudget(m: Measured, budgets: { initialJsBr: number; initialCssBr: number } = BUDGETS, firstScreen: Readonly<Record<Look, LookBudget>> = FIRST_SCREEN_BUDGETS): string[] {
+export function overBudget(
+  m: Measured,
+  budgets: { initialJsBr: number; initialCssBr: number } = BUDGETS,
+  firstScreen: Readonly<Record<Look, LookBudget>> = FIRST_SCREEN_BUDGETS,
+  lazy: readonly LazyChunkBudget[] = LAZY_CHUNK_BUDGETS,
+  lazyMax: number = LAZY_CHUNK_MAX_BR,
+): string[] {
   const over: string[] = [];
+  for (const c of m.lazy) {
+    const own = lazy.find((b) => b.pattern.test(c.file));
+    const max = own?.brMax ?? lazyMax;
+    if (c.br > max) over.push(`lazy chunk ${own ? `${own.name} ` : ''}${c.file.replace('assets/', '')} ${kb(c.br)} br > ${kb(max)}`);
+  }
+  const first = new Set([...m.entry.js.files, ...LOOKS.flatMap((look) => m.looks?.[look]?.js.files ?? [])].map((f) => f.replace(/^\//, '')));
+  for (const b of lazy) if (b.neverFirst) for (const f of first) if (b.pattern.test(f)) over.push(`${b.name} chunk ${f.replace('assets/', '')} is on the first screen: it loads lazily only`);
   if (m.entry.js.br > budgets.initialJsBr) over.push(`initial JS ${kb(m.entry.js.br)} br > ${kb(budgets.initialJsBr)}`);
   if (m.entry.css.br > budgets.initialCssBr) over.push(`initial CSS ${kb(m.entry.css.br)} br > ${kb(budgets.initialCssBr)}`);
   for (const look of LOOKS) {

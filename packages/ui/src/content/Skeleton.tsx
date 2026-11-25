@@ -11,6 +11,8 @@ export interface SkeletonProps extends KitProps {
   readonly shape?: 'line' | 'block' | 'circle' | 'pill';
   readonly width?: SkeletonWidth;
   readonly height?: Size;
+  /** What is on its way, said in the placeholder and to a screen reader; without it the skeleton is decoration. */
+  readonly label?: string;
 }
 
 const FRACTION: Readonly<Record<string, string>> = { full: '100%', '3/4': '75%', '2/3': '66.667%', '1/2': '50%', '1/3': '33.333%', '1/4': '25%' };
@@ -24,7 +26,10 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
   return (
     <span
       id={props.id}
-      aria-hidden="true"
+      aria-hidden={props.label ? undefined : 'true'}
+      role={props.label ? 'status' : undefined}
+      aria-label={props.label}
+      data-label={props.label ? '' : undefined}
       data-kit="skeleton"
       data-part={props.part ?? 'ui.skeleton'}
       data-shape={props.shape ?? 'line'}
@@ -32,6 +37,8 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
         ...(width() ? { '--k-w': width() } : {}),
         ...(props.height ? { '--k-h': sizeVar(props.height) } : {}),
       }}
-    />
+    >
+      {props.label}
+    </span>
   );
 }

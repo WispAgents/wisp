@@ -85,12 +85,12 @@ describe('blocks', () => {
   });
 
   test('fences keep their content verbatim, and an unclosed one runs to the end', () => {
-    expect(parseMarkdown('```ts\nconst a = 1;\n\n# not a heading\n```')).toEqual([{ t: 'code', lang: 'ts', v: 'const a = 1;\n\n# not a heading' }]);
-    expect(parseMarkdown('~~~\nstill\nstreaming')).toEqual([{ t: 'code', lang: '', v: 'still\nstreaming' }]);
+    expect(parseMarkdown('```ts\nconst a = 1;\n\n# not a heading\n```')).toEqual([{ t: 'code', lang: 'ts', v: 'const a = 1;\n\n# not a heading', open: false }]);
+    expect(parseMarkdown('~~~\nstill\nstreaming')).toEqual([{ t: 'code', lang: '', v: 'still\nstreaming', open: true }]);
   });
 
   test('indented code', () => {
-    expect(parseMarkdown('    npm test\n    npm run x\n\nafter')).toEqual([{ t: 'code', lang: '', v: 'npm test\nnpm run x' }, { t: 'paragraph', c: [t('after')] }]);
+    expect(parseMarkdown('    npm test\n    npm run x\n\nafter')).toEqual([{ t: 'code', lang: '', v: 'npm test\nnpm run x', open: false }, { t: 'paragraph', c: [t('after')] }]);
   });
 
   test('nested lists by indentation', () => {
@@ -111,7 +111,7 @@ describe('blocks', () => {
     if (list?.t !== 'list') throw new Error('no list');
     expect(list.ordered).toBe(true);
     expect(list.items.length).toBe(2);
-    expect(list.items[0]?.c[1]).toEqual({ t: 'code', lang: 'sh', v: 'npm i\n- not an item' });
+    expect(list.items[0]?.c[1]).toEqual({ t: 'code', lang: 'sh', v: 'npm i\n- not an item', open: false });
   });
 
   test('ordered lists keep their start; a blank line between items makes it loose', () => {
@@ -223,5 +223,86 @@ describe('<Markdown>', () => {
     expect(sameBlock(a[3]!, c[3]!)).toBe(false);
     expect(sameBlock(a[4]!, c[4]!)).toBe(false);
     expect(sameBlock(a[0]!, a[1]!)).toBe(false);
+  });
+});
+
+describe('fences that are still open', () => {
+  test('a fence is open until its closer arrives; indented code never is', () => {
+    expect(parseMarkdown('```mermaid\ngraph TD')).toEqual([{ t: 'code', lang: 'mermaid', v: 'graph TD', open: true }]);
+    expect(parseMarkdown('```mermaid\ngraph TD\n```')).toEqual([{ t: 'code', lang: 'mermaid', v: 'graph TD', open: false }]);
+    expect(parseMarkdown('    code')).toEqual([{ t: 'code', lang: '', v: 'code', open: false }]);
+  });
+
+  test('sameBlock tells an open fence from the closed one with the same text', () => {
+    const [a] = parseMarkdown('```mermaid\ngraph TD');
+    const [b] = parseMarkdown('```mermaid\ngraph TD\n```');
+    expect(sameBlock(a!, b!)).toBe(false);
+  });
+});
+
+describe('setext headings', () => {
+  test('=== under text is an h1, --- an h2 (and no rule)', () => {
+    expect(parseMarkdown('Title\n=====')).toEqual([{ t: 'heading', level: 1, c: [t('Title')] }]);
+    expect(parseMarkdown('Sub\n---')).toEqual([{ t: 'heading', level: 2, c: [t('Sub')] }]);
+    expect(parseMarkdown('Two\nlines\n  ==  ')).toEqual([{ t: 'heading', level: 1, c: [t('Two\nlines')] }]);
+  });
+
+  test('a rule after a blank line, a list or a fence is still a rule', () => {
+    expect(kinds(parseMarkdown('Para\n\n---'))).toEqual(['paragraph', 'hr']);
+    expect(kinds(parseMarkdown('- a\n---'))).toEqual(['list', 'hr']);
+    expect(kinds(parseMarkdown('```\nx\n```\n---'))).toEqual(['code', 'hr']);
+    expect(kinds(parseMarkdown('# H\n---'))).toEqual(['heading', 'hr']);
+  });
+
+  test('renders as a heading element', () => {
+    const host = mount(() => <Markdown source={'Sub\n---'} headingBase={1} />);
+    expect(host.querySelector('h2')?.textContent).toBe('Sub');
+    expect(host.querySelector('hr')).toBeNull();
+  });
+});
+
+describe('<details>', () => {
+  const example = '<details>\n<summary>More</summary>\n\nSome **text**\n</details>';
+
+  test('parses its summary and its body as Markdown, counting nested ones', () => {
+    const [d] = parseMarkdown(example);
+    expect(d).toEqual({ t: 'details', open: false, summary: [t('More')], c: [{ t: 'paragraph', c: [t('Some '), { t: 'strong', c: [t('text')] }] }], closed: true });
+    const nested = parseMarkdown('<details open>\n<details>\ninner\n</details>\nouter\n</details>\nafter');
+    expect(kinds(nested)).toEqual(['details', 'paragraph']);
+    const outer = nested[0];
+    if (outer?.t !== 'details') throw new Error('no details');
+    expect(outer.open).toBe(true);
+    expect(kinds(outer.c)).toEqual(['details', 'paragraph']);
+  });
+
+  test('renders a native details element with its summary and body', () => {
+    const host = mount(() => <Markdown source={example} />);
+    const d = host.querySelector('details');
+    expect(d?.getAttribute('data-kit')).toBe('md-details');
+    expect(d?.querySelector('summary')?.textContent).toBe('More');
+    expect(d?.querySelector('strong')?.textContent).toBe('text');
+    expect(d?.open).toBe(false);
+  });
+
+  test('one still streaming (no closer) renders open', () => {
+    const src = '<details>\n<summary>More</summary>\n\nstill coming';
+    expect(parseMarkdown(src)[0]).toMatchObject({ t: 'details', closed: false });
+    expect(mount(() => <Markdown source={src} />).querySelector('details')?.open).toBe(true);
+  });
+
+  test('inline in a sentence it stays text, and other HTML stays text', () => {
+    const host = mount(() => <Markdown source={'Use <details> here.\n\n<script>alert(1)</script>\n\n<details onclick=x>'} />);
+    expect(host.querySelector('details')).toBeNull();
+    expect(host.querySelector('script')).toBeNull();
+    expect(host.textContent).toContain('Use <details> here.');
+    expect(host.textContent).toContain('<script>alert(1)</script>');
+  });
+
+  test('sameBlock compares details structurally', () => {
+    const [a] = parseMarkdown(example);
+    const [b] = parseMarkdown(example);
+    const [c] = parseMarkdown(example.replace('More', 'Less'));
+    expect(sameBlock(a!, b!)).toBe(true);
+    expect(sameBlock(a!, c!)).toBe(false);
   });
 });
