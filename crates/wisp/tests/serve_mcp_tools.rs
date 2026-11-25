@@ -2038,7 +2038,8 @@ async fn slash_workflow_makes_the_agent_the_runs_lead_and_the_task_shows_what_wa
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     let r = api.try_cmd("runtime.create", json!({ "prompt": "/workflow", "cwd": dir.join("proj"), "agent": "claude" })).await;
     assert!(r.to_string().contains("Say what the workflow should do"), "{r}");
-    let made = api.cmd("runtime.create", json!({ "prompt": "/workflow audit every route", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    let made =
+        api.cmd("runtime.create", json!({ "prompt": "/workflow audit every route", "cwd": dir.join("proj"), "agent": "claude" })).await;
     let id = made["id"].as_str().unwrap().to_owned();
     let turns = api.until(&id, "the turn ends", |t| t.last().is_some_and(ended)).await;
     assert_eq!(turns[0]["prompt"], "/workflow audit every route", "the task shows what was typed");
@@ -2124,7 +2125,8 @@ async fn an_agent_skips_and_adds_steps_and_is_told_when_one_fails() {
     assert_eq!(v["steps"][0]["why"], "skipped by the agent", "{v}");
     assert_eq!(v["steps"][1]["state"], "done", "{v}");
     // the run ended: a step added starts it again
-    let (said, err) = a.call("workflows_edit", json!({ "id": run, "add": { "more": { "prompt": "one more look", "needs": ["next"] } } })).await;
+    let (said, err) =
+        a.call("workflows_edit", json!({ "id": run, "add": { "more": { "prompt": "one more look", "needs": ["next"] } } })).await;
     assert!(!err, "{said}");
     let v = run_ends_with(&a, 3).await;
     assert_eq!(v["steps"][2]["id"], "more", "{v}");

@@ -190,6 +190,9 @@ const reason = (why: string, ids: readonly string[]): [string, string][] => ids.
 export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
   ...reason('Continue on…\'s preview (ADR-0124): built by the runtime\'s hand-off note over real turns; the dialog says it is reading', ['runtime.handoffPreview']),
   ...reason('a software factory run (ADR-0114): its stations are real tasks a server drives; the mock lists none', ['factory.names', 'factory.stop']),
+  ...reason('a workflow run (ADR-0119, ADR-0121): its steps are real tasks a server drives, and the saved and prebuilt workflows live on disk; the mock runs none, so /workflow suggests none', [
+    'workflows.edit', 'workflows.list', 'workflows.set', 'workflows.starters', 'workflows.stop',
+  ]),
   ...reason('a sign-in or key flow: needs the harness CLI or a provider to answer', [
     'accounts.add', 'accounts.keys.remove', 'accounts.keys.set', 'accounts.keys.test', 'accounts.login.cancel', 'accounts.login.input',
     'accounts.login.start', 'accounts.logout', 'accounts.remove', 'accounts.update', 'accounts.watch.ask', 'accounts.watch.trust',

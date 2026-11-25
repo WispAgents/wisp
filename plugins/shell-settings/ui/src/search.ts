@@ -3,6 +3,8 @@
 // pane, else All settings filtered to it. Pure, for tests.
 
 import { AUTO_SETTING } from '@wisp/shell/pure';
+// HARNESS_ROWS names lazy keys (frame.tsx, this module's one user, loads them too)
+import './i18n/lazy.ts';
 
 /** A declared setting as the search reads it (its title split as All settings shows it). */
 export interface FoundSetting {
