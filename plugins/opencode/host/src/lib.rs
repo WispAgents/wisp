@@ -252,6 +252,7 @@ impl Harness for OpencodeHarness {
             Some(serde_json::json!({
                 "windows": [],
                 "cost": s.cost_usd,
+                "costDays": 7,
                 "tokens": { "input": s.input, "output": s.output, "cacheRead": s.cache_read, "cacheWrite": s.cache_write },
             }))
         })
@@ -389,5 +390,66 @@ mod tests {
         let cfg: Value = serde_json::from_str(&l.env["OPENCODE_CONFIG_CONTENT"]).unwrap_or_default();
         assert_eq!(cfg["mcp"]["wisp"]["url"], "http://x/api/mcp");
         assert_eq!(l.stdin, Stdin::Bytes(b"fix it".to_vec()));
+    }
+
+    /// A computer with only the CLI's answers (`exec` by its arguments), its folders and its files: no real process.
+    #[derive(Default)]
+    struct FakeSys {
+        out: std::collections::BTreeMap<String, (i32, String)>,
+        dirs: std::collections::BTreeMap<String, Vec<String>>,
+        files: std::collections::BTreeMap<String, String>,
+        seen: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl HarnessSys for FakeSys {
+        fn exec(&self, req: ExecReq) -> BoxFuture<'_, Result<wisp_runtime_api::harness::ExecOut>> {
+            let got = self.out.get(&req.args.join(" ")).cloned();
+            if let Ok(mut s) = self.seen.lock() {
+                s.push(req.args);
+            }
+            Box::pin(async move {
+                let (code, stdout) = got.unwrap_or((1, String::new()));
+                Ok(wisp_runtime_api::harness::ExecOut { code: Some(code), stdout, ..Default::default() })
+            })
+        }
+        fn which(&self, _: &str) -> BoxFuture<'_, Option<String>> {
+            Box::pin(async { None })
+        }
+        fn read_file(&self, p: &str) -> BoxFuture<'_, Option<String>> {
+            let f = self.files.get(p).cloned();
+            Box::pin(async move { f })
+        }
+        fn write_file(&self, _: &str, _: String) -> BoxFuture<'_, Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn list_dir(&self, p: &str) -> BoxFuture<'_, Vec<String>> {
+            let d = self.dirs.get(p).cloned().unwrap_or_default();
+            Box::pin(async move { d })
+        }
+        fn env(&self, _: &str) -> Option<String> {
+            None
+        }
+        fn home(&self) -> String {
+            "/home/test".into()
+        }
+        fn platform(&self) -> String {
+            "darwin".into()
+        }
+    }
+
+    /// ADR-0119: `opencode stats --days 7`, as captured (`core/tests/cli/stats.txt`), gives what opencode totals as
+    /// spent and its tokens over 7 days, and no windows. A failed `stats` is no reading.
+    #[tokio::test]
+    async fn live_limits_reads_cost_and_tokens_from_opencode_stats() {
+        let mut sys = FakeSys::default();
+        sys.out.insert("stats --days 7".into(), (0, include_str!("../../core/tests/cli/stats.txt").into()));
+        let h = OpencodeHarness::default();
+        let got = h.live_limits(&sys, &BTreeMap::new()).await.unwrap_or_default();
+        assert_eq!(got["windows"], json!([]));
+        assert_eq!((got["cost"].as_f64(), got["costDays"].as_u64()), (Some(0.0), Some(7)));
+        assert_eq!(got["tokens"]["input"].as_u64(), Some(30_300_000));
+        assert_eq!(got["tokens"]["cacheRead"].as_u64(), Some(253_500_000));
+        assert_eq!(sys.seen.lock().map(|s| s.clone()).unwrap_or_default(), [["stats", "--days", "7"]]);
+        assert_eq!(h.live_limits(&FakeSys::default(), &BTreeMap::new()).await, None, "stats failed: nothing made up");
     }
 }

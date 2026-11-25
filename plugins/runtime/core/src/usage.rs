@@ -223,6 +223,7 @@ pub fn breakdown(turns: &[Turn], from: i64, now: i64, tz_offset_min: i32, cwd_of
         w.cost += d.cost;
         w.turns += d.turns;
         w.tokens = w.tokens.saturating_add(d.tokens);
+        w.cost_estimated |= d.cost_estimated;
     }
     out.weekly = weeks.into_values().collect();
     out.daily = days.into_values().collect();
@@ -389,6 +390,7 @@ mod tests {
         );
         assert_eq!(u.weekly.iter().map(|w| w.turns).sum::<u32>(), u.daily.iter().map(|d| d.turns).sum::<u32>(), "the weeks sum the days");
         assert_eq!(u.weekly[1].cost, 0.75);
+        assert!(!u.weekly[1].cost_estimated, "reported costs only: not an estimate");
         assert_eq!(iso_week(days_from_civil(2027, 1, 1)).1, "2026-W53", "Jan 1 2027 is a Friday: the last week of 2026");
         // UTC without an offset: the same turns land on Nov 25
         assert_eq!(
@@ -403,7 +405,7 @@ mod tests {
         reported.agent = "claude".into();
         let mut codex = turn(20, TurnStatus::Done, 0.0, false);
         codex.agent = "codex".into();
-        codex.model = "gpt-5-codex".into();
+        codex.model = "gpt-5".into();
         codex.stats = Some(TurnStats { input_tokens: Some(1_000_000), output_tokens: Some(100_000), ..TurnStats::default() });
         let mut unknown = turn(30, TurnStatus::Done, 0.0, false);
         unknown.agent = "codex".into();
@@ -421,5 +423,6 @@ mod tests {
         assert!(!cl.cost_estimated, "a reported cost is never an estimate");
         assert_eq!(u.harnesses.iter().find(|h| h.agent == "copilot").unwrap().premium_requests, 2);
         assert!(u.daily[0].cost_estimated && u.daily_by_harness.iter().any(|d| d.agent == "codex" && d.cost_estimated));
+        assert!(u.weekly.len() == 1 && u.weekly[0].cost_estimated, "a week holding an estimated day says so");
     }
 }

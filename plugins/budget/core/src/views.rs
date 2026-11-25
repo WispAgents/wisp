@@ -143,7 +143,13 @@ impl Budget {
             let notices: Vec<WindowNotice> = Self::notices(acc).into_iter().filter(|n| windows.iter().any(|w| w.id == n.window)).collect();
             let overage = Self::over_view(acc, now);
             let banked = if agent == "codex" { banked_at(acc.banked.as_ref(), now) } else { None };
-            if windows.is_empty() && notices.is_empty() && overage.is_none() && banked.is_none() {
+            if windows.is_empty()
+                && notices.is_empty()
+                && overage.is_none()
+                && banked.is_none()
+                && acc.plan.is_none()
+                && acc.spent.is_none()
+            {
                 continue;
             }
             let where_went = crate::traced::where_of(acc, &windows, now);
@@ -156,6 +162,8 @@ impl Budget {
                 overage,
                 banked,
                 where_went,
+                plan: acc.plan.clone(),
+                spent: acc.spent.clone(),
             });
         }
         out

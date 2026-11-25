@@ -20,11 +20,8 @@ static MODEL_LINE: Re = Re::new(r"(?m)^\s+[*-]\s+([\w.\-/:]+)");
 static DEFAULT_LINE: Re = Re::new(r"(?m)^\s+\*\s+([\w.\-/:]+)");
 const EFFORT_ORDER: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-/// Gate (ADR-0119): `grok usage <SESSION_ID> [TURN]` ("Print persisted token and cost usage for a session", in the
-/// real CLI's help) would give a turn's cost when the stream has no `total_cost_usd`, but no session's output has been
-/// captured yet, so there is no parser for it: such a turn is priced from its tokens at list price (marked `~`) or
-/// stays unpriced, never parsed from a guessed format.
-pub const USAGE_VERIFIED: bool = false;
+pub mod usage;
+pub use usage::{GrokUsage, Spent, UsageTurn, spent, usage};
 
 #[derive(Debug, Clone, Default)]
 pub struct GrokArgs<'a> {

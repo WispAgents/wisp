@@ -2,6 +2,7 @@
 import { expect, test } from 'vitest';
 import {
   bankedSoon,
+  cliLine,
   bankedWords,
   compareParts,
   compareWords,
@@ -18,7 +19,7 @@ import {
   windowLine,
   type Compare,
 } from '../src/plan.ts';
-import { cacheHit, costCell, costWords, limitLeft, stackedModel, usageModel, weekStart } from '../src/usage-model.ts';
+import { cacheHit, costCell, costWords, limitLeft, spendTile, stackedModel, usageModel, weekStart } from '../src/usage-model.ts';
 
 const when = (at: number): string => `@${at}`;
 const H = 3_600_000;
@@ -237,4 +238,65 @@ test('the_week_scale_reads_the_runtimes_weekly_rollup', () => {
   expect(w.first).toBe('Week of Nov 16');
   expect(w.max).toBe('max 4/week');
   expect(usageModel(u, 'turns').bars.length).toBe(2);
+});
+
+// Review of #915: Settings → Usage's Spend tile showed a list-price estimate as an exact `$x.xx` and "Spend $0.00" when
+// nothing was priced. It reads as the Usage page does now.
+test('the_settings_spend_tile_marks_an_estimate_and_says_tokens_when_nothing_is_priced', () => {
+  const base = { from: 0, turns: 4, worked: 100, questions: 0 };
+  expect(spendTile(undefined)).toEqual({ label: 'Spend', value: '—' });
+  expect(spendTile({ ...base, spend: 1.5, priced: 4 })).toEqual({ label: 'Spend', value: '$1.50' });
+  expect(spendTile({ ...base, spend: 1.5, priced: 4, costEstimated: true })).toEqual({ label: 'Spend', value: '~$1.50' });
+  expect(spendTile({ ...base, spend: 1.5, priced: 3, costEstimated: true })).toEqual({ label: 'Spend', value: '~$1.50+' });
+  expect(spendTile({ ...base, spend: 1.5, priced: 3 })).toEqual({ label: 'Spend', value: '$1.50+' });
+  // nothing priced: never "Spend $0.00"
+  expect(spendTile({ ...base, spend: 0, priced: 0, tokens: 9_000 })).toEqual({ label: 'Tokens', value: '9k' });
+  expect(spendTile({ ...base, spend: 0, priced: 0 })).toEqual({ label: 'Spend', value: 'not priced' });
+  expect(spendTile({ ...base, turns: 0, spend: 0, priced: 0 })).toEqual({ label: 'Spend', value: '—' });
+});
+
+// Review of #915: the stacked chart's tooltip and scale said a plain `$x.xx` of an estimate, and a week never did.
+test('the_stacked_tooltip_and_the_week_bars_mark_an_estimated_cost', () => {
+  const u = {
+    from: 0,
+    spend: 0.6,
+    turns: 3,
+    worked: 100,
+    questions: 0,
+    priced: 3,
+    costEstimated: true,
+    daily: [{ date: '2026-11-23', cost: 0.6, turns: 3, cost_estimated: true }],
+    dailyByHarness: [
+      { date: '2026-11-23', agent: 'claude', cost: 0.4, tokens: 6_000, cache_read: 0, turns: 2 },
+      { date: '2026-11-23', agent: 'codex', cost: 0.2, tokens: 2_000, cache_read: 0, turns: 1, cost_estimated: true },
+    ],
+    weekly: [{ week: '2026-W48', start: '2026-11-23', cost: 0.6, turns: 3, tokens: 8_000, cost_estimated: true }],
+  };
+  const s = stackedModel(u, 'cost');
+  expect(s.bars[0]?.tip).toBe('Nov 23: Claude Code $0.40 · Codex ~$0.20');
+  expect(s.max).toBe('max ~$0.60/day');
+  // Codex hidden: what's left is Claude's reported cost, no `~`
+  expect(stackedModel(u, 'cost', { hidden: new Set(['codex']) }).max).toBe('max $0.40/day');
+  const w = usageModel(u, 'cost', 'week');
+  expect(w.bars[0]?.tip).toBe('Week of Nov 23: ~$0.60 · 8k tokens · 3 turns');
+  expect(w.max).toBe('max ~$0.60/week');
+  expect(usageModel({ ...u, weekly: [{ ...u.weekly[0]!, cost_estimated: false }] }, 'cost', 'week').bars[0]?.tip).toBe('Week of Nov 23: $0.60 · 8k tokens · 3 turns');
+});
+
+// Review of #915: Cursor's tier and what opencode and Grok total as spent were read and then dropped; budget.view
+// carries them now (`plan`, `spent`) and a harness with no windows says them.
+test('a_harness_with_no_windows_says_its_clis_tier_and_spend', () => {
+  const cursor = HARNESSES.find((h) => h.agent === 'cursor')!;
+  const opencode = HARNESSES.find((h) => h.agent === 'opencode')!;
+  const grok = HARNESSES.find((h) => h.agent === 'grok')!;
+  expect(cliLine(cursor, [{ account: 'default', windows: [], plan: 'Pro' }])).toBe('Cursor plan: Pro');
+  expect(cliLine(opencode, [{ account: 'default', windows: [], spent: { cost: 1.25, days: 7, tokens: 287_300_000 } }])).toBe(
+    'opencode says $1.25 · 287M tokens in 7 days',
+  );
+  expect(cliLine(grok, [{ account: 'default', windows: [], spent: { tokens: 0, days: 7 } }]), 'no cost recorded: none shown').toBe('Grok says 0 tokens in 7 days');
+  expect(cliLine(cursor, [])).toBe('');
+  expect(harnessUsageDescription(cursor, undefined, [{ account: 'default', windows: [], plan: 'Pro' }])).toBe(
+    'Cursor plan: Pro — Tracks tokens, turns and duration · limits not reported by Cursor',
+  );
+  expect(limitsReported(cursor, [{ account: 'default', windows: [], plan: 'Pro' }]), 'a tier is no window').toBe(false);
 });

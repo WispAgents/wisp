@@ -29,6 +29,7 @@ import { dayWhen, HARNESSES, harnessesOf, harnessUsageDescription, limitsReporte
 import type { Compare } from '../plan.ts';
 import { drainLines, drainReport, noticeWords } from '../drain.ts';
 import { VIEW_USAGE } from '../views.ts';
+import { spendTile } from '../usage-model.ts';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
 import '../i18n/lazy.ts';
@@ -51,8 +52,6 @@ function subagentSource(c: PluginClient): SettingSource<string> {
 
 const STOPS = ['off', '50', '75', '90'] as const;
 type Stop = 'same' | (typeof STOPS)[number];
-
-const money = (n: number): string => `$${n.toFixed(2)}`;
 
 export default function Usage(props: { readonly client: PluginClient }): JSX.Element {
   const c = props.client;
@@ -153,7 +152,8 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
         compact
         part="budget.usage.stats"
         items={[
-          { label: t('budget.usage.spend'), value: line() ? money(line()?.spend ?? 0) : '—' },
+          // `~` an estimate, `+` some turns unpriced, Tokens when nothing is priced (usage-model.ts spendTile, ADR-0119)
+          spendTile(line()),
           { label: t('budget.usage.turns'), value: line()?.turns ?? '—' },
           { label: t('budget.usage.worked'), value: worked() },
           { label: t('budget.usage.questions'), value: line()?.questions ?? '—' },

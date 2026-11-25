@@ -11,4 +11,8 @@ week: string,
 /**
  * its Monday, `YYYY-MM-DD`
  */
-start: string, cost: number, turns: number, tokens: number, };
+start: string, cost: number, turns: number, tokens: number, 
+/**
+ * added 2026-11-25 (additive, ADR-0119): `cost` holds a list-price estimate (one of its days does)
+ */
+cost_estimated: boolean, };

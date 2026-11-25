@@ -2,7 +2,7 @@
 //! server/budget.js:118-220: claudeLimits, codexLimits, codexLive, codexBanked, bankedAt, bankedDue).
 
 use serde_json::{Map, Value};
-use wisp_budget_api::{Banked, BankedCredit, LimitWindow, LimitsReport};
+use wisp_budget_api::{Banked, BankedCredit, CliSpend, LimitWindow, LimitsReport};
 
 use crate::windows::{H, MIN, known_ms};
 
@@ -267,6 +267,25 @@ pub fn banked_due(b: Option<&Banked>, sent: &std::collections::BTreeMap<String, 
         .collect()
 }
 
+/// What a CLI totals of its own recent use, from a `live_limits` read: `cost` (USD), `costDays`, and `tokens` (a number, or
+/// `{input, output, cacheRead, cacheWrite}` summed). None when it gives neither cost nor tokens.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn spent_of(o: &Obj) -> Option<CliSpend> {
+    let cost = fin(o.get("cost")).filter(|c| *c >= 0.0);
+    let tokens = match o.get("tokens") {
+        Some(Value::Object(m)) => {
+            let parts: Vec<f64> = m.values().filter_map(|v| fin(Some(v))).filter(|x| *x >= 0.0).collect();
+            (!parts.is_empty()).then(|| parts.iter().sum::<f64>().round() as u64)
+        }
+        v => fin(v).filter(|x| *x >= 0.0).map(|x| x.round() as u64),
+    };
+    if cost.is_none() && tokens.is_none() {
+        return None;
+    }
+    let days = o.get("costDays").and_then(Value::as_u64).and_then(|d| u32::try_from(d).ok()).filter(|d| *d > 0);
+    Some(CliSpend { cost, days, tokens, at: None })
+}
+
 /// A `turn.limits` body (what a harness reported, already in report shape) read leniently: a field
 /// of the wrong type is left out rather than failing the whole report.
 #[allow(clippy::cast_possible_truncation)]
@@ -296,7 +315,10 @@ pub fn report_from_value(v: &Value) -> Option<LimitsReport> {
     };
     let flag = |k: &str| o.get(k) == Some(&Value::Bool(true));
     let banked = o.get("banked").and_then(|b| serde_json::from_value::<Banked>(b.clone()).ok());
+    let plan = o.get("plan").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty()).map(|p| p.chars().take(80).collect());
     Some(LimitsReport {
+        plan,
+        spent: spent_of(o),
         windows: windows.unwrap_or_default(),
         complete: flag("complete"),
         rejected,
@@ -305,4 +327,39 @@ pub fn report_from_value(v: &Value) -> Option<LimitsReport> {
         read: flag("read"),
         banked,
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_live_read_carries_a_cli_tier_and_spend() {
+        let r = report_from_value(&json!({ "windows": [], "plan": " Pro " })).unwrap();
+        assert_eq!((r.plan.as_deref(), r.spent), (Some("Pro"), None));
+        let r = report_from_value(&json!({ "windows": [], "cost": 2.5, "costDays": 7,
+            "tokens": { "input": 10.0, "output": 5.0, "cacheRead": 100.0, "cacheWrite": "x" } }))
+        .unwrap();
+        assert_eq!(r.spent, Some(CliSpend { cost: Some(2.5), days: Some(7), tokens: Some(115), at: None }));
+        let r = report_from_value(&json!({ "windows": [], "tokens": 42 })).unwrap();
+        assert_eq!(r.spent.map(|s| (s.cost, s.tokens)), Some((None, Some(42))), "tokens only: no cost made up");
+        let r = report_from_value(&json!({ "windows": [], "cost": -1, "plan": "" })).unwrap();
+        assert_eq!((r.plan, r.spent), (None, None), "a negative cost and an empty tier are nothing");
+    }
+
+    #[test]
+    fn budget_keeps_the_tier_and_spend_and_the_view_shows_an_account_with_only_those() {
+        let mut b = crate::model::Budget::new();
+        let r = report_from_value(&json!({ "windows": [], "plan": "Pro" })).unwrap();
+        assert!(b.record("cursor", "", &r, 10).moved);
+        assert!(!b.record("cursor", "", &r, 20).moved, "the same tier again moves nothing");
+        let v = b.view("cursor", 30);
+        assert_eq!((v.len(), v[0].plan.as_deref(), v[0].windows.len()), (1, Some("Pro"), 0));
+        let r = report_from_value(&json!({ "windows": [], "cost": 0.5, "costDays": 7 })).unwrap();
+        assert!(b.record("opencode", "", &r, 40).moved);
+        assert_eq!(b.view("opencode", 50)[0].spent.as_ref().and_then(|s| s.at), Some(40));
+        assert_eq!(b.view("claude", 50), Vec::new());
+    }
 }

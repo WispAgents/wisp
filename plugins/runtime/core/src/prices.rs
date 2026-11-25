@@ -8,37 +8,69 @@
 
 use wisp_runtime_api::model::{Turn, TurnStats};
 
-/// USD per million tokens at API list price, as `[input, cache read, output]`; table dated 2026-11-25 (ADR-0119).
+/// USD per million tokens at API list price, as `[input, cache read, output]` (ADR-0119). Every row is copied from the
+/// vendor's own pricing page named above its group, read on the date given there; an id a page doesn't list (with that
+/// exact id) is not here, so it stays unpriced and shows as "not priced". Where a page prices by prompt length, the row
+/// is the short-prompt rate (said next to it): a long prompt's estimate reads low, and every estimate shows with a `~`.
 pub const PRICES: &[(&str, [f64; 3])] = &[
-    // Anthropic (the five cold.rs had, unchanged; v1 #763: Fable 5.2 lists at $8 / $0.20 / $40)
-    ("claude-opus-5-5", [4.0, 0.2, 20.0]),
-    ("claude-sonnet-5-5", [2.0, 0.2, 10.0]),
+    // Anthropic: https://platform.claude.com/docs/en/about-claude/pricing (read 2026-11-25). Cache read is the page's
+    // "Cache hits and refreshes" column. Not here: Claude Haiku 5.5 (priced by prompt length over 100k tokens) and the
+    // Mythos models (limited availability; the page gives no ids).
     ("claude-fable-5-2", [8.0, 0.2, 40.0]),
     ("claude-fable-5-1", [10.0, 0.25, 50.0]),
-    ("claude-fable-5", [10.0, 0.25, 50.0]),
+    ("claude-fable-5", [10.0, 1.0, 50.0]),
+    ("claude-opus-5-5", [4.0, 0.2, 20.0]),
+    ("claude-opus-5", [5.0, 0.5, 25.0]),
+    ("claude-opus-4-8", [5.0, 0.5, 25.0]),
+    ("claude-opus-4-7", [5.0, 0.5, 25.0]),
+    ("claude-opus-4-6", [5.0, 0.5, 25.0]),
     ("claude-opus-4-5", [5.0, 0.5, 25.0]),
     ("claude-opus-4-1", [15.0, 1.5, 75.0]),
+    ("claude-opus-4", [15.0, 1.5, 75.0]),
+    ("claude-sonnet-5-5", [2.0, 0.1, 10.0]),
+    ("claude-sonnet-5", [2.0, 0.2, 10.0]),
+    ("claude-sonnet-4-6", [3.0, 0.3, 15.0]),
     ("claude-sonnet-4-5", [3.0, 0.3, 15.0]),
+    ("claude-sonnet-4", [3.0, 0.3, 15.0]),
     ("claude-haiku-4-5", [1.0, 0.1, 5.0]),
-    // OpenAI (Codex, and the GPT ids Cursor and Copilot run)
+    // OpenAI: https://developers.openai.com/api/docs/pricing (read 2026-11-25), Standard tier, "Cached input" as cache
+    // read. Not here: gpt-5-codex and gpt-5.1-codex (the page doesn't list them), the -pro models (no cached rate).
     ("gpt-5", [1.25, 0.125, 10.0]),
-    ("gpt-5-codex", [1.25, 0.125, 10.0]),
     ("gpt-5.1", [1.25, 0.125, 10.0]),
-    ("gpt-5.1-codex", [1.25, 0.125, 10.0]),
     ("gpt-5-mini", [0.25, 0.025, 2.0]),
-    // Google (Antigravity)
-    ("gemini-2.5-pro", [1.25, 0.31, 10.0]),
-    ("gemini-2.5-flash", [0.3, 0.075, 2.5]),
-    ("gemini-3-pro-preview", [2.0, 0.2, 12.0]),
-    // xAI (Grok)
-    ("grok-4", [3.0, 0.75, 15.0]),
-    ("grok-4-fast", [0.2, 0.05, 0.5]),
-    ("grok-code-fast-1", [0.2, 0.02, 1.5]),
-    // Cursor's own
-    ("composer-1", [1.25, 0.125, 10.0]),
+    ("gpt-5.2", [1.75, 0.175, 14.0]),
+    ("gpt-5.3-codex", [1.75, 0.175, 14.0]),
+    ("gpt-5.4", [2.5, 0.25, 15.0]), // the <272K-context rate
+    ("gpt-5.4-mini", [0.75, 0.075, 4.5]),
+    ("gpt-5.4-nano", [0.2, 0.02, 1.25]),
+    ("gpt-5.5", [5.0, 0.5, 30.0]),       // the <272K-context rate
+    ("gpt-5.6-sol", [4.0, 0.4, 20.0]),   // the short-context (<=272K) rate
+    ("gpt-5.6-terra", [2.0, 0.2, 12.0]), // the short-context (<=272K) rate
+    ("gpt-5.6-luna", [0.2, 0.02, 1.2]),  // the short-context (<=272K) rate
+    // Google: https://ai.google.dev/gemini-api/docs/pricing (now https://aistudio.google.com/docs/pricing; read
+    // 2026-11-25), Paid tier, Standard, "Context caching" as cache read. Not here: gemini-3-pro-preview (not listed), and
+    // gemini-3.6-flash / gemini-3.8-flash (their price changes on 2027-01-01).
+    ("gemini-2.5-pro", [1.25, 0.125, 10.0]), // the <=200k-prompt rate
+    ("gemini-2.5-flash", [0.3, 0.03, 2.5]),
+    ("gemini-3.1-pro-preview", [2.0, 0.2, 12.0]), // the <=200k-prompt rate
+    ("gemini-3-flash-preview", [0.5, 0.05, 3.0]),
+    ("gemini-3.1-flash-lite", [0.25, 0.025, 1.5]),
+    ("gemini-3.5-flash-lite", [0.3, 0.03, 2.5]),
+    // xAI: https://docs.x.ai/docs/models (read 2026-11-25), the <200k-prompt rate of each. The Grok CLI's own ids
+    // (`grok-4.7-build`) aren't on the page, so its turns stay unpriced unless the CLI reports a cost (it does, in
+    // ticks: wisp-grok-core's usage). Not here: grok-4, grok-4-fast, grok-code-fast-1 (no longer listed).
+    ("grok-4.7", [2.0, 0.5, 6.0]),
+    ("grok-4.6", [2.0, 0.5, 6.0]),
+    ("grok-4.5", [2.0, 0.3, 6.0]),
+    ("grok-4.3", [1.25, 0.2, 2.5]),
+    ("grok-4.20-0309-reasoning", [1.25, 0.2, 2.5]),
+    ("grok-4.20-0309-non-reasoning", [1.25, 0.2, 2.5]),
+    // Cursor: https://cursor.com/docs/models (read 2026-11-25) prices "Composer 2.5" by its display name and gives no
+    // API id, so there is no Composer row: Cursor's turns stay unpriced.
 ];
 
-/// A cache write as a multiple of input (the 5-minute write; the 1-hour one is cold.rs's).
+/// A cache write as a multiple of input: the 5-minute write, "1.25x base input price"
+/// (<https://platform.claude.com/docs/en/about-claude/pricing>, read 2026-11-25); the 1-hour one is cold.rs's.
 const WRITE: f64 = 1.25;
 
 /// v1 `bareModel`, widened: `claude-opus-5-5[1m]` → `claude-opus-5-5`, `…-20261101` → `…`, `anthropic/claude-…` →
@@ -114,15 +146,21 @@ mod tests {
         assert_eq!(price("claude-fable-5-2[1m]"), Some([8.0, 0.2, 40.0]));
         assert_eq!(price("claude-sonnet-4.5"), price("claude-sonnet-4-5"), "Copilot's dotted id");
         assert_eq!(price("anthropic/claude-opus-4-5-20251101"), Some([5.0, 0.5, 25.0]), "opencode's provider/model");
-        for id in ["gpt-5-codex", "gemini-2.5-pro", "grok-4", "composer-1"] {
+        for id in ["gpt-5", "gpt-5.3-codex", "gemini-2.5-pro", "grok-4.7", "claude-sonnet-5-5"] {
             assert!(price(id).is_some(), "{id}");
         }
         assert_eq!(price("gpt-9"), None, "an id the table doesn't name is never guessed from its family");
+        // not on the vendors' pages (2026-11-25): unpriced, never a made-up number
+        for id in ["gpt-5-codex", "gpt-5.1-codex", "gemini-3-pro-preview", "grok-4", "grok-4.7-build", "composer-1", "claude-haiku-5-5"] {
+            assert_eq!(price(id), None, "{id}");
+        }
+        assert_eq!(price("claude-sonnet-5-5"), Some([2.0, 0.1, 10.0]), "Sonnet 5.5's cache hit is 0.05x its input");
+        assert_eq!(price("claude-fable-5"), Some([10.0, 1.0, 50.0]), "Fable 5's cache hit is the standard 0.1x");
     }
 
     #[test]
     fn prices_estimate_a_turn_with_tokens_and_no_cost_and_flag_it() {
-        let mut t = Turn { model: "gpt-5-codex".into(), ..Turn::default() };
+        let mut t = Turn { model: "gpt-5".into(), ..Turn::default() };
         t.stats = Some(TurnStats {
             input_tokens: Some(1_000_000),
             cache_tokens: Some(2_000_000),

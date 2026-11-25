@@ -167,5 +167,10 @@
   "budget.harness.stop": "Automations stop on it at",
   "budget.usage.stopIs": "stop line: {stop}",
   "budget.usage.stopInAgents": "Set in Agents",
-  "budget.usage.stop.unset": "none (no limits reported)"
+  "budget.usage.stop.unset": "none (no limits reported)",
+  "budget.usage.cli.plan": "{name} plan: {plan}",
+  "budget.usage.cli.spent": "{name} says {what}",
+  "budget.usage.cli.spentDays.one": "{name} says {what} in {count} day",
+  "budget.usage.cli.spentDays.other": "{name} says {what} in {count} days",
+  "budget.usage.spend.notPriced": "not priced"
 }

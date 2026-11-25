@@ -43,7 +43,7 @@ export function weekStart(date: string): string {
 
 type Point = { readonly key: string; readonly cost: number; readonly tokens: number; readonly turns: number; readonly estimated: boolean };
 const dayPoint = (d: UsageDay): Point => ({ key: d.date, cost: d.cost, tokens: d.tokens ?? 0, turns: d.turns, estimated: d.cost_estimated === true });
-const weekPoint = (w: UsageWeek): Point => ({ key: w.start, cost: w.cost, tokens: w.tokens, turns: w.turns, estimated: false });
+const weekPoint = (w: UsageWeek): Point => ({ key: w.start, cost: w.cost, tokens: w.tokens, turns: w.turns, estimated: w.cost_estimated === true });
 
 /** The bars' points: a local day each, or the runtime's ISO-week rollup (`weekly`) when the scale is week. */
 function points(u: Usage, scale: UsageScale): Point[] {
@@ -82,7 +82,9 @@ export function usageModel(
     metric === 'cost' && byCost ? 'cost' : metric === 'tokens' && byTokens ? 'tokens' : metric === 'turns' ? 'turns' : byCost ? 'cost' : byTokens ? 'tokens' : 'turns';
   const val = (d: Point): number => (active === 'cost' ? d.cost : active === 'tokens' ? d.tokens : d.turns);
   const top = Math.max(0, ...pts.map(val)) || 1;
-  const maxStr = active === 'cost' ? money(top) : active === 'tokens' ? tokenWords(top) : String(top);
+  // the tallest bar's cost is an estimate when the bar holds one
+  const topEstimated = pts.some((d) => val(d) === top && d.estimated);
+  const maxStr = active === 'cost' ? costWords(top, { estimated: topEstimated }) : active === 'tokens' ? tokenWords(top) : String(top);
   return {
     byCost,
     byTokens,
@@ -104,6 +106,16 @@ export function usageModel(
   };
 }
 
+/** The first tile, on Settings → Usage and the Usage page alike: Spend as `costWords` says it (`~` an estimate, `+`
+ *  some turns unpriced), Tokens when no turn has a price (never "Spend $0.00" of nothing priced), and '—' before the
+ *  answer or with nothing at all. */
+export function spendTile(u: Usage | undefined): { label: string; value: string } {
+  if (!u) return { label: t('budget.usage.spend'), value: '—' };
+  const m = usageModel(u);
+  if (m.byCost) return { label: m.spendLabel, value: m.spend };
+  return { label: m.spendLabel, value: m.tokens > 0 ? tokenWords(m.tokens) : u.turns > 0 ? t('budget.usage.spend.notPriced') : '—' };
+}
+
 export interface StackSeries {
   readonly key: string;
   readonly label: string;
@@ -111,7 +123,8 @@ export interface StackSeries {
   readonly off: boolean;
 }
 
-type Cell = { cost: number; tokens: number; turns: number };
+type Cell = { cost: number; tokens: number; turns: number; estimated: boolean };
+const EMPTY: Cell = { cost: 0, tokens: 0, turns: 0, estimated: false };
 
 /** The stacked chart from one answer (`dailyByHarness`): a colour per harness in a fixed order (a harness keeps its
  * colour when another is hidden), a bar per day or per ISO week (the weeks the runtime's `weekly` names), each split
@@ -145,26 +158,39 @@ export function stackedModel(
     if (hidden.has(r.agent)) continue;
     const k = keyOf(r.date);
     const bar = cells.get(k) ?? new Map<string, Cell>();
-    const cur = bar.get(r.agent) ?? { cost: 0, tokens: 0, turns: 0 };
-    bar.set(r.agent, { cost: cur.cost + r.cost, tokens: cur.tokens + r.tokens, turns: cur.turns + r.turns });
+    const cur = bar.get(r.agent) ?? EMPTY;
+    bar.set(r.agent, {
+      cost: cur.cost + r.cost,
+      tokens: cur.tokens + r.tokens,
+      turns: cur.turns + r.turns,
+      estimated: cur.estimated || r.cost_estimated === true,
+    });
     cells.set(k, bar);
   }
   const total = (k: string): number => [...(cells.get(k)?.values() ?? [])].reduce((s, x) => s + val(x), 0);
+  const estimatedIn = (k: string): boolean => [...(cells.get(k)?.values() ?? [])].some((x) => x.estimated);
   const top = Math.max(0, ...keys.map(total)) || 1;
-  const words = (v: number): string => (metric === 'cost' ? money(v) : metric === 'tokens' ? tokenWords(v) : String(v));
+  // a cost holding a list-price estimate reads `~$x.xx` (costWords), in the tooltip and the scale alike
+  const words = (v: number, estimated = false): string => (metric === 'cost' ? costWords(v, { estimated }) : metric === 'tokens' ? tokenWords(v) : String(v));
+  const topEstimated = keys.some((k) => total(k) === top && estimatedIn(k));
   return {
     series,
     bars: keys.map((k) => {
       const bar = cells.get(k);
-      const on = series.filter((x) => !x.off && bar?.has(x.key)).map((x) => ({ x, v: val(bar?.get(x.key) ?? { cost: 0, tokens: 0, turns: 0 }) }));
+      const on = series
+        .filter((x) => !x.off && bar?.has(x.key))
+        .map((x) => {
+          const c = bar?.get(x.key) ?? EMPTY;
+          return { x, v: val(c), est: c.estimated };
+        });
       return {
         key: k,
         share: total(k) / top,
         stack: on.map(({ x, v }) => ({ series: x.series, share: v / top })),
-        tip: `${scaleLabel(k, scale)}: ${on.length ? on.map(({ x, v }) => `${x.label} ${words(v)}`).join(' · ') : words(0)}`,
+        tip: `${scaleLabel(k, scale)}: ${on.length ? on.map(({ x, v, est }) => `${x.label} ${words(v, est)}`).join(' · ') : words(0)}`,
       };
     }),
-    max: scale === 'week' ? t('budget.view.maxWeek', { v: words(top) }) : t('budget.view.max', { v: words(top) }),
+    max: scale === 'week' ? t('budget.view.maxWeek', { v: words(top, topEstimated) }) : t('budget.view.max', { v: words(top, topEstimated) }),
     first: keys[0] ? scaleLabel(keys[0], scale) : '',
   };
 }

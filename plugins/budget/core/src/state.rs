@@ -137,6 +137,12 @@ pub struct Acc {
     /// the last 7 days of finished turns' tokens (tokens per turn by account)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub turns: Vec<crate::traced::TurnSample>,
+    /// the plan or tier its CLI last named (Cursor)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+    /// what its CLI last said was spent lately (opencode, Grok), with when it was read
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spent: Option<wisp_budget_api::CliSpend>,
 }
 
 /// `agent@account`, the ledger's and the store's key.

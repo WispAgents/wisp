@@ -32,6 +32,8 @@ export interface UsageWeek {
   readonly cost: number;
   readonly turns: number;
   readonly tokens: number;
+  /** its cost holds a list-price estimate (ADR-0119, additive 2026-11-25) */
+  readonly cost_estimated?: boolean;
 }
 
 export interface Usage {
@@ -112,6 +114,18 @@ export interface AccountPlan {
   readonly overage?: Overage | null;
   /** where its longest window went this period */
   readonly where?: Where | null;
+  /** the plan or tier its CLI names (Cursor's `about`; budget-api AccountView, additive 2026-11-25) */
+  readonly plan?: string;
+  /** what its CLI totals as spent lately (opencode `stats`, `grok usage`; additive 2026-11-25) */
+  readonly spent?: CliSpend;
+}
+
+/** What a CLI itself reports of recent use (budget-api CliSpend): its own sum, not wisp's turns. */
+export interface CliSpend {
+  readonly cost?: number;
+  readonly days?: number;
+  readonly tokens?: number;
+  readonly at?: number;
 }
 
 /** `tzOffsetMin`: minutes east of UTC (`-getTimezoneOffset()`), so the days are the reader's local days. */

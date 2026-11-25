@@ -145,6 +145,22 @@ export function tokenBreakdown(r: { readonly inputTokens?: number | undefined; r
 }
 
 /** One harness's 7-day usage + plan status line for its row in Settings → Usage. */
+/** What a harness's own CLI said of the plan and its recent spend (ADR-0119): "Cursor plan: Pro", "opencode says
+ *  $1.25 · 287M tokens in 7 days". Its CLI's number, so never marked `~`; '' when it said nothing. */
+export function cliLine(h: Pick<HarnessBudgetMeta, 'name'>, accounts: readonly AccountPlan[]): string {
+  const parts: string[] = [];
+  const plan = accounts.find((a) => a.plan)?.plan;
+  if (plan) parts.push(t('budget.usage.cli.plan', { name: h.name, plan }));
+  const sp = accounts.find((a) => a.spent && (a.spent.cost !== undefined || a.spent.tokens !== undefined))?.spent;
+  if (sp) {
+    const what = [sp.cost !== undefined ? `$${sp.cost.toFixed(2)}` : '', sp.tokens !== undefined ? t('budget.usage.harness.tokens', { n: tokenWords(sp.tokens) }) : '']
+      .filter(Boolean)
+      .join(' · ');
+    parts.push(sp.days ? t('budget.usage.cli.spentDays', { name: h.name, what, count: sp.days }) : t('budget.usage.cli.spent', { name: h.name, what }));
+  }
+  return parts.join(' · ');
+}
+
 export function harnessUsageDescription(h: HarnessBudgetMeta, row: UsageRow | undefined, accounts: readonly AccountPlan[] = []): string {
   const parts: string[] = [];
   if (row && row.turns > 0) {
@@ -160,6 +176,8 @@ export function harnessUsageDescription(h: HarnessBudgetMeta, row: UsageRow | un
   if (fullest) parts.push(t('budget.usage.harness.window', { label: fullest.label, pct: pct(fullest.used) }));
   // a harness whose CLI gives wisp no quota window says so: its stop line has nothing to read
   const silent = !limitsReported(h, accounts);
+  const cli = cliLine(h, accounts);
+  if (cli) parts.push(cli);
   const note = silent
     ? `${t(h.priced ? 'budget.usage.track.priced' : 'budget.usage.track.tokens')} · ${t('budget.usage.limits.none', { name: h.name })}`
     : h.agent === 'codex'

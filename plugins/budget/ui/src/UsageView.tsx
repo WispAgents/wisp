@@ -4,13 +4,13 @@
 // window's share left with its reset) that Compare narrows to two or three side by side, then the breakdowns by
 // harness, by project and by harness · model. Every harness's tokens, turns and outcomes show even when the CLI
 // reports no dollar cost.
-import { createResource, createSignal, For, Show, type JSX } from 'solid-js';
+import { createResource, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { Button, Card, DataCellLead, DataTable, DayBars, Grid, Inline, SettingsNote, Stack, Stats, Tabs, Text, useSignal, Wrap } from '@wisp/ui';
-import { plans, usage, type AccountPlan, type UsageRow } from './commands.ts';
-import { HARNESSES, tokenBreakdown, tokenWords } from './plan.ts';
-import { cacheHit, costCell, limitLeft, stackedModel, usageModel, type ChartMetric, type UsageScale } from './usage-model.ts';
+import { plans, TOPIC, usage, type AccountPlan, type UsageRow } from './commands.ts';
+import { cliLine, HARNESSES, tokenBreakdown, tokenWords } from './plan.ts';
+import { cacheHit, costCell, limitLeft, spendTile, stackedModel, usageModel, type ChartMetric, type UsageScale } from './usage-model.ts';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
 
@@ -69,8 +69,14 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
   // the reader's local days: the runtime starts the window at local midnight and buckets by it
   const tzOffsetMin = -new Date().getTimezoneOffset();
   const [u] = createResource(days, (d) => c.run(usage, { peer: c.home, days: d, tzOffsetMin }).catch(() => undefined));
-  // each harness's plan windows (budget.view), for its card's limit and reset; none read is 'not reported'
-  const [limits] = createResource(async () => {
+  // each harness's plan windows (budget.view), for its card's limit and reset; none read is 'not reported'. A view of
+  // Cursor, opencode or Grok starts a background read of its CLI (ADR-0119): when it lands, the harness gets its first
+  // budget_acc row and this reads again, so the card shows the tier or spend the CLI gave.
+  const scope = c.scope.child('usage-view');
+  onCleanup(() => scope.dispose());
+  c.watch(c.home, TOPIC, scope, { passive: true });
+  const accs = useSignal(c.entities.list('budget_acc'));
+  const [limits] = createResource(() => accs().length + 1, async () => {
     const out = new Map<string, readonly AccountPlan[]>();
     await Promise.all(HARNESSES.map(async (h) => out.set(h.agent, await c.run(plans, { peer: c.home, agent: h.agent }).catch(() => [] as AccountPlan[]))));
     return out;
@@ -125,7 +131,8 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
           const limitOf = (agent: string): string => {
             const h = HARNESSES.find((x) => x.agent === agent) ?? { agent, name: nameOf(agent), key: '', planned: false, priced: false };
             const l = limitLeft(h, limits()?.get(agent) ?? [], Date.now());
-            if ('none' in l) return l.none;
+            // no windows: say so, and what its CLI said of its plan and spend (Cursor's tier, opencode / Grok's own sum)
+            if ('none' in l) return [l.none, cliLine(h, limits()?.get(agent) ?? [])].filter(Boolean).join(' · ');
             return [l.full ? t('budget.view.atLimit') : l.left, l.resets].filter(Boolean).join(' · ');
           };
           return (
@@ -134,11 +141,7 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
                 compact
                 part="budget.view.tiles"
                 items={[
-                  {
-                    label: m().spendLabel,
-                    value: m().byCost ? m().spend : m().tokens > 0 ? tokenWords(m().tokens) : '—',
-                    note: spendNote(),
-                  },
+                  { ...spendTile(x()), note: spendNote() },
                   { label: t('budget.usage.turns'), value: x().turns, note: turnsNote() },
                   { label: t('budget.usage.worked'), value: pct(x().worked), note: t('budget.view.workedNote') },
                   { label: t('budget.usage.questions'), value: x().questions, note: t('budget.view.questionsNote') },

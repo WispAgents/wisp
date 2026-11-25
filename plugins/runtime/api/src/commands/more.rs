@@ -832,6 +832,9 @@ pub struct UsageWeek {
     pub turns: u32,
     #[ts(type = "number")]
     pub tokens: u64,
+    /// added 2026-11-25 (additive, ADR-0119): `cost` holds a list-price estimate (one of its days does)
+    #[serde(default)]
+    pub cost_estimated: bool,
 }
 
 /// One row of a breakdown: a harness, a project, or a harness · model.
