@@ -63,6 +63,15 @@ describe('the Update pill', () => {
     expect(restartStep(undefined, idle, restarting)).toEqual({ from: '2.0.0', reload: false, wait: true });
   });
 
+  it('never_reloads_on_a_restarting_row_restored_from_disk', () => {
+    const stale = row({ status: 'restarting', current: '2.0.0' });
+    // the page opens on the row the last run saved: nothing to watch
+    const first = restartStep(undefined, undefined, stale);
+    expect(first).toEqual({ from: undefined, reload: false, wait: false });
+    // the new wisp's row lands: no reload (the loop: it reloaded before the new row was saved)
+    expect(restartStep(first.from, stale, row({ current: '2.1.0', available: false })).reload).toBe(false);
+  });
+
   it('says_how_to_start_wisp_again_when_it_never_came_back', () => {
     expect(notBack(row())).toBe('wisp didn’t come back. Start it again from your terminal.');
     expect(notBack(row({ method: 'app' }))).toBe('wisp didn’t come back. Open it again.');
