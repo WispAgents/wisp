@@ -252,6 +252,23 @@
     color: var(--ink-2);
     white-space: nowrap;
   }
+  /* the machine it runs on, over the branch: the branch's look in the body font */
+  [data-kit='m-where'] {
+    display: flex;
+    align-items: center;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  [data-kit='m-where'] > span {
+    min-width: 3ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  [data-kit='m-where'] > [data-kit='icon'],
   [data-kit='m-branch'] > [data-kit='icon'] {
     width: var(--size-icon-sm);
     height: var(--size-icon-sm);
@@ -408,9 +425,11 @@
       margin-top: -6px;
       overflow: visible;
     }
+    [data-kit='m-where'],
     [data-kit='m-branch'] {
       color: var(--muted);
     }
+    [data-kit='m-where'] > [data-kit='icon'],
     [data-kit='m-branch'] > [data-kit='icon'] {
       width: 13px;
       height: 13px;

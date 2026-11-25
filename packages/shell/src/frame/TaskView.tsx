@@ -1424,6 +1424,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           ];
         };
         const branch = (): string => String(s().summary['branch'] ?? '');
+        // where it runs (row.ts runOf's words): a sandbox, a peer by name, else this computer
+        const machine = (): { name: string; icon: 'box' | 'server' | 'laptop' } => {
+          const m = s().summary['machine'] as { name?: string; kind?: string } | null | undefined;
+          if (m?.kind === 'sandbox') return { name: m.name || t('shell.task.sandbox'), icon: 'box' };
+          if (m) return { name: m.name || t('shell.task.remote'), icon: 'server' };
+          return { name: t('shell.card.thisComputer'), icon: 'laptop' };
+        };
         const color = (): string => String(s().summary['color'] ?? 'slate');
         const ov = createMemo(() => (!closedReady() ? [] : shownOverlaps(overlapsOf(s()), closed() as unknown as Dismissed | undefined, s().id)));
         const mode = (): Mode => (['plan', 'edits', 'auto'].includes(String(s().summary['mode'])) ? (s().summary['mode'] as Mode) : 'auto');
@@ -1776,6 +1783,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   color={color()}
                   places={placeChips(s())}
                   status={statusOf(s(), t)}
+                  machine={machine()}
                   {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
                   {...((u) => (u ? { usage: u } : {}))(usage())}
                   actions={[]}
@@ -2024,7 +2032,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       color={color()}
                       places={placeChips(s())}
                       status={statusOf(s(), t)}
-                      {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
+                      machine={machine()}
+                  {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
                       {...((u) => (u ? { usage: u } : {}))(usage())}
                       actions={[]}
                     />
