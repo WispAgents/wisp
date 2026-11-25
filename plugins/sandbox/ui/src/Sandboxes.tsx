@@ -2,11 +2,12 @@
 // sandbox (`claude setup-token` runs here; its link opens, its code goes back; the token goes to the grid sealed,
 // never kept here), the env vars every sandbox gets (names only come back), and each sandbox with whose it is,
 // Open its task, Sign in to Codex there (its own device login), and Delete.
-import { For, Show, createResource, createSignal, type JSX } from 'solid-js';
+import { For, Show, createEffect, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
 import { entityKey, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Callout, IconButton, Inline, Input, SettingsGroup, SettingsRow, Stack, Text } from '@wisp/ui';
-import { claudeBegin, claudeCode, codexLogin, drop, env, info, logout, type ClaudeSignIn, type Info } from './commands.ts';
+import { Button, Callout, IconButton, Inline, Input, SettingsGroup, SettingsRow, Stack, Text, useSignal } from '@wisp/ui';
+import { claudeBegin, claudeCode, codexLogin, drop, env, info, logout, type ClaudeSignIn, type Info, type SigninRow } from './commands.ts';
+import { LAUNCHES_TOPIC, SIGNIN } from './launches.ts';
 import { t } from './i18n.ts';
 import { ownerTask, ownerWords } from './model.ts';
 import './i18n/lazy.ts';
@@ -21,6 +22,19 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
   // the Claude sign-in: its link, then the code
   const [flow, setFlow] = createSignal<ClaudeSignIn | undefined>(undefined);
   const [code, setCode] = createSignal('');
+  // the sign-in's row: one finished in the browser (no code pasted) shows here as it happens
+  const scope = c.scope.child('sandboxes-pane');
+  onCleanup(() => scope.dispose());
+  c.watch(peer, LAUNCHES_TOPIC, scope);
+  const live = useSignal(c.entities.row<SigninRow>(SIGNIN, entityKey(peer, 'claude')));
+  createEffect(() => {
+    const s = live() as SigninRow | undefined;
+    if (!s || !flow()) return;
+    if (s.state === 'done') {
+      setFlow(undefined);
+      void refetch();
+    } else if (s.state === 'link' || s.state === 'failed') setFlow(s);
+  });
   const begin = (): void => {
     setFlow({ state: 'waiting' });
     void c.run(claudeBegin, { peer }).then(setFlow, (e: unknown) => setFlow({ state: 'failed', error: e instanceof Error ? e.message : String(e) }));
@@ -81,7 +95,7 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
         <SettingsRow
           part="sandbox.claude"
           title={t('sandbox.claude')}
-          description={t(claudeOn() ? 'sandbox.claude.on' : 'sandbox.claude.off')}
+          description={t(claudeOn() ? 'sandbox.claude.on' : flow()?.state === 'link' ? 'sandbox.signin.browser.hint' : 'sandbox.claude.off')}
           control={
             <Show
               when={claudeOn()}

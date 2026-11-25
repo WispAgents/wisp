@@ -1,0 +1,66 @@
+/* GlowGrid: cells a wave of accent light runs across, corner to corner (each cell's --k-d is its place on the
+   diagonal), with what's happening in the middle over a soft veil. Reduced motion: still cells, lit evenly. */
+@layer kit {
+  [data-kit='glow-grid'] {
+    position: relative;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    border: var(--size-hairline) solid var(--line);
+    background: var(--bg-2);
+  }
+  [data-kit='glow-grid'][data-size='lg'] { width: 100%; padding: var(--space-6); min-height: calc(var(--size-control-md) * 7); }
+  [data-kit='glow-grid'][data-size='sm'] { padding: var(--space-1); border-radius: var(--radius-sm); }
+  [data-kit='glow-grid-cells'] {
+    display: grid;
+    grid-template-columns: repeat(var(--k-cols), 1fr);
+    gap: var(--space-2);
+    width: 100%;
+    height: 100%;
+  }
+  [data-kit='glow-grid'][data-size='lg'] > [data-kit='glow-grid-cells'] { position: absolute; inset: var(--space-4); width: auto; height: auto; }
+  [data-kit='glow-grid'][data-size='sm'] > [data-kit='glow-grid-cells'] { gap: var(--space-0); width: var(--size-icon-md); height: var(--size-icon-md); }
+  [data-kit='glow-cell'] {
+    border-radius: var(--radius-sm);
+    background: var(--line);
+    opacity: 0.55;
+    min-height: var(--space-1);
+  }
+  [data-kit='glow-grid'][data-size='sm'] [data-kit='glow-cell'] { border-radius: 1px; }
+  [data-kit='glow-grid'][data-state='working'] [data-kit='glow-cell'] {
+    animation: kit-glow-wave 2.4s var(--ease) infinite;
+    animation-delay: calc(var(--k-d) * 90ms);
+  }
+  [data-kit='glow-grid'][data-state='working'][data-size='sm'] [data-kit='glow-cell'] { animation-delay: calc(var(--k-d) * 160ms); }
+  [data-kit='glow-grid'][data-state='waiting'] [data-kit='glow-cell'] {
+    animation: kit-glow-breathe 3.2s ease-in-out infinite;
+    animation-delay: calc(var(--k-d) * 40ms);
+  }
+  [data-kit='glow-grid'][data-state='failed'] [data-kit='glow-cell'] { opacity: 0.35; }
+  [data-kit='glow-grid'][data-state='failed'] [data-kit='glow-cell'][data-broken] { background: var(--bad); opacity: 0.6; }
+  [data-kit='glow-grid-middle'] {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    padding: var(--space-5) var(--space-7);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--bg-2) 82%, transparent);
+    backdrop-filter: blur(6px);
+    text-align: center;
+  }
+  @keyframes kit-glow-wave {
+    0%, 60%, 100% { background: var(--line); opacity: 0.55; box-shadow: none; }
+    22% { background: var(--accent); opacity: 1; box-shadow: 0 0 var(--space-4) color-mix(in srgb, var(--accent) 70%, transparent); }
+  }
+  @keyframes kit-glow-breathe {
+    0%, 100% { background: var(--line); opacity: 0.5; }
+    50% { background: color-mix(in srgb, var(--warn) 55%, var(--line)); opacity: 0.85; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-kit='glow-grid'][data-state='working'] [data-kit='glow-cell'] { animation: none; background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  }
+}

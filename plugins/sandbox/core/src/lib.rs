@@ -182,21 +182,39 @@ pub fn retry_in(tries: u32) -> i64 {
 }
 
 fn plain(out: &str) -> String {
-    // the terminal's colours and cursor moves out
+    // the terminal's colours and cursor moves out (CSI: `ESC [ … final`), and its titles and hyperlinks (OSC:
+    // `ESC ] … BEL` or `ESC ] … ESC \`): Claude prints its sign-in link as a hyperlink, whose target and text would
+    // otherwise run together into one broken link
     let mut s = String::with_capacity(out.len());
-    let mut esc = false;
-    for c in out.chars() {
-        if esc {
-            if c.is_ascii_alphabetic() || c == '~' {
-                esc = false;
+    let mut it = out.chars().peekable();
+    while let Some(c) = it.next() {
+        if c != '\u{1b}' {
+            if c != '\u{7}' {
+                s.push(c);
             }
             continue;
         }
-        if c == '\u{1b}' {
-            esc = true;
-            continue;
+        match it.next() {
+            Some('[') => {
+                for c in it.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = it.next() {
+                    if c == '\u{7}' {
+                        break;
+                    }
+                    if c == '\u{1b}' && it.peek() == Some(&'\\') {
+                        it.next();
+                        break;
+                    }
+                }
+            }
+            _ => {}
         }
-        s.push(c);
     }
     s
 }
@@ -212,27 +230,41 @@ pub fn setup_link(out: &str) -> Option<String> {
 /// The token `claude setup-token` printed at the end (`sk-ant-oat01-…`), once it has, the line breaks the
 /// terminal put in it taken out.
 pub fn setup_token(out: &str) -> Option<String> {
+    token_read(out).map(|(t, _)| t)
+}
+
+/// [`setup_token`] once it's printed whole: something after it ends it (a blank line, the next words), so a token
+/// still coming in over a wrapped line isn't taken half.
+pub fn setup_token_whole(out: &str) -> Option<String> {
+    token_read(out).and_then(|(t, ended)| ended.then_some(t))
+}
+
+/// The token, and whether anything after it ended it.
+fn token_read(out: &str) -> Option<(String, bool)> {
     let p = plain(out);
     let at = p.find("sk-ant-oat01-")?;
     // a wrapped token goes on after a single line break; a blank line (or anything else) ends it
     let text: String = p[at..].chars().filter(|c| *c != '\r').collect();
     let mut tok = String::new();
     let mut breaks = 0;
+    let mut ended = false;
     for c in text.chars() {
         if c == '\n' {
             breaks += 1;
             if breaks > 1 {
+                ended = true;
                 break;
             }
             continue;
         }
         if !(c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            ended = true;
             break;
         }
         breaks = 0;
         tok.push(c);
     }
-    (tok.len() > 30).then_some(tok)
+    (tok.len() > 30).then_some((tok, ended))
 }
 
 #[cfg(test)]
@@ -347,5 +379,24 @@ mod tests {
         let done = "✓ Long-lived authentication token created successfully!\r\n\r\nYour OAuth token (valid for 1 year):\r\n\r\nsk-ant-oat01-AbCdEfGhIjKlMnOpQrStUvWx\r\nYz0123456789_-tail\r\n\r\nStore this token securely.";
         assert_eq!(setup_token(done).as_deref(), Some("sk-ant-oat01-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-tail"));
         assert_eq!(setup_link("no link yet"), None);
+    }
+
+    #[test]
+    fn a_sign_in_finished_in_the_browser_gives_its_token_once_printed_whole_and_its_link_reads_once() {
+        // Claude Code 2.1: the link as a hyperlink (OSC 8), its text the same URL
+        let url = "https://claude.ai/oauth/authorize?code=true&client_id=x&state=y";
+        let out = format!(
+            "\u{1b}[1mBrowser didn't open?\u{1b}[0m Use the URL below\r\n\r\n\u{1b}]8;id=mk1;{url}\u{7}{url}\u{1b}]8;;\u{7}\r\n\r\nPaste code here if prompted"
+        );
+        assert_eq!(setup_link(&out).as_deref(), Some(url));
+        let st = format!("\u{1b}]8;id=mk1;{url}\u{1b}\\{url}\u{1b}]8;;\u{1b}\\ next");
+        assert_eq!(setup_link(&st).as_deref(), Some(url));
+        // the callback on localhost finished it: no code pasted, the token printed, perhaps wrapped
+        let half = "Your OAuth token (valid for 1 year):\r\n\r\nsk-ant-oat01-AbCdEfGhIjKlMnOpQrStUvWx";
+        assert_eq!(setup_token_whole(half), None, "still coming in");
+        let wrapped = format!("{half}\r\nYz0123456789_-tail");
+        assert_eq!(setup_token_whole(&wrapped), None, "a wrapped line may go on");
+        let whole = format!("{wrapped}\r\n\r\nStore this token securely.");
+        assert_eq!(setup_token_whole(&whole).as_deref(), Some("sk-ant-oat01-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-tail"));
     }
 }

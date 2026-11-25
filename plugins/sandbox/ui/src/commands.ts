@@ -1,6 +1,7 @@
 // wisp.sandbox's commands as the app runs them (ADR-0047). Reads say what they wait for; writes the pane makes are
 // shown at once where they can be (an env var's name, a sandbox going).
-import { defineCommand, type PeerId } from '@wisp/client';
+import { defineCommand, entityKey, type EntityKey, type PeerId } from '@wisp/client';
+import { LAUNCH, type LaunchRow } from './launches.ts';
 import './i18n/lazy.ts';
 
 export interface SandboxView {
@@ -21,7 +22,7 @@ export interface Info {
 }
 
 export interface ClaudeSignIn {
-  readonly state: 'idle' | 'waiting' | 'link' | 'done' | 'failed';
+  readonly state: 'idle' | 'waiting' | 'link' | 'saving' | 'done' | 'failed';
   readonly link?: string;
   readonly error?: string;
 }
@@ -36,6 +37,11 @@ export interface LaunchArgs {
   readonly goal?: unknown;
 }
 
+/** Claude's sign-in for sandboxes as it goes (`id: claude`). */
+export interface SigninRow extends ClaudeSignIn {
+  readonly id: string;
+}
+
 const none = { optimistic: 'none' as const };
 export const info = defineCommand<{ peer: PeerId }, Info>({ id: 'sandbox.info', owner: (a) => a.peer, wire: () => ({}), ...none, pending: 'the Sandboxes pane' });
 export const launch = defineCommand<{ peer: PeerId; args: LaunchArgs }, { machine: string; peer: string; task: string; sandbox: string }>({
@@ -44,6 +50,37 @@ export const launch = defineCommand<{ peer: PeerId; args: LaunchArgs }, { machin
   wire: (a) => a.args,
   ...none,
   pending: 'the launching view (its placeholder card shows at once)',
+});
+const title = (a: LaunchArgs): string =>
+  (a.prompt.split('\n').map((l) => l.trim()).find((l) => l) ?? '').slice(0, 80);
+
+/** `/sandbox …`: its row shows at once (the list and its page), the sandbox comes up behind it. */
+export const start = defineCommand<{ peer: PeerId; id: string; args: LaunchArgs; at: number }, Record<string, never>>({
+  id: 'sandbox.start',
+  owner: (a) => a.peer,
+  wire: (a) => ({ id: a.id, ...a.args }),
+  optimistic: (_base, a) => {
+    const v: LaunchRow = { id: a.id, title: title(a.args), state: 'preparing', step: 'make', at: a.at, agent: a.args.agent ?? '' };
+    return [{ e: LAUNCH, id: entityKey(a.peer, a.id), op: 'upsert', v: v as never }];
+  },
+});
+const patchRow = (key: EntityKey, row: LaunchRow | undefined, change: Partial<LaunchRow>) => (row ? [{ e: LAUNCH, id: key, op: 'upsert' as const, v: { ...row, ...change } as never }] : []);
+/** Try again: preparing at once. */
+export const retry = defineCommand<{ peer: PeerId; id: string }, Record<string, never>>({
+  id: 'sandbox.retry',
+  owner: (a) => a.peer,
+  wire: (a) => ({ id: a.id }),
+  optimistic: (base, a) => {
+    const key = entityKey(a.peer, a.id);
+    return patchRow(key, base.peek<LaunchRow>(LAUNCH, key) as LaunchRow | undefined, { state: 'preparing', step: 'make', error: null });
+  },
+});
+/** Dismiss a launch that failed: its row goes at once. */
+export const dismiss = defineCommand<{ peer: PeerId; id: string }, Record<string, never>>({
+  id: 'sandbox.dismiss',
+  owner: (a) => a.peer,
+  wire: (a) => ({ id: a.id }),
+  optimistic: (_base, a) => [{ e: LAUNCH, id: entityKey(a.peer, a.id), op: 'del' }],
 });
 export const claudeBegin = defineCommand<{ peer: PeerId }, ClaudeSignIn>({ id: 'sandbox.claude.begin', owner: (a) => a.peer, wire: () => ({}), ...none, pending: 'Sign in' });
 export const claudeCode = defineCommand<{ peer: PeerId; code: string }, ClaudeSignIn>({ id: 'sandbox.claude.code', owner: (a) => a.peer, wire: (a) => ({ code: a.code }), ...none, pending: 'Done' });

@@ -1,13 +1,15 @@
 // @wisp-plugin/sandbox-ui: wisp.sandbox's UI (ADR-0047). `/sandbox …` in New task opens a placeholder for the task at
-// once (the Sandbox pill from the first frame) while its sandbox comes up, then the task itself; Sandbox in New task's
+// once (the Sandbox pill from the first frame) and a row on top of the task list while its sandbox comes up (a glowing
+// grid; Claude's sign-in right there when it's missing), then the task itself; Sandbox in New task's
 // Run on does the same with what's typed (TRY-19), offered while this wisp's grid makes sandboxes; Settings →
 // Computers → Sandboxes: the Claude sign-in for every sandbox, env vars, and each sandbox with its owner.
 import { createSignal, lazy } from 'solid-js';
 import { uuidv7, type Json, type PeerId, type PluginClient } from '@wisp/client';
-import { defineView, definePluginUi } from '@wisp/shell';
+import { defineExtension, defineView, definePluginUi } from '@wisp/shell';
 import { afterFirstScreen } from '@wisp/ui';
 import { catalogue, t } from './i18n.ts';
 import { sandboxPrompt } from './model.ts';
+import { anyLaunch } from './launches.ts';
 import { LAUNCHING, parseLaunching } from './views.ts';
 
 // whether this wisp makes sandboxes (`sandbox.info`): asked when Run on is first drawn, and again after a minute, so
@@ -29,13 +31,21 @@ function offered(c: PluginClient): boolean {
   return canMake();
 }
 
-const open = (c: PluginClient, prompt: string, launch: unknown): void =>
-  c.navigate({ t: 'openView', id: LAUNCHING as never, params: { id: uuidv7(), prompt, launch: (launch ?? {}) as Json } as Json });
+/** `/sandbox …`: its launch row at once (the list and its page, optimistic), its page now, the sandbox behind them. */
+const open = (c: PluginClient, prompt: string, launch: unknown): void => {
+  const id = uuidv7();
+  c.navigate({ t: 'openView', id: LAUNCHING as never, params: { id, prompt } as Json });
+  void import('./commands.ts').then(({ start }) =>
+    c.run(start, { peer: c.home as PeerId, id, at: Date.now(), args: { prompt, ...((launch ?? {}) as Record<string, unknown>) } }),
+  );
+};
 
 export default definePluginUi({
   id: 'wisp.sandbox',
   catalogue,
   settings: [{ id: 'sandboxes', group: 'computers', title: 'sandbox.pane', icon: 'box', order: 25, component: lazy(() => import('./Sandboxes.tsx')) }],
+  // the launches on top of the task list, only while there is one
+  extensions: [defineExtension({ id: 'sandbox.launches', attachTo: { id: 'shell.list:top' }, if: (p) => anyLaunch(p.client), component: lazy(() => import('./LaunchRows.tsx')) })],
   views: [defineView({ kind: LAUNCHING, slot: 'main', parse: parseLaunching, title: () => t('sandbox.pill'), component: lazy(() => import('./Launching.tsx')) })],
   prompt: [
     {
