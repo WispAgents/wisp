@@ -548,6 +548,7 @@
   "shell.task.factoryStopTitle": "Stop every station of this factory run",
   "shell.task.placeOwn": "{path}\nThe agent started here",
   "shell.task.placeAlso": "{path}\nAlso works in this folder",
+  "shell.task.worktreeCopied": "Worktree path copied",
   "shell.task.checkpoint": "Git checkpoint before this turn on {branch} ({sha})",
   "shell.task.activity": "Show activity",
   "shell.task.tokens": "{n} tokens",

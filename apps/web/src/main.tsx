@@ -154,7 +154,7 @@ function start(platform: Platform): void {
     });
   }
 
-  void client.start([{ peer: home, name: 'wisp', transport: httpTransport({ base: '' }) }]).then(() => {
+  void client.start([{ peer: home, name: '', transport: httpTransport({ base: '' }) }]).then(() => {
     for (const p of extraPeers()) client.addPeer(p);
     followMachines();
     loadRemoteUis();

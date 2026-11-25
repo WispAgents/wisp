@@ -44,7 +44,15 @@ export function toggleDone(c: ActionCtx, key: EntityKey): void {
     c.client.navigate({ t: 'markDone', id: sid(key) });
   }
   quiet(c.client.run(setState, { id: key, state: next }));
-  if (next === 'done') c.toast.success(c.t('shell-list.toast.done'), { action: { label: c.t('shell-list.toast.undo'), onClick: () => toggleDone(c, key) } });
+  if (next !== 'done') return;
+  // marking done takes it out of For later; Undo puts it back where it was, saved time and all (design/for-later.md)
+  const saved = isForLater(s) ? s.forLater?.at : undefined;
+  const undo = (): void => {
+    if (saved === undefined) return toggleDone(c, key);
+    // reopening clears the mark on the server, so the save goes once the reopen has landed
+    quiet(c.client.run(setState, { id: key, state: 'review' }).then(() => c.client.run(forLater, { id: key, forLater: true, at: saved })));
+  };
+  c.toast.success(c.t('shell-list.toast.done'), { action: { label: c.t('shell-list.toast.undo'), onClick: undo } });
 }
 
 /** Save for later ↔ Unsave, both with Undo; Undo of Unsave puts it back where it was. An Undo says nothing new: its

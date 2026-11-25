@@ -126,6 +126,8 @@ export const SHELL_STRINGS = {
   'shell.card.later': 'Save for later (L)',
   'shell.card.done': 'Mark done (E)',
   'shell.card.thisComputer': 'This computer',
+  'shell.task.sandbox': 'Sandbox',
+  'shell.task.remote': 'Another machine',
   'shell.card.runTitle': '{harness} · {model} · on {where}',
   'shell.side.all': 'All projects',
   'shell.side.need.one': '{count} needs you',

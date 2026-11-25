@@ -13,6 +13,8 @@ import { Menu, SheetMenus } from '../controls/Menu.tsx';
 import { useTurnMenu, type TurnPhoneMenu, type TurnTool } from './turn-menu.ts';
 import { holdMedia, type Held } from './hold-view.ts';
 import { createTimer } from '../blocks/content-scope.ts';
+import { copyText } from '../blocks/content-copy.tsx';
+import { Tooltip } from '../controls/Tooltip.tsx';
 import { useBarLabels } from './bar-labels.ts';
 import { Tool } from './launcher-tool.tsx';
 import { foldOrder, foldTail, type LauncherTool } from './launcher-fold.ts';
@@ -227,7 +229,15 @@ export interface TaskDetailsProps {
   readonly status?: { readonly label: string; readonly tone: string };
   /** a plan's when (v1 plan-view .pv-when): Starts in 2h, At 3pm, Draft, After “x”; first in the column */
   readonly when?: { readonly icon: IconName; readonly label: string; readonly title?: string };
-  readonly branch?: { readonly head: string; readonly tail: string; readonly title: string };
+  readonly branch?: {
+    readonly head: string;
+    readonly tail: string;
+    readonly title: string;
+    /** a click copies `text` (the worktree's path) and says `done` over the chip for a moment */
+    readonly copy?: { readonly text: string; readonly done: string };
+  };
+  /** the machine it runs on (this computer, a peer, a sandbox), over the branch. Additive. */
+  readonly machine?: { readonly name: string; readonly icon: IconName; readonly title?: string };
   /** its usage, its subagents' in, and how full its context is (v1 #785): the wide pane's lines. Additive. */
   readonly usage?: TaskUsageProps;
   readonly actions: readonly TaskAction[];
@@ -236,6 +246,44 @@ export interface TaskDetailsProps {
    * turns scroll; a full row under the narrow pane's bar. Additive.
    */
   readonly extra?: JSX.Element;
+}
+
+const COPIED_MS = 1200;
+
+/** The task's branch; with `copy`, a button that copies the worktree's path and says so in a tooltip. */
+function BranchChip(props: NonNullable<TaskDetailsProps['branch']>): JSX.Element {
+  const timer = createTimer();
+  const [copied, setCopied] = createSignal(false);
+  const chip = (): JSX.Element => (
+    <>
+      <Icon name="branch" />
+      <span data-kit="b-h">{props.head}</span>
+      <span data-kit="b-t">{props.tail}</span>
+    </>
+  );
+  return (
+    <Show when={props.copy} fallback={<span data-kit="m-branch" title={props.title}>{chip()}</span>}>
+      {(c) => (
+        <Tooltip content={c().done} open={copied()} disabled={!copied()} placement="bottom" part="split.branch-copied">
+          <button
+            type="button"
+            data-kit="m-branch"
+            data-part="split.branch"
+            title={copied() ? undefined : props.title}
+            onClick={() => {
+              void copyText(c().text).then((ok) => {
+                if (!ok) return;
+                setCopied(true);
+                timer.after(COPIED_MS, () => setCopied(false));
+              });
+            }}
+          >
+            {chip()}
+          </button>
+        </Tooltip>
+      )}
+    </Show>
+  );
 }
 
 /** v1 .it-bar: the harness and project, the branch, then the task's actions. */
@@ -296,16 +344,20 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
         {/* after the harness and the folder, as v1's it-props (split.js paintDetails: headPills, then planLine) */}
         <Show when={props.usage}>{(u) => <TaskUsage {...u()} />}</Show>
       </div>
-      <Show when={props.branch}>
-        {(b) => (
-          <div data-kit="it-meta" title={b().title}>
-            <span data-kit="m-branch">
-              <Icon name="branch" />
-              <span data-kit="b-h">{b().head}</span>
-              <span data-kit="b-t">{b().tail}</span>
-            </span>
-          </div>
-        )}
+      <Show when={props.branch || props.machine}>
+        <div data-kit="it-meta">
+          <Show when={props.machine}>
+            {(m) => (
+              <span data-kit="m-where" data-part="split.machine" title={m().title ?? m().name}>
+                <Icon name={m().icon} />
+                <span>{m().name}</span>
+              </span>
+            )}
+          </Show>
+          <Show when={props.branch}>
+            {(b) => <BranchChip {...b()} />}
+          </Show>
+        </div>
       </Show>
       <Show when={props.extra}>
         <div data-kit="it-extra" data-part="split.extra">

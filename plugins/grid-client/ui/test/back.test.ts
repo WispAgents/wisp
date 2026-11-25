@@ -21,3 +21,10 @@ test('the_reach_tip_shows_only_off_a_grid_and_only_once_the_row_says_so', () => 
   expect(offerReach(row(''))).toBe(true);
   expect(offerReach(row('https://grid.trywisp.dev')), 'a box is on a grid already').toBe(false);
 });
+
+test('the_reach_tip_hides_once_this_computer_is_on_a_grid', () => {
+  const on = (state: string): CloudRow => ({ ...row(''), computer: { on: true, state, label: 'studio', url: '', error: '' } });
+  for (const state of ['connecting', 'online', 'retrying']) expect(offerReach(on(state)), state).toBe(false);
+  expect(offerReach({ ...row(''), computer: { on: false, state: 'off', label: '', url: '', error: '' } }), 'turned off: offer it again').toBe(true);
+  expect(offerReach({ ...row(''), computer: { on: false, state: 'gone', label: '', url: '', error: '' } }), 'removed on the grid: offer it again').toBe(true);
+});
