@@ -341,13 +341,46 @@ async fn ended(ctx: &Ctx, call: &Call, task: &str, goal: bool) -> Look {
         Ok(t) => t,
         Err(e) => return unread(&e),
     };
-    if let Some(going) = busy(&t) {
+    // a goal that stalled asks you on its task (Waiting): the step has failed all the same, so it's read before busy
+    if let Some(going) = busy(&t).filter(|_| !(goal && goal_failed(&t).is_some())) {
         return going;
     }
-    match ctx.run::<r::Turns>(call, r::TurnsArgs { id, before: None, limit: None, masked: None }).await {
-        Ok(turns) => look(&t, turns.last(), goal),
-        Err(e) => unread(&e),
+    let turns = match ctx.run::<r::Turns>(call, r::TurnsArgs { id, before: None, limit: None, masked: None }).await {
+        Ok(turns) => turns,
+        Err(e) => return unread(&e),
+    };
+    let seen = look(&t, turns.last(), goal);
+    // nothing judges it (the goal plugin is off): its turn's outcome stands, or the step waited for ever
+    if goal && seen == (Look::Going { held: None }) && goal_of(&t).is_none_or(|g| g.state.is_empty()) && !goal_on(ctx, call).await {
+        return look(&t, turns.last(), false);
     }
+    seen
+}
+
+/// Whether the goal plugin is on to judge a step's goal (`goal.declared` answers; unknown or off says no).
+async fn goal_on(ctx: &Ctx, call: &Call) -> bool {
+    match ctx.run::<wisp_goal_api::Declared>(call, serde_json::json!({})).await {
+        Ok(_) => true,
+        Err(e) => !matches!(e.code, wisp_kernel::Code::NotFound | wisp_kernel::Code::PluginOff),
+    }
+}
+
+/// Whether a step's `goal:` is one the goal plugin judges: text of its own (a string, or `{text}`); `{}`, `""` or only
+/// judges is none, never judged, and the step waited on it for ever.
+pub(crate) fn has_goal(g: Option<&Value>) -> bool {
+    g.and_then(|g| g.as_str().or_else(|| g.get("text").and_then(Value::as_str))).is_some_and(|t| !t.trim().is_empty())
+}
+
+/// The task's goal slot as the goal plugin wrote it.
+fn goal_of(t: &Session) -> Option<wisp_goal_api::GoalState> {
+    t.ext.get(wisp_goal_api::PLUGIN).and_then(|v| serde_json::from_value::<wisp_goal_api::GoalState>(v.clone()).ok())
+}
+
+/// Why a step's goal failed (stalled, failed, past its limit), if it did.
+fn goal_failed(t: &Session) -> Option<String> {
+    let st = goal_of(t)?;
+    matches!(st.state.as_str(), "stalled" | "failed" | "limit")
+        .then(|| if st.why.is_empty() { format!("its goal ended {}", st.state) } else { format!("its goal wasn't met: {}", st.why) })
 }
 
 /// A step's task that couldn't be read: gone (deleted) ends the step failed, or the run waited on it for ever;
@@ -380,6 +413,11 @@ fn held_why(l: &Turn) -> String {
 /// How a step stands from its task and last turn. A held turn (a limit, trust, the plan) waits, as does a step whose
 /// goal its judges haven't met yet (working, judging, another round); met is done, stalled is failed with why.
 pub(crate) fn look(t: &Session, last: Option<&Turn>, goal: bool) -> Look {
+    // stalled: the goal asks you what next on its task (it waits on you), and the step failed with why
+    if goal && let Some(why) = goal_failed(t) {
+        let (_, output, _) = outcome(t.state, last);
+        return Look::Ended { ok: false, output, why };
+    }
     if let Some(going) = busy(t) {
         return going;
     }
@@ -391,15 +429,14 @@ pub(crate) fn look(t: &Session, last: Option<&Turn>, goal: bool) -> Look {
     if !(ok && goal) {
         return Look::Ended { ok, output, why };
     }
-    let slot = t.ext.get(wisp_goal_api::PLUGIN).and_then(|v| serde_json::from_value::<wisp_goal_api::GoalState>(v.clone()).ok());
-    let st = slot.unwrap_or_default();
+    let st = goal_of(t).unwrap_or_default();
     match st.state.as_str() {
         // dropped: the turn's answer stands, as a step without a goal
         "met" | "cleared" => Look::Ended { ok, output, why },
-        "stalled" | "failed" | "limit" => {
-            let why = if st.why.is_empty() { format!("its goal ended {}", st.state) } else { format!("its goal wasn't met: {}", st.why) };
-            Look::Ended { ok: false, output, why }
-        }
+        // paused (by you, or its agent's wake-up didn't go): it waits until it's resumed, and the board says so
+        "paused" => Look::Going {
+            held: Some(if st.why.is_empty() { "its goal is paused".into() } else { format!("its goal is paused: {}", st.why) }),
+        },
         _ => Look::Going { held: None },
     }
 }
@@ -462,7 +499,7 @@ async fn look_at_steps(
         .filter_map(|(id, r)| (r.state == StepState::Running).then(|| r.task.clone().map(|t| (id.clone(), t))).flatten())
         .collect();
     for (node, task) in running {
-        let goal = run.nodes.iter().find(|n| n.id == node).is_some_and(|n| n.spec.goal.as_ref().is_some_and(|g| !g.is_null()));
+        let goal = run.nodes.iter().find(|n| n.id == node).is_some_and(|n| has_goal(n.spec.goal.as_ref()));
         match ended(ctx, call, &task, goal).await {
             Look::Ended { ok, output, why } => {
                 holds.remove(&node);
@@ -930,6 +967,40 @@ mod tests {
         assert_eq!(why, "its goal wasn't met: 3 rounds and still no test");
         assert!(matches!(look(&with_goal("judging", ""), Some(&done), false), Look::Ended { ok: true, .. }), "a step without a goal");
         assert!(matches!(look(&with_goal("judging", ""), Some(&turn(TurnStatus::Error)), true), Look::Ended { ok: false, .. }));
+    }
+
+    /// A stalled goal asks you what next on its task, which sets it Waiting: the step read as "still working" and
+    /// waited on you, and never failed. It fails, with the goal's reason; a goal still being worked on waits as before.
+    #[test]
+    fn a_stalled_goal_fails_its_step_while_its_question_waits() {
+        let waiting = |state: &str, why: &str| {
+            let mut t = task(SessionState::Waiting);
+            t.ext.insert(wisp_goal_api::PLUGIN.into(), json!({ "state": state, "rounds": 3, "why": why }));
+            t
+        };
+        let done = turn(TurnStatus::Done);
+        let Look::Ended { ok, why, .. } = look(&waiting("stalled", "no test yet"), Some(&done), true) else { panic!() };
+        assert!(!ok);
+        assert_eq!(why, "its goal wasn't met: no test yet");
+        assert_eq!(look(&waiting("again", ""), Some(&done), true), Look::Going { held: None }, "another round runs");
+        assert_eq!(look(&waiting("stalled", ""), Some(&done), false), Look::Going { held: None }, "a step without a goal waits on you");
+    }
+
+    /// A paused goal holds its step, and says why; a `goal:` with no text is no goal (never judged, it waited for ever).
+    #[test]
+    fn a_paused_goal_holds_its_step_and_a_textless_goal_is_none() {
+        let mut t = task(SessionState::Review);
+        t.ext.insert(wisp_goal_api::PLUGIN.into(), json!({ "state": "paused", "rounds": 1, "why": "waiting on the API" }));
+        assert_eq!(
+            look(&t, Some(&turn(TurnStatus::Done)), true),
+            Look::Going { held: Some("its goal is paused: waiting on the API".into()) }
+        );
+        assert!(has_goal(Some(&json!("tests pass"))));
+        assert!(has_goal(Some(&json!({ "text": "tests pass", "judges": ["codex"] }))));
+        for none in [json!(null), json!(""), json!({}), json!({ "judges": ["codex"] }), json!({ "text": "  " })] {
+            assert!(!has_goal(Some(&none)), "{none}");
+        }
+        assert!(!has_goal(None));
     }
 
     /// A trigger's workflow run: its steps carry the trigger as their lineage, so their own `task.finished` never fires it.

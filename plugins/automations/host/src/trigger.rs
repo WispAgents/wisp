@@ -292,10 +292,18 @@ async fn on_event(ctx: Ctx, engine: Shared, env: Arc<wisp_kernel::EventEnvelope>
             }
         }
         // a stopped turn sends no `task.finished`: its run ended all the same (not a failure), or the trigger counted it
-        // running for ever and skipped every event after ("already running")
-        "turn.ended" if data.get("status").and_then(Value::as_str) == Some("stopped") => {
-            if let Some(id) = data.get("sessionId").and_then(Value::as_str).or(env.subject.as_deref()) {
-                engine.ended(&ctx, id, outcome_of(&env.ty, &data), Via::Turn, now).await;
+        // running for ever and skipped every event after ("already running"). Only a final stop: a follow-up that
+        // interrupted the turn (`interrupted`), or one queued behind it, runs on in the same task, and ending the run here
+        // let `concurrency` start a second beside it. A crew member's stop ends it too (`crew.reported` comes only
+        // with `task.finished`/`task.failed`, so a stopped member's run was never freed).
+        "turn.ended"
+            if data.get("status").and_then(Value::as_str) == Some("stopped")
+                && data.get("interrupted").and_then(Value::as_bool) != Some(true) =>
+        {
+            if let Some(id) = data.get("sessionId").and_then(Value::as_str).or(env.subject.as_deref())
+                && !engine.still_going(&ctx, id).await
+            {
+                engine.ended(&ctx, id, outcome_of(&env.ty, &data), Via::Any, now).await;
             }
         }
         // a workflow's run: its held task never runs a turn, so its end is the workflow's (failed unless done)

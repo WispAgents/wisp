@@ -297,6 +297,19 @@ impl Engine {
         }
     }
 
+    /// Whether a task still has a turn running, waiting or queued (unheld): a stopped turn then isn't its run's end.
+    /// A read error other than not found counts as going (the tick heals it if it ended).
+    pub async fn still_going(&self, ctx: &Ctx, id: &str) -> bool {
+        let got = ctx.run::<rt::Get>(&ctx.root_call(), rt::IdArgs { id: id.into() }).await;
+        match got {
+            Ok(t) => {
+                use wisp_runtime_api::model::SessionState;
+                matches!(t.state, SessionState::Running | SessionState::Waiting) || (!t.queue.is_empty() && !t.queue_held)
+            }
+            Err(e) => e.code != wisp_kernel::Code::NotFound,
+        }
+    }
+
     /// The tick: availability, schedules, one-offs, closed debounce windows, the queues, the polls.
     pub async fn tick(&self, ctx: &Ctx, now: i64) {
         let call = ctx.root_call();

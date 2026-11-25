@@ -35,6 +35,8 @@ struct World {
     gone: Arc<Mutex<BTreeSet<String>>>,
     /// what `workflows.run` was asked
     runs: Arc<Mutex<Vec<RunArgs>>>,
+    /// tasks that run nothing any more (in review); every other task is running
+    idle: Arc<Mutex<BTreeSet<String>>>,
 }
 
 impl World {
@@ -62,12 +64,13 @@ impl Plugin for Runtime {
         let w = self.0.clone();
         s.command::<r::Get, _, _>(move |_, _, a: r::IdArgs| {
             let gone = w.gone.lock().unwrap().contains(a.id.as_str());
+            let state = if w.idle.lock().unwrap().contains(a.id.as_str()) { "review" } else { "running" };
             async move {
                 if gone {
                     return Err(WireError::not_found(format!("no task {}", a.id.as_str())));
                 }
                 Ok(serde_json::from_value::<Session>(json!({ "id": a.id, "title": "t", "agent": "claude", "model": "", "effort": "",
-                    "mode": "auto", "cwd": "/repo", "state": "running", "createdAt": 0, "updatedAt": 0 }))
+                    "mode": "auto", "cwd": "/repo", "state": state, "createdAt": 0, "updatedAt": 0 }))
                 .unwrap())
             }
         });
@@ -181,13 +184,43 @@ async fn a_stopped_run_lets_the_next_event_start() {
     let k = kernel(&w, &clock, vec![("deploys".into(), chat())]).await;
     assert_eq!(push(&k, 1).await, 1);
     assert_eq!(push(&k, 2).await, 0, "one runs: skipped");
-    let e: TurnEnded = serde_json::from_value(json!({ "sessionId": "t1", "turnId": "u1", "status": "stopped", "interrupted": false,
-        "agent": "claude", "model": "" }))
-    .unwrap();
-    emit_runtime(&k, &e);
+    w.idle.lock().unwrap().insert("t1".into());
+    emit_runtime(&k, &stopped("t1", "u1", false));
     until_logged(&k, "deploys", "stopped").await;
     assert_eq!(push(&k, 3).await, 1, "{}", log(&k, "deploys").await);
     assert!(!log(&k, "deploys").await.as_array().unwrap().iter().any(|l| l["result"] == "failed"), "a stop isn't a failure");
+}
+
+fn stopped(task: &str, turn: &str, interrupted: bool) -> TurnEnded {
+    serde_json::from_value(json!({ "sessionId": task, "turnId": turn, "status": "stopped", "interrupted": interrupted,
+        "agent": "claude", "model": "" }))
+    .unwrap()
+}
+
+/// A follow-up that interrupts a running turn stops it (`interrupted`) and runs on in the same task, as does a stop with
+/// a follow-up queued behind it (the task still runs): neither ends the run, or `concurrency` started a second beside it.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_interrupted_stop_keeps_the_run_counted() {
+    let (w, clock) = (World::default(), FakeClock::at(T0));
+    let k = kernel(&w, &clock, vec![("deploys".into(), chat())]).await;
+    assert_eq!(push(&k, 1).await, 1);
+    // interrupted: the task is idle for a moment between the two turns, and still not ended
+    w.idle.lock().unwrap().insert("t1".into());
+    emit_runtime(&k, &stopped("t1", "u1", true));
+    w.idle.lock().unwrap().remove("t1");
+    // a final-looking stop while its next turn runs
+    emit_runtime(&k, &stopped("t1", "u2", false));
+    for _ in 0..30 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(!log(&k, "deploys").await.as_array().unwrap().iter().any(|l| l["result"] == "stopped"), "{}", log(&k, "deploys").await);
+    }
+    assert_eq!(push(&k, 2).await, 0, "its run goes on: skipped");
+    // the last turn stopped, nothing after it: now it ends
+    w.idle.lock().unwrap().insert("t1".into());
+    emit_runtime(&k, &stopped("t1", "u3", false));
+    until_logged(&k, "deploys", "stopped").await;
+    assert_eq!(push(&k, 3).await, 1, "{}", log(&k, "deploys").await);
+    assert_eq!(w.made.lock().unwrap().len(), 2, "one run at a time");
 }
 
 #[tokio::test(flavor = "multi_thread")]
