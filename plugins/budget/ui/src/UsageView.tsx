@@ -9,13 +9,13 @@ import type { PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { Button, Card, DataCellLead, DataTable, DayBars, Grid, Inline, SettingsNote, Stack, Stats, Tabs, Text, useSignal, Wrap } from '@wisp/ui';
 import { plans, usage, type AccountPlan, type UsageRow } from './commands.ts';
-import { cacheHit, HARNESSES, limitLeft, stackedModel, tokenBreakdown, tokenWords, usageModel, type ChartMetric, type UsageScale } from './plan.ts';
+import { HARNESSES, tokenBreakdown, tokenWords } from './plan.ts';
+import { cacheHit, costCell, limitLeft, stackedModel, usageModel, type ChartMetric, type UsageScale } from './usage-model.ts';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
 
-export { usageModel, type ChartMetric } from './plan.ts';
+export { usageModel, type ChartMetric } from './usage-model.ts';
 
-const money = (n: number): string => `$${n.toFixed(2)}`;
 const pct = (n: number | null | undefined): string => (n === null || n === undefined ? '—' : `${Math.round(n)}%`);
 /** "2m 05s", "41s" (v1 fmtDuration) */
 const dur = (ms: number | null): string => {
@@ -44,7 +44,7 @@ function Table(props: {
           cells: [
             props.lead(r),
             tok > 0 ? <span title={tip || undefined}>{tokenWords(tok)}</span> : '—',
-            r.priced ? money(r.cost) : '—',
+            ((c) => (c.tip ? <span title={c.tip}>{c.text}</span> : c.text))(costCell(r)),
             String(r.turns),
             pct(r.worked),
             String(r.questions),
@@ -97,12 +97,14 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
       />
       <Show when={u()} fallback={<Text tone="muted">{t('budget.view.adding')}</Text>}>
         {(x) => {
-          const m = (): ReturnType<typeof usageModel> => usageModel(x(), metric());
+          // the week scale: the runtime's ISO-week rollup, stacked or not
+          const weeks = (): boolean => (x().weekly?.length ?? 0) > 0 || stacked();
+          const m = (): ReturnType<typeof usageModel> => usageModel(x(), metric(), weeks() ? scale() : 'day');
           // an older peer answers without the per-harness days: its bars stay one colour, per day
           const stacked = (): boolean => (x().dailyByHarness?.length ?? 0) > 0;
           const s = (): ReturnType<typeof stackedModel> => stackedModel(x(), m().active, { hidden: hidden(), scale: scale(), nameOf });
           const chartTitle = (): string => {
-            const week = stacked() && scale() === 'week';
+            const week = weeks() && scale() === 'week';
             if (m().active === 'cost') return week ? `${t('budget.usage.spend')} · ${t('budget.view.perWeek')}` : t('budget.view.spendPerDay');
             if (m().active === 'tokens') return week ? `${t('budget.usage.tokens')} · ${t('budget.view.perWeek')}` : t('budget.view.tokensPerDay');
             return week ? `${t('budget.usage.turns')} · ${t('budget.view.perWeek')}` : t('budget.view.turnsPerDay');
@@ -134,7 +136,7 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
                 items={[
                   {
                     label: m().spendLabel,
-                    value: m().byCost ? money(x().spend) : m().tokens > 0 ? tokenWords(m().tokens) : '—',
+                    value: m().byCost ? m().spend : m().tokens > 0 ? tokenWords(m().tokens) : '—',
                     note: spendNote(),
                   },
                   { label: t('budget.usage.turns'), value: x().turns, note: turnsNote() },
@@ -146,7 +148,7 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
                 <Inline justify="between" align="center" gap="3">
                   <Text weight="medium">{chartTitle()}</Text>
                   <Inline gap="3" align="center">
-                    <Show when={stacked()}>
+                    <Show when={weeks()}>
                       <Tabs
                         variant="pill"
                         part="budget.view.scale"
@@ -224,7 +226,7 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
                               part="budget.view.card.stats"
                               items={[
                                 { label: t('budget.usage.tokens'), value: (r.tokens ?? 0) > 0 ? tokenWords(r.tokens ?? 0) : '—' },
-                                { label: t('budget.usage.spend'), value: r.priced ? money(r.cost) : '—' },
+                                { label: t('budget.usage.spend'), value: costCell(r).text },
                                 { label: t('budget.view.cacheHit'), value: cacheHit(r) },
                                 { label: t('budget.usage.turns'), value: r.turns },
                                 { label: t('budget.usage.worked'), value: pct(r.worked) },

@@ -569,5 +569,15 @@
   "shell.reply.moreChips": "More: the goal, delegates, when it sends",
   "shell.home.goalNew": "New goal…",
   "shell.feedback.thanks": "Thanks! Sent to the wisp team.",
-  "shell.peer.offline-since": "{name} is offline · last updated {at}"
+  "shell.peer.offline-since": "{name} is offline · last updated {at}",
+  "shell.runner.unreported": "Limits not reported by {name}",
+  "shell.runner.find": "Search harnesses and models",
+  "shell.runner.findEmpty": "No harness or model matches",
+  "shell.runner.quick": "Recent & favourites",
+  "shell.runner.quickSub.one": "{count} saved pick",
+  "shell.runner.quickSub.other": "{count} saved picks",
+  "shell.runner.recent": "Recent",
+  "shell.runner.favourites": "Favourites",
+  "shell.runner.star": "Favourite (f)",
+  "shell.runner.signIn": "Sign in"
 }

@@ -69,7 +69,7 @@
   "budget.view.avg": "Avg time",
   "budget.view.nothing": "Nothing in this range.",
   "budget.view.defaultModel": "default",
-  "budget.view.unpricedNote": "Codex, Cursor, Antigravity and Copilot report tokens but not cost (Copilot bills in premium requests), so their turns count in turns and outcomes but not in spend.",
+  "budget.view.unpricedNote": "A turn its harness gives no cost for is priced from its tokens at API list price and marked ~ (Codex, Cursor, Antigravity and Copilot bill a plan, so this is what the same tokens would cost on the API). A model with no list price counts in tokens, turns and outcomes only; a cost marked + leaves some turns out.",
   "budget.usage.stopLine": "Automations stop at {pct}",
   "budget.usage.banked.tip": "Reset credits on this plan, as Codex last said. wisp never redeems one: that’s yours to do in Codex",
   "budget.usage.over.title": "Past your plan",
@@ -156,10 +156,11 @@
   "budget.view.scale.week": "Week",
   "budget.view.cards": "Harnesses",
   "budget.view.cacheHit": "Cache hit",
-  "budget.view.limit": "Limit",
   "budget.view.compare": "Compare",
   "budget.view.compareAll": "All harnesses",
   "budget.view.atLimit": "at its limit",
-  "budget.view.perDay": "Per day",
-  "budget.view.perWeek": "Per week"
+  "budget.view.perWeek": "Per week",
+  "budget.view.estimatedTip.one": "{count} turn estimated from its tokens at API list price.",
+  "budget.view.estimatedTip.other": "{count} turns estimated from their tokens at API list price.",
+  "budget.view.partialTip": "{priced} of {turns} turns priced."
 }

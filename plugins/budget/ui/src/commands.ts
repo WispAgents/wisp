@@ -10,6 +10,8 @@ export interface UsageDay {
   readonly cost: number;
   readonly turns: number;
   readonly tokens?: number;
+  /** its cost holds a list-price estimate (ADR-0119, additive 2026-11-25) */
+  readonly cost_estimated?: boolean;
 }
 
 /** One harness's share of a day (runtime-api UsageHarnessDay, additive 2026-11-25): the stacked chart's parts. */
@@ -20,6 +22,7 @@ export interface UsageHarnessDay {
   readonly tokens: number;
   readonly cache_read: number;
   readonly turns: number;
+  readonly cost_estimated?: boolean;
 }
 
 /** An ISO week of the window (runtime-api UsageWeek, additive 2026-11-25). */
@@ -40,6 +43,9 @@ export interface Usage {
   /** v1's Charts and breakdowns (runtime-api UsageSummary, additive 2026-11-12) */
   readonly priced?: number;
   readonly sessions?: number;
+  /** of `priced`, the turns estimated at list price, and whether `spend` holds any (ADR-0119, additive 2026-11-25) */
+  readonly estimated?: number;
+  readonly costEstimated?: boolean;
   /** TRY-32: token totals and per-harness rollup across all harnesses */
   readonly tokens?: number;
   readonly inputTokens?: number;
@@ -62,6 +68,10 @@ export interface UsageRow {
   readonly priced: number;
   readonly turns: number;
   readonly sessions?: number;
+  readonly estimated?: number;
+  readonly costEstimated?: boolean;
+  /** Copilot's premium requests (gated until a real capture, ADR-0119) */
+  readonly premiumRequests?: number;
   readonly tokens?: number;
   readonly inputTokens?: number;
   readonly outputTokens?: number;
