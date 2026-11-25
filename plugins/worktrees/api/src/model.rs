@@ -262,9 +262,29 @@ pub struct FolderRow {
     /// lost with the folder: uncommitted paths, plus one when HEAD left the branch; None: git can't tell
     pub only: Option<u32>,
     pub uncommitted: Option<u32>,
+    /// the uncommitted paths themselves, first [`HELD_FILES_MAX`] (`uncommitted` counts them all), so the
+    /// dialog shows what Remove would lose. Additive (2026-11-25): an older peer sends none.
+    #[serde(default)]
+    pub files: Vec<HeldFile>,
     pub unpushed: u32,
     pub pr: Option<PrRef>,
     pub kept: bool,
+}
+
+/// How many uncommitted paths a Done row carries: past that the dialog says "+N more".
+pub const HELD_FILES_MAX: usize = 100;
+
+/// One uncommitted path in a folder: `xy` is git's two-letter porcelain code (`.M`, `A.`, `??`, `UU`), `from`
+/// a rename's old path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "worktrees/")]
+pub struct HeldFile {
+    pub path: String,
+    pub xy: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub from: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

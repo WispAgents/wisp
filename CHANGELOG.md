@@ -8,10 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - Prompt box: **/plugin** makes a wisp plugin from New task or a task's reply box. Type `/plugin` and what it should do: an agent writes it as a plugin of yours and installs it off, as **Cast a plugin** in Settings → Plugins does, and the new task opens. New task's agent pick goes with it. `/plugin` alone opens Settings → Plugins.
+- Mark done → *Remove its worktree?*: a folder holding uncommitted work lists its files. Click **3 uncommitted files** on the row to see each file with its change (A, M, D, R, or U for untracked) and its path. When only one folder holds work, its files show when the dialog opens. Past 100 files, the last line says how many more.
 - Task details: click the branch chip to copy the task's worktree path. A tooltip says **Worktree path copied**. Hover the chip to see the branch and the path.
 
 ### Fixed
 
+- Toasts now sit centred on the main area, not the whole window, so the sidebar no longer pushes them off-centre. They stay centred when you collapse or resize the sidebar.
 - Side discussions (`/side`) now run with their main task's access on every harness: the main task's mode (never below Edits, Full auto when it is), its account, thinking, connectors and team, and commands without an Allow card. Before, a side on Codex and the other harnesses only read, and on Claude Code every command asked. A side's write to a file the main task changed, in an earlier turn or in the one it is running, isn't made: it shows on the main task as a card with the diff, **Apply** (written while the file still reads as it did, else nothing is written) and **Discard** (ADR-0119).
 - Fork: a fork keeps its task's connectors, team, Try it two ways variant, lean setting and limits, so its first run has the same MCP servers; and none of the task's leftovers (a retry's grants, side questions, a blocked card).
 - Fork from Claude Code: the forked conversation is saved, so the fork's second follow-up resumes it. Before, it resumed a conversation that was never written.

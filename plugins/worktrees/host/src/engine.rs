@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 use wisp_git_api::{GitService, Repo, WorktreeAdd};
 use wisp_kernel::{Call, CancellationToken, Clock};
 use wisp_proc::Proc;
-use wisp_worktrees_api::{CreateArgs, Prepared, RemoveOpts, Removed, SetupSource, Worktree, WorktreeStatus};
+use wisp_worktrees_api::{CreateArgs, HELD_FILES_MAX, HeldFile, Prepared, RemoveOpts, Removed, SetupSource, Worktree, WorktreeStatus};
 use wisp_worktrees_core::{naming, removal};
 
 use crate::error::{Result, WtError};
@@ -337,6 +337,12 @@ impl Engine {
 
     /// What only this folder holds; Err when git can't tell (a repo that moved).
     pub async fn folder_only(&self, call: &Call, wt: &Worktree) -> Result<u32> {
+        self.folder_held(call, wt).await.map(|(only, _)| only)
+    }
+
+    /// [`Self::folder_only`] and the uncommitted paths behind it (the first [`HELD_FILES_MAX`]), from the
+    /// same `git status`: the Done dialog lists what Remove would lose without asking git twice.
+    pub async fn folder_held(&self, call: &Call, wt: &Worktree) -> Result<(u32, Vec<HeldFile>)> {
         let repo = self.repo(call, &wt.path).await?;
         let root = self.repo(call, &wt.root).await?;
         let tip_ref = format!("refs/heads/{}", wt.branch);
@@ -349,7 +355,9 @@ impl Engine {
         if !wt.branch.is_empty() && tip.is_none() {
             return Err(WtError::Conflict(format!("branch {} is gone", wt.branch)));
         }
-        Ok(removal::folder_only(u32::try_from(st.dirty()).unwrap_or(u32::MAX), &head, tip.as_deref()))
+        let only = removal::folder_only(u32::try_from(st.dirty()).unwrap_or(u32::MAX), &head, tip.as_deref());
+        let files = st.entries.into_iter().take(HELD_FILES_MAX).map(|e| HeldFile { path: e.path, xy: e.xy, from: e.from }).collect();
+        Ok((only, files))
     }
 
     /// Removes the folder only when nothing would be lost (or forced); the branch per `opts.branch`.

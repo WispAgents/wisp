@@ -149,6 +149,8 @@ export interface DoneFolder {
   /** what's lost with it: uncommitted paths, plus one when HEAD left the branch; null: git can't tell */
   readonly only: number | null;
   readonly uncommitted: number | null;
+  /** the uncommitted paths (the first 100; `uncommitted` counts all), git's porcelain code each. An older peer sends none */
+  readonly files?: readonly { readonly path: string; readonly xy: string; readonly from?: string }[];
   readonly unpushed: number;
   readonly pr: { readonly number: number; readonly url: string; readonly state: string } | null;
   readonly kept: boolean;

@@ -12,3 +12,4 @@ export { FileView, type FileViewProps, type GutterMark } from './file/FileView.t
 export { langOfPath, lineAt, nameAt } from './file/file-text.ts';
 export { EnvMask, envName, type EnvMaskProps } from './EnvMask.tsx';
 export { DOTS, envFileNamed, isEnvFile, maskBlock, maskDiffs, maskEdit, maskLine, maskText, namesEnvFile, readsEnvFile } from './env-mask.ts';
+export { HeldFiles, FoldToggle, heldKind, type HeldFile, type HeldFilesProps, type HeldKind, type FoldToggleProps } from './HeldFiles.tsx';

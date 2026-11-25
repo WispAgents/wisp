@@ -128,7 +128,7 @@ async fn with_no_npm_opencode_comes_from_the_registry_checked_and_every_attempt_
                     .to_string()
                     .into_bytes(),
             )
-        } else if path.ends_with(".tgz") {
+        } else if path == format!("/{pkg}/-/{pkg}-1.19.6.tgz") {
             (200, body.clone())
         } else {
             (404, b"{}".to_vec())

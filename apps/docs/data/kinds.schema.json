@@ -115,12 +115,28 @@
           "description": "Codex's own line (same | off | 50 | 75 | 90)",
           "type": "string"
         },
+        "copilot": {
+          "description": "Copilot's own line (same | off | 50 | 75 | 90)",
+          "type": "string"
+        },
+        "cursor": {
+          "description": "Cursor's own line (same | off | 50 | 75 | 90)",
+          "type": "string"
+        },
         "drainWatch": {
           "description": "warn when a window is about to drain",
           "type": [
             "boolean",
             "null"
           ]
+        },
+        "grok": {
+          "description": "Grok's own line (same | off | 50 | 75 | 90)",
+          "type": "string"
+        },
+        "opencode": {
+          "description": "opencode's own line (same | off | 50 | 75 | 90)",
+          "type": "string"
         },
         "stopAt": {
           "description": "off | 50 | 75 | 90: percent of a window where automations stop",

@@ -73,6 +73,16 @@ export function rowStatus(f: DoneFolder, ticked: boolean): Said & { readonly war
 /** Clean rows start ticked; one holding work only when you tick it. */
 export const initiallyTicked = (folders: readonly DoneFolder[]): string[] => folders.filter((f) => !holdsWork(f)).map((f) => f.path);
 
+/** The rows whose files can be listed: those git named uncommitted paths for. */
+export const hasFiles = (f: DoneFolder): boolean => (f.files?.length ?? 0) > 0;
+
+/** Which rows show their files when the dialog opens: the one row holding files, when only one does (most Dones:
+ * the task's own folder). With several, each waits for its toggle, so the dialog stays one screen. */
+export function initiallyOpen(folders: readonly DoneFolder[]): string[] {
+  const with_ = folders.filter(hasFiles);
+  return with_.length === 1 && with_[0] ? [with_[0].path] : [];
+}
+
 /** The dialog's title and the line under it. */
 export function heading(folders: readonly DoneFolder[], only: boolean): { title: Said; hint: Said } {
   const n = folders.length;
