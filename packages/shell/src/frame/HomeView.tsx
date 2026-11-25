@@ -30,7 +30,7 @@ import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type At
 import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
 import { modelWord, useHarnessRows, type Runner, useDefaultWords } from './runner.ts';
 import { usePlanRing } from './plan-ring.ts';
-import { AUTO_SETTING, FACTORY, LAUNCH_SETTING, autoEnabled, readLaunch, startRunner, withPick, type LaunchPick } from './launch-pick.ts';
+import { AUTO_SETTING, FACTORY, LAUNCH_SETTING, autoEnabled, readLaunch, startRunner, withPick, withWhere, type LaunchPick } from './launch-pick.ts';
 import { goalGate, goalOf, goalSent, goalWire, isBareGoal, typedInFull, type DeclaredGoal, type HomeGoal } from './goal-gate.ts';
 import { useGoalKit } from './goal-kit.ts';
 import { isFeedback } from './feedback.ts';
@@ -104,7 +104,14 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const [ghTools] = createResource(() => shell.client.commands.run(githubTools, { peer: home }).catch(() => null));
   // Run on (v1 launch.where): this computer, or another one you added (machines); only one at a time (F-comp-10)
   const peerIds = useSignal(shell.client.peers.list());
-  const [runOn, setRunOn] = createSignal<string>(home);
+  // the pick is kept in `runtime.launch` (its `where`), so the next New task starts on the same computer; until it
+  // loads, or once that computer is gone, it's this one (target())
+  const [ownRunOn, setOwnRunOn] = createSignal<string>();
+  const runOn = (): string => ownRunOn() ?? kept().where ?? home;
+  const setRunOn = (v: string): void => {
+    setOwnRunOn(v);
+    void shell.client.commands.run(setSetting, { peer: home, key: LAUNCH_SETTING, value: withWhere(kept(), v) as unknown as Json }).catch(() => undefined);
+  };
   const target = (): PeerId => (peerIds().includes(runOn() as PeerId) ? runOn() : home) as PeerId;
   // a sandbox is the task's that made it, never a computer to run on (where.ts); plugins' places come after (TRY-19)
   const keptMachines = useSignal(shell.client.entities.list<{ id: unknown; body?: { data?: unknown } }>('machines_peer'));

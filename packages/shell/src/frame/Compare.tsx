@@ -150,6 +150,7 @@ export default function Compare(props: { readonly params: { readonly id: string 
           reply: () => undefined,
           draft: () => undefined,
           openChanges: () => undefined,
+          changes: () => last.body.ext?.['wisp.runtime']?.changes ?? last.body.changes ?? [],
           apps: () => (last.body.ext?.['wisp.apps'] ?? {}) as Record<string, unknown>,
         })}
       />

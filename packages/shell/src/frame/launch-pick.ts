@@ -24,6 +24,8 @@ export interface LaunchPick {
   readonly models?: Readonly<Record<string, string>>;
   readonly labels?: Readonly<Record<string, string>>;
   readonly efforts?: Readonly<Record<string, string>>;
+  /** Run on (v1 launch.where): the computer (a peer id) or plugin place New task last ran on; absent is this one. */
+  readonly where?: string;
 }
 
 /** Auto is offered only while its switch is on (a bool `true`, nothing else). */
@@ -52,6 +54,7 @@ export function readLaunch(v: unknown): LaunchPick {
     ...(models && { models }),
     ...(labels && { labels }),
     ...(efforts && { efforts }),
+    ...(typeof o['where'] === 'string' && o['where'] && { where: o['where'] }),
   };
 }
 
@@ -62,7 +65,13 @@ export function withPick(prev: LaunchPick, agent: string, model: string, label: 
     models: { ...prev.models, [agent]: model },
     labels: { ...prev.labels, [agent]: label },
     efforts: { ...prev.efforts, [agent]: effort },
+    ...(prev.where && { where: prev.where }),
   };
+}
+
+/** A Run on pick made: the next New task starts there too (the harness pick kept as it is). */
+export function withWhere(prev: LaunchPick, where: string): LaunchPick {
+  return { ...prev, where };
 }
 
 /** What New task starts on: the last pick while it's there (Auto only while it's on), else Auto when on, else the
