@@ -252,6 +252,27 @@
     color: var(--ink-2);
     white-space: nowrap;
   }
+  /* the branch as a button: a click copies the worktree's path (Worktree path copied, in a tooltip) */
+  [data-kit='it-meta'] > [data-kit='tooltip-trigger'] {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+  }
+  button[data-kit='m-branch'] {
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    text-align: start;
+    cursor: pointer;
+  }
+  button[data-kit='m-branch']:hover {
+    color: var(--ink);
+  }
+  button[data-kit='m-branch']:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
   /* the machine it runs on, over the branch: the branch's look in the body font */
   [data-kit='m-where'] {
     display: flex;

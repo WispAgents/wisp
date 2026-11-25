@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Task details: click the branch chip to copy the task's worktree path. A tooltip says **Worktree path copied**. Hover the chip to see the branch and the path.
+
 ### Fixed
 
 - Task list: **Mark done** on a task saved for later moves it to *Done*. Before, it stayed in *For later*. **Undo** puts it back in For later at its old place.
