@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - Prompt box: **/plugin** makes a wisp plugin from New task or a task's reply box. Type `/plugin` and what it should do: an agent writes it as a plugin of yours and installs it off, as **Cast a plugin** in Settings → Plugins does, and the new task opens. New task's agent pick goes with it. `/plugin` alone opens Settings → Plugins.
+- Mark done → *Remove its worktree?*: a folder holding uncommitted work lists its files. Click **3 uncommitted files** on the row to see each file with its change (A, M, D, R, or U for untracked) and its path. When only one folder holds work, its files show when the dialog opens. Past 100 files, the last line says how many more.
 - Task details: click the branch chip to copy the task's worktree path. A tooltip says **Worktree path copied**. Hover the chip to see the branch and the path.
 - Usage page: the chart stacks each harness in its own colour. Click a harness in the legend to hide or show it. **Day** and **Week** group the bars by day or by ISO week. A card per harness shows its tokens, spend, cache hit %, turns, how many worked, and how much of its fullest plan window is left with when it resets. **Compare** puts two or three harnesses side by side. All the tables are still there.
 - Harness picker: a harness's line says when its window resets ("Weekly 64% used · resets in 2h 10m"). A harness at its limit is greyed but still listed, with its reset time.

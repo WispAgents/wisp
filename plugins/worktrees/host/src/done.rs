@@ -66,10 +66,11 @@ pub async fn list(e: &Engine, port: &dyn Port, call: &Call, session: &str, sizes
         let Some(wt) = by_path.get(&f.path) else {
             continue;
         };
-        let (only, st, size) = tokio::join!(e.folder_only(call, wt), e.status(call, wt, None), async {
+        let (held, st, size) = tokio::join!(e.folder_held(call, wt), e.status(call, wt, None), async {
             if sizes { size_of(e, &wt.path).await } else { None }
         });
         let st = st.ok();
+        let (only, files) = held.map_or((None, Vec::new()), |(n, f)| (Some(n), f));
         rows.push(FolderRow {
             path: f.path.clone(),
             task: t.id.clone(),
@@ -77,8 +78,9 @@ pub async fn list(e: &Engine, port: &dyn Port, call: &Call, session: &str, sizes
             own: t.id == session,
             branch: f.branch.clone(),
             size,
-            only: only.ok(),
+            only,
             uncommitted: st.map(|s| s.dirty),
+            files,
             unpushed: st.map_or(0, |s| s.unpushed),
             pr: f.pr.clone(),
             kept: t.kept,

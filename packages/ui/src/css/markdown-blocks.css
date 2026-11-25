@@ -1,0 +1,65 @@
+/* The markdown blocks only Markdown.tsx draws (headings, lists, quotes, rules, tables, <details>, ```mermaid fences): a
+ * sheet of its own, imported there, so it ships in Markdown's lazy chunk and not in the first screen's index.css
+ * (index.css's note; ADR-0105 §4's phone CSS ratchet). markdown.css keeps what other code draws too (the prose root,
+ * paragraphs, inline marks and links, code). */
+@layer kit {
+  [data-kit='md-heading'] {
+    margin: var(--space-7) 0 var(--space-4); color: var(--ink); font-family: var(--display); font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold); line-height: var(--lh-tight); letter-spacing: var(--tracking-title); text-wrap: balance;
+  }
+  [data-kit='md-heading'][data-level='1'] { font-size: var(--fs-xl); }
+
+  [data-kit='md-list'] { padding-left: calc(var(--space-7) + var(--space-2)); }
+  [data-kit='md-li'] { margin: var(--space-1) 0; }
+  [data-kit='md-li']::marker { color: var(--faint); }
+  [data-kit='md-li'] > [data-kit='md-list'] { margin: var(--space-1) 0 0; }
+  [data-kit='md-li'] > [data-kit='md-p'] { margin-bottom: var(--space-3); }
+  [data-kit='md-li'][data-task] { list-style: none; margin-left: calc(-1 * var(--space-7)); }
+  [data-kit='md-task'] {
+    float: left; width: var(--size-check); height: var(--size-check);
+    margin: calc((1lh - var(--size-check)) / 2) var(--space-3) 0 0; accent-color: var(--accent);
+  }
+
+  [data-kit='md-quote'] { padding-left: var(--space-6); border-left: var(--size-ring) solid var(--line-2); color: var(--muted); }
+  [data-kit='md-hr'] { margin: var(--space-7) 0; border: 0; border-top: var(--size-hairline) solid var(--line); }
+
+  /* Tables scroll sideways inside their frame; cells break words only where they must. */
+  [data-kit='md-table-wrap'] { overflow-x: auto; border: var(--size-hairline) solid var(--line); border-radius: var(--radius-lg); }
+  [data-kit='md-table'] { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+  [data-kit='md-th'], [data-kit='md-td'] {
+    padding: var(--space-3) var(--space-6); text-align: left; vertical-align: top;
+    border-bottom: var(--size-hairline) solid var(--line); overflow-wrap: normal;
+  }
+  [data-kit='md-th'] { color: var(--ink); font-weight: var(--fw-semibold); background: var(--surface-2); white-space: nowrap; }
+  [data-kit='md-table'] tbody tr:last-child [data-kit='md-td'] { border-bottom: 0; }
+  [data-kit='md-th'][data-align='center'], [data-kit='md-td'][data-align='center'] { text-align: center; }
+  [data-kit='md-th'][data-align='right'], [data-kit='md-td'][data-align='right'] { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* <details>: a native disclosure, drawn as a quiet card. */
+  [data-kit='md-details'] {
+    margin: 0 0 var(--space-6); padding: var(--space-3) var(--space-6); border: var(--size-hairline) solid var(--line);
+    border-radius: var(--radius-lg); background: var(--surface);
+  }
+  [data-kit='md-details'][open] { padding-bottom: var(--space-6); }
+  [data-kit='md-details'] > *:last-child { margin-bottom: 0; }
+  [data-kit='md-summary'] { color: var(--ink); font-weight: var(--fw-semibold); cursor: pointer; border-radius: var(--radius-xs); }
+  [data-kit='md-details'][open] > [data-kit='md-summary'] { margin-bottom: var(--space-4); }
+
+  /* ```mermaid: the diagram in a code block's frame, its bar on top (ADR-0118). */
+  [data-kit='mermaid'] {
+    margin: 0 0 var(--space-6); min-width: 0; overflow: hidden; border: var(--size-hairline) solid var(--line);
+    border-radius: var(--radius-lg); background: var(--surface);
+  }
+  [data-kit='mermaid-bar'] {
+    display: flex; align-items: center; gap: var(--space-2); min-height: var(--size-control-md); padding: 0 var(--space-3) 0 var(--space-6);
+    border-bottom: var(--size-hairline) solid var(--line); background: var(--surface-2);
+  }
+  [data-kit='mermaid-label'] {
+    flex: 1; min-width: 0; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  [data-kit='mermaid-svg'] { display: flex; justify-content: center; padding: var(--space-6); overflow-x: auto; }
+  [data-kit='mermaid-svg'] > svg { max-width: 100%; height: auto; }
+  [data-kit='mermaid'] > [data-kit='skeleton'] { margin: var(--space-6); width: auto; }
+  [data-kit='mermaid'] > [data-kit='code-block'] { border: 0; border-radius: 0; }
+  [data-kit='mermaid-note'] { padding: var(--space-3) var(--space-6); border-top: var(--size-hairline) solid var(--line); font-size: var(--fs-xs); color: var(--muted); }
+}

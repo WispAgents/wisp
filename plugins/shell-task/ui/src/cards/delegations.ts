@@ -1,5 +1,6 @@
 // Inline delegate rows for a turn (`turn.ext['wisp.runtime'].delegations`), joined with each child session's
 // live state so Chat mode (and Report mode) shows live progress and one-click navigation right on the turn. DOM-free.
+import '../i18n/lazy.ts';
 import type { T, TurnDoc } from './model.ts';
 
 export interface DelegationSessionLike {

@@ -7,6 +7,8 @@
   "type": "result",
   "text": "Side answer (digest): what is 2+2?",
   "isError": false,
-  "stats": {}
+  "stats": {
+   "costUsd": 0.002
+  }
  }
 ]

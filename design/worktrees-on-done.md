@@ -28,6 +28,11 @@ A subagent working in its lead's folder is the lead's row.
   State, first that applies: *N uncommitted files* (warn colour), *Commits off its branch*, *Can’t read
   it*, *PR #N open*, *PR #N merged*, *N commits not pushed*, *Clean*. Sizes come in a second request
   (`du` takes seconds on a big folder): a placeholder until then, blank where there's no `du`.
+- A row with uncommitted files makes its state a toggle (*3 uncommitted files ›*) that opens the files
+  under the row (`files` on the row: the first 100 of git's status, from the same `git status` that counts
+  them): git's change as a badge (A, M, D, R, U untracked, ! conflict) and the path, folder faint and name
+  strong. The list scrolls past eight lines; past 100 the last line says *+N more*. When exactly one row
+  has files, it starts open; with several, each waits for its toggle.
 - Clean rows are ticked. A row holding work (`only > 0`, or git can't tell) is **unticked** and says
   *3 uncommitted files will be lost*; ticking one turns Remove red.
 - Footer: *Always do this* · **Keep** · **Remove** (primary; *Remove 3* when more than one is ticked;
