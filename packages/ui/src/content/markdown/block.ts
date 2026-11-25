@@ -107,6 +107,19 @@ function indented(lines: readonly string[], i: number): Parsed | undefined {
   return { block: { t: 'code', lang: '', v: body.join('\n'), open: false }, end: j };
 }
 
+/**
+ * Whether a lone `-` underline may still be a list opener on its way in: followed by a space (`- ` waiting
+ * for its text) or the last line of the text so far. Agents write `Steps:\n- a` with no blank line, so
+ * while it streams the prose line must stay a paragraph instead of flashing as an h2.
+ */
+function listOpenerInFlight(lines: readonly string[], j: number): boolean {
+  const line = lines[j] ?? '';
+  if (!/^ {0,3}-[ \t]*$/.test(line)) return false;
+  if (/-[ \t]+$/.test(line)) return true;
+  for (let k = j + 1; k < lines.length; k++) if (!blank(lines[k])) return false;
+  return true;
+}
+
 function paragraph(lines: readonly string[], i: number): Parsed {
   const body: string[] = [];
   let j = i;
@@ -115,7 +128,7 @@ function paragraph(lines: readonly string[], i: number): Parsed {
     // A setext underline turns the lines above it into a heading; checked before the rule test,
     // since `---` under text is an h2, not a paragraph and a rule.
     const setext = j > i ? SETEXT.exec(line) : null;
-    if (setext) {
+    if (setext && !listOpenerInFlight(lines, j)) {
       const level = (setext[1] ?? '=')[0] === '=' ? 1 : 2;
       return { block: { t: 'heading', level, c: parseInline(body.join('\n').replace(/\s+$/, '')) }, end: j + 1 };
     }

@@ -1,6 +1,6 @@
 // Skeleton: a placeholder with the real thing's shape and size, so loading never looks empty and
 // the real controls replace it without a jump (design/ux.md).
-import type { JSX } from 'solid-js';
+import { Show, type JSX } from 'solid-js';
 import type { Size } from '@wisp/tokens';
 import { sizeVar } from '@wisp/tokens';
 import type { KitProps } from '../core/props.ts';
@@ -23,22 +23,40 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
     if (w === undefined) return undefined;
     return FRACTION[w] ?? sizeVar(w as Size);
   };
+  const style = (): JSX.CSSProperties => ({
+    ...(width() ? { '--k-w': width() } : {}),
+    ...(props.height ? { '--k-h': sizeVar(props.height) } : {}),
+  });
+  // Two branches, not dynamic attributes: the unlabelled skeleton keeps its static aria-hidden first, so its
+  // markup stays byte-identical to before labels existed (the packages/ui golden renders pin it).
   return (
-    <span
-      id={props.id}
-      aria-hidden={props.label ? undefined : 'true'}
-      role={props.label ? 'status' : undefined}
-      aria-label={props.label}
-      data-label={props.label ? '' : undefined}
-      data-kit="skeleton"
-      data-part={props.part ?? 'ui.skeleton'}
-      data-shape={props.shape ?? 'line'}
-      style={{
-        ...(width() ? { '--k-w': width() } : {}),
-        ...(props.height ? { '--k-h': sizeVar(props.height) } : {}),
-      }}
+    <Show
+      when={props.label}
+      fallback={
+        <span
+          id={props.id}
+          aria-hidden="true"
+          data-kit="skeleton"
+          data-part={props.part ?? 'ui.skeleton'}
+          data-shape={props.shape ?? 'line'}
+          style={style()}
+        />
+      }
     >
-      {props.label}
-    </span>
+      {(label) => (
+        <span
+          id={props.id}
+          role="status"
+          aria-label={label()}
+          data-label=""
+          data-kit="skeleton"
+          data-part={props.part ?? 'ui.skeleton'}
+          data-shape={props.shape ?? 'line'}
+          style={style()}
+        >
+          {label()}
+        </span>
+      )}
+    </Show>
   );
 }
