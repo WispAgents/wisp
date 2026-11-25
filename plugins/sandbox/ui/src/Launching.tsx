@@ -5,24 +5,12 @@
 import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
 import { entityKey, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Callout, GlowGrid, Icon, Inline, Input, Pill, Stack, Steps, Text, useSignal, type Step } from '@wisp/ui';
+import { Button, Callout, GlowGrid, Icon, Inline, Input, Pill, Stack, Steps, Text, useSignal } from '@wisp/ui';
 import { claudeBegin, claudeCode, dismiss, retry, type SigninRow } from './commands.ts';
 import { t } from './i18n.ts';
-import { LAUNCH, LAUNCHES_TOPIC, SIGNIN, type LaunchRow, type LaunchStep } from './launches.ts';
+import { LAUNCH, LAUNCHES_TOPIC, SIGNIN, stepsOf, type LaunchRow } from './launches.ts';
 import type { LaunchingParams } from './views.ts';
 import './i18n/lazy.ts';
-
-const STEPS: readonly LaunchStep[] = ['make', 'wake', 'copy', 'start'];
-
-/** Each step done, being done or still to come, from where the launch is. */
-export function stepsOf(row: LaunchRow | undefined): Step[] {
-  const at = row ? STEPS.indexOf(row.step as LaunchStep) : 0;
-  const failed = row?.state === 'failed';
-  return STEPS.map((s, i) => ({
-    title: t(`sandbox.step.${s}`),
-    status: i < at ? 'done' : i === at ? (failed ? 'failed' : 'current') : 'pending',
-  }));
-}
 
 export default function Launching(props: { readonly client: PluginClient; readonly params: LaunchingParams }): JSX.Element {
   const c = props.client;

@@ -1,11 +1,11 @@
 // The `/sandbox` launches on top of the task list (`shell.list:top`, the owner's 2026-11-25 report): each as a task
-// row from the first frame, its mark a small glowing grid while the sandbox comes up, then gone when its task's own
+// row from the first frame, its mark the live dot of a working task while the sandbox comes up, then gone when its task's own
 // row is there; one waiting for Claude's sign-in asks for it, one that failed says why until it's dismissed. A press
 // opens its page.
 import { For, type JSX } from 'solid-js';
 import type { PeerId } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';
-import { GlowGrid, IconButton, ListRow, Pill, Stack, Time, useSignal } from '@wisp/ui';
+import { Dot, IconButton, ListRow, Pill, Stack, Time, useSignal } from '@wisp/ui';
 import { dismiss } from './commands.ts';
 import { t } from './i18n.ts';
 import { LAUNCH, shown, type LaunchRow } from './launches.ts';
@@ -33,7 +33,7 @@ export default function LaunchRows(props: ExtensionProps): JSX.Element {
             layout="feed"
             title={r.title}
             strong={r.state === 'signin'}
-            lead={<GlowGrid size="sm" state={r.state === 'failed' ? 'failed' : r.state === 'signin' ? 'waiting' : 'working'} />}
+            lead={<Dot tone={r.state === 'failed' ? 'bad' : r.state === 'signin' ? 'warn' : 'accent'} live={r.state === 'preparing'} />}
             sub={subOf(r)}
             subTone={r.state === 'preparing' ? 'accent-ink' : 'warn'}
             subTitle={subOf(r)}

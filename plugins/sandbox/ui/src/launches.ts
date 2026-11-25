@@ -5,29 +5,13 @@
 import { createSignal } from 'solid-js';
 import { effect, type PluginClient } from '@wisp/client';
 import { afterFirstScreen } from '@wisp/ui';
+import { shown, type LaunchRow } from './launch-model.ts';
+
+export { shown, stepsOf, type LaunchRow, type LaunchStep } from './launch-model.ts';
 
 export const LAUNCHES_TOPIC = 'plugin:wisp.sandbox:launches' as const;
 export const LAUNCH = 'sandbox.launch';
 export const SIGNIN = 'sandbox.signin';
-
-export type LaunchStep = 'make' | 'wake' | 'copy' | 'start';
-
-/** A `/sandbox` launch, until its task started there (then the task's own row). */
-export interface LaunchRow {
-  readonly id: string;
-  readonly title: string;
-  /** preparing (`step` says where), signin (Claude's sign-in for sandboxes first), failed (`error`), started */
-  readonly state: 'preparing' | 'signin' | 'failed' | 'started';
-  readonly step: LaunchStep | '';
-  readonly error?: string | null;
-  readonly at: number;
-  readonly agent: string;
-  readonly peer?: string | null;
-  readonly task?: string | null;
-}
-
-/** The rows the list shows: a started one is its task's own row by then. */
-export const shown = (rows: readonly LaunchRow[]): LaunchRow[] => rows.filter((r) => r.state !== 'started').sort((a, b) => b.at - a.at);
 
 const [count, setCount] = createSignal(0);
 const watched = new WeakSet<PluginClient>();
