@@ -1,0 +1,15 @@
+# The boxes' harnesses, rebuilt into wisp-grid-user daily (refresh-harnesses.sh; wisp-grid-harnesses.timer).
+# Root: it runs docker. Low priority, so the users' boxes keep the CPU while it builds.
+[Unit]
+Description=wisp Grid: refresh the boxes' harnesses (claude, codex, copilot, opencode, cursor, grok, agy)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wisp-grid/deploy/refresh-harnesses.sh
+Nice=15
+IOSchedulingClass=idle
+CPUWeight=20
+TimeoutStartSec=45min

@@ -217,72 +217,103 @@ fn keys(s: &mut Setup, slot: &Slot) {
     });
 }
 
+/// A failed `accounts.install`: how it was tried (`npm` | `download` | `none`), why it failed (the telemetry
+/// reason), and what the user reads.
+struct InstallFailed {
+    how: &'static str,
+    reason: &'static str,
+    error: WireError,
+}
+
+fn failed(how: &'static str, reason: &'static str, error: WireError) -> InstallFailed {
+    InstallFailed { how, reason, error }
+}
+
+/// Installs `a.agent` into wisp's tools folder: with npm, or (no npm, no pinned version) its own binary from the
+/// npm registry, so a computer without Node still gets a harness. Ok: how it got there, and it now starts.
+async fn install_one(
+    st: &Arc<State>,
+    ctx: &Ctx,
+    a: &c::InstallArgs,
+    h: &dyn wisp_runtime_api::Harness,
+) -> Result<&'static str, InstallFailed> {
+    let name = h.info().name.clone();
+    let pinned = a.package.clone().filter(|p| !p.is_empty());
+    let pkg = pinned.clone().or_else(|| h.npm_package()).ok_or_else(|| {
+        failed("none", "not_installable", WireError::invalid(format!("wisp can’t install {name}. Install it yourself, then re-check.")))
+    })?;
+    // `name@version` (a pin) stays; a bare name gets the latest
+    let pkg = if pkg[1..].contains('@') { pkg } else { format!("{pkg}@latest") };
+    lock(&st.installing).insert(a.agent.clone());
+    crate::view::publish(ctx, st).await;
+    let _done = Installing(st.clone(), a.agent.clone());
+    let dir = st.home.join("tools");
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| failed("none", "no_folder", WireError::invalid(e.to_string())))?;
+    let npm = std::env::var("WISP_NPM").ok().filter(|n| !n.is_empty()).unwrap_or_else(|| "npm".into());
+    let args: Vec<String> =
+        ["install", "--prefix", &dir.to_string_lossy(), "--no-audit", "--no-fund", "--loglevel=error", &pkg].map(str::to_owned).to_vec();
+    let opts = wisp_proc::ExecOpts {
+        env: wisp_proc::Env { remove: vec!["ELECTRON_RUN_AS_NODE".into()], ..wisp_proc::Env::default() },
+        timeout: Some(std::time::Duration::from_secs(300)),
+        ..wisp_proc::ExecOpts::default()
+    };
+    let how = match st.proc.exec(&npm, &args, opts).await {
+        Ok(r) if r.exit.code == Some(0) => "npm",
+        Ok(r) => {
+            let tail = format!("{}{}", r.stdout_text(), r.stderr_text())
+                .trim()
+                .lines()
+                .filter(|l| !l.is_empty())
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let (word, reason) = if r.timed_out { ("timed out", "npm_timeout") } else { ("failed", "npm_failed") };
+            let tail = if tail.is_empty() { String::new() } else { format!(": {tail}") };
+            return Err(failed("npm", reason, WireError::invalid(format!("npm install {pkg} {word}{tail}"))));
+        }
+        // no npm: the harness's own binary, unless a version was pinned (its platform package has its own numbers)
+        Err(_) => {
+            let (os, arch) = crate::binary::platform();
+            let Some(bp) = h.binary_package(os, arch).filter(|_| pinned.is_none()) else {
+                return Err(failed(
+                    "none",
+                    "no_npm",
+                    WireError::invalid("npm isn’t on PATH, so wisp can’t install it. Install Node.js (it comes with npm), then try again."),
+                ));
+            };
+            crate::binary::install(ctx, &dir, &bp)
+                .await
+                .map_err(|why| failed("download", "download_failed", WireError::invalid(format!("Couldn’t download {name}: {why}"))))?;
+            "download"
+        }
+    };
+    let agents = crate::calls::agents(ctx, Some("all")).await.map_err(|e| failed(how, "not_detected", e))?;
+    if !agents.iter().any(|x| x.id == a.agent && x.available) {
+        return Err(failed(how, "not_detected", WireError::internal(format!("{name} was installed but doesn’t start."))));
+    }
+    Ok(how)
+}
+
 /// Install, re-check and live limits.
 #[allow(clippy::many_single_char_names)]
 fn install_and_more(s: &mut Setup, slot: &Slot) {
     on!(s, slot, c::Install, |st, ctx, a| {
         let h = harness(&ctx, &a.agent).ok_or_else(|| WireError::not_found("No such harness."))?;
-        let pkg = a
-            .package
-            .clone()
-            .filter(|p| !p.is_empty())
-            .or_else(|| h.npm_package())
-            .ok_or_else(|| WireError::invalid(format!("wisp can’t install {}. Install it yourself, then re-check.", h.info().name)))?;
-        // `name@version` (a pin) stays; a bare name gets the latest
-        let pkg = if pkg[1..].contains('@') { pkg } else { format!("{pkg}@latest") };
-        lock(&st.installing).insert(a.agent.clone());
-        crate::view::publish(&ctx, &st).await;
-        let _done = Installing(st.clone(), a.agent.clone());
-        let dir = st.home.join("tools");
-        tokio::fs::create_dir_all(&dir).await.map_err(|e| WireError::invalid(e.to_string()))?;
-        let npm = std::env::var("WISP_NPM").ok().filter(|n| !n.is_empty()).unwrap_or_else(|| "npm".into());
-        let args: Vec<String> = ["install", "--prefix", &dir.to_string_lossy(), "--no-audit", "--no-fund", "--loglevel=error", &pkg]
-            .map(str::to_owned)
-            .to_vec();
-        let r = st
-            .proc
-            .exec(
-                &npm,
-                &args,
-                wisp_proc::ExecOpts {
-                    env: wisp_proc::Env { remove: vec!["ELECTRON_RUN_AS_NODE".into()], ..wisp_proc::Env::default() },
-                    timeout: Some(std::time::Duration::from_secs(300)),
-                    ..wisp_proc::ExecOpts::default()
-                },
-            )
-            .await;
-        match r {
-            Ok(r) if r.exit.code == Some(0) => {}
-            Ok(r) => {
-                let tail = format!("{}{}", r.stdout_text(), r.stderr_text())
-                    .trim()
-                    .lines()
-                    .filter(|l| !l.is_empty())
-                    .rev()
-                    .take(3)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                return Err(WireError::invalid(format!(
-                    "npm install {pkg} {}{}",
-                    if r.timed_out { "timed out" } else { "failed" },
-                    if tail.is_empty() { String::new() } else { format!(": {tail}") }
-                )));
-            }
-            Err(_) => {
-                return Err(WireError::invalid(
-                    "npm isn’t on PATH, so wisp can’t install it. Install Node.js (it comes with npm), then try again.",
-                ));
-            }
-        }
+        let started = ctx.clock().map_or(0, |c| c.now_ms());
+        let r = install_one(&st, &ctx, &a, &*h).await;
+        // every outcome is counted, the failures with their reason: a first run that never got a harness is visible
+        let ms = ctx.clock().map_or(0, |c| c.now_ms()).saturating_sub(started);
+        let (how, reason) = match &r {
+            Ok(how) => (*how, None),
+            Err(f) => (f.how, Some(f.reason)),
+        };
+        track(&ctx, "harness_install", json!({ "agent": a.agent, "ok": r.is_ok(), "how": how, "reason": reason, "ms": ms })).await;
+        r.map_err(|f| f.error)?;
         let agents = crate::calls::agents(&ctx, Some("all")).await?;
-        let ok = agents.iter().any(|x| x.id == a.agent && x.available);
-        track(&ctx, "harness_install", json!({ "agent": a.agent, "ok": ok })).await;
-        if !ok {
-            return Err(WireError::internal(format!("{} was installed but doesn’t start.", h.info().name)));
-        }
         serde_json::to_value(agents).map_err(|e| WireError::internal(e.to_string()))
     });
     // here and on every online computer (v1 Promise.all): the answer is this one's harnesses; the others' come on

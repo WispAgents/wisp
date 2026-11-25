@@ -1,7 +1,8 @@
 //! wisp.opencode: opencode as a module of wisp.runtime (`runtime.harness@1`).
 //!
 //! What it contributes (v1 adapters/opencode.js): the CLI's description, `detect` (`WISP_OPENCODE_BIN`,
-//! else `opencode` on PATH, else the install script's `~/.opencode/bin`; 1.x or 2.x; the models with
+//! else `opencode` on PATH, else wisp's tools folder (npm's copy or its own binary), else the install script's
+//! `~/.opencode/bin`; 1.x or 2.x; the models with
 //! their variants from `opencode models --verbose`; whether a provider is signed in), the launch
 //! (argv plus `OPENCODE_CONFIG_CONTENT` with wisp's MCP server and the user's grants), a driver over
 //! `wisp-opencode-core`'s parser with the file tracker on, and the resume command.
@@ -18,8 +19,8 @@ use wisp_harness_kit::{Re, RunPaths};
 use wisp_kernel::{BoxFuture, Manifest, Plugin, Result, Setup};
 use wisp_opencode_core::{OpencodeArgs, OpencodeOptions, OpencodeParser, RATE_LIMIT_GRACE_MS, args, config, has_key, major_version};
 use wisp_runtime_api::harness::{
-    ExecReq, HarnessFound, HarnessInfo, HarnessKeys, HarnessModel, HarnessRun, HarnessSys, KeyProvider, Launch, ResumeCommand,
-    ResumeOptions, RunDriver, SetupTip, Stdin,
+    BinaryPackage, ExecReq, HarnessFound, HarnessInfo, HarnessKeys, HarnessModel, HarnessRun, HarnessSys, KeyProvider, Launch,
+    ResumeCommand, ResumeOptions, RunDriver, SetupTip, Stdin,
 };
 use wisp_runtime_api::model::Mode;
 use wisp_runtime_api::{HARNESS, Harness};
@@ -75,13 +76,28 @@ fn data_home() -> String {
         .unwrap_or_else(|| format!("{}/.local/share", std::env::var("HOME").unwrap_or_default()))
 }
 
-/// Where `accounts.install` puts it: wisp's own tools folder.
-fn tools_bin() -> String {
-    let home = std::env::var("WISP_HOME")
-        .ok()
-        .filter(|h| !h.is_empty())
-        .unwrap_or_else(|| format!("{}/.wisp", std::env::var("HOME").unwrap_or_default()));
-    format!("{home}/tools/node_modules/.bin/opencode")
+/// Where `accounts.install` puts it, in wisp's own tools folder: npm's copy, then the binary it unpacks itself when
+/// there's no npm ([`binary_dest`]). wisp's home is `WISP_HOME`, else `.wisp` in the user's home (`HOME`, else
+/// `USERPROFILE`: Windows rarely sets `HOME`, and reading only `HOME` missed the copy wisp had just installed there).
+fn tools_bins(wisp_home: Option<String>, home: &str, platform: &str) -> Vec<String> {
+    let base = wisp_home.filter(|h| !h.is_empty()).unwrap_or_else(|| format!("{home}/.wisp"));
+    vec![format!("{base}/tools/node_modules/.bin/opencode"), format!("{base}/tools/{}", binary_dest(platform))]
+}
+
+/// The binary's place under the tools folder (`Harness::binary_package`'s `dest`).
+fn binary_dest(platform: &str) -> String {
+    format!("opencode/bin/opencode{}", if platform == "win32" { ".exe" } else { "" })
+}
+
+/// opencode's per-platform package on npm (`opencode-ai`'s optional dependencies): `opencode-<os>-<arch>`, with
+/// `windows` for win32; its tarball holds the one executable.
+fn platform_package(os: &str, arch: &str) -> Option<String> {
+    let os = match os {
+        "darwin" | "linux" => os,
+        "win32" => "windows",
+        _ => return None,
+    };
+    matches!(arch, "x64" | "arm64").then(|| format!("opencode-{os}-{arch}"))
 }
 
 #[derive(Debug)]
@@ -193,7 +209,8 @@ impl Harness for OpencodeHarness {
                     .which(DEFAULT_BIN)
                     .await
                     .into_iter()
-                    .chain([tools_bin(), format!("{}/.opencode/bin/opencode", sys.home())])
+                    .chain(tools_bins(sys.env("WISP_HOME"), &sys.home(), &sys.platform()))
+                    .chain([format!("{}/.opencode/bin/opencode", sys.home())])
                     .collect(),
             };
             let mut hit = None;
@@ -268,6 +285,12 @@ impl Harness for OpencodeHarness {
         Some("opencode-ai".into())
     }
 
+    fn binary_package(&self, os: &str, arch: &str) -> Option<BinaryPackage> {
+        let package = platform_package(os, arch)?;
+        let exe = if os == "win32" { ".exe" } else { "" };
+        Some(BinaryPackage { package, entry: format!("package/bin/opencode{exe}"), dest: binary_dest(os) })
+    }
+
     /// Its latest version is the npm package's (TRY-17); its own `opencode upgrade` knows its install script's copy
     /// (~/.opencode/bin) as well as an npm one. A copy in wisp's tools folder updates through npm there.
     fn update(&self) -> Option<wisp_runtime_api::harness::HarnessUpdate> {
@@ -337,6 +360,37 @@ mod tests {
             [("fake/model-a", "model-a", 2), ("fake/model-b", "model-b", 0)]
         );
         assert_eq!(plain_models("fake/a\nnot a model\nx/y-1\n").len(), 2);
+    }
+
+    /// Windows rarely sets HOME: the tools folder comes from the user's home as wisp resolves it (HOME, else
+    /// USERPROFILE), so detect finds the copy accounts.install put there (was `/.wisp/tools/...`: "installed but
+    /// doesn't start").
+    #[test]
+    fn detect_looks_in_wisps_tools_folder_under_the_users_home_and_wisp_home() {
+        assert_eq!(
+            tools_bins(None, "C:/Users/ana", "win32"),
+            ["C:/Users/ana/.wisp/tools/node_modules/.bin/opencode", "C:/Users/ana/.wisp/tools/opencode/bin/opencode.exe"]
+        );
+        assert_eq!(tools_bins(Some(String::new()), "/home/a", "linux")[1], "/home/a/.wisp/tools/opencode/bin/opencode");
+        assert_eq!(tools_bins(Some("/w".into()), "/home/a", "darwin")[0], "/w/tools/node_modules/.bin/opencode");
+    }
+
+    /// No npm: the platform's own package from the registry, unpacked where detect looks.
+    #[test]
+    fn its_binary_package_is_opencode_ai_s_platform_package() {
+        let h = OpencodeHarness::default();
+        let w = h.binary_package("win32", "x64").unwrap();
+        assert_eq!(
+            (w.package.as_str(), w.entry.as_str(), w.dest.as_str()),
+            ("opencode-windows-x64", "package/bin/opencode.exe", "opencode/bin/opencode.exe")
+        );
+        let m = h.binary_package("darwin", "arm64").unwrap();
+        assert_eq!(
+            (m.package.as_str(), m.entry.as_str(), m.dest.as_str()),
+            ("opencode-darwin-arm64", "package/bin/opencode", "opencode/bin/opencode")
+        );
+        assert!(h.binary_package("freebsd", "x64").is_none() && h.binary_package("linux", "ia32").is_none());
+        assert!(tools_bins(None, "/h", "win32").iter().any(|p| p.ends_with(&w.dest)), "detect looks where it's unpacked");
     }
 
     #[test]

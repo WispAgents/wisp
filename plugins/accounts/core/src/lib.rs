@@ -3,6 +3,7 @@
 //! sign-in's output (v1 agent-login.js `parse`). The host does the disk, the processes and the store.
 
 pub mod accounts;
+pub mod binary;
 pub mod login;
 pub mod update;
 pub mod watch;
