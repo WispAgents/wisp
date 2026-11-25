@@ -9,9 +9,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Prompt box: **/plugin** makes a wisp plugin from New task or a task's reply box. Type `/plugin` and what it should do: an agent writes it as a plugin of yours and installs it off, as **Cast a plugin** in Settings → Plugins does, and the new task opens. New task's agent pick goes with it. `/plugin` alone opens Settings → Plugins.
 - Task details: click the branch chip to copy the task's worktree path. A tooltip says **Worktree path copied**. Hover the chip to see the branch and the path.
+- Usage page: the chart stacks each harness in its own colour. Click a harness in the legend to hide or show it. **Day** and **Week** group the bars by day or by ISO week. A card per harness shows its tokens, spend, cache hit %, turns, how many worked, and how much of its fullest plan window is left with when it resets. **Compare** puts two or three harnesses side by side. All the tables are still there.
+- Harness picker: a harness's line says when its window resets ("Weekly 64% used · resets in 2h 10m"). A harness at its limit is greyed but still listed, with its reset time.
 
 ### Fixed
 
+- Usage page: 7 days is now exactly 7 bars, and the last bar is your today. Days follow your time zone, not UTC. Before, the window started at this hour 7 days ago, so it had an extra part-day bar and a late-evening turn could land on the next day.
+- Settings → Usage: a harness whose CLI reports no plan limits (Cursor, Copilot, Grok, opencode) now says so (**limits not reported by Cursor**), and its stop line can't be set, since there's no window to stop at. Cursor, Copilot and Grok accounts now also show in the plan list: wisp misread their account ids before.
+- Usage page: when no turn in the range has a price, the first tile is labelled **Tokens**, not Spend.
 - Toasts now sit centred on the main area, not the whole window, so the sidebar no longer pushes them off-centre. They stay centred when you collapse or resize the sidebar.
 - Desktop app on macOS, installed with `npm i -g wisp-agents`: the app now opens when you start it from the Dock, Spotlight or Finder. Before, it showed "wisp's files aren't in this app" and quit unless `wisp` was already running in a terminal. It also works when the Dock item is left over from an older version.
 - Task list: **Mark done** on a task saved for later moves it to *Done*. Before, it stayed in *For later*. **Undo** puts it back in For later at its old place.

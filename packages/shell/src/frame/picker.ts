@@ -15,7 +15,8 @@ export type SubLine =
   | { readonly k: 'checking' }
   | { readonly k: 'signedOut' }
   | { readonly k: 'missing' }
-  | { readonly k: 'used'; readonly label: string; readonly pct: number }
+  /** how full its fullest window is, and in how long it resets (ms) when the harness says; `full`: at its limit */
+  | { readonly k: 'used'; readonly label: string; readonly pct: number; readonly resetsIn?: number; readonly full?: true }
   | { readonly k: 'models'; readonly n: number }
   | { readonly k: 'default' }
   /** nothing to say: no plan window (UX 2026-11-18 #9: the model count was noise when picking a harness) */
@@ -33,12 +34,35 @@ export interface PickerRow {
 /** v1 sub(): "Picks per task" for Auto, "4 models" (the Default not counted), "Default model" with none, why it
  * can't run, or how full its plan is (v1 usageNote) in place of the count. A harness still detecting says Checking…
  * (ADR-0066). */
-export function subLine(a: AgentOffer, used?: { readonly label: string; readonly pct: number }): SubLine {
+export function subLine(a: AgentOffer, used?: UsedWindow): SubLine {
   const s = offerState(a);
   if (s === 'checking') return { k: 'checking' };
   if (s === 'signedOut') return { k: 'signedOut' };
   if (s === 'missing') return { k: 'missing' };
-  return used ? { k: 'used', label: used.label, pct: used.pct } : { k: 'none' };
+  if (!used) return { k: 'none' };
+  return {
+    k: 'used',
+    label: used.label,
+    pct: used.pct,
+    ...(used.resetsIn !== undefined && used.resetsIn > 0 && { resetsIn: used.resetsIn }),
+    ...(used.pct >= 100 && { full: true as const }),
+  };
+}
+
+/** A harness's fullest window as the picker reads it: its label, whole percent used, and ms until it resets. */
+export interface UsedWindow {
+  readonly label: string;
+  readonly pct: number;
+  readonly resetsIn?: number | undefined;
+}
+
+/** "2h 10m", "45m", "3d 4h": how long until a window resets. */
+export function untilWords(ms: number): string {
+  const m = Math.max(1, Math.round(ms / 60_000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
 /** The left pane: Auto first when it's offered, then each harness that can run, in the order given (UX 2026-11-18 #9:
@@ -46,11 +70,14 @@ export function subLine(a: AgentOffer, used?: { readonly label: string; readonly
  *  one in use stays even when it's gone, so the pill's harness is there with why it can't run. */
 export function pickerRows(
   offers: readonly AgentOffer[],
-  o: { readonly auto: boolean; readonly autoName: string; readonly used?: (id: string) => { label: string; pct: number } | undefined; readonly inUse?: string },
+  o: { readonly auto: boolean; readonly autoName: string; readonly used?: (id: string) => UsedWindow | undefined; readonly inUse?: string },
 ): PickerRow[] {
   const rows = offers.filter((a) => offerState(a) !== 'missing' || a.id === o.inUse).map((a): PickerRow => {
     const s = offerState(a);
-    return { id: a.id, name: a.name, sub: subLine(a, s === 'ready' ? o.used?.(a.id) : undefined), off: s === 'missing' || s === 'signedOut' || (s === 'checking' && !a.available), auto: false };
+    const sub = subLine(a, s === 'ready' ? o.used?.(a.id) : undefined);
+    // at its limit it's greyed like one that can't run, still listed with when it resets
+    const full = sub.k === 'used' && sub.full === true;
+    return { id: a.id, name: a.name, sub, off: full || s === 'missing' || s === 'signedOut' || (s === 'checking' && !a.available), auto: false };
   });
   return o.auto ? [{ id: AUTO, name: o.autoName, sub: { k: 'auto' }, off: false, auto: true }, ...rows] : rows;
 }

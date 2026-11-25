@@ -27,7 +27,7 @@ import {
   type Runner,
   useHarnessRows,
 } from './runner.ts';
-import { AUTO, AUTO_GOALS, firstFocus, goalOf, modelGroups, pickerRows, searchShown, useHarness, varyRows, withModel, withSetting, withVary, type SubLine, type VaryKey } from './picker.ts';
+import { AUTO, AUTO_GOALS, firstFocus, goalOf, modelGroups, pickerRows, searchShown, untilWords, useHarness, varyRows, withModel, withSetting, withVary, type SubLine, type VaryKey } from './picker.ts';
 import { SUBAGENT_NAME, type Variant } from './trial.ts';
 import { AUTO_SETTING, FACTORY, autoEnabled } from './launch-pick.ts';
 import { FACTORY_HOW_URL, factoryNames, factoryPane, factoryPick, factoryRow, useFactory } from './factory-pick.ts';
@@ -137,7 +137,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
       autoName: t('shell.home.auto'),
       used: (id) => {
         const w = usage().get(id);
-        return w ? { label: w.label, pct: usedPct(w) } : undefined;
+        return w ? { label: w.label, pct: usedPct(w), resetsIn: w.resetsAt ? w.resetsAt - Date.now() : undefined } : undefined;
       },
     }),
   );
@@ -151,8 +151,10 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
         return t('shell.runner.signedOutShort');
       case 'missing':
         return t('shell.runner.notInstalled');
-      case 'used':
-        return t('shell.runner.used', { label: s.label, pct: s.pct });
+      case 'used': {
+        const head = s.full ? t('shell.runner.atLimit', { label: s.label }) : t('shell.runner.used', { label: s.label, pct: s.pct });
+        return s.resetsIn ? t('shell.runner.usedResets', { head, in: untilWords(s.resetsIn) }) : head;
+      }
       case 'models':
         return s.n === 1 ? t('shell.runner.oneModel') : t('shell.runner.models', { n: s.n });
       case 'none':

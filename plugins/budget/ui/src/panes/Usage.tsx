@@ -25,7 +25,7 @@ import {
 } from '@wisp/ui';
 import { accountNames, compare, dismissDrain, dismissNotice, META, plans, setStop, TOPIC, usage, type AccountPlan, type UsageRow } from '../commands.ts';
 import { AccountPlanView, HarnessCompare } from '../PlanRows.tsx';
-import { dayWhen, HARNESSES, harnessesOf, harnessUsageDescription, plannedHarnesses, stopKeyOf, stopLine } from '../plan.ts';
+import { dayWhen, HARNESSES, harnessesOf, harnessUsageDescription, limitsReported, plannedHarnesses, stopKeyOf, stopLine } from '../plan.ts';
 import type { Compare } from '../plan.ts';
 import { drainLines, drainReport, noticeWords } from '../drain.ts';
 import { VIEW_USAGE } from '../views.ts';
@@ -251,6 +251,9 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
               title={p.name}
               logo={logoOf(p.agent)}
               description={harnessUsageDescription(p, harnessRows().get(p.agent), accountsOf(p.agent))}
+              // a CLI that reports no quota window gives the line nothing to stop at: shown, not settable
+              // (read once the windows are in, so it doesn't flicker off while they load)
+              disabled={windows.latest !== undefined && !limitsReported(p, accountsOf(p.agent))}
               source={stop(p.key, 'same')}
               items={(['same', ...STOPS] as Stop[]).map((v) => ({ value: v, label: t(`budget.usage.stop.${v}`) }))}
             />

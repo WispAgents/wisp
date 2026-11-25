@@ -3,17 +3,22 @@ import { expect, test } from 'vitest';
 import {
   bankedSoon,
   bankedWords,
+  cacheHit,
   compareParts,
   compareWords,
   HARNESSES,
   harnessesOf,
   harnessUsageDescription,
+  limitLeft,
+  limitsReported,
   overWords,
   plannedHarnesses,
+  stackedModel,
   stopKeyOf,
   stopLine,
   tokenBreakdown,
   usageModel,
+  weekStart,
   whereRows,
   windowLine,
   type Compare,
@@ -84,7 +89,13 @@ test('every_harness_has_a_stop_key_and_per_harness_usage_summary_and_chart_metri
     ['grok', 'autoStopGrok'],
   ]);
   expect(plannedHarnesses().map((h) => h.agent)).toEqual(['claude', 'codex', 'antigravity']);
-  expect(plannedHarnesses([{ id: 'local:cursor/default' }]).map((h) => h.agent)).toEqual(['claude', 'codex', 'antigravity', 'cursor']);
+  // budget_acc ids as store.rs writes them: `{agent}|{account}`, and a peer's `peer:{agent}|{account}`
+  const base = ['claude', 'codex', 'antigravity'];
+  expect(plannedHarnesses([{ id: 'cursor|default' }]).map((h) => h.agent)).toEqual([...base, 'cursor']);
+  expect(plannedHarnesses([{ id: 'local:cursor|default' }]).map((h) => h.agent)).toEqual([...base, 'cursor']);
+  expect(plannedHarnesses([{ id: 'copilot|work' }, { id: 'local:grok|default' }]).map((h) => h.agent)).toEqual([...base, 'copilot', 'grok']);
+  expect(plannedHarnesses([{ id: 'nobody|default' }]).map((h) => h.agent)).toEqual(base);
+  expect(plannedHarnesses([{ id: 'cursor|default', body: { agent: 'grok' } }]).map((h) => h.agent)).toEqual([...base, 'grok']);
 
   const u = {
     from: 0,
@@ -120,4 +131,74 @@ test('every_harness_has_a_stop_key_and_per_harness_usage_summary_and_chart_metri
   expect(byTokens.active).toBe('tokens');
   expect(byTokens.max).toBe('max 112k/day');
   expect(byTokens.bars[1]?.tip).toContain('112k tokens');
+});
+
+test('a_harness_that_reports_no_windows_says_so_and_a_tokens_only_range_is_labelled_tokens', () => {
+  const cursor = HARNESSES.find((h) => h.agent === 'cursor')!;
+  const grok = HARNESSES.find((h) => h.agent === 'grok')!;
+  expect(limitsReported(cursor, [])).toBe(false);
+  expect(limitsReported(cursor, [{ account: 'default', windows: [{ id: 'w', label: 'Monthly', used: 0.2 }] }])).toBe(true);
+  expect(limitsReported(HARNESSES[0]!, []), 'Claude reports windows by design').toBe(true);
+  expect(harnessUsageDescription(cursor, undefined, [])).toBe('Tracks tokens, turns and duration · limits not reported by Cursor');
+  expect(harnessUsageDescription(grok, undefined, [])).toBe('Tracks tokens, spend and outcomes · limits not reported by Grok');
+  expect(limitLeft(cursor, [], 0)).toEqual({ none: 'limits not reported by Cursor' });
+  const now = 1_000 * H;
+  const claude = [{ account: 'a', windows: [{ id: 'five_hour', label: 'Session', used: 0.3 }, { id: 'seven_day', label: 'Weekly', used: 0.64, resetsAt: now + 2 * H + 10 * 60_000 }] }];
+  expect(limitLeft(HARNESSES[0]!, claude, now)).toEqual({ left: '36% of weekly left', resets: 'resets in 2h 10m', full: false });
+  // nothing priced: the first tile counts tokens, so it never says Spend
+  const tokensOnly = { from: 0, spend: 0, turns: 2, worked: 100, questions: 0, priced: 0, tokens: 9_000, daily: [{ date: '2026-11-12', cost: 0, turns: 2, tokens: 9_000 }] };
+  expect(usageModel(tokensOnly).spendLabel).toBe('Tokens');
+  expect(usageModel({ ...tokensOnly, priced: 1, spend: 0.1 }).spendLabel).toBe('Spend');
+});
+
+test('the_usage_page_stacks_harnesses_per_day_or_week_and_reads_cache_hit', () => {
+  const u = {
+    from: 0,
+    spend: 0.6,
+    turns: 5,
+    worked: 100,
+    questions: 0,
+    priced: 2,
+    daily: ['2026-11-22', '2026-11-23', '2026-11-24'].map((date) => ({ date, cost: 0, turns: 0 })),
+    dailyByHarness: [
+      { date: '2026-11-22', agent: 'codex', cost: 0, tokens: 4_000, cache_read: 0, turns: 1 },
+      { date: '2026-11-23', agent: 'claude', cost: 0.4, tokens: 6_000, cache_read: 1_000, turns: 2 },
+      { date: '2026-11-23', agent: 'codex', cost: 0, tokens: 2_000, cache_read: 0, turns: 1 },
+      { date: '2026-11-24', agent: 'claude', cost: 0.2, tokens: 1_000, cache_read: 0, turns: 1 },
+    ],
+  };
+  const m = stackedModel(u, 'tokens');
+  expect(m.series.map((s) => [s.key, s.series])).toEqual([
+    ['claude', 0],
+    ['codex', 1],
+  ]);
+  expect(m.bars.map((b) => [b.key, b.share, b.stack.map((x) => [x.series, x.share])])).toEqual([
+    ['2026-11-22', 0.5, [[1, 0.5]]],
+    ['2026-11-23', 1, [[0, 0.75], [1, 0.25]]],
+    ['2026-11-24', 0.125, [[0, 0.125]]],
+  ]);
+  expect(m.bars[1]?.tip).toBe('Nov 23: Claude Code 6k · Codex 2k');
+  expect(m.max).toBe('max 8k/day');
+  // hiding Codex keeps Claude's colour and rescales the bars to what's left
+  const hid = stackedModel(u, 'tokens', { hidden: new Set(['codex']) });
+  expect(hid.series.map((s) => [s.key, s.series, s.off])).toEqual([
+    ['claude', 0, false],
+    ['codex', 1, true],
+  ]);
+  expect(hid.bars.map((b) => b.share)).toEqual([0, 1, 1 / 6]);
+  // by week: Sunday Nov 22 is in the week of Monday Nov 16, Nov 23–24 in the next
+  expect(weekStart('2026-11-22')).toBe('2026-11-16');
+  expect(weekStart('2026-11-23')).toBe('2026-11-23');
+  expect(weekStart('2027-01-01')).toBe('2026-12-28');
+  const wk = stackedModel(u, 'turns', { scale: 'week' });
+  expect(wk.bars.map((b) => [b.key, b.stack.map((x) => x.share)])).toEqual([
+    ['2026-11-16', [0.25]],
+    ['2026-11-23', [0.75, 0.25]],
+  ]);
+  expect(wk.first).toBe('Week of Nov 16');
+  expect(wk.max).toBe('max 4/week');
+  // cache hit: no input reads '—', never NaN
+  expect(cacheHit({ inputTokens: 0, cacheTokens: 0 })).toBe('—');
+  expect(cacheHit({})).toBe('—');
+  expect(cacheHit({ inputTokens: 40_000, cacheTokens: 30_000 })).toBe('75%');
 });

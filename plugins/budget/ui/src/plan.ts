@@ -28,6 +28,8 @@ export function usageModel(
   unpriced: number;
   tokens: number;
   harnesses: readonly UsageRow[];
+  /** the first tile's label: Tokens when no turn has a price, never a Spend tile of token counts */
+  spendLabel: string;
 } {
   const byCost = (u.priced ?? 0) > 0;
   const harnesses = harnessesOf(u);
@@ -55,7 +57,110 @@ export function usageModel(
     unpriced: u.turns - (u.priced ?? 0),
     tokens,
     harnesses,
+    spendLabel: !byCost && tokens > 0 ? t('budget.usage.tokens') : t('budget.usage.spend'),
   };
+}
+
+export type UsageScale = 'day' | 'week';
+
+/** The Monday of a `YYYY-MM-DD`'s ISO week, as the runtime's `weekly` keys it. */
+export function weekStart(date: string): string {
+  const at = Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
+  const dow = (new Date(at).getUTCDay() + 6) % 7; // 0 = Monday
+  return new Date(at - dow * DAY).toISOString().slice(0, 10);
+}
+
+export interface StackSeries {
+  readonly key: string;
+  readonly label: string;
+  readonly series: number;
+  readonly off: boolean;
+}
+
+type Cell = { cost: number; tokens: number; turns: number };
+
+/** The stacked chart from one answer (`dailyByHarness`): a colour per harness in a fixed order (a harness keeps its
+ * colour when another is hidden), a bar per day or per ISO week, each split bottom up by harness. A hidden series
+ * leaves the bars and the scale. Pure, so a test reads it. */
+export function stackedModel(
+  u: Usage,
+  metric: ChartMetric,
+  opts: { readonly hidden?: ReadonlySet<string>; readonly scale?: UsageScale; readonly nameOf?: (agent: string) => string } = {},
+): {
+  series: readonly StackSeries[];
+  bars: { key: string; share: number; tip: string; stack: { series: number; share: number }[] }[];
+  max: string;
+  first: string;
+} {
+  const hidden = opts.hidden ?? new Set<string>();
+  const nameOf = opts.nameOf ?? ((a: string) => HARNESSES.find((h) => h.agent === a)?.name ?? a);
+  const rows = u.dailyByHarness ?? [];
+  const order = (a: string): number => {
+    const i = HARNESSES.findIndex((h) => h.agent === a);
+    return i < 0 ? HARNESSES.length : i;
+  };
+  const agents = [...new Set(rows.map((r) => r.agent))].sort((a, b) => order(a) - order(b) || a.localeCompare(b));
+  const series = agents.map((a, i) => ({ key: a, label: nameOf(a), series: i, off: hidden.has(a) }));
+  const val = (r: Cell): number => (metric === 'cost' ? r.cost : metric === 'tokens' ? r.tokens : r.turns);
+  const keyOf = (date: string): string => (opts.scale === 'week' ? weekStart(date) : date);
+  // every day of the window is a bar (empty ones too), or each day's week
+  const keys = [...new Set((u.daily ?? []).map((d) => keyOf(d.date)))];
+  const cells = new Map<string, Map<string, Cell>>();
+  for (const r of rows) {
+    if (hidden.has(r.agent)) continue;
+    const k = keyOf(r.date);
+    const bar = cells.get(k) ?? new Map<string, Cell>();
+    const cur = bar.get(r.agent) ?? { cost: 0, tokens: 0, turns: 0 };
+    bar.set(r.agent, { cost: cur.cost + r.cost, tokens: cur.tokens + r.tokens, turns: cur.turns + r.turns });
+    cells.set(k, bar);
+  }
+  const total = (k: string): number => [...(cells.get(k)?.values() ?? [])].reduce((s, x) => s + val(x), 0);
+  const top = Math.max(0, ...keys.map(total)) || 1;
+  const words = (v: number): string => (metric === 'cost' ? money(v) : metric === 'tokens' ? tokenWords(v) : String(v));
+  const label = (k: string): string => (opts.scale === 'week' ? t('budget.view.weekOf', { day: dayLabel(k) }) : dayLabel(k));
+  return {
+    series,
+    bars: keys.map((k) => {
+      const bar = cells.get(k);
+      const on = series.filter((x) => !x.off && bar?.has(x.key)).map((x) => ({ x, v: val(bar?.get(x.key) ?? { cost: 0, tokens: 0, turns: 0 }) }));
+      return {
+        key: k,
+        share: total(k) / top,
+        stack: on.map(({ x, v }) => ({ series: x.series, share: v / top })),
+        tip: `${label(k)}: ${on.length ? on.map(({ x, v }) => `${x.label} ${words(v)}`).join(' · ') : words(0)}`,
+      };
+    }),
+    max: opts.scale === 'week' ? t('budget.view.maxWeek', { v: words(top) }) : t('budget.view.max', { v: words(top) }),
+    first: keys[0] ? label(keys[0]) : '',
+  };
+}
+
+/** Cache hit: the share of the input read from prompt cache ('—' with no input, never NaN). */
+export function cacheHit(r: { readonly inputTokens?: number | undefined; readonly cacheTokens?: number | undefined }): string {
+  const inp = r.inputTokens ?? 0;
+  return inp > 0 ? pct((r.cacheTokens ?? 0) / inp) : '—';
+}
+
+/** "2h 10m", "45m", "3d 4h": how long until a reset. */
+export function resetsIn(ms: number): string {
+  const m = Math.max(1, Math.round(ms / 60_000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+/** Whether wisp knows a harness's plan limits: one that reports quota windows by design, or any account with one. */
+export const limitsReported = (h: HarnessBudgetMeta, accounts: readonly AccountPlan[]): boolean => h.planned || accounts.some((a) => a.windows.length > 0);
+
+/** A harness card's limit line: the fullest window's share left and when it resets, or that its CLI reports none. */
+export function limitLeft(h: HarnessBudgetMeta, accounts: readonly AccountPlan[], now: number): { left: string; resets: string; full: boolean } | { none: string } {
+  const all = accounts.flatMap((a) => a.windows);
+  const w = all.reduce<(typeof all)[number] | undefined>((best, x) => (!best || x.used > best.used ? x : best), undefined);
+  if (!w) return { none: t('budget.usage.limits.none', { name: h.name }) };
+  const left = t('budget.view.left', { label: w.label.charAt(0).toLowerCase() + w.label.slice(1), pct: pct(Math.max(0, 1 - w.used)) });
+  const resets = w.resetsAt && w.resetsAt > now ? t('budget.view.resetsIn', { in: resetsIn(w.resetsAt - now) }) : '';
+  return { left, resets, full: w.used >= 1 };
 }
 
 export interface HarnessBudgetMeta {
@@ -88,13 +193,15 @@ export function plannedHarnesses(accs: readonly unknown[] = []): readonly Harnes
   const withRows = new Set(
     accs.flatMap((r) => {
       if (!r || typeof r !== 'object') return [];
-      const rec = r as { readonly id?: unknown; readonly agent?: unknown };
+      const rec = r as { readonly id?: unknown; readonly agent?: unknown; readonly body?: { readonly agent?: unknown } | null };
+      if (typeof rec.body?.agent === 'string' && rec.body.agent) return [rec.body.agent];
       if (typeof rec.agent === 'string' && rec.agent) return [rec.agent];
       if (typeof rec.id !== 'string' || !rec.id) return [];
+      // budget store.rs writes `{agent}|{account}`; a peer's copy carries a `peer:` prefix in front of it.
       const colon = rec.id.indexOf(':');
       const key = colon >= 0 ? rec.id.slice(colon + 1) : rec.id;
-      const slash = key.indexOf('/');
-      return [slash >= 0 ? key.slice(0, slash) : key];
+      const cut = key.search(/[|/]/);
+      return [cut >= 0 ? key.slice(0, cut) : key];
     }),
   );
   return HARNESSES.filter((h) => h.planned || withRows.has(h.agent));
@@ -202,8 +309,11 @@ export function harnessUsageDescription(h: HarnessBudgetMeta, row: UsageRow | un
     .flatMap((a) => a.windows)
     .reduce<{ label: string; used: number } | undefined>((best, w) => (!best || w.used > best.used ? { label: w.label, used: w.used } : best), undefined);
   if (fullest) parts.push(t('budget.usage.harness.window', { label: fullest.label, pct: pct(fullest.used) }));
-  const note =
-    h.agent === 'codex'
+  // a harness whose CLI gives wisp no quota window says so: its stop line has nothing to read
+  const silent = !limitsReported(h, accounts);
+  const note = silent
+    ? `${t(h.priced ? 'budget.usage.track.priced' : 'budget.usage.track.tokens')} · ${t('budget.usage.limits.none', { name: h.name })}`
+    : h.agent === 'codex'
       ? t('budget.usage.stop.codex')
       : h.agent === 'antigravity'
         ? t('budget.usage.stop.antigravity')

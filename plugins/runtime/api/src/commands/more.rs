@@ -711,6 +711,11 @@ pub struct UsageArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub days: Option<u32>,
+    /// added 2026-11-25 (additive): the viewer's offset from UTC in minutes (`-Date#getTimezoneOffset()`), so
+    /// the window starts at local midnight and each bar is a local day; UTC when unset
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub tz_offset_min: Option<i32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
@@ -752,6 +757,12 @@ pub struct UsageSummary {
     /// added 2026-11-12: one per day of the window, oldest first (v1 usage.js "Spend per day")
     #[serde(default)]
     pub daily: Vec<UsageDay>,
+    /// added 2026-11-25 (additive): each day split by harness, for the stacked chart; only days a harness ran
+    #[serde(default)]
+    pub daily_by_harness: Vec<UsageHarnessDay>,
+    /// added 2026-11-25 (additive): `daily` rolled up by ISO week (Monday first), oldest first
+    #[serde(default)]
+    pub weekly: Vec<UsageWeek>,
     /// added 2026-11-23 (TRY-32, additive): by harness (all models of each harness rolled up)
     #[serde(default)]
     pub harnesses: Vec<UsageRow>,
@@ -763,7 +774,7 @@ pub struct UsageSummary {
     pub runners: Vec<UsageRow>,
 }
 
-/// One day of `runtime.usage`'s window (UTC).
+/// One day of `runtime.usage`'s window (the viewer's local day; UTC without `tz_offset_min`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]
 pub struct UsageDay {
@@ -773,6 +784,36 @@ pub struct UsageDay {
     pub turns: u32,
     /// added 2026-11-23 (TRY-32, additive): total tokens (read + output) on this day
     #[serde(default)]
+    #[ts(type = "number")]
+    pub tokens: u64,
+}
+
+/// One harness's share of one day of `runtime.usage`'s window (the viewer's local day).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct UsageHarnessDay {
+    /// `YYYY-MM-DD`
+    pub date: String,
+    pub agent: String,
+    pub cost: f64,
+    #[ts(type = "number")]
+    pub tokens: u64,
+    /// input tokens read from prompt cache
+    #[ts(type = "number")]
+    pub cache_read: u64,
+    pub turns: u32,
+}
+
+/// One ISO week of `runtime.usage`'s window: its days summed (a week the window cuts holds only its days in it).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct UsageWeek {
+    /// `YYYY-Www`, the ISO week
+    pub week: String,
+    /// its Monday, `YYYY-MM-DD`
+    pub start: String,
+    pub cost: f64,
+    pub turns: u32,
     #[ts(type = "number")]
     pub tokens: u64,
 }

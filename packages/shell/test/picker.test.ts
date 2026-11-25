@@ -1,7 +1,7 @@
 // The harness picker's model (src/frame/picker.ts, v1 runner-picker.js): the left pane's rows and sub-lines, the pane
 // that shows on open, the right pane's model groups, and what each pick changes.
 import { expect, test } from 'vitest';
-import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, useHarness, varyRows, withModel, withSetting, withVary } from '../src/frame/picker.ts';
+import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, untilWords, useHarness, varyRows, withModel, withSetting, withVary } from '../src/frame/picker.ts';
 import { modelWord, type AgentOffer } from '../src/frame/runner.ts';
 import { compareWords, newRun, runWords, sameSetup } from '../src/frame/trial.ts';
 import { autoPick, runnerParts, runnerPick, type AutoPreview } from '../src/frame/auto.ts';
@@ -55,6 +55,21 @@ test('the_left_pane_lists_auto_first_then_each_harness_that_can_run_with_its_usa
   expect(pickerRows([{ ...CURSOR, checking: true }], { auto: false, autoName: 'Auto' })[0]?.off).toBe(true);
   // the one in use stays even when it's gone, so the pill's harness is in the list with why it can't run
   expect(pickerRows(ALL, { auto: false, autoName: 'Auto', inUse: 'cursor' }).map((r) => [r.id, r.sub.k])).toContainEqual(['cursor', 'missing']);
+});
+
+test('a_harness_row_says_when_its_window_resets_and_one_at_its_limit_is_greyed_but_listed', () => {
+  const H = 3_600_000;
+  const rows = pickerRows(ALL, {
+    auto: false,
+    autoName: 'Auto',
+    used: (id) => (id === 'codex' ? { label: 'Weekly', pct: 100, resetsIn: 2 * H + 10 * 60_000 } : id === 'claude' ? { label: '5h', pct: 42, resetsIn: 45 * 60_000 } : undefined),
+  });
+  expect(rows.map((r) => [r.id, r.sub, r.off])).toContainEqual(['claude', { k: 'used', label: '5h', pct: 42, resetsIn: 45 * 60_000 }, false]);
+  // at its limit: still in the list, dimmed, with its reset
+  expect(rows.map((r) => [r.id, r.sub, r.off])).toContainEqual(['codex', { k: 'used', label: 'Weekly', pct: 100, resetsIn: 2 * H + 10 * 60_000, full: true }, true]);
+  // a reset already past says nothing about it
+  expect(subLine(CODEX, { label: '5h', pct: 10, resetsIn: -5 })).toEqual({ k: 'used', label: '5h', pct: 10 });
+  expect([untilWords(45 * 60_000), untilWords(2 * H + 10 * 60_000), untilWords(76 * H)]).toEqual(['45m', '2h 10m', '3d 4h']);
 });
 
 test('the_right_pane_opens_on_the_harness_in_use_else_the_first_usable_one', () => {

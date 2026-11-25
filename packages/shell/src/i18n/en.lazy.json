@@ -5,6 +5,8 @@
   "shell.runner.none": "Nothing matches",
   "shell.runner.checking": "Checking…",
   "shell.runner.used": "{label} {pct}% used",
+  "shell.runner.usedResets": "{head} · resets in {in}",
+  "shell.runner.atLimit": "{label} at its limit",
   "shell.runner.account": "Account",
   "shell.runner.accountAuto": "Auto",
   "shell.runner.accountAutoHint": "Your saved account; one already at its limit is skipped when you start a task",

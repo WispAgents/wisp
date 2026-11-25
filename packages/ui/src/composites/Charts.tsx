@@ -10,6 +10,17 @@ export interface DayBar {
   readonly share: number;
   /** what hovering it says: "Nov 12: $0.40 · 3 turns" */
   readonly tip: string;
+  /** a stacked bar: its parts bottom up, each 0–1 of the tallest bar and coloured by its series (0–8) */
+  readonly stack?: readonly { readonly series: number; readonly share: number }[];
+}
+
+/** One series of a stacked DayBars, in its legend: pressing it hides or shows the series. */
+export interface ChartSeries {
+  readonly key: string;
+  readonly label: string;
+  /** 0–8: the colour, the same in the bars */
+  readonly series: number;
+  readonly off?: boolean;
 }
 
 export interface DayBarsProps extends KitProps {
@@ -17,6 +28,9 @@ export interface DayBarsProps extends KitProps {
   readonly label: string;
   /** under the bars: the first day, the scale, today */
   readonly axis: readonly [string, string, string];
+  /** a stacked chart's series: a legend under the axis whose items toggle */
+  readonly legend?: readonly ChartSeries[];
+  readonly onToggle?: (key: string) => void;
 }
 
 export function DayBars(props: DayBarsProps): JSX.Element {
@@ -28,7 +42,15 @@ export function DayBars(props: DayBarsProps): JSX.Element {
         <For each={props.bars}>
           {(b, i) => (
             <div data-kit="day-bar" title={b.tip} onMouseEnter={() => setTip({ text: b.tip, at: (i() + 0.5) / Math.max(1, props.bars.length) })}>
-              <i style={{ '--k-v': `${b.share > 0 ? Math.max(2, b.share * 100) : 0}%` }} />
+              <Show when={b.stack} fallback={<i style={{ '--k-v': `${b.share > 0 ? Math.max(2, b.share * 100) : 0}%` }} />}>
+                {(parts) => (
+                  <span data-kit="day-bar-stack" style={{ '--k-v': `${b.share > 0 ? Math.max(2, b.share * 100) : 0}%` }}>
+                    <For each={parts()}>
+                      {(p) => <i data-series={p.series % 9} style={{ '--k-v': `${b.share > 0 ? (p.share / b.share) * 100 : 0}%` }} />}
+                    </For>
+                  </span>
+                )}
+              </Show>
             </div>
           )}
         </For>
@@ -45,6 +67,18 @@ export function DayBars(props: DayBarsProps): JSX.Element {
         <span>{props.axis[1]}</span>
         <span>{props.axis[2]}</span>
       </div>
+      <Show when={props.legend?.length}>
+        <div data-kit="day-bars-legend" data-layout="wrap" data-part={sub(part(), 'legend')}>
+          <For each={props.legend}>
+            {(s) => (
+              <button type="button" data-kit="day-bars-key" data-series={s.series % 9} aria-pressed={!s.off} onClick={() => props.onToggle?.(s.key)}>
+                <i />
+                {s.label}
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
     </div>
   );
 }

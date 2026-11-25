@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use wisp_runtime_api::commands::{UsageDay, UsageRow, UsageSummary};
+use wisp_runtime_api::commands::{UsageDay, UsageHarnessDay, UsageRow, UsageSummary, UsageWeek};
 use wisp_runtime_api::model::{Turn, TurnStatus};
 
 /// A turn that ended by asking (a `question` block in its answer, or held for an answer).
@@ -81,6 +81,35 @@ pub(crate) fn civil(days: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// The day number of a civil date (Howard Hinnant's `days_from_civil`), for the ISO week's year.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// The Monday of a day's ISO week (1970-01-01 was a Thursday) and its `YYYY-Www`.
+fn iso_week(day: i64) -> (i64, String) {
+    let monday = day - (day + 3).rem_euclid(7);
+    // the ISO year is the Thursday's
+    let thursday = monday + 3;
+    let year: i64 = civil(thursday)[..4].parse().unwrap_or(1970);
+    let week = (thursday - days_from_civil(year, 1, 1)) / 7 + 1;
+    (monday, format!("{year:04}-W{week:02}"))
+}
+
+/// Where a `days`-long window starts: the viewer's local midnight `days - 1` days before today, so `days` is
+/// exactly that many bars and the last one is the viewer's today (it was `now - days × 24h`, one UTC bar too many
+/// and cut at the current hour). `tz_offset_min` is east of UTC (`-Date#getTimezoneOffset()`).
+pub fn window_start(now: i64, days: u32, tz_offset_min: i32) -> i64 {
+    let off = i64::from(tz_offset_min) * 60_000;
+    let today = (now + off).div_euclid(DAY);
+    (today - i64::from(days.max(1)) + 1) * DAY - off
+}
+
 fn ended(t: &Turn) -> bool {
     matches!(t.status, TurnStatus::Done | TurnStatus::Error | TurnStatus::Stopped)
 }
@@ -132,9 +161,11 @@ fn ranked(mut rows: Vec<UsageRow>) -> Vec<UsageRow> {
     rows
 }
 
-/// The summary with v1's breakdowns: a bar per UTC day from `from` to `now` (empty days too), and the turns by
+/// The summary with v1's breakdowns: a bar per local day from `from` to `now` (empty days too; `tz_offset_min` east
+/// of UTC places a turn on the viewer's day), the days split by harness and rolled up by ISO week, and the turns by
 /// harness, by project (`cwd_of` says where a task ran; a task it can't place goes under its id) and by harness · model.
-pub fn breakdown(turns: &[Turn], from: i64, now: i64, cwd_of: &dyn Fn(&str) -> Option<String>) -> UsageSummary {
+pub fn breakdown(turns: &[Turn], from: i64, now: i64, tz_offset_min: i32, cwd_of: &dyn Fn(&str) -> Option<String>) -> UsageSummary {
+    let off = i64::from(tz_offset_min) * 60_000;
     let mut out = summarize(turns, from);
     let mine: Vec<&Turn> = turns.iter().filter(|t| t.started_at >= from).collect();
     out.priced = u32::try_from(mine.iter().filter(|t| t.stats.as_ref().and_then(|s| s.cost_usd).is_some()).count()).unwrap_or(u32::MAX);
@@ -142,25 +173,47 @@ pub fn breakdown(turns: &[Turn], from: i64, now: i64, cwd_of: &dyn Fn(&str) -> O
     ids.sort_unstable();
     ids.dedup();
     out.sessions = u32::try_from(ids.len()).unwrap_or(u32::MAX);
-    let (first, last) = (from.div_euclid(DAY), now.max(from).div_euclid(DAY));
+    let (first, last) = ((from + off).div_euclid(DAY), (now.max(from) + off).div_euclid(DAY));
     let mut days: BTreeMap<i64, UsageDay> =
         (first..=last).map(|d| (d, UsageDay { date: civil(d), cost: 0.0, turns: 0, tokens: 0 })).collect();
     let mut by_harness: BTreeMap<String, Vec<&Turn>> = BTreeMap::new();
     let mut by_project: BTreeMap<String, Vec<&Turn>> = BTreeMap::new();
     let mut by_runner: BTreeMap<(String, String), Vec<&Turn>> = BTreeMap::new();
+    let mut by_day_harness: BTreeMap<(i64, String), UsageHarnessDay> = BTreeMap::new();
     for t in &mine {
-        let (r, _, o) = tokens_of(t);
-        if let Some(d) = days.get_mut(&t.started_at.div_euclid(DAY)) {
-            d.turns += 1;
-            d.cost += t.stats.as_ref().and_then(|s| s.cost_usd).unwrap_or(0.0);
-            d.tokens = d.tokens.saturating_add(r.saturating_add(o));
-        }
+        let (r, c, o) = tokens_of(t);
+        let day = (t.started_at + off).div_euclid(DAY);
+        let cost = t.stats.as_ref().and_then(|s| s.cost_usd).unwrap_or(0.0);
         let agent = if t.agent.trim().is_empty() { "claude".to_owned() } else { t.agent.trim().to_owned() };
+        if let Some(d) = days.get_mut(&day) {
+            d.turns += 1;
+            d.cost += cost;
+            d.tokens = d.tokens.saturating_add(r.saturating_add(o));
+            let h = by_day_harness.entry((day, agent.clone())).or_insert_with(|| UsageHarnessDay {
+                date: d.date.clone(),
+                agent: agent.clone(),
+                ..UsageHarnessDay::default()
+            });
+            h.turns += 1;
+            h.cost += cost;
+            h.tokens = h.tokens.saturating_add(r.saturating_add(o));
+            h.cache_read = h.cache_read.saturating_add(c);
+        }
         by_harness.entry(agent.clone()).or_default().push(t);
         by_project.entry(cwd_of(t.session_id.as_str()).unwrap_or_else(|| t.session_id.as_str().to_owned())).or_default().push(t);
         by_runner.entry((agent, t.model.clone())).or_default().push(t);
     }
+    let mut weeks: BTreeMap<i64, UsageWeek> = BTreeMap::new();
+    for (day, d) in &days {
+        let (monday, week) = iso_week(*day);
+        let w = weeks.entry(monday).or_insert_with(|| UsageWeek { week, start: civil(monday), ..UsageWeek::default() });
+        w.cost += d.cost;
+        w.turns += d.turns;
+        w.tokens = w.tokens.saturating_add(d.tokens);
+    }
+    out.weekly = weeks.into_values().collect();
     out.daily = days.into_values().collect();
+    out.daily_by_harness = by_day_harness.into_values().collect();
     out.harnesses = ranked(by_harness.into_iter().map(|(agent, ts)| row(agent.clone(), agent.clone(), agent, &ts)).collect());
     out.projects = ranked(by_project.into_iter().map(|(cwd, ts)| row(cwd.clone(), project_name(&cwd), String::new(), &ts)).collect());
     out.runners = ranked(by_runner.into_iter().map(|((agent, model), ts)| row(format!("{agent} {model}"), model, agent, &ts)).collect());
@@ -216,7 +269,7 @@ mod tests {
         b.model = "gpt".into();
         b.stats = None; // Codex reports no price
         let cwd = |id: &str| (id == "s1").then(|| "/home/me/code/wisp/".to_owned());
-        let u = breakdown(&[a, b], D, 3 * D + 100, &cwd);
+        let u = breakdown(&[a, b], D, 3 * D + 100, 0, &cwd);
         assert_eq!(
             u.daily.iter().map(|d| (d.date.as_str(), d.turns)).collect::<Vec<_>>(),
             vec![("1970-01-02", 1), ("1970-01-03", 0), ("1970-01-04", 1)],
@@ -266,7 +319,7 @@ mod tests {
             output_tokens: Some(1_000),
             ..TurnStats::default()
         });
-        let u = breakdown(&[claude, codex, agy], D, D + 100, &|_| Some("/repo".into()));
+        let u = breakdown(&[claude, codex, agy], D, D + 100, 0, &|_| Some("/repo".into()));
         // Claude: read = 15k + 30k = 45k, cache = 30k, out = 4k -> 49k
         // Codex: read = 5k + 15k = 20k, cache = 15k, out = 3k -> 23k
         // Antigravity: read = 8k + 2k = 10k, cache = 2k, out = 1k -> 11k
@@ -275,6 +328,59 @@ mod tests {
         assert_eq!(
             u.harnesses.iter().map(|h| (h.agent.as_str(), h.turns, h.sessions, h.tokens, h.cache_tokens)).collect::<Vec<_>>(),
             vec![("claude", 1, 1, 49_000, 30_000), ("codex", 1, 1, 23_000, 15_000), ("antigravity", 1, 1, 11_000, 2_000),]
+        );
+    }
+
+    #[test]
+    fn usage_buckets_by_the_viewers_local_day_with_exactly_days_bars_and_iso_weeks() {
+        const D: i64 = 86_400_000;
+        const H: i64 = 3_600_000;
+        // 2026-11-25 is day 20_782 (a Wednesday); now is 10:00 UTC, 02:00 on the 25th in UTC-8
+        let today = 20_782 * D;
+        assert_eq!(civil(20_782), "2026-11-25");
+        let now = today + 10 * H;
+        let off = -480;
+        let from = window_start(now, 7, off);
+        assert_eq!(from, (20_782 - 6) * D + 8 * H, "local midnight six days back, in UTC");
+        // 23:30 local on Nov 24 is 07:30 UTC on Nov 25: it belongs to Nov 24, the viewer's day
+        let mut late = turn(today + 7 * H + 30 * 60_000, TurnStatus::Done, 0.5, false);
+        late.agent = "claude".into();
+        late.stats = Some(TurnStats {
+            cost_usd: Some(0.5),
+            input_tokens: Some(100),
+            cache_tokens: Some(300),
+            output_tokens: Some(50),
+            ..TurnStats::default()
+        });
+        let mut other = turn(today + 6 * H + 30 * 60_000, TurnStatus::Done, 0.0, false);
+        other.agent = "codex".into();
+        other.stats = Some(TurnStats { cost_usd: None, input_tokens: Some(10), output_tokens: Some(5), ..TurnStats::default() });
+        let mut same_day = turn(today + 6 * H, TurnStatus::Done, 0.25, false);
+        same_day.agent = "claude".into();
+        let u = breakdown(&[late, other, same_day], from, now, off, &|_| None);
+        assert_eq!(u.daily.len(), 7, "days=7 is seven bars");
+        assert_eq!(u.daily.last().map(|d| d.date.as_str()), Some("2026-11-25"), "the last bar is the viewer's today (02:00 local)");
+        assert_eq!(u.daily.first().map(|d| d.date.as_str()), Some("2026-11-19"));
+        let last = &u.daily[5];
+        assert_eq!(last.date, "2026-11-24");
+        assert_eq!((last.turns, last.cost), (3, 0.75), "23:30 local stays on its local day, not the next");
+        assert_eq!(
+            u.daily_by_harness.iter().map(|h| (h.date.as_str(), h.agent.as_str(), h.turns, h.tokens, h.cache_read)).collect::<Vec<_>>(),
+            vec![("2026-11-24", "claude", 2, 450, 300), ("2026-11-24", "codex", 1, 15, 0)],
+            "two agents split on their day"
+        );
+        // Nov 19 (Thu) .. Nov 22 (Sun) is week 47, Nov 23 (Mon) .. Nov 25 is week 48
+        assert_eq!(
+            u.weekly.iter().map(|w| (w.week.as_str(), w.start.as_str())).collect::<Vec<_>>(),
+            vec![("2026-W47", "2026-11-16"), ("2026-W48", "2026-11-23")]
+        );
+        assert_eq!(u.weekly.iter().map(|w| w.turns).sum::<u32>(), u.daily.iter().map(|d| d.turns).sum::<u32>(), "the weeks sum the days");
+        assert_eq!(u.weekly[1].cost, 0.75);
+        assert_eq!(iso_week(days_from_civil(2027, 1, 1)).1, "2026-W53", "Jan 1 2027 is a Friday: the last week of 2026");
+        // UTC without an offset: the same turns land on Nov 25
+        assert_eq!(
+            breakdown(&[turn(today + 7 * H, TurnStatus::Done, 0.1, false)], window_start(now, 7, 0), now, 0, &|_| None).daily.len(),
+            7
         );
     }
 }
