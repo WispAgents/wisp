@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Task view (expanded actions): redesigned expanded action groups and step details in `Timeline` into a cohesive disclosure card with a full-width header, separated file-read chips with file icons, semantic edit icon tinting, crisp inline command badges, right-aligned diff stats/chevrons, and recessed high-contrast output panels instead of disconnected floating boxes.
+
 ## [1.0.0-alpha.12] - 2026-11-25
 
 ### Fixed

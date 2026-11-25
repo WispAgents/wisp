@@ -72,22 +72,26 @@ function StepRow(props: TimelineStepProps & { readonly part: PartName }): JSX.El
           {props.command}
         </code>
       </Show>
-      <Show when={props.nums}>
-        {(n) => (
-          <span data-kit="timeline-nums" data-text="control">
-            <span data-kit="timeline-add">+{n().add}</span>
-            <span data-kit="timeline-del">−{n().del}</span>
-          </span>
-        )}
-      </Show>
-      <Show when={props.time}>
-        <time data-kit="timeline-time" data-text="control" title={props.timeTitle}>
-          {props.time}
-        </time>
-      </Show>
-      <Show when={props.detail}>
-        <span data-kit="timeline-chev" data-open={flag(props.expanded)}>
-          <Icon name="chevron" size="sm" />
+      <Show when={props.nums || props.time || props.detail}>
+        <span data-kit="timeline-trail">
+          <Show when={props.nums}>
+            {(n) => (
+              <span data-kit="timeline-nums" data-text="control">
+                <span data-kit="timeline-add">+{n().add}</span>
+                <span data-kit="timeline-del">−{n().del}</span>
+              </span>
+            )}
+          </Show>
+          <Show when={props.time}>
+            <time data-kit="timeline-time" data-text="control" title={props.timeTitle}>
+              {props.time}
+            </time>
+          </Show>
+          <Show when={props.detail}>
+            <span data-kit="timeline-chev" data-open={flag(props.expanded)}>
+              <Icon name="chevron" size="sm" />
+            </span>
+          </Show>
         </span>
       </Show>
     </>
@@ -170,7 +174,7 @@ export interface TimelineGroupProps extends KitProps {
   readonly children?: JSX.Element;
 }
 
-/** A collapsed cluster of routine steps on a finished turn's timeline: one quiet row that unfolds in place. */
+/** A collapsed cluster of routine steps on a finished turn's timeline: a quiet capsule that opens into a unified card. */
 export function TimelineGroup(props: TimelineGroupProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.timeline.group';
   return (
@@ -182,25 +186,32 @@ export function TimelineGroup(props: TimelineGroupProps): JSX.Element {
         <span data-kit="timeline-label" data-part={sub(part(), 'label')} data-text="control" title={props.label}>
           {props.label}
         </span>
-        <span data-kit="timeline-group-count" data-text="control">
-          {props.count}
-        </span>
-        <span data-kit="timeline-chev" data-open={flag(props.expanded)}>
-          <Icon name="chevron" size="sm" />
+        <span data-kit="timeline-trail">
+          <span data-kit="timeline-group-count" data-text="control">
+            {props.count}
+          </span>
+          <span data-kit="timeline-chev" data-open={flag(props.expanded)}>
+            <Icon name="chevron" size="sm" />
+          </span>
         </span>
       </button>
       <Show when={props.expanded}>
         <div data-kit="timeline-group-body" data-part={sub(part(), 'body')}>
           <Show when={(props.files?.length ?? 0) > 0}>
-            <Wrap gap="2" part={sub(part(), 'files')}>
-              <For each={props.files}>
-                {(f) => (
-                  <span data-kit="timeline-file" data-text="control" title={f.title}>
-                    {f.name}
-                  </span>
-                )}
-              </For>
-            </Wrap>
+            <div data-kit="timeline-group-files" data-has-steps={flag(Boolean(props.children))}>
+              <Wrap gap="2" part={sub(part(), 'files')}>
+                <For each={props.files}>
+                  {(f) => (
+                    <span data-kit="timeline-file" data-text="control" title={f.title}>
+                      <Icon name="file" size="xs" />
+                      <span data-kit="timeline-file-name" data-text="control">
+                        {f.name}
+                      </span>
+                    </span>
+                  )}
+                </For>
+              </Wrap>
+            </div>
           </Show>
           <Show when={props.children}>
             <ol data-kit="timeline-sublist">{props.children}</ol>
