@@ -1,6 +1,8 @@
 //! Settings → Usage's line (v1 GET /api/usage summary): spend, turns, how many worked, and the questions
 //! agents asked, over the turns that started since a time; and v1's Charts and breakdowns (usage.js): per day,
 //! per project and per harness · model. Pure: the host reads the turns and says where each task ran.
+//!
+//! size-ok: the summary, its day/week/harness buckets and their tests share one set of fixtures; under half is code.
 
 use std::collections::BTreeMap;
 

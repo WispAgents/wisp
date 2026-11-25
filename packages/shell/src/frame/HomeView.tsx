@@ -51,7 +51,7 @@ import { homePlaceholderKey } from './reply-hint.ts';
 import type { SendShortcut } from '@wisp/ui';
 
 const sendShortcutOf = (v: unknown): SendShortcut => (v === 'mod-enter-multiline' || v === 'mod-enter' ? v : 'enter');
-import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
+import { MODES, MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 import { newRecipeIntent } from './recipe-new.ts';
 import { foldTail } from './phone-bar.ts';
 import { plusTool } from './composer-plus.ts';
@@ -170,6 +170,12 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   };
   // until you pick, New task follows what's kept (it lands after the first frame, as do the harnesses)
   let runnerTouched = false;
+  // the harness's own mode (Settings → Agents, `runtime.launch` modes) until you pick one here
+  let modeTouched = false;
+  const harnessMode = (a: string): void => {
+    const m = kept().modes?.[a];
+    if (!modeTouched && m && (MODES as readonly string[]).includes(m)) setMode(m as Mode);
+  };
   createEffect(() => {
     const r = startRunner(kept(), readyIds(), autoOn());
     if (runnerTouched) return;
@@ -177,6 +183,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     setModel(r.model);
     setModelLabel(r.modelLabel);
     setEffort(r.effort);
+    harnessMode(r.agent);
   });
   const keepPick = (a: string, m: string, label: string, e: string): void => {
     runnerTouched = true;
@@ -190,6 +197,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     setModelLabel(r.modelLabel);
     setEffort(r.effort);
     setAccount(undefined);
+    harnessMode(a);
     keepPick(a, r.model, r.modelLabel, r.effort);
   };
   const [picker, setPicker] = createSignal(false);
@@ -394,7 +402,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // ↑ brings back what you sent, Shift+Tab cycles the mode (v1 prompt-history.js, F-task-31, F-comp-4)
   const sent = sentStore(shell.client);
   const sentList = useSignal(sent.value);
-  const onKey = promptKeys({ sent: () => sentList() as readonly string[], value: text, set: (v) => (setText(v), menu.typed(v)), mode: { get: mode, set: setMode } });
+  const onKey = promptKeys({ sent: () => sentList() as readonly string[], value: text, set: (v) => (setText(v), menu.typed(v)), mode: { get: mode, set: (m: Mode) => ((modeTouched = true), setMode(m)) } });
   // a command typed in full (`/goal`, `/feedback`): the menu's Enter sends it rather than picking what's there
   const suggest = createMemo(() => {
     const s = menu.suggest();
@@ -1024,7 +1032,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           el.addEventListener('blur', () => setPromptFocused(false));
           setPromptFocused(document.activeElement === el);
         }}
-        mode={{ label: t(`shell.mode.${mode()}`), title: t('shell.home.fullAutoTitle'), icon: MODE_ICON[mode()], act: { menu: { title: t('shell.mode.sheet'), items: modeMenu(t, mode()), onSelect: (v) => setMode(v as Mode) } } }}
+        mode={{ label: t(`shell.mode.${mode()}`), title: t('shell.home.fullAutoTitle'), icon: MODE_ICON[mode()], act: { menu: { title: t('shell.mode.sheet'), items: modeMenu(t, mode()), onSelect: (v) => ((modeTouched = true), setMode(v as Mode)) } } }}
         runner={{
           // a picked file's agent and model are what runs (audit H5): the pill says them, never the bar's own pick
           ...((f) =>

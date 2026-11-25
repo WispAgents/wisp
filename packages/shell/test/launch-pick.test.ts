@@ -2,6 +2,7 @@
 // S.config.defaults.agent / models / efforts, PATCH /config on each pick), and Auto is off behind one switch (owner #37).
 import { expect, test } from 'vitest';
 import { autoEnabled, autoOn, readLaunch, startRunner, withPick } from '../src/frame/launch-pick.ts';
+import { harnessDefaults, withHarnessDefaults } from '../src/frame/default-models.ts';
 
 const ready = ['claude', 'codex', 'opencode'];
 
@@ -43,4 +44,21 @@ test('a_plugin_reads_the_one_switch_from_its_wisps_setting_row_owner_37', () => 
   expect(autoOn(client)).toBe(false);
   rows.set('home:runtime.auto', { key: 'runtime.auto', value: true });
   expect(autoOn(client)).toBe(true);
+});
+
+// Harness audit r2: Settings → Agents sets a harness's default model, thinking level and mode in the same
+// `runtime.launch` New task reads, without moving New task's last pick to that harness.
+test('a_harness_default_set_in_agents_is_what_new_task_starts_it_on', () => {
+  const kept = withPick({}, 'claude', 'opus', 'Opus', 'high');
+  const next = withHarnessDefaults(kept, 'cursor', { model: 'gpt-5', label: 'GPT-5', effort: '', mode: 'plan' });
+  expect(next.agent, 'the last pick stays Claude').toBe('claude');
+  expect(harnessDefaults(next, 'cursor')).toEqual({ model: 'gpt-5', effort: '', mode: 'plan' });
+  expect(harnessDefaults(next, 'claude')).toEqual({ model: 'opus', effort: 'high', mode: '' });
+  expect(startRunner({ ...readLaunch(next), agent: 'cursor' }, ['cursor'], false)).toMatchObject({ model: 'gpt-5', modelLabel: 'GPT-5' });
+  // back to Default: its model and name go
+  const back = withHarnessDefaults(next, 'cursor', { model: '' });
+  expect(harnessDefaults(back, 'cursor').model).toBe('');
+  expect(readLaunch(back).labels?.['cursor']).toBeUndefined();
+  // a pick in New task keeps the modes Settings set
+  expect(readLaunch(withPick(readLaunch(next), 'codex', '', '', '')).modes).toEqual({ cursor: 'plan' });
 });

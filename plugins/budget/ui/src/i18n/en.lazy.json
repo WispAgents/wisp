@@ -162,5 +162,10 @@
   "budget.view.perWeek": "Per week",
   "budget.view.estimatedTip.one": "{count} turn estimated from its tokens at API list price.",
   "budget.view.estimatedTip.other": "{count} turns estimated from their tokens at API list price.",
-  "budget.view.partialTip": "{priced} of {turns} turns priced."
+  "budget.view.partialTip": "{priced} of {turns} turns priced.",
+  "budget.harness.title": "Usage limit",
+  "budget.harness.stop": "Automations stop on it at",
+  "budget.usage.stopIs": "stop line: {stop}",
+  "budget.usage.stopInAgents": "Set in Agents",
+  "budget.usage.stop.unset": "none (no limits reported)"
 }

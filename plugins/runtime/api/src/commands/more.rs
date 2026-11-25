@@ -404,6 +404,10 @@ pub struct AgentStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub setup: Option<crate::harness::SetupTip>,
+    /// the program wisp found and runs (Settings → Agents shows it under the harness). Additive (2026-11-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub bin: Option<String>,
 }
 
 /// Where a harness's detection stands on the `harnesses` topic (ADR-0066).

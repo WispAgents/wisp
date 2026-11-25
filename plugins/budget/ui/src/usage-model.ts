@@ -2,7 +2,7 @@
 // week (one colour, or stacked by harness), cache hit, each harness's limit line, and how a cost reads: `~$x.xx` when
 // it's a list-price estimate (ADR-0119), with `+` when only some of the turns had a price.
 
-import { untilLabel } from '@wisp/ui';
+import { untilLabel } from '@wisp/ui/pure';
 import type { AccountPlan, Usage, UsageDay, UsageRow, UsageWeek } from './commands.ts';
 import { pct } from './drain.ts';
 import { HARNESSES, harnessesOf, tokenWords, type HarnessBudgetMeta } from './plan.ts';

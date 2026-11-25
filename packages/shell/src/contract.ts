@@ -50,6 +50,9 @@ export const INPUTS = {
   // added 2026-11-13 (additive): in the harness · model picker, a signed-out harness's sign-in, right there (wisp.accounts'
   // link-and-code steps, v1 runner-picker.js paintSignIn); its extension gets the harness as `id`
   'shell.runner:signin': 'runner.signin',
+  // added 2026-11-25 (additive): rows other plugins add to a harness's detail in Settings → Agents (wisp.budget's
+  // per-harness stop line); its extension gets the harness as `id`
+  'shell.settings:harness': 'agents.harness',
   // added 2026-11-13 (additive): what other plugins put in Settings → Cloud under the account (wisp.machines' cloud
   // computers, v1 .cg-list: Open, Wake / Put to sleep, its agents)
   'shell.settings:cloud': 'cloud.computers',

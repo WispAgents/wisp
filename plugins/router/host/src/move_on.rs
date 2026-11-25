@@ -81,6 +81,7 @@ mod tests {
             delegates: false,
             signed_in: None,
             setup: None,
+            bin: None,
         }
     }
 

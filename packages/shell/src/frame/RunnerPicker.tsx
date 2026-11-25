@@ -1,3 +1,4 @@
+// size-ok: one popover whose panes (a harness, Auto, a factory, Recent & favourites, the find results) share its picks and words
 // The harness picker (v1 runner-picker.js): ONE two-pane popover under the runner pill (the kit's HarnessPicker). Left:
 // Auto ("Picks per task", where it's offered) and every harness with its logo and a sub-line; right: the focused one's
 // pane: Auto's goals, or its models, thinking level and accounts; one that can't run yet signs in (Sign in under its row)

@@ -2,7 +2,7 @@
 // that shows on open, the right pane's model groups, and what each pick changes.
 import { expect, test } from 'vitest';
 import { findAll, firstFocus, goalOf, matchScore, modelGroups, pickerMemory, pickerRows, refOf, optionId, searchShown, stepRow, subLine, toggleFavourite, useHarness, varyRows, withModel, withRecent, withSetting, withVary } from '../src/frame/picker.ts';
-import { untilLabel } from '@wisp/ui';
+import { untilLabel } from '@wisp/ui/pure';
 import { modelWord, type AgentOffer } from '../src/frame/runner.ts';
 import { compareWords, newRun, runWords, sameSetup } from '../src/frame/trial.ts';
 import { autoPick, runnerParts, runnerPick, type AutoPreview } from '../src/frame/auto.ts';
