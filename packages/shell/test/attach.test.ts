@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { filesOf, named, upload } from '../src/frame/attach.ts';
+import { filesOf, named, upload, useAttachments } from '../src/frame/attach.ts';
 import type { ShellContext } from '../src/contract.ts';
 
 test('pasted_and_dropped_files_become_chips_and_go_up_to_the_tasks_computer_as_its_attachments', async () => {
@@ -29,4 +29,36 @@ test('pasted_and_dropped_files_become_chips_and_go_up_to_the_tasks_computer_as_i
   } as unknown as ShellContext;
   expect(await upload(shell, 'studio' as never, [a])).toEqual([{ id: 'u1', name: 'notes.md', mime: 'text/markdown', size: 1 }]);
   expect(sent).toEqual([{ peer: 'studio', path: '/uploads?name=notes.md&type=text%2Fmarkdown', body: a }]);
+});
+
+test('take_sends_a_file_again_to_the_launch_target_when_it_changed_after_the_file_was_picked', async () => {
+  const sent: string[] = [];
+  const shell = {
+    toast: { error: () => undefined },
+    t: (k: string) => k,
+    client: {
+      plugin: () => ({
+        http: (peer: string) => ({
+          send: () => {
+            sent.push(peer);
+            return Promise.resolve({ id: `${peer}-u${sent.length}`, name: 'notes.md', mime: 'text/markdown', size: 1 });
+          },
+        }),
+      }),
+    },
+  } as unknown as ShellContext;
+  const a = new File(['x'], 'notes.md', { type: 'text/markdown' });
+  // picked while New task pointed home, then Run on moved it to studio: studio can't resolve home's upload id
+  let target = 'home';
+  const moved = useAttachments(shell, () => target as never);
+  moved.add([a]);
+  target = 'studio';
+  expect(await moved.take()).toEqual([{ id: 'studio-u2', name: 'notes.md', mime: 'text/markdown', size: 1 }]);
+  expect(sent).toEqual(['home', 'studio']);
+  // the target unchanged: what went up is what's sent, no second upload
+  sent.length = 0;
+  const stayed = useAttachments(shell, () => 'home' as never);
+  stayed.add([a]);
+  expect(await stayed.take()).toEqual([{ id: 'home-u1', name: 'notes.md', mime: 'text/markdown', size: 1 }]);
+  expect(sent).toEqual(['home']);
 });

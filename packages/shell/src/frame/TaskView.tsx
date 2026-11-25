@@ -511,7 +511,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const compactOffer = (): ReturnType<typeof compactItem> => (row()?.state === 'running' ? undefined : compactItem(cold(), now(), t));
   // Settings → Chat: Chat mode (`settings.transcript`: 'on'), Tool calls in chat, Show thinking, Send shortcut,
   // Chat width, Time format — all reactive so changing a setting updates open tasks immediately.
-  const chat = useChatSettings(shell.client, ownerOf(key));
+  // per-user preferences, written on this computer (Settings → Chat): read from home, not the task's computer
+  const chat = useChatSettings(shell.client, usePluginClient('shell').home);
   const clock = (at: number): string => turnClock(at, undefined, chat.timeFormat());
   // Transcript view (V): off by default in both Chat mode (messages + answer only) and Cards mode, persisted per task
   // with its scroll place so returning to a task restores the same view and scroll position.
@@ -822,13 +823,19 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         );
       return;
     }
-    menu.reset();
     // what plugins send with it, at its top (comments on lines): the reply goes even with nothing typed
     const extra = shell
       .promptSources()()
       .filter((p) => (p.where ?? ['reply']).includes('reply') && p.pending)
       .map((p) => p.pending?.(v, { client: clients.client((p as { plugin?: string }).plugin ?? 'shell'), task: key }))
       .find((x) => x !== undefined);
+    // a time picked: only Send later's source keeps it, and its follow-up carries no files or comments yet, so with
+    // them it's refused with the box, its files, its comments and the clock as they were; sending now would ignore it
+    if (sendAt !== undefined && (extra || files().length > 0)) {
+      shell.toast.error(t('shell.when.noFilesReply'));
+      return;
+    }
+    menu.reset();
     if (!v && !extra && files().length === 0) return;
     // a plugin's prompt source may take it (@a crew member: their job, their answer under this turn)
     const pc = shell.client.plugin('shell');
@@ -841,6 +848,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     ) {
       setText('');
       setWhen(undefined);
+      return;
+    }
+    // no source kept the time (Send later's plugin off or still away): never sent now in its place
+    if (sendAt !== undefined) {
+      shell.toast.error(t('shell.when.noLater'));
       return;
     }
     // under a setup card, words answer it (ADR-0113 rule 4: Allow runs it, else the Deny with them), never a follow-up

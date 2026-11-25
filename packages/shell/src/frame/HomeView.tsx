@@ -290,7 +290,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   };
   const [when, setWhen] = createSignal<When | undefined>(undefined);
   // files with the new task: picked, pasted or dropped, each uploading at once to this computer
-  const att = useAttachments(shell, () => home);
+  // up to the computer it runs on: an attachment is an upload id only that computer knows
+  const att = useAttachments(shell, () => target());
   const files = att.files;
   const [picking, setPicking] = createSignal(false);
   // `+` → Formula or task file…: what the picked file adds to the task, until its chip's ✕ (./formula-pick.ts)
@@ -466,6 +467,14 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       });
       return;
     }
+    // a time picked (Start later, or Wait until the reset): only a prompt source plans it, and a plan carries no
+    // files yet, so with files it's refused with New task as it was; starting now would ignore the time
+    const w = when();
+    const at = w ? whenAt(w, now()) : through?.kind === 'wait' ? through.at : undefined;
+    if (at !== undefined && files().length > 0) {
+      shell.toast.error(t('shell.when.noFiles'));
+      return;
+    }
     menu.reset();
     const p = project();
     const id = entityKey(target(), newRowId());
@@ -476,7 +485,6 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     // unless Done when was opened and typed in again meanwhile
     const goalBack = (): void => void (g !== undefined && !goalOn() && !goalDraft() && putGoal(taken.back));
     // a plugin's prompt source may take it (`/sandbox …`: a sandbox of its own), with what New task picked
-    const w = when();
     const launch = {
       // the project and its Worktree / In place pick go with it: Start later's plan starts as Send would (orch #13)
       ...(p && { cwd: p.path, projectId: p.id, worktree: worktree() }),
@@ -486,7 +494,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       ...(agent() !== 'auto' && model() && { model: model() }),
       ...(effort() && { effort: effort() }),
       ...(g && { goal: sentGoal(g) }),
-      ...(w ? { at: whenAt(w, now()) } : through?.kind === 'wait' ? { at: through.at } : {}),
+      ...(at !== undefined && { at }),
     };
     const pc = shell.client.plugin('shell');
     const place = placeOf();
@@ -509,6 +517,12 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     ) {
       setText('');
       setWhen(undefined);
+      return;
+    }
+    // no source planned it (Start later's plugin off or still away): never started now in its place
+    if (at !== undefined) {
+      goalBack();
+      shell.toast.error(t('shell.when.noLater'));
       return;
     }
     // the row and the page at once (optimistic), the box cleared; a refusal puts the text back. With files, the
