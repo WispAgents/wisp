@@ -110,7 +110,7 @@ export function withModel(value: Runner, focused: string, model: string, offers:
   if (focused === AUTO) return { agent: AUTO, model, effort: '', account: '' };
   const a = offers.find((x) => x.id === focused);
   const m = a?.models.find((x) => x.id === model);
-  const levels = m?.efforts?.length ? m.efforts : (a?.efforts ?? []);
+  const levels = m?.efforts ?? a?.efforts ?? [];
   const keep = focused === value.agent && levels.includes(value.effort) ? value.effort : '';
   return { agent: focused, model, effort: keep, account: focused === value.agent ? (value.account ?? '') : '', ...(m && m.id !== '' && { modelLabel: m.label }) };
 }

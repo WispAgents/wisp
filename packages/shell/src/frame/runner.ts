@@ -183,7 +183,7 @@ export function effortsFor(agents: readonly AgentOffer[], r: Runner): readonly s
   const a = agents.find((x) => x.id === r.agent);
   if (!a) return [];
   const m = a.models.find((x) => x.id === r.model);
-  return m?.efforts?.length ? m.efforts : a.efforts;
+  return m?.efforts ?? a.efforts;
 }
 
 /** The bar's words: "Claude Code · Opus", "Codex" (its default model), with the thinking level when set. */

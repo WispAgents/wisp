@@ -35,7 +35,7 @@ pub fn info() -> HarnessInfo {
             id: String::new(),
             label: "Default".into(),
             hint: Some("Whatever Codex is set to".into()),
-            efforts: Vec::new(),
+            efforts: None,
             resolves: None,
         }],
         efforts: ["minimal", "low", "medium", "high", "xhigh"].map(str::to_owned).to_vec(),
@@ -170,8 +170,8 @@ fn catalog_models(list: &[Value]) -> Vec<HarnessModel> {
             let slug = m["slug"].as_str().unwrap_or_default().to_owned();
             let efforts = m["supported_reasoning_levels"]
                 .as_array()
-                .map(|l| l.iter().filter_map(|x| x["effort"].as_str().map(str::to_owned)).collect())
-                .unwrap_or_default();
+                .map(|l| l.iter().filter_map(|x| x["effort"].as_str().map(str::to_owned)).collect::<Vec<_>>())
+                .filter(|l| !l.is_empty());
             let hint = m["description"].as_str().filter(|d| !d.is_empty()).unwrap_or(&slug).to_owned();
             HarnessModel {
                 id: slug.clone(),
@@ -264,8 +264,8 @@ impl Harness for CodexHarness {
                 // Default runs the model config.toml names, else codex's first choice: it takes those levels
                 let want = configured_model(&config);
                 let def = models.iter().find(|m| Some(&m.id) == want.as_ref()).unwrap_or(&models[0]);
-                if !def.efforts.is_empty() {
-                    found.efforts = Some(def.efforts.clone());
+                if let Some(e) = def.efforts.as_ref().filter(|e| !e.is_empty()) {
+                    found.efforts = Some(e.clone());
                 }
                 let mut all = vec![default];
                 all.extend(models);
@@ -441,7 +441,7 @@ mod tests {
     /// and catalog, never a run: config.toml's `model`, else the catalog's first choice; its name from the catalog
     #[test]
     fn the_default_names_the_model_codex_runs_from_its_config_or_catalog() {
-        let m = |id: &str, label: &str| HarnessModel { id: id.into(), label: label.into(), hint: None, efforts: vec![], resolves: None };
+        let m = |id: &str, label: &str| HarnessModel { id: id.into(), label: label.into(), hint: None, efforts: None, resolves: None };
         let catalog = [m("gpt-9", "GPT-9"), m("gpt-9-mini", "GPT-9 Mini")];
         assert_eq!(default_runs("model = \"gpt-9-mini\"\n", &catalog).as_deref(), Some("GPT-9 Mini"));
         // no model in config.toml: codex's first choice
@@ -464,7 +464,7 @@ mod tests {
         ]);
         let m = catalog_models(list.as_array().map_or(&[][..], Vec::as_slice));
         assert_eq!(m.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["gpt-9", "gpt-9-mini"]);
-        assert_eq!(m[1].efforts, ["low", "high"]);
+        assert_eq!(m[1].efforts, Some(vec!["low".to_owned(), "high".to_owned()]));
         assert_eq!(configured_model("model = \"gpt-9-mini\"\n\n[profiles.x]\nmodel = \"gpt-9\"\n").as_deref(), Some("gpt-9-mini"));
     }
 

@@ -75,7 +75,7 @@ mod tests {
             error: None,
             models: models
                 .iter()
-                .map(|(i, l)| HarnessModel { id: (*i).into(), label: (*l).into(), hint: None, efforts: Vec::new(), resolves: None })
+                .map(|(i, l)| HarnessModel { id: (*i).into(), label: (*l).into(), hint: None, efforts: None, resolves: None })
                 .collect(),
             efforts: Vec::new(),
             delegates: false,

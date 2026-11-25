@@ -5,8 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.13] - 2026-11-25
+
 ### Fixed
 
+- Antigravity (model picker): a model whose id holds its thinking level (`gemini-…-high`, `-low`, `-medium`) no longer shows the thinking-level selector, and wisp no longer passes `--effort` with it, so agy stops refusing the run with "--model … conflicts with --effort". A model's empty level list now means "no selector" again (as in v1) instead of "use the harness's levels", which also hides the selector for Grok models that take no reasoning effort.
 - Grid (security): a request into a box or sandbox no longer carries a client's own copy of the grid's marks (`x-wisp-preview`, `x-wisp-route`, `x-wisp-upgrade`, `x-wisp-tunnel`, `x-wisp-proxy-*`, `x-forwarded-*`), and a box's `Domain=` cookies never reach the browser; a cookie-signed write to the grid's `/api/` from another origin is refused (403); a box's secret no longer reaches `/api/teams` or `GET /api/computers`; a grid cookie sent twice signs nobody in. A grid box's formula reads no secret through `file()`, the environment or a module folder in wisp's home.
 - New task and reply box (Start later / Send later / Wait until the reset): with files attached (or review comments waiting on a reply) the task started, or the follow-up went, at once and the picked time was ignored. Such a send is now refused with a toast, leaving the text, files, comments and time as they were; with no time set, files go as before. New task also uploads attachments to the computer the task runs on rather than always this one, and uploads again if Run on changed after a file was added. A task on another computer now reads Settings → Chat from this computer, and `/btw` with its × show at once on tasks from other computers.
 

@@ -17,10 +17,11 @@ pub struct HarnessModel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub hint: Option<String>,
-    /// this model's own reasoning levels (wins over the harness's)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(as = "Option<Vec<String>>", optional)]
-    pub efforts: Vec<String>,
+    /// this model's own reasoning levels, winning over the harness's: `None` takes the harness's, `Some([])` has none
+    /// (the level is in the model's id, as Antigravity's `gemini-…-high`: no selector, no `--effort`; v1 `efforts: []`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub efforts: Option<Vec<String>>,
     /// the default's (`id` ""): the model it runs, as the harness's own config names it ("Opus"), when the harness
     /// can tell without a run (UX 2026-11-18 #9: the chip names the real model). Additive (2026-11-18).
     #[serde(default, skip_serializing_if = "Option::is_none")]

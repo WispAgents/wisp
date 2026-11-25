@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.learn",
   "name": "learn",
-  "version": "1.0.0-alpha.12",
+  "version": "1.0.0-alpha.13",
   "api": "^1",
   "description": "What wisp learns about how you work: preferences and lessons, globally and per project, from a retro of each quiet task; later tasks' prompts carry them (v1 preferences.js)",
   "kind": "plugin",
