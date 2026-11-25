@@ -503,5 +503,9 @@ function peerHttp(transport: () => Transport | undefined, peer: PeerId): PeerHtt
       return body;
     },
     events: (path, signal) => need('events')(path, signal),
+    media(path, signal) {
+      const t = transport();
+      return t?.mediaUrl ? t.mediaUrl(path, signal ?? new AbortController().signal) : undefined;
+    },
   };
 }

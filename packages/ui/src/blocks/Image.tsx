@@ -5,6 +5,7 @@
 import { createSignal, Show, type JSX } from 'solid-js';
 import { IconButton } from '../controls/Button.tsx';
 import { Icon } from '../content/Icon.tsx';
+import { Skeleton } from '../content/Skeleton.tsx';
 import { createTimer } from './content-scope.ts';
 import { KeepButton } from './keep-button.tsx';
 import { mediaKeep } from './keep.ts';
@@ -16,8 +17,8 @@ import { CantShow, InlineMd } from './rich-ui.tsx';
 import type { BlockProps } from './types.ts';
 import '../css/media.css';
 
-/** What the agent named (`path`, else `src`), and the URL the host gives for it. */
-export function useMedia(props: BlockProps): { readonly name: () => string; readonly url: () => string | undefined } {
+/** What the agent named (`path`, else `src`), and the URL the host gives for it (null: on its way). */
+export function useMedia(props: BlockProps): { readonly name: () => string; readonly url: () => string | null | undefined } {
   const ctx = useBlocks();
   const name = (): string => opt(props.block['path']) ?? opt(props.block['src']) ?? '';
   return { name, url: () => (name() ? ctx.media?.(name()) : undefined) };
@@ -104,14 +105,16 @@ export function ImageBlock(props: BlockProps): JSX.Element {
     if (img) setView(mediaSet(img));
   };
   return (
-    <figure data-kit="rb-media" data-card="" data-part="block.image" data-broken={broken() || !media.url() ? '' : undefined}>
-      <Show when={!broken() && media.url()} fallback={<CantShow part="block.image.missing">{t('block.image.missing')}</CantShow>}>
-        {(src) => (
-          <div data-kit="rb-media-box">
-            <img ref={img} data-kit="rb-image" data-zoom="" src={src()} alt={caption() ?? media.name()} loading="lazy" decoding="async" onClick={open} onError={() => setBroken(true)} />
-            <MediaTools src={src()} name={opt(props.block['source']) ?? media.name()} alt={caption() ?? media.name()} part="image.tools" onFull={open} block={props.block} />
-          </div>
-        )}
+    <figure data-kit="rb-media" data-card="" data-part="block.image" data-broken={broken() || media.url() === undefined ? '' : undefined}>
+      <Show when={media.url() !== null} fallback={<Skeleton part="block.image.loading" shape="block" width="full" height="home-top" label={t('block.image.loading')} />}>
+        <Show when={!broken() && media.url()} fallback={<CantShow part="block.image.missing">{t('block.image.missing')}</CantShow>}>
+          {(src) => (
+            <div data-kit="rb-media-box">
+              <img ref={img} data-kit="rb-image" data-zoom="" src={src()} alt={caption() ?? media.name()} loading="lazy" decoding="async" onClick={open} onError={() => setBroken(true)} />
+              <MediaTools src={src()} name={opt(props.block['source']) ?? media.name()} alt={caption() ?? media.name()} part="image.tools" onFull={open} block={props.block} />
+            </div>
+          )}
+        </Show>
       </Show>
       <Caption text={caption()} part="block.image.caption" />
       <Show when={view()}>{(v) => <MediaViewer list={v().list} at={v().at} onClose={() => setView(undefined)} />}</Show>

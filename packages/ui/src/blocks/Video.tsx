@@ -7,6 +7,7 @@ import { Caption, MediaTools, useMedia } from './Image.tsx';
 import { MediaViewer, mediaSet, type ViewItem } from './Viewer.tsx';
 import { opt } from './read.ts';
 import { CantShow } from './rich-ui.tsx';
+import { Skeleton } from '../content/Skeleton.tsx';
 import type { BlockProps } from './types.ts';
 import '../css/media.css';
 
@@ -30,7 +31,8 @@ export function VideoBlock(props: BlockProps): JSX.Element {
     open();
   };
   return (
-    <figure data-kit="rb-media" data-card="" data-part="block.video" data-video="" data-broken={broken() || !media.url() ? '' : undefined}>
+    <figure data-kit="rb-media" data-card="" data-part="block.video" data-video="" data-broken={broken() || media.url() === undefined ? '' : undefined}>
+      <Show when={media.url() !== null} fallback={<Skeleton part="block.video.loading" shape="block" width="full" height="home-top" label={t('block.video.loading')} />}>
       <Show when={!broken() && media.url()} fallback={<CantShow part="block.video.missing">{t('block.video.missing')}</CantShow>}>
         {(src) => (
           <div data-kit="rb-media-box">
@@ -48,6 +50,7 @@ export function VideoBlock(props: BlockProps): JSX.Element {
             <MediaTools src={src()} name={opt(props.block['source']) ?? media.name()} alt={caption() ?? media.name()} video part="video.tools" onFull={open} block={props.block} />
           </div>
         )}
+      </Show>
       </Show>
       <Caption text={caption()} part="block.video.caption" />
       <Show when={view()}>{(v) => <MediaViewer list={v().list} at={v().at} onClose={() => setView(undefined)} />}</Show>
