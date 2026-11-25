@@ -61,7 +61,9 @@ export const markRead = defineCommand<{ id: EntityKey; unread: boolean }>({
   feature: { plugin: RUNTIME, command: 'runtime.markRead', label: 'Mark read' },
 });
 
-/** Mark done (`done`) and Reopen (`review`). Any state change takes it out of For later (sessions.js:332). */
+/** Mark done (`done`) and Reopen (`review`). Any state change takes it out of For later (sessions.js:332): a server
+ *  row keeps the mark under `summary`, so the patch removes it there (setField wrote `/forLater`, which a server row
+ *  doesn't have: a saved task marked done stayed in For later). */
 export const setState = defineCommand<{ id: EntityKey; state: 'done' | 'review' }>({
   id: 'runtime.setState',
   owner: (a) => a.id,
@@ -69,7 +71,7 @@ export const setState = defineCommand<{ id: EntityKey; state: 'done' | 'review' 
   optimistic: (base, a) => {
     const s = row(base, a.id);
     if (!s) return [];
-    return patch(a.id, [{ op: 'replace', path: '/state', value: a.state }, ...setField(s, 'forLater', undefined)]);
+    return patch(a.id, [{ op: 'replace', path: '/state', value: a.state }, ...summaryField(s, 'forLater', undefined)]);
   },
   feature: { plugin: RUNTIME, command: 'runtime.setState', label: 'Mark done' },
 });

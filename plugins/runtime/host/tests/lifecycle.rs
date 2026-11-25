@@ -378,6 +378,24 @@ async fn mode_agent_for_later_and_queue_order_and_cancel_change_the_task() {
     r.rt.stop(id.as_str(), true).await.unwrap();
 }
 
+/// design/for-later.md: Mark done takes a saved task out of For later (it lands in Done); before, the mark stayed
+/// on the done task, and a saved task marked done never left For later.
+#[tokio::test(flavor = "multi_thread")]
+async fn mark_done_takes_a_saved_task_out_of_for_later() {
+    let r = rig().await;
+    let id = r.rt.create(start("fix the login")).await.unwrap().id.0;
+    until("the run to let go", || async { r.rt.get(&id).await.unwrap().state == SessionState::Review }).await;
+    r.rt.for_later(&id, true, Some(900)).await.unwrap();
+    r.rt.set_state(&id, SessionState::Done).await.unwrap();
+    let s = r.rt.get(&id).await.unwrap();
+    assert_eq!(s.state, SessionState::Done);
+    assert!(s.ext["wisp.runtime"].get("forLater").is_none(), "{:?}", s.ext);
+    // Undo: reopen, then save it again with its old time
+    r.rt.set_state(&id, SessionState::Review).await.unwrap();
+    r.rt.for_later(&id, true, Some(900)).await.unwrap();
+    assert_eq!(r.rt.get(&id).await.unwrap().ext["wisp.runtime"]["forLater"]["at"], 900);
+}
+
 /// What a plugin keeps on a turn just before it runs (`RunPart::before_turn`: git's checkpoint for the
 /// turn's rollback) is on the turn as saved.
 #[tokio::test(flavor = "multi_thread")]
