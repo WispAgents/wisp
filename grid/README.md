@@ -18,6 +18,9 @@ A computer's pages show the same way at `p5173--<name>--<handle>.<domain>`, thro
 local pages in previews** on. A page signed in to that wisp but not to the grid (the phone app's)
 gets the way in from `POST <its address>/_grid/preview?port=&path=`: a one-time link there
 (an app launched from My Stuff opens through it).
+The phone app's pictures, videos and attachments come from `POST <its address>/_grid/media {paths}`
+with the device's token. The answer is one URL per path that a plain `<img>` loads with no token.
+Each URL works for an hour, for that file and that device only (ADR-0122).
 
 The hosted one is [grid.trywisp.dev](https://grid.trywisp.dev) (early preview). This folder is the
 same code, for your own server.

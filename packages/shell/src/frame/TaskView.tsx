@@ -108,7 +108,8 @@ import {
 } from './commands.ts';
 import { answerContext } from './answer-ctx.ts';
 import { answerComments } from './answer-comments.ts';
-import { blockedOf, uploadUrl } from './answer-of.ts';
+import { blockedOf, uploadPath, uploadUrl } from './answer-of.ts';
+import { peerMedia } from './media-src.ts';
 import { TASK_KEY, takePendingKey, type TaskKey } from './task-keys.ts';
 import { usePromptMenu } from './prompt-menu.ts';
 import { useAttachments } from './attach.ts';
@@ -721,7 +722,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const queueOn = (): boolean => followSetting()?.value === 'queue';
   const working = (): boolean => row()?.state === 'running' || row()?.state === 'waiting';
   const queues = (): boolean => working() && queueOn();
-  const shellHome = usePluginClient('shell').home;
+  const shellClient = usePluginClient('shell');
+  const shellHome = shellClient.home;
+  // a prompt's attachment: the page's own URL, or (the phone app) one the task's computer's transport gives; none while asked
+  const attachmentUrl = (id: string): string | undefined => {
+    const rel = uploadUrl(shellHome, key, id);
+    if (!rel) return undefined;
+    const got = peerMedia(shell.client, shellClient.http(ownerOf(key)), ownerOf(key), uploadPath(id), Date.now());
+    return got === 'relative' ? rel : (got ?? undefined);
+  };
   // every folder it works in, its own first (F-task-27): a chip opens that project, the list showing only it
   const projects = useProjects(shell, shellHome).list;
   const placeChips = (s: SessionRow): TaskPlaceChip[] =>
@@ -1670,7 +1679,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 {...((b.attachments ?? []).length > 0 && {
                   attachments: (b.attachments ?? []).map((a) => ({
                     name: a.name ?? a.id ?? '',
-                    ...((u) => (u ? { src: u } : {}))(uploadUrl(shellHome, key, a.id ?? '')),
+                    ...((u) => (u ? { src: u } : {}))(attachmentUrl(a.id ?? '')),
                     ...(a.mime?.startsWith('image/') && { image: true }),
                   })),
                 })}

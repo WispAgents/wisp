@@ -24,6 +24,10 @@ export interface Transport {
   request?(r: RawRequest, signal: AbortSignal): Promise<RawResponse>;
   /** a plugin's own event-stream route (a terminal's output): each SSE event until it ends or `signal` aborts */
   events?(path: string, signal: AbortSignal): AsyncIterable<RouteEvent>;
+  /** a GET path (`/api/sessions/<id>/file?path=…`) → an absolute URL an `<img>`/`<video>` loads with no headers, for a
+   *  page that isn't served by this peer (the phone app): a tunnel's local address, or a grid's signed URL (an hour).
+   *  None: the page's own relative URL works. */
+  mediaUrl?(path: string, signal: AbortSignal): Promise<string>;
 }
 
 export interface RawRequest {
@@ -51,6 +55,8 @@ export interface PeerHttp {
   /** the body parsed as JSON (null when empty); a status ≥ 400 throws with the server's message */
   send(r: RawRequest, signal?: AbortSignal): Promise<unknown>;
   events(path: string, signal: AbortSignal): AsyncIterable<RouteEvent>;
+  /** Transport.mediaUrl, when the transport has it (else undefined, at once: a relative URL works) */
+  media?(path: string, signal?: AbortSignal): Promise<string> | undefined;
 }
 
 /** A transport says why it can't connect: a sleeping box isn't an error and isn't retried. */
