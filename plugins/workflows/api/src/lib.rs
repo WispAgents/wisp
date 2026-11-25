@@ -128,6 +128,7 @@ pub struct NamedWorkflow {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NameArgs {
     pub name: String,
 }
@@ -170,6 +171,7 @@ pub struct Started {
 
 /// `workflows.status` / `workflows.stop`: a run (its task's id).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunId {
     pub id: String,
 }
@@ -278,11 +280,40 @@ macro_rules! command {
 }
 
 command!(List = "workflows.list" ["workflows:read"] read yes : Value => Vec<NamedWorkflow>; typed);
-command!(Set = "workflows.set" ["workflows:write"] : NamedWorkflow => NamedWorkflow);
-command!(Remove = "workflows.remove" ["workflows:write"] : NameArgs => Value);
 command!(Starters = "workflows.starters" ["workflows:read"] read yes : Value => Vec<NamedWorkflow>; typed);
-command!(Status = "workflows.status" ["workflows:read"] read yes : RunId => Value);
-command!(Stop = "workflows.stop" ["workflows:run"] : RunId => Value);
+
+/// A command whose arguments are written out for the generated CLI and MCP tools: without it a tool takes only an
+/// opaque `{args}` (`NamedWorkflow` flattens its spec, so it has no ts-rs shape to derive one from).
+macro_rules! described_command {
+    ($name:ident = $id:literal [$perm:literal] $(read $ro:ident)? : $args:ty => $out:ty, $ts:expr) => {
+        #[derive(Debug)]
+        pub struct $name;
+        impl Command for $name {
+            const ID: &'static str = $id;
+            const PERMISSION: Option<&'static str> = Some($perm);
+            $(const READ_ONLY: bool = { let _ = stringify!($ro); true };)?
+            type Args = $args;
+            type Out = $out;
+            fn args_ts() -> Option<String> {
+                Some($ts.to_owned())
+            }
+        }
+    };
+}
+
+/// `workflows.set`'s argument, as `NamedWorkflow`'s fields say it.
+pub const SET_TS: &str = r#"/** Save a workflow under its name (a new one, or over the one of that name): `wisp run <name>` and workflows_run { name } run it. */ { /** its name */ name: string, /** what it does, in a line */ description?: string, /** the folder its steps run in unless they say */ project?: string, /** values a run takes, with their defaults: { version: "2.1" } */ inputs?: Record<string, unknown>, /** its steps by name, each as in workflows_run's spec: { tests: { prompt: "Run the tests" }, report: { needs: ["tests"], prompt: "Write the release note" } } */ tasks: Record<string, unknown>, /** at most this many steps at once (0: no limit) */ concurrency?: number, /** { "usd": 20 }: no new step starts once the run has cost this much */ budget?: Record<string, unknown>, /** what starts it by itself: { "trigger": "nightly" } (by hand otherwise) */ on?: Record<string, unknown> }"#;
+/// `workflows.remove`'s argument.
+pub const REMOVE_TS: &str = "/** Remove a saved workflow. */ { /** the saved workflow's name */ name: string }";
+/// `workflows.status`'s argument.
+pub const STATUS_TS: &str = "/** Where a workflow run stands: each step's state and output (given a task, every run it keeps). */ { /** the run's id (workflows_run gave it), or a task's */ id: string }";
+/// `workflows.stop`'s argument.
+pub const STOP_TS: &str = "/** Stop a workflow run: its working steps stop and the rest won't start (their tasks are kept). */ { /** the run's id (workflows_run gave it) */ id: string }";
+
+described_command!(Set = "workflows.set" ["workflows:write"] : NamedWorkflow => NamedWorkflow, SET_TS);
+described_command!(Remove = "workflows.remove" ["workflows:write"] : NameArgs => Value, REMOVE_TS);
+described_command!(Status = "workflows.status" ["workflows:read"] read yes : RunId => Value, STATUS_TS);
+described_command!(Stop = "workflows.stop" ["workflows:run"] : RunId => Value, STOP_TS);
 
 /// `workflows.edit`: its arguments as the generated CLI and the MCP tool show them.
 pub const EDIT_TS: &str = r#"/** Change a workflow run of this task while it goes: skip a step (the ones working stop; the steps after it still run), retry a failed or skipped one (what its failure skipped runs again too), add steps, change a step that hasn't started, or change the run's concurrency and budget. A step is named by its name (all its runs) or a run's id from workflows_status (fix[2]). All or nothing: a refusal says why and changes nothing. Works on a run that ended too: retry or add starts it again. */ { /** the run's id (workflows_run gave it) */ id: string, /** steps to skip */ skip?: Array<string>, /** failed or skipped steps to run again */ retry?: Array<string>, /** steps to add by name: { "check-docs": { "prompt": "…", "needs": ["fix"] } } */ add?: Record<string, unknown>, /** steps that haven't started by name: the fields to set: { "report": { "agent": "codex" } } */ change?: Record<string, unknown>, /** at most this many steps at once (0: no limit) */ concurrency?: number, /** { "usd": 10 } (null: none) */ budget?: Record<string, unknown> }"#;
