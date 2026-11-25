@@ -36,7 +36,8 @@ pub fn args(mode: &str, model: &str, effort: &str, resume_id: Option<&str>, atta
     if !model.is_empty() {
         a.extend(["--model".into(), model.into()]);
     }
-    if !effort.is_empty() {
+    // a slug that holds its level takes no --effort: agy exits with "conflicts with --effort" (grid, 2026-11-24)
+    if !effort.is_empty() && !effort_in_id(model) {
         a.extend(["--effort".into(), effort.into()]);
     }
     if let Some(r) = resume_id.filter(|r| !r.is_empty()) {
@@ -57,13 +58,19 @@ pub fn stdin_event(content: &str) -> String {
     format!("{}\n", json!({ "event": "user", "message": { "content": content } }))
 }
 
+/// Whether `model`'s slug holds its thinking level (`gemini-3-flash-high`): it gets no selector and no `--effort`.
+#[must_use]
+pub fn effort_in_id(model: &str) -> bool {
+    EFFORT_SUFFIX.is_match(model)
+}
+
 /// `agy models`: "slug<TAB>Label" (or space-padded) lines; slugs with the effort baked in get no selector.
 pub fn list_models(out: &str) -> Vec<(String, String, bool)> {
     out.lines()
         .filter_map(|l| {
             let c = MODEL_LINE.captures(js::trim(l))?;
             let id = c.get(1)?.as_str().to_owned();
-            let baked = EFFORT_SUFFIX.is_match(&id);
+            let baked = effort_in_id(&id);
             Some((id, js::trim(c.get(2).map_or("", |m| m.as_str())).to_owned(), baked))
         })
         .collect()
@@ -293,6 +300,20 @@ mod tests {
             ]
         );
         assert_eq!(stdin_event("hi"), "{\"event\":\"user\",\"message\":{\"content\":\"hi\"}}\n");
+    }
+
+    #[test]
+    fn a_model_whose_id_holds_its_level_gets_no_effort_flag() {
+        // grid 2026-11-24: `--model gemini-3.8-flash-high --effort max` made agy exit with "conflicts with --effort"
+        let has = |a: &[String], f: &str| a.iter().any(|x| x == f);
+        let baked = args("auto", "gemini-3.8-flash-high", "max", None, &[]);
+        assert!(has(&baked, "gemini-3.8-flash-high") && !has(&baked, "--effort"), "{baked:?}");
+        let plain = args("auto", "claude-sonnet-4-5", "high", None, &[]);
+        assert!(plain.windows(2).any(|w| w[0] == "--effort" && w[1] == "high"), "{plain:?}");
+        // the Default (no model) keeps the picked level
+        assert!(args("auto", "", "low", None, &[]).windows(2).any(|w| w[0] == "--effort" && w[1] == "low"));
+        assert!(effort_in_id("gemini-3-pro-low") && effort_in_id("gemini-3-flash-medium"));
+        assert!(!effort_in_id("gemini-3-pro") && !effort_in_id("gemini-3-pro-xhighway") && !effort_in_id(""));
     }
 
     #[test]

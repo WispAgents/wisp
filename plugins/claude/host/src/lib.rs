@@ -27,7 +27,7 @@ use wisp_runtime_api::{HARNESS, Harness};
 pub use launch::{DEFAULT_BIN, launch};
 
 fn model(id: &str, label: &str, hint: &str) -> HarnessModel {
-    HarnessModel { id: id.into(), label: label.into(), hint: Some(hint.into()), efforts: Vec::new(), resolves: None }
+    HarnessModel { id: id.into(), label: label.into(), hint: Some(hint.into()), efforts: None, resolves: None }
 }
 
 /// v1 adapters/claude.js's static fields.

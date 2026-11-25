@@ -35,7 +35,7 @@ pub fn info() -> HarnessInfo {
             id: String::new(),
             label: "Default".into(),
             hint: Some("Whatever Grok is set to".into()),
-            efforts: Vec::new(),
+            efforts: None,
             resolves: None,
         }],
         efforts: ["low", "medium", "high", "xhigh"].map(str::to_owned).to_vec(),
@@ -103,14 +103,14 @@ fn models_of(out: &str, cache: &Value) -> (Vec<HarnessModel>, Option<Vec<String>
             HarnessModel {
                 label: info["name"].as_str().unwrap_or(&id).to_owned(),
                 hint: Some(clip(info["description"].as_str().unwrap_or(&id), 60)),
-                efforts: efforts.unwrap_or_default(),
+                efforts,
                 id,
                 resolves: None,
             }
         })
         .collect();
     // Default runs grok's own default, so it takes that model's levels
-    let levels = def.and_then(|d| models.iter().find(|m| m.id == d)).map(|m| m.efforts.clone()).filter(|e| !e.is_empty());
+    let levels = def.and_then(|d| models.iter().find(|m| m.id == d)).and_then(|m| m.efforts.clone()).filter(|e| !e.is_empty());
     (models, levels)
 }
 
@@ -300,7 +300,7 @@ mod tests {
         // v1 adapters.test.js: GROK_HOME's models_cache.json gives grok-9 its levels
         let cache = json!({ "models": { "grok-9": { "info": { "name": "Grok 9", "description": "Big", "supports_reasoning_effort": true, "reasoning_efforts": [{ "id": "xhigh" }, { "id": "high" }, { "id": "low" }] } } } });
         let (m, levels) = models_of("  * grok-9 (default)\n  - grok-8\n", &cache);
-        assert_eq!((m[0].label.as_str(), m[0].efforts.len(), m[1].label.as_str()), ("Grok 9", 3, "grok-8"));
+        assert_eq!((m[0].label.as_str(), m[0].efforts.as_ref().map_or(0, Vec::len), m[1].label.as_str()), ("Grok 9", 3, "grok-8"));
         assert_eq!(levels, Some(vec!["low".to_owned(), "high".to_owned(), "xhigh".to_owned()]));
     }
 
