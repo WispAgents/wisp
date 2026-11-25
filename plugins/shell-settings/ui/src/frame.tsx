@@ -77,15 +77,27 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
   };
   // every declared setting, read once a search starts, through All settings' plugin (wisp.settings owns the read)
   const reader = (): PluginClient | undefined => panes().find((e) => e.pane.id === 'all')?.client;
+  // each pane's rows (its lazy `keys`), read with the settings so a found one opens where its row is
+  const keysOf = new Map<string, readonly string[] | undefined>();
+  const loadKeys = (): Promise<unknown> =>
+    Promise.all(
+      panes().map(async (e) => {
+        const load = e.pane.keys;
+        keysOf.set(e.pane.id, load === undefined ? undefined : await load().catch(() => undefined));
+      }),
+    );
   const [declared] = createResource(
     () => (query().trim() !== '' ? reader() : undefined),
     (c) =>
-      c
-        .run(settingsList, { peer: c.home })
-        .then((rows) => rows.map((r): FoundSetting => ({ key: r.key, owner: r.owner, ...titleParts(r.decl.title ?? r.key) })))
-        .catch((): FoundSetting[] => []),
+      Promise.all([
+        c
+          .run(settingsList, { peer: c.home })
+          .then((rows) => rows.map((r): FoundSetting => ({ key: r.key, owner: r.owner, ...titleParts(r.decl.title ?? r.key) })))
+          .catch((): FoundSetting[] => []),
+        loadKeys(),
+      ]).then(([found]) => found),
   );
-  const paneOwners = (): RoutePane[] => panes().map((e) => ({ id: e.pane.id, plugin: (e.pane as { plugin?: string }).plugin ?? '', keys: e.pane.keys }));
+  const paneOwners = (): RoutePane[] => panes().map((e) => ({ id: e.pane.id, plugin: (e.pane as { plugin?: string }).plugin ?? '', keys: keysOf.get(e.pane.id) }));
   // each harness its own result ("Claude Code — Agents"), while Agents is there to open on it
   const agentsTitle = (): string | undefined => {
     const p = panes().find((e) => e.pane.id === 'agents')?.pane;

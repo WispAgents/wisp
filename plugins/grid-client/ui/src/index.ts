@@ -6,11 +6,10 @@ import { catalogue, t } from './i18n.ts';
 import { gridHome, offerReach } from './back.ts';
 import { watchHomeScreen } from './homescreen.ts';
 import { cloudRow, previewAddress } from './preview.ts';
-import { PANE_KEYS } from './pane-keys.ts';
 
 const ui: PluginUiDef = {
   id: 'wisp.grid-client',
-  settings: [{ id: 'cloud', group: 'computers', keys: PANE_KEYS.cloud, title: 'grid-client.pane', icon: 'cloud', order: 20, component: lazy(() => import('./panes/Cloud.tsx')) }],
+  settings: [{ id: 'cloud', group: 'computers', keys: () => import('./pane-keys.ts').then((m) => m.PANE_KEYS.cloud), title: 'grid-client.pane', icon: 'cloud', order: 20, component: lazy(() => import('./panes/Cloud.tsx')) }],
   // this computer on a grid, in Settings → Machines too, where v1 had it (.mc-grid)
   extensions: [defineExtension({ id: 'grid-client.machines', attachTo: { id: 'shell.settings:machines' }, component: lazy(() => import('./panes/Reach.tsx')) })],
   // a box's localhost in an answer's preview block, at the grid's preview address (ADR-0064)

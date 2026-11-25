@@ -3,11 +3,10 @@ import { lazy } from 'solid-js';
 import { drawnLater } from '@wisp/ui';
 import { defineExtension, type PluginUiDef } from '@wisp/shell';
 import { catalogue } from './i18n.ts';
-import { PANE_KEYS } from './pane-keys.ts';
 
 const ui: PluginUiDef = {
   id: 'wisp.telemetry',
-  settings: [{ id: 'privacy', group: 'advanced', keys: PANE_KEYS.privacy, title: 'telemetry.privacy.pane', icon: 'info', order: 30, component: lazy(() => import('./panes/Privacy.tsx')) }],
+  settings: [{ id: 'privacy', group: 'advanced', keys: () => import('./pane-keys.ts').then((m) => m.PANE_KEYS.privacy), title: 'telemetry.privacy.pane', icon: 'info', order: 30, component: lazy(() => import('./panes/Privacy.tsx')) }],
   // Home's last line, "Hit a bug… Tell us", while feedback can be sent (v1 split.js .sh-fb)
   extensions: [defineExtension({ id: 'telemetry.homeFeedback', attachTo: { id: 'shell.home:feedback' }, component: drawnLater(lazy(() => import('./HomeFeedback.tsx'))) })],
   catalogue,

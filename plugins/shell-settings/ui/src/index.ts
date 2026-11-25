@@ -15,7 +15,6 @@ import type { FrameDeps } from './frame.tsx';
 import { parseParams } from './nav.ts';
 import { catalogue } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
-import { PANE_KEYS } from './pane-keys.ts';
 
 export { type FrameDeps } from './frame.tsx';
 export { GROUP_ORDER, groupPanes, pickPane, type PaneEntry } from './nav.ts';
@@ -39,10 +38,10 @@ export type ShellSettingsDeps = FrameDeps;
 
 export function shellSettingsPanes(): SettingsPaneDef[] {
   return [
-    { id: 'general', group: 'general', keys: PANE_KEYS.general, title: 'shell-settings.pane.general', icon: 'settings', order: 10, component: General },
-    { id: 'chat', group: 'general', keys: PANE_KEYS.chat, title: 'shell-settings.pane.chat', icon: 'comment', order: 20, component: Chat },
-    { id: 'notifications', group: 'general', keys: PANE_KEYS.notifications, title: 'shell-settings.pane.notifications', icon: 'bell', order: 30, component: Notifications },
-    { id: 'keys', group: 'general', keys: PANE_KEYS.keys, title: 'shell-settings.pane.keys', icon: 'grid', order: 40, component: Keys },
+    { id: 'general', group: 'general', keys: () => import('./pane-keys.ts').then((m) => m.PANE_KEYS.general), title: 'shell-settings.pane.general', icon: 'settings', order: 10, component: General },
+    { id: 'chat', group: 'general', keys: () => import('./pane-keys.ts').then((m) => m.PANE_KEYS.chat), title: 'shell-settings.pane.chat', icon: 'comment', order: 20, component: Chat },
+    { id: 'notifications', group: 'general', keys: () => import('./pane-keys.ts').then((m) => m.PANE_KEYS.notifications), title: 'shell-settings.pane.notifications', icon: 'bell', order: 30, component: Notifications },
+    { id: 'keys', group: 'general', keys: () => import('./pane-keys.ts').then((m) => m.PANE_KEYS.keys), title: 'shell-settings.pane.keys', icon: 'grid', order: 40, component: Keys },
   ];
 }
 

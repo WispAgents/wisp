@@ -2,11 +2,10 @@
 import { lazy } from 'solid-js';
 import type { PluginUiDef } from '@wisp/shell';
 import { catalogue } from './i18n.ts';
-import { PANE_KEYS } from './pane-keys.ts';
 
 const ui: PluginUiDef = {
   id: 'wisp.learn',
   catalogue,
-  settings: [{ id: 'memory', group: 'agents', keys: PANE_KEYS.memory, title: 'learn.pane', icon: 'text', order: 30, component: lazy(() => import('./panes/Memory.tsx')) }],
+  settings: [{ id: 'memory', group: 'agents', keys: () => import('./pane-keys.ts').then((m) => m.PANE_KEYS.memory), title: 'learn.pane', icon: 'text', order: 30, component: lazy(() => import('./panes/Memory.tsx')) }],
 };
 export default ui;

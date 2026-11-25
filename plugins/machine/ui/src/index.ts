@@ -9,7 +9,6 @@ import { openSettings } from './open-settings.ts';
 import { STATIC_NAME_KEY } from './names.ts';
 // the chip's gate is small and here; the chip loads only when it has something to show (ChipGate.tsx)
 import Chip from './ChipGate.tsx';
-import { PANE_KEYS } from './pane-keys.ts';
 
 const Pane = lazy(() => import('./MachinePane.tsx'));
 
@@ -20,7 +19,7 @@ const Load = lazy(() => import('./LoadGroup.tsx'));
 export default definePluginUi({
   id: 'wisp.machine',
   catalogue,
-  settings: [defineSettingsPane({ id: 'machine', group: 'computers', keys: PANE_KEYS.machine, title: STATIC_NAME_KEY, icon: 'laptop', component: Pane, order: 50 })],
+  settings: [defineSettingsPane({ id: 'machine', group: 'computers', keys: () => import('./pane-keys.ts').then((m) => m.PANE_KEYS.machine), title: STATIC_NAME_KEY, icon: 'laptop', component: Pane, order: 50 })],
   views: [
     defineView<{ peer?: string }>({
       kind: 'machine.this',

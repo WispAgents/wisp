@@ -246,8 +246,9 @@ export interface SettingsPaneDef {
   if?: (client: PluginClient) => boolean;
   /** the settings this pane has a row for (another plugin's too: General shows `worktrees.worktree`), so Settings'
    *  search opens a setting on the pane that shows it and lands on its row; none: the search knows only that the
-   *  pane's plugin owns its settings. Additive (2026-11-25). */
-  keys?: readonly string[];
+   *  pane's plugin owns its settings. A loader (`() => import('./pane-keys.ts')…`), so the lists stay off the first
+   *  screen (ADR-0105's phone budget): Settings reads them when it opens. Additive (2026-11-25). */
+  keys?: () => Promise<readonly string[]>;
 }
 
 /** An answer block renderer (the `runtime.block` point's UI half). */
