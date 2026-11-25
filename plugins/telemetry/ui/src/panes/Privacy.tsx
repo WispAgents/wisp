@@ -50,6 +50,7 @@ export default function Privacy(props: { readonly client: PluginClient }): JSX.E
       <SettingsGroup part="telemetry.privacy.trust">
         <SwitchSetting
           part="settings.projectAsk"
+          settingKey="worktrees.projectAsk"
           title={t('telemetry.privacy.trust.title')}
           description={t('telemetry.privacy.trust.description')}
           source={onOff(fromRow(c, 'worktrees.projectAsk'), true)}
@@ -60,6 +61,7 @@ export default function Privacy(props: { readonly client: PluginClient }): JSX.E
       <SettingsGroup part="telemetry.privacy.env">
         <SwitchSetting
           part="settings.maskEnvFiles"
+          settingKey="git.maskEnvFiles"
           title={t('telemetry.privacy.env.title')}
           description={t('telemetry.privacy.env.description')}
           source={maskEnv(c)}

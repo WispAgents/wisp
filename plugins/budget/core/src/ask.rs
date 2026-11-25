@@ -26,6 +26,14 @@ pub fn line(setting: Option<&str>) -> Option<f64> {
     (v != "off").then(|| v.parse::<f64>().map(|p| p / 100.0).ok()).flatten()
 }
 
+/// A harness's own line (`budget.limitHoldBy`, Settings → Agents → Limits & budget: `{ <harness>: off | 80 | 90 | 95 }`)
+/// over everyone's (`budget.limitHold`). A harness the map doesn't name, or names with something unknown, has
+/// everyone's line.
+pub fn line_for(by: Option<&serde_json::Value>, agent: &str, global: Option<&str>) -> Option<f64> {
+    let own = by.and_then(|m| m.get(agent)).and_then(serde_json::Value::as_str).filter(|s| LINES.contains(s));
+    line(own.or(global))
+}
+
 /// The line for a window you already said yes to (at `acked`): the next step above it, or None.
 pub fn next_line(line: Option<f64>, acked: f64) -> Option<f64> {
     let line = line?;
@@ -236,6 +244,17 @@ mod tests {
 
     fn run(units: f64, first: bool) -> Run {
         Run { at: 0, account: "default".into(), session: "t".into(), units, first, inner: false }
+    }
+
+    /// Settings → Agents: a harness's own stop-at wins over everyone's; the others keep everyone's.
+    #[test]
+    fn a_harness_own_line_overrides_everyones_and_the_others_keep_it() {
+        let by = serde_json::json!({ "codex": "80", "grok": "off", "cursor": "x" });
+        assert_eq!(line_for(Some(&by), "codex", Some("95")), Some(0.8));
+        assert_eq!(line_for(Some(&by), "grok", Some("90")), None, "its own off");
+        assert_eq!(line_for(Some(&by), "claude", Some("95")), Some(0.95), "not named: everyone's");
+        assert_eq!(line_for(Some(&by), "cursor", Some("95")), Some(0.95), "unknown: everyone's");
+        assert_eq!(line_for(None, "codex", None), Some(0.9));
     }
 
     /// v1 test/limit-hold.test.js: the line, the steps after a yes, and the window nearest its limit.

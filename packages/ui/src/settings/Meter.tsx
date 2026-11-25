@@ -16,6 +16,8 @@ export interface MeterProps extends KitProps {
   readonly mark?: number;
   readonly markLabel?: string;
   readonly tone?: Tone;
+  /** a bar across (the default), or a small ring that fills clockwise (a list item's fullest window: Settings → Agents). Additive (2026-11-25). */
+  readonly shape?: 'bar' | 'ring';
 }
 
 const clamp = (v: number): number => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
@@ -29,6 +31,7 @@ export function Meter(props: MeterProps): JSX.Element {
       data-kit="meter"
       data-part={part()}
       data-tone={props.tone ?? 'accent'}
+      data-shape={props.shape === 'ring' ? 'ring' : undefined}
       role="meter"
       aria-label={props.label}
       aria-valuemin={0}

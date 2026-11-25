@@ -216,3 +216,48 @@ export const setAsk = defineCommand<{ peer: PeerId; on: boolean }>({
   wire: (a) => ({ on: a.on }),
   optimistic: (base, a) => merge<{ id: string; grid: boolean; ask: boolean }>(base, 'accounts.place', at(a.peer, 'this'), { ask: a.on }),
 });
+
+// ---------- Settings → Agents' list and detail: other plugins' commands, by their ids (ADR-0003) ----------
+
+/** Every plugin and whether it's on (`plugins.list`): a harness whose plugin is off stays listed, Disabled. Quiet: a
+ *  wisp that refuses it leaves the list as it is, never a toast. */
+export const pluginsList = {
+  ...defineCommand<{ peer: PeerId }, readonly { id: string; enabled: boolean }[]>({
+    id: 'plugins.list',
+    owner: (a) => a.peer,
+    wire: () => ({}),
+    optimistic: 'none',
+    pending: 'the plugins list',
+  }),
+  quiet: true,
+};
+
+/** A harness's plugin switched on or off (`plugins.setEnabled`: its Advanced → Enabled). */
+export const setPluginEnabled = defineCommand<{ peer: PeerId; id: string; enabled: boolean }>({
+  id: 'plugins.setEnabled',
+  owner: (a) => a.peer,
+  wire: (a) => ({ id: a.id, enabled: a.enabled }),
+  optimistic: 'none',
+  pending: 'the harness’s Enabled switch',
+});
+
+/** A harness's accounts' plan windows (`budget.view`): the list's ring is the fullest. Quiet: no budget, no ring. */
+export const planWindows = {
+  ...defineCommand<{ peer: PeerId; agent: string }, readonly { account: string; windows: readonly { id: string; label: string; used: number }[] }[]>({
+    id: 'budget.view',
+    owner: (a) => a.peer,
+    wire: (a) => ({ agent: a.agent }),
+    optimistic: 'none',
+    pending: 'the plan windows',
+  }),
+  quiet: true,
+};
+
+/** Detect this one harness again (`runtime.agents`, fresh: its id; Binary → Re-detect): its detect row settles in place. */
+export const redetect = defineCommand<AgentArgs, readonly unknown[]>({
+  id: 'runtime.agents',
+  owner: (a) => a.peer,
+  wire: (a) => ({ fresh: a.agent }),
+  optimistic: 'none',
+  pending: 'the Re-detect control',
+});

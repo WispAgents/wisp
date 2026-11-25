@@ -76,6 +76,10 @@ const GUARDS: &[Guard] = &[
     Guard { key: "machine.batteryHold", what: "hold less work while this computer is on battery", default: "off", lower: less },
 ];
 
+/// Everyone's Ask near the limit, and each harness's own over it (`{ <harness>: off | 80 | 90 | 95 }`).
+const HOLD: &str = "budget.limitHold";
+const HOLD_BY: &str = "budget.limitHoldBy";
+
 /// A value as the guards compare it: a string's text, else its JSON (`false`, `90`).
 fn text(v: &Value) -> String {
     v.as_str().map_or_else(|| v.to_string(), str::to_owned)
@@ -123,6 +127,19 @@ pub fn lowers(command: &str, args: &Value, now: &dyn Fn(&str) -> Option<Value>) 
                 return (!added.is_empty()).then(|| Lowered {
                     what: format!("let {} answer setup cards for you", added.join(", ")),
                     change: format!("runtime.setupAnswerSets: {} → {}", text(was.as_ref().unwrap_or(&Value::Null)), text(new)),
+                });
+            }
+            // a harness's own Ask near the limit (Settings → Agents): lowered when any harness's line, its own or else
+            // everyone's, would hold later than it does now (a removed entry falls back to everyone's, maybe later)
+            if key == HOLD_BY {
+                let global = now(HOLD).map_or_else(|| "90".to_owned(), |v| text(&v));
+                let line = |m: Option<&Value>, h: &str| m.and_then(|m| m.get(h)).map_or_else(|| global.clone(), text);
+                let old = was.as_ref();
+                let names: Vec<&String> =
+                    [old, Some(new)].into_iter().flatten().filter_map(Value::as_object).flat_map(serde_json::Map::keys).collect();
+                return names.into_iter().any(|h| later(&line(old, h), &line(Some(new), h))).then(|| Lowered {
+                    what: "ask later (or never) before a harness's work goes past a usage limit".into(),
+                    change: format!("{HOLD_BY}: {} → {}", text(old.unwrap_or(&Value::Null)), text(new)),
                 });
             }
             let g = GUARDS.iter().find(|g| g.key == key)?;
@@ -184,9 +201,10 @@ fn runs_code(command: &str, args: &Value) -> Option<Lowered> {
 #[must_use]
 pub fn guarded(command: &str, args: &Value) -> bool {
     match command {
-        "settings.set" => {
-            args.get("key").and_then(Value::as_str).is_some_and(|k| k == "runtime.setupAnswerSets" || GUARDS.iter().any(|g| g.key == k))
-        }
+        "settings.set" => args
+            .get("key")
+            .and_then(Value::as_str)
+            .is_some_and(|k| k == "runtime.setupAnswerSets" || k == HOLD_BY || GUARDS.iter().any(|g| g.key == k)),
         "worktrees.trust" | "runtime.exec" | "plugins.install" | "plugins.trust" | "machines.call" => true,
         // switching a plugin off lowers nothing (audit I, smaller notes)
         "plugins.setEnabled" => args.get("enabled") == Some(&Value::Bool(true)),
@@ -276,6 +294,29 @@ mod tests {
         assert!(!guarded("settings.set", &json!({ "key": "crew.tint", "value": false })));
         assert!(set("runtime.setupAnswerSets", json!(["apikey"]), Some(json!([]))).is_some());
         assert!(lowers("worktrees.trust", &json!({ "key": "/repo", "ids": ["hooks"] }), &|_| None).is_some());
+    }
+
+    /// Settings → Agents' per-harness stop-at is a guard too: the harness can't switch one harness's ask off unseen.
+    #[test]
+    fn a_harness_own_limit_line_set_later_or_off_needs_the_users_allow() {
+        // everyone's line unset (90), the map as given
+        let by = |value: Value, had: Option<Value>| {
+            lowers("settings.set", &json!({ "key": "budget.limitHoldBy", "value": value }), &move |k| {
+                if k == "budget.limitHoldBy" { had.clone() } else { None }
+            })
+        };
+        assert!(by(json!({ "claude": "off" }), None).is_some(), "off");
+        assert!(by(json!({ "claude": "95" }), Some(json!({ "claude": "80" }))).is_some(), "later");
+        // removed: back to everyone's 90, later than its own 80
+        assert!(by(json!({}), Some(json!({ "claude": "80" }))).is_some(), "removed");
+        assert!(by(json!({ "claude": "80" }), None).is_none(), "sooner: at once");
+        assert!(by(json!({ "claude": "90" }), None).is_none(), "the same as everyone's");
+        // everyone's at 95: a harness's own 90 holds sooner
+        let sooner = lowers("settings.set", &json!({ "key": "budget.limitHoldBy", "value": { "codex": "90" } }), &|k| {
+            (k == "budget.limitHold").then(|| json!("95"))
+        });
+        assert!(sooner.is_none());
+        assert!(guarded("settings.set", &json!({ "key": "budget.limitHoldBy", "value": {} })));
     }
 
     #[test]

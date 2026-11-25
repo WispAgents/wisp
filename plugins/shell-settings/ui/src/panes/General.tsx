@@ -34,7 +34,7 @@ function OnOffRow(props: { readonly client: PluginClient; readonly k: string; re
     ) : (
       t(props.hint)
     );
-  return <SwitchSetting title={t(props.title)} description={hint()} source={onOff(fromRow(props.client, props.k), props.dflt, props.k)} locked={locked} />;
+  return <SwitchSetting settingKey={props.k} title={t(props.title)} description={hint()} source={onOff(fromRow(props.client, props.k), props.dflt, props.k)} locked={locked} />;
 }
 
 /** wisp.terminal's list for this computer (v1 config.terminals): In wisp, the terminal apps found, Custom. */
@@ -94,7 +94,7 @@ function Review(props: { readonly client: PluginClient }): JSX.Element {
   const picked = useSignal(review.value);
   const harnesses = useSignal(props.client.entities.list<Harness>(HARNESS_KIND));
   const items = createMemo(() => reviewChoices(harnesses() as readonly Harness[], picked()));
-  return <SelectSetting part="settings.review" title={t('shell-settings.review')} description={t('shell-settings.review.hint')} source={review} locked={locked} items={items()} />;
+  return <SelectSetting part="settings.review" settingKey={KEYS.review} title={t('shell-settings.review')} description={t('shell-settings.review.hint')} source={review} locked={locked} items={items()} />;
 }
 
 export default function General(props: { readonly client: PluginClient }): JSX.Element {
@@ -104,7 +104,7 @@ export default function General(props: { readonly client: PluginClient }): JSX.E
   return (
     <>
       <SettingsGroup part="settings.general.open">
-        <SelectSetting title={t('shell-settings.editor')} description={t('shell-settings.editor.hint')} source={text(fromRow(props.client, KEYS.editor), 'vscode')} locked={locked} items={editors} />
+        <SelectSetting settingKey={KEYS.editor} title={t('shell-settings.editor')} description={t('shell-settings.editor.hint')} source={text(fromRow(props.client, KEYS.editor), 'vscode')} locked={locked} items={editors} />
         <TakeOver client={props.client} />
       </SettingsGroup>
       <SettingsGroup part="settings.general.answers">

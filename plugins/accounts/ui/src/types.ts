@@ -60,7 +60,7 @@ export interface HarnessRow {
   ord: number;
   available: boolean;
   version?: string;
-  models: { id: string; label: string }[];
+  models: { id: string; label: string; efforts?: string[] }[];
   /** installed but signed out (hidden from the picker) */
   signedIn?: false;
   error?: string;
@@ -81,6 +81,12 @@ export interface HarnessRow {
   changed?: HarnessChange;
   /** when its program was last trusted (ms) */
   pinnedAt?: number;
+  /** the levels it takes (wisp.runtime's detect: a model's own win), for Settings → Agents → Defaults */
+  efforts?: string[];
+  /** the program wisp pinned the first time it ran it: as found, its real path, its version (Binary) */
+  pin?: { path: string; real: string; version: string } | null;
+  /** its plugin is off (Settings → Plugins): listed, Disabled, switched back on from its Advanced */
+  disabled?: boolean;
   /** its detect hasn't answered yet (wisp.runtime's `harnesses` topic, ADR-0066): the rest is what was known */
   checking?: boolean;
 }
@@ -101,7 +107,8 @@ export interface DetectRow {
     available: boolean;
     version?: string;
     error?: string;
-    models: { id: string; label: string }[];
+    models: { id: string; label: string; efforts?: string[] }[];
+    efforts?: string[];
     signedIn?: boolean;
     setup?: { tip: string; command?: string; url?: string };
   };

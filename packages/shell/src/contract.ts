@@ -244,6 +244,10 @@ export interface SettingsPaneDef {
   order?: number;
   /** shown only while this says so (read reactively: a setting, a switch); absent: always. Additive (2026-11-17). */
   if?: (client: PluginClient) => boolean;
+  /** the settings this pane has a row for (another plugin's too: General shows `worktrees.worktree`), so Settings'
+   *  search opens a setting on the pane that shows it and lands on its row; none: the search knows only that the
+   *  pane's plugin owns its settings. Additive (2026-11-25). */
+  keys?: readonly string[];
 }
 
 /** An answer block renderer (the `runtime.block` point's UI half). */

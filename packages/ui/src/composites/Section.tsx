@@ -3,7 +3,7 @@
 // In the phone apps (ADR-0065 build step 4): Android's header is an M3 list subheader in the primary colour
 // with no card; iOS draws an inset grouped section, and its description moves under the box as the
 // section's footer (HIG: help text in footers).
-import { createUniqueId, Show, type JSX } from 'solid-js';
+import { createContext, createUniqueId, onMount, Show, useContext, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import type { HeadingLevel } from '../content/Text.tsx';
 import { Heading } from '../content/Text.tsx';
@@ -80,15 +80,47 @@ export interface SettingsRowProps extends KitProps {
    *  cloud computer's agents). Additive
    *  (2026-11-17). */
   readonly below?: JSX.Element;
+  /** the setting this row shows (`runtime.leanRuns`): Settings' search lands on it, scrolled to, flashed and focused
+   *  when it's the one asked for (`SettingsFocus`). Additive (2026-11-25). */
+  readonly settingKey?: string | undefined;
 }
 
+/** The setting Settings' search opened the pane on: its row scrolls into view, flashes once and takes focus. */
+const FocusContext = createContext<() => string | undefined>(() => undefined);
+
+export function SettingsFocus(props: { readonly setting: string | undefined; readonly children: JSX.Element }): JSX.Element {
+  return <FocusContext.Provider value={() => props.setting}>{props.children}</FocusContext.Provider>;
+}
+
+const reduced = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** The row asked for: in view (centred, at once with reduced motion), flashed, its control focused (else the row). */
+function land(el: HTMLElement): void {
+  el.scrollIntoView?.({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' });
+  el.setAttribute('data-found', '');
+  el.addEventListener('animationend', () => el.removeAttribute('data-found'), { once: true });
+  const ctl = el.querySelector<HTMLElement>('[data-kit="settings-row-control"] :is(button, input, select, textarea, [tabindex]):not([disabled])');
+  (ctl ?? el).focus({ preventScroll: true });
+}
+
+// size-ok: one row's markup, its optional parts each a Show
 export function SettingsRow(props: SettingsRowProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.settings-row';
+  const focus = useContext(FocusContext);
+  let box: HTMLDivElement | undefined;
+  onMount(() => {
+    const key = props.settingKey;
+    // after the pane's first paint: the rows above it have their height, so the scroll lands where it stays
+    if (key !== undefined && key === focus() && box) requestAnimationFrame(() => box && land(box));
+  });
   return (
     <div
+      ref={box}
       id={props.id}
       data-kit="settings-row"
       data-part={part()}
+      data-key={props.settingKey}
+      tabindex={props.settingKey !== undefined && props.settingKey === focus() ? -1 : undefined}
       data-wide={props.wideControl ? '' : undefined}
       data-layout={props.wideControl ? undefined : 'wrap'}
       data-tile={props.tile ? '' : undefined}

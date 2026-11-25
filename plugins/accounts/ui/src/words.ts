@@ -19,7 +19,9 @@ export const present = (h: Pick<HarnessRow, 'available' | 'signedIn'>): boolean 
 /** "Checking…", "Ready", "Signed out", "Not found" and its tone (v1 sx-state). */
 /** `cli`: its CLI's own login as last asked, where the row's Sign in follows it: a found harness its CLI says is signed
  *  out reads Signed out, as its button says (QA r1 #23: "Sign in" beside "● Ready"). */
-export function harnessState(h: Pick<HarnessRow, 'available' | 'signedIn' | 'checking'>, cli?: boolean): { tone: Tone; label: string } {
+export function harnessState(h: Pick<HarnessRow, 'available' | 'signedIn' | 'checking'> & { readonly disabled?: boolean | undefined }, cli?: boolean): { tone: Tone; label: string } {
+  // its plugin is off (Settings → Plugins): nothing else about it is live
+  if (h.disabled) return { tone: 'neutral', label: t('accounts.state.disabled') };
   if (h.checking) return { tone: 'neutral', label: t('accounts.state.checking') };
   if (h.available && cli === false) return { tone: 'warn', label: t('accounts.state.signedOut') };
   if (h.available) return { tone: 'good', label: t('accounts.state.ready') };
@@ -103,13 +105,14 @@ export function mergeHarnesses(mine: readonly HarnessRow[], detected: readonly D
     .sort((a, b) => a.ord - b.ord)
     .map((d): HarnessRow => {
       const base: HarnessRow = byId.get(d.id) ?? { id: d.id, name: d.agent.name, ord: d.ord, available: false, models: [], signIn: 'none' };
-      const { version: _v, error: _e, setup: _s, signedIn: _o, checking: _c, ...rest } = base;
+      const { version: _v, error: _e, setup: _s, signedIn: _o, checking: _c, efforts: _f, ...rest } = base;
       return {
         ...rest,
         name: d.agent.name,
         ord: d.ord,
         available: d.agent.available,
-        models: d.agent.models.map((m) => ({ id: m.id, label: m.label })),
+        models: d.agent.models.map((m) => ({ id: m.id, label: m.label, ...(m.efforts && { efforts: [...m.efforts] }) })),
+        ...(d.agent.efforts && { efforts: [...d.agent.efforts] }),
         ...(d.agent.version !== undefined && { version: d.agent.version }),
         ...(d.agent.error !== undefined && { error: d.agent.error }),
         ...(d.agent.setup !== undefined && { setup: d.agent.setup }),

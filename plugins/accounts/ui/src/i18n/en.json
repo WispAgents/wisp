@@ -4,5 +4,6 @@
   "accounts.recheck": "Re-check",
   "accounts.install": "Install",
   "accounts.keys.remove": "Remove",
-  "accounts.pane.lede": "The harnesses wisp found on this machine. Pick one next to the model in the launcher."
+  "accounts.pane.lede": "The harnesses wisp found on this machine. Pick one next to the model in the launcher.",
+  "accounts.pane.keywords": "sign in sign out account accounts api key keys install update version path binary trust lean model effort mode limit budget stop disable enable harness"
 }

@@ -153,5 +153,6 @@
   "shell-settings.diag.cursor": "At {seq}",
   "shell-settings.search": "Search settings",
   "shell-settings.search.settings": "Settings",
+  "shell-settings.search.harness": "{name} — {pane}",
   "shell-settings.search.none": "No settings match “{q}”"
 }

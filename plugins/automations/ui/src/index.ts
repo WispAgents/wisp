@@ -3,12 +3,13 @@ import { lazy } from 'solid-js';
 import { defineExtension, definePalette, type PluginUiDef } from '@wisp/shell';
 import { parseDraft, parseRun, recipeName } from './recipe.ts';
 import { catalogue } from './i18n.ts';
+import { PANE_KEYS } from './pane-keys.ts';
 
 const parsePage = (p: unknown): { tab: 'recipes' | 'triggers' } => ({ tab: (p as { tab?: unknown } | null)?.tab === 'recipes' ? 'recipes' : 'triggers' });
 
 const ui: PluginUiDef = {
   id: 'wisp.automations',
-  settings: [{ id: 'automations', group: 'agents', title: 'automations.pane', icon: 'bolt', order: 40, component: lazy(() => import('./panes/Automations.tsx')) }],
+  settings: [{ id: 'automations', group: 'agents', keys: PANE_KEYS.automations, title: 'automations.pane', icon: 'bolt', order: 40, component: lazy(() => import('./panes/Automations.tsx')) }],
   // a recipe from a task (v1 recipeForm, Save as recipe…)
   views: [
     // Automations from ⌘K (v1 openAutomations): Recipes and Triggers, with v1's trigger form

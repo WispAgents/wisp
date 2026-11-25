@@ -11,6 +11,8 @@ export const VIEW_ID = 'shell-settings.sheet' as ExtensionId;
 export interface SettingsParams {
   pane?: string;
   filter?: string;
+  /** the setting Settings' search opened it on: its row scrolls into view, flashes and takes focus */
+  focus?: string;
 }
 
 /** The registry keys behind the General, Appearance and Notifications rows (v1 config.defaults names after the dot). */

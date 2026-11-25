@@ -5,10 +5,11 @@ import { drawnLater } from '@wisp/ui';
 import { defineExtension, defineView, type PluginUiDef } from '@wisp/shell';
 import { VIEW_USAGE } from './views.ts';
 import { catalogue, t } from './i18n.ts';
+import { PANE_KEYS } from './pane-keys.ts';
 
 const ui: PluginUiDef = {
   id: 'wisp.budget',
-  settings: [{ id: 'usage', group: 'agents', title: 'budget.usage.pane', icon: 'stats', order: 20, component: lazy(() => import('./panes/Usage.tsx')) }],
+  settings: [{ id: 'usage', group: 'agents', keys: PANE_KEYS.usage, title: 'budget.usage.pane', icon: 'stats', order: 20, component: lazy(() => import('./panes/Usage.tsx')) }],
   views: [defineView({ kind: VIEW_USAGE, slot: 'overlay', overlay: 'dialog', parse: () => null, title: () => t('budget.view.title'), component: lazy(() => import('./UsageView.tsx')) })],
   // Spare allowance and window changes on Home, where v1 had them (.sh-spare)
   // (UX 2026-11-18 desktop #8: no usage bar under Home's prompt box any more: the harness chip's ring and menu and

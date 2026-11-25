@@ -2153,6 +2153,10 @@
         "effort": {
           "type": "string"
         },
+        "foreach": {
+          "description": "one run per item of a list an earlier step gave, made once its needs end:\n`${{ tasks.plan.output.files }}`; the prompt reads the item as `${{ item }}` and its place as `${{ index }}`",
+          "type": "string"
+        },
         "goal": true,
         "if": {
           "description": "run only when this is true: `${{ tasks.tests.output.failed > 0 }}` (skipped otherwise)",
@@ -2191,6 +2195,10 @@
         "output": {
           "description": "its output's shape (a JSON Schema); without one, the output is what its answer gives"
         },
+        "phase": {
+          "description": "the run's view groups steps by phase, in the order phases first appear (`Explore`, `Build`, `Review`)",
+          "type": "string"
+        },
         "project": {
           "description": "the folder it runs in (default: the run's)",
           "type": "string"
@@ -2220,6 +2228,10 @@
             "integer",
             "null"
           ]
+        },
+        "title": {
+          "description": "what the step is, in a few words, for the run's view (default: its name)",
+          "type": "string"
         },
         "worktree": {
           "type": [

@@ -32,6 +32,8 @@ const MIGRATIONS: &[Migration] = &[
     Migration::sql(2, "ALTER TABLE accounts_v_harness ADD COLUMN latest TEXT;"),
     // QA r1 #23: whether gh is signed in (the GitHub row said nothing)
     Migration::sql(3, "ALTER TABLE accounts_v_tool ADD COLUMN signedIn INTEGER;"),
+    // Settings → Agents → Binary: the program wisp pinned (as found, its real path, its version)
+    Migration::sql(4, "ALTER TABLE accounts_v_harness ADD COLUMN pin TEXT;"),
 ];
 
 fn topics(_: &Row) -> Vec<String> {
@@ -61,8 +63,9 @@ pub const HARNESS: EntityDef = EntityDef {
         ("changed", Col::Text),
         ("pinnedAt", Col::Int),
         ("latest", Col::Text),
+        ("pin", Col::Text),
     ],
-    json_columns: &["models", "setup", "changed"],
+    json_columns: &["models", "setup", "changed", "pin"],
     parent: None,
     seq: None,
     topics,
@@ -235,6 +238,7 @@ pub async fn rows(ctx: &Ctx, st: &State, fresh_tools: bool) -> Option<Vec<(&'sta
                 "brand": multi, "provider": null,
                 "changed": serde_json::to_value(&wv.changed).unwrap_or(Value::Null), "pinnedAt": wv.pinned_at,
                 "latest": latest,
+                "pin": w.pin.as_ref().map(|p| json!({ "path": p.path, "real": p.real, "version": p.version })),
             }),
         ));
         let list = lock(&st.accounts).get(&id).cloned().unwrap_or_default();
@@ -402,6 +406,23 @@ mod tests {
         assert_eq!(sign_in_kind(false, true), "cli");
         assert_eq!(sign_in_kind(false, false), "none");
         assert_eq!((HARNESS.topics)(&h), vec![TOPIC.to_owned()]);
+    }
+
+    /// Settings audit r1: Settings → Agents → Binary had no path to show (the row carried only when it was pinned). The
+    /// harness row carries the program wisp pinned: as found, its real path, its version.
+    #[tokio::test]
+    async fn the_harness_row_carries_the_pinned_programs_path_settings_audit_r1() {
+        let db = Store::open(wisp_store::Location::Memory, std::sync::Arc::new(wisp_store::SystemClock)).unwrap();
+        install(&db).unwrap();
+        let r = row_of(
+            &HARNESS,
+            &json!({ "id": "claude", "name": "Claude Code", "ord": 0, "available": true, "models": [], "signIn": "cli",
+                     "pin": { "path": "/usr/local/bin/claude", "real": "/opt/claude/2.1/claude", "version": "2.1" } }),
+        );
+        db.write(move |w| w.upsert(HARNESS.kind, r).map(|_| ())).await.unwrap();
+        let h = db.read(|x| x.get("accounts.harness", "claude")).unwrap().unwrap();
+        assert_eq!(h["pin"]["real"], "/opt/claude/2.1/claude", "{h:?}");
+        assert_eq!(h["pin"]["path"], "/usr/local/bin/claude");
     }
 
     /// QA r1 #23: Settings → Agents' GitHub row said nothing of its sign-in (the row had no field for it) while Home

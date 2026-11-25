@@ -4,10 +4,11 @@ import { drawnLater } from '@wisp/ui';
 import { defineExtension, type PluginUiDef } from '@wisp/shell';
 import type { ExtensionId } from '@wisp/client';
 import { catalogue } from './i18n.ts';
+import { PANE_KEYS } from './pane-keys.ts';
 
 const ui: PluginUiDef = {
   id: 'wisp.update',
-  settings: [{ id: 'updates', group: 'advanced', title: 'update.pane.updates', icon: 'update', order: 10, component: lazy(() => import('./panes/Updates.tsx')) }],
+  settings: [{ id: 'updates', group: 'advanced', keys: PANE_KEYS.updates, title: 'update.pane.updates', icon: 'update', order: 10, component: lazy(() => import('./panes/Updates.tsx')) }],
   // the channel at the end of General too, where v1 had it
   extensions: [
     defineExtension({ id: 'update.general', attachTo: { id: 'shell.settings:general' }, component: lazy(() => import('./GeneralRow.tsx')) }),

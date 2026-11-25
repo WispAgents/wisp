@@ -46,9 +46,13 @@ pub fn learn(runs: &mut Runs, e: &TurnEnded, at: i64) -> bool {
     true
 }
 
-fn ask_line(ctx: &Ctx) -> Option<f64> {
+/// A harness's own line (Settings → Agents → Limits & budget) over everyone's: `{ <harness>: off | 80 | 90 | 95 }`.
+pub const SETTING_BY: &str = "budget.limitHoldBy";
+
+fn ask_line(ctx: &Ctx, agent: &str) -> Option<f64> {
     let v = ctx.setting(SETTING);
-    ask::line(v.as_ref().and_then(|v| v.as_str()))
+    let by = ctx.setting(SETTING_BY);
+    ask::line_for(by.as_ref(), agent, v.as_ref().and_then(|v| v.as_str()))
 }
 
 impl State {
@@ -65,7 +69,7 @@ impl State {
         together: u32,
         turn: Option<&str>,
     ) -> Option<(ask::Hold, Vec<ask::Win>)> {
-        let line = ask_line(ctx)?;
+        let line = ask_line(ctx, agent)?;
         let account = account_of(account);
         let at = now(ctx);
         let runs = lock(&self.runs).get(agent).cloned().unwrap_or_default();

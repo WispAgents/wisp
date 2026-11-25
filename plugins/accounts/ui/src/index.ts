@@ -2,6 +2,7 @@
 import { lazy } from 'solid-js';
 import type { PluginUiDef } from '@wisp/shell';
 import { catalogue } from './i18n.ts';
+import { PANE_KEYS } from './pane-keys.ts';
 
 const ui: PluginUiDef = {
   id: 'wisp.accounts',
@@ -11,7 +12,7 @@ const ui: PluginUiDef = {
     // a cloud computer's agents, signed in to from Settings → Cloud (v1 cloud.js agents); the machine's peer as `id`
     { id: 'accounts.machine-agents', attachTo: { id: 'shell.machine:agents' }, component: lazy(() => import('./panes/MachineAgents.tsx')) },
   ],
-  settings: [{ id: 'agents', group: 'agents', title: 'accounts.pane', icon: 'agent', order: 10, component: lazy(() => import('./panes/Agents.tsx')) }],
+  settings: [{ id: 'agents', group: 'agents', keys: PANE_KEYS.agents, title: 'accounts.pane', icon: 'agent', order: 10, component: lazy(() => import('./panes/Agents.tsx')) }],
   catalogue,
 };
 export default ui;

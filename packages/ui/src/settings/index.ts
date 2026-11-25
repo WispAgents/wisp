@@ -11,3 +11,5 @@ export { Meter, type MeterProps } from './Meter.tsx';
 export { PlanAccount, PlanCompare, PlanList, type PlanAccountProps, type PlanCompareProps, type PlanWindowRow, type PlanWhereRow } from './PlanBudget.tsx';
 export { SwitchSetting, SelectSetting, ChoiceSetting, type SettingSource, type SelectSettingProps, type ChoiceSettingProps, type ChoiceOption } from './SettingControls.tsx';
 export { SettingsSignIn, type SettingsSignInProps, type SettingsSignInLabels } from './SettingsSignIn.tsx';
+export { SettingsSplit, type SettingsSplitItem, type SettingsSplitProps } from './SettingsSplit.tsx';
+export { listStep } from './split-keys.ts';

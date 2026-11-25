@@ -4,6 +4,8 @@
 // the bridge from @wisp/client's signals into Solid (no component): plain modules that derive over the store use it
 export { useDerived, useSignal } from './core/signal.ts';
 export { reorderable, reordered, type OnReorder, type ReorderAttrs } from './core/reorder.ts';
+// Settings → Agents' list keys (SettingsSplit): Up, Down, Home, End, Enter
+export { listStep } from './settings/split-keys.ts';
 export { matchesQuery } from './controls/menu-filtering.ts';
 export { menuSections, SHEET_SCREEN, type MenuEntry, type MenuFilter, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './controls/menu-entries.ts';
 export type { IconName } from './content/icons.ts';

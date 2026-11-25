@@ -42,6 +42,7 @@ function Desktop(props: { readonly client: PluginClient }): JSX.Element {
   return (
     <SettingsRow
       part="settings.notify"
+      settingKey={KEYS.notify}
       title={t('shell-settings.notify')}
       description={notifyHint(perm(), on() && perm() === 'granted')}
       control={<Switch checked={on() && perm() === 'granted'} disabled={perm() === 'denied' || perm() === 'unsupported'} onChange={(v) => void toggle(v)} aria-label={t('shell-settings.notify')} />}
@@ -58,6 +59,7 @@ function ChannelProject(props: { readonly client: PluginClient }): JSX.Element {
   return (
     <SelectSetting
       part="settings.channelProject"
+      settingKey={KEYS.channelProject}
       title={t('shell-settings.channelProject')}
       description={t('shell-settings.channelProject.hint')}
       source={text(fromRow(props.client, KEYS.channelProject), '')}
@@ -87,6 +89,7 @@ export default function Notifications(props: { readonly client: PluginClient }):
         />
         <SwitchSetting
           part="settings.acceptChannels"
+          settingKey={KEYS.acceptChannels}
           title={t('shell-settings.channels')}
           description={
             <>

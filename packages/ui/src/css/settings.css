@@ -88,6 +88,49 @@
   [data-kit='settings-row'] [data-kit='tabs'][data-variant='seg'] [data-kit='tab'] > [data-kit='icon'] { margin-right: 0; }
   [data-kit='setting-locked'] { display: block; margin-top: var(--space-1); color: var(--ink-2); }
 
+  /* a small ring that fills clockwise (Meter shape="ring": a list item's fullest window) */
+  [data-kit='meter'][data-shape='ring'] {
+    flex: none; width: var(--size-icon-md); height: var(--size-icon-md); border-radius: var(--radius-pill);
+    background: conic-gradient(var(--k-tone) var(--k-v), var(--sunk) 0);
+    mask: radial-gradient(farthest-side, transparent calc(100% - var(--size-ring)), var(--ink) calc(100% - var(--size-ring) + var(--size-hairline)));
+  }
+  [data-kit='meter'][data-shape='ring'] > [data-kit='meter-fill'], [data-kit='meter'][data-shape='ring'] > [data-kit='meter-mark'] { display: none; }
+
+  /* the row Settings' search opened the pane on: a flash of the accent, once */
+  @keyframes kit-found { from { background: color-mix(in srgb, var(--accent) 18%, transparent); } }
+  [data-kit='settings-row'][data-found] { animation: kit-found 1.6s var(--ease) 1; }
+  [data-kit='settings-row'][tabindex]:focus { outline: none; }
+
+  /* SettingsSplit: a list and the picked one's detail, inside a pane (Settings → Agents); narrow, one at a time */
+  [data-kit='settings-split'] { container: settings-split / inline-size; display: grid; grid-template-columns: var(--size-settings-nav-narrow) minmax(0, 1fr); gap: var(--space-5); align-items: start; min-width: 0; }
+  [data-kit='settings-split-list'] { position: sticky; top: 0; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  [data-kit='settings-split-items'] { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  [data-kit='settings-split-item'] {
+    display: flex; align-items: center; gap: var(--space-3); min-width: 0; min-height: var(--size-control-md); padding: 0 var(--space-3);
+    border: 0; border-radius: var(--radius-md); background: transparent; color: var(--ink-2); font: inherit; font-size: var(--fs-md); text-align: start; cursor: pointer;
+  }
+  [data-kit='settings-split-item']:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
+  [data-kit='settings-split-item'][data-current] { background: var(--surface-2); color: var(--ink); font-weight: var(--fw-medium); box-shadow: var(--shadow-1); }
+  [data-kit='settings-split-item']:focus-visible { outline: var(--size-ring) solid var(--accent); outline-offset: calc(-1 * var(--size-ring)); }
+  [data-kit='settings-split-item'] > [data-kit='icon'] { flex: none; color: var(--muted); }
+  [data-kit='settings-split-logo'] { flex: none; width: var(--size-icon-md); height: var(--size-icon-md); object-fit: contain; }
+  [data-kit='settings-split-label'] { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-kit='settings-split-dot'] { flex: none; width: var(--size-dot-lg); height: var(--size-dot-lg); border-radius: var(--radius-pill); background: var(--k-tone); }
+  [data-kit='settings-split-chevron'], [data-kit='settings-split-head'] { display: none; }
+  [data-kit='settings-split-detail'] { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+  [data-kit='settings-split-detail']:focus { outline: none; }
+  [data-kit='settings-split-title'] { font-weight: var(--fw-semibold); color: var(--ink); }
+  @container settings-split (max-width: 640px) {
+    [data-kit='settings-split'] { grid-template-columns: minmax(0, 1fr); }
+    [data-kit='settings-split-list'] { position: static; }
+    [data-kit='settings-split'][data-view='list'] [data-kit='settings-split-detail'] { display: none; }
+    [data-kit='settings-split'][data-view='detail'] [data-kit='settings-split-list'] { display: none; }
+    [data-kit='settings-split-item'] { min-height: var(--size-touch); }
+    [data-kit='settings-split-item'][data-current] { background: transparent; box-shadow: none; }
+    [data-kit='settings-split-chevron'] { display: flex; flex: none; color: var(--faint); }
+    [data-kit='settings-split-head'] { display: flex; align-items: center; gap: var(--space-2); }
+  }
+
   /* Narrow: the list, or a pane over it with Back. */
   @container settings (max-width: 640px) {
     [data-kit='settings-frame-grid'] { grid-template-columns: minmax(0, 1fr); }

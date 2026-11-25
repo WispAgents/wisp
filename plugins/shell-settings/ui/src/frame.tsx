@@ -8,12 +8,12 @@ import { ErrorBoundary, Show, createMemo, createResource, createSignal, type JSX
 import { Dynamic } from 'solid-js/web';
 import { defineCommand, type PeerId, type PluginClient, type Vars } from '@wisp/client';
 import { titleParts, usePluginClient, useShell, type SettingsPaneDef } from '@wisp/shell';
-import { Callout, EmptyState, Input, SettingsFrame, Skeleton, Stack, useAfterPaint, useDerived, useSignal } from '@wisp/ui';
+import { Callout, EmptyState, Input, SettingsFocus, SettingsFrame, Skeleton, Stack, useAfterPaint, useDerived, useSignal } from '@wisp/ui';
 import { t as own } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
 import { pickPane, samePane, settingsIntent, type PaneEntry } from './nav.ts';
 import { filterSections, offeredPanes, sectionedPanes } from './phone-nav.ts';
-import { foundSettings, settingTarget, type FoundSetting } from './search.ts';
+import { foundHarnesses, foundSettings, harnessTarget, settingTarget, type FoundHarness, type FoundSetting, type RoutePane } from './search.ts';
 import './i18n/lazy.ts';
 
 /** What the frame reads: every registered pane and a translator (titles are other plugins' keys). */
@@ -24,6 +24,8 @@ export interface FrameDeps {
   readonly phone?: boolean;
   /** the list and the pane show side by side (wide): picking a pane replaces Settings' place in history (TRY-26) */
   readonly sideBySide?: () => boolean;
+  /** the harnesses the plugins registered: each is a search result of its own, opening Settings → Agents on it */
+  readonly harnesses?: () => readonly FoundHarness[];
 }
 
 
@@ -45,7 +47,8 @@ export function shellDeps(): FrameDeps {
   // a pane with an `if` shows only while it says so (Auto's while its switch is on, owner #37); useDerived, as it may
   // read the entity store
   const entries = useDerived(() => all().filter((e) => e.pane.if?.(e.client) ?? true));
-  return { panes: entries, t: (k, v) => shell.t(k, v), phone: shell.platform.phone, sideBySide: () => shell.nav().layout === 'split' };
+  const harnesses = useSignal(shell.harnesses());
+  return { panes: entries, t: (k, v) => shell.t(k, v), phone: shell.platform.phone, sideBySide: () => shell.nav().layout === 'split', harnesses };
 }
 
 export function SettingsView(props: { readonly client: PluginClient; readonly params: SettingsParams; readonly deps?: FrameDeps }): JSX.Element {
@@ -82,19 +85,34 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
         .then((rows) => rows.map((r): FoundSetting => ({ key: r.key, owner: r.owner, ...titleParts(r.decl.title ?? r.key) })))
         .catch((): FoundSetting[] => []),
   );
-  const paneOwners = (): { id: string; plugin: string }[] => panes().map((e) => ({ id: e.pane.id, plugin: (e.pane as { plugin?: string }).plugin ?? '' }));
+  const paneOwners = (): RoutePane[] => panes().map((e) => ({ id: e.pane.id, plugin: (e.pane as { plugin?: string }).plugin ?? '', keys: e.pane.keys }));
+  // each harness its own result ("Claude Code — Agents"), while Agents is there to open on it
+  const agentsTitle = (): string | undefined => {
+    const p = panes().find((e) => e.pane.id === 'agents')?.pane;
+    return p ? deps.t(p.title) : undefined;
+  };
   const groups = createMemo(() => {
     const byPane = filterSections(all(), query(), aboutOf);
+    const pane = agentsTitle();
+    const hs = pane === undefined ? [] : foundHarnesses(deps.harnesses?.() ?? [], query());
     const found = foundSettings(declared() ?? [], query()).slice(0, 20);
-    if (found.length === 0) return byPane;
-    return [...byPane, { id: 'found', label: own('shell-settings.search.settings'), items: found.map((f) => ({ id: `setting:${f.key}`, label: f.label, icon: 'settings' as const })) }];
+    const out = [...byPane];
+    if (hs.length > 0 && pane !== undefined)
+      out.push({ id: 'harnesses', label: pane, items: hs.map((h) => ({ id: `harness:${h.id}`, label: own('shell-settings.search.harness', { name: h.name, pane }), icon: 'agent' as const })) });
+    if (found.length > 0) out.push({ id: 'found', label: own('shell-settings.search.settings'), items: found.map((f) => ({ id: `setting:${f.key}`, label: f.label, icon: 'settings' as const })) });
+    return out;
   });
   const open = (id: string): void => {
-    if (!id.startsWith('setting:')) return props.client.navigate(settingsIntent(id, undefined, deps.sideBySide?.() === true));
+    const side = deps.sideBySide?.() === true;
+    if (id.startsWith('harness:')) {
+      const to = harnessTarget(id.slice('harness:'.length));
+      return props.client.navigate(settingsIntent(to.pane, to.filter, side));
+    }
+    if (!id.startsWith('setting:')) return props.client.navigate(settingsIntent(id, undefined, side));
     const f = (declared() ?? []).find((x) => `setting:${x.key}` === id);
     if (!f) return;
     const to = settingTarget(f, paneOwners());
-    props.client.navigate(settingsIntent(to.pane, to.filter, deps.sideBySide?.() === true));
+    props.client.navigate(settingsIntent(to.pane, to.filter, side, to.focus));
   };
   const nothing = (): boolean => query().trim() !== '' && !declared.loading && groups().length === 0;
   const onSearchKey = (e: KeyboardEvent): void => {
@@ -175,7 +193,10 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
               </Callout>
             )}
           >
-            <Dynamic component={entry.pane.component} client={entry.client} {...(props.params.filter !== undefined && { filter: props.params.filter })} />
+            {/* the setting the search opened it on: its row (SettingsRow settingKey) scrolls to, flashes and takes focus */}
+            <SettingsFocus setting={props.params.focus}>
+              <Dynamic component={entry.pane.component} client={entry.client} {...(props.params.filter !== undefined && { filter: props.params.filter })} />
+            </SettingsFocus>
           </ErrorBoundary>
         )}
       </Show>

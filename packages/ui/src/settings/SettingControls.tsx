@@ -28,6 +28,8 @@ interface BoundRowProps<V> extends KitProps {
   readonly disabled?: boolean;
   /** a mark before the title (a harness's logo: Usage's per-harness stop lines) */
   readonly logo?: string | undefined;
+  /** the setting it shows: Settings' search lands on its row (SettingsRow `settingKey`) */
+  readonly settingKey?: string | undefined;
 }
 
 const none: Readable<undefined> = () => undefined;
@@ -57,6 +59,7 @@ export function SwitchSetting(props: BoundRowProps<boolean>): JSX.Element {
   return (
     <SettingsRow
       part={props.part ?? 'settings.row'}
+      settingKey={props.settingKey}
       title={props.title}
       description={<Description row={props} by={by()} />}
       control={<Switch checked={value() === true} onChange={(v) => props.source.set(v)} disabled={props.disabled === true || by() !== undefined} aria-label={props.title} />}
@@ -75,6 +78,7 @@ export function SelectSetting(props: SelectSettingProps): JSX.Element {
   return (
     <SettingsRow
       part={props.part ?? 'settings.row'}
+      settingKey={props.settingKey}
       title={props.title}
       wideControl
       description={<Description row={props} by={by()} />}
@@ -112,6 +116,7 @@ export function ChoiceSetting(props: ChoiceSettingProps): JSX.Element {
   return (
     <SettingsRow
       part={props.part ?? 'settings.row'}
+      settingKey={props.settingKey}
       title={props.title}
       {...(props.logo && { logo: props.logo })}
       wideControl
