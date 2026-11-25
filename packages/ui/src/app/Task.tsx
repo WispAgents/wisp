@@ -228,6 +228,8 @@ export interface TaskDetailsProps {
   /** a plan's when (v1 plan-view .pv-when): Starts in 2h, At 3pm, Draft, After “x”; first in the column */
   readonly when?: { readonly icon: IconName; readonly label: string; readonly title?: string };
   readonly branch?: { readonly head: string; readonly tail: string; readonly title: string };
+  /** the machine it runs on (this computer, a peer, a sandbox), over the branch. Additive. */
+  readonly machine?: { readonly name: string; readonly icon: IconName; readonly title?: string };
   /** its usage, its subagents' in, and how full its context is (v1 #785): the wide pane's lines. Additive. */
   readonly usage?: TaskUsageProps;
   readonly actions: readonly TaskAction[];
@@ -296,16 +298,26 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
         {/* after the harness and the folder, as v1's it-props (split.js paintDetails: headPills, then planLine) */}
         <Show when={props.usage}>{(u) => <TaskUsage {...u()} />}</Show>
       </div>
-      <Show when={props.branch}>
-        {(b) => (
-          <div data-kit="it-meta" title={b().title}>
-            <span data-kit="m-branch">
-              <Icon name="branch" />
-              <span data-kit="b-h">{b().head}</span>
-              <span data-kit="b-t">{b().tail}</span>
-            </span>
-          </div>
-        )}
+      <Show when={props.branch || props.machine}>
+        <div data-kit="it-meta">
+          <Show when={props.machine}>
+            {(m) => (
+              <span data-kit="m-where" data-part="split.machine" title={m().title ?? m().name}>
+                <Icon name={m().icon} />
+                <span>{m().name}</span>
+              </span>
+            )}
+          </Show>
+          <Show when={props.branch}>
+            {(b) => (
+              <span data-kit="m-branch" title={b().title}>
+                <Icon name="branch" />
+                <span data-kit="b-h">{b().head}</span>
+                <span data-kit="b-t">{b().tail}</span>
+              </span>
+            )}
+          </Show>
+        </div>
       </Show>
       <Show when={props.extra}>
         <div data-kit="it-extra" data-part="split.extra">
