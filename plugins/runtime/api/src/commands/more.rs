@@ -118,7 +118,7 @@ pub struct BtwDropArgs {
     pub btw_id: String,
 }
 
-/// A side discussion's proposed write on its main task (`ext["wisp.runtime"].proposals`), applied or discarded by the
+/// A side discussion's proposed write on its main task, applied or discarded by the
 /// user there. `id`: the main task. Additive (2026-11-25).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
