@@ -4,7 +4,7 @@ import { lazy } from 'solid-js';
 
 const TaskSide = lazy(() => import('./TaskSide.tsx'));
 import { defineExtension, definePluginUi, defineView } from './define.ts';
-import { TAB_VIEW, TERM_VIEW, WATCH_VIEW } from './open-task.ts';
+import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, isTui } from './open-task.ts';
 import { CATALOGUE } from './i18n/index.ts';
 
 export { CATALOGUE };
@@ -28,8 +28,8 @@ export default definePluginUi({
     defineExtension({ id: 'shell-task.comments', attachTo: { id: 'shell.task:foot' }, component: lazy(() => import('./foot/CommentTray.tsx')) }),
     // the agent opened a watch while you look at its task: the Watch tab opens beside it (v1 panel.js)
     defineExtension({ id: 'shell-task.watch-open', attachTo: { id: 'shell.task:foot' }, component: lazy(() => import('./foot/WatchOpen.tsx')) }),
-    // a terminal task opens on its terminal
-    defineExtension({ id: 'shell-task.term-open', attachTo: { id: 'shell.task:foot' }, component: lazy(() => import('./foot/TermOpen.tsx')) }),
+    // a terminal task's CLI is its body, edge to edge under its head (v1 .tui-term)
+    defineExtension({ id: 'shell-task.term-screen', attachTo: { id: 'shell.task:screen' }, if: (p) => isTui(p.session?.()), component: lazy(() => import('./foot/TermScreen.tsx')) }),
   ],
   // Run app and Watch in a task's row menu, the comments' prompt source and Open file…: loaded as the first screen
   // draws (ADR-0067)

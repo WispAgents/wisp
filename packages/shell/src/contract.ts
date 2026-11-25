@@ -83,6 +83,9 @@ export const INPUTS = {
   // added 2026-11-15 (additive): inside the reply box, over the text, within its border (v1 .c-queued): the queued
   // follow-ups (shell-composer, order 10), then wisp.later's set for a time (order 20); the box grows upward with what's here
   'shell.task:composer-top': 'composer.top',
+  // added 2026-11-25 (additive): what takes the task body's place, under its head, in place of the turns, details and
+  // reply box (v1 term.css .tui-term: a terminal task's CLI); shown while one of its extensions' `if` holds for the task
+  'shell.task:screen': 'task.screen',
   // added 2026-11-10 (additive): under each turn (its key as the id), what plugins say of it (why it stopped, held, the receipt)
   'shell.turn:foot': 'turn.foot',
   // added 2026-11-17 (additive, ADR-0095): in a turn's trail, after its token count, one line with it (its key as the id):
