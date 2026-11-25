@@ -486,6 +486,14 @@ export const reveal = defineCommand<{ id: string; path: string }, { ok: boolean;
   optimistic: 'none',
   pending: 'the Show in folder button',
 });
+/** Live fallback read for a `doc` block whose text wasn't snapshotted yet (mid-turn Chat mode or older turns). */
+export const docSource = defineCommand<{ id: string; path: string }, { text: string }>({
+  id: 'worktrees.source',
+  owner: (a) => a.id,
+  wire: (a) => ({ id: bare(a.id), path: a.path }),
+  optimistic: 'none',
+  pending: 'the doc block',
+});
 /** Reveal one masked .env item (ADR-0050, v1 GET /sessions/:id/unmasked): the server sends every .env value as
  *  KEY=••••, and this asks for one step's output, one answer block or one file's captured change as it is. */
 export const unmasked = defineCommand<{ id: string; turnId: string; step?: number; block?: number; file?: string }, Readonly<Record<string, unknown>>>({

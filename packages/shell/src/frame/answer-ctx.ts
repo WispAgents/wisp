@@ -1,14 +1,15 @@
 // What an answer's blocks may ask of the open task (BlockContext, packages/ui/src/blocks/types.ts): send a reply,
 // put text in the reply box, run a command in the task's folder (and show what it did), open another task or a
 // link, allow or deny a blocked turn, read another task's title and state. Live only on the latest answer.
+import { createSignal, getOwner, onCleanup } from 'solid-js';
 import type { EntityKey } from '@wisp/client';
 import { entityKey, ownerOf, untracked } from '@wisp/client';
-import { useSignal, type BlockContext, type EnvReveal, type StuffRef, type TaskRef } from '@wisp/ui';
+import { useSignal, type BlockContext, type DocText, type EnvReveal, type StuffRef, type TaskRef } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { usePluginClient } from '../slot.tsx';
 import { SESSION, type SessionRow } from '../rows.ts';
-import { appState, approveBlocked, exec, reveal } from './commands.ts';
-import { mediaUrl } from './answer-of.ts';
+import { appState, approveBlocked, docSource, exec, reveal } from './commands.ts';
+import { docRelativePath, mediaUrl } from './answer-of.ts';
 import { keepHost } from './keep.ts';
 import { fileUrl } from '../editor.ts';
 import '../i18n/lazy.ts';
@@ -96,6 +97,21 @@ export function answerContext(h: AnswerHost): BlockContext {
       else h.openChanges();
     },
     media: (p) => mediaUrl(home, key, p),
+    // Live read when a `doc` block has no snapshotted `text` yet (mid-turn Chat mode blocks or turns from before keep_docs).
+    docText: (path) => {
+      const r = shell.client.entities.peek<{ body?: { cwd?: string; ext?: Record<string, { path?: string; cwd?: string } | undefined> }; summary?: { cwd?: string } }>(SESSION, key);
+      const dir = String(r?.body?.ext?.['wisp.worktrees']?.cwd ?? r?.body?.ext?.['wisp.worktrees']?.path ?? r?.body?.cwd ?? r?.summary?.cwd ?? '');
+      const rel = docRelativePath(dir, path);
+      if (!rel) return () => ({ kind: 'failed', reason: '' });
+      const [state, setState] = createSignal<DocText>({ kind: 'loading' });
+      let alive = true;
+      if (getOwner()) onCleanup(() => { alive = false; });
+      void run(docSource, { id: key, path: rel }).then(
+        (res) => alive && setState({ kind: 'ready', text: res.text }),
+        (e: unknown) => alive && setState({ kind: 'failed', reason: e instanceof Error ? e.message : String(e) }),
+      );
+      return state;
+    },
     previewUrl: (url) => {
       for (const m of previews) {
         const to = m(url);

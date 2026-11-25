@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Task view (`doc` blocks): ported v1 `keepDocs` snapshotting to `wisp-runtime` so finished turns capture each referenced markdown document (`text`, `abs`, and `truncated` past 512 KiB) from the task's cwd, worktree, extra project dirs, or outside doc paths (while refusing `.env`, binary files, and non-doc symlinks), wired `docText` live fallback via `worktrees.source` in `answerContext` for mid-turn Chat mode blocks and earlier turns, and fixed empty markdown files (`text: ""`) in `DocBlock` falsely showing *"The file wasn’t there when the agent finished"*.
 - Task view (expanded actions): redesigned expanded action groups and step details in `Timeline` into a cohesive disclosure card with a full-width header, separated file-read chips with file icons, semantic edit icon tinting, crisp inline command badges, right-aligned diff stats/chevrons, and recessed high-contrast output panels instead of disconnected floating boxes.
 
 ## [1.0.0-alpha.12] - 2026-11-25

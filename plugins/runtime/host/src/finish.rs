@@ -149,6 +149,7 @@ impl Runtime {
         }
         if let Some(p) = turn.presentation.as_mut() {
             self.keep_media(s, turn.id.as_str(), &mut p.blocks).await;
+            self.keep_docs(s, &mut p.blocks).await;
         }
     }
 

@@ -55,7 +55,7 @@ const STRUCT: &[&str] =
     &["id", "parentId", "turnId", "sessionId", "cwd", "agent", "model", "effort", "mode", "state", "status", "account", "kind", "by", HIDE];
 
 /// An answer block's fields that hold no agent text in a prose part (its kind, tone, file: the .env rules read it).
-const BLOCK: &[&str] = &["type", "tone", "language", "change", "device", "masked", "v", "file", "path"];
+const BLOCK: &[&str] = &["type", "tone", "language", "change", "device", "masked", "v", "file", "path", "abs"];
 
 /// The fields of a `code` or `diff` answer block about a .env file: masked whole by its own rules
 /// (`env_mask::mask_one_block`, which flags it for Reveal), never by a part's.

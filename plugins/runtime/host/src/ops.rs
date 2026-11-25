@@ -603,11 +603,14 @@ impl Runtime {
         let stale = t.presentation.as_ref().is_some_and(|p| p.v < PARSER_VERSION) && t.status == TurnStatus::Done;
         if let (true, Some(text)) = (stale, t.text.clone()) {
             t.presentation = Some(presentation(&text, &self.host.blocks()));
-            if t.by.as_deref() != Some("compact")
-                && let Ok(s) = self.repo.session(id).await
-            {
-                for o in self.host.outcomes() {
-                    o.prepare(&s, &mut t);
+            if let Ok(s) = self.repo.session(id).await {
+                if t.by.as_deref() != Some("compact") {
+                    for o in self.host.outcomes() {
+                        o.prepare(&s, &mut t);
+                    }
+                }
+                if let Some(p) = t.presentation.as_mut() {
+                    self.keep_docs(&s, &mut p.blocks).await;
                 }
             }
             let row = t.clone();

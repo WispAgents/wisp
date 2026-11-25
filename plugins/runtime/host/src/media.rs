@@ -7,17 +7,62 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use wisp_kernel::http::{Request, Response, Route};
 use wisp_kernel::{Result as WireResult, WireError};
+use wisp_runtime_core::doc::{MAX_KEPT_DOC, doc_plan, expand_tilde, is_doc_ext, kept_doc, utf8_prefix};
 use wisp_runtime_core::media::{MediaFile, SNIFF_LEN, content_fits, doc_file, keep_plan, kept, media_file, mime, resolve};
 
 use crate::error::{Result, RuntimeError};
 use crate::plugin::{Slot, rt};
 use crate::runtime::Runtime;
 
-/// What a doc block may name outside the task's folder for Save to My Stuff to copy.
-const DOC_EXTS: [&str; 5] = ["md", "markdown", "mdx", "txt", "rst"];
-
 /// A picture goes out unable to run anything (an SVG's scripts), and never sniffed into a page.
 const MEDIA_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from)
+}
+
+/// Folders this task works in: its cwd, its worktree paths (if any), and extra project dirs, deduplicated.
+fn task_dirs(s: &wisp_runtime_api::model::Session) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    let mut push = |raw: &str| {
+        if raw.is_empty() {
+            return;
+        }
+        let p = PathBuf::from(raw);
+        if p.is_absolute() && !dirs.contains(&p) {
+            dirs.push(p);
+        }
+    };
+    push(&s.cwd);
+    if let Some(wt) = s.ext.get("wisp.worktrees") {
+        for key in ["cwd", "path", "root"] {
+            if let Some(v) = wt.get(key).and_then(Value::as_str) {
+                push(v);
+            }
+        }
+    }
+    for d in &s.dirs {
+        push(d);
+    }
+    dirs
+}
+
+/// Reads at most `max` bytes from one open handle (no TOCTOU swap), returning `(text, truncated)`.
+async fn read_doc(path: &Path, max: u64) -> Option<(String, bool)> {
+    use tokio::io::AsyncReadExt as _;
+    let file = tokio::fs::File::open(path).await.ok()?;
+    if !file.metadata().await.ok()?.is_file() {
+        return None;
+    }
+    let cap = usize::try_from(max).ok()?;
+    let mut buf = Vec::with_capacity(cap.min(64 * 1024));
+    file.take(max.saturating_add(1)).read_to_end(&mut buf).await.ok()?;
+    let truncated = buf.len() > cap;
+    if truncated {
+        buf.truncate(cap);
+    }
+    Some((utf8_prefix(&buf)?, truncated))
+}
 
 /// The file manager on `path` (v1 `revealInFolder`): Finder selects it, Explorer too, elsewhere its folder opens.
 #[must_use]
@@ -104,6 +149,49 @@ impl Runtime {
         }
     }
 
+    /// v1 `Store.keepDocs`: every `doc` block's file is snapshotted into the turn (`text`, `abs`, and `truncated`
+    /// past 512 KiB) so it still reads the same once the file changes, moves or its worktree goes. Outside the task's
+    /// folders (links followed), only document extensions ([`wisp_runtime_core::doc::DOC_EXTS`]) are read; `.env`
+    /// files and binary files are never snapshotted.
+    pub(crate) async fn keep_docs(&self, s: &wisp_runtime_api::model::Session, blocks: &mut [Value]) {
+        let dirs = task_dirs(s);
+        let dir_refs: Vec<&Path> = dirs.iter().map(PathBuf::as_path).collect();
+        let home = home_dir();
+        let plan = doc_plan(&dir_refs, home.as_deref(), blocks);
+        if plan.is_empty() {
+            return;
+        }
+        let mut roots = Vec::with_capacity(dirs.len());
+        for d in &dirs {
+            if let Ok(real) = wisp_proc::canonical(d).await {
+                roots.push(real);
+            }
+        }
+        for k in plan {
+            let mut found = None;
+            for cand in k.candidates {
+                if cand.is_absolute() && tokio::fs::metadata(&cand).await.is_ok_and(|m| m.is_file()) {
+                    found = Some(cand);
+                    break;
+                }
+            }
+            let Some(cand) = found else { continue };
+            let Ok(real) = wisp_proc::canonical(&cand).await else { continue };
+            if wisp_envmask::is_env_file(&cand.to_string_lossy()) || wisp_envmask::is_env_file(&real.to_string_lossy()) {
+                continue;
+            }
+            let inside = roots.iter().any(|r| real.starts_with(r));
+            if !(inside || (is_doc_ext(&cand) && is_doc_ext(&real))) {
+                continue;
+            }
+            if let Some((text, truncated)) = read_doc(&real, MAX_KEPT_DOC).await
+                && let Some(b) = blocks.get_mut(k.index)
+            {
+                kept_doc(b, text, &cand, truncated);
+            }
+        }
+    }
+
     /// The file `asked` names for task `id`, if a page may load it.
     ///
     /// # Errors
@@ -158,7 +246,8 @@ impl Runtime {
         }
         let s = self.repo.session(id).await?;
         let dir = PathBuf::from(&s.cwd);
-        let at = resolve(&dir, asked);
+        let asked_path = expand_tilde(asked, home_dir().as_deref()).map_or_else(|| asked.to_owned(), |p| p.display().to_string());
+        let at = resolve(&dir, &asked_path);
         // relative only when the task has no folder: the server's own folder is never the task's
         if !at.is_absolute() || !tokio::fs::metadata(&at).await.is_ok_and(|m| m.is_file()) {
             return Ok(None);
@@ -167,9 +256,7 @@ impl Runtime {
             self.repo.turns(id, None, None).await?.into_iter().filter_map(|t| t.presentation).flat_map(|p| p.blocks).collect();
         // a doc block named it outside the folder: only a document (an agent told to name `~/.ssh/id_rsa` in a doc
         // block gets nothing copied); one inside is checked as any file there is, links followed
-        let document =
-            |p: &PathBuf| p.extension().and_then(|e| e.to_str()).is_some_and(|e| DOC_EXTS.contains(&e.to_ascii_lowercase().as_str()));
-        if let Some(doc) = doc_file(&dir, asked, &blocks, &|_| true).filter(|p| !p.starts_with(&dir) && document(p)) {
+        if let Some(doc) = doc_file(&dir, &asked_path, &blocks, &|_| true).filter(|p| !p.starts_with(&dir) && is_doc_ext(p)) {
             return Ok(Some(doc));
         }
         let (real, root) = (wisp_proc::canonical(&at).await, wisp_proc::canonical(&dir).await);
@@ -189,9 +276,10 @@ impl Runtime {
             let blocks: Vec<Value> =
                 self.repo.turns(id, None, None).await?.into_iter().filter_map(|t| t.presentation).flat_map(|p| p.blocks).collect();
             let dir = PathBuf::from(&s.cwd);
-            let at = resolve(&dir, asked);
+            let asked_path = expand_tilde(asked, home_dir().as_deref()).map_or_else(|| asked.to_owned(), |p| p.display().to_string());
+            let at = resolve(&dir, &asked_path);
             let is = at.is_absolute() && tokio::fs::metadata(&at).await.is_ok_and(|m| m.is_file());
-            doc_file(&dir, asked, &blocks, &|_| is).ok_or_else(|| RuntimeError::Invalid("That file is gone.".into()))?
+            doc_file(&dir, &asked_path, &blocks, &|_| is).ok_or_else(|| RuntimeError::Invalid("That file is gone.".into()))?
         };
         let file = file.display().to_string();
         let (bin, args) = reveal_argv(std::env::consts::OS, &file);
