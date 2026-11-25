@@ -2,7 +2,8 @@
 // Fast path: returns undefined when no ```wisp opener is present so ordinary messages render plain <Markdown>.
 
 const OPEN = '```wisp';
-const FENCE = '```';
+/** A closing fence at the start of what follows the JSON: blank before it, and the rest of its line blank. */
+const CLOSE = /^\s*```[ \t]*(\r?\n|$)/;
 
 /** Finds the end index (exclusive) of a JSON object/array starting at `start`, respecting strings and escapes. */
 function jsonEnd(src: string, start: number): number {
@@ -66,13 +67,10 @@ export function parseInlineChatBlocks(text: string): readonly Record<string, unk
     const before = text.slice(cursor, at).trim();
     if (before) out.push({ type: 'markdown', text: before });
     out.push(...valid);
-    const closeFence = text.indexOf(FENCE, end);
-    if (closeFence >= 0) {
-      const afterClose = text.indexOf('\n', closeFence + FENCE.length);
-      cursor = afterClose >= 0 ? afterClose + 1 : text.length;
-    } else {
-      cursor = end;
-    }
+    // The closing fence is the one right after the JSON (only whitespace between, nothing after it on its line). A
+    // block left unclosed keeps the prose after it: searching on for any ``` would swallow it up to the next fence.
+    const close = CLOSE.exec(text.slice(end));
+    cursor = close ? end + close[0].length : end;
     search = cursor;
   }
   if (out.length === 0) return undefined;

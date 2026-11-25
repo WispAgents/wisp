@@ -122,16 +122,14 @@ fn read_inline_block(text: &str, body: usize) -> Option<(Vec<Value>, Option<Stri
     if valid.is_empty() && topic.is_none() {
         return None;
     }
-    let rest = &src[json_len..];
-    let after = match rest.find(FENCE) {
-        Some(f) => {
-            let past = body + json_len + f + FENCE.len();
-            match text[past..].find('\n') {
-                Some(nl) => past + nl + 1,
-                None => text.len(),
-            }
+    // The closing fence is the one right after the JSON (only whitespace between, nothing after it on its line). A
+    // block left unclosed keeps the prose after it: searching on for any ``` would swallow it up to the next fence.
+    let after = match src[json_len..].trim_start().strip_prefix(FENCE) {
+        Some(line) if line.split('\n').next().is_some_and(|l| l.trim_matches([' ', '\t', '\r']).is_empty()) => {
+            let past = text.len() - line.len();
+            line.find('\n').map_or(text.len(), |nl| past + nl + 1)
         }
-        None => body + json_len,
+        _ => body + json_len,
     };
     Some((valid, topic, after))
 }
