@@ -12,10 +12,16 @@
 /// The expressions live in the api crate (pure), so other plugins evaluate `if:` the same way (ADR-0043).
 pub use wisp_workflows_api::expr;
 
+/// Changing a run while it goes: skip, retry, add, change, limits (ADR-0121).
+mod edit;
+
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 use wisp_workflows_api::{StepSpec, StepState, WorkflowSpec};
+
+/// Why a step was skipped when one it needs failed (it carries down the chain; a retry opens it again).
+pub const NEEDS_FAILED: &str = "a task it needs failed";
 
 /// One task to run: a step, or one combination of its matrix.
 #[derive(Debug, Clone, PartialEq)]
@@ -192,9 +198,6 @@ pub struct NodeRun {
     pub ended_at: Option<i64>,
     pub why: String,
     pub cost: f64,
-    /// skipped because a task it needs failed (or was skipped for that): its own dependents can't run either, while a
-    /// step skipped by its `if` (or an empty foreach) still lets them
-    pub cascade: bool,
 }
 
 /// What the host does next.
@@ -250,6 +253,13 @@ impl Run {
         json!({ "tasks": tasks, "inputs": self.inputs, "matrix": node.matrix, "item": item, "index": index })
     }
 
+    /// Whether node `m` keeps the steps that need it from running: it failed (and has to succeed), or it was skipped
+    /// because one it needs failed (a failure carries down the chain; a step you skip doesn't).
+    fn blocks(&self, m: &Node) -> bool {
+        let r = &self.runs[&m.id];
+        (r.state == StepState::Failed && !m.spec.optional) || (r.state == StepState::Skipped && r.why == NEEDS_FAILED)
+    }
+
     fn ended(s: StepState) -> bool {
         matches!(s, StepState::Done | StepState::Failed | StepState::Skipped)
     }
@@ -265,16 +275,6 @@ impl Run {
 
     pub fn cost(&self) -> f64 {
         self.runs.values().map(|r| r.cost).sum()
-    }
-
-    /// A step `n` needs (one that isn't optional) failed, or was skipped because one it needs failed.
-    fn need_failed(&self, n: &Node) -> bool {
-        self.nodes.iter().any(|m| {
-            let r = &self.runs[&m.id];
-            n.spec.needs.contains(&m.step)
-                && !m.spec.optional
-                && (r.state == StepState::Failed || r.state == StepState::Skipped && r.cascade)
-        })
     }
 
     fn budget(&self) -> Option<f64> {
@@ -312,10 +312,10 @@ impl Run {
                 if !needs.iter().all(|r| Self::ended(r.state)) {
                     continue;
                 }
-                let failed = self.need_failed(&n);
+                let failed = self.nodes.iter().any(|m| n.spec.needs.contains(&m.step) && self.blocks(m));
                 let scope = self.scope(&n);
                 let skip = if failed {
-                    Some("a task it needs failed".to_owned())
+                    Some(NEEDS_FAILED.to_owned())
                 } else if !n.spec.when.trim().is_empty() && !expr::eval(&n.spec.when, &scope).is_ok_and(|v| expr::truthy(&v)) {
                     Some(format!("if: {} was false", n.spec.when.trim()))
                 } else if self.budget().is_some_and(|b| self.cost() >= b) {
@@ -327,7 +327,6 @@ impl Run {
                     let Some(r) = self.runs.get_mut(&n.id) else { continue };
                     r.state = StepState::Skipped;
                     r.why = why;
-                    r.cascade = failed;
                     changed = true;
                     continue;
                 }
@@ -372,7 +371,7 @@ impl Run {
             n.fanout
                 && self.runs[&n.id].state == StepState::Waiting
                 && self.nodes.iter().filter(|m| n.spec.needs.contains(&m.step)).all(|m| Self::ended(self.runs[&m.id].state))
-                && !self.need_failed(n)
+                && !self.nodes.iter().any(|m| n.spec.needs.contains(&m.step) && self.blocks(m))
                 && (n.spec.when.trim().is_empty() || expr::eval(&n.spec.when, &self.scope(n)).is_ok_and(|v| expr::truthy(&v)))
         }) else {
             return false;

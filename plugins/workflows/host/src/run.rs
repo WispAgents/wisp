@@ -13,13 +13,13 @@ use std::fmt::Write as _;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{Map, Value, json};
-use tokio::sync::{Mutex as AsyncMutex, broadcast, watch};
+use tokio::sync::{Mutex as AsyncMutex, broadcast, mpsc, oneshot};
 use wisp_kernel::{Call, Ctx, Result, WireError};
 use wisp_runtime_api::commands as r;
 use wisp_runtime_api::spec::Lineage;
 use wisp_runtime_api::{Mode, Session, SessionId, SessionState, Turn, TurnStatus};
 use wisp_store::Store;
-use wisp_workflows_api::{EXT, RunArgs, Started, StepState, WorkflowEnded, WorkflowSpec};
+use wisp_workflows_api::{EXT, EditArgs, RunArgs, Started, StepState, WorkflowEnded, WorkflowSpec, WorkflowStarted};
 use wisp_workflows_core::{Action, Run, check, output_of};
 
 /// How often a run looks at its steps when nothing woke it (timeouts).
@@ -34,26 +34,84 @@ const VIEW_CHARS: usize = 240;
 /// `(task, cost)` of every turn that ended, for the runs to wake on.
 pub(crate) type Ended = broadcast::Sender<(String, f64)>;
 
-/// A run that is going: whose it is, and how to stop it.
+/// What a run's driver is told while it goes: stop, or a change (ADR-0121) with who made it, the mode its steps
+/// may run at (an agent's: its task's), and where to say whether it took.
+pub(crate) enum Ctl {
+    Stop,
+    Edit(Box<EditArgs>, String, Option<Mode>, oneshot::Sender<std::result::Result<(), String>>),
+}
+
+/// A run that is going: whose it is, and how to reach its driver.
 struct Live {
     owner: String,
-    stop: watch::Sender<bool>,
+    ctl: mpsc::UnboundedSender<Ctl>,
 }
+
+/// The runs ended here kept to start again (a retry or a step added after the end), the newest few.
+const KEEP_ENDED: usize = 16;
 
 pub(crate) struct State {
     pub(crate) ended: Ended,
     live: Mutex<BTreeMap<String, Live>>,
+    /// ended runs that a retry or an added step can start again (ADR-0121)
+    done: Mutex<Vec<(RunCtx, Run)>>,
     /// one writer of a task's `runs` at a time: each write reads the slot, changes its run, and writes it back
     slots: AsyncMutex<()>,
 }
 
 impl State {
     pub(crate) fn new() -> Self {
-        Self { ended: broadcast::channel(256).0, live: Mutex::new(BTreeMap::new()), slots: AsyncMutex::new(()) }
+        Self {
+            ended: broadcast::channel(256).0,
+            live: Mutex::new(BTreeMap::new()),
+            done: Mutex::new(Vec::new()),
+            slots: AsyncMutex::new(()),
+        }
+    }
+
+    /// Whether a run of `task`'s is going here (its task stays in Working on it).
+    pub(crate) fn owns_live(&self, task: &str) -> bool {
+        self.live.lock().unwrap_or_else(PoisonError::into_inner).values().any(|l| l.owner == task)
+    }
+
+    /// Stops every run of `task`'s going here (you stopped the task); true when there was one.
+    pub(crate) fn stop_owned(&self, task: &str) -> bool {
+        let live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut any = false;
+        for l in live.values().filter(|l| l.owner == task) {
+            let _ = l.ctl.send(Ctl::Stop);
+            any = true;
+        }
+        any
     }
 
     fn owner_of(&self, run: &str) -> Option<String> {
         self.live.lock().unwrap_or_else(PoisonError::into_inner).get(run).map(|l| l.owner.clone())
+    }
+
+    /// A run going here: its task, and how to reach its driver.
+    pub(crate) fn live_run(&self, run: &str) -> Option<(String, mpsc::UnboundedSender<Ctl>)> {
+        self.live.lock().unwrap_or_else(PoisonError::into_inner).get(run).map(|l| (l.owner.clone(), l.ctl.clone()))
+    }
+
+    /// The task of a run that ended here and is kept to start again.
+    pub(crate) fn ended_owner(&self, run: &str) -> Option<String> {
+        self.done.lock().unwrap_or_else(PoisonError::into_inner).iter().find(|(rc, _)| rc.id == run).map(|(rc, _)| rc.owner.clone())
+    }
+
+    fn keep_ended(&self, rc: RunCtx, run: Run) {
+        let mut done = self.done.lock().unwrap_or_else(PoisonError::into_inner);
+        done.retain(|(x, _)| x.id != rc.id);
+        done.push((rc, run));
+        if done.len() > KEEP_ENDED {
+            done.remove(0);
+        }
+    }
+
+    fn take_ended(&self, run: &str) -> Option<(RunCtx, Run)> {
+        let mut done = self.done.lock().unwrap_or_else(PoisonError::into_inner);
+        let at = done.iter().position(|(rc, _)| rc.id == run)?;
+        Some(done.remove(at))
     }
 }
 
@@ -78,26 +136,31 @@ fn wire_name<T: serde::Serialize>(v: T) -> String {
 /// Every step at most `cap` (ADR-0112: an agent never raises a mode): a step that says none, or more, runs at `cap`.
 pub(crate) fn cap_modes(spec: &mut WorkflowSpec, cap: Mode) {
     for s in spec.tasks.values_mut() {
-        let over = match mode_of(&s.mode) {
-            Ok(Some(m)) => m.rank() > cap.rank(),
-            Ok(None) => true,
-            // a wrong one fails its step, as it does in any run
-            Err(_) => false,
-        };
-        if over {
-            s.mode = wire_name(cap);
-        }
+        cap_step(s, cap);
+    }
+}
+
+/// One step at most `cap`.
+pub(crate) fn cap_step(s: &mut wisp_workflows_api::StepSpec, cap: Mode) {
+    let over = match mode_of(&s.mode) {
+        Ok(Some(m)) => m.rank() > cap.rank(),
+        Ok(None) => true,
+        // a wrong one fails its step, as it does in any run
+        Err(_) => false,
+    };
+    if over {
+        s.mode = wire_name(cap);
     }
 }
 
 /// What a run's steps are made with: its id, the task they go under, and where they run.
 #[derive(Debug, Clone)]
-struct RunCtx {
-    id: String,
-    owner: String,
+pub(crate) struct RunCtx {
+    pub(crate) id: String,
+    pub(crate) owner: String,
     /// the owner is a held task made for this run (it ends with the run, and nothing is sent to it)
     held: bool,
-    name: String,
+    pub(crate) name: String,
     project: String,
     notify: bool,
     started_at: i64,
@@ -249,7 +312,7 @@ fn with_run(was: &Value, v: &Value, held: bool) -> Value {
     slot
 }
 
-async fn set_state(ctx: &Ctx, call: &Call, id: &str, state: SessionState) {
+pub(crate) async fn set_state(ctx: &Ctx, call: &Call, id: &str, state: SessionState) {
     if let Err(err) = ctx.run::<r::SetState>(call, r::SetStateArgs { id: SessionId(id.to_owned()), state }).await {
         tracing::warn!(error = %err.message, task = id, "workflows: runtime.setState");
     }
@@ -383,6 +446,7 @@ pub(crate) fn ended_message(name: &str, state: &str, run: &Run, secs: i64) -> St
 }
 
 /// Each running step's task looked at: the ones that ended are finished (with what they cost), a held one says why.
+/// The steps that failed for good.
 async fn look_at_steps(
     ctx: &Ctx,
     call: &Call,
@@ -390,7 +454,8 @@ async fn look_at_steps(
     costs: &mut BTreeMap<String, f64>,
     holds: &mut BTreeMap<String, String>,
     now: i64,
-) {
+) -> Vec<String> {
+    let mut failed = Vec::new();
     let running: Vec<(String, String)> = run
         .runs
         .iter()
@@ -403,6 +468,9 @@ async fn look_at_steps(
                 holds.remove(&node);
                 run.finished(&node, ok, output, &why, costs.remove(&task).unwrap_or(0.0));
                 run.ended_at(&node, now);
+                if run.runs.get(&node).is_some_and(|r| r.state == StepState::Failed) {
+                    failed.push(node);
+                }
             }
             Look::Going { held: Some(why) } => {
                 holds.insert(node, why);
@@ -413,6 +481,7 @@ async fn look_at_steps(
             Look::Retry => {}
         }
     }
+    failed
 }
 
 /// Runs the workflow under its owner until every step has ended, or it's stopped.
@@ -420,7 +489,7 @@ async fn drive(
     ctx: Ctx,
     st: Arc<State>,
     mut wake: broadcast::Receiver<(String, f64)>,
-    mut stop: watch::Receiver<bool>,
+    mut ctl: mpsc::UnboundedReceiver<Ctl>,
     rc: RunCtx,
     mut run: Run,
 ) {
@@ -471,19 +540,73 @@ async fn drive(
                     *costs.entry(task).or_default() += cost;
                 }
             }
-            _ = stop.changed() => {
-                for task in run.stop(clock.now_ms()) {
-                    if let Err(err) = ctx.run::<r::Stop>(&call, r::StopArgs { id: SessionId(task.clone()), clear_queue: true }).await {
-                        tracing::warn!(error = %err.message, task, "workflows: runtime.stop");
+            got = ctl.recv() => match got {
+                Some(Ctl::Edit(a, by, cap, reply)) => {
+                    // all or nothing: changed on a copy, kept only when every part took
+                    let mut next = run.clone();
+                    match crate::edit::apply(&mut next, &a, &by, cap, clock.now_ms()) {
+                        Ok(stop) => {
+                            run = next;
+                            stop_tasks(&ctx, &call, stop).await;
+                            let _ = reply.send(Ok(()));
+                        }
+                        Err(why) => {
+                            let _ = reply.send(Err(why));
+                        }
                     }
+                    continue;
                 }
-                stopped = true;
-                break;
-            }
+                Some(Ctl::Stop) | None => {
+                    stop_tasks(&ctx, &call, run.stop(clock.now_ms())).await;
+                    stopped = true;
+                    break;
+                }
+            },
             () = clock.sleep(LOOK_MS) => {}
         }
-        look_at_steps(&ctx, &call, &mut run, &mut costs, &mut holds, clock.now_ms()).await;
+        let failed = look_at_steps(&ctx, &call, &mut run, &mut costs, &mut holds, clock.now_ms()).await;
+        // a step failed for good while the run goes on: its agent hears now, so it can retry or skip it (the run's end
+        // says the rest)
+        if !failed.is_empty() && !run.over() && rc.notify && !rc.held {
+            crate::edit::tell_failed(&ctx, &call, &rc, &run, &failed).await;
+        }
     }
+    finish(&ctx, &st, &call, &rc, &run, stopped, &notes).await;
+    st.keep_ended(rc, run);
+}
+
+/// Stops these steps' tasks (skipped, or the run stopped).
+async fn stop_tasks(ctx: &Ctx, call: &Call, tasks: Vec<String>) {
+    for task in tasks {
+        if let Err(err) = ctx.run::<r::Stop>(call, r::StopArgs { id: SessionId(task.clone()), clear_queue: true }).await {
+            tracing::warn!(error = %err.message, task, "workflows: runtime.stop");
+        }
+    }
+}
+
+/// Starts an ended run again under its task (a retry, a step added): its driver picks up where it was, and the task
+/// is in Working on it again.
+pub(crate) fn revive(ctx: &Ctx, st: &Arc<State>, rc: RunCtx, run: Run) {
+    let (tx, rx) = mpsc::unbounded_channel();
+    st.live.lock().unwrap_or_else(PoisonError::into_inner).insert(rc.id.clone(), Live { owner: rc.owner.clone(), ctl: tx });
+    let (c, owner) = (ctx.clone(), rc.owner.clone());
+    ctx.spawn(async move { set_state(&c, &c.root_call(), &owner, SessionState::Running).await });
+    ctx.spawn(drive(ctx.clone(), st.clone(), st.ended.subscribe(), rx, rc, run));
+}
+
+/// An ended run kept here, taken to change and start again (`None`: none by that id; put it back with `keep_ended`
+/// when the change is refused).
+pub(crate) fn take_ended(st: &State, id: &str) -> Option<(RunCtx, Run)> {
+    st.take_ended(id)
+}
+
+pub(crate) fn put_back(st: &State, rc: RunCtx, run: Run) {
+    st.keep_ended(rc, run);
+}
+
+/// The run ended (or you stopped it): its view says how, `workflow.ended` tells, and its task lands or hears.
+async fn finish(ctx: &Ctx, st: &State, call: &Call, rc: &RunCtx, run: &Run, stopped: bool, notes: &[String]) {
+    let Ok(clock) = ctx.clock() else { return };
     let state = if stopped {
         "stopped"
     } else if run.ok() {
@@ -492,16 +615,28 @@ async fn drive(
         "failed"
     };
     let now = clock.now_ms();
-    write_view(&ctx, &call, &st, &rc, view(&run, &rc, state, &notes, Some(now), &BTreeMap::new())).await;
+    write_view(ctx, call, st, rc, view(run, rc, state, notes, Some(now), &BTreeMap::new())).await;
     st.live.lock().unwrap_or_else(PoisonError::into_inner).remove(&rc.id);
-    // a durable fact of its end, about the id `workflows.run` answered: a trigger that started it counts it ended
-    let fact =
-        WorkflowEnded { run: rc.id.clone(), owner: rc.owner.clone(), workflow: rc.name.clone(), state: state.into(), cost_usd: run.cost() };
-    ctx.emit(&call, &fact);
+    let total = u32::try_from(run.nodes.len()).unwrap_or(u32::MAX);
+    let done = u32::try_from(run.runs.values().filter(|r| r.state == StepState::Done).count()).unwrap_or(u32::MAX);
+    let ended = WorkflowEnded {
+        session_id: rc.owner.clone(),
+        run: rc.id.clone(),
+        workflow: rc.name.clone(),
+        state: state.to_owned(),
+        done,
+        total,
+        cost_usd: run.cost(),
+    };
+    ctx.emit(call, &ended);
     if rc.held {
-        set_state(&ctx, &call, &rc.owner, if run.ok() && !stopped { SessionState::Review } else { SessionState::Error }).await;
-    } else if rc.notify && !stopped {
-        let text = ended_message(&rc.name, state, &run, (now - rc.started_at) / 1000);
+        set_state(ctx, call, &rc.owner, if run.ok() && !stopped { SessionState::Review } else { SessionState::Error }).await;
+        return;
+    }
+    // the owner was held in Working on this run (Hold): wisp's message with the results starts its agent's next turn;
+    // with none to send (stopped, notify off), it lands, unless another of its runs still goes
+    if rc.notify && !stopped {
+        let text = ended_message(&rc.name, state, run, (now - rc.started_at) / 1000);
         let a = r::FollowUpArgs {
             id: SessionId(rc.owner.clone()),
             text,
@@ -509,9 +644,18 @@ async fn drive(
             by: Some("workflow".into()),
             ..r::FollowUpArgs::default()
         };
-        if let Err(err) = ctx.run::<r::FollowUp>(&call, a).await {
+        if let Err(err) = ctx.run::<r::FollowUp>(call, a).await {
             tracing::warn!(error = %err.message, task = rc.owner, "workflows: runtime.followUp");
         }
+    } else if !st.owns_live(&rc.owner) {
+        settle(ctx, call, &rc.owner).await;
+    }
+}
+
+/// `runtime.settle`: the task the runs held in Working lands (a turn of it running is left to its own end).
+pub(crate) async fn settle(ctx: &Ctx, call: &Call, task: &str) {
+    if let Err(err) = ctx.run::<r::Settle>(call, r::SettleArgs { id: SessionId(task.to_owned()), quiet: false }).await {
+        tracing::warn!(error = %err.message, task, "workflows: runtime.settle");
     }
 }
 
@@ -525,10 +669,10 @@ async fn resolve(store: &Store, a: &RunArgs) -> Result<(String, WorkflowSpec)> {
         }
         return Ok((name, spec));
     }
-    let all = crate::list(store).await?;
+    let all = crate::runnable(store).await?;
     let Some(w) = all.into_iter().find(|w| w.name == a.name) else {
         return Err(WireError::not_found(format!(
-            "no workflow named {} (pass `spec` to run one written now; wisp export workflows lists the saved ones)",
+            "no workflow named {} (pass `spec` to run one written now; workflows.list has yours, workflows.starters the prebuilt ones)",
             a.name
         )));
     };
@@ -596,9 +740,16 @@ pub(crate) async fn start(ctx: &Ctx, call: &Call, st: &Arc<State>, a: RunArgs) -
         // a trigger names itself; an agent names none (its steps are its own task's)
         triggered_by: a.triggered_by.clone().filter(|_| agent.is_none()),
     };
-    let (tx, rx) = watch::channel(false);
-    st.live.lock().unwrap_or_else(PoisonError::into_inner).insert(id.clone(), Live { owner, stop: tx });
+    let (tx, rx) = mpsc::unbounded_channel();
+    st.live.lock().unwrap_or_else(PoisonError::into_inner).insert(id.clone(), Live { owner, ctl: tx });
     let run = Run::new(spec, &a.inputs);
+    let started = WorkflowStarted {
+        session_id: rc.owner.clone(),
+        run: id.clone(),
+        workflow: name.clone(),
+        steps: u32::try_from(run.nodes.len()).unwrap_or(u32::MAX),
+    };
+    ctx.emit(call, &started);
     ctx.spawn(drive(ctx.clone(), st.clone(), st.ended.subscribe(), rx, rc, run));
     let said = if held {
         format!("Started the workflow {name} ({total} steps) as task {id}.")
@@ -606,6 +757,7 @@ pub(crate) async fn start(ctx: &Ctx, call: &Call, st: &Arc<State>, a: RunArgs) -
         format!(
             "Started the workflow {name} ({total} steps), run {id}. It runs in the background and the user watches it live on this task. \
              Don't do its steps yourself: end your turn, and wisp sends you every step's result as a message when the run ends. \
+             wisp also tells you if a step fails, so you can retry or skip it with workflows_edit. \
              workflows_status {{\"id\":\"{id}\"}} says where it is; workflows_stop stops it."
         )
     };
@@ -624,9 +776,18 @@ pub(crate) async fn status(ctx: &Ctx, call: &Call, st: &State, id: &str) -> Resu
     let t = ctx.run::<r::Get>(call, r::IdArgs { id: SessionId(owner) }).await?;
     let slot = t.ext.get(EXT).cloned().unwrap_or(Value::Null);
     let runs = slot.get("runs").and_then(Value::as_array).cloned().unwrap_or_default();
+    // what an agent reads: where the run stands, not the spec it was given (it wrote it)
+    let lean = |v: &Value| {
+        let mut v = v.clone();
+        if let Some(o) = v.as_object_mut() {
+            o.remove("spec");
+        }
+        v
+    };
     if let Some(v) = runs.iter().find(|x| x.get("id").and_then(Value::as_str) == Some(id)) {
-        return Ok(v.clone());
+        return Ok(lean(v));
     }
+    let runs: Vec<Value> = runs.iter().map(lean).collect();
     if runs.is_empty() {
         return Err(WireError::not_found(format!("no workflow run {id}")));
     }
@@ -644,7 +805,7 @@ pub(crate) fn stop(call: &Call, st: &State, id: &str) -> Result<Value> {
     if call.caller().session.as_ref().is_some_and(|s| *s != l.owner) {
         return Err(WireError::forbidden("an agent stops only its own task's workflow runs"));
     }
-    let _ = l.stop.send(true);
+    let _ = l.ctl.send(Ctl::Stop);
     Ok(json!({ "ok": true }))
 }
 

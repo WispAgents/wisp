@@ -300,7 +300,8 @@ async fn on_event(ctx: Ctx, engine: Shared, env: Arc<wisp_kernel::EventEnvelope>
         }
         // a workflow's run: its held task never runs a turn, so its end is the workflow's (failed unless done)
         "workflow.ended" => {
-            if let Some(id) = &env.subject {
+            // the run's id, as `workflows.run` answered it (its subject is the task it ran under: the same for a held run)
+            if let Some(id) = data.get("run").and_then(Value::as_str).or(env.subject.as_deref()) {
                 let state = data.get("state").and_then(Value::as_str).unwrap_or_default();
                 let o = Outcome {
                     failed: state == "failed",

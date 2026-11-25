@@ -208,7 +208,15 @@ async fn a_workflow_targets_run_ends_with_the_workflow() {
     assert_eq!(w.runs.lock().unwrap()[0].triggered_by.as_deref(), Some("trigger:flow"), "its run carries the trigger");
     assert_eq!(push(&k, 2).await, 0, "its run goes on: skipped");
     let ctx = k.ctx("wisp.workflows").unwrap();
-    let e = WorkflowEnded { run: "w1".into(), owner: "w1".into(), workflow: "release".into(), state: "done".into(), cost_usd: 0.5 };
+    let e = WorkflowEnded {
+        session_id: "w1".into(),
+        run: "w1".into(),
+        workflow: "release".into(),
+        state: "done".into(),
+        done: 1,
+        total: 1,
+        cost_usd: 0.5,
+    };
     ctx.emit(&ctx.root_call(), &e);
     until_logged(&k, "flow", "done").await;
     assert_eq!(push(&k, 3).await, 1);

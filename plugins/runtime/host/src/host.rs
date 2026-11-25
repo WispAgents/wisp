@@ -146,6 +146,8 @@ pub struct Recorder {
     /// a stand-in for the plugin's scope: cancelled, what was spawned on it (a drive, its CLI) ends, as when the
     /// runtime is switched off
     pub scope: Option<wisp_proc::Scope>,
+    /// how a task's agent reaches wisp (its MCP server); none: the install doesn't provide it
+    pub access: Option<Arc<dyn wisp_runtime_api::points::AgentAccess>>,
 }
 
 impl std::fmt::Debug for Recorder {
@@ -228,6 +230,9 @@ impl Host for Recorder {
     }
     fn scope(&self) -> Option<wisp_proc::Scope> {
         self.scope.clone()
+    }
+    fn agent_access(&self) -> Option<Arc<dyn wisp_runtime_api::points::AgentAccess>> {
+        self.access.clone()
     }
 }
 

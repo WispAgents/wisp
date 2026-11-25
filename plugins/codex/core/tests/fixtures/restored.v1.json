@@ -49,7 +49,8 @@
   "stopped": false,
   "text": "All done.\n```wisp\n{\"blocks\":[{\"type\":\"hero\",\"title\":\"Fake codex finished\",\"summary\":\"No question asked.\",\"status\":\"done\"}]}\n```",
   "stats": {
-   "inputTokens": 10,
+   "inputTokens": 8,
+   "cacheReadTokens": 2,
    "cachedInputTokens": 2,
    "outputTokens": 5,
    "totals": {
