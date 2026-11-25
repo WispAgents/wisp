@@ -26,7 +26,7 @@ test('the_spare_card_goes_when_its_setting_is_turned_off_while_home_shows_and_co
     home: 'laptop',
     scope,
     watch: () => undefined,
-    entities: { row: (_kind: string, key: string) => (key === 'laptop:budget.spareCard' ? setting : none) },
+    entities: { row: (_kind: string, key: string) => (key === 'laptop:budget.spareCard' ? setting : none), list: () => signal([]) },
     defineStore: () => ({ value: signal({}), set: () => undefined }),
     run: async (_cmd: unknown, a: { agent: string }) => (a.agent === 'codex' ? [{ account: 'default', at: NOW - H, windows: [{ id: 'weekly', label: 'Weekly', used: 0.62, resetsAt: NOW + 10 * H, ms: WEEK }] }] : []),
   };

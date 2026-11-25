@@ -4,6 +4,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show, type JSX 
 import { entityKey, ownerOf, type EntityKey, type PluginClient } from '@wisp/client';
 import { Avatar, Card, ListRow, Pill, Stack, TeamPlace, TeamTime, useSignal } from '@wisp/ui';
 import { useShell } from '../shell.ts';
+import '../i18n/lazy.ts';
 import { delegationTime, delegationsOf, type DelegationSessionLike } from './delegations.ts';
 import type { TurnDoc } from './model.ts';
 
