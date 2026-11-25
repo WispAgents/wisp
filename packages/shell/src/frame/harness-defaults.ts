@@ -18,7 +18,7 @@ export function harnessDefaults(launch: unknown, agent: string): HarnessDefaults
   return { model: p.models?.[agent] ?? '', effort: p.efforts?.[agent] ?? '', mode: p.modes?.[agent] ?? '' };
 }
 
-/** `launch` with `agent`'s defaults changed: the last pick (`agent`) stays as it was, so setting Cursor's model in
+/** `launch` with `agent`'s defaults changed: the last pick (`agent`) and Run on (`where`) stay as they were, so setting Cursor's model in
  *  Settings doesn't move New task to Cursor. A model's `label` goes with it (the pill shows the name). */
 export function withHarnessDefaults(
   launch: unknown,
@@ -43,5 +43,6 @@ export function withHarnessDefaults(
     ...(labels && Object.keys(labels).length > 0 && { labels }),
     ...(efforts && Object.keys(efforts).length > 0 && { efforts }),
     ...(modes && Object.keys(modes).length > 0 && { modes }),
+    ...(p.where && { where: p.where }),
   };
 }
