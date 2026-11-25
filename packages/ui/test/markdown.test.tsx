@@ -254,6 +254,22 @@ describe('setext headings', () => {
     expect(kinds(parseMarkdown('# H\n---'))).toEqual(['heading', 'hr']);
   });
 
+  test('a list streaming in right under a prose line never flashes the line as an h2', () => {
+    // Every prefix of 'Steps:\n- one' keeps 'Steps:' a paragraph: '-' as the last line and '- ' are list openers.
+    expect(kinds(parseMarkdown('Steps:\n-'))).toEqual(['paragraph', 'list']);
+    expect(kinds(parseMarkdown('Steps:\n- '))).toEqual(['paragraph', 'list']);
+    expect(kinds(parseMarkdown('Para\n- '))).toEqual(['paragraph', 'list']);
+    expect(kinds(parseMarkdown('Steps:\n-\n'))).toEqual(['paragraph', 'list']);
+    expect(kinds(parseMarkdown('Steps:\n- one'))).toEqual(['paragraph', 'list']);
+    const src = 'Steps:\n- one\n- two';
+    for (let n = 'Steps:\n'.length; n <= src.length; n++) expect(kinds(parseMarkdown(src.slice(0, n)))[0]).toBe('paragraph');
+  });
+
+  test('a lone - underline with text after it is still an h2, and -- is never a list', () => {
+    expect(kinds(parseMarkdown('Sub\n-\nmore'))).toEqual(['heading', 'paragraph']);
+    expect(parseMarkdown('Sub\n--')).toEqual([{ t: 'heading', level: 2, c: [t('Sub')] }]);
+  });
+
   test('renders as a heading element', () => {
     const host = mount(() => <Markdown source={'Sub\n---'} headingBase={1} />);
     expect(host.querySelector('h2')?.textContent).toBe('Sub');
