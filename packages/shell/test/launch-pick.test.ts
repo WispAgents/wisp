@@ -2,7 +2,7 @@
 // S.config.defaults.agent / models / efforts, PATCH /config on each pick), and Auto is off behind one switch (owner #37).
 import { expect, test } from 'vitest';
 import { autoEnabled, autoOn, readLaunch, startRunner, withPick } from '../src/frame/launch-pick.ts';
-import { harnessDefaults, withHarnessDefaults } from '../src/frame/default-models.ts';
+import { harnessDefaults, withHarnessDefaults } from '../src/frame/harness-defaults.ts';
 
 const ready = ['claude', 'codex', 'opencode'];
 

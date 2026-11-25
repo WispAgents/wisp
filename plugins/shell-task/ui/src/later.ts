@@ -7,7 +7,7 @@ import { added, commentStore, marksOn, waiting, withComments } from './comments.
 import { CATALOGUE } from './i18n/index.ts';
 import { appRunning, runRequest } from './side/run-request.ts';
 import { filesSource } from './side/open-file.ts';
-import { openContinue } from './continue/model.ts';
+import { openContinue } from './continue/open.ts';
 
 /** The task a palette row or a key is about: the focused one, as its entity key. */
 const taskKeyOf = (focused: string | undefined): string | undefined => (focused && focused.includes(':') ? focused : undefined);

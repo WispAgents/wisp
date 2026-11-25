@@ -10,6 +10,7 @@ import { defineCommand, ownerOf, type EntityKey, type PluginClient } from '@wisp
 import { RunnerPicker, type Runner } from '@wisp/shell';
 import { Button, Inline, Stack, Tabs, Text, TextArea, useSignal } from '@wisp/ui';
 import { useShell } from '../shell.ts';
+import '../i18n/lazy.ts';
 import { CARRY_ON, CONTINUE_VIEW, continueArgs, previewModel, type ContinueParams, type HandoffChoiceId, type HandoffPreview } from './model.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);

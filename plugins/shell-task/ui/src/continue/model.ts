@@ -2,32 +2,16 @@
 // (summary only, the default, or the full transcript) with its token estimate, the follow-up it sends, and the
 // Timeline's divider from a turn's switch mark.
 import type { EntityKey } from '@wisp/client';
+import '../i18n/lazy.ts';
 
-export const CONTINUE_VIEW = 'shell-task.continue';
+export { CONTINUE_VIEW, parseContinueParams, type ContinueParams } from './view.ts';
+export { openContinue } from './open.ts';
+
 /** what a hand-off carries: the latest turn and the rules, or every turn the harness missed */
 export type HandoffChoiceId = 'summary' | 'full';
 export const CHOICES: readonly HandoffChoiceId[] = ['summary', 'full'];
 /** what carrying on says when nothing is typed */
 export const CARRY_ON = 'Carry on with this task from where it is.';
-
-export interface ContinueParams {
-  readonly key: EntityKey;
-  /** a harness (and model) already picked: a refused or limited turn's offer */
-  readonly agent?: string;
-  readonly model?: string;
-  /** the follow-up's words (a refused prompt again, `/continue …` typed in the reply box) */
-  readonly text?: string;
-}
-
-export function parseContinueParams(v: unknown): ContinueParams {
-  const o = (v ?? {}) as Record<string, unknown>;
-  if (typeof o['key'] !== 'string' || !o['key'].includes(':')) throw new Error('Continue on… needs the task’s key');
-  const str = (k: string): string | undefined => (typeof o[k] === 'string' && o[k] !== '' ? (o[k] as string) : undefined);
-  const agent = str('agent');
-  const model = str('model');
-  const text = str('text');
-  return { key: o['key'] as EntityKey, ...(agent && { agent }), ...(model && { model }), ...(text && { text }) };
-}
 
 /** `runtime.handoffPreview`'s answer (runtime-api HandoffPreviewView). */
 export interface HandoffPreview {
@@ -110,10 +94,4 @@ export function dividerWords(m: SwitchMark, nameOf: (agent: string) => string, m
     return model ? `${name} (${model})` : name;
   };
   return t('shell-task.continue.divider', { from: side(m.from), to: side(m.to), context: t(`shell-task.continue.context.${m.context}`) });
-}
-
-/** Opens Continue on… for a task (every way in goes through here: the task menu, the palette, its key, `/continue` in
- *  the reply box, and a refused or limited turn's offer). */
-export function openContinue(client: { navigate(i: unknown): void }, p: ContinueParams): void {
-  client.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: CONTINUE_VIEW, params: p } });
 }

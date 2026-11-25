@@ -1041,67 +1041,6 @@
   [data-kit='day-bar']:hover > i {
     opacity: 1;
   }
-  /* a stacked bar (Usage by harness): its parts bottom up, one project colour per series */
-  [data-kit='day-bar-stack'] {
-    display: flex;
-    flex-direction: column-reverse;
-    width: 100%;
-    height: var(--k-v);
-    border-radius: 4px 4px 0 0;
-    overflow: hidden;
-    opacity: 0.85;
-  }
-  [data-kit='day-bar']:hover > [data-kit='day-bar-stack'] {
-    opacity: 1;
-  }
-  [data-kit='day-bar-stack'] > i {
-    display: block;
-    flex: none;
-    height: var(--k-v);
-  }
-  [data-kit='day-bar-stack'] > i,
-  [data-kit='day-bars-key'] > i {
-    background: var(--k-series, var(--accent));
-  }
-  [data-kit='day-bars'] [data-series='0'] { --k-series: var(--accent); }
-  [data-kit='day-bars'] [data-series='1'] { --k-series: var(--pc-teal); }
-  [data-kit='day-bars'] [data-series='2'] { --k-series: var(--pc-amber); }
-  [data-kit='day-bars'] [data-series='3'] { --k-series: var(--pc-rose); }
-  [data-kit='day-bars'] [data-series='4'] { --k-series: var(--pc-sky); }
-  [data-kit='day-bars'] [data-series='5'] { --k-series: var(--pc-lime); }
-  [data-kit='day-bars'] [data-series='6'] { --k-series: var(--pc-orange); }
-  [data-kit='day-bars'] [data-series='7'] { --k-series: var(--pc-indigo); }
-  [data-kit='day-bars'] [data-series='8'] { --k-series: var(--pc-slate); }
-  /* a Wrap group (data-layout='wrap': layout.css wraps it), the keys a little apart */
-  [data-kit='day-bars-legend'] {
-    gap: 4px 12px;
-    margin-top: 8px;
-  }
-  [data-kit='day-bars-key'] {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 0;
-    border: 0;
-    background: none;
-    font: inherit;
-    font-size: 12px;
-    color: var(--muted);
-    white-space: nowrap;
-    cursor: pointer;
-  }
-  [data-kit='day-bars-key'] > i {
-    width: 9px;
-    height: 9px;
-    border-radius: 3px;
-  }
-  [data-kit='day-bars-key'][aria-pressed='false'] {
-    color: var(--faint);
-    text-decoration: line-through;
-  }
-  [data-kit='day-bars-key'][aria-pressed='false'] > i {
-    opacity: 0.3;
-  }
   [data-kit='day-bars-tip'] {
     position: absolute;
     left: var(--k-x);

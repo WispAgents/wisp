@@ -15,7 +15,7 @@ import { Receipt } from './Receipt.tsx';
 import { TurnDelegations } from './TurnDelegations.tsx';
 import { handoffTargets, limitTarget, type AgentLike, type Target } from './vendors.ts';
 import { WhatChanged } from './WhatChanged.tsx';
-import { openContinue } from '../continue/model.ts';
+import { openContinue } from '../continue/open.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 

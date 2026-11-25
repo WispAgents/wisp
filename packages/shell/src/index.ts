@@ -37,5 +37,6 @@ export { partStylesCss, partOk, propertyOk, valueProblem, type PluginStyles } fr
 export { mountPluginStyles, pluginStyles, STYLE_ID as PLUGIN_STYLE_ID } from './theme-styles/mount.ts';
 // Home's chunk (ADR-0105: lazy, the desktop's frame waits for it): a host or a test that starts the app loads it first
 export { loadHome, TaskView } from './frame/Panes.tsx';
-export { MODES_FOR_HARNESS, defaultModels, harnessDefaults, withHarnessDefaults, type HarnessDefaults } from './frame/default-models.ts';
+export { defaultModels } from './frame/default-models.ts';
+export { MODES_FOR_HARNESS, harnessDefaults, withHarnessDefaults, type HarnessDefaults } from './frame/harness-defaults.ts';
 export { LAUNCH_SETTING } from './frame/launch-pick.ts';

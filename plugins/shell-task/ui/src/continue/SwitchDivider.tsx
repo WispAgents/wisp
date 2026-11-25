@@ -3,7 +3,7 @@
 import { Show, type JSX } from 'solid-js';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { modelWords } from '@wisp/shell/pure';
-import { Divider, useSignal } from '@wisp/ui';
+import { LabelDivider, useSignal } from '@wisp/ui';
 import { useShell } from '../shell.ts';
 import { dividerWords, switchOf } from './model.ts';
 
@@ -16,7 +16,7 @@ export default function SwitchDivider(props: ExtensionProps): JSX.Element {
   return (
     <Show when={mark()}>
       {(m) => (
-        <Divider
+        <LabelDivider
           part="turn.switch"
           label={dividerWords(m(), nameOf, (_a, model) => modelWords(model), shell.t)}
           logo={harnesses().find((h) => h.id === m().to.agent)?.logo}

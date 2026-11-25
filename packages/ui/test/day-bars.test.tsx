@@ -4,7 +4,7 @@ import { createSignal } from 'solid-js';
 import { expect, test } from 'vitest';
 import { mount } from './helpers.tsx';
 import { DayBars, type ChartSeries, type DayBar } from '../src/composites/Charts.tsx';
-import { untilLabel } from '../src/content/time-format.ts';
+import { untilLabel } from '../src/content/until-label.ts';
 
 const bars: DayBar[] = [
   { key: 'a', share: 1, tip: 'Nov 1: Claude 3 · Codex 1', stack: [{ series: 0, share: 0.75 }, { series: 1, share: 0.25 }] },

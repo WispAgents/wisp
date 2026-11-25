@@ -3,6 +3,7 @@
 // row and the rest are numbers on the right (.us-table).
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
+import '../css/day-bars.css';
 
 export interface DayBar {
   readonly key: string;

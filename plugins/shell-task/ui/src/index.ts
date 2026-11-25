@@ -6,7 +6,7 @@ const TaskSide = lazy(() => import('./TaskSide.tsx'));
 import { defineExtension, definePluginUi, defineView } from './define.ts';
 import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, isTui } from './open-task.ts';
 import { CATALOGUE } from './i18n/index.ts';
-import { CONTINUE_VIEW, parseContinueParams } from './continue/model.ts';
+import { CONTINUE_VIEW, parseContinueParams } from './continue/view.ts';
 
 export { CATALOGUE };
 export type * from './types.ts';

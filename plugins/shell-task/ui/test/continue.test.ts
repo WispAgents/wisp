@@ -4,8 +4,10 @@
 import { expect, test } from 'vitest';
 import { continueArgs, dividerWords, parseContinueParams, previewModel, switchOf, tokenWords, CARRY_ON, type HandoffPreview } from '../src/continue/model.ts';
 import CARDS from '../src/i18n/en.cards.json' with { type: 'json' };
+import LAZY from '../src/i18n/en.lazy.json' with { type: 'json' };
 
-const words = CARDS as Record<string, string>;
+/** both halves: the dialog's words are lazy (they load with it), its title and menu entries eager */
+const words = { ...CARDS, ...LAZY } as Record<string, string>;
 /** the catalogue's words, `{x}` filled, `.one`/`.other` by `count` */
 const t = (key: string, vars: Readonly<Record<string, string | number>> = {}): string => {
   const plural = typeof vars['count'] === 'number' ? `${key}.${vars['count'] === 1 ? 'one' : 'other'}` : key;
