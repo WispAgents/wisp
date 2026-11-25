@@ -9,4 +9,4 @@ export { copyImage } from './media-copy.ts';
 export { docStats } from './rich-doc.ts';
 /** Untrusted-field readers for a plugin's own block renderer: `blockRead.str(b.title)`. */
 export * as blockRead from './read.ts';
-export type { AnswerBlock, AnswerCommentAt, AnswerCommentMark, AnswerComments, BlockContext, BlockedItem, BlockProps, BlockRenderer, DocText, EnvReveal, KeepHost, KeepWhat, RunResult, StuffRef, TaskRef } from './types.ts';
+export type { AnswerBlock, AnswerCommentAt, AnswerCommentMark, AnswerComments, BlockContext, BlockedItem, BlockProps, CapturedChange, BlockRenderer, DocText, EnvReveal, KeepHost, KeepWhat, RunResult, StuffRef, TaskRef } from './types.ts';

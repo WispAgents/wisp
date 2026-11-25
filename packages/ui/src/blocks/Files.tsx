@@ -8,11 +8,11 @@ import { Diff } from '../content/diff/Diff.tsx';
 import type { DiffFile } from '../content/diff/parse.ts';
 import { flag, styleOf } from '../core/props.ts';
 import { useBlocks, useBlockT } from './context.tsx';
-import { ownDiff } from './content-diff.ts';
+import { capturedDiff, ownDiff } from './content-diff.ts';
 import { BlockTitle, ChangeBadge, Folded, InlineMd, PathText } from './content-parts.tsx';
 import { changeOf, type ChangeKind } from './content-util.ts';
 import { items, num, str } from './read.ts';
-import type { BlockProps } from './types.ts';
+import type { BlockProps, CapturedChange } from './types.ts';
 
 export interface FileRow {
   readonly path: string;
@@ -24,17 +24,21 @@ export interface FileRow {
   readonly diff: DiffFile | undefined;
 }
 
-export function readFiles(v: unknown): FileRow[] {
+/** `changes`: the turn's captured changes; a row without its own diff folds open the edits captured for its file. */
+export function readFiles(v: unknown, changes: readonly CapturedChange[] = []): FileRow[] {
   return items<FileRow>(
     v,
     (o) => {
       const path = str(o['path']) || str(o['file']);
       if (!path) return undefined;
-      const diff = ownDiff(o, path);
+      const diff = ownDiff(o, path) ?? capturedDiff(changes, path);
       const { mark, kind } = changeOf(o['change'], 'modified');
       return { path, mark, kind, note: str(o['note']), add: num(o['additions']) ?? diff?.additions, del: num(o['deletions']) ?? diff?.deletions, diff };
     },
-    (s) => ({ path: s, ...changeOf(undefined, 'modified'), note: '', add: undefined, del: undefined, diff: undefined }),
+    (s) => {
+      const diff = capturedDiff(changes, s);
+      return { path: s, ...changeOf(undefined, 'modified'), note: '', add: diff?.additions, del: diff?.deletions, diff };
+    },
   );
 }
 
@@ -96,7 +100,8 @@ const LIMIT = 50;
 
 export function FilesBlock(props: BlockProps): JSX.Element {
   const t = useBlockT();
-  const rows = createMemo(() => readFiles(props.block['items']));
+  const ctx = useBlocks();
+  const rows = createMemo(() => readFiles(props.block['items'], ctx.changes?.() ?? []));
   return (
     <div data-kit="cb-card" data-part="block.files" data-type="files">
       <BlockTitle part="block.files.title" title={str(props.block['title']) || t('block.files.title')} count={rows().length} />

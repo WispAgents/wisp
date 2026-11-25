@@ -94,7 +94,19 @@ export interface EnvReveal {
  * Everything a block may ask of its host. Every member is optional: a block whose action the host
  * doesn't offer renders without that control (a share page has no Reply), never a dead button.
  */
+/** A file the turn changed, as wisp captured it (the turn's `changes`): `diff` blocks and `files` rows without a
+ *  diff of their own show these edits (v1 findChange). */
+export interface CapturedChange {
+  readonly file: string;
+  /** 'create' | 'write' | 'edit' | 'delete' … */
+  readonly op?: string;
+  readonly edits?: readonly unknown[];
+}
+
 export interface BlockContext {
+  /** the turn's captured changes, read live; absent (a share page, the gallery): blocks show only their own diffs.
+   *  Additive (2026-11-25). */
+  readonly changes?: () => readonly CapturedChange[];
   /** sends a follow-up to the task: `next` items, `actions` replies, `question` answers */
   readonly reply?: (text: string) => void;
   /** comments on the answer (v1 comments.js): a block's Comment button, the bubble over words selected in one; the
