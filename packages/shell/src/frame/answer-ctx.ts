@@ -9,7 +9,8 @@ import type { ShellContext } from '../contract.ts';
 import { usePluginClient } from '../slot.tsx';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { appState, approveBlocked, docSource, exec, reveal } from './commands.ts';
-import { docRelativePath, mediaUrl } from './answer-of.ts';
+import { docRelativePath, isLink, mediaUrl, sessionFilePath } from './answer-of.ts';
+import { peerMedia } from './media-src.ts';
 import { keepHost } from './keep.ts';
 import { fileUrl } from '../editor.ts';
 import '../i18n/lazy.ts';
@@ -44,7 +45,8 @@ export function answerContext(h: AnswerHost): BlockContext {
   const run = shell.client.commands.run;
   const peer = ownerOf(key);
   // called while a view sets up (TaskView, Compare): the shell's own client says which wisp is this one
-  const home = usePluginClient('shell').home;
+  const shellClient = usePluginClient('shell');
+  const home = shellClient.home;
   const keyOf = (id: string): EntityKey => (id.includes(':') ? (id as EntityKey) : entityKey(peer, id));
   // where a `preview` block's page loads from here (ADR-0064: a box's localhost at the grid's preview address); set
   // up once per answer, read reactively by the block; the first plugin that answers wins. Read once on purpose
@@ -96,7 +98,13 @@ export function answerContext(h: AnswerHost): BlockContext {
       if (url) shell.platform.openExternal(url);
       else h.openChanges();
     },
-    media: (p) => mediaUrl(home, key, p),
+    // the page's own URL, or (the phone app, which no wisp serves) one the task's computer's transport gives
+    media: (p) => {
+      const rel = mediaUrl(home, key, p);
+      if (!rel || isLink(p)) return rel;
+      const got = peerMedia(shell.client, shellClient.http(peer), peer, sessionFilePath(key, p), Date.now());
+      return got === 'relative' ? rel : got;
+    },
     // Live read when a `doc` block has no snapshotted `text` yet (mid-turn Chat mode blocks or turns from before keep_docs).
     docText: (path) => {
       const r = shell.client.entities.peek<{ body?: { cwd?: string; ext?: Record<string, { path?: string; cwd?: string } | undefined> }; summary?: { cwd?: string } }>(SESSION, key);

@@ -129,8 +129,9 @@ export interface BlockContext {
   readonly revealFile?: (path: string) => void;
   /** a file's text for the `doc` block, live */
   readonly docText?: (path: string) => Accessor<DocText>;
-  /** a path or URL an agent named (image, video, doc) → a URL the page can load; undefined: can't */
-  readonly media?: (pathOrUrl: string) => string | undefined;
+  /** a path or URL an agent named (image, video, doc) → a URL the page can load; undefined: can't; null: on its way
+   *  (the host is asking for it: a phone's signed URL), read live */
+  readonly media?: (pathOrUrl: string) => string | null | undefined;
   /** a `preview` block's URL → a URL the frame may load (a proxied localhost, a grid preview) */
   readonly previewUrl?: (url: string) => string | undefined;
   /** an `app` block's saved state, and where it writes (v1 app-state) */
