@@ -126,3 +126,67 @@ async fn a_btw_without_a_fork_sends_its_turns_and_question_and_stores_no_earlier
     let stored = serde_json::to_string(&r.rt.get(id.as_str()).await.unwrap()).unwrap();
     assert!(!stored.contains("sk-live-handoff"), "the stored task quoted a .env value: {stored}");
 }
+
+/// `runtime.setAgent` (the task page's harness picker) hands the task over as a follow-up's pick does: it wrote only the
+/// harness, so the next turn resumed the old harness's conversation id on the new one, kept the old one's model, and
+/// sent no hand-off note.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_agent_hands_over_as_a_follow_ups_pick_does() {
+    let r = rig_on(
+        Recorder::default(),
+        vec![
+            Fake::named("fake", "Fake CLI", &["low", "high", "max"]),
+            Fake::named("other", "Other CLI", &["low", "medium", "high", "xhigh"]),
+        ],
+    )
+    .await;
+    let start = StartArgs {
+        prompt: "fix the login".into(),
+        agent: Some("fake".into()),
+        model: Some("fake-m".into()),
+        effort: Some("max".into()),
+        cwd: Some(common::tmp()),
+        ..StartArgs::default()
+    };
+    let id = r.rt.create(start).await.unwrap().id;
+    let done = |n: usize| {
+        let (rt, id) = (r.rt.clone(), id.0.clone());
+        async move { rt.turns(&id, None, None).await.unwrap().iter().filter(|t| t.status == TurnStatus::Done).count() == n }
+    };
+    until("the first turn", || done(1)).await;
+    assert_eq!(r.rt.get(id.as_str()).await.unwrap().resume_id.as_deref(), Some("conv-1"));
+    r.rt.set_agent(id.as_str(), "other").await.unwrap();
+    let s = r.rt.get(id.as_str()).await.unwrap();
+    assert_eq!(
+        (s.agent.as_str(), s.resume_id.as_deref(), s.model.as_str(), s.effort.as_str()),
+        ("other", None, "", "xhigh"),
+        "the old conversation, model and level don't go to the new harness"
+    );
+    r.rt.follow_up(FollowUpArgs { id: id.clone(), text: "now the signup page".into(), ..FollowUpArgs::default() }).await.unwrap();
+    until("the hand-off turn", || done(2)).await;
+    let args = &r.sim.spawned()[1].args;
+    assert!(!args.iter().any(|a| a.starts_with("--resume")), "{args:?}");
+    assert!(args[0].contains("### Turn 1 · Fake CLI") && args[0].ends_with("now the signup page"), "the hand-off note: {}", args[0]);
+    // the same harness again: its conversation goes on
+    r.rt.set_agent(id.as_str(), "other").await.unwrap();
+    assert_eq!(r.rt.get(id.as_str()).await.unwrap().resume_id.as_deref(), Some("conv-1"));
+}
+
+/// A harness switched while a turn runs: that turn's end doesn't put its conversation back on the task.
+#[tokio::test(flavor = "multi_thread")]
+async fn set_agent_during_a_run_keeps_the_old_conversation_off_the_new_harness() {
+    let r = rig_on(Recorder::default(), vec![Fake::named("fake", "Fake CLI", &["low"]), Fake::named("other", "Other CLI", &["low"])]).await;
+    let start =
+        StartArgs { prompt: "gate setagent-run go".into(), agent: Some("fake".into()), cwd: Some(common::tmp()), ..StartArgs::default() };
+    let id = r.rt.create(start).await.unwrap().id;
+    until("the run", || async { r.sim.spawned().len() == 1 }).await;
+    r.rt.set_agent(id.as_str(), "other").await.unwrap();
+    common::open("setagent-run");
+    until("its end", || {
+        let (rt, id) = (r.rt.clone(), id.0.clone());
+        async move { rt.turns(&id, None, None).await.unwrap().iter().all(|t| t.status == TurnStatus::Done) }
+    })
+    .await;
+    let s = r.rt.get(id.as_str()).await.unwrap();
+    assert_eq!((s.agent.as_str(), s.resume_id.as_deref()), ("other", None));
+}

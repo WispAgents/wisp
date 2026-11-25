@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Usage (Claude Code, Codex): a resumed turn counts only its own cost and tokens. Each turn now keeps the conversation's counters (`stats.totals`) and the next turn on the same harness and conversation starts from them, where every follow-up counted the whole conversation again. A chat brought in or adopted takes its first result as the baseline; another harness or a fresh conversation starts from zero.
+- Usage: the cache share counts cache reads only. A write to the prompt cache (most of Claude Code's first turn) is input, and is no longer shown as a hit; turns keep their cache reads and writes apart (`cacheReadTokens`, `cacheWriteTokens`). Codex's cached input is recorded as cache reads and no longer counted twice in the input total.
+- Task page (harness picker): switching a task to another harness hands it over as a follow-up's pick does: the new harness no longer resumes the old one's conversation id, gets its own default model and the nearest thinking level, and hears what it missed (the hand-off note). A turn still running when you switch no longer puts the old conversation back.
+- Delegation: a lead told to delegate through wisp now runs with its harness's own subagent tool off (Claude Code's Task/Agent, opencode's `task`, Copilot's), as its system prompt says; subagents, side discussions and harnesses without wisp's tools keep theirs.
+- OpenCode and Grok: a permission refusal on stderr shows as a blocked card with Allow & retry again (no refusal was ever detected), and a CLI's last stderr line without a newline reaches its turn's error.
+
 ## [1.0.0-alpha.14] - 2026-11-25
 
 ### Added

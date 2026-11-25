@@ -43,6 +43,13 @@ impl Fake {
         })
     }
 
+    /// A fake harness that takes wisp's tools (`HarnessInfo::ask_tool`): a lead on it hears about delegating through wisp.
+    pub fn leads(id: &str, name: &str) -> Arc<dyn Harness> {
+        let mut info = Self::named(id, name, &["low"]).info().clone();
+        info.ask_tool = Some("mcp__wisp__ask_user".into());
+        Arc::new(Self { info, program: "fake", piped: false })
+    }
+
     /// A fake harness that runs Try it two ways' variants (`HarnessInfo::variants`), as Claude Code does.
     pub fn varies(id: &str, name: &str) -> Arc<dyn Harness> {
         Arc::new(Self {
@@ -97,14 +104,27 @@ impl Fake {
 
 struct Lines {
     done: bool,
+    /// where its counters start (`HarnessRun::prior`, `unknown_prior`): a result carrying `totals` (a `cumul…` CLI's
+    /// running total) counts what's new since, as Claude Code's and Codex's parsers do
+    prior: Option<Value>,
+    unknown_prior: bool,
 }
 
 impl HarnessParser for Lines {
     fn on(&mut self, input: ParserInput<'_>, _now: i64, out: &mut ParserOutput) {
         match input {
             ParserInput::Stdout(line) => {
-                if let Ok(e) = serde_json::from_str::<Value>(line).map_err(|_| ()).and_then(|v| HarnessEvent::from_v1(v).map_err(|_| ())) {
+                if let Ok(mut e) =
+                    serde_json::from_str::<Value>(line).map_err(|_| ()).and_then(|v| HarnessEvent::from_v1(v).map_err(|_| ()))
+                {
                     self.done |= e.is_result();
+                    if let HarnessEvent::Result { stats: Some(st), .. } = &mut e
+                        && let Some(totals) = st.extra.get("totals").cloned()
+                        && let Some(from) = self.prior.clone().or_else(|| self.unknown_prior.then(|| totals.clone()))
+                    {
+                        st.cost_usd = st.cost_usd.map(|c| c - from["costUsd"].as_f64().unwrap_or(0.0));
+                        st.input_tokens = st.input_tokens.map(|i| i - from["inputTokens"].as_u64().unwrap_or(0));
+                    }
                     out.emit(e);
                 }
             }
@@ -173,11 +193,20 @@ impl Harness for Fake {
         if run.plan_commands {
             args.push("--plan-commands".into());
         }
+        if let Some(p) = &run.prior {
+            args.push(format!("--prior={p}"));
+        }
+        if run.unknown_prior {
+            args.push("--unknown-prior".into());
+        }
+        if run.delegating {
+            args.push("--delegating".into());
+        }
         let stdin = if self.piped { Stdin::Bytes(run.prompt.clone().into_bytes()) } else { Stdin::Null };
         Ok(Launch { program: self.program.into(), args, stdin, ..Launch::default() })
     }
-    fn driver(&self, _run: &HarnessRun) -> Box<dyn RunDriver> {
-        pure(Lines { done: false })
+    fn driver(&self, run: &HarnessRun) -> Box<dyn RunDriver> {
+        pure(Lines { done: false, prior: run.prior.clone(), unknown_prior: run.unknown_prior })
     }
 }
 
@@ -222,6 +251,17 @@ pub fn script(prompt: &str) -> Vec<Value> {
         return vec![
             json!({"type":"session","id":"conv-1"}),
             json!({"type":"result","text":"I can't help with that.","isError":false,"stopReason":"refusal"}),
+        ];
+    }
+    // `cumul <cost> <input>`: the conversation's running total, as Claude Code's `total_cost_usd` and Codex's usage are
+    // (or its paragraph after a hand-off note wisp put ahead of it)
+    if let Some(rest) = prompt.strip_prefix("cumul ").or_else(|| prompt.rsplit_once("\n\ncumul ").map(|(_, r)| r)) {
+        let mut n = rest.split_whitespace();
+        let cost: f64 = n.next().and_then(|x| x.parse().ok()).unwrap_or(0.0);
+        let input: u64 = n.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+        return vec![
+            json!({"type":"session","id":"conv-1"}),
+            json!({"type":"result","text":hero,"isError":false,"stats":{"costUsd":cost,"inputTokens":input,"totals":{"costUsd":cost,"inputTokens":input}}}),
         ];
     }
     // `envread…`: it prints a .env file, then quotes its value in its answer (ADR-0050)
@@ -333,6 +373,12 @@ async fn fake_cli(mut io: SimIo) -> Exit {
         io.print(format!("{}\n", json!({"type":"session","id":"conv-1"})).as_bytes()).await;
         let legacy = if prompt.contains("legacy") { " LEGACY" } else { "" };
         io.eprint(format!("unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.example/v1/responses{legacy}\n").as_bytes()).await;
+        return Exit { code: Some(1), signal: None };
+    }
+    // `errtail…`: it dies with its last words on stderr, no newline after them
+    if prompt.starts_with("errtail") {
+        io.print(format!("{}\n", json!({"type":"session","id":"conv-1"})).as_bytes()).await;
+        io.eprint(b"fatal: the last words").await;
         return Exit { code: Some(1), signal: None };
     }
     if prompt.starts_with("slowexit") {

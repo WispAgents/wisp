@@ -83,13 +83,16 @@ impl Runtime {
         .map(drop)
     }
 
-    /// The harness the task's next turns run on (the turn running finishes where it is).
+    /// The harness the task's next turns run on (the turn running finishes where it is). Handed over as a follow-up's
+    /// pick does (`handoff::switch_agent`): the old conversation isn't resumed on the new harness, which gets the
+    /// hand-off note instead, and its own default model and nearest thinking level.
     pub async fn set_agent(self: &Arc<Self>, id: &str, agent: &str) -> Result<()> {
         if agent.trim().is_empty() {
             return Err(RuntimeError::Invalid("a harness id is needed".into()));
         }
+        let h = self.harness(agent.trim()).ok();
         self.edit(id, |s| {
-            agent.trim().clone_into(&mut s.agent);
+            crate::handoff::switch_agent(s, agent.trim(), false, false, h.as_deref());
             Ok(())
         })
         .await

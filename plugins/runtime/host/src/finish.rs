@@ -86,7 +86,9 @@ impl Runtime {
         keep_facts(&mut turn, head, auth_failed);
         turn.presentation = Some(presentation);
         self.prepare_done(&mut s, &mut turn, status).await;
-        if head.resume_id.is_some() {
+        // the task's conversation, unless it was handed to another harness while this turn ran (`runtime.setAgent`):
+        // that one doesn't resume this harness's conversation
+        if head.resume_id.is_some() && s.agent == turn.agent {
             s.resume_id.clone_from(&head.resume_id);
         }
         // v1 runner.js:1812: a question the turn left open goes with it (no stale ask in review); a setup card's agent
@@ -446,13 +448,15 @@ fn refuse(
     }
 }
 
-/// What a turn read from the cache: Claude's per-model `cacheRead` when it gives them (its `cache_tokens` adds the
-/// writes), else the cached input (Codex's `cache_tokens` is reads alone).
+/// What a turn read from the cache (never its writes: input the provider read in full): Claude's per-model
+/// `cacheRead` when it gives them (its subagents' in), else the reads its harness gave apart (`cache_read_tokens`; 0
+/// when it gave only writes, as Copilot can), else, for a turn stored before the two were kept apart, `cache_tokens`.
 fn cache_reads(st: &wisp_runtime_api::model::TurnStats) -> Option<u64> {
-    let reads = st.models.as_ref().filter(|m| !m.is_empty()).and_then(|models| {
+    let models = st.models.as_ref().filter(|m| !m.is_empty()).and_then(|models| {
         models.values().map(|m| m.get("cacheRead").and_then(serde_json::Value::as_u64)).try_fold(0u64, |a, x| x.map(|x| a + x))
     });
-    reads.or(st.cache_tokens)
+    let split = (st.cache_read_tokens.is_some() || st.cache_write_tokens.is_some()).then(|| st.cache_read_tokens.unwrap_or(0));
+    models.or(split).or(st.cache_tokens)
 }
 
 /// A failed end in the harness's own signed-out words, with or without a result line: a CLI that died with a 401 on
@@ -478,6 +482,29 @@ fn keep_facts(turn: &mut Turn, head: &Head, auth_failed: bool) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
+
+    use super::cache_reads;
+    use wisp_runtime_api::model::TurnStats;
+
+    #[test]
+    fn cache_reads_never_count_the_writes() {
+        // Claude's first turn of a conversation: 30k written to the cache, nothing read from it
+        let first =
+            TurnStats { cache_tokens: Some(30_000), cache_read_tokens: Some(0), cache_write_tokens: Some(30_000), ..TurnStats::default() };
+        assert_eq!(cache_reads(&first), Some(0));
+        let both = TurnStats {
+            cache_tokens: Some(15_000),
+            cache_read_tokens: Some(10_000),
+            cache_write_tokens: Some(5_000),
+            ..TurnStats::default()
+        };
+        assert_eq!(cache_reads(&both), Some(10_000));
+        // Copilot can say only what it wrote
+        let writes = TurnStats { cache_tokens: Some(2_000), cache_write_tokens: Some(2_000), ..TurnStats::default() };
+        assert_eq!(cache_reads(&writes), Some(0));
+        // a turn stored before the two were apart: the sum is all it has
+        assert_eq!(cache_reads(&TurnStats { cache_tokens: Some(7), ..TurnStats::default() }), Some(7));
+    }
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use wisp_kernel::BoxFuture;

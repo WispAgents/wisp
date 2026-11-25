@@ -238,6 +238,19 @@ mod tests {
     }
 
     #[test]
+    fn cached_input_is_a_cache_read_and_not_input_again() {
+        let prior = json!({ "inputTokens": 1000, "cachedInputTokens": 200, "outputTokens": 100 });
+        let mut p = CodexParser::new(CodexOptions { resume_id: Some("th".into()), prior: Some(prior), ..CodexOptions::default() });
+        let mut out = Vec::new();
+        p.line(r#"{"type":"turn.completed","usage":{"input_tokens":1600,"cached_input_tokens":600,"output_tokens":150}}"#, 1, &mut out);
+        let Some(Out::Event(HarnessEvent::Result(r))) = out.last() else { panic!("result") };
+        let st = r.stats.as_deref().unwrap();
+        // 600 in this turn, 400 of them from the cache
+        assert_eq!((st.input_tokens.as_ref(), st.cache_read_tokens.as_ref()), (Some(&json!(200)), Some(&json!(400))));
+        assert_eq!(st.extra["totals"]["inputTokens"], json!(1600), "the next resume starts from the CLI's own counters");
+    }
+
+    #[test]
     fn a_failed_turn_says_why() {
         let mut p = CodexParser::new(CodexOptions::default());
         let mut out = Vec::new();

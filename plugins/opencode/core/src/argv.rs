@@ -95,7 +95,7 @@ pub fn config(
     capped: bool,
 ) -> Option<String> {
     let allow: Vec<(String, Vec<String>)> = grants.iter().filter_map(|g| grant(g)).collect();
-    if mcp_servers.is_empty() && allow.is_empty() && !capped {
+    if mcp_servers.is_empty() && allow.is_empty() && !capped && !delegating {
         return None;
     }
     let inline: Map<String, Value> =
@@ -186,5 +186,12 @@ mod tests {
         let capped: Value =
             serde_json::from_str(&config(None, &BTreeMap::new(), &[], "edits", false, true).unwrap_or_default()).unwrap_or_default();
         assert_eq!(capped["permission"]["webfetch"], "ask");
+    }
+
+    #[test]
+    fn a_delegating_run_turns_task_off_with_nothing_else_to_add() {
+        let c = config(None, &BTreeMap::new(), &[], "edits", true, false).expect("a config: its own subagents are off");
+        let c: Value = serde_json::from_str(&c).unwrap_or_default();
+        assert_eq!(c["permission"]["task"], "deny");
     }
 }
