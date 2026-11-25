@@ -12,6 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Toasts now sit centred on the main area, not the whole window, so the sidebar no longer pushes them off-centre. They stay centred when you collapse or resize the sidebar.
 - Desktop app on macOS, installed with `npm i -g wisp-agents`: the app now opens when you start it from the Dock, Spotlight or Finder. Before, it showed "wisp's files aren't in this app" and quit unless `wisp` was already running in a terminal. It also works when the Dock item is left over from an older version.
 - Task list: **Mark done** on a task saved for later moves it to *Done*. Before, it stayed in *For later*. **Undo** puts it back in For later at its old place.
 - Task page: the details now name the machine the task runs on (**This computer**, a computer by its name, or **Sandbox**), above the branch.
