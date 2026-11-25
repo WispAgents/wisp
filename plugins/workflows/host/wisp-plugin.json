@@ -27,6 +27,7 @@
     "wisp.runtime": "^1.0.0-0"
   },
   "contributes": {
+    "events": [{"type": "workflow.ended", "durable": true}],
     "commands": [
       {
         "id": "workflows.list",

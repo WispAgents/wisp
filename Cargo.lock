@@ -6165,6 +6165,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "wisp-goal-api",
  "wisp-kernel",
  "wisp-resources-api",
  "wisp-runtime-api",

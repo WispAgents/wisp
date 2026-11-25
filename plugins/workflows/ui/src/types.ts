@@ -26,6 +26,8 @@ export interface StepView {
   readonly task?: string | null;
   readonly attempts?: number;
   readonly why?: string;
+  /** a running step whose turn is held before it starts (a limit, trust, the plan): why it waits */
+  readonly held?: string;
   /** a line of what it gave */
   readonly said?: string;
   readonly startedAt?: number | null;

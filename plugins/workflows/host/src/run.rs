@@ -17,9 +17,9 @@ use tokio::sync::{Mutex as AsyncMutex, broadcast, watch};
 use wisp_kernel::{Call, Ctx, Result, WireError};
 use wisp_runtime_api::commands as r;
 use wisp_runtime_api::spec::Lineage;
-use wisp_runtime_api::{Mode, SessionId, SessionState, Turn, TurnStatus};
+use wisp_runtime_api::{Mode, Session, SessionId, SessionState, Turn, TurnStatus};
 use wisp_store::Store;
-use wisp_workflows_api::{EXT, RunArgs, Started, StepState, WorkflowSpec};
+use wisp_workflows_api::{EXT, RunArgs, Started, StepState, WorkflowEnded, WorkflowSpec};
 use wisp_workflows_core::{Action, Run, check, output_of};
 
 /// How often a run looks at its steps when nothing woke it (timeouts).
@@ -103,6 +103,8 @@ struct RunCtx {
     started_at: i64,
     /// the workflow as it was given (the view's Copy as workflow)
     spec: Value,
+    /// the trigger that started the run: its steps carry it, so their events never fire it again
+    triggered_by: Option<String>,
 }
 
 /// The child task's args for a node (Err: why it can't start).
@@ -115,7 +117,7 @@ fn child_args(run: &Run, rc: &RunCtx, node: &str, prompt: String, steps: Vec<Str
         title: Some(format!("{} · {what}", rc.name)),
         parent_id: Some(SessionId(rc.owner.clone())),
         // the run's task, as runtime reads it: a step made under a task an agent was held to is held to it too
-        lineage: Lineage { workflow_run: Some(rc.owner.clone()), ..Lineage::default() },
+        lineage: Lineage { workflow_run: Some(rc.owner.clone()), triggered_by: rc.triggered_by.clone(), ..Lineage::default() },
         ext: [(EXT.to_owned(), json!({ "run": rc.id, "node": node }))].into(),
         agent: some(&n.agent),
         model: some(&n.model),
@@ -167,13 +169,19 @@ pub(crate) fn output_line(output: &Value, n: usize) -> String {
 
 /// The run as its task's view shows it (`ext["wisp.workflows"].runs[]`): each step with its phase, agent, state, task,
 /// times, cost and a line of its output.
-fn view(run: &Run, rc: &RunCtx, state: &str, notes: &[String], ended_at: Option<i64>) -> Value {
+/// A step whose turn is held before it starts carries why (`held`): the board shows it waiting, not working.
+fn view(run: &Run, rc: &RunCtx, state: &str, notes: &[String], ended_at: Option<i64>, holds: &BTreeMap<String, String>) -> Value {
     let mut steps = run.report();
     for s in steps.as_array_mut().into_iter().flatten() {
         let line = output_line(s.get("output").unwrap_or(&Value::Null), VIEW_CHARS);
         if let Some(o) = s.as_object_mut() {
             o.remove("output");
             o.insert("said".into(), json!(line));
+            if let Some(why) = o.get("id").and_then(Value::as_str).and_then(|id| holds.get(id))
+                && o.get("state").and_then(Value::as_str) == Some("running")
+            {
+                o.insert("held".into(), json!(why));
+            }
             if let Some(item) = o.get("item").filter(|v| !v.is_null() && !v.is_string()).cloned() {
                 o.insert("item".into(), json!(short(&item.to_string(), 80)));
             }
@@ -247,17 +255,90 @@ async fn set_state(ctx: &Ctx, call: &Call, id: &str, state: SessionState) {
     }
 }
 
-/// How the node's task stands: None while it runs (or waits on you), or when it can't be read; else (ok, its
-/// output, why).
-async fn ended(ctx: &Ctx, call: &Call, task: &str) -> Option<(bool, Value, String)> {
+/// How a step's task stands at a look.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Look {
+    /// still working, or waiting on you; `held`: its turn waits before it starts (a limit, trust, the plan), and why
+    Going {
+        held: Option<String>,
+    },
+    Ended {
+        ok: bool,
+        output: Value,
+        why: String,
+    },
+    /// it couldn't be read just now: looked at again next time
+    Retry,
+}
+
+/// How the node's task stands (`goal`: the step has a goal of its own, judged before the step counts as done).
+async fn ended(ctx: &Ctx, call: &Call, task: &str, goal: bool) -> Look {
     let id = SessionId(task.to_owned());
-    let t = ctx.run::<r::Get>(call, r::IdArgs { id: id.clone() }).await.ok()?;
-    let busy = matches!(t.state, SessionState::Running | SessionState::Waiting) || !t.queue.is_empty() && !t.queue_held;
-    if busy {
-        return None;
+    let t = match ctx.run::<r::Get>(call, r::IdArgs { id: id.clone() }).await {
+        Ok(t) => t,
+        Err(e) => return unread(&e),
+    };
+    if let Some(going) = busy(&t) {
+        return going;
     }
-    let turns = ctx.run::<r::Turns>(call, r::TurnsArgs { id, before: None, limit: None, masked: None }).await.ok()?;
-    Some(outcome(t.state, turns.last()))
+    match ctx.run::<r::Turns>(call, r::TurnsArgs { id, before: None, limit: None, masked: None }).await {
+        Ok(turns) => look(&t, turns.last(), goal),
+        Err(e) => unread(&e),
+    }
+}
+
+/// A step's task that couldn't be read: gone (deleted) ends the step failed, or the run waited on it for ever;
+/// anything else is looked at again.
+pub(crate) fn unread(e: &WireError) -> Look {
+    if e.code == wisp_kernel::Code::NotFound {
+        Look::Ended { ok: false, output: Value::Null, why: "its task was deleted".into() }
+    } else {
+        Look::Retry
+    }
+}
+
+/// Running, waiting on you, or something queued (a held queue waits to be started): still going.
+fn busy(t: &Session) -> Option<Look> {
+    if matches!(t.state, SessionState::Running | SessionState::Waiting) || (!t.queue.is_empty() && !t.queue_held) {
+        return Some(Look::Going { held: None });
+    }
+    (!t.queue.is_empty()).then(|| Look::Going { held: Some("it waits to be started".into()) })
+}
+
+/// Why a held turn waits, in a few words: what its holder said, else its kind.
+fn held_why(l: &Turn) -> String {
+    let Some(h) = &l.held else { return "it waits before it starts".into() };
+    ["why", "line", "label"]
+        .iter()
+        .find_map(|k| h.data.get(*k).and_then(Value::as_str).filter(|s| !s.trim().is_empty()))
+        .map_or_else(|| h.kind.clone(), str::to_owned)
+}
+
+/// How a step stands from its task and last turn. A held turn (a limit, trust, the plan) waits, as does a step whose
+/// goal its judges haven't met yet (working, judging, another round); met is done, stalled is failed with why.
+pub(crate) fn look(t: &Session, last: Option<&Turn>, goal: bool) -> Look {
+    if let Some(going) = busy(t) {
+        return going;
+    }
+    if let Some(l) = last.filter(|l| l.status.is_live()) {
+        let held = (l.status == TurnStatus::Held).then(|| held_why(l));
+        return Look::Going { held };
+    }
+    let (ok, output, why) = outcome(t.state, last);
+    if !(ok && goal) {
+        return Look::Ended { ok, output, why };
+    }
+    let slot = t.ext.get(wisp_goal_api::PLUGIN).and_then(|v| serde_json::from_value::<wisp_goal_api::GoalState>(v.clone()).ok());
+    let st = slot.unwrap_or_default();
+    match st.state.as_str() {
+        // dropped: the turn's answer stands, as a step without a goal
+        "met" | "cleared" => Look::Ended { ok, output, why },
+        "stalled" | "failed" | "limit" => {
+            let why = if st.why.is_empty() { format!("its goal ended {}", st.state) } else { format!("its goal wasn't met: {}", st.why) };
+            Look::Ended { ok: false, output, why }
+        }
+        _ => Look::Going { held: None },
+    }
 }
 
 /// How a step ended, from its task's state and its last turn: done with no error is ok.
@@ -301,6 +382,39 @@ pub(crate) fn ended_message(name: &str, state: &str, run: &Run, secs: i64) -> St
     out
 }
 
+/// Each running step's task looked at: the ones that ended are finished (with what they cost), a held one says why.
+async fn look_at_steps(
+    ctx: &Ctx,
+    call: &Call,
+    run: &mut Run,
+    costs: &mut BTreeMap<String, f64>,
+    holds: &mut BTreeMap<String, String>,
+    now: i64,
+) {
+    let running: Vec<(String, String)> = run
+        .runs
+        .iter()
+        .filter_map(|(id, r)| (r.state == StepState::Running).then(|| r.task.clone().map(|t| (id.clone(), t))).flatten())
+        .collect();
+    for (node, task) in running {
+        let goal = run.nodes.iter().find(|n| n.id == node).is_some_and(|n| n.spec.goal.as_ref().is_some_and(|g| !g.is_null()));
+        match ended(ctx, call, &task, goal).await {
+            Look::Ended { ok, output, why } => {
+                holds.remove(&node);
+                run.finished(&node, ok, output, &why, costs.remove(&task).unwrap_or(0.0));
+                run.ended_at(&node, now);
+            }
+            Look::Going { held: Some(why) } => {
+                holds.insert(node, why);
+            }
+            Look::Going { held: None } => {
+                holds.remove(&node);
+            }
+            Look::Retry => {}
+        }
+    }
+}
+
 /// Runs the workflow under its owner until every step has ended, or it's stopped.
 async fn drive(
     ctx: Ctx,
@@ -319,6 +433,7 @@ async fn drive(
         }
     }
     let mut costs: BTreeMap<String, f64> = BTreeMap::new();
+    let mut holds: BTreeMap<String, String> = BTreeMap::new();
     let mut last = Value::Null;
     let mut stopped = false;
     loop {
@@ -341,7 +456,7 @@ async fn drive(
             }
         }
         // written when it changed, not on every look
-        let v = view(&run, &rc, "running", &notes, None);
+        let v = view(&run, &rc, "running", &notes, None, &holds);
         if v != last {
             write_view(&ctx, &call, &st, &rc, v.clone()).await;
             last = v;
@@ -367,17 +482,7 @@ async fn drive(
             }
             () = clock.sleep(LOOK_MS) => {}
         }
-        let running: Vec<(String, String)> = run
-            .runs
-            .iter()
-            .filter_map(|(id, r)| (r.state == StepState::Running).then(|| r.task.clone().map(|t| (id.clone(), t))).flatten())
-            .collect();
-        for (node, task) in running {
-            if let Some((ok, output, why)) = ended(&ctx, &call, &task).await {
-                run.finished(&node, ok, output, &why, costs.remove(&task).unwrap_or(0.0));
-                run.ended_at(&node, clock.now_ms());
-            }
-        }
+        look_at_steps(&ctx, &call, &mut run, &mut costs, &mut holds, clock.now_ms()).await;
     }
     let state = if stopped {
         "stopped"
@@ -387,8 +492,12 @@ async fn drive(
         "failed"
     };
     let now = clock.now_ms();
-    write_view(&ctx, &call, &st, &rc, view(&run, &rc, state, &notes, Some(now))).await;
+    write_view(&ctx, &call, &st, &rc, view(&run, &rc, state, &notes, Some(now), &BTreeMap::new())).await;
     st.live.lock().unwrap_or_else(PoisonError::into_inner).remove(&rc.id);
+    // a durable fact of its end, about the id `workflows.run` answered: a trigger that started it counts it ended
+    let fact =
+        WorkflowEnded { run: rc.id.clone(), owner: rc.owner.clone(), workflow: rc.name.clone(), state: state.into(), cost_usd: run.cost() };
+    ctx.emit(&call, &fact);
     if rc.held {
         set_state(&ctx, &call, &rc.owner, if run.ok() && !stopped { SessionState::Review } else { SessionState::Error }).await;
     } else if rc.notify && !stopped {
@@ -465,6 +574,7 @@ pub(crate) async fn start(ctx: &Ctx, call: &Call, st: &Arc<State>, a: RunArgs) -
                 title: Some(format!("{name} (workflow)")),
                 hold: true,
                 cwd: some(&project),
+                lineage: Lineage { triggered_by: a.triggered_by.clone(), ..Lineage::default() },
                 ext: [(EXT.to_owned(), json!({ "workflow": name, "state": "starting" }))].into(),
                 ..r::StartArgs::default()
             };
@@ -483,6 +593,8 @@ pub(crate) async fn start(ctx: &Ctx, call: &Call, st: &Arc<State>, a: RunArgs) -
         notify: a.notify.unwrap_or(true),
         started_at: clock.now_ms(),
         spec: serde_json::to_value(&spec).unwrap_or(Value::Null),
+        // a trigger names itself; an agent names none (its steps are its own task's)
+        triggered_by: a.triggered_by.clone().filter(|_| agent.is_none()),
     };
     let (tx, rx) = watch::channel(false);
     st.live.lock().unwrap_or_else(PoisonError::into_inner).insert(id.clone(), Live { owner, stop: tx });
@@ -594,6 +706,92 @@ mod tests {
         let runs = many["runs"].as_array().cloned().unwrap_or_default();
         assert_eq!(runs.len(), KEEP);
         assert_eq!(runs[0]["id"], "r0", "the one still going stays");
+    }
+
+    fn turn(status: TurnStatus) -> Turn {
+        Turn { id: "u1".into(), session_id: "s1".into(), status, text: Some("done".into()), ..Turn::default() }
+    }
+
+    fn task(state: SessionState) -> Session {
+        Session { id: "s1".into(), state, ..Session::default() }
+    }
+
+    /// A step whose turn waits for a limit's reset (or trust, or the plan) failed with "it ended held"; the board now
+    /// shows it waiting, with why.
+    #[test]
+    fn a_held_turn_is_still_going_and_says_why() {
+        let mut held = turn(TurnStatus::Held);
+        held.held = Some(wisp_runtime_api::model::Held {
+            by: "wisp.accounts".into(),
+            kind: "limit".into(),
+            until: None,
+            data: json!({ "line": "claude's limit resets at 14:00" }),
+        });
+        assert_eq!(
+            look(&task(SessionState::Review), Some(&held), false),
+            Look::Going { held: Some("claude's limit resets at 14:00".into()) }
+        );
+        held.held = None;
+        assert!(matches!(look(&task(SessionState::Review), Some(&held), false), Look::Going { held: Some(_) }));
+        let mut queued = task(SessionState::Review);
+        queued.queue.push(wisp_runtime_api::QueueItem::default());
+        queued.queue_held = true;
+        assert_eq!(look(&queued, None, false), Look::Going { held: Some("it waits to be started".into()) }, "a held queue waits");
+        assert!(matches!(look(&task(SessionState::Review), Some(&turn(TurnStatus::Done)), false), Look::Ended { ok: true, .. }));
+    }
+
+    /// A deleted step's task was read as "can't be read" forever: the run never ended.
+    #[test]
+    fn a_deleted_steps_task_fails_it_and_a_passing_error_looks_again() {
+        assert_eq!(
+            unread(&WireError::not_found("no task s1")),
+            Look::Ended { ok: false, output: Value::Null, why: "its task was deleted".into() }
+        );
+        assert_eq!(unread(&WireError::unavailable("busy")), Look::Retry);
+    }
+
+    /// A step with a goal of its own counts as done once its judges met it, not when its first turn ended.
+    #[test]
+    fn a_steps_goal_is_judged_before_it_counts_as_done() {
+        let with_goal = |state: &str, why: &str| {
+            let mut t = task(SessionState::Review);
+            t.ext.insert(wisp_goal_api::PLUGIN.into(), json!({ "state": state, "rounds": 1, "why": why }));
+            t
+        };
+        let done = turn(TurnStatus::Done);
+        for going in ["", "judging", "again"] {
+            assert_eq!(look(&with_goal(going, ""), Some(&done), true), Look::Going { held: None }, "{going:?}");
+        }
+        assert_eq!(look(&task(SessionState::Review), Some(&done), true), Look::Going { held: None }, "not judged yet");
+        assert!(matches!(look(&with_goal("met", ""), Some(&done), true), Look::Ended { ok: true, .. }));
+        let Look::Ended { ok, why, .. } = look(&with_goal("stalled", "3 rounds and still no test"), Some(&done), true) else { panic!() };
+        assert!(!ok);
+        assert_eq!(why, "its goal wasn't met: 3 rounds and still no test");
+        assert!(matches!(look(&with_goal("judging", ""), Some(&done), false), Look::Ended { ok: true, .. }), "a step without a goal");
+        assert!(matches!(look(&with_goal("judging", ""), Some(&turn(TurnStatus::Error)), true), Look::Ended { ok: false, .. }));
+    }
+
+    /// A trigger's workflow run: its steps carry the trigger as their lineage, so their own `task.finished` never fires it.
+    #[test]
+    fn a_step_carries_the_trigger_that_started_its_run() {
+        let w = WorkflowSpec {
+            tasks: [("a".to_owned(), StepSpec { prompt: "a".into(), ..StepSpec::default() })].into(),
+            ..WorkflowSpec::default()
+        };
+        let run = Run::new(w, &BTreeMap::new());
+        let rc = RunCtx {
+            id: "r1".into(),
+            owner: "o1".into(),
+            held: true,
+            name: "w".into(),
+            project: "/repo".into(),
+            notify: false,
+            started_at: 0,
+            spec: Value::Null,
+            triggered_by: Some("trigger:nightly".into()),
+        };
+        let a = child_args(&run, &rc, "a", "a".into(), Vec::new()).unwrap();
+        assert_eq!((a.lineage.workflow_run.as_deref(), a.lineage.triggered_by.as_deref()), (Some("o1"), Some("trigger:nightly")));
     }
 
     #[test]

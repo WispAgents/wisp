@@ -15,6 +15,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Triggers: a trigger whose run was stopped, whose task was deleted, or whose target is a workflow now runs again on its next event. Before, it said "skipped: already running" for good. A run whose end wisp never heard is let go at the next check, about 15 seconds later.
+- Triggers: two triggers that fire on each other's runs now stop after three rounds, as a trigger on its own tasks does. A trigger whose target is a workflow no longer fires on the workflow's own steps.
+- Triggers: jobs queued outside a trigger's hours now wait for the hours. A trigger set to run one job at a time (or N at a time) now starts its queued jobs one (or N) at a time. A paused or switched-off trigger keeps its queue.
+- Workflows: when a step fails, every step after it is skipped, not only the next one. A step skipped by its `if` still lets the steps after it run.
+- Workflows: a step with a goal now counts as done once its judges agree the goal is met. If the goal stalls, the step fails and says why.
+- Workflows and factories: a step whose turn waits for a usage limit, a trust check or the plan now shows as waiting, with why, and no longer fails with "it ended held". A step whose task you delete now fails with "its task was deleted". Before, the run waited for it forever.
+- Goals: a goal that wisp stopped in the middle of its check now gets checked again when wisp starts. Before, it could say "judging" forever.
 - Toasts now sit centred on the main area, not the whole window, so the sidebar no longer pushes them off-centre. They stay centred when you collapse or resize the sidebar.
 - Desktop app on macOS, installed with `npm i -g wisp-agents`: the app now opens when you start it from the Dock, Spotlight or Finder. Before, it showed "wisp's files aren't in this app" and quit unless `wisp` was already running in a terminal. It also works when the Dock item is left over from an older version.
 - Task list: **Mark done** on a task saved for later moves it to *Done*. Before, it stayed in *For later*. **Undo** puts it back in For later at its old place.

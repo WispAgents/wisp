@@ -346,18 +346,46 @@ async fn wait(
 
 /// How the task stands: None while it runs (or waits on someone), else how its last turn (the one waited on) ended.
 async fn ended(ctx: &Ctx, call: &Call, p: &Pending) -> Option<TaskEnd> {
-    let t = get(ctx, call, &p.task).await.ok()?;
+    let t = match get(ctx, call, &p.task).await {
+        Ok(t) => t,
+        Err(e) => return unread(&p.task, &e),
+    };
     let busy = matches!(t.state, SessionState::Running | SessionState::Waiting) || !t.queue.is_empty() && !t.queue_held;
     if busy {
         return None;
     }
     let turns =
-        ctx.run::<r::Turns>(call, r::TurnsArgs { id: SessionId(p.task.clone()), before: None, limit: Some(3), masked: None }).await.ok()?;
+        match ctx.run::<r::Turns>(call, r::TurnsArgs { id: SessionId(p.task.clone()), before: None, limit: Some(3), masked: None }).await {
+            Ok(turns) => turns,
+            Err(e) => return unread(&p.task, &e),
+        };
+    end_of(&p.task, &t, &turns, p.turn.as_deref())
+}
+
+/// A station's task that couldn't be read: deleted, the station failed (the run waited on it for ever); any other
+/// error, looked at again next time.
+pub(crate) fn unread(task: &str, e: &WireError) -> Option<TaskEnd> {
+    (e.code == wisp_kernel::Code::NotFound).then(|| TaskEnd {
+        task: task.to_owned(),
+        ok: false,
+        text: "its task was deleted".into(),
+        cost: 0.0,
+    })
+}
+
+/// How a station's task ended, from the task and its last turns (`want`: the follow-up waited on): None while its
+/// turn runs, is held before it starts (a limit, trust, the plan: not "it ended held") or its queue waits.
+pub(crate) fn end_of(
+    task: &str,
+    t: &wisp_runtime_api::model::Session,
+    turns: &[wisp_runtime_api::model::Turn],
+    want: Option<&str>,
+) -> Option<TaskEnd> {
     let last = turns.last();
     // a follow-up still queued (no turn of its id yet) hasn't run
-    if let Some(want) = &p.turn
-        && !turns.iter().any(|x| &x.id.0 == want)
-        && t.queue.iter().any(|q| &q.id == want)
+    if let Some(want) = want
+        && !turns.iter().any(|x| x.id.0 == want)
+        && t.queue.iter().any(|q| q.id == want)
     {
         return None;
     }
@@ -367,9 +395,9 @@ async fn ended(ctx: &Ctx, call: &Call, p: &Pending) -> Option<TaskEnd> {
         if why.is_none() && !t.queue.is_empty() {
             return None;
         }
-        return Some(TaskEnd { task: p.task.clone(), ok: false, text: why.unwrap_or_else(|| "it never ran".into()), cost: 0.0 });
+        return Some(TaskEnd { task: task.to_owned(), ok: false, text: why.unwrap_or_else(|| "it never ran".into()), cost: 0.0 });
     };
-    if last.status == TurnStatus::Running {
+    if last.status.is_live() || !t.queue.is_empty() {
         return None;
     }
     let ok = last.status == TurnStatus::Done && !last.is_error;
@@ -379,7 +407,7 @@ async fn ended(ctx: &Ctx, call: &Call, p: &Pending) -> Option<TaskEnd> {
     } else {
         format!("it ended {}", serde_json::to_value(last.status).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default())
     };
-    Some(TaskEnd { task: p.task.clone(), ok, text, cost: 0.0 })
+    Some(TaskEnd { task: task.to_owned(), ok, text, cost: 0.0 })
 }
 
 /// Asks on the run's task and waits for the answer.

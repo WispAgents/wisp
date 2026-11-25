@@ -88,6 +88,13 @@ describe('the workflow board', () => {
     expect(detailOf(step({ id: 'x', step: 'x', state: 'running', attempts: 2 }))).toBe('Working, try 2…');
   });
 
+  it('shows a step whose turn is held as waiting, with why', () => {
+    const held = step({ id: 'fix', step: 'fix', state: 'running', task: 't1', held: "claude's limit resets at 14:00" });
+    expect(detailOf(held)).toBe("Waiting: claude's limit resets at 14:00");
+    const card = lanes(run({ phases: [], steps: [held] }), 0, () => undefined)[0]?.entries[0];
+    expect(card && 'step' in card ? card.step.state : undefined).toBe('waiting');
+  });
+
   it('reads a synced row and a step task', () => {
     expect(runsOf({ id: 'h:1', summary: { workflowRuns: [run()] } })).toHaveLength(1);
     expect(runsOf({ id: 'h:1', summary: { workflowRuns: 'junk' } })).toEqual([]);

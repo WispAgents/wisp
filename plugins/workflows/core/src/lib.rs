@@ -192,6 +192,9 @@ pub struct NodeRun {
     pub ended_at: Option<i64>,
     pub why: String,
     pub cost: f64,
+    /// skipped because a task it needs failed (or was skipped for that): its own dependents can't run either, while a
+    /// step skipped by its `if` (or an empty foreach) still lets them
+    pub cascade: bool,
 }
 
 /// What the host does next.
@@ -264,6 +267,16 @@ impl Run {
         self.runs.values().map(|r| r.cost).sum()
     }
 
+    /// A step `n` needs (one that isn't optional) failed, or was skipped because one it needs failed.
+    fn need_failed(&self, n: &Node) -> bool {
+        self.nodes.iter().any(|m| {
+            let r = &self.runs[&m.id];
+            n.spec.needs.contains(&m.step)
+                && !m.spec.optional
+                && (r.state == StepState::Failed || r.state == StepState::Skipped && r.cascade)
+        })
+    }
+
     fn budget(&self) -> Option<f64> {
         self.spec.budget.as_ref().and_then(|b| b.get("usd")).and_then(Value::as_f64)
     }
@@ -299,10 +312,7 @@ impl Run {
                 if !needs.iter().all(|r| Self::ended(r.state)) {
                     continue;
                 }
-                let failed = self
-                    .nodes
-                    .iter()
-                    .any(|m| n.spec.needs.contains(&m.step) && self.runs[&m.id].state == StepState::Failed && !m.spec.optional);
+                let failed = self.need_failed(&n);
                 let scope = self.scope(&n);
                 let skip = if failed {
                     Some("a task it needs failed".to_owned())
@@ -317,6 +327,7 @@ impl Run {
                     let Some(r) = self.runs.get_mut(&n.id) else { continue };
                     r.state = StepState::Skipped;
                     r.why = why;
+                    r.cascade = failed;
                     changed = true;
                     continue;
                 }
@@ -361,10 +372,7 @@ impl Run {
             n.fanout
                 && self.runs[&n.id].state == StepState::Waiting
                 && self.nodes.iter().filter(|m| n.spec.needs.contains(&m.step)).all(|m| Self::ended(self.runs[&m.id].state))
-                && !self
-                    .nodes
-                    .iter()
-                    .any(|m| n.spec.needs.contains(&m.step) && self.runs[&m.id].state == StepState::Failed && !m.spec.optional)
+                && !self.need_failed(n)
                 && (n.spec.when.trim().is_empty() || expr::eval(&n.spec.when, &self.scope(n)).is_ok_and(|v| expr::truthy(&v)))
         }) else {
             return false;
@@ -702,6 +710,31 @@ mod tests {
         assert!(r.runs["each"].why.contains("not a list"), "{:?}", r.runs["each"]);
         let bad = wf(vec![("a", step("x ${{ item }}", &[]))]);
         assert!(check(&bad).iter().any(|p| p.contains("foreach")), "{:?}", check(&bad));
+    }
+
+    /// build failed, so test was skipped, and deploy (which needs only test) still ran: a skip by cascade was read as
+    /// satisfied, as a skip by `if` is.
+    #[test]
+    fn a_failure_cascades_through_the_steps_it_skips() {
+        let w = wf(vec![("build", step("build", &[])), ("test", step("test", &["build"])), ("deploy", step("deploy", &["test"]))]);
+        let mut r = Run::new(w, &BTreeMap::new());
+        assert_eq!(starts(&r.next(0)), ["build"]);
+        r.started("build", "T1");
+        r.finished("build", false, Value::Null, "it ended error", 0.0);
+        assert_eq!(starts(&r.next(1)), Vec::<String>::new(), "deploy doesn't start");
+        assert_eq!((r.runs["test"].state, r.runs["deploy"].state), (StepState::Skipped, StepState::Skipped));
+        assert_eq!(r.runs["deploy"].why, "a task it needs failed");
+        assert!(r.over() && !r.ok());
+        // a step skipped by its `if` still lets the ones after it run
+        let mut gated = step("test", &["build"]);
+        gated.when = "${{ inputs.run_tests }}".into();
+        let mut w = wf(vec![("build", step("build", &[])), ("test", gated), ("deploy", step("deploy", &["test"]))]);
+        w.inputs.insert("run_tests".into(), json!(false));
+        let mut r = Run::new(w, &BTreeMap::new());
+        r.next(0);
+        r.finished("build", true, json!({}), "", 0.0);
+        assert_eq!(starts(&r.next(1)), ["deploy"], "test's if was false: deploy runs");
+        assert_eq!(r.runs["test"].state, StepState::Skipped);
     }
 
     #[test]

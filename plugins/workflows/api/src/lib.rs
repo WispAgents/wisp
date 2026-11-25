@@ -153,6 +153,35 @@ pub struct RunArgs {
     /// false: the task isn't sent the result when the run ends (default true when the run belongs to a task)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notify: Option<bool>,
+    /// the trigger that started the run (`trigger:<name>`): its task and every step carry it as their lineage, so the
+    /// trigger never fires again on its own run's steps. Additive (2026-11-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub triggered_by: Option<String>,
+}
+
+/// A workflow run ended (`workflow.ended`): its subject is the run's id, as `workflows.run` answered it. A trigger
+/// whose target is a workflow counts its run's end from this (its held task never runs a turn of its own). Durable.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowEnded {
+    pub run: String,
+    /// the task it ran under
+    pub owner: String,
+    pub workflow: String,
+    /// done | failed | stopped
+    pub state: String,
+    pub cost_usd: f64,
+}
+
+impl wisp_kernel::Event for WorkflowEnded {
+    const TYPE: &'static str = "workflow.ended";
+    const DURABLE: bool = true;
+    fn subject(&self) -> Option<String> {
+        Some(self.run.clone())
+    }
+    fn key(&self) -> Option<String> {
+        Some(self.run.clone())
+    }
 }
 
 /// `workflows.run`: the run's parent task.
