@@ -6,7 +6,7 @@
 import { expect, test } from 'vitest';
 import type { EntityKey, PluginClient } from '@wisp/client';
 import type { Toaster } from '@wisp/ui';
-import { toggleForLater } from '../src/actions.ts';
+import { toggleDone, toggleForLater } from '../src/actions.ts';
 import { flatSession } from '../src/model/wire.ts';
 import { isForLater } from '../src/model/sections.ts';
 import type { SessionRow } from '../src/types.ts';
@@ -62,4 +62,31 @@ test('a_saved_server_row_reads_as_saved_so_the_toggle_unsaves_it', () => {
   expect(sent.map((s) => [s.cmd, s.wire])).toEqual([['runtime.forLater', { id, forLater: false }]]);
   expect(sent[0]?.ops).toEqual([{ e: 'session', id: key, op: 'patch', ops: [{ op: 'remove', path: '/summary/forLater' }] }]);
   expect(toasts).toEqual(['shell-list.toast.unsaved']);
+});
+
+// design/for-later.md: Mark done takes a saved task out of For later, into Done. setState's optimistic patch removed
+// `/forLater`, which a server row doesn't have (its mark is under `summary`), and the server kept the mark: a saved task
+// marked done stayed in For later.
+test('mark_done_on_a_saved_server_row_takes_it_out_of_for_later_at_once', () => {
+  const { c, sent } = ctx(serverRow({ at: 900, by: 'you' }));
+  (c.client as unknown as { navigate: () => void }).navigate = () => {};
+  toggleDone(c, key);
+  expect(sent.map((s) => [s.cmd, s.wire])).toEqual([['runtime.setState', { id, state: 'done' }]]);
+  expect(sent[0]?.ops).toEqual([{ e: 'session', id: key, op: 'patch', ops: [{ op: 'replace', path: '/state', value: 'done' }, { op: 'remove', path: '/summary/forLater' }] }]);
+});
+
+test('undo_of_mark_done_reopens_then_saves_it_again_with_its_old_time', async () => {
+  const toasts: { undo?: () => void }[] = [];
+  const { c, sent } = ctx(serverRow({ at: 900, by: 'you' }));
+  (c.client as unknown as { navigate: () => void }).navigate = () => {};
+  const push = (_m: string, o?: { action?: { onClick: () => void } }): void => void toasts.push({ ...(o?.action && { undo: o.action.onClick }) });
+  const cc = { ...c, toast: { show: push, success: push } as unknown as Toaster };
+  toggleDone(cc, key);
+  toasts[0]?.undo?.();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(sent.slice(1).map((s) => [s.cmd, s.wire])).toEqual([
+    ['runtime.setState', { id, state: 'review' }],
+    ['runtime.forLater', { id, forLater: true, at: 900 }],
+  ]);
 });
