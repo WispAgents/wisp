@@ -1287,6 +1287,9 @@
           ],
           "type": "string"
         },
+        "budget.limitHoldBy": {
+          "description": "Ask near the limit, per harness: { <harness>: off | 80 | 90 | 95 }, each over everyone's line (Settings → Agents → Limits & budget); a harness it doesn't name keeps everyone's"
+        },
         "budget.liveLimits": {
           "description": "Check Codex & Antigravity while waiting: read their usage every 10 minutes while work waits for a plan (spends nothing)",
           "type": "boolean"
