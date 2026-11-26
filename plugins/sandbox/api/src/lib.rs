@@ -157,6 +157,17 @@ pub struct PatchArgs {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Patch {
     pub patch: String,
+    /// the project's state the patch goes up to (a tree id there): once the patch came back, `sandbox.rebase` makes it
+    /// the base, so the next job's patch holds only that job's changes (empty: a sandbox from before it)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tree: String,
+}
+
+/// `sandbox.rebase` (inside a sandbox): what a project's changes are counted from is now `tree`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RebaseArgs {
+    pub cwd: String,
+    pub tree: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,6 +177,9 @@ pub struct BringArgs {
     pub from: String,
     /// the folder here it goes into
     pub into: String,
+    /// keep the changes in a file and leave `into` as it is (a lead in Plan, a job that didn't finish)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -175,6 +189,23 @@ pub struct Brought {
     /// why they couldn't go in (they clash with changes here)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// the patch, kept here when it didn't go in (a clash, or `keep`), so the work isn't lost
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kept: Option<String>,
+}
+
+/// The grid's code for "you have all the sandboxes you may" (grid/sandboxes.js `SANDBOX_CAP`, in a refusal's details).
+pub const CAP_CODE: &str = "sandbox_cap";
+
+/// A full grid (it's full, or the user has all the sandboxes they may): a launch or a delegation fails at once; a crew
+/// job waits and tries again (doubling to 30 minutes). Told by the grid's typed code; a grid from before it, by its
+/// words. Here, not in wisp-sandbox-core, so other plugins (crew) reach it through this api.
+pub fn full(e: &wisp_kernel::WireError) -> bool {
+    if e.details.as_ref().and_then(|d| d.get("code")).and_then(Value::as_str) == Some(CAP_CODE) {
+        return true;
+    }
+    let m = e.message.to_lowercase();
+    m.contains("is full") || m.contains("sandboxes of yours") || m.contains("at most") || m.contains("the most this grid keeps")
 }
 
 /// One sandbox as Settings → Cloud → Sandboxes lists it.
@@ -261,6 +292,7 @@ command!(Seed = "sandbox.seed" : SeedArgs => Seeded);
 command!(Drop = "sandbox.drop" : DropArgs => Dropped);
 command!(Own = "sandbox.own" : OwnArgs => Empty);
 command!(PatchCmd = "sandbox.patch" : PatchArgs => Patch, ro);
+command!(Rebase = "sandbox.rebase" : RebaseArgs => Empty);
 command!(Bring = "sandbox.bring" : BringArgs => Brought);
 command!(InfoCmd = "sandbox.info" : Empty => Info, ro; typed);
 // typed: it takes nothing, so `wisp sandbox claude begin --x` is a usage error, not a 30 s sign-in run with --x as a field
@@ -269,3 +301,22 @@ command!(ClaudeCode = "sandbox.claude.code" : CodeArgs => ClaudeSignIn);
 command!(ClaudeState = "sandbox.claude.state" : Empty => ClaudeSignIn, ro; typed);
 command!(Logout = "sandbox.logout" : AgentArgs => Info);
 command!(Env = "sandbox.env" : EnvArgs => Info);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wisp_kernel::WireError;
+
+    /// The grid's real cap refusal (grid/sandboxes.js) is "full" by its code, and by its words from a grid before the
+    /// code; before, "the most this grid keeps" matched nothing, and a crew job that met it was lost.
+    #[test]
+    fn a_full_grid_is_told_by_its_code_and_by_its_words() {
+        let cap = "You have 10 sandboxes, the most this grid keeps. Free one in Settings → Computers → Sandboxes first.";
+        assert!(full(&WireError::invalid(cap)));
+        assert!(full(&WireError::invalid("no").with_details(serde_json::json!({ "code": CAP_CODE, "have": 10, "max": 10 }))));
+        assert!(full(&WireError::invalid("This grid is full right now. Try again in a few minutes.")));
+        assert!(full(&WireError::invalid("You have 5 sandboxes of yours already: at most 5.")));
+        assert!(!full(&WireError::invalid("Sign in first.")));
+        assert!(!full(&WireError::invalid("Sign in first.").with_details(serde_json::json!({ "code": "other" }))));
+    }
+}

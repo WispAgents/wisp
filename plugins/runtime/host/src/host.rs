@@ -133,7 +133,7 @@ pub struct Recorder {
     pub settings: std::collections::BTreeMap<String, serde_json::Value>,
     /// what other plugins' commands answer (`budget.resetAt`, `later.waitAtLimit`…); one not here is unavailable. A
     /// command routed to another wisp answers `machines.route <cmd>` first (`machines.route runtime.get`), then
-    /// `machines.route`
+    /// `machines.route`. An answer `{"$error": <WireError>}` is that refusal (`{"$error": {"code": "not_found", …}}`)
     pub answers: std::collections::BTreeMap<String, serde_json::Value>,
     /// answers a test changes as it goes (a job elsewhere that ends): looked up before `answers`, the same way
     pub live: Mutex<std::collections::BTreeMap<String, serde_json::Value>>,
@@ -175,7 +175,11 @@ impl Host for Recorder {
             .iter()
             .find_map(|k| live.get(k).or_else(|| self.answers.get(k)))
             .cloned()
-            .ok_or_else(|| WireError::unavailable(format!("{cmd}: no kernel here")));
+            .ok_or_else(|| WireError::unavailable(format!("{cmd}: no kernel here")))
+            .and_then(|v| match v.get("$error").map(|e| serde_json::from_value::<WireError>(e.clone())) {
+                Some(Ok(e)) => Err(e),
+                _ => Ok(v),
+            });
         drop(live);
         Box::pin(async move { out })
     }

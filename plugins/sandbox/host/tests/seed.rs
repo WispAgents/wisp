@@ -103,6 +103,33 @@ async fn a_delegates_changes_come_back_as_the_difference_from_what_came_in() {
     assert!(sb.call(Caller::user(), "sandbox.patch", serde_json::json!({ "cwd": "/etc" })).await.is_err());
 }
 
+/// Two jobs in one sandbox: once the first job's patch came back, `sandbox.rebase` moves the base to the state it went
+/// up to, so the second job's patch holds only its own changes. (Before, it held the first job's too: brought again,
+/// they clashed with themselves in the lead's folder.)
+#[tokio::test(flavor = "multi_thread")]
+async fn after_a_rebase_the_next_patch_holds_only_the_next_job_s_changes() {
+    let home = dir("home-rebase");
+    let (_lead, args) = project();
+    let sb = app().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let out = sb.call(Caller::user(), "sandbox.seed", args).await.unwrap();
+    let cwd = PathBuf::from(out["cwd"].as_str().unwrap());
+    std::fs::write(cwd.join("a.txt"), "job one\n").unwrap();
+    let one = sb.call(Caller::user(), "sandbox.patch", json!({ "cwd": cwd })).await.unwrap();
+    assert!(one["patch"].as_str().unwrap().contains("a.txt"), "{one}");
+    let tree = one["tree"].as_str().unwrap().to_owned();
+    assert!(!tree.is_empty(), "{one}");
+    sb.call(Caller::user(), "sandbox.rebase", json!({ "cwd": cwd, "tree": tree })).await.unwrap();
+    std::fs::write(cwd.join("b.txt"), "job two\n").unwrap();
+    let two = sb.call(Caller::user(), "sandbox.patch", json!({ "cwd": cwd })).await.unwrap();
+    let patch = two["patch"].as_str().unwrap();
+    assert_eq!(patch.matches("diff --git ").count(), 1, "{patch}");
+    assert!(patch.contains("b.txt") && !patch.contains("a.txt"), "only job two's: {patch}");
+    // a tree the project doesn't have, or something that isn't a tree id, moves nothing
+    assert!(sb.call(Caller::user(), "sandbox.rebase", json!({ "cwd": cwd, "tree": "HEAD" })).await.is_err());
+    assert!(sb.call(Caller::user(), "sandbox.rebase", json!({ "cwd": cwd, "tree": "0123abcd" })).await.is_err());
+    assert!(sb.call(Caller::user(), "sandbox.rebase", json!({ "cwd": "/etc", "tree": tree })).await.is_err());
+}
+
 fn upload(key: &str, part: &str, body: Vec<u8>) -> wisp_kernel::http::Request {
     wisp_kernel::http::Request {
         method: "POST".into(),

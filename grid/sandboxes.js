@@ -18,6 +18,8 @@ import { randomBytes } from 'node:crypto';
 import { bad } from './accounts.js';
 import { safeEqual } from './secrets.js';
 
+// The per-user cap's refusal code (409 `{error, code, have, max}`).
+export const SANDBOX_CAP = 'sandbox_cap';
 export const SANDBOX_DEFAULTS = { enabled: true, perUser: 10 };
 export const SANDBOX_ID = /^[a-f0-9]{8}$/;
 export const SANDBOX_LABEL = /^sb-([a-f0-9]{8})--([a-z0-9-]+)$/;
@@ -57,7 +59,11 @@ export function createSandboxes({ db, cfg, secrets }) {
     create(user, name, { taken = () => false } = {}) {
       if (!opts.enabled) throw bad('This grid doesn’t make sandboxes.', 403);
       const have = db.get('SELECT count(*) AS n FROM sandboxes WHERE user_id = ?', user.id).n;
-      if (have >= opts.perUser) throw bad(`You have ${have} sandboxes, the most this grid keeps. Delete a sandboxed task you’re done with first.`, 409);
+      // a typed code with it (`sandbox_cap`): wisp tells "full" from any other refusal by it, never by the words
+      if (have >= opts.perUser) {
+        const msg = `You have ${have} sandboxes, the most this grid keeps. Free one in Settings → Computers → Sandboxes first.`;
+        throw Object.assign(bad(msg, 409), { body: { code: SANDBOX_CAP, have, max: opts.perUser } });
+      }
       let id;
       let label;
       do {

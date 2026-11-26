@@ -374,3 +374,49 @@ async fn an_agents_wake_on_no_source_is_refused() {
     assert!(out.error.as_deref().unwrap_or_default().starts_with("wakes[0].on: not.an.event is no source"), "{out:?}");
     assert_eq!(st.member("Ada").unwrap().wakes[0].on, "pr.opened", "unchanged");
 }
+
+/// wisp.sandbox on a grid at its per-user cap: `sandbox.place` refused as the grid refuses it (its words, its code).
+struct CappedGrid;
+
+impl Plugin for CappedGrid {
+    fn manifest(&self) -> Manifest {
+        Manifest::from_value(
+            json!({ "wispPlugin": 1, "id": "wisp.sandbox", "version": "1.0.0-alpha.1", "api": "^1", "activation": ["onStartup"] }),
+        )
+        .unwrap()
+    }
+    fn setup(&self, s: &mut Setup) -> wisp_kernel::Result<()> {
+        s.command::<wisp_sandbox_api::Place, _, _>(|_c, _call, _a: wisp_sandbox_api::PlaceArgs| async move {
+            Err::<wisp_sandbox_api::Placed, _>(
+                WireError::invalid("You have 10 sandboxes, the most this grid keeps. Free one in Settings → Computers → Sandboxes first.")
+                    .with_details(json!({ "code": wisp_sandbox_api::CAP_CODE, "have": 10, "max": 10 })),
+            )
+        });
+        Ok(())
+    }
+}
+
+/// A member whose jobs each get a sandbox, on a grid at its cap: the job waits its turn again. (Before, the grid's
+/// "the most this grid keeps" wasn't read as full: the job was logged and lost.)
+#[tokio::test]
+async fn a_job_that_meets_the_grid_s_sandbox_cap_waits_again() {
+    let rt = Rt::default();
+    let clock = FakeClock::at(T0);
+    let k = TestApp::new().clock(&clock).with(rt.clone()).with(CappedGrid).with(Declarative(CrewPlugin.manifest())).start().await;
+    let ctx = k.ctx(PLUGIN_ID).unwrap();
+    let st = State::new();
+    st.insert(Member {
+        id: "ada1".into(),
+        name: "Ada".into(),
+        agent: "claude".into(),
+        mode: "edits".into(),
+        parallel: 1,
+        sandbox: "job".into(),
+        queue: vec![WaitingJob { id: "w1".into(), ..job("waiting") }],
+        ..Member::default()
+    });
+    drain(&ctx, &ctx.root_call(), &st, "ada1").await;
+    let queue: Vec<String> = st.member("ada1").unwrap().queue.into_iter().map(|w| w.id).collect();
+    assert_eq!(queue, ["w1"], "it waits again");
+    assert!(rt.made().is_empty(), "nothing ran");
+}

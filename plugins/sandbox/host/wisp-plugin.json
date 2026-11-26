@@ -37,6 +37,7 @@
       { "id": "sandbox.place", "title": "A seeded sandbox for a delegate, a crew job or member, or a goal's judges" },
       { "id": "sandbox.seed", "title": "Take a project in (inside a sandbox only)" },
       { "id": "sandbox.patch", "title": "A project's changes since it came in (inside a sandbox only)", "readOnly": true },
+      { "id": "sandbox.rebase", "title": "Count a project's changes from the state they last came back at (inside a sandbox only)" },
       { "id": "sandbox.bring", "title": "A delegate's changes in its sandbox, into the lead's folder here" },
       { "id": "sandbox.own", "title": "Name a sandbox's owner once it exists (a crew job's task)" },
       { "id": "sandbox.drop", "title": "Delete the sandboxes of a task, a crew member, or one by its machine" },

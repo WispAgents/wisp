@@ -135,6 +135,9 @@ pub struct BringArgs {
     pub from: String,
     /// the lead's folder here
     pub into: String,
+    /// keep the changes in a file and leave `into` as it is (a lead in Plan, a job that didn't finish)
+    #[serde(default)]
+    pub keep: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]

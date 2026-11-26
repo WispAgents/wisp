@@ -170,24 +170,53 @@ async fn setup_once(proc: &Proc, home: &Path, dir: &Path, name: &str) -> Option<
     Some(said.chars().rev().take(4000).collect::<Vec<_>>().into_iter().rev().collect())
 }
 
-/// `sandbox.patch` (inside a sandbox): what changed in a project since it came in, new files too, as one binary diff.
-pub async fn patch(ctx: &Ctx, home: &Path, cwd: &str) -> Result<api::Patch> {
-    let proc = ctx.service::<Proc>()?;
+/// A project under `~/code` (spelled as the home is) and where its base is kept.
+async fn project_at(home: &Path, cwd: &str) -> Result<(PathBuf, PathBuf)> {
     // spelled as the home is (ADR-0071): the task's folder may come in either spelling of one folder
     let dir = wisp_proc::plain_path(cwd).await;
     let name = core::name_of(&dir.to_string_lossy());
     if !dir.starts_with(home.join("code")) {
         return Err(WireError::invalid("only a project under ~/code has changes to give back"));
     }
-    let base = tokio::fs::read_to_string(home.join(".sandbox").join(format!("base-{name}")))
-        .await
-        .map_err(|_| WireError::not_found("That project didn't come in through a seed."))?;
+    Ok((dir, home.join(".sandbox").join(format!("base-{name}"))))
+}
+
+/// `sandbox.patch` (inside a sandbox): what changed in a project since it came in (or since its changes last came
+/// back, `sandbox.rebase`), new files too, as one binary diff; and the state it goes up to.
+pub async fn patch(ctx: &Ctx, home: &Path, cwd: &str) -> Result<api::Patch> {
+    let proc = ctx.service::<Proc>()?;
+    let (dir, at) = project_at(home, cwd).await?;
+    let base = tokio::fs::read_to_string(at).await.map_err(|_| WireError::not_found("That project didn't come in through a seed."))?;
     // new files count: the folder's whole state now, through a scratch index
     let now = tree_of(&proc, &dir).await.map_err(|e| WireError::internal(format!("the project's state: {e}")))?;
-    let diff = run(&proc, &dir, "git", &["diff".to_owned(), "--binary".to_owned(), base.trim().to_owned(), now], None, 120)
+    let diff = run(&proc, &dir, "git", &["diff".to_owned(), "--binary".to_owned(), base.trim().to_owned(), now.clone()], None, 120)
         .await
         .map_err(|e| WireError::internal(format!("git diff: {e}")))?;
-    Ok(api::Patch { patch: diff })
+    Ok(api::Patch { patch: diff, tree: now })
+}
+
+/// `sandbox.rebase` (inside a sandbox): a job's changes came back (into the lead's folder, or kept in a file there),
+/// so the project's changes now count from `tree`, the state that patch went up to. Without it every later job's
+/// patch carried the earlier jobs' changes too, which clash with themselves in the lead's folder.
+pub async fn rebase(ctx: &Ctx, home: &Path, a: &api::RebaseArgs) -> Result<api::Empty> {
+    let proc = ctx.service::<Proc>()?;
+    let (dir, at) = project_at(home, &a.cwd).await?;
+    if tokio::fs::metadata(&at).await.is_err() {
+        return Err(WireError::not_found("That project didn't come in through a seed."));
+    }
+    let tree = a.tree.trim();
+    if tree.is_empty() || !tree.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(WireError::invalid("tree: a tree id the patch named"));
+    }
+    // one this project has, and a tree (never a ref or a path the caller made up)
+    let kind = run(&proc, &dir, "git", &["cat-file".to_owned(), "-t".to_owned(), tree.to_owned()], None, 30)
+        .await
+        .map_err(|_| WireError::not_found("That project has no such state."))?;
+    if kind.trim() != "tree" {
+        return Err(WireError::invalid("tree: a tree id the patch named"));
+    }
+    tokio::fs::write(&at, tree).await.map_err(|e| WireError::internal(format!("the project's base: {e}")))?;
+    Ok(api::Empty {})
 }
 
 #[cfg(test)]

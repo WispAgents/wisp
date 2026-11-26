@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **A sandbox subagent's changes are never lost on the way back.** When they clash with yours, the patch is kept in a file and the lead's report says where (`git apply <path>` puts it in). A sandbox that's asleep or unreachable no longer counts its changes as brought: they're tried again on the next look. A deleted lead's sandbox that still holds work it never got stays until you delete it in Settings → Computers → Sandboxes.
+- **Every job of a sandbox subagent brings its own changes back.** The second and later jobs you gave the same subagent used to come back with nothing (or with the first job's changes again, which then clashed). Each job now brings only what it changed.
+- **A subagent whose sandbox is gone gets a new one** on its next task, instead of failing until you remove it from the team.
+- **A lead in Plan mode never gets a subagent's changes in its folder**, and neither does any lead from a subagent job that stopped or failed. Those changes are held in a file the report names.
+- **A crew job that meets your grid's sandbox limit waits its turn** instead of being dropped. The grid's refusal now says to free a sandbox in Settings → Computers → Sandboxes.
+
 ## [1.0.0-alpha.16] - 2026-11-26
 
 ### Fixed

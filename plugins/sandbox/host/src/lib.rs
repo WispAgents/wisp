@@ -117,7 +117,16 @@ fn watch(s: &mut Setup) {
     s.on::<wisp_runtime_api::events::SessionDeleted, _, _>(|ctx, e| async move {
         let call = ctx.root_call();
         let all = make::held(&ctx, &call).await;
-        make::drop_all(&ctx, &call, &core::gone_with_task(&all, e.id.as_str())).await;
+        let mut gone = Vec::new();
+        for h in core::gone_with_task(&all, e.id.as_str()) {
+            // a delegate's sandbox with work its lead never got stays, for the user to delete (Settings → Sandboxes)
+            if make::holds_work(&ctx, &call, h).await {
+                tracing::warn!(machine = %h.machine, "sandbox: a deleted lead's delegate still holds work there; kept until it's deleted in Settings");
+                continue;
+            }
+            gone.push(h);
+        }
+        make::drop_all(&ctx, &call, &gone).await;
     });
     s.on::<wisp_crew_api::events::Left, _, _>(|ctx, e| async move {
         let call = ctx.root_call();
@@ -173,6 +182,43 @@ fn seed_route(inside: bool, at: std::path::PathBuf) -> wisp_kernel::http::Route 
     }
 }
 
+/// What only a sandbox's wisp does (refused anywhere else): take a project in, give its changes back, count them on.
+fn inside_commands(s: &mut Setup, inside: bool, home_at: Option<&std::path::PathBuf>) {
+    let at_home = || home_at.cloned().map_or_else(home, wisp_proc::plain_path_blocking);
+    let at = at_home();
+    s.command::<api::Seed, _, _>(move |ctx, _call, a| {
+        let at = at.clone();
+        async move {
+            // only a sandbox takes a project in: anywhere else this would overwrite ~/code
+            if !inside {
+                return Err(WireError::forbidden("Only a sandbox takes a project in (sandbox.seed)."));
+            }
+            seed::seed(&ctx, &at, &a).await
+        }
+    });
+    s.route(seed_route(inside, at_home()));
+    let at = at_home();
+    s.command::<api::PatchCmd, _, _>(move |ctx, _call, a| {
+        let at = at.clone();
+        async move {
+            if !inside {
+                return Err(WireError::forbidden("Only a sandbox gives its changes back (sandbox.patch)."));
+            }
+            seed::patch(&ctx, &at, &a.cwd).await
+        }
+    });
+    let at = at_home();
+    s.command::<api::Rebase, _, _>(move |ctx, _call, a| {
+        let at = at.clone();
+        async move {
+            if !inside {
+                return Err(WireError::forbidden("Only a sandbox counts its changes (sandbox.rebase)."));
+            }
+            seed::rebase(&ctx, &at, &a).await
+        }
+    });
+}
+
 impl Plugin for SandboxPlugin {
     fn manifest(&self) -> Manifest {
         Manifest::embedded(include_str!("../wisp-plugin.json"))
@@ -180,28 +226,7 @@ impl Plugin for SandboxPlugin {
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
         let inside = self.inside.unwrap_or_else(|| in_sandbox(&|k| std::env::var(k).ok()));
-        let at = self.home.clone().map_or_else(home, wisp_proc::plain_path_blocking);
-        s.command::<api::Seed, _, _>(move |ctx, _call, a| {
-            let at = at.clone();
-            async move {
-                // only a sandbox takes a project in: anywhere else this would overwrite ~/code
-                if !inside {
-                    return Err(WireError::forbidden("Only a sandbox takes a project in (sandbox.seed)."));
-                }
-                seed::seed(&ctx, &at, &a).await
-            }
-        });
-        s.route(seed_route(inside, self.home.clone().map_or_else(home, wisp_proc::plain_path_blocking)));
-        let at = self.home.clone().map_or_else(home, wisp_proc::plain_path_blocking);
-        s.command::<api::PatchCmd, _, _>(move |ctx, _call, a| {
-            let at = at.clone();
-            async move {
-                if !inside {
-                    return Err(WireError::forbidden("Only a sandbox gives its changes back (sandbox.patch)."));
-                }
-                seed::patch(&ctx, &at, &a.cwd).await
-            }
-        });
+        inside_commands(s, inside, self.home.as_ref());
         if inside {
             // a sandbox makes no sandboxes and has no owners to watch
             return Ok(());
