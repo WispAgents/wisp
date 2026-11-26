@@ -5,7 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.16] - 2026-11-26
+
 ### Fixed
+
+- **`wisp tui` polish.** A reply follows the open task's mode (the status bar shows it, and a capped task says so) instead of sending the bar's mode, which lifted a channel task's cap without you choosing it; Shift-Tab picks one and warns when that lifts the cap. `Ctrl-E` gives your editor the whole text (long pastes put back) in a private 0600 file, keeps images whose `[image N]` is still there, and says so when the editor didn't save. ↑ history recalls a long paste whole. A new task that didn't start puts your prompt back in the box with a plain "wisp isn't answering" instead of jumping to another task. `/` search moves between matches with ↑ ↓ (Ctrl-N, Ctrl-P), and Enter with no match does nothing and says "No task matches". `o` opens the task in its harness on the TUI's own wisp (`--port`, `--on`) and says when it couldn't. A palette command goes before your draft instead of replacing it, and `i` with no task starts one.
 
 - **Mark done no longer says a worktree "holds work" when it doesn't.** An agent that switched to its own branch in a task's worktree (`git checkout -b fix/x`) left its commits on that branch, so removing the folder loses nothing, but the Done dialog warned "Commits off its branch" and wouldn't remove it unless you ticked it. Now only commits that no branch keeps (a detached HEAD) count as work the folder holds.
 - **Connectors ask before they act, and stay out of Plan mode.** In Edits a connector's tools now ask you first (wisp's approval card on Claude Code; Codex, which can't ask, refuses them outside Full auto), where every one ran unasked. Plan mode gets a connector only when its `modes` name plan. wisp's own tools still run without a card.

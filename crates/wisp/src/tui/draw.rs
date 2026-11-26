@@ -235,7 +235,8 @@ pub fn draw(f: &mut Frame<'_>, app: &App) -> Hit {
         f.render_widget(
             Paragraph::new(band(
                 vec![Span::styled(
-                    " ○ Connection lost. Reconnecting; what you do now is sent when it's back.",
+                    // nothing is queued while it's down: a send fails and its text comes back to the box
+                    " ○ Connection lost. Reconnecting; a send now won't go through, and its text stays in the box.",
                     Style::default().fg(th.on_accent).add_modifier(Modifier::BOLD),
                 )],
                 w,
@@ -421,7 +422,12 @@ fn sidebar(f: &mut Frame<'_>, app: &App, r: Rect) -> BTreeMap<u16, String> {
         }
     }
     if order.is_empty() {
-        body.push((Line::from(Span::styled(" No tasks yet. n starts one.", th.dim())), None));
+        // a search that matches nothing says so, not that there are no tasks
+        let empty = match app.search.as_ref().filter(|q| !q.is_empty() && app.focus == Zone::List) {
+            Some(q) => format!(" No task matches \"{q}\""),
+            None => " No tasks yet. n starts one.".to_owned(),
+        };
+        body.push((Line::from(Span::styled(empty, th.dim())), None));
     }
     // the selected row stays in sight
     let h = usize::from(r.height).saturating_sub(top.len());
@@ -752,7 +758,7 @@ fn new_task(f: &mut Frame<'_>, app: &App, r: Rect) {
     } else {
         app.agents.iter().find(|(id, _)| *id == app.launch_agent).map_or_else(|| app.launch_agent.clone(), |(_, n)| n.clone())
     };
-    let mode = match app.mode {
+    let mode = match app.launch_mode {
         super::app::Mode::Plan => "Plan: reads and plans, changes nothing",
         super::app::Mode::Edits => "Edits: asks before it runs a command",
         super::app::Mode::Auto => "Full auto: no permission prompts",
@@ -1133,16 +1139,21 @@ fn status(f: &mut Frame<'_>, app: &App, r: Rect) {
     };
     let turn = app.open.as_ref().and_then(Transcript::running).unwrap_or_default();
     let c = cx(app);
-    let mode_bg = match app.mode {
+    // the open task's own mode (or New task's), never the last one picked elsewhere
+    let mode = app.shown_mode();
+    let mode_bg = match mode {
         Mode::Plan => th.info,
         Mode::Edits => th.warn,
         Mode::Auto => th.good,
     };
     let mut left: Vec<Span<'static>> = vec![
         Span::raw(" "),
-        Span::styled(format!(" {} ", app.mode.wire()), Style::default().fg(th.on_accent).bg(mode_bg).add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" {} ", mode.wire()), Style::default().fg(th.on_accent).bg(mode_bg).add_modifier(Modifier::BOLD)),
         Span::raw(" "),
     ];
+    if let Some(cap) = app.cap().filter(|_| !app.new_task) {
+        left.push(Span::styled(format!(" capped at {}", cap.wire()), Style::default().fg(th.warn)));
+    }
     let run = [cell(&session, "/agent"), cell(&session, "/model"), cell(&session, "/effort")]
         .into_iter()
         .filter(|x| !x.is_empty())

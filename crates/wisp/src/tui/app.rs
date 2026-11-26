@@ -71,6 +71,23 @@ impl Mode {
             Self::Auto => "auto",
         }
     }
+    /// A mode as runtime writes it (`"plan"`); anything else isn't one.
+    pub fn of(s: &str) -> Option<Self> {
+        match s {
+            "plan" => Some(Self::Plan),
+            "edits" => Some(Self::Edits),
+            "auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+    /// How much it lets the agent do, as runtime ranks it (`Mode::rank`): a cap is lifted by a choice above it.
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Plan => 0,
+            Self::Edits => 1,
+            Self::Auto => 2,
+        }
+    }
     fn next(self) -> Self {
         match self {
             Self::Plan => Self::Edits,
@@ -123,8 +140,9 @@ pub enum Then {
     Catalogue,
     /// the `@` picker's crew, machines and My Stuff
     Mentions(String),
-    /// a new task: the optimistic row `local` is replaced by the real one
-    Created(String),
+    /// a new task: the optimistic row `local` is replaced by the real one; refused, its text and attachments go back
+    /// in the box
+    Created(String, String, Vec<String>),
     /// `runtime.agents`: the harnesses the New task page offers
     Agents,
     /// a follow-up shown at once under the composer: dropped when it lands, back in the box when refused
@@ -148,7 +166,9 @@ pub enum Effect {
         task: Option<String>,
         text: String,
         attachments: Vec<String>,
-        mode: Mode,
+        /// a new task's mode; a follow-up's only when the user chose one (Shift-Tab) while the task was open: sending
+        /// the bar's mode every time asked a capped task for more than its cap, which runtime reads as the user lifting it
+        mode: Option<Mode>,
         queue: bool,
         local: String,
         /// a new task's agent picked on the New task page (None: Auto, wisp's default)
@@ -198,7 +218,12 @@ pub struct App {
     pub new_task: bool,
     pub focus: Zone,
     pub side: Option<Side>,
+    /// the open task's mode, as its row says, until the user picks another (Shift-Tab)
     pub mode: Mode,
+    /// the user pressed Shift-Tab since this task was opened: only then does a follow-up carry `mode`
+    pub mode_touched: bool,
+    /// the New task page's mode (Shift-Tab there), apart from the open task's
+    pub launch_mode: Mode,
     pub overlay: Option<Overlay>,
     /// a view instead of the task (None: the tasks)
     pub screen: Option<String>,
@@ -252,6 +277,16 @@ fn next_agent(agents: &[(String, String)], now: &str) -> String {
     }
 }
 
+/// A command that never reached wisp (the client's `wisp at …: error sending request for url …`), in plain words;
+/// None: wisp answered, and its own words say why.
+fn unreachable(e: &str) -> Option<String> {
+    let l = e.to_lowercase();
+    ["error sending request", "connection refused", "connection reset", "tcp connect error", "timed out", "broken pipe"]
+        .iter()
+        .any(|x| l.contains(x))
+        .then(|| "wisp isn't answering; your prompt is still in the box".to_owned())
+}
+
 fn ctrl(k: &KeyEvent, c: char) -> bool {
     k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char(c)
 }
@@ -276,6 +311,8 @@ impl App {
             focus: Zone::List,
             side: None,
             mode: Mode::Auto,
+            mode_touched: false,
+            launch_mode: Mode::Auto,
             overlay: None,
             screen: None,
             views: BTreeMap::new(),
@@ -339,7 +376,9 @@ impl App {
     pub fn listed(&mut self, changed: &[String]) -> Vec<Effect> {
         let _ = changed;
         let gone = self.sel.as_ref().is_some_and(|id| !self.tasks.rows.contains_key(id));
-        if self.sel.is_none() || gone {
+        // a new task being written (or one that didn't start, back in the box) keeps the box: selecting would file
+        // the draft under another task
+        if (self.sel.is_none() && !self.new_task) || gone {
             let first = self.order().first().cloned();
             return self.select(first);
         }
@@ -356,7 +395,49 @@ impl App {
         self.open = id.as_deref().map(Transcript::new);
         self.scroll = 0;
         self.cursor = None;
+        // the bar shows this task's mode, and a reply leaves it as it is until the user picks one
+        self.mode_touched = false;
+        self.mode = id.as_ref().and_then(|id| self.tasks.rows.get(id)).and_then(|t| Mode::of(s(t, "mode"))).unwrap_or(Mode::Auto);
         vec![Effect::Watch(id)]
+    }
+
+    /// The open task's row came (its topic): the bar follows its mode, unless the user picked one since.
+    pub fn task_mode_came(&mut self) {
+        if self.mode_touched {
+            return;
+        }
+        if let Some(m) = self.open.as_ref().and_then(|t| Mode::of(s(&t.session(), "mode"))) {
+            self.mode = m;
+        }
+    }
+
+    /// The open task's mode cap (a channel's or a crew job's, F-chan-10): its row's `capped`, or its session's slot.
+    pub fn cap(&self) -> Option<Mode> {
+        let row = self.sel.as_ref().and_then(|id| self.tasks.rows.get(id)).and_then(|t| Mode::of(s(t, "capped")));
+        row.or_else(|| {
+            let session = self.open.as_ref()?.session();
+            let c = session.pointer("/ext/wisp.runtime/capped").filter(|c| !c.is_null())?;
+            // a cap with no readable mode is Edits, as runtime reads it
+            Some(c.get("mode").and_then(Value::as_str).and_then(Mode::of).unwrap_or(Mode::Edits))
+        })
+    }
+
+    /// The mode the bar shows: the New task page's, or the open task's.
+    pub fn shown_mode(&self) -> Mode {
+        if self.new_task { self.launch_mode } else { self.mode }
+    }
+
+    /// Shift-Tab: the next mode for the new task, or for this task's next reply (warned when it lifts a cap).
+    fn cycle_mode(&mut self) {
+        if self.new_task {
+            self.launch_mode = self.launch_mode.next();
+            return;
+        }
+        self.mode = self.mode.next();
+        self.mode_touched = true;
+        if let Some(c) = self.cap().filter(|c| self.mode.rank() > c.rank()) {
+            self.toast(format!("Sending in {} lifts this task's {} cap", self.mode.wire(), c.wire()), false);
+        }
     }
 
     fn moved(&mut self, by: isize) -> Vec<Effect> {
@@ -412,7 +493,7 @@ impl App {
             return self.search_key(k);
         }
         if k.code == KeyCode::BackTab {
-            self.mode = self.mode.next();
+            self.cycle_mode();
             return Vec::new();
         }
         if self.focus == Zone::Composer {
@@ -456,14 +537,33 @@ impl App {
         }
     }
 
-    /// `/` search: the list filters as you type (Enter opens the first); in a task it marks what matches.
+    /// `/` search: the list filters as you type, ↑ ↓ (Ctrl-P Ctrl-N) move between the matches and Enter opens the
+    /// highlighted one (the first, when the highlighted row is filtered out); with no match, Enter does nothing. In a
+    /// task it marks what matches.
     fn search_key(&mut self, k: KeyEvent) -> Vec<Effect> {
+        let by = match k.code {
+            KeyCode::Down => 1,
+            KeyCode::Up => -1,
+            _ if ctrl(&k, 'n') => 1,
+            _ if ctrl(&k, 'p') => -1,
+            _ => 0,
+        };
+        if by != 0 && self.focus == Zone::List {
+            let o = self.order();
+            if o.is_empty() {
+                return Vec::new();
+            }
+            // a highlighted row the query filtered out counts as the first match
+            let i = self.index().unwrap_or(0).saturating_add_signed(by).min(o.len() - 1);
+            return self.select(o.get(i).cloned());
+        }
         match k.code {
             KeyCode::Enter if self.focus == Zone::List => {
-                let first = self.order().first().cloned();
+                let o = self.order();
+                let Some(pick) = self.index().map(|i| o[i].clone()).or_else(|| o.first().cloned()) else { return Vec::new() };
                 self.search = None;
                 self.focus = Zone::Task;
-                return self.select(first);
+                return self.select(Some(pick));
             }
             KeyCode::Esc | KeyCode::Enter => self.search = None,
             KeyCode::Backspace => {
@@ -591,8 +691,9 @@ impl App {
                 self.focus = Zone::Task;
                 Vec::new()
             }
-            KeyCode::Char('i') if self.sel.is_some() => {
-                self.new_task = false;
+            // i writes to the selected task; with none there is nothing to reply to, so it starts one, as n does
+            KeyCode::Char('i') => {
+                self.new_task = self.sel.is_none();
                 self.focus = Zone::Composer;
                 Vec::new()
             }
@@ -719,7 +820,8 @@ impl App {
             return Vec::new();
         }
         if ctrl(&k, 'e') {
-            return vec![Effect::Editor(self.composer.text())];
+            // the editor gets every collapsed paste put back: a `[pasted 40 lines]` token saved back lost the paste
+            return vec![Effect::Editor(self.composer.expanded())];
         }
         if ctrl(&k, 's') {
             return self.send_now();
@@ -795,7 +897,7 @@ impl App {
             // the new task shows at once, at the top, selected; the real one replaces it
             self.tasks.rows.insert(
                 local.clone(),
-                json!({ "id": local, "title": text.lines().next().unwrap_or_default(), "state": "starting", "updated_at": i64::MAX }),
+                json!({ "id": local, "title": text.lines().next().unwrap_or_default(), "state": "starting", "mode": self.launch_mode.wire(), "updated_at": i64::MAX }),
             );
             let fx = self.select(Some(local.clone()));
             drop(fx);
@@ -806,7 +908,8 @@ impl App {
         }
         let queue = self.running();
         let agent = if task.is_none() && !self.launch_agent.is_empty() { Some(self.launch_agent.clone()) } else { None };
-        vec![Effect::Send { task, text, attachments, mode: self.mode, queue, local, agent }]
+        let mode = if task.is_none() { Some(self.launch_mode) } else { self.mode_touched.then_some(self.mode) };
+        vec![Effect::Send { task, text, attachments, mode, queue, local, agent }]
     }
 
     /// `/btw …`, `/fork`, `/stop`, or `/<catalogue command> [json args]` (the open task's id by default).
@@ -1017,9 +1120,10 @@ impl App {
             }
             Pick::View(v) => self.open_view(&v),
             Pick::Setting(_) => self.open_view("settings"),
+            // the command goes before what was written, which stays (set() emptied the draft, its pastes and images)
             Pick::Command(id) => {
                 self.focus = Zone::Composer;
-                self.composer.set(&format!("/{id} "));
+                self.composer.prefix(&format!("/{id} "));
                 Vec::new()
             }
             Pick::Insert(text) => {
@@ -1043,9 +1147,21 @@ impl App {
         self.composer.paste(text);
     }
 
-    /// `$EDITOR` saved this.
-    pub fn edited(&mut self, text: &str) {
-        self.composer.set(text.trim_end_matches('\n'));
+    /// `$EDITOR` came back: what it saved replaces the box, or (no editor, a non-zero exit) the box stays as it was
+    /// and a toast says why.
+    pub fn edited(&mut self, got: std::result::Result<String, String>) {
+        match got {
+            Ok(text) => self.composer.set(text.trim_end_matches('\n')),
+            Err(why) => self.toast(format!("Editor didn't save ({why})"), true),
+        }
+    }
+
+    /// Open in <harness> came back: a failure says so (the TUI took the screen back over whatever the child printed).
+    pub fn opened_in(&mut self, id: &str, got: std::result::Result<(), String>) {
+        if let Err(why) = got {
+            let agent = self.tasks.rows.get(id).map(|t| s(t, "agent").to_owned()).filter(|a| !a.is_empty());
+            self.toast(format!("Couldn't open in {} ({why})", agent.as_deref().unwrap_or("its harness")), true);
+        }
     }
 
     /// The mouse: a click focuses a zone (and picks a row, opens a step), the wheel scrolls, a drag on a border
@@ -1134,6 +1250,34 @@ impl App {
         }
     }
 
+    /// A new task that didn't start: the prompt comes back to New task, nothing lost (jumping to another task hid it
+    /// in that task's draft). A box already holding another draft is left alone, and the toast says so.
+    fn not_started(&mut self, local: &str, text: &str, attachments: Vec<String>, e: &str) -> Vec<Effect> {
+        let here = self.sel.as_deref() == Some(local);
+        if here {
+            self.sel = None;
+            self.open = None;
+            self.mode_touched = false;
+        }
+        let back = self.composer.is_empty();
+        if back {
+            self.composer.set(text);
+            self.composer.attachments = attachments;
+        }
+        if here || back {
+            self.new_task = true;
+            self.screen = None;
+            self.focus = Zone::Composer;
+        }
+        let said = match unreachable(e) {
+            Some(plain) if back => plain,
+            Some(_) => format!("Didn't start \"{}\": wisp isn't answering", text.lines().next().unwrap_or_default()),
+            None => format!("Didn't start: {e}"),
+        };
+        self.toast(said, true);
+        if here { vec![Effect::Watch(None)] } else { Vec::new() }
+    }
+
     pub fn done(&mut self, then: Then, got: std::result::Result<Value, String>) -> Vec<Effect> {
         match (then, got) {
             // no agents list: New task offers Auto only
@@ -1185,7 +1329,7 @@ impl App {
                 }
                 self.mentions.insert(kind, items);
             }
-            (Then::Created(local), got) => {
+            (Then::Created(local, text, attachments), got) => {
                 self.tasks.rows.remove(&local);
                 match got {
                     Ok(v) => {
@@ -1199,12 +1343,7 @@ impl App {
                         self.sel = None;
                         return self.select(Some(id));
                     }
-                    Err(e) => {
-                        self.toast(format!("Didn't start: {e}"), true);
-                        self.sel = None;
-                        let first = self.order().first().cloned();
-                        return self.select(first);
-                    }
+                    Err(e) => return self.not_started(&local, &text, attachments, &e),
                 }
             }
             (Then::Sent(local), got) => {
@@ -1212,10 +1351,12 @@ impl App {
                 let (_, text) = self.sending.remove(i);
                 if let Err(e) = got {
                     // refused: what was written comes back, nothing lost
-                    if self.composer.is_empty() {
+                    let back = self.composer.is_empty();
+                    if back {
                         self.composer.set(&text);
                     }
-                    self.toast(format!("Not sent: {e}"), true);
+                    let said = unreachable(&e).filter(|_| back).unwrap_or_else(|| format!("Not sent: {e}"));
+                    self.toast(said, true);
                 }
             }
             (Then::Stopped(id), got) => {

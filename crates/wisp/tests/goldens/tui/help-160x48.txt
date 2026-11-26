@@ -12,8 +12,8 @@
                               │   j k  ↑ ↓                move                                                                   │
                               │   Enter  l                open the task                                                          │
                               │   n                       new task                                                               │ame constant, so the two
-                              │   i                       reply to the selected task                                             │
-                              │   /                       search                                                                 │
+                              │   i                       reply to the selected task (none: start one)                           │
+                              │   /                       search: ↑ ↓ between the matches, Enter opens one                       │
                               │                                                                                                  │
                               │ THE TASK                                                                                         │
                               │   i  Enter                write (the composer)                                                   │
