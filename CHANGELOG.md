@@ -32,6 +32,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Changes: **Show more lines** on a very long diff now adds 1,000 lines per click and says how many are left, instead of showing the whole file at once and freezing the panel. Preview finds the app's address once as its output comes, so it keeps working after a megabyte of logs, and each request no longer re-reads the terminal's output. ⌘K and the project counts look up each task's project faster, and the server opens faster on a long event log.
 - Triggers: a trigger whose run was stopped, whose task was deleted, or whose target is a workflow or a crew member now runs again on its next event. A follow-up that interrupts the run's turn no longer counts as its end, so a second run no longer starts beside it. Before, it said "skipped: already running" for good. A run whose end wisp never heard is let go at the next check, about 15 seconds later.
 - Triggers: two triggers that fire on each other's runs now stop after three rounds, as a trigger on its own tasks does. A trigger whose target is a workflow no longer fires on the workflow's own steps.
 - Triggers: jobs queued outside a trigger's hours now wait for the hours. A trigger set to run one job at a time (or N at a time) now starts its queued jobs one (or N) at a time. A paused or switched-off trigger keeps its queue.

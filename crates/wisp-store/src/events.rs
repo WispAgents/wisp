@@ -132,14 +132,47 @@ pub(crate) fn trim_on(db: &Connection, now: i64, keep_ms: i64, keep_rows: i64) -
         return Ok(0);
     }
     let a = db.execute("DELETE FROM event WHERE seq <= ?1 AND seq < ?2", [max - keep_rows, max])?;
-    // oldest first: stop at the first row young enough (rowid order is time order)
-    let cut: Option<i64> =
-        db.query_row("SELECT seq FROM event WHERE at >= ?1 ORDER BY seq LIMIT 1", [now - keep_ms], |r| r.get(0)).optional()?;
+    let cut = first_seq_at_or_after(db, now - keep_ms)?;
     let b = match cut {
         Some(s) => db.execute("DELETE FROM event WHERE seq < ?1 AND seq < ?2", [s, max])?,
         None => db.execute("DELETE FROM event WHERE seq < ?1", [max])?,
     };
     Ok(a + b)
+}
+
+/// The first seq whose row was appended at `at` or later, none when every row is older. Rowid order is time order, so
+/// it's a binary search on seq: about 20 rowid lookups for 1 M rows. `at` has no index, and `WHERE at >= ? ORDER BY
+/// seq LIMIT 1` walked the table from its oldest row (perf-r1 #4: at every open, before the first response).
+pub(crate) fn first_seq_at_or_after(db: &Connection, at: i64) -> Result<Option<i64>> {
+    // one aggregate per query: SQLite reads min or max off the rowid's ends only when it's alone; together they scan
+    let min: Option<i64> = db.query_row("SELECT min(seq) FROM event", [], |r| r.get(0))?;
+    let max: Option<i64> = db.query_row("SELECT max(seq) FROM event", [], |r| r.get(0))?;
+    let (Some(mut lo), Some(mut hi)) = (min, max) else { return Ok(None) };
+    // the first row at or after `seq` (seqs have gaps once trimmed or rolled back), and when it was appended
+    let mut probe = db.prepare_cached("SELECT seq, at FROM event WHERE seq >= ?1 ORDER BY seq LIMIT 1")?;
+    let mut first_from =
+        |seq: i64| -> Result<Option<(i64, i64)>> { Ok(probe.query_row([seq], |r| Ok((r.get(0)?, r.get(1)?))).optional()?) };
+    if first_from(hi)?.is_none_or(|(_, t)| t < at) {
+        return Ok(None);
+    }
+    // the smallest seq from which the next row is young enough
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if first_from(mid)?.is_some_and(|(_, t)| t >= at) {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    Ok(first_from(lo)?.map(|(s, _)| s))
+}
+
+/// The dedupe keys appended in the 24 h before `now`, with when each was.
+fn recent_keys(db: &Connection, now: i64) -> Result<Vec<(String, String, i64)>> {
+    let Some(from) = first_seq_at_or_after(db, now - DEDUPE_MS)? else { return Ok(Vec::new()) };
+    let mut s = db.prepare("SELECT type, key, at FROM event WHERE key IS NOT NULL AND seq >= ?1")?;
+    let v = s.query_map([from], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(v)
 }
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<StoredEvent> {
@@ -166,11 +199,7 @@ impl Store {
     /// At open: the dedupe keys of the last 24 h, and a first trim.
     pub(crate) fn init_events(&self) -> Result<()> {
         let now = self.shared.clock.now_ms();
-        let keys: Vec<(String, String, i64)> = self.read(|r| {
-            let mut s = r.db.prepare("SELECT type, key, at FROM event WHERE key IS NOT NULL AND seq >= coalesce((SELECT seq FROM event WHERE at >= ?1 ORDER BY seq LIMIT 1), 9223372036854775807)")?;
-            let v = s.query_map([now - DEDUPE_MS], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
-            Ok(v)
-        })?;
+        let keys = self.read(|r| recent_keys(r.db, now))?;
         {
             let mut recent = lock(&self.shared.log.recent);
             for (t, k, at) in keys {
@@ -448,5 +477,94 @@ impl EventLog for Store {
             .await
             .map_err(|e| wire(&e))
         })
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn log() -> Connection {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(SQL).unwrap();
+        db
+    }
+
+    /// `(seq, at, key)` rows, as `append_on` would leave them.
+    fn put(db: &Connection, rows: &[(i64, i64, Option<&str>)]) {
+        let mut st =
+            db.prepare("INSERT INTO event (seq, type, plugin, key, root, at, data) VALUES (?1, 't', 'p', ?3, 'r', ?2, x'7b7d')").unwrap();
+        for (seq, at, key) in rows {
+            st.execute(params![seq, at, key]).unwrap();
+        }
+    }
+
+    /// What the lookup was: a walk from the oldest row.
+    fn walk(db: &Connection, at: i64) -> Option<i64> {
+        db.query_row("SELECT seq FROM event WHERE at >= ?1 ORDER BY seq LIMIT 1", [at], |r| r.get(0)).optional().unwrap()
+    }
+
+    #[test]
+    fn events_boundary_is_found_on_empty_old_new_exact_and_gapped_logs() {
+        let db = log();
+        assert_eq!(first_seq_at_or_after(&db, 0).unwrap(), None, "empty");
+        put(&db, &[(1, 100, None), (2, 200, None), (3, 300, None), (4, 300, None), (5, 400, None)]);
+        assert_eq!(first_seq_at_or_after(&db, 500).unwrap(), None, "every row older");
+        assert_eq!(first_seq_at_or_after(&db, 50).unwrap(), Some(1), "every row newer");
+        assert_eq!(first_seq_at_or_after(&db, 300).unwrap(), Some(3), "an exact match: the first with it");
+        assert_eq!(first_seq_at_or_after(&db, 301).unwrap(), Some(5));
+        // trimmed and rolled back: gaps in seq
+        db.execute("DELETE FROM event WHERE seq IN (1, 3)", []).unwrap();
+        put(&db, &[(9, 500, None), (20, 600, None)]);
+        for at in [0, 100, 150, 200, 250, 300, 301, 400, 450, 500, 600, 601] {
+            assert_eq!(first_seq_at_or_after(&db, at).unwrap(), walk(&db, at), "at {at}");
+        }
+        let single = log();
+        put(&single, &[(7, 10, None)]);
+        assert_eq!(first_seq_at_or_after(&single, 10).unwrap(), Some(7));
+        assert_eq!(first_seq_at_or_after(&single, 11).unwrap(), None);
+    }
+
+    #[test]
+    fn events_dedupe_keys_read_at_open_are_the_old_querys() {
+        let db = log();
+        let now = 10 * DEDUPE_MS;
+        let rows: Vec<(i64, i64, Option<String>)> =
+            (1..=400).map(|i| (i, now - 2 * DEDUPE_MS + i * (DEDUPE_MS / 100), (i % 3 != 0).then(|| format!("k{}", i % 50)))).collect();
+        let rows: Vec<(i64, i64, Option<&str>)> = rows.iter().map(|(s, a, k)| (*s, *a, k.as_deref())).collect();
+        put(&db, &rows);
+        let old: Vec<(String, String, i64)> = db
+            .prepare("SELECT type, key, at FROM event WHERE key IS NOT NULL AND seq >= coalesce((SELECT seq FROM event WHERE at >= ?1 ORDER BY seq LIMIT 1), 9223372036854775807)")
+            .unwrap()
+            .query_map([now - DEDUPE_MS], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let new = recent_keys(&db, now).unwrap();
+        assert!(!old.is_empty() && old.len() < rows.len(), "a mixed log: some in the last 24 h, some older");
+        assert_eq!(new, old);
+        assert_eq!(recent_keys(&db, 100 * DEDUPE_MS).unwrap(), Vec::new(), "nothing in the last 24 h");
+    }
+
+    /// The old query walked every row older than the boundary; the search looks at ~20.
+    #[test]
+    fn events_boundary_lookup_is_a_few_rowid_probes_not_a_table_walk() {
+        let db = log();
+        let n: i64 = 1_000_000;
+        db.execute_batch("BEGIN").unwrap();
+        put(&db, &(1..=n).map(|i| (i, i * 10, None)).collect::<Vec<_>>());
+        db.execute_batch("COMMIT").unwrap();
+        let at = (n - 10) * 10; // the last day's: almost every row is older
+        let t = std::time::Instant::now();
+        let found = first_seq_at_or_after(&db, at).unwrap();
+        let fast = t.elapsed();
+        let t = std::time::Instant::now();
+        let walked = walk(&db, at);
+        let slow = t.elapsed();
+        assert_eq!(found, Some(n - 10));
+        assert_eq!(found, walked);
+        assert!(fast < std::time::Duration::from_millis(5), "{fast:?} (the walk: {slow:?})");
+        assert!(fast < slow, "{fast:?} vs the walk's {slow:?}");
     }
 }

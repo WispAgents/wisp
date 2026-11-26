@@ -254,6 +254,44 @@ test('large_files_cap_rows_and_call_comment_marks_once_per_file_not_per_line', (
   expect(marksCalls).toBe(1);
 });
 
+// perf-r1 #3: Show more lines revealed the whole diff in one mount (10,249 <tr>, ~0.5 s for a 10k-line file); it now
+// adds a step at a time, saying how many are left, until every line shows
+test('show_more_lines_reveals_a_huge_diff_in_steps_until_every_line_shows', () => {
+  const rows: ChangeRow[] = Array.from({ length: 10_000 }, (_, i) => ({ op: '+', text: `line ${i + 1}`, b: i + 1 }));
+  const file: ChangeFile = { path: 'huge.ts', status: 'M', add: 10_000, del: 0, binary: false, revertable: true, rows };
+  const host = mount(() => (
+    <ChangesList
+      files={[file]}
+      labels={{ ...L, showMore: (n, left) => (left > n ? `Show ${n} more lines (${left} left)` : `Show ${n} more lines`) }}
+      open={() => true}
+      viewed={() => false}
+      onToggle={() => {}}
+      onViewed={() => {}}
+      allOpen
+      onAll={() => {}}
+      onRevertHunk={() => {}}
+    />
+  ));
+  const more = (): HTMLButtonElement | null => host.querySelector<HTMLButtonElement>('[data-part="panel.changes.moreRows"]');
+  const lines = (): number => host.querySelectorAll('[data-kit="cx-line"]').length;
+  expect(lines()).toBe(300);
+  expect(more()?.textContent).toBe('Show 1000 more lines (9700 left)');
+  const at = performance.now();
+  more()?.click();
+  const ms = performance.now() - at;
+  expect(host.querySelectorAll('tr').length).toBeLessThanOrEqual(1_300 + 2);
+  expect(lines()).toBe(1_300);
+  expect(ms).toBeLessThan(150);
+  // the rows already shown stay where they are: only the new ones mount
+  const first = host.querySelector('[data-kit="cx-line"]');
+  more()?.click();
+  expect(host.querySelector('[data-kit="cx-line"]')).toBe(first);
+  for (let i = 0; i < 20 && more(); i++) more()?.click();
+  expect(lines()).toBe(10_000);
+  expect(more()).toBeNull();
+  expect(host.querySelector('[data-part="panel.changes.revertHunk"]')).not.toBeNull();
+});
+
 test('file_rows_key_by_path_so_updating_files_patches_in_place_without_remounting_diffs', () => {
   const [files, setFiles] = createSignal<ChangeFile[]>([FILE]);
   const host = mount(() => (
