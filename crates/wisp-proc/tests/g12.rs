@@ -4,8 +4,8 @@
 //!
 //!   cargo test -p wisp-proc --test g12 -- --ignored --nocapture      # the gate: 1,000 runs
 //!   cargo test -p wisp-proc --test g12                               # 40 runs, in every test run
-#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::panic, clippy::cast_precision_loss, reason = "a test")]
+#![cfg(unix)]
 
 mod common;
 
