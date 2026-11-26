@@ -5,10 +5,11 @@
 // user's, how many of the most it keeps, with whose it is, Open its task, Sign in to Codex there (its own device
 // login, followed on its row), and Delete. The list is live: a sandbox's machine row landing or going, and its link's
 // state, show as they happen; a refusal shows where it happened, never only in a toast.
-import { For, Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, type JSX } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createResource, createSignal, on, onCleanup, type JSX } from 'solid-js';
 import { entityKey, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Callout, ForKeyed, IconButton, Inline, Input, Meter, SettingsGroup, SettingsRow, Stack, Text, useSignal } from '@wisp/ui';
+import { Button, Callout, ForKeyed, IconButton, Inline, Input, Meter, SettingsGroup, SettingsRow, Skeleton, Stack, Text, useSignal } from '@wisp/ui';
+import { Confirm, type Ask } from './Confirm.tsx';
 import {
   claudeBegin,
   claudeCode,
@@ -57,7 +58,18 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
   const shell = useShell();
   const peer = c.home as PeerId;
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
-  const [data, { mutate, refetch }] = createResource(() => c.run(info, { peer }).catch((): Info | undefined => undefined));
+  // why sandbox.info failed, kept: a pending or failed answer isn't "not signed in, none yet" (UI QA r1)
+  const [failed, setFailed] = createSignal<string | undefined>(undefined);
+  const [data, { mutate, refetch }] = createResource(() =>
+    c.run(info, { peer }).then(
+      (d) => (setFailed(undefined), d),
+      (e: unknown): Info | undefined => (setFailed(e instanceof Error ? e.message : String(e)), undefined),
+    ),
+  );
+  const retryInfo = (): void => {
+    setFailed(undefined);
+    void refetch();
+  };
   const claudeOn = (): boolean => !!data()?.logins.includes('claude');
   // the Claude sign-in: its link, then the code
   const [flow, setFlow] = createSignal<ClaudeSignIn | undefined>(undefined);
@@ -215,8 +227,11 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
     void c.run(codexLogin, { peer: sbPeer as PeerId }).then(follow, fail);
   };
 
+  // Delete asks first (Confirm): only its Delete drops the sandbox
+  const [asking, setAsking] = createSignal<Ask | undefined>(undefined);
+  const askRemove = (s: Listed): void => void setAsking({ name: s.name, owner: ownerWords(s.owner, say, crewName), run: () => remove(s) });
   const used = (): number => data()?.used ?? rows().length;
-  return (
+  const pane = (): JSX.Element => (
     <>
       <Text as="p" tone="muted" part="sandbox.lede">
         {t('sandbox.lede')}
@@ -407,13 +422,13 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
                             aria-label={say('sandbox.list.remove', {
                               name: s().name,
                             })}
-                            onClick={() => remove(s())}
+                            onClick={() => askRemove(s())}
                           >
                             {t('sandbox.list.delete')}
                           </Button>
                         }
                       >
-                        <IconButton icon="trash" size="sm" variant="ghost" label={say('sandbox.list.remove', { name: s().name })} onClick={() => remove(s())} />
+                        <IconButton icon="trash" size="sm" variant="ghost" label={say('sandbox.list.remove', { name: s().name })} onClick={() => askRemove(s())} />
                       </Show>
                     </Inline>
                   }
@@ -431,6 +446,35 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
           </ForKeyed>
         </Show>
       </SettingsGroup>
+      <Confirm ask={asking()} onClose={() => setAsking(undefined)} />
     </>
+  );
+  // the pane once sandbox.info has answered; until then a skeleton, and why when it couldn't, with Try again
+  return (
+    <Switch
+      fallback={
+        <Stack gap="3" part="sandbox.loading">
+          <Skeleton width="3/4" />
+          <Skeleton shape="block" width="full" />
+          <Skeleton shape="block" width="full" />
+        </Stack>
+      }
+    >
+      <Match when={failed()}>
+        {(why) => (
+          <Callout tone="bad" title={t('sandbox.info.failed')} part="sandbox.info.error">
+            <Stack gap="2">
+              <Text size="sm">{why()}</Text>
+              <span>
+                <Button size="sm" variant="secondary" icon="rotate" onClick={retryInfo} part="sandbox.info.retry">
+                  {t('sandbox.retry')}
+                </Button>
+              </span>
+            </Stack>
+          </Callout>
+        )}
+      </Match>
+      <Match when={data()}>{pane()}</Match>
+    </Switch>
   );
 }

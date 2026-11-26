@@ -40,6 +40,8 @@
     line-height: var(--lh-loose); color: var(--ink-2); white-space: pre; overflow-wrap: normal; tab-size: 4;
   }
   [data-kit='code-pre'][data-wrap] { white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* `lines`: at most that many lines tall, the rest a scroll away (a long log under a page's next step) */
+  [data-kit='code-pre'][data-lines] { max-block-size: calc(var(--k-lines) * 1lh + 2 * var(--space-6)); overflow: auto; }
   [data-kit='code-pre']:focus-visible { outline-offset: calc(-1 * var(--size-ring)); border-radius: var(--radius-lg); }
   [data-tk='k'] { color: var(--tk-k); }
   [data-tk='s'] { color: var(--tk-s); }

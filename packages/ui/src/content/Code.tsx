@@ -1,7 +1,7 @@
 // Code: an inline chip (`<Code>npm test</Code>`) or a block (`<Code block lang="ts">…</Code>`)
 // that scrolls sideways rather than wrap, with a small highlighter. The text is rendered as
 // text, so code that looks like HTML stays code.
-import { For, Show, createMemo, type JSX } from 'solid-js';
+import { For, Show, createEffect, createMemo, type JSX } from 'solid-js';
 import { CopyButton } from '../blocks/content-copy.tsx';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import { highlight } from './highlight.ts';
@@ -21,10 +21,19 @@ export interface CodeProps extends KitProps {
   readonly plain?: boolean;
   /** Block only: a head row with the language and a Copy button (a fenced block in markdown). */
   readonly copy?: boolean;
+  /** Block only: at most this many lines tall; the rest scrolls inside it. */
+  readonly lines?: number;
+  /** Block only: shown scrolled to its end (a log, whose last lines say what went wrong). */
+  readonly tail?: boolean;
 }
 
 function CodeBlock(props: CodeProps & { readonly partName: PartName }): JSX.Element {
   const tokens = createMemo(() => (props.plain ? [{ kind: null, text: props.children ?? '' }] : highlight(props.children ?? '', props.lang)));
+  let pre: HTMLPreElement | undefined;
+  createEffect(() => {
+    tokens();
+    if (props.tail && pre) pre.scrollTop = pre.scrollHeight;
+  });
   return (
     <figure id={props.id} data-kit="code-block" data-part={props.partName}>
       <Show when={props.title}>
@@ -41,7 +50,14 @@ function CodeBlock(props: CodeProps & { readonly partName: PartName }): JSX.Elem
         </div>
       </Show>
       {/* Focusable so a keyboard can scroll a long line into view. */}
-      <pre data-kit="code-pre" data-wrap={flag(props.wrap)} tabIndex={0}>
+      <pre
+        ref={pre}
+        data-kit="code-pre"
+        data-wrap={flag(props.wrap)}
+        data-lines={props.lines}
+        style={props.lines ? { '--k-lines': String(props.lines) } : undefined}
+        tabIndex={0}
+      >
         <code data-lang={props.lang || undefined}>
           <For each={tokens()}>{(tk) => (tk.kind ? <span data-tk={tk.kind}>{tk.text}</span> : tk.text)}</For>
         </code>

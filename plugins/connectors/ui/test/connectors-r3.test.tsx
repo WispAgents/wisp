@@ -66,3 +66,13 @@ test('show_hidden_lists_what_not_now_hid_so_it_can_still_be_added', async () => 
   document.querySelector<HTMLElement>('[data-part="connectors.review.add"]')?.click();
   expect(added).toEqual(['docs']);
 });
+
+// UI QA r1: the notes were cut with "…" and had no title, so on a phone the reason (its own server, SSE) couldn't be
+// read. Each note is the whole sentence, wrapping as it needs.
+test('a_rows_notes_wrap_whole_instead_of_being_cut', () => {
+  const name = 'a-connector-with-a-rather-long-name-that-would-not-fit-on-a-phone';
+  const host = mount(() => <RowNotes connector={{ name, own: ['claude'], cant_reach: ['codex'] }} names={new Map()} />);
+  const notes = [...host.querySelectorAll('[data-part="connectors.row.note"]')];
+  expect(notes.map((n) => n.textContent)).toEqual([`Claude Code uses its own ${name}`, "Codex can't reach an SSE server, so it goes without"]);
+  for (const n of notes) expect(n.hasAttribute('data-truncate')).toBe(false);
+});

@@ -18,6 +18,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **An agent can only delete or re-own its own task's sandboxes** (ADR-0136). `sandbox.drop` and `sandbox.own` from an agent reached any sandbox, another task's included; now they're held to the agent's own task, and a delegate's sandbox still holding work is yours to delete.
 - **Sandbox env vars, Claude's code and Sign out say why they failed, where it happened.** A name the grid refuses (starting with a digit, `PATH`, `HOME`, `WISP_…`, `LD_…`) is said before it's sent; a variable the grid turned down comes back into its inputs with the grid's words under them, and one whose removal failed comes back too. A refused Claude code and a failed Sign out show their error instead of nothing.
+- **Deleting a sandbox asks first.** Settings → Computers → Sandboxes' trash opens a confirm that names the sandbox and whose it is, and warns that what wasn't brought back from it is lost; only Delete drops it (Cancel, Escape or a click outside keep it).
+- **The Sandboxes pane says when it can't reach your sandboxes.** While it loads it shows a skeleton, and when the grid doesn't answer it says why with Try again, instead of "Not signed in" and "None now" as if nothing were set up.
+- **A failed sandbox setup's log fits on the page.** The end of what `.wisp/sandbox.sh` said is a dozen lines tall, scrolled to the error, so Open its task stays in view on a phone.
+- **A connector's notes wrap.** "Codex uses its own …" and "can't reach an SSE server" show whole on narrow screens instead of being cut with "…".
+- **Settings rows:** a meter as a row's control keeps its width (it drew 0px wide), and an empty notes band under a row no longer draws a stray line.
 
 ## [1.0.0-alpha.17] - 2026-11-26
 

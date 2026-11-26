@@ -69,5 +69,10 @@
   "sandbox.row.preparing": "Preparing the sandbox…",
   "sandbox.row.signin": "Sign in to Claude to start",
   "sandbox.row.failed": "Didn't start: {why}",
-  "sandbox.row.dismiss": "Dismiss {name}"
+  "sandbox.row.dismiss": "Dismiss {name}",
+  "sandbox.confirm.title": "Delete {name}?",
+  "sandbox.confirm.body": "Whose it is: {owner}. Anything in it not yet brought back is lost, and this can't be undone.",
+  "sandbox.confirm.ok": "Delete",
+  "sandbox.confirm.cancel": "Cancel",
+  "sandbox.info.failed": "Couldn't reach your sandboxes"
 }

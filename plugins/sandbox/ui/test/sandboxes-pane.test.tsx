@@ -106,6 +106,10 @@ test('every_sandbox_the_grid_holds_is_listed_with_how_many_of_the_most_and_one_m
   expect(elsewhere.textContent).toContain('Not on this computer');
   expect(p.button('Sign in to Codex there', elsewhere), 'no peer to sign in on').toBeUndefined();
   p.button('Delete', elsewhere)!.click();
+  // Delete asks first (UI QA r1): only the confirm's Delete drops it
+  await until(() => document.querySelector('[data-part="sandbox.confirm.ok"]') !== null);
+  expect(p.calls.some((c) => c.id === 'sandbox.drop'), 'nothing dropped before the confirm').toBe(false);
+  document.querySelector<HTMLElement>('[data-part="sandbox.confirm.ok"]')!.click();
   expect(p.rows(), 'gone at once').toHaveLength(1);
   await until(() => p.calls.some((c) => c.id === 'sandbox.drop'));
   expect(p.calls.find((c) => c.id === 'sandbox.drop')?.args).toEqual({ peer: 'laptop', sandbox: 'bb' });
@@ -121,7 +125,8 @@ test('a_sandbox_machine_landing_going_or_changing_state_shows_without_a_refetch'
     }
     return {};
   });
-  await until(() => infos > 0);
+  // the pane shows once sandbox.info has answered (a skeleton until then, UI QA r1)
+  await until(() => infos > 0 && p.host.querySelector('[data-part="sandbox.loading"]') === null);
   p.lists.machines_peer([machine('m1', 'aa', 'Sandbox web'), { id: 'laptop:mac', body: { id: 'mac', name: 'Mac', data: { computer: 'c1' } } }]);
   p.lists.machines_status([{ id: 'laptop:m1', body: { id: 'm1', state: 'online' } }]);
   expect(p.rows()).toHaveLength(1);
@@ -200,5 +205,71 @@ test('an_env_var_the_grid_refuses_comes_back_into_its_inputs_with_why_and_a_bad_
   expect(p.host.querySelectorAll('[data-part="sandbox.env.row"]'), 'and gone again').toHaveLength(0);
   expect(p.host.querySelector('[data-part="sandbox.env.error"]')?.textContent).toContain('40 variables at most');
   expect(p.calls.filter((c) => c.id === 'sandbox.env')).toHaveLength(1);
+  p.stop();
+});
+
+// UI QA r1: the trash dropped a sandbox at once, with no question, and what wasn't brought back from it went too; and
+// while sandbox.info was on its way, or when it failed, the pane said "Not signed in", "None yet" and "None now" as if
+// nothing were set up. Delete asks first (naming the sandbox and whose it is); the pane shows a skeleton until it
+// knows, and why it couldn't know, with Try again.
+const q = (sel: string): HTMLElement | null => document.querySelector<HTMLElement>(sel);
+const emptyRows = (): number =>
+  document.querySelectorAll('[data-part="sandbox.list.none"], [data-part="sandbox.env.none"], [data-part="sandbox.claude"]').length;
+const drops = (calls: { id: string }[]): number => calls.filter((c) => c.id === 'sandbox.drop').length;
+
+test('delete_asks_first_naming_the_sandbox_and_cancel_keeps_it', async () => {
+  const p = mount(async (id) => (id === 'sandbox.info' ? { ...base, sandboxes: [web] } : {}));
+  await until(() => p.rows().length === 1);
+  q('[data-part="sandbox.row"] [aria-label="Delete Sandbox web"]')?.click();
+  await until(() => q('[data-part="sandbox.confirm"]') !== null);
+  const dialog = q('[data-part="sandbox.confirm"]');
+  expect(dialog, 'a confirm opens').not.toBeNull();
+  expect(dialog?.textContent).toContain('Sandbox web');
+  expect(drops(p.calls), 'nothing dropped yet').toBe(0);
+  q('[data-part="sandbox.confirm.cancel"]')?.click();
+  await until(() => q('[data-part="sandbox.confirm"]') === null);
+  expect(q('[data-part="sandbox.confirm"]')).toBeNull();
+  expect(p.rows(), 'still listed').toHaveLength(1);
+  expect(drops(p.calls)).toBe(0);
+  p.stop();
+});
+
+test('delete_drops_only_on_yes', async () => {
+  const p = mount(async (id) => (id === 'sandbox.info' ? { ...base, sandboxes: [web] } : {}));
+  await until(() => p.rows().length === 1);
+  q('[data-part="sandbox.row"] [aria-label="Delete Sandbox web"]')?.click();
+  await until(() => q('[data-part="sandbox.confirm.ok"]') !== null);
+  expect(q('[data-part="sandbox.confirm.ok"]')?.textContent).toBe('Delete');
+  q('[data-part="sandbox.confirm.ok"]')?.click();
+  await until(() => p.rows().length === 0);
+  expect(p.calls.filter((c) => c.id === 'sandbox.drop').map((c) => c.args['machine'])).toEqual(['m1']);
+  p.stop();
+});
+
+test('while_sandbox_info_is_on_its_way_the_pane_shows_a_skeleton_not_empty_rows', async () => {
+  const p = mount((id) => (id === 'sandbox.info' ? new Promise(() => undefined) : Promise.resolve({})));
+  await new Promise((r) => setTimeout(r, 0));
+  expect(q('[data-part="sandbox.loading"]')).not.toBeNull();
+  expect(emptyRows()).toBe(0);
+  expect(document.body.textContent).not.toContain('Not signed in');
+  p.stop();
+});
+
+test('sandbox_info_failing_says_why_and_try_again_brings_the_list', async () => {
+  let fail = true;
+  const p = mount(async (id) => {
+    if (id !== 'sandbox.info') return {};
+    if (fail) throw new Error('grid unreachable');
+    return { ...base, sandboxes: [web] };
+  });
+  await until(() => q('[data-part="sandbox.info.error"]') !== null);
+  expect(q('[data-part="sandbox.info.error"]')?.textContent).toContain('grid unreachable');
+  expect(emptyRows(), 'no "none" rows, no signed-out Sign in').toBe(0);
+  expect(q('[data-part="sandbox.loading"]')).toBeNull();
+  fail = false;
+  q('[data-part="sandbox.info.retry"]')?.click();
+  await until(() => p.rows().length === 1);
+  expect(p.calls.filter((c) => c.id === 'sandbox.info').length).toBeGreaterThanOrEqual(2);
+  expect(q('[data-part="sandbox.info.error"]')).toBeNull();
   p.stop();
 });
