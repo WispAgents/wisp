@@ -6,6 +6,7 @@ import type { PromptSuggest } from '@wisp/ui';
 import { useDerived } from '@wisp/ui/pure';
 import { ownerOf, type Json } from '@wisp/client';
 import type { PromptItem, PromptSourceDef, ShellContext } from '../contract.ts';
+import '../i18n/home.ts';
 
 export interface MenuAt {
   readonly trigger: '@' | '/';

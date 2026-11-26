@@ -46,6 +46,24 @@ describe('the strings split', () => {
     });
   }
 
+  // the shell's third part, Home's compose box's strings (en.home.json, i18n/home.ts): in neither half, and every module
+  // that names one imports its loader (on a desktop Home is the first screen; on the phone it loads with New task)
+  it('packages/shell/src: Home’s strings are in no half, and their users import i18n/home.ts', () => {
+    const dir = 'packages/shell/src';
+    const home = Object.keys(json(`${repo}${dir}/i18n/en.home.json`));
+    const halves = new Set([...eagerKeys(dir), ...Object.keys(json(`${repo}${dir}/i18n/en.lazy.json`))]);
+    expect(home.filter((k) => halves.has(k))).toEqual([]);
+    const set = new Set(home);
+    const missing = walk(`${repo}${dir}`)
+      .filter((f) => !f.endsWith('/i18n/home.ts'))
+      .filter((f) => {
+        const src = readFileSync(f, 'utf8');
+        return [...src.matchAll(/['"`]([a-z][\w-]*\.[\w.-]+)['"`]/g)].some((m) => set.has(m[1] ?? '')) && !/import '[./]*(i18n\/)?home\.ts';/.test(src);
+      })
+      .map((f) => f.slice(repo.length));
+    expect(missing).toEqual([]);
+  });
+
   // shell.tsx register() picks a catalogue's halves (namespace keys, full-id keys) from the keys there at start, and
   // registers nothing for an empty one: strings lazy.ts adds later show only through a half registered then
   for (const dir of owners.filter((d) => d.startsWith('plugins/'))) {

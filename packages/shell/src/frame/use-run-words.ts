@@ -6,6 +6,7 @@ import { useSignal } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { defaultModelName, defaultModels } from './default-models.ts';
 import { modelWords, runLabel } from './run-words.ts';
+import '../i18n/home.ts';
 
 /** What a run was given: its harness id, model id, thinking level; where it runs (its Default is named there). */
 export interface RunIds {

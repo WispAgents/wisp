@@ -23,5 +23,9 @@ wisp-store.workspace = true
 wisp-proc.workspace = true
 tokio.workspace = true
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+wisp-testkit.workspace = true
+
 [lints]
 workspace = true
