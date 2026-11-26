@@ -6,6 +6,7 @@ import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import { Wrap } from '../layout/Stack.tsx';
+import { CopyButton } from '../blocks/content-copy.tsx';
 import '../css/transcript.css';
 
 export interface TimelineProps extends KitProps {
@@ -55,6 +56,10 @@ export interface TimelineStepProps extends KitProps {
   readonly end?: JSX.Element;
   /** the step's kind, for plugins' restyling (`data-kind`) */
   readonly kind?: string;
+  /** what names this step in its turn (`data-anchor`): where Find brings a hit into sight. Additive. */
+  readonly anchor?: string;
+  /** what the opened detail's Copy (its top-right corner) copies: the text it shows. Without it, no Copy. Additive. */
+  readonly copy?: () => string;
 }
 
 function StepRow(props: TimelineStepProps & { readonly part: PartName }): JSX.Element {
@@ -101,7 +106,7 @@ function StepRow(props: TimelineStepProps & { readonly part: PartName }): JSX.El
 export function TimelineStep(props: TimelineStepProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.timeline.step';
   return (
-    <li data-kit="timeline-step" data-part={part()} data-kind={props.kind} data-tone={props.tone ?? 'neutral'} data-open={flag(props.expanded)}>
+    <li data-kit="timeline-step" data-part={part()} data-kind={props.kind} data-anchor={props.anchor} data-tone={props.tone ?? 'neutral'} data-open={flag(props.expanded)}>
       <Show
         when={props.detail && props.onToggle}
         fallback={
@@ -120,6 +125,14 @@ export function TimelineStep(props: TimelineStepProps): JSX.Element {
       <Show when={props.expanded && props.detail}>
         {(d) => (
           <div data-kit="timeline-detail" data-part={sub(part(), 'detail')}>
+            {/* first, so what follows it (the .env line, the output) keeps room for it at the corner */}
+            <Show when={props.copy}>
+              {(c) => (
+                <span data-kit="timeline-copy">
+                  <CopyButton part={sub(part(), 'copy')} text={c()} />
+                </span>
+              )}
+            </Show>
             {d()()}
           </div>
         )}
@@ -128,10 +141,10 @@ export function TimelineStep(props: TimelineStepProps): JSX.Element {
   );
 }
 
-export function TimelineMessage(props: KitProps & { readonly children?: JSX.Element; readonly time?: string; readonly timeTitle?: string }): JSX.Element {
+export function TimelineMessage(props: KitProps & { readonly children?: JSX.Element; readonly time?: string; readonly timeTitle?: string; readonly anchor?: string }): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.timeline.message';
   return (
-    <li data-kit="timeline-msg" data-part={part()}>
+    <li data-kit="timeline-msg" data-part={part()} data-anchor={props.anchor}>
       <span data-kit="timeline-dot" />
       <div data-kit="timeline-msg-body">{props.children}</div>
       <Show when={props.time}>

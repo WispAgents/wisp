@@ -1,6 +1,8 @@
 // The transcript's kit pieces (plugins/shell-task): the prompt bubble, a folded exchange, the
 // timeline of a turn, the live orb and the working panel.
 export { Bubble, type BubbleProps } from './Bubble.tsx';
+export { FindBar, type FindBarProps } from './FindBar.tsx';
+export { findRanges, markFind } from './find-mark.ts';
 export { Orb, type OrbProps } from './Orb.tsx';
 export {
   Timeline,

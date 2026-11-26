@@ -150,7 +150,9 @@
     padding: var(--space-4) var(--space-5); background: var(--bg-2); border-radius: var(--radius-sm); font-size: var(--fs-xs);
   }
   [data-kit='timeline-end-slot'] { flex: none; margin-left: var(--space-3); }
-  [data-kit='timeline-detail'] { grid-column: 1 / -1; min-width: 0; margin: var(--space-1) 0 var(--space-4) var(--space-8); animation: kit-rise var(--dur-base) var(--ease); }
+  [data-kit='timeline-detail'] { position: relative; grid-column: 1 / -1; min-width: 0; margin: var(--space-1) 0 var(--space-4) var(--space-8); animation: kit-rise var(--dur-base) var(--ease); }
+  /* a step's Copy: the detail's top-right corner, over the output's box (or the .env line), which keeps room for it */
+  [data-kit='timeline-copy'] { position: absolute; top: var(--space-2); right: var(--space-2); z-index: 1; }
   /* a step's output (v1 .tx-out): a mono box that wraps long lines and scrolls past 340px, never wider than the transcript */
   [data-kit='timeline-detail'] > pre {
     margin: 0; padding: var(--space-4) var(--space-5); max-height: var(--size-side); overflow: auto; border-radius: var(--radius-md);
@@ -158,6 +160,7 @@
     font-family: var(--mono); font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere;
   }
   [data-kit='timeline-step'][data-tone='bad'] > [data-kit='timeline-detail'] > pre { color: var(--bad); background: var(--del-bg); border-color: color-mix(in srgb, var(--bad) 22%, var(--line)); }
+  [data-kit='timeline-detail'] > [data-kit='timeline-copy'] + [data-kit='env-mask'], [data-kit='timeline-detail'] > [data-kit='timeline-copy'] + pre { padding-right: var(--space-9); }
   [data-kit='timeline-step'][data-tone='bad'] [data-kit='timeline-icon'], [data-kit='timeline-step'][data-tone='bad'] [data-kit='timeline-label'] { color: var(--bad); }
   [data-kit='timeline-step'][data-tone='warn'] [data-kit='timeline-icon'], [data-kit='timeline-step'][data-tone='warn'] [data-kit='timeline-label'] { color: var(--warn); }
   [data-kit='timeline-step'][data-tone='quiet'] [data-kit='timeline-label'] { color: var(--muted); }

@@ -503,6 +503,18 @@ export const unmasked = defineCommand<{ id: string; turnId: string; step?: numbe
   optimistic: 'none',
   pending: 'the Reveal button, pressed at once; the masked text stays until the value arrives',
 });
+/** Find in a task (R4-3, ADR-0133): the steps of the turns the window sent as stubs that hold the words, searched
+ *  on the server, masked as the wire masks them. */
+export const searchTask = defineCommand<
+  { id: string; query: string; turnIds?: readonly string[] },
+  { readonly hits: readonly { readonly turnId: string; readonly seq: number; readonly snippet: string }[]; readonly more?: boolean }
+>({
+  id: 'runtime.searchTask',
+  owner: (a) => a.id,
+  wire: (a) => ({ id: bare(a.id), query: a.query, ...(a.turnIds && { turnIds: a.turnIds.map(bare) }) }),
+  optimistic: 'none',
+  pending: "Find's count, which says it is still looking",
+});
 /** A `blocked` block's Allow & retry / Deny. */
 export const approveBlocked = defineCommand<{ id: string; turnId: string; allow: boolean }, unknown>({
   id: 'runtime.approveBlocked',

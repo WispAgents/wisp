@@ -8,6 +8,7 @@ export const ICONS = {
   ...FIRST_ICONS,
   skip: ['0 0 24 24', '<path d="M7 12h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'],
   'arrow-down': ['0 0 24 24', '<path d="M12 5v14m-5-5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'],
+  'arrow-up': ['0 0 24 24', '<path d="M12 19V5m-5 5l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'],
   download: ['0 0 24 24', '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'],
   minus: ['0 0 24 24', '<path d="M7 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'],
   arrow: ['0 0 24 24', '<path d="M4 12h15m-5-5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'],

@@ -38,6 +38,7 @@ import {
   type LauncherTool,
   type TaskPlaceChip,
   type TaskScroll,
+  type EnvReveal,
 } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { blockStrings } from '../block-strings.ts';
@@ -114,6 +115,7 @@ import { answerComments } from './answer-comments.ts';
 import { blockedOf, uploadPath, uploadUrl } from './answer-of.ts';
 import { peerMedia } from './media-src.ts';
 import { TASK_KEY, takePendingKey, type TaskKey } from './task-keys.ts';
+import { displayCombo } from '../keys.ts';
 import { usePromptMenu } from './prompt-menu.ts';
 import { useAttachments } from './attach.ts';
 import { attachAct } from './capture.ts';
@@ -127,6 +129,8 @@ import { isStub, turnOpener } from './turn-window.ts';
 import { NOTICE_KINDS, ledgerTurn } from './ledger-turns.ts';
 import type { LedgerTurn } from '@wisp/ui/pure';
 import { envReveal } from './env-reveal.ts';
+import { stepOpen, type StepOpen } from './step-open.ts';
+import { findEnvOf, type FindHit, type FindTurn } from './task-find.ts';
 import { runPick, runWords, taskRunner, useDefaultWords, type Runner } from './runner.ts';
 import { rowUsage, taskUsage, type TurnStatsLike } from './task-usage.ts';
 import { TELEMETRY_TOPIC, feedbackOn } from './feedback-on.ts';
@@ -138,6 +142,8 @@ import { plusTool } from './composer-plus.ts';
 const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
 // a side discussion's proposed changes (audit user-side-edits-for-approval): their own chunk, loaded with the first one
 const Proposals = lazy(() => import('./Proposals.tsx'));
+// Find in task (mod+f, R4-3): its own chunk, loaded when it first opens
+const TaskFind = lazy(() => import('./TaskFind.tsx'));
 import { capOf } from './cap.ts';
 import { shipsFromWorktree } from './ship-gate.ts';
 import { unreadLeave } from './unread-leave.ts';
@@ -642,6 +648,93 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     setOpenTurn(id);
     if (id !== undefined && turns().find((x) => x.id === id && isStub(x.body))) opener.open(id);
   };
+  // each turn's open steps and clusters (step-open.ts), made once per turn for the page's life: its live and finished
+  // transcripts share it, and Find opens a hit's step through it before the turn is drawn
+  const opens = new Map<string, StepOpen>();
+  const openOf = (turnId: string): StepOpen => opens.get(turnId) ?? ((o) => (opens.set(turnId, o), o))(stepOpen());
+  // what Find reads of a drawn turn: its .env Reveal and the rows its transcript draws (an undrawn one's are built)
+  const findEnvs = new Map<string, EnvReveal>();
+  const drawnRows = new Map<string, () => TranscriptStepRow[]>();
+  const [finding, setFinding] = createSignal(false);
+  // Copy turn as Markdown (R4-6): its serializer loads on the click; it copies the steps as the transcript shows them
+  // (.env outputs masked unless revealed) and the answer's markdown source
+  const copyTurn = (turn: TurnRow, b: TurnBody, prompt: string, steps: readonly TranscriptStepRow[], env: EnvReveal, here: (s: string) => string): void => {
+    const blocks = (b.presentation?.blocks ?? []) as readonly { readonly type: string; readonly text?: string }[];
+    const answer = turn.answer ?? (b as { text?: string }).text ?? blocks.filter((x) => x.type === 'markdown' && x.text).map((x) => x.text).join('\n\n');
+    void import('./turn-markdown.ts')
+      .then((m) =>
+        shell.platform.copy(
+          m.turnMarkdown({ prompt, steps, answer, env: findEnvOf(env), here, words: { prompt: t('shell.md.prompt'), steps: t('shell.md.steps'), answer: t('shell.md.answer') } }),
+        ),
+      )
+      .then((ok) => shell.toast.show(t(ok ? 'shell.task.copiedMarkdown' : 'shell.task.copyFailedMarkdown'), ok ? {} : { tone: 'error' }));
+  };
+  // Find in task (R4-3): every turn's rows as its transcript draws them; a stub's are the server's to search
+  const findTurns = (): FindTurn[] =>
+    turns().map((x) => {
+      const stub = isStub(x.body);
+      const env = findEnvs.get(x.id);
+      return { turnId: x.id, stub, steps: stub ? [] : (drawnRows.get(x.id)?.() ?? chatStepsOf(x, x.body, stepsOf(x.id))), ...(env && { env: findEnvOf(env) }) };
+    });
+  let findFrom: Element | null = null;
+  const openFind = (): void => {
+    if (finding()) {
+      // pressed again: back to its words
+      document.querySelector<HTMLInputElement>('[data-part="task.find.input"]')?.select();
+      return;
+    }
+    findFrom = document.activeElement;
+    setFinding(true);
+  };
+  const closeFind = (): void => {
+    setFinding(false);
+    if (findFrom instanceof HTMLElement && findFrom.isConnected) findFrom.focus({ preventScroll: true });
+    findFrom = null;
+  };
+  // a hit brought into sight: its turn shown (the ledger's, asked whole when a stub), the transcript on, its cluster and
+  // step opened, then scrolled to once drawn (a few frames at most: the ledger's turn mounts, the cluster opens)
+  const goFind = (hit: FindHit): Promise<Element | undefined> => {
+    if (!showStream()) setTaskTranscript(true);
+    if (!fold().shown.some((x) => x.id === hit.turnId) && openTurn() !== hit.turnId) openLedgerTurn(hit.turnId);
+    else if (turns().some((x) => x.id === hit.turnId && isStub(x.body))) opener.open(hit.turnId);
+    const id = hit.stepId;
+    if (id === undefined) return Promise.resolve(undefined);
+    openOf(hit.turnId).reveal(id);
+    return new Promise((done) => {
+      let tries = 0;
+      const look = (): void => {
+        const el = document.querySelector(`[data-kit="turn"][data-turn="${CSS.escape(hit.turnId)}"] [data-anchor="${CSS.escape(id)}"]`) ?? undefined;
+        if (el || ++tries > 8) {
+          el?.scrollIntoView({ block: 'center' });
+          return done(el);
+        }
+        requestAnimationFrame(look);
+      };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(look);
+      else look();
+    });
+  };
+  // a turn's inline steps (its transcript's rows) as Chat mode's Tool calls and Show thinking say; `turn` and `b` may be
+  // renderTurn's views of the row (through), read in its memo
+  // (its events given: a drawn turn reads its own memo of them, not every turn's)
+  const chatStepsOf = (turn: TurnRow, b: TurnBody, events: readonly EventRow[]): TranscriptStepRow[] => {
+    const blocks = b.presentation?.blocks ?? [];
+    return buildChatSteps(events, b.activity ?? [], {
+      chatMode: chat.chatMode(),
+      toolCalls: chat.toolCalls(),
+      showThinking: chat.showThinking(),
+      running: turn.status === 'running' || turn.status === 'starting',
+      // the answer as the agent wrote it is what its last message says; the last markdown block alone differs
+      // as soon as the answer carries a wisp block (it is cut around it), so raw answer/body.text and last markdown are tried
+      finalText: [
+        turn.answer ?? undefined,
+        (b as { text?: string }).text,
+        (b as { answer?: string }).answer,
+        finalMarkdownOf(blocks as readonly { readonly type: string; readonly text?: string }[]),
+      ],
+      notes: (b as { presentation?: { notes?: string } }).presentation?.notes,
+    });
+  };
   const noticeKind = (by: string): string => t((NOTICE_KINDS as readonly string[]).includes(by) || by === 'wisp' ? `shell.ledger.by.${by}` : 'shell.ledger.by.other', { by });
   // each row read once per row object: a patch to one turn re-reads that one (no full-list work per event, ADR-0011)
   const seen = new WeakMap<TurnRow, LedgerTurn>();
@@ -1045,6 +1138,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     // the head's bar keeps Changes, Ship, Done (docs/ux/2026-11-18-desktop.md #4): Transcript, Rerun and Open in are
     // here, with their keys, on every width
     own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: stepsShown() } });
+    // Find in task (R4-3): a phone has no ⌘F, so it is here too
+    own.push({ section: 'open', order: -25, entry: { value: 'find', label: t('shell.find.menu'), icon: 'search', keys: displayCombo('mod+f', shell.platform.apple).join('') } });
     if (!row()?.summary['sideOf'])
       own.push(
         { section: 'open', order: -20, entry: { value: 'rerun', label: t('shell.task.rerun'), icon: 'rerun', keys: '⇧R' } },
@@ -1116,6 +1211,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     if (v === 'next-task') stepTo(steps().next);
     else if (v === 'previous-task') stepTo(steps().previous);
     else if (v === 'transcript') toggleTranscript();
+    else if (v === 'find') openFind();
     else if (v === 'rerun') openRerun();
     else if (v === 'openIn') takeOver();
     else if (v === 'shell') side('shell');
@@ -1240,6 +1336,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const act = (e as CustomEvent<TaskKey>).detail;
     const did = ((): boolean => {
       if (act === 'transcript') toggleTranscript();
+      else if (act === 'find') openFind();
       else if (act === 'rerun' || act === 'fork' || act === 'archive' || act === 'delete') onMore(act);
       else if (act === 'openIn') takeOver();
       else if (act === 'shell') side('shell');
@@ -1534,23 +1631,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const quietSteps = createMemo(() => turnEvents().map((e) => ({ kind: e.kind ?? e.body?.kind, t: e.t, outAt: e.body?.outAt, call: e.body?.callId, output: e.body?.output })));
           const count = (k: string): number => steps().filter((a) => a.kind === k).length;
           const blocks = () => b.presentation?.blocks ?? [];
-          const streamSteps = createMemo(() =>
-            buildChatSteps(turnEvents(), b.activity ?? [], {
-              chatMode: chat.chatMode(),
-              toolCalls: chat.toolCalls(),
-              showThinking: chat.showThinking(),
-              running: turn.status === 'running' || turn.status === 'starting',
-              // the answer as the agent wrote it is what its last message says; the last markdown block alone differs
-              // as soon as the answer carries a wisp block (it is cut around it), so raw answer/body.text and last markdown are tried
-              finalText: [
-                turn.answer ?? undefined,
-                (b as { text?: string }).text,
-                (b as { answer?: string }).answer,
-                finalMarkdownOf(blocks() as readonly { readonly type: string; readonly text?: string }[]),
-              ],
-              notes: (b as { presentation?: { notes?: string } }).presentation?.notes,
-            }),
-          );
+          const streamSteps = createMemo(() => chatStepsOf(turn, b, turnEvents()));
+          drawnRows.set(turn.id, streamSteps);
+          onCleanup(() => drawnRows.get(turn.id) === streamSteps && drawnRows.delete(turn.id));
           const stubbed = () => isStub(b);
           const changes = () => b.ext?.['wisp.runtime']?.changes ?? b.changes ?? [];
           const figures = () => changeFigures(changes());
@@ -1561,6 +1644,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const comment = answerComments({ shell, client: (pl) => clients.client(pl), task: key, turn: turn.id, of: () => (turn.id === turns().at(-1)?.id ? undefined : sent.rest) });
           // what a step printed of a .env file: masked, revealed per task (env-reveal.ts)
           const env = envReveal(shell, key, `${turn.id}:`);
+          findEnvs.set(turn.id, env);
+          // what of it is open: one store for its live and its finished transcripts (step-open.ts)
+          const open = openOf(turn.id);
           // the working panel, made once for this turn and only while it runs, under the turn's own owner: made inside
           // the props' spread it was made again on every change of the task's row (its live line, ~3 a second while it
           // streams), so the panel and its Stop were taken down and put back each time (B31). Its words update in place.
@@ -1597,7 +1683,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const liveTx = (): JSX.Element =>
             (madeTx ??= runWithOwner(owner, () => (
               <Show when={showStream() && (!chat.chatMode() || streamSteps().length > 0)}>
-                <TurnTranscript steps={streamSteps()} changes={changes()} env={env} here={here} status={turn.status ?? ''} chat={chat.chatMode()} quiet={chat.chatMode() && !stepsShown()} answerCtx={turnAnswerCtx} t={t} />
+                <TurnTranscript steps={streamSteps()} changes={changes()} env={env} open={open} here={here} status={turn.status ?? ''} chat={chat.chatMode()} quiet={chat.chatMode() && !stepsShown()} answerCtx={turnAnswerCtx} t={t} />
               </Show>
             )));
           const working = (): JSX.Element =>
@@ -1656,6 +1742,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                           steps={streamSteps()}
                           changes={changes()}
                           env={env}
+                          open={open}
                           here={here}
                           status={turn.status ?? ''}
                           chat={chat.chatMode()}
@@ -1762,6 +1849,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     },
                   },
                   { id: 'fork', icon: 'fork', label: t('shell.task.fork'), part: 'turn.fork', act: { onClick: () => openFork(turn.id) } },
+                  // on the trail on a computer, in the answer's menu on a phone (R4-6)
+                  { id: 'copy-md', icon: 'copy', label: t('shell.task.copyMarkdown'), part: 'turn.copy-md', act: { onClick: () => copyTurn(turn, b, sent.rest, streamSteps(), env, here) } },
                 ]}
                 // a phone's answer menu (its ⋯ and a long-press, UX 2026-11-18 phone #8, QA r9 #2): Copy, Comment… on the
                 // block held, the tools above, and Good / Bad result (their buttons are on the trail already)
@@ -1848,6 +1937,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     <TurnsSkeleton />
                   }
                 >
+                  {/* Find in task (mod+f, R4-3): held over the turns as they scroll */}
+                  <Show when={finding()}>
+                    <TaskFind shell={shell} task={key} turns={findTurns} go={goFind} scope={() => bodyEl?.querySelector('[data-kit="turns"]') ?? bodyEl} onClose={closeFind} />
+                  </Show>
                   {/* the band over the turns (wisp.goal's): `shell.task:band`, the task's row as its session */}
                   <Slot input="shell.task:band" layout="stack" id={key} session={() => s() as never} />
                   {/* a phone has no details column: what's pinned to it goes over the turns instead */}
