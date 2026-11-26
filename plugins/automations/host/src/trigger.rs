@@ -8,10 +8,11 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use wisp_automations_api::commands as c;
 use wisp_automations_api::{Target, TriggerEvent, TriggerSpec};
+use wisp_automations_core::engine::Outcome;
 use wisp_kernel::{BoxFuture, Call, Ctx, Result, Setup, WireError};
 use wisp_resources_api::{KindInfo, Op, RESOURCE_KIND, Resource, ResourceKind, StoredKind, schema_of};
 
-use crate::engine::{Engine, Shared, from_envelope, outcome_of};
+use crate::engine::{Engine, Shared, Via, from_envelope, outcome_of};
 
 /// A webhook's body is capped at 1 MB (413 above it, ADR-0043 edge case 11).
 pub const WEBHOOK_MAX: usize = 1024 * 1024;
@@ -287,7 +288,36 @@ async fn on_event(ctx: Ctx, engine: Shared, env: Arc<wisp_kernel::EventEnvelope>
     match env.ty.as_str() {
         "task.finished" | "task.failed" => {
             if let Some(id) = &env.subject {
-                engine.ended(&ctx, id, outcome_of(&env.ty, &data), false, now).await;
+                engine.ended(&ctx, id, outcome_of(&env.ty, &data), Via::Turn, now).await;
+            }
+        }
+        // a stopped turn sends no `task.finished`: its run ended all the same (not a failure), or the trigger counted it
+        // running for ever and skipped every event after ("already running"). Only a final stop: a follow-up that
+        // interrupted the turn (`interrupted`), or one queued behind it, runs on in the same task, and ending the run here
+        // let `concurrency` start a second beside it. A crew member's stop ends it too (`crew.reported` comes only
+        // with `task.finished`/`task.failed`, so a stopped member's run was never freed).
+        "turn.ended"
+            if data.get("status").and_then(Value::as_str) == Some("stopped")
+                && data.get("interrupted").and_then(Value::as_bool) != Some(true) =>
+        {
+            if let Some(id) = data.get("sessionId").and_then(Value::as_str).or(env.subject.as_deref())
+                && !engine.still_going(&ctx, id).await
+            {
+                engine.ended(&ctx, id, outcome_of(&env.ty, &data), Via::Any, now).await;
+            }
+        }
+        // a workflow's run: its held task never runs a turn, so its end is the workflow's (failed unless done)
+        "workflow.ended" => {
+            // the run's id, as `workflows.run` answered it (its subject is the task it ran under: the same for a held run)
+            if let Some(id) = data.get("run").and_then(Value::as_str).or(env.subject.as_deref()) {
+                let state = data.get("state").and_then(Value::as_str).unwrap_or_default();
+                let o = Outcome {
+                    failed: state == "failed",
+                    stopped: state == "stopped",
+                    cost: data.get("costUsd").and_then(Value::as_f64).unwrap_or(0.0),
+                    ..Outcome::default()
+                };
+                engine.ended(&ctx, id, o, Via::Turn, now).await;
             }
         }
         "turn.held" => {
@@ -298,7 +328,7 @@ async fn on_event(ctx: Ctx, engine: Shared, env: Arc<wisp_kernel::EventEnvelope>
         }
         "crew.reported" => {
             if let Some(id) = data.get("sessionId").and_then(Value::as_str) {
-                engine.ended(&ctx, id, outcome_of(&env.ty, &data), true, now).await;
+                engine.ended(&ctx, id, outcome_of(&env.ty, &data), Via::Crew, now).await;
             }
         }
         _ => {}
@@ -319,19 +349,28 @@ fn core_glob(on: &str, ty: &str) -> bool {
     wisp_automations_core::engine::glob(on, ty)
 }
 
+/// What started the task an event is about (`trigger:<name>`, …), and how many causes deep it is: the deepest of the
+/// event's own `depth` (`trigger.fired` says it), the runs the triggers started (by its subject or its `session`), and
+/// the workflow run it's a step of (a step's own task was never started by a trigger, its run was). Each was 0 for a
+/// `trigger.fired` and any payload with `by`, so two triggers on each other's runs never stopped.
 async fn lineage(ctx: &Ctx, call: &Call, engine: &Engine, env: &wisp_kernel::EventEnvelope, data: &Value) -> (Option<String>, u32) {
+    let states = engine.states().await;
+    let depth_of = |id: &str| states.iter().filter_map(|(_, st)| st.depths.get(id).copied()).max().unwrap_or(0);
+    let said = data.get("depth").and_then(Value::as_u64).and_then(|d| u32::try_from(d).ok()).unwrap_or(0);
+    let task = env.subject.clone().or_else(|| data.get("session").and_then(Value::as_str).map(str::to_owned));
+    let mut depth = said.max(task.as_deref().map_or(0, depth_of));
     if env.ty == "trigger.fired" {
-        return (data.get("trigger").and_then(Value::as_str).map(|t| format!("trigger:{t}")), 0);
+        return (data.get("trigger").and_then(Value::as_str).map(|t| format!("trigger:{t}")), depth);
     }
-    if let Some(b) = data.get("by").and_then(Value::as_str) {
-        return (Some(b.to_owned()), 0);
-    }
-    let Some(subject) = &env.subject else { return (None, 0) };
+    let given = data.get("by").and_then(Value::as_str).map(str::to_owned);
+    let Some(subject) = task else { return (given, depth) };
     let spec =
         ctx.run::<wisp_runtime_api::commands::SpecOf>(call, wisp_runtime_api::commands::IdArgs { id: subject.as_str().into() }).await;
-    let by = spec.ok().and_then(|s| s.lineage.triggered_by);
-    let depth = engine.states().await.iter().filter_map(|(_, st)| st.depths.get(subject).copied()).max().unwrap_or(0);
-    (by, depth)
+    let lineage = spec.ok().map(|s| s.lineage).unwrap_or_default();
+    if let Some(run) = &lineage.workflow_run {
+        depth = depth.max(depth_of(run));
+    }
+    (given.or(lineage.triggered_by), depth)
 }
 
 fn now_of(ctx: &Ctx) -> Result<i64> {
@@ -477,6 +516,16 @@ pub fn register(s: &mut Setup, engine: &Shared) {
     s.contribute(&RESOURCE_KIND, k);
     let e = engine.clone();
     s.on_durable_any("engine", "*", move |ctx, _call, env| on_event(ctx, e.clone(), env));
+    // a deleted task's run ended, whatever its target (it says nothing else)
+    let e = engine.clone();
+    s.on::<wisp_runtime_api::events::SessionDeleted, _, _>(move |ctx, d| {
+        let e = e.clone();
+        async move {
+            let now = ctx.clock().map_or(0, |c| c.now_ms());
+            let o = Outcome { stopped: true, ..Outcome::default() };
+            e.ended(&ctx, d.id.as_str(), o, Via::Any, now).await;
+        }
+    });
     let hooks = engine.clone();
     s.route(wisp_kernel::http::Route {
         method: "POST",
@@ -536,6 +585,24 @@ fn spell_project(spec: &mut Value) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// What a tick makes of a run it counts as going: gone, idle (ended twice in a row, it's dropped), or going; a held
+    /// turn (the plan, a limit) is going, and an error reading it isn't taken for gone.
+    #[test]
+    fn a_tick_reads_a_run_as_gone_idle_or_going() {
+        use crate::engine::{RunLook, look_of};
+        use wisp_runtime_api::model::{Session, SessionState, Turn, TurnStatus};
+        let task = |state| Session { id: "t1".into(), state, ..Session::default() };
+        let turn = |status| Turn { id: "u1".into(), session_id: "t1".into(), status, ..Turn::default() };
+        assert_eq!(look_of(Err(&WireError::not_found("no task t1")), None), RunLook::Gone);
+        assert_eq!(look_of(Err(&WireError::unavailable("busy")), None), RunLook::Going);
+        assert_eq!(look_of(Ok(&task(SessionState::Running)), None), RunLook::Going);
+        assert_eq!(look_of(Ok(&task(SessionState::Review)), Some(&turn(TurnStatus::Held))), RunLook::Going, "held for the plan");
+        assert_eq!(look_of(Ok(&task(SessionState::Review)), Some(&turn(TurnStatus::Done))), RunLook::Idle);
+        let mut queued = task(SessionState::Review);
+        queued.queue.push(wisp_runtime_api::QueueItem::default());
+        assert_eq!(look_of(Ok(&queued), None), RunLook::Going, "something waits to run on it");
+    }
 
     /// Audit G11: `on: "every minute"` (no source) passed validate and apply, was stored "unavailable" and never fired.
     #[test]

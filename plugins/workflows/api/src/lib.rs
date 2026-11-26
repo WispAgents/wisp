@@ -154,6 +154,10 @@ pub struct RunArgs {
     /// false: the task isn't sent the result when the run ends (default true when the run belongs to a task)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notify: Option<bool>,
+    /// the trigger that started the run (`trigger:<name>`): its task and every step carry it as their lineage, so the
+    /// trigger never fires again on its own run's steps. Additive (2026-11-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub triggered_by: Option<String>,
 }
 
 /// `workflows.run`: the run's parent task.
