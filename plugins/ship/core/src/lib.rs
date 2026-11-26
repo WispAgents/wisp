@@ -9,6 +9,7 @@ pub mod follow;
 pub mod pr;
 pub mod recheck;
 pub mod slot;
+pub mod steward;
 pub mod text;
 pub mod time;
 pub mod write;

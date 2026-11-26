@@ -6,8 +6,7 @@ use tokio::sync::{oneshot, watch};
 use wisp_kernel::exec::windows_base_env;
 
 use super::{ProcessHost, lock, preview_template};
-use crate::boxhost::BoxState;
-use crate::error::{Result, bad};
+use crate::error::{GridError, Result, bad};
 use crate::rows::BoxUser;
 
 /// A local child process wrapped like [`crate::boxd::BoxdRun`]: its exit is watched on a
@@ -162,22 +161,23 @@ impl ProcessHost {
     }
 
     /// Waits for the started box to answer `/api/health`: its process and the port it answers on, or why it never came
-    /// up (it stopped as it started, it took longer than `startMs`, the grid began stopping). Either way but up, it's
-    /// marked stopped. `port` 0: a process box binds its own, read from its `server.json` once it's written.
-    pub(super) async fn healthy(&self, user: &BoxUser, port: u16, child: BoxProc) -> Result<(BoxProc, u16)> {
+    /// up (it stopped as it started, it took longer than `startMs`, the grid began stopping) with the event that says
+    /// so; `start` marks it stopped then. `port` 0: a process box binds its own, read from its `server.json` once it's
+    /// written.
+    pub(super) async fn healthy(
+        &self,
+        user: &BoxUser,
+        port: u16,
+        child: BoxProc,
+    ) -> std::result::Result<(BoxProc, u16), (&'static str, GridError)> {
         let deadline = self.clock.now_ms() + self.o.start_ms;
         let mut port = port;
         let home = self.o.data.join("users").join(&user.id).join("home");
-        let failed = |event: &str| {
-            lock(&self.inst).entry(user.id.clone()).or_default().state = BoxState::Stopped;
-            self.change(user, BoxState::Stopped, event);
-        };
         loop {
             if self.is_closed() {
                 // the grid is stopping: this box doesn't outlive it
                 child.stop().await;
-                failed("grid stopped");
-                return Err(bad("The grid is shutting down.", 503));
+                return Err(("grid stopped", bad("The grid is shutting down.", 503)));
             }
             if port == 0 {
                 port = tokio::fs::read(home.join("server.json")).await.ok().and_then(|b| bound_port(&b)).unwrap_or(0);
@@ -187,13 +187,11 @@ impl ProcessHost {
                 return Ok((child, port));
             }
             if let Some(st) = child.exited() {
-                failed("failed");
-                return Err(bad(format!("wisp in the box stopped as it started ({st})."), 503));
+                return Err(("failed", bad(format!("wisp in the box stopped as it started ({st})."), 503)));
             }
             if self.clock.now_ms() > deadline {
                 child.stop().await;
-                failed("failed");
-                return Err(bad("wisp in the box didn't answer in time.", 504));
+                return Err(("failed", bad("wisp in the box didn't answer in time.", 504)));
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }

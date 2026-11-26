@@ -1318,6 +1318,10 @@
           "description": "Default project: where a task from a channel (Slack, Discord, Telegram, email) runs when its message names none ('': the last used)",
           "type": "string"
         },
+        "computer.enabled": {
+          "description": "Computer use: every task's agent can see and use this computer's screen through Cua Driver (needs cua-driver installed)",
+          "type": "boolean"
+        },
         "crew.tint": {
           "description": "Crew tint: with the crew rail, the task list takes a very light tint of the colour of the member you pick.",
           "type": "boolean"
@@ -1557,6 +1561,15 @@
         "ship.fixConflicts": {
           "description": "Fix merge conflicts by itself: when a task's PR has conflicts, its agent is asked to fix them without waiting for you",
           "type": "boolean"
+        },
+        "ship.steward": {
+          "description": "Keep PRs green (Steward), ticked in Ship it by default: the task fixes its PR's failing checks and new review comments, wisp pushes; review also has another vendor's model review each push. Never merges",
+          "enum": [
+            "off",
+            "fix",
+            "review"
+          ],
+          "type": "string"
         },
         "stuff.panes": {
           "description": "Panes: <app>@task or <app>@home, comma separated",

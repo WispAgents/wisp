@@ -28,18 +28,28 @@ interface StuffRow {
   readonly kind?: string;
 }
 
-/** The tasks @ can name: not archived, by the words typed, the latest first; the open task itself never. */
-export function taskItems(rows: readonly TaskRow[], query: string, self?: string): PromptItem[] {
+/**
+ * The tasks @ can name: not archived, by the words typed, the latest first; the open task itself never. With `peer`
+ * (the computer the box sends to), only that computer's: a mention is sent as the bare id and read on the computer the
+ * task runs on (runtime mentions.rs), so another one's task would be dropped unsaid (new1). `where`: the computer's
+ * name as each row's detail, when you have more than one.
+ */
+export function taskItems(rows: readonly TaskRow[], query: string, self?: string, peer?: string, where?: string): PromptItem[] {
   const bare = (id: string): string => id.slice(id.indexOf(':') + 1);
+  const on = (id: string): string => id.slice(0, Math.max(0, id.indexOf(':')));
   return rows
-    .filter((r) => !r.archived && (!self || bare(r.id) !== bare(self)) && has(cleanTitle(r.title), query))
+    .filter((r) => !r.archived && (!peer || on(r.id) === peer) && (!self || bare(r.id) !== bare(self)) && has(cleanTitle(r.title), query))
     .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))
     .slice(0, MAX)
     .map((r) => {
       const title = cleanTitle(r.title);
-      return { value: `task:${r.id}`, label: title, icon: 'feed', insert: `@${title} `, mention: { scheme: 'wisp', id: bare(r.id), title } };
+      return { value: `task:${r.id}`, label: title, ...(where && { detail: where }), icon: 'feed', insert: `@${title} `, mention: { scheme: 'wisp', id: bare(r.id), title } };
     });
 }
+
+/** The computer's name for the @ menu's tasks: only when you have more than one, else it says nothing */
+const peerLabel = (c: PluginClient, peer: string | undefined): string | undefined =>
+  peer && c.peers.list()().length > 1 ? c.peers.name(peer as never) : undefined;
 
 export function crewItems(rows: readonly CrewRow[], query: string): PromptItem[] {
   return rows
@@ -133,7 +143,7 @@ export function cached(key: string, ask: () => Promise<{ files: string[] }>, now
 }
 
 export const PROMPT_SOURCES: PromptSourceDef[] = [
-  { id: 'shell-composer.tasks', trigger: '@', order: 10, items: (q, ctx) => taskItems(rows<TaskRow>(ctx.client, 'session'), q, ctx.task) },
+  { id: 'shell-composer.tasks', trigger: '@', order: 10, items: (q, ctx) => taskItems(rows<TaskRow>(ctx.client, 'session'), q, ctx.task, ctx.peer, peerLabel(ctx.client, ctx.peer)) },
   {
     id: 'shell-composer.crew',
     trigger: '@',

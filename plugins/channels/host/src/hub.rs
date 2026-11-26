@@ -505,8 +505,9 @@ impl Phone for KPhone {
         let mode = o.cap.map_or(asked, |c| asked.min(c)).min(wisp_channels_api::views::Mode::Edits);
         // and the task stays there: every turn of it, whatever a later message or agent asks (F-chan-10)
         let cap = channel_cap(o.cap);
+        let prompt = wisp_channels_core::conversation::with_about(&p.prompt, o.about.as_deref());
         let mut a =
-            json!({ "prompt": p.prompt, "mode": mode_str(Some(mode)), "cap": mode_str(Some(cap)), "by": format!("channel:{}", o.channel) });
+            json!({ "prompt": prompt, "mode": mode_str(Some(mode)), "cap": mode_str(Some(cap)), "by": format!("channel:{}", o.channel) });
         // a message that names no project runs in the default one (v1 phone.js `p.project || ctx.defaultProject`)
         let project = match &p.project {
             Some(pr) => Some(pr.clone()),

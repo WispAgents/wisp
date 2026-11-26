@@ -353,25 +353,51 @@ impl Engine {
 
     /// Brings a cleaned-up worktree back from its branch (its ignored files again, not its setup).
     pub async fn ensure(&self, call: &Call, wt: &Worktree) -> Result<()> {
+        self.restore(call, wt, false).await.map(drop)
+    }
+
+    /// `ensure`, and when its branch is gone too (deleted after its PR merged, or by a tidy, ADR-0131) and `fresh`: the
+    /// branch made again from the base, so the task goes on (its work is on the base by then). `Ok(true)`: it was.
+    pub async fn restore(&self, call: &Call, wt: &Worktree, fresh: bool) -> Result<bool> {
         let lock = self.lock(&wt.path).await;
         let _held = lock.lock().await;
         match removal::ensure_plan(fsx::exists(&wt.path).await, self.foreign(wt), &wt.path) {
-            removal::EnsurePlan::Nothing => Ok(()),
+            removal::EnsurePlan::Nothing => Ok(false),
             removal::EnsurePlan::Refuse(m) => Err(WtError::Conflict(m)),
             removal::EnsurePlan::Restore => {
                 let root = self.repo(call, &wt.root).await?;
                 let _ = root.worktree_prune(call).await;
-                // its branch gone too (deleted after its PR merged): said plainly, never git's "invalid reference"
-                if !wt.branch.is_empty() && matches!(root.rev_parse(call, &format!("refs/heads/{}", wt.branch)).await, Ok(None)) {
-                    return Err(WtError::NotFound(crate::archived::branch_gone(wt)));
-                }
-                root.worktree_add(call, WorktreeAdd { path: wt.path.clone(), branch: wt.branch.clone(), start: None }).await?;
+                // its branch gone too: made again from the base, or said plainly, never git's "invalid reference"
+                let gone = !wt.branch.is_empty() && matches!(root.rev_parse(call, &format!("refs/heads/{}", wt.branch)).await, Ok(None));
+                let start = match (gone, fresh) {
+                    (false, _) => None,
+                    (true, false) => return Err(WtError::NotFound(crate::archived::branch_gone(wt))),
+                    (true, true) => Some(self.fresh_start(call, &root, wt).await?),
+                };
+                let made = start.is_some();
+                root.worktree_add(call, WorktreeAdd { path: wt.path.clone(), branch: wt.branch.clone(), start }).await?;
                 // its setup still held (not trusted yet): only the root's `.env` files, as when it was made
                 let all = wt.prepared.as_ref().is_none_or(|p| p.held.is_none());
                 let _ = crate::prepare::copy_some(self, &wt.root, &wt.path, all).await;
-                Ok(())
+                Ok(made)
             }
         }
+    }
+
+    /// Where a gone branch starts again: its base as it is now (`origin/main`, else `main`), else the sha it branched
+    /// from. `NotFound` when none of them is there any more.
+    async fn fresh_start(&self, call: &Call, root: &Arc<dyn Repo>, wt: &Worktree) -> Result<String> {
+        // `base_ref` is a sha when the repo has no remote: the base's name comes first then, so it starts where the base is now
+        let sha = wt.base_ref.len() >= 40 && wt.base_ref.bytes().all(|b| b.is_ascii_hexdigit());
+        let (first, second) = if sha { (wt.base.as_str(), wt.base_ref.as_str()) } else { (wt.base_ref.as_str(), wt.base.as_str()) };
+        let mut tries: Vec<&str> = [first, second].into_iter().filter(|b| !b.is_empty()).collect();
+        tries.extend(wt.head.as_deref().filter(|h| !h.is_empty()));
+        for b in tries {
+            if let Ok(Some(sha)) = root.rev_parse(call, b).await {
+                return Ok(sha);
+            }
+        }
+        Err(WtError::NotFound(crate::archived::branch_gone(wt)))
     }
 
     /// Changed paths, commits past the base, commits not on the remote (from the merged PR's head first).

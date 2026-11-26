@@ -8,9 +8,9 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 use wisp_channels_api::conversation::Conversation;
 use wisp_channels_api::{
-    ActArgs, ChannelCtx, Later, Mode, Parsed, Phone, ProjectView, RunOpts, SessionView, StartOpts, Started, ThreadCtx,
+    ActArgs, ChannelCtx, Later, Mode, Parsed, Phone, ProjectView, RunOpts, SessionView, StartOpts, Started, Thread, ThreadCtx,
 };
-use wisp_channels_core::conversation::converse;
+use wisp_channels_core::conversation::{converse, with_about};
 use wisp_kernel::Result;
 
 #[derive(Default)]
@@ -50,7 +50,8 @@ impl Phone for FakePhone {
     }
     async fn start_parsed(&self, p: &Parsed, o: &StartOpts) -> Result<Started> {
         self.note(format!("start {} in {} cap {:?}", p.prompt, p.project.as_ref().map_or("-", |x| x.name.as_str()), o.cap));
-        Ok(Started { ack: "▶ started".into(), ..Started::default() })
+        let session = Some(SessionView { id: "t9".into(), ..SessionView::default() });
+        Ok(Started { ack: "▶ started".into(), session, ..Started::default() })
     }
     async fn stop(&self, s: &str) -> Result<String> {
         self.note(format!("stop {s}"));
@@ -87,6 +88,9 @@ struct Chat<'a> {
     phone: &'a FakePhone,
     ctx: ChannelCtx,
     said: Mutex<Vec<String>>,
+    /// a channel with threads (Slack, GitHub): what `acked` was handed
+    threaded: bool,
+    acked: Mutex<Vec<Option<String>>>,
 }
 
 #[async_trait]
@@ -119,6 +123,14 @@ impl Conversation for Chat<'_> {
         self.said.lock().unwrap().push(text);
         Ok(json!({}))
     }
+    async fn thread(&self, _p: &Parsed) -> Option<Thread> {
+        self.threaded.then(|| Thread { channel: "test".into(), reference: Some("r1".into()), ..Thread::default() })
+    }
+    fn acked(&self, thread: Option<&Thread>, _sent: &Value) {
+        if let Some(t) = thread {
+            self.acked.lock().unwrap().push(t.session.clone());
+        }
+    }
 }
 
 fn chat(phone: &FakePhone) -> Chat<'_> {
@@ -127,7 +139,29 @@ fn chat(phone: &FakePhone) -> Chat<'_> {
         phone,
         ctx: ChannelCtx { projects: vec![api.clone()], default_project: Some(api), ..ChannelCtx::default() },
         said: Mutex::default(),
+        threaded: false,
+        acked: Mutex::default(),
     }
+}
+
+#[tokio::test]
+async fn a_task_started_in_a_thread_is_linked_to_it_and_runs_in_the_places_own_project() {
+    let phone = FakePhone::default();
+    let web = ProjectView { id: "p2".into(), name: "web".into(), path: "/work/web".into(), ..ProjectView::default() };
+    // a GitHub comment's conversation: its repo's project is the context's default
+    let c = Chat {
+        threaded: true,
+        ctx: ChannelCtx {
+            default_project: Some(web.clone()),
+            projects: vec![web, chat(&phone).ctx.projects[0].clone()],
+            ..ChannelCtx::default()
+        },
+        ..chat(&phone)
+    };
+    converse(&c, "review this PR", None, None).await.unwrap();
+    assert!(phone.log().contains(&"start review this PR in web cap Some(Edits)".to_owned()), "{:?}", phone.log());
+    // the thread is made before the task exists: acked gets it with the task, so its report comes back there
+    assert_eq!(c.acked.lock().unwrap().as_slice(), [Some("t9".to_owned())]);
 }
 
 #[tokio::test]
@@ -170,4 +204,14 @@ async fn in_a_tasks_thread_a_message_follows_up_and_stop_stops_it() {
     let log = phone.log();
     assert!(log.contains(&"run t1 also fix the signup".to_owned()) && log.contains(&"stop t1".to_owned()), "{log:?}");
     assert_eq!(c.said.lock().unwrap().last().unwrap(), "Reply to the task’s message to do that.", "stop out of a thread");
+}
+
+#[test]
+fn a_tasks_prompt_says_where_it_was_asked_after_the_message() {
+    let about = "GitHub PR me/api#6: https://github.com/me/api/pull/6\nRead it with `gh pr view 6 --repo me/api`.";
+    let p = with_about("review this PR", Some(about));
+    assert!(p.starts_with("review this PR\n\n---\nGitHub PR me/api#6"), "the message first: the title stays its: {p}");
+    assert!(p.ends_with("--repo me/api`."), "{p}");
+    assert_eq!(with_about("fix it", None), "fix it", "a chat with no place says nothing more");
+    assert_eq!(with_about("fix it", Some("  \n")), "fix it");
 }

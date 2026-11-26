@@ -3,7 +3,7 @@
 // this adds is derived (the sections, memoised in placement.ts) plus one plugin store: the view
 // (project filter, folded sections). The shell keeps the recent tasks (⌃Tab) itself.
 
-import { computed, defineCommand, entityKey, signal, type DeepReadonly, type EntityKey, type PeerId, type PluginClient, type PluginStore, type Readable } from '@wisp/client';
+import { computed, defineCommand, effect, entityKey, homeSetting, signal, untracked, type DeepReadonly, type EntityKey, type PeerId, type PluginClient, type PluginStore, type Readable, type Scope } from '@wisp/client';
 import { PROJECT_ORDER, parsePick, pickValue, projectList, projectOfRow, type ProjectView } from '@wisp/shell/pure';
 import { reordered } from '@wisp/ui/pure';
 import { createPlacement } from './model/placement.ts';
@@ -150,16 +150,29 @@ function createModel(client: PluginClient): ListModel {
   const raw = client.entities.list<Session>(KIND.session);
   // the projects in your order; a task is in the one that holds its folder (v1 projectFor)
   const projectRows = client.entities.list<unknown>(KIND.project);
-  const homeOrder = client.entities.row<{ value: unknown }>('setting', `${client.home}:${PROJECT_ORDER}` as EntityKey);
-  const settingRows = client.entities.list<{ key: string; value: unknown }>('setting');
-  const projects = computed(() => projectList(projectRows(), homeOrder()?.value ?? settingRows().find((r) => r.key === PROJECT_ORDER)?.value));
+  // this wisp's order, never another computer's, and the next one's once the phone launches it (setHome without a
+  // reload: the model is made once per client, so a home read here once kept the first computer's order)
+  const homeOrder = homeSetting(client, PROJECT_ORDER);
+  const projects = computed(() => projectList(projectRows(), homeOrder()));
   // a row from another wisp: which machine it is (a sandbox shows as Sandbox), from wisp.machines' rows
   const machineRows = client.entities.list<{ id: string; body?: { peer?: string | null; name?: string; data?: Record<string, unknown> } }>('machines_peer');
   const machines = computed(() => machinesByPeer(machineRows()));
   const make = rowMaker();
   const rows = computed(() => make(raw(), keys(), projects(), machines()));
-  // Scheduled and Drafts: wisp.later's plans, on its own topic
-  client.watch(client.home, LATER_TOPIC as never);
+  // Scheduled and Drafts: wisp.later's plans, on its own topic, from this wisp: watched under a scope per home, so a
+  // new home takes the watch and the last one's ends
+  let later: Scope | undefined;
+  const homeNow = client.homeNow ?? ((): PeerId => client.home); // a hand-made client (a test's) may lack it
+  client.scope.add(
+    effect(() => {
+      const home = homeNow();
+      untracked(() => {
+        later?.dispose();
+        later = client.scope.child('later');
+        client.watch(home, LATER_TOPIC as never, later);
+      });
+    }),
+  );
   const planRows = client.entities.list<unknown>(KIND.plan);
   const plans = computed(() =>
     planRows()

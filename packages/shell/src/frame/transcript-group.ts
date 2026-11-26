@@ -1,7 +1,7 @@
 // Signal-only grouping for a finished turn's timeline (TurnTranscript):
 // While a turn is running, every step streams live without folding. Once finished, high-signal steps
-// (agent prose, file edits, errors/failed calls) stay directly visible on the rail while contiguous runs
-// of 3+ routine exploration steps (reads, searches, commands, thoughts, generic tools) fold into a single
+// (agent prose and thoughts, file edits, errors/failed calls) stay directly visible on the rail while contiguous runs
+// of 3+ routine exploration steps (reads, searches, commands, generic tools) fold into a single
 // quiet expandable cluster with compact read-file chips and coalesced duplicate labels. DOM-free.
 import type { TimelineFileChip } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
@@ -44,12 +44,13 @@ const READING_PREFIX = /^reading\s+(.+)$/i;
 
 /** High-signal steps stay surfaced directly on a finished turn's rail (when Transcript is on). */
 export function isSignalStep(s: TranscriptStepRow): boolean {
-  return s.kind === 'text' || s.kind === 'edit' || s.kind === 'agent' || s.kind === 'error' || s.bad === true;
+  return s.kind === 'text' || s.kind === 'thinking' || s.kind === 'edit' || s.kind === 'agent' || s.kind === 'error' || s.bad === true;
 }
 
-/** In quiet Chat mode (Transcript off), agent messages, delegations and errors stay surfaced; routine actions between messages fold into an expandable pill. */
+/** In quiet Chat mode (Transcript off), agent messages and thoughts, delegations and errors stay surfaced; routine actions
+ *  between messages fold into an expandable pill. A thought is what the agent says it is doing: it reads as a message. */
 export function isQuietSignalStep(s: TranscriptStepRow): boolean {
-  return s.kind === 'text' || s.kind === 'agent' || s.kind === 'error' || s.bad === true;
+  return s.kind === 'text' || s.kind === 'thinking' || s.kind === 'agent' || s.kind === 'error' || s.bad === true;
 }
 
 function classify(s: TranscriptStepRow): keyof ClusterCounts {

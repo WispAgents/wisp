@@ -8,4 +8,9 @@ id: string,
 /**
  * Review again (or the first, by hand): runs whatever the setting says
  */
-force: boolean, };
+force: boolean, 
+/**
+ * who reviews this time instead of the setting (ship's Steward asks for `other-vendor`): runs even when the
+ * setting is off. Additive (2026-11-26).
+ */
+pick?: string, };

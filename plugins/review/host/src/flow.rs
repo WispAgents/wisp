@@ -53,8 +53,18 @@ impl Reviewer {
 
     /// Start a review of the task's PR head when one is due. `force`: Review again, or the first by hand.
     pub async fn maybe(self: &Arc<Self>, call: &Call, id: &str, force: bool) -> Result<Started> {
+        self.maybe_by(call, id, force, None).await
+    }
+
+    /// `maybe`, with who reviews given instead of the setting (the Steward's `other-vendor`, ADR-0132).
+    pub async fn maybe_by(self: &Arc<Self>, call: &Call, id: &str, force: bool, pick: Option<&str>) -> Result<Started> {
         let t = self.env.task(call, id).await?;
-        let setting = self.env.setting(call).await;
+        // the Steward's review is another vendor's whoever asks (a turn's end, a new head): never the same model's
+        let pick = pick.filter(|p| !p.is_empty()).or(t.steward_review.then_some(core::OTHER_VENDOR));
+        let setting = match pick {
+            Some(p) => p.to_owned(),
+            None => self.env.setting(call).await,
+        };
         let setting = {
             let mut running = self.lock();
             let d = Due {

@@ -2,7 +2,7 @@
 // keys (a command goes to the peer that owns the member), and the one optimistic write path.
 
 import { PROJECT_ORDER, projectList } from '@wisp/shell';
-import { computed, type EntityKey, type PluginClient, type Readable } from '@wisp/client';
+import { computed, homeSetting, type EntityKey, type PluginClient, type Readable } from '@wisp/client';
 import { useSignal } from '@wisp/ui';
 import type { Accessor } from 'solid-js';
 import { KIND } from '../types.ts';
@@ -60,8 +60,8 @@ export async function patchMember(client: PluginClient, id: string, body: Member
 export function useProjects(client: PluginClient): Accessor<readonly ProjectRow[]> {
   // wisp.runtime's `project` rows (`{id: name, body: spec}`), in your order (v1 #772)
   const rows = useSignal(client.entities.list<unknown>('project'));
-  const settings = useSignal(client.entities.list<{ key: string; value: unknown }>('setting'));
-  return () => projectList(rows(), settings().find((r) => r.key === PROJECT_ORDER)?.value);
+  const order = useSignal(homeSetting(client, PROJECT_ORDER)); // this wisp's order, not another computer's (doc25c)
+  return () => projectList(rows(), order());
 }
 
 const FALLBACK_HARNESSES: readonly HarnessRow[] = [

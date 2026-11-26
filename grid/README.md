@@ -251,14 +251,17 @@ token) when wisp deletes the task. Subagents and crew members can have sandboxes
   (`claude setup-token`) and can add env vars. The grid seals both per user, and every sandbox starts
   with them (`CLAUDE_CODE_OAUTH_TOKEN`, …). They never go into the user's own box.
 - **Browser.** The image has Chromium, Xvfb and noVNC (`wisp-desktop`). wisp shows the live view
-  through the box's `p6080` preview, and agents drive the browser through Playwright MCP.
+  through the box's `p6080` preview, and agents drive the browser through Playwright MCP. Agents also get computer use on that
+  screen (ADR-0127): Cua Driver behind wisp's `computer` MCP server, with a window manager and the accessibility bus.
 
 ```json
 "sandboxes": { "enabled": true, "perUser": 10 }
 ```
 
 Each sandbox counts against `hostd.maxRunning`, and `admit` reserves its memory limit for it. It
-stops when idle like any box, and wakes on the next request.
+stops when idle like any box, and wakes on the next request. `hostd.maxRunningPerUser` (default 4) caps how
+many of one person's boxes run at once (their own box and their sandboxes): past it a sandbox waits in line
+without taking anyone else's room. Their own box is never held back by it.
 
 ### Usage stats
 
@@ -389,9 +392,16 @@ wisp grid serve ── wisp.example.com           sign in, your account, approve
   1024 + 1024; `"admit": false` counts boxes only). When it doesn't, hostd stops the box that has
   been quiet longest the way idle does (nothing running, no page or terminal open, no channel answering, for
   `hostd.evictAfterMs`, 2 min; never one whose schedule is due within 5 min), so its home and tasks
-  are kept. With nothing to stop, the start waits in line (*Waiting for room*) for
-  `hostd.queueMs` (2 min), then says the grid is full. Scheduled wakes wait behind people, for up to
-  30 min, and never stop anyone's box.
+  are kept. With nothing to stop, the start waits in line (*Waiting for room*) for as long as someone
+  waits for it: a person's start that no one asks after for `hostd.queueMs` (2 min; its waiting page asks every
+  few seconds, a script asks again when `retry-after` says) leaves the line, so a tab that was closed never takes
+  a slot later. Scheduled wakes wait behind people until there's room, and never stop anyone's box. Opening a box
+  from a browser shows its waiting page at once: *Waking your wisp*, *Waiting for room* with its place in line,
+  or why it didn't start with **Try again**; it opens the wisp once it runs. A box whose start failed in the last
+  10 min isn't started again by opening it: its page says why, and **Try again** starts it. Anything else (an
+  API call, a websocket) hears 503 with `retry-after` while it waits in line. A
+  scheduled wake that fails keeps its schedule and is tried again (30 s, 1 min, 2 min, … up to 10 min apart) until an
+  hour past the task.
 
 ## Secrets
 
@@ -407,8 +417,8 @@ wisp grid serve ── wisp.example.com           sign in, your account, approve
 
 - **`wisp grid rotate-key`** makes a new master key, re-wraps every user's data key and retires the
   old master key.
-- **Deleting a user** deletes their box and files, and their data key, so nothing sealed with it can
-  be read again.
+- **Deleting a user** deletes their box and every sandbox's (homes and logins), their published apps, their
+  channel bot's webhook, and their data key with everything sealed with it, so none of it can be read again.
 - **`wisp grid backup`** makes a consistent copy of the database. Keep it together with the master
   key.
 

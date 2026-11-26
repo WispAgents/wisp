@@ -402,7 +402,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // the list's own rules (saved for later, Scheduled, a subagent's run: not here), asking first, so Home agrees with it
   const needs = createMemo(() => homeNeeds(sessions()));
   // the @ and / menus (plugins' prompt sources), New task's own
-  const menu = usePromptMenu({ shell, where: 'home', text, setText, input: () => input, id: 'launcher-suggest', project: () => project()?.path });
+  // @ offers the Run on computer's tasks (its own mentions are the ones it reads: new1); the mentions are kept beside
+  // the draft, so a reload still sends them (doc25a)
+  const menu = usePromptMenu({ shell, where: 'home', draft: [draftKey, draftField], text, setText, input: () => input, id: 'launcher-suggest', project: () => project()?.path, peer: target });
   let goalInput: HTMLInputElement | undefined;
   const [promptFocused, setPromptFocused] = createSignal(false);
   // a phone or a touch-only screen has no shortcut to advertise (v1: MOBILE || (hover: none))
@@ -416,7 +418,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // ↑ brings back what you sent, Shift+Tab cycles the mode (v1 prompt-history.js, F-task-31, F-comp-4)
   const sent = sentStore(shell.client);
   const sentList = useSignal(sent.value);
-  const onKey = promptKeys({ sent: () => sentList() as readonly string[], value: text, set: (v) => (setText(v), menu.typed(v)), mode: { get: mode, set: (m: Mode) => ((modeTouched = true), setMode(m)) } });
+  const onKey = promptKeys({ sent: () => sentList() as readonly string[], value: text, set: (v) => menu.typed(menu.restore(v)), mode: { get: mode, set: (m: Mode) => ((modeTouched = true), setMode(m)) } });
   // a command typed in full (`/goal`, `/feedback`): the menu's Enter sends it rather than picking what's there
   const suggest = createMemo(() => {
     const s = menu.suggest();
@@ -599,7 +601,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             ...(team().length > 0 && { team: teamToSend(team()) }),
           },
         })
-        .catch(() => (setText(prompt), goalBack()));
+        .catch(() => (menu.restore(prompt), goalBack()));
       shell.navigate({ t: 'openTask', id: id as EntityKey as never });
       return true;
     };
@@ -636,7 +638,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           ...(yes && { confirmLimit: true }),
           ...formula()?.args,
         })
-        .catch((err: unknown) => (setText(prompt), goalBack(), heldBack(err)));
+        .catch((err: unknown) => (menu.restore(prompt), goalBack(), heldBack(err)));
       // the other runs after the lead, so the lead is run A (Compare orders runs by when they started)
       for (const r of extra) {
         shell.client.commands
@@ -670,7 +672,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       placeOn({ cwd: p.path, peer, home, name: p.name, where, run: (cmd, args) => shell.client.commands.run(cmd, args), say: (name, w) => t('shell.runOn.noOrigin', { name, where: w }) }).then(
         (cwd) => start(attachments, cwd),
         (err: unknown) => {
-          setText(prompt);
+          menu.restore(prompt);
           shell.toast.error(err instanceof Error ? err.message : t('shell.runOn.failed', { where }));
         },
       );
