@@ -361,6 +361,15 @@ fn tg_linked(cfg: Option<&Value>) -> bool {
     cfg.and_then(|c| c.get("chatId")).is_some_and(|v| v.as_str().map_or(!v.is_null(), |s| !s.is_empty()))
 }
 
+/// Someone linked: Telegram's chat, or Slack's and Discord's people. Their code was used up when it linked
+/// (`wisp_channels_api::link`); another person links with Relink's fresh one, never a code saved again unseen.
+fn linked_already(t: &str, cfg: Option<&Value>) -> bool {
+    match t {
+        "telegram" => tg_linked(cfg),
+        _ => cfg.and_then(|c| c.get("senders")).and_then(Value::as_array).is_some_and(|a| !a.is_empty()),
+    }
+}
+
 /// Another bot, or none yet: a fresh code to link with (v1 `newLinkCode`). It's the transport's own state, as the
 /// code a transport changes after wrong guesses is: kept beside its config (in secrets), never declared.
 fn link_code(ctx: &Ctx, live: &Live, t: &str, relink: bool) {
@@ -370,7 +379,7 @@ fn link_code(ctx: &Ctx, live: &Live, t: &str, relink: bool) {
     let (has, linked) = {
         let all = lock(&live.st.cfg);
         let c = all.get(t);
-        (c.and_then(|c| c.get("linkCode")).and_then(Value::as_str).is_some_and(|s| !s.is_empty()), t == "telegram" && tg_linked(c))
+        (c.and_then(|c| c.get("linkCode")).and_then(Value::as_str).is_some_and(|s| !s.is_empty()), linked_already(t, c))
     };
     if relink || !(has || linked) {
         let hub = Hub { ctx: ctx.clone(), st: live.st.clone() };
@@ -391,4 +400,21 @@ pub(crate) fn scrub(live: &Live, t: &str, text: String) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A Slack or Discord code is used up when it links someone: saving the setup again then put a fresh code back
+    /// that Settings never showed (it shows none once someone is linked), so it could link a second person unseen.
+    #[test]
+    fn a_used_up_code_isnt_put_back_while_someone_is_linked() {
+        assert!(linked_already("slack", Some(&json!({ "senders": ["U1"], "linkCode": "" }))));
+        assert!(linked_already("discord", Some(&json!({ "senders": ["1"] }))));
+        assert!(!linked_already("slack", Some(&json!({ "senders": [] }))));
+        assert!(!linked_already("discord", None));
+        assert!(linked_already("telegram", Some(&json!({ "chatId": 42 }))));
+        assert!(!linked_already("telegram", Some(&json!({ "chatId": null, "senders": ["x"] }))));
+    }
 }

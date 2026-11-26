@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use wisp_channels_api::policy::{Gate, GateArgs, RateLimit, STALE_S, gate};
+use wisp_channels_api::policy::{Gate, GateArgs, RateHit, RateLimit, STALE_S, gate};
 use wisp_channels_api::scrub::scrub_out;
 use wisp_channels_api::transport::{Headers, InboundOpts, InboundResult};
 use wisp_channels_api::views::{ActArgs, ActKind, ActionKind, Mode, Msg, SessionView, Signed};
@@ -40,7 +40,12 @@ impl TransportDef for Def {
         "telegram"
     }
     fn create(&self, hub: Arc<dyn ChannelHub>) -> Arc<dyn Transport> {
-        Arc::new(Telegram { hub, limit: Mutex::new(RateLimit::default()), hook_turn: Mutex::new(()) })
+        Arc::new(Telegram {
+            hub,
+            limit: Mutex::new(RateLimit::default()),
+            strangers: Mutex::new(RateLimit::new(3, 60_000)),
+            hook_turn: Mutex::new(()),
+        })
     }
     fn secrets(&self) -> &'static [&'static str] {
         // the webhook's secret is kept across a restart (the hub's `chan_kept`) in secrets.json, not the store
@@ -51,6 +56,8 @@ impl TransportDef for Def {
 struct Telegram {
     hub: Arc<dyn ChannelHub>,
     limit: Mutex<RateLimit>,
+    /// codes offered before a chat is linked, by sender: three a minute (as Slack's and Discord's `link`)
+    strangers: Mutex<RateLimit>,
     /// held updates' `seen` list, read and written by one delivery at a time (hook.rs)
     hook_turn: Mutex<()>,
 }
@@ -259,16 +266,25 @@ impl Telegram {
         if chat.is_empty() {
             // linking: only the chat that sends the code shown in wisp's settings gets attached
             let code = s(&cfg, "linkCode");
-            if !code.is_empty() && links_it(text).is_some_and(|c| wisp_telegram_core::secret_ok(Some(c), code)) {
-                // the person who sent the code, by their own id: in a group, only they answer what needs them
-                let by = m.from.as_ref().and_then(|f| f.id.clone()).unwrap_or_default();
-                self.hub.set_cfg(
-                    "telegram",
-                    json!({ "chatId": m.chat.id, "chatName": core::chat_name(&m.chat), "userId": by, "linkCode": "" }),
-                );
-                self.mark(None);
-                self.say("✓ Linked to wisp. Questions and finished tasks will show up here.", None).await?;
+            let Some(offered) = links_it(text).filter(|_| !code.is_empty()) else { return Ok(()) };
+            // the person who sent the code, by their own id: in a group, only they answer what needs them
+            let by = m.from.as_ref().and_then(|f| f.id.clone()).unwrap_or_default();
+            // three tries a minute from one sender, past that silence (the right code too)
+            let key = if by.is_empty() { m.chat.id.clone() } else { by.clone() };
+            if !matches!(self.strangers.lock().unwrap_or_else(PoisonError::into_inner).hit(&key, self.hub.now_ms()), RateHit::Ok) {
+                return Ok(());
             }
+            if !wisp_telegram_core::secret_ok(Some(offered), code) {
+                // counted for everyone: five wrong and the code changes (Settings shows the new one)
+                wisp_channels_api::link::miss(self.hub.as_ref(), "telegram");
+                return Ok(());
+            }
+            self.hub.set_cfg(
+                "telegram",
+                json!({ "chatId": m.chat.id, "chatName": core::chat_name(&m.chat), "userId": by, "linkCode": "", "linkGuess": Value::Null }),
+            );
+            self.mark(None);
+            self.say("✓ Linked to wisp. Questions and finished tasks will show up here.", None).await?;
             return Ok(());
         }
         if m.chat.id != chat {

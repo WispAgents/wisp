@@ -256,3 +256,58 @@ async fn on_a_cloud_wisp_a_held_interaction_is_checked_by_its_signature_and_runs
     let late = slash("U1", false).to_string().replace(ID, "1173000000000000010").into_bytes();
     assert_eq!(t.inbound(&late, &signed(&k, &late), InboundOpts::default()).await.status, 410);
 }
+
+/// `/wisp link <code>` in a DM, interaction `n` from `user`.
+fn link_slash(n: u64, user: &str, code: &str) -> Value {
+    json!({ "id": (1_173_000_000_000_000_100_u64 + n).to_string(), "type": 2, "token": format!("T{n}"), "application_id": "777", "channel_id": format!("D{user}"), "user": { "id": user }, "data": { "name": "wisp", "options": [{ "name": "prompt", "value": format!("link {code}") }] } })
+}
+
+/// The gateway's hello and ready, then each interaction, then a close.
+fn frames_of(all: &[Value]) -> Vec<WsFrame> {
+    let mut f = frames(&json!({}));
+    f.truncate(2);
+    for (i, d) in all.iter().enumerate() {
+        f.push(ScriptWs::text(&json!({ "op": 0, "t": "INTERACTION_CREATE", "s": i + 2, "d": d })));
+    }
+    f.push(WsFrame::Close(4004, String::new()));
+    f
+}
+
+/// `/wisp link` checked only that the interaction was new: one person could guess as fast as Discord delivers. It's
+/// limited as a DM's `link` is (three a minute, then silence: the right code too); the code links one person and is
+/// used up; five wrong guesses from anyone and a new code is stored.
+#[tokio::test]
+async fn slash_link_is_rate_limited_links_one_person_and_wrong_guesses_change_the_code() {
+    let h = hub(&[], false, "");
+    h.ws.push(frames_of(&[
+        link_slash(1, "U9", "000000"),
+        link_slash(2, "U9", "000001"),
+        link_slash(3, "U9", "000002"),
+        link_slash(4, "U9", "ab12cd"),
+    ]));
+    let t = start(&h);
+    t.start(h.stop.clone()).await;
+    h.run_spawned().await;
+    assert_eq!(h.cfg("discord")["senders"], json!([]), "a fourth try in the minute never reaches the code");
+    assert_eq!(h.cfg("discord")["linkGuess"]["wrong"], 3, "the three that did count: {}", h.cfg("discord"));
+    assert!(calls(&h).iter().all(|(_, u, _)| !u.contains("/interactions/1173000000000000104/")), "nothing answers the fourth");
+
+    let h = hub(&[], false, "");
+    h.ws.push(frames_of(&[link_slash(1, "U9", "ab12cd"), link_slash(2, "U8", "ab12cd")]));
+    let t = start(&h);
+    t.start(h.stop.clone()).await;
+    h.run_spawned().await;
+    assert_eq!(h.cfg("discord")["senders"], json!(["U9"]), "one code, one person");
+    assert_eq!(h.cfg("discord")["linkCode"], "");
+
+    let h = hub(&[], false, "");
+    let mut all: Vec<Value> = (0..5).map(|i| link_slash(i, &format!("U{i}"), "000000")).collect();
+    all.push(link_slash(9, "U7", "ab12cd"));
+    h.ws.push(frames_of(&all));
+    let t = start(&h);
+    t.start(h.stop.clone()).await;
+    h.run_spawned().await;
+    let code = h.cfg("discord")["linkCode"].as_str().unwrap_or_default().to_owned();
+    assert!(!code.is_empty() && code != "ab12cd", "a new code is stored: {code}");
+    assert_eq!(h.cfg("discord")["senders"], json!([]), "the old code links nobody");
+}
