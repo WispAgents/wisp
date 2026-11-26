@@ -167,6 +167,36 @@ fn runs_code(command: &str, args: &Value) -> Option<Lowered> {
         "machines.call" => {
             Some(Lowered { what: "call another computer's wisp directly".into(), change: format!("machines.call {}", text(args)) })
         }
+        // a connector's command line runs on this computer for every task, and its test spawns it at once (or sends its
+        // headers to the URL): the user's harness adds or changes one only on the user's Allow, as an agent does
+        "connectors.add" => Some(Lowered {
+            what: format!("add a connector that every task runs ({})", connector_line(args)),
+            change: format!("connectors.add {}", text(args)),
+        }),
+        "connectors.update" if connector_edit(args) => {
+            let id = args.get("id").and_then(Value::as_str).unwrap_or_default();
+            Some(Lowered {
+                what: format!("change what the connector {id} runs or where it goes ({})", connector_line(args)),
+                change: format!("connectors.update {}", text(args)),
+            })
+        }
+        "connectors.test" => {
+            let id = args.get("id").and_then(Value::as_str).unwrap_or_default();
+            Some(Lowered { what: format!("start the connector {id} to test it"), change: format!("connectors.test {id}") })
+        }
+        "connectors.import" if connector_import(args) => Some(Lowered {
+            what: "add connectors found in your other apps' settings (each runs for every task)".into(),
+            change: format!("connectors.import {}", text(args)),
+        }),
+        // a project's test command runs after a task's turn, unasked: setting one is running code
+        "runtime.projectTest" if project_test(args) => {
+            let name = args.get("name").and_then(Value::as_str).unwrap_or_default();
+            let cmd = args.get("testCommand").and_then(Value::as_str).unwrap_or_default();
+            Some(Lowered {
+                what: format!("run `{cmd}` as the tests of the project {name}"),
+                change: format!("runtime.projectTest {name}: {cmd}"),
+            })
+        }
         // a command sent to another computer: guarded as it would be here
         "machines.route" => {
             let cmd = args.get("cmd").and_then(Value::as_str).unwrap_or_default();
@@ -179,6 +209,33 @@ fn runs_code(command: &str, args: &Value) -> Option<Lowered> {
         _ => None,
     }
 }
+
+/// A connector's command line or URL, as its card names it.
+fn connector_line(args: &Value) -> String {
+    if let Some(url) = args.get("url").and_then(Value::as_str).filter(|u| !u.is_empty()) {
+        return url.to_owned();
+    }
+    let cmd = args.get("command").and_then(Value::as_str).unwrap_or_default();
+    let rest: Vec<&str> = args.get("args").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+    if rest.is_empty() { cmd.to_owned() } else { format!("{cmd} {}", rest.join(" ")) }
+}
+
+/// Whether a `connectors.update` changes what runs or where it goes: switching it on or off or renaming it lowers
+/// nothing.
+fn connector_edit(args: &Value) -> bool {
+    ["transport", "command", "args", "url", "env", "headers"].iter().any(|k| args.get(*k).is_some_and(|v| !v.is_null()))
+}
+
+/// Whether a `connectors.import` adds any (hiding found ones from the list adds nothing).
+fn connector_import(args: &Value) -> bool {
+    args.get("names").and_then(Value::as_array).is_some_and(|n| !n.is_empty())
+}
+
+/// Whether a `runtime.projectTest` sets a command (clearing one runs nothing).
+fn project_test(args: &Value) -> bool {
+    args.get("testCommand").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty())
+}
+
 /// Whether `command` is one the guard looks at at all (a guard's setting, whichever way, or one that runs code): what
 /// may not be sent to another computer with a tool's `peer`, whose current value isn't known here.
 #[must_use]
@@ -187,7 +244,11 @@ pub fn guarded(command: &str, args: &Value) -> bool {
         "settings.set" => {
             args.get("key").and_then(Value::as_str).is_some_and(|k| k == "runtime.setupAnswerSets" || GUARDS.iter().any(|g| g.key == k))
         }
-        "worktrees.trust" | "runtime.exec" | "plugins.install" | "plugins.trust" | "machines.call" => true,
+        "worktrees.trust" | "runtime.exec" | "plugins.install" | "plugins.trust" | "machines.call" | "connectors.add"
+        | "connectors.test" => true,
+        "connectors.update" => connector_edit(args),
+        "connectors.import" => connector_import(args),
+        "runtime.projectTest" => project_test(args),
         // switching a plugin off lowers nothing (audit I, smaller notes)
         "plugins.setEnabled" => args.get("enabled") == Some(&Value::Bool(true)),
         // a command sent on: guarded as that command is (audit I, smaller notes: `machines_route` of `runtime.list` with a
@@ -310,5 +371,43 @@ mod tests {
         assert!(question(&l).contains("in task t1's folder"), "{}", question(&l));
         let l = lowers("runtime.exec", &json!({ "cwd": "/w/app", "command": "make" }), &|_| None).unwrap();
         assert!(question(&l).contains("(in /w/app)"), "{}", question(&l));
+    }
+
+    /// A connector's command line runs for every task and its test spawns it at once: the user's harness adding or
+    /// changing one (`connectors_add {command: "sh", args: ["-c", "touch PWNED"]}`) ran it unasked, as did setting a
+    /// project's test command. Each asks; a switch, a rename, hiding found servers or clearing a test don't.
+    #[test]
+    fn a_connector_or_a_project_test_the_harness_adds_needs_the_users_allow() {
+        let none = |_: &str| None;
+        let l = lowers("connectors.add", &json!({ "name": "evil", "command": "sh", "args": ["-c", "touch PWNED"] }), &none).unwrap();
+        assert!(question(&l).contains("(sh -c touch PWNED)"), "{}", question(&l));
+        let l = lowers("connectors.add", &json!({ "name": "r", "url": "https://x.example/mcp" }), &none).unwrap();
+        assert!(question(&l).contains("https://x.example/mcp"), "{}", question(&l));
+        assert!(guarded("connectors.add", &json!({ "url": "https://x.example/mcp" })));
+        for edit in [
+            json!({ "id": "c", "command": "sh" }),
+            json!({ "id": "c", "args": ["-c", "id"] }),
+            json!({ "id": "c", "url": "https://evil.example" }),
+            json!({ "id": "c", "env": { "PATH": "/tmp" } }),
+            json!({ "id": "c", "headers": { "Authorization": "x" } }),
+        ] {
+            assert!(guarded("connectors.update", &edit) && lowers("connectors.update", &edit, &none).is_some(), "{edit}");
+        }
+        for toggle in [json!({ "id": "c", "enabled": false }), json!({ "id": "c", "enabled": true }), json!({ "id": "c", "name": "n" })] {
+            assert!(!guarded("connectors.update", &toggle) && lowers("connectors.update", &toggle, &none).is_none(), "{toggle}");
+        }
+        assert!(guarded("connectors.test", &json!({ "id": "c" })) && lowers("connectors.test", &json!({ "id": "c" }), &none).is_some());
+        assert!(guarded("connectors.import", &json!({ "names": ["x"] })));
+        assert!(lowers("connectors.import", &json!({ "names": ["x"] }), &none).is_some());
+        assert!(!guarded("connectors.import", &json!({ "dismiss": ["x"] })));
+        assert!(lowers("connectors.import", &json!({ "dismiss": ["x"] }), &none).is_none());
+        let l = lowers("runtime.projectTest", &json!({ "name": "app", "testCommand": "id > PWNED" }), &none).unwrap();
+        assert!(question(&l).contains("`id > PWNED`") && question(&l).contains("app"), "{}", question(&l));
+        assert!(guarded("runtime.projectTest", &json!({ "name": "app", "testCommand": "npm test" })));
+        assert!(!guarded("runtime.projectTest", &json!({ "name": "app", "testCommand": "" })));
+        assert!(lowers("runtime.projectTest", &json!({ "name": "app", "testCommand": " " }), &none).is_none());
+        // sent to another computer: guarded as it would be here
+        assert!(guarded("machines.route", &json!({ "cmd": "connectors.add", "args": { "command": "sh" } })));
+        assert!(!guarded("machines.route", &json!({ "cmd": "connectors.update", "args": { "id": "c", "enabled": false } })));
     }
 }

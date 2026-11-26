@@ -1,6 +1,7 @@
 // The harness · model picker's data (v1 runner-picker.js), DOM-free: what each harness offers (runtime.agents), the
 // models matching what's typed (by label or id, the harness's name too), and the thinking levels the pick allows.
 
+import type { BrowserCan } from './browser-pick.ts';
 import { defineCommand, ownerOf, type Client, type EntityKey, type EntityReader, type PeerId } from '@wisp/client';
 import { useDerived } from '@wisp/ui/pure';
 import { createEffect, createSignal, onCleanup, type Accessor } from 'solid-js';
@@ -25,6 +26,8 @@ export interface AgentOffer {
   readonly efforts: readonly string[];
   /** its detect hasn't answered yet (the `harnesses` topic, ADR-0066): the rest is what was known before */
   readonly checking?: boolean;
+  /** what it can do with a browser here (`AgentStatus.browser`, ADR-0128); a wisp from before it says nothing */
+  readonly browser?: BrowserCan;
 }
 
 /** What `agent`'s Default runs, by name, when its harness can tell (HarnessModel.resolves, read from its own config by

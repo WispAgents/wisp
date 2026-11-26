@@ -13,6 +13,8 @@
 
 import type { PeerId } from '@wisp/client';
 
+import type { BrowserCan } from '@wisp/shell';
+
 export const TOPIC = 'plugin:wisp.accounts:harnesses' as const;
 export const HARNESS = 'accounts.harness';
 export const ACCOUNT = 'accounts.account';
@@ -107,6 +109,8 @@ export interface DetectRow {
     /** its thinking levels and the program wisp runs (runtime AgentStatus; `bin` additive 2026-11-25) */
     efforts?: string[];
     bin?: string;
+    /** what it can do with a browser here (runtime AgentStatus `browser`, ADR-0128; additive 2026-11-26) */
+    browser?: BrowserCan;
   };
 }
 

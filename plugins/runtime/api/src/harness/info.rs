@@ -65,6 +65,10 @@ pub struct HarnessInfo {
     /// one it lacks is refused, never run without it. Additive (2026-11-14).
     #[serde(default)]
     pub variants: Vec<String>,
+    /// its CLI drives the user's own Chrome itself (Claude in Chrome, `--chrome`): `runtime.browser`'s Chrome needs no
+    /// MCP server on it (ADR-0128). Additive (2026-11-26).
+    #[serde(default)]
+    pub own_chrome: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
