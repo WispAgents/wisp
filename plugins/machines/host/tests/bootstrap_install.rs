@@ -3,8 +3,8 @@
 //! `curl` a stand-in that serves it and answers wisp's health check once the installed wisp has started, so the test
 //! needs no network and no SSH server: what it checks is the script itself (download, checksum, unpack into
 //! `~/.wisp/bin/<version>`, start, ready), and that a second connect reuses the install and the running wisp.
-#![cfg(unix)]
 #![allow(clippy::unwrap_used)]
+#![cfg(unix)]
 
 use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt as _;

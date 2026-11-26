@@ -10,6 +10,7 @@ use wisp_proc::{ChildHandle, Env, Proc, PtySize, SpawnOpts};
 use wisp_terminal_api::commands::OpenArgs;
 use wisp_terminal_api::{InputOrder, TermInfo, TermKind, TermState};
 use wisp_terminal_core::flow::{FlowEvent, SLOW_MS, exit_event, step};
+use wisp_terminal_core::pick::PortScan;
 use wisp_terminal_core::replay::{KEEP, Replay, Utf8Stream};
 use wisp_terminal_core::size::{COLS, ROWS, clamp};
 use wisp_terminal_core::{order, sse};
@@ -25,6 +26,9 @@ struct Term {
     nth: u64,
     /// a gap timer runs for its held keys ([`Registry::input`]): one per Term
     gap_armed: bool,
+    /// the app's address as its output printed it, looked for in each chunk as it comes ([`Registry::local_port`]).
+    /// A restart is a new Term: a new scan
+    port: PortScan,
 }
 
 type Key = (TermKind, String);
@@ -39,7 +43,7 @@ pub const ENDED_KEEP_MS: u64 = 5 * 60 * 1000;
 impl Term {
     fn new(info: TermInfo, handle: Option<ChildHandle>, replay: Replay) -> Self {
         let nth = NTH.fetch_add(1, Ordering::Relaxed);
-        Self { info, handle, replay, clients: Vec::new(), order: order::InputOrder::new(), nth, gap_armed: false }
+        Self { info, handle, replay, clients: Vec::new(), order: order::InputOrder::new(), nth, gap_armed: false, port: PortScan::new() }
     }
 
     fn type_in(&self, parts: Vec<String>) {
@@ -144,11 +148,11 @@ impl Registry {
         self.info(kind, id).is_some_and(|i| i.state.live())
     }
 
-    /// The port the run's own output says the app listens on (v1 runs.js `r.url`), from its kept screen.
+    /// The port the run's own output says the app listens on (v1 runs.js `r.url`). Found as the output came, not
+    /// read from its kept screen: the proxy asks on every request, and reading a megabyte of screen (compacted, its
+    /// colours stripped) under the lock every output chunk also takes held up both.
     pub fn local_port(&self, kind: TermKind, id: &str) -> Option<u16> {
-        let mut m = lock(&self.map);
-        let t = m.get_mut(&(kind, id.to_owned()))?;
-        wisp_terminal_core::pick::local_port_in(t.replay.read())
+        lock(&self.map).get(&(kind, id.to_owned()))?.port.port()
     }
 
     /// Starts one, or answers the one that runs. A program that can't start is an answer (`failed`).
@@ -232,6 +236,10 @@ impl Registry {
                 }
                 t.info.state = step(t.info.state, FlowEvent::Ready);
                 t.replay.push(&text);
+                // only a run's output says where its app listens (the proxy asks no other kind)
+                if key.0 == TermKind::Run {
+                    t.port.push(&text);
+                }
                 broadcast(t, &sse::data(&text));
             }
             let exit = handle.exited().await;
@@ -556,5 +564,28 @@ pub(crate) mod tests {
         assert_eq!(r.app_port(&id), None, "hung up: forgotten");
         // its own port free again: that's the one (the stable origin)
         assert_eq!(r.claim_app_port(&id).await, derived);
+    }
+
+    /// The proxy's target port is found once as the app's output comes and kept: it was read from the kept screen on
+    /// every request (a megabyte, under the lock the output takes), and lost once a megabyte more output had pushed the
+    /// address line out of it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn local_port_is_kept_past_a_full_screen_and_answers_at_once() {
+        let clock = FakeClock::at(1_000);
+        let (_k, ctx) = kernel(&clock).await;
+        let r = Registry::new(wisp_proc::local(), wisp_kernel::CancellationToken::new());
+        let script = "printf 'Local: http://localhost:5173/\\n'; head -c 1200000 /dev/zero | tr '\\0' x; printf '\\ndone-marker'";
+        r.open(&ctx, &args(TermKind::Run, "port-kept", &["sh", "-c", script]));
+        assert!(until(|| r.screen(TermKind::Run, "port-kept").ends_with("done-marker")).await, "it printed it all");
+        assert!(!r.screen(TermKind::Run, "port-kept").contains("5173"), "the address line has left the kept screen");
+        assert_eq!(r.local_port(TermKind::Run, "port-kept"), Some(5173));
+        let n: u32 = 10_000;
+        let at = std::time::Instant::now();
+        for _ in 0..n {
+            assert_eq!(r.local_port(TermKind::Run, "port-kept"), Some(5173));
+        }
+        let per = at.elapsed() / n;
+        assert!(per < std::time::Duration::from_micros(10), "{per:?} per call on a full screen");
+        r.close(TermKind::Run, "port-kept").await;
     }
 }

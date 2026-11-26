@@ -2107,13 +2107,19 @@ async fn an_agent_runs_a_workflow_under_its_own_task_and_is_told_how_it_ended() 
     assert!(err && said.contains("leave out project"), "{said}");
     let (said, err) = a.call("workflows_run", json!({ "name": "audit", "spec": spec })).await;
     assert!(!err && said.contains("Don't do its steps yourself"), "{said}");
+    // the run is over once its view says done and its result waits in the task's queue (wisp's own follow-up);
+    // finish() queues the message before the view says done, so the first snapshot with both is the end
+    let ended = |t: &Value| {
+        let q = t["queue"].as_array().cloned().unwrap_or_default();
+        q.iter().any(|i| i["text"].as_str().is_some_and(|x| x.starts_with("wisp: the workflow audit ended done")))
+    };
     let at = std::time::Instant::now();
     let t = loop {
         let t = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
-        if t.pointer("/ext/wisp.workflows/runs/0/state").and_then(Value::as_str) == Some("done") {
+        if t.pointer("/ext/wisp.workflows/runs/0/state").and_then(Value::as_str) == Some("done") && ended(&t) {
             break t;
         }
-        assert!(at.elapsed() < std::time::Duration::from_secs(60), "the run ends: {t}");
+        assert!(at.elapsed() < std::time::Duration::from_secs(60), "the run ends with its result queued: {t}");
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     };
     let run = &t["ext"]["wisp.workflows"]["runs"][0];
@@ -2127,8 +2133,7 @@ async fn an_agent_runs_a_workflow_under_its_own_task_and_is_told_how_it_ended() 
         assert_eq!(step["ext"]["wisp.workflows"]["node"], s["id"], "{step}");
     }
     // the task's agent is still in its turn: the result waits in its queue, as wisp's own follow-up
-    let q = t["queue"].as_array().cloned().unwrap_or_default();
-    assert!(q.iter().any(|i| i["text"].as_str().is_some_and(|x| x.starts_with("wisp: the workflow audit ended done"))), "{q:?}");
+    assert!(ended(&t), "{t}");
     let (said, err) = a.call("workflows_status", json!({ "id": run["id"] })).await;
     assert!(!err && said.contains("\"state\":\"done\""), "{said}");
     a.serve.stop();

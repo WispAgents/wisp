@@ -1,8 +1,8 @@
 //! Throughput of a child's output through the proc service (ADR-0011: measure, don't guess).
 //!
 //!   cargo test -p wisp-proc --release --test bench -- --ignored --nocapture
-#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::cast_precision_loss, reason = "a bench")]
+#![cfg(unix)]
 
 use std::time::Instant;
 
