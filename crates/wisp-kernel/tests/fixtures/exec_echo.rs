@@ -18,6 +18,8 @@ use serde_json::{Value, json};
 struct Rpc {
     lines: std::io::Lines<std::io::StdinLock<'static>>,
     next: u64,
+    /// the token of the `before:hang` call it never answered
+    hung: Value,
 }
 
 impl Rpc {
@@ -73,15 +75,21 @@ impl Rpc {
                     }
                     return Self::answer(&m["id"], Ok(json!({ "ok": true })));
                 }
-                for c in ["say", "nested", "deep", "hook", "setting", "crash", "env", "path", "resolve"] {
+                for c in ["say", "nested", "deep", "hook", "setting", "crash", "env", "path", "resolve", "emit", "stale"] {
                     self.request("command.register", json!({ "id": format!("echo.{c}") })).unwrap();
                 }
                 self.request("intercept.register", json!({ "n": 0, "hook": "before:go", "failure": "closed" })).unwrap();
+                self.request("intercept.register", json!({ "n": 1, "hook": "before:hang", "timeoutMs": 100 })).unwrap();
                 self.request("on", json!({ "n": 0, "type": "host.ping" })).unwrap();
                 self.request("contribute", json!({ "point": "host.list", "item": { "id": "echo" } })).unwrap();
                 Ok(json!({ "ok": true }))
             }
             "command.run" => self.command(p),
+            // never answered: the kernel's timeout ends the call
+            "intercept.run" if p["n"] == 1 => {
+                self.hung = p["call"].clone();
+                return;
+            }
             "intercept.run" => Ok(if p["ctx"]["block"] == true {
                 json!({ "kind": "veto", "code": "nope", "message": "echo says no", "then": [] })
             } else {
@@ -108,6 +116,13 @@ impl Rpc {
             "echo.deep" => self.request("run", json!({ "cmd": "echo.deep", "args": null, "call": call })),
             "echo.hook" => self.request("hook", json!({ "hook": "before:go", "ctx": p["args"], "call": call })),
             "echo.setting" => self.request("settings.get", json!({ "key": "echo.greeting" })),
+            // emits the type it's given, inside this call
+            "echo.emit" => self.request("emit", json!({ "type": p["args"]["type"], "data": {}, "call": call })),
+            // runs a command in a call it names: the hung interceptor's token, or the one in its args
+            "echo.stale" => {
+                let t = if p["args"]["call"].is_null() { self.hung.clone() } else { p["args"]["call"].clone() };
+                self.request("run", json!({ "cmd": "host.read", "args": null, "call": t }))
+            }
             "echo.crash" => std::process::exit(3),
             // what its environment holds (names only): an untrusted plugin's is nearly empty (ADR-0048)
             "echo.env" => {
@@ -134,7 +149,7 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some("dies") {
         std::process::exit(1);
     }
-    let mut rpc = Rpc { lines: std::io::stdin().lock().lines(), next: 0 };
+    let mut rpc = Rpc { lines: std::io::stdin().lock().lines(), next: 0, hung: Value::Null };
     while let Ok(m) = rpc.read() {
         if m.get("method").is_some() {
             rpc.serve(&m);

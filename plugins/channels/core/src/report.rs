@@ -6,7 +6,7 @@
 use serde_json::Value;
 use wisp_channels_api::policy::{Seen, approvals_here};
 use wisp_channels_api::scrub::{truncate, waiting_line};
-use wisp_channels_api::views::{Action, ActionKind, AskView, Msg, SessionView};
+use wisp_channels_api::views::{Action, ActionKind, AskView, Msg, SessionView, TurnView};
 
 /// How far up a subagent, a side discussion or a delegated crew job looks for the thread it came from.
 pub const MAX_HOPS: usize = 8;
@@ -24,6 +24,33 @@ pub fn answer_buttons(ask: &AskView) -> Vec<Action> {
         .iter()
         .zip(0u32..)
         .map(|(label, index)| Action { label: label.clone(), kind: ActionKind::Answer, reference: ask.id.clone(), index })
+        .collect()
+}
+
+/// One of a finished turn's `question` options: what its reply button shows, and what a tap on it sends back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplyOption {
+    pub label: String,
+    /// the full message the agent asked for (the block's `reply`), else the label
+    pub reply: String,
+}
+
+/// The options of the last `question` block `turn` ended with, in their order (a reply button's index is one of these):
+/// a string is both label and reply; an object's `label` is shown and its `reply` sent, each standing in for the other.
+/// The report and the hub's tap both read them here, so a button sends the option it shows (doc26b: the hub ignored
+/// the index and sent an empty follow-up, which the runtime refused).
+pub fn reply_options(turn: Option<&TurnView>) -> Vec<ReplyOption> {
+    let blocks = turn.and_then(|t| t.presentation.as_ref()).and_then(|p| p.get("blocks")).and_then(Value::as_array);
+    let q = blocks.into_iter().flatten().rfind(|b| str_of(b, "type") == Some("question"));
+    q.and_then(|q| q.get("options"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|o| {
+            let label = o.as_str().or_else(|| str_of(o, "label")).or_else(|| str_of(o, "reply"))?;
+            let reply = o.as_str().or_else(|| str_of(o, "reply")).unwrap_or(label);
+            Some(ReplyOption { label: label.to_owned(), reply: reply.to_owned() })
+        })
         .collect()
 }
 
@@ -65,13 +92,7 @@ pub fn message(s: &SessionView, project: Option<&str>, preview: Option<&str>) ->
     let asked = q.and_then(|q| str_of(q, "question")).map(str::to_owned);
     let text = [headline, Some(body), asked].into_iter().flatten().collect::<Vec<_>>().join("\n\n");
     let turn_id = turn.map(|t| t.id.clone()).unwrap_or_default();
-    let options: Vec<String> = q
-        .and_then(|q| q.get("options"))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|o| o.as_str().or_else(|| str_of(o, "label")).or_else(|| str_of(o, "reply")).map(str::to_owned))
-        .collect();
+    let options: Vec<String> = reply_options(turn).into_iter().map(|o| o.label).collect();
     let actions = if options.is_empty() {
         vec![Action { label: "Mark done".into(), kind: ActionKind::Done, reference: turn_id, index: 0 }]
     } else {

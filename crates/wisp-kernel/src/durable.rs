@@ -862,7 +862,9 @@ async fn deliver(
     Some(false)
 }
 
-/// `wisp events retry <seq>`: a parked event delivered again to the subscription that parked it.
+/// `wisp events retry <seq>`: a parked event delivered again to the subscription that parked it. A subscription whose
+/// plugin is off keeps its event parked (unavailable): unparking it then would drop it unseen. → how many were delivered
+/// (or parked again by a handler that still fails).
 pub(crate) async fn retry(k: &Arc<KernelState>, seq: u64) -> Result<usize> {
     let log = k.event_log().ok_or_else(|| WireError::unavailable("no event log"))?;
     let parked: Vec<Parked> = log.0.parked().await?.into_iter().filter(|p| p.seq == seq).collect();
@@ -871,15 +873,26 @@ pub(crate) async fn retry(k: &Arc<KernelState>, seq: u64) -> Result<usize> {
     }
     let ev = log.0.get(seq).await?.ok_or_else(|| WireError::not_found(format!("event {seq} isn't kept any more")))?;
     let env = envelope_of(&ev, depth_of(&log, ev.event.cause).await);
-    let mut n = 0;
+    let (mut n, mut off) = (0, None);
     for p in parked {
         let subs = k.bus.durables.lock().unwrap_or_else(PoisonError::into_inner).get(&(p.plugin.clone(), p.name.clone())).cloned();
-        let Some(sub) = subs else { continue };
+        let Some(sub) = subs.filter(|s| !s.ctx.scope().is_cancelled()) else {
+            off = Some(WireError::unavailable(format!("{} is off: switch it on to retry", p.plugin)));
+            continue;
+        };
+        // unparked first: a handler that fails again parks it afresh. Stopped before it ran (the plugin went off
+        // meanwhile), it goes back as it was.
         log.0.unpark(&p.plugin, &p.name, seq).await?;
-        deliver(k, &sub, Some(&log), &env, &sub.ctx.scope().child_token()).await;
+        if deliver(k, &sub, Some(&log), &env, &sub.ctx.scope().child_token()).await.is_none() {
+            log.0.park(p).await?;
+            continue;
+        }
         n += 1;
     }
-    Ok(n)
+    match off {
+        Some(e) if n == 0 => Err(e),
+        _ => Ok(n),
+    }
 }
 
 impl Clone for DSub {

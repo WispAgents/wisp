@@ -61,6 +61,32 @@ fn io(e: &std::io::Error) -> WireError {
     WireError::internal(format!("secrets.json: {e}"))
 }
 
+/// `secrets.json`'s bytes as [`Data`]. A document that isn't a JSON object fails (the caller then leaves the file
+/// alone); inside it, a namespace that isn't an object or a value that isn't a string (a v1 bug, a hand edit) is
+/// dropped with a warning and the rest kept.
+fn parse(b: &[u8]) -> Result<Data> {
+    let bad = |why: String| WireError::internal(format!("secrets.json: {why}; fix or move the file, wisp won't write over it"));
+    let Value::Object(top) = serde_json::from_slice::<Value>(b).map_err(|e| bad(e.to_string()))? else {
+        return Err(bad("not a JSON object".to_owned()));
+    };
+    let mut d = Data::new();
+    for (ns, kv) in top {
+        let Value::Object(kv) = kv else {
+            tracing::warn!(namespace = %ns, "secrets.json: namespace isn't an object, skipped");
+            continue;
+        };
+        let m = d.entry(ns.clone()).or_default();
+        for (k, v) in kv {
+            if let Value::String(s) = v {
+                m.insert(k, s);
+            } else {
+                tracing::warn!(namespace = %ns, key = %k, "secrets.json: value isn't a string, skipped");
+            }
+        }
+    }
+    Ok(d)
+}
+
 impl FileSecrets {
     pub fn new(home: &Path) -> Self {
         Self { inner: Arc::new(Inner { file: home.join("secrets.json"), data: Mutex::new(None) }) }
@@ -68,23 +94,21 @@ impl FileSecrets {
 }
 
 impl Inner {
-    async fn load(&self, slot: &mut Option<Data>) -> Data {
+    /// The file's secrets, cached once read. Only a missing file reads as empty: a file that can't be read
+    /// (permissions, a disk error) is an error and isn't cached, so the next call tries again, and a file
+    /// that isn't a JSON object is an error too. Either way nothing is written over it, so a bad moment
+    /// never costs every key.
+    async fn load(&self, slot: &mut Option<Data>) -> Result<Data> {
         if let Some(d) = slot {
-            return d.clone();
+            return Ok(d.clone());
         }
-        let d: Data = match tokio::fs::read(&self.file).await {
-            // a value that isn't a string (a v1 bug, a hand edit) is dropped, not fatal
-            Ok(b) => serde_json::from_slice::<BTreeMap<String, BTreeMap<String, Value>>>(&b)
-                .map(|m| {
-                    m.into_iter()
-                        .map(|(ns, kv)| (ns, kv.into_iter().filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_owned()))).collect()))
-                        .collect()
-                })
-                .unwrap_or_default(),
-            Err(_) => Data::new(),
+        let d = match tokio::fs::read(&self.file).await {
+            Ok(b) => parse(&b)?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Data::new(),
+            Err(e) => return Err(io(&e)),
         };
         *slot = Some(d.clone());
-        d
+        Ok(d)
     }
 
     async fn save(&self, d: &Data) -> Result<()> {
@@ -98,7 +122,7 @@ impl Inner {
 
     async fn update(&self, f: impl FnOnce(&mut Data) -> bool) -> Result<()> {
         let mut slot = self.data.lock().await;
-        let mut d = self.load(&mut slot).await;
+        let mut d = self.load(&mut slot).await?;
         if f(&mut d) {
             self.save(&d).await?;
             *slot = Some(d);
@@ -155,7 +179,7 @@ impl Secrets for FileSecrets {
         let (me, (ns, k)) = (self.inner.clone(), split(key));
         Box::pin(async move {
             let mut slot = me.data.lock().await;
-            Ok(me.load(&mut slot).await.get(&ns).and_then(|m| m.get(&k)).cloned())
+            Ok(me.load(&mut slot).await?.get(&ns).and_then(|m| m.get(&k)).cloned())
         })
     }
     fn set(&self, key: &str, value: &str) -> BoxFuture<'static, Result<()>> {
@@ -186,7 +210,7 @@ impl Secrets for FileSecrets {
         let (me, prefix) = (self.inner.clone(), prefix.to_owned());
         Box::pin(async move {
             let mut slot = me.data.lock().await;
-            let d = me.load(&mut slot).await;
+            let d = me.load(&mut slot).await?;
             let mut out: Vec<String> = d
                 .iter()
                 .flat_map(|(ns, kv)| kv.keys().map(move |k| if ns == "wisp" { k.clone() } else { format!("{ns}/{k}") }))

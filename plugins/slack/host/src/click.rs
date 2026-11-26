@@ -15,8 +15,8 @@ use wisp_slack_core::{event, mrkdwn};
 
 use crate::{Slack, lock, s, slack_text};
 
+pub use wisp_channels_api::IN_WORDS;
 pub const DEAD_BUTTON: &str = "That button doesn’t work any more.";
-pub const IN_WORDS: &str = "Say that in words here, so it runs in Edits at most.";
 
 /// The report's choices as signed buttons: answers, and replies unless the task runs in Full auto.
 pub fn choices(msg: &Msg, sv: &SessionView, sign: &dyn Fn(ActionKind, &str, u32) -> String) -> Vec<Choice> {
@@ -86,7 +86,7 @@ impl Slack {
         if kind == ActionKind::Reply && self.hub.phone().session(&b.s).await.ok().flatten().is_none_or(|sv| sv.mode == Some(Mode::Auto)) {
             return self.only(&c.chat, &user, &c.root, IN_WORDS).await;
         }
-        let result = match self
+        let acted = match self
             .hub
             .act(&ActArgs {
                 session_id: b.s.clone(),
@@ -107,9 +107,12 @@ impl Slack {
                     .await;
             }
         };
-        if !result.starts_with('✓') {
-            return self.only(&c.chat, &user, &c.root, &result).await;
+        // a refusal (a setup card, a stale button) changed nothing: only the clicker hears why, and the buttons stay
+        // (doc26c: this waited for a `✓` no answer has, so every click ended here and the message never said who)
+        if !acted.done {
+            return self.only(&c.chat, &user, &c.root, &acted.words).await;
         }
+        let result = acted.words;
         let line = format!("{} · <@{user}>", slack_text(&result));
         let token = s(&cfg, "botToken").to_owned();
         let text = c.text.clone().unwrap_or_else(|| slack_text(&result));
