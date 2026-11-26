@@ -30,6 +30,7 @@ export function fromRow(client: PluginClient, key: string, fallback: Json = null
     value: computed(() => (row()?.value ?? fallback) as Json),
     lockedBy: computed(() => row()?.locked_by ?? undefined),
     set: (value) => quiet(client.run(setSetting, { peer: client.home, key, value })),
+    key,
   };
 }
 
@@ -41,6 +42,7 @@ export function onOff(s: SettingSource<Json>, dflt: boolean, key?: string): Sett
   return {
     value: computed(() => read((s.value as () => Json)())),
     ...(s.lockedBy && { lockedBy: s.lockedBy }),
+    ...(s.key !== undefined && { key: s.key }),
     set: (on) => s.set(asBool ? on : on ? 'on' : 'off'),
   };
 }
@@ -56,6 +58,7 @@ export function text(s: SettingSource<Json>, dflt: string): SettingSource<string
       return typeof v === 'string' && v !== '' ? v : dflt;
     }),
     ...(s.lockedBy && { lockedBy: s.lockedBy }),
+    ...(s.key !== undefined && { key: s.key }),
     set: (v) => s.set(v),
   };
 }

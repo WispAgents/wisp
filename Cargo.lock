@@ -4056,6 +4056,7 @@ dependencies = [
  "wisp-cli-api",
  "wisp-cli-core",
  "wisp-codex",
+ "wisp-computer",
  "wisp-connectors",
  "wisp-copilot",
  "wisp-crew",
@@ -4468,6 +4469,38 @@ dependencies = [
  "serde",
  "serde_json",
  "wisp-harness-kit",
+]
+
+[[package]]
+name = "wisp-computer"
+version = "1.0.0-alpha.14"
+dependencies = [
+ "serde_json",
+ "tokio",
+ "tracing",
+ "wisp-computer-api",
+ "wisp-computer-core",
+ "wisp-kernel",
+ "wisp-proc",
+ "wisp-runtime-api",
+]
+
+[[package]]
+name = "wisp-computer-api"
+version = "1.0.0-alpha.14"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "wisp-kernel",
+]
+
+[[package]]
+name = "wisp-computer-core"
+version = "1.0.0-alpha.14"
+dependencies = [
+ "serde_json",
+ "wisp-computer-api",
 ]
 
 [[package]]

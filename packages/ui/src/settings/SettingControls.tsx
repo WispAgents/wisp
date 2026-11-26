@@ -17,6 +17,8 @@ export interface SettingSource<V> {
   /** The plugin that locked it, if one did. */
   readonly lockedBy?: Readable<string | undefined>;
   readonly set: (value: V) => unknown;
+  /** the registry key it reads, when it has one: the row carries it, so Settings' search can find it. Additive. */
+  readonly key?: string | undefined;
 }
 
 interface BoundRowProps<V> extends KitProps {
@@ -57,6 +59,7 @@ export function SwitchSetting(props: BoundRowProps<boolean>): JSX.Element {
   return (
     <SettingsRow
       part={props.part ?? 'settings.row'}
+      settingKey={props.source.key}
       title={props.title}
       description={<Description row={props} by={by()} />}
       control={<Switch checked={value() === true} onChange={(v) => props.source.set(v)} disabled={props.disabled === true || by() !== undefined} aria-label={props.title} />}
@@ -75,6 +78,7 @@ export function SelectSetting(props: SelectSettingProps): JSX.Element {
   return (
     <SettingsRow
       part={props.part ?? 'settings.row'}
+      settingKey={props.source.key}
       title={props.title}
       wideControl
       description={<Description row={props} by={by()} />}
@@ -112,6 +116,7 @@ export function ChoiceSetting(props: ChoiceSettingProps): JSX.Element {
   return (
     <SettingsRow
       part={props.part ?? 'settings.row'}
+      settingKey={props.source.key}
       title={props.title}
       {...(props.logo && { logo: props.logo })}
       wideControl

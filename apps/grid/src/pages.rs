@@ -30,7 +30,8 @@ mod time;
 
 pub use account::{AccountPage, DeviceView, IdentityView, KeyView, RouteView, account_page};
 pub use device::{
-    APP_URL, ActivatePage, DeviceAsk, MessagePage, OfflinePage, activate_page, message_page, offline_page, site_not_found, waking_page,
+    APP_URL, ActivatePage, DeviceAsk, MessagePage, OfflinePage, WakingPage, activate_page, message_page, offline_page, site_not_found,
+    waking_page,
 };
 pub use home::{ComputerView, HomePage, InstanceView, Offers, ShareView, SiteView, Start, home_page, wisp_at, wisp_settings};
 pub use hub::{ShareCard, gallery_page, gone_page, locked_page, share_page};
