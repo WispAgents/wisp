@@ -285,6 +285,7 @@ impl Gh {
         let mut ctx = phone.context().await?;
         // its project first: a comment on a repo runs there unless it says otherwise
         ctx.projects.sort_by_key(|p| p.id != project.id);
+        ctx.default_project = Some(project.clone());
         let text = wisp_channels_api::markup::strip_formatting(
             &if cmd.to_lowercase().starts_with("new ") || cmd.eq_ignore_ascii_case("new") {
                 format!("/{cmd}")
