@@ -120,6 +120,34 @@ pub struct PermissionAsk {
     pub why: Option<String>,
 }
 
+/// A tool call that writes a file (`Harness::file_write`): where, and what it does to the file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileWrite {
+    /// as the call names it (absolute, or under the run's folder)
+    pub path: String,
+    pub change: FileChangeOf,
+}
+
+/// What a file write does to the file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FileChangeOf {
+    /// the whole file, written as this
+    Whole { text: String },
+    /// these replacements, in order (`all`: every occurrence, else the first)
+    Edits { edits: Vec<TextEdit> },
+    /// a change wisp can't work out from the call (a notebook cell)
+    Opaque,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextEdit {
+    pub old: String,
+    pub new: String,
+    #[serde(default)]
+    pub all: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResumeOptions {

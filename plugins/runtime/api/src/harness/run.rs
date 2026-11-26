@@ -26,6 +26,18 @@ pub struct HarnessRun {
     pub dirs: Vec<String>,
     pub resume_id: Option<String>,
     pub fork: bool,
+    /// with `fork`: the copy is a task's own conversation (a forked task's first run), kept so its next turn resumes
+    /// it; without, the copy is thrown away after the run (/btw, a probe). Additive (2026-11-25).
+    #[serde(default)]
+    pub fork_keep: bool,
+    /// with `fork`: the copy ends at this point of the conversation (Claude: an assistant message's uuid), for a
+    /// fork from a turn before the latest. Additive (2026-11-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_at: Option<String>,
+    /// a side discussion's run (`sideOf`): it works in the main task's folder with the main task's access, and only
+    /// its file writes go to wisp first (to become proposals on the main task). Additive (2026-11-25).
+    #[serde(default)]
+    pub side: bool,
     pub mode: Mode,
     pub model: String,
     pub effort: String,

@@ -84,6 +84,11 @@ impl Runtime {
         turn.n_events = n_events;
         turn.resume_id.clone_from(&head.resume_id);
         keep_facts(&mut turn, head, auth_failed);
+        // where this turn left the conversation (a harness that shares one conversation across turns): a fork from it
+        // resumes there, not with the turns after it
+        if let Some(at) = &head.resume_at {
+            keep_in_slot(&mut turn, [("resumeAt", json!(at))]);
+        }
         turn.presentation = Some(presentation);
         self.prepare_done(&mut s, &mut turn, status).await;
         // the task's conversation, unless it was handed to another harness while this turn ran (`runtime.setAgent`):

@@ -23,6 +23,9 @@ pub struct CodexArgs<'a> {
     pub resume_id: Option<&'a str>,
     pub fork: bool,
     pub capped: bool,
+    /// a side discussion's run: it has its main task's access, so its sandbox reaches the network as Full auto would
+    /// (codex's workspace-write keeps it off by default). Never past a channel's cap.
+    pub network: bool,
     /// a lean run: the base prompt file's path
     pub lean_base: Option<&'a str>,
     /// wisp's protocol as developer instructions (codex ≥ 0.53, not Windows, not set in config.toml)
@@ -150,6 +153,8 @@ pub fn args(a: &CodexArgs<'_>) -> Vec<String> {
     }
     if a.capped && a.mode != "auto" {
         c(&mut out, "sandbox_workspace_write.network_access=false".into());
+    } else if a.network && a.mode != "auto" {
+        c(&mut out, "sandbox_workspace_write.network_access=true".into());
     }
     if !a.dirs.is_empty() && a.mode != "auto" {
         c(&mut out, format!("sandbox_workspace_write.writable_roots={}", toml(&Value::from(a.dirs.to_vec()))));

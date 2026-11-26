@@ -2,6 +2,10 @@
 //! in that main task's folder as it is now. Each run hears the side rules in its system prompt (v1 `sideNote`) and,
 //! before each of the user's messages, where the main task stands now (v1 `sidePrompt`). Nothing of it goes into the
 //! main task's conversation: it resumes its own (orch #5, tasks #6).
+//!
+//! It has the main task's access on every harness (audit user-side-full-access): the main task's mode, never below
+//! Edits, its commands and web tools without a card. Only its file writes go to wisp first, where the harness can stop
+//! one until wisp answers: a write to a file the main task changed becomes a proposal on the main task (`more/ask.rs`).
 
 use wisp_runtime_api::harness::{HarnessInfo, HarnessRun};
 use wisp_runtime_api::model::{Mode, Session};
@@ -10,10 +14,17 @@ use wisp_runtime_core::prompt::side::{MainTask, SideOf, side_note, side_prompt};
 
 use crate::runtime::Runtime;
 
+/// A side discussion's mode: the main task's, never below Edits (it used to fall back to Plan on a harness that can't
+/// ask before a write, and to Edits on one that can, whatever the main task ran in).
+pub(crate) fn side_mode(main: Mode) -> Mode {
+    if main.rank() > Mode::Edits.rank() { main } else { Mode::Edits }
+}
+
 impl Runtime {
-    /// v1 `sideMode`: Edits behind wisp's gate where the harness can ask before a write, else Plan.
-    pub(crate) fn side_mode(&self, info: &HarnessInfo) -> Mode {
-        if info.side_gate && self.host.agent_access().is_some() { Mode::Edits } else { Mode::Plan }
+    /// Whether a side run's file writes go to wisp before they happen: its harness can stop a write until wisp answers
+    /// (`side_gate`) and wisp's tools are there to ask.
+    pub(crate) fn side_proposes(&self, info: &HarnessInfo) -> bool {
+        info.side_gate && self.host.agent_access().is_some()
     }
 
     /// The side rules for the system prompt ('' for a task that isn't a side discussion).
@@ -30,11 +41,12 @@ impl Runtime {
             }
             _ => String::new(),
         };
-        side_note(SideOf { id, title }, &tool, self.side_mode(info) == Mode::Edits, &info.name)
+        side_note(SideOf { id, title }, &tool, self.side_proposes(info))
     }
 
     /// The run of a side discussion as it goes: in the main task's folder now (it may have moved to a worktree since),
-    /// in its side mode, every write through the gate in Edits, and the user's words after the main task's state.
+    /// its writes through the gate where the harness has one, and the user's words after the main task's state. Its mode
+    /// was set before the run was made (`start_turn`), so its MCP servers are the ones that mode gets.
     pub(crate) async fn side_discussion_run(&self, s: &Session, info: &HarnessInfo, run: &mut HarnessRun, said: &str) {
         let Some(main_id) = crate::run::side_main(s) else { return };
         let main = self.repo.session(main_id).await.ok();
@@ -44,8 +56,8 @@ impl Runtime {
             run.cwd.clone_from(&m.cwd);
             run.dirs.clone_from(&m.dirs);
         }
-        run.mode = self.side_mode(info);
-        run.gate = run.mode == Mode::Edits;
+        run.side = true;
+        run.gate = self.side_proposes(info);
         let render = |blocks: &[serde_json::Value], _t: &wisp_runtime_api::model::Turn| {
             wisp_runtime_core::blocks::blocks_to_markdown(
                 blocks,
@@ -73,5 +85,18 @@ impl Runtime {
         } else {
             run.prompt = wrapped;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Audit user-side-full-access: a side runs at the main task's mode, never below Edits, Full auto when it is.
+    #[test]
+    fn a_side_runs_at_the_main_tasks_mode_never_below_edits() {
+        assert_eq!(side_mode(Mode::Plan), Mode::Edits);
+        assert_eq!(side_mode(Mode::Edits), Mode::Edits);
+        assert_eq!(side_mode(Mode::Auto), Mode::Auto);
     }
 }

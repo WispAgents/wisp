@@ -144,18 +144,8 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, mut a: Start
     };
     let main_title = side_of.as_ref().map(|_| main.as_ref().map(|m| m.title.clone()).unwrap_or_default());
     mark_side(&mut a, side_of.as_ref().zip(main_title.as_deref()));
-    // a side discussion works in the main task's folder, on its harness unless one was picked (v1 side_task); never
-    // in a worktree of its own: it talks the main task's work over (orch #5)
     if let Some(m) = &main {
-        if a.cwd.as_deref().is_none_or(str::is_empty) {
-            a.cwd = Some(m.cwd.clone());
-            a.dirs.clone_from(&m.dirs);
-        }
-        if a.agent.as_deref().is_none_or(str::is_empty) {
-            a.agent = Some(m.agent.clone());
-            a.model.get_or_insert_with(|| m.model.clone());
-        }
-        a.worktree = None;
+        side_of_main(&mut a, m);
     }
     let (store, proc) = (ctx.service::<Store>()?, ctx.service::<Proc>()?);
     let home = wisp_kernel::services::paths(ctx).ok().map(|p| p.home().to_owned());
@@ -191,7 +181,7 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, mut a: Start
         let mode = serde_json::to_value(mode).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
         // a rerun at an older commit: its worktree's branch starts at that commit (the detached folder made for it)
         let from = p.detached.as_ref().map(|(_, path)| path.clone());
-        let wa = wisp_worktrees_api::CreateArgs { session_id: made.id.0.clone(), cwd, title, mode, from, reuse, tidy };
+        let wa = wisp_worktrees_api::CreateArgs { session_id: made.id.0.clone(), cwd, title, mode, from, reuse, tidy, at: None };
         let made = in_worktree(ctx, &rt, &proc, made, wa, &setup).await?;
         // it runs in its own worktree now: the detached folder goes (audit C8); one it still runs in stays
         if let Some((project, path)) = &p.detached
@@ -248,6 +238,42 @@ pub(crate) fn mark_side(a: &mut StartArgs, main: Option<(&wisp_runtime_api::Sess
     }
     if a.ext.get("wisp.runtime").is_some_and(|o| o.as_object().is_some_and(serde_json::Map::is_empty)) {
         a.ext.remove("wisp.runtime");
+    }
+}
+
+/// A side discussion starts with its main task's setup (v1 `side_task`, audit user-side-full-access): its folder, never a
+/// worktree of its own (it talks the main task's work over, orch #5); its harness, model, thinking and account unless
+/// one was picked; the connectors it names and its formula's overlay, its team and its cap, so its first run has the
+/// main task's MCP servers and access. The client's `sideStart` sends none of these.
+pub(crate) fn side_of_main(a: &mut StartArgs, m: &wisp_runtime_api::model::Session) {
+    if a.cwd.as_deref().is_none_or(str::is_empty) {
+        a.cwd = Some(m.cwd.clone());
+        a.dirs.clone_from(&m.dirs);
+    }
+    if a.agent.as_deref().is_none_or(str::is_empty) || a.agent.as_deref() == Some(m.agent.as_str()) {
+        a.agent = Some(m.agent.clone());
+        a.model.get_or_insert_with(|| m.model.clone());
+        a.effort.get_or_insert_with(|| m.effort.clone());
+        if a.account.is_none() {
+            a.account.clone_from(&m.account);
+        }
+    }
+    a.worktree = None;
+    let main = m.ext.get("wisp.runtime");
+    if a.connectors.is_empty() {
+        a.connectors = main
+            .and_then(|o| o.pointer("/spec/connectors"))
+            .and_then(serde_json::Value::as_array)
+            .map(|l| l.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default();
+    }
+    let own = a.ext.entry("wisp.runtime".to_owned()).or_insert_with(|| serde_json::json!({}));
+    if let (Some(o), Some(main)) = (own.as_object_mut(), main) {
+        for k in ["connectors", "subagents", "capped"] {
+            if let Some(v) = main.get(k).filter(|v| !v.is_null()) {
+                o.entry(k).or_insert_with(|| v.clone());
+            }
+        }
     }
 }
 
@@ -327,6 +353,39 @@ mod tests {
         let mut a = StartArgs::default();
         mark_side(&mut a, None);
         assert!(!a.ext.contains_key("wisp.runtime"), "nothing added to a plain create");
+    }
+
+    /// Audit user-side-full-access: a side discussion gets its main task's account, thinking, connectors (named and its
+    /// overlay), team and cap, with nothing more sent by the client than its prompt and main task.
+    #[test]
+    fn a_side_discussion_starts_with_its_main_tasks_setup() {
+        let mut m = wisp_runtime_api::model::Session {
+            agent: "claude".into(),
+            model: "opus".into(),
+            effort: "high".into(),
+            account: Some("work".into()),
+            cwd: "/w/app".into(),
+            ..wisp_runtime_api::model::Session::default()
+        };
+        m.ext.insert(
+            "wisp.runtime".into(),
+            serde_json::json!({ "spec": { "connectors": ["linear"] }, "connectors": { "docs": { "command": "d" } }, "subagents": [{ "name": "rev" }], "capped": { "mode": "edits" }, "btw": [1] }),
+        );
+        let mut a = StartArgs { prompt: "why?".into(), parent_id: Some("main".into()), ..StartArgs::default() };
+        mark_side(&mut a, Some((&"main".into(), "Fix login")));
+        side_of_main(&mut a, &m);
+        assert_eq!((a.agent.as_deref(), a.model.as_deref(), a.effort.as_deref()), (Some("claude"), Some("opus"), Some("high")));
+        assert_eq!((a.account.as_deref(), a.cwd.as_deref(), a.worktree), (Some("work"), Some("/w/app"), None));
+        assert_eq!(a.connectors, ["linear"]);
+        let o = &a.ext["wisp.runtime"];
+        assert_eq!(o["connectors"], serde_json::json!({ "docs": { "command": "d" } }));
+        assert_eq!(o["subagents"], serde_json::json!([{ "name": "rev" }]));
+        assert_eq!(o["capped"], serde_json::json!({ "mode": "edits" }));
+        assert!(o.get("btw").is_none() && o["sideOf"]["id"] == "main", "{o}");
+        // another harness picked: its own model, thinking and account
+        let mut b = StartArgs { agent: Some("codex".into()), ..StartArgs::default() };
+        side_of_main(&mut b, &m);
+        assert_eq!((b.model, b.effort, b.account), (None, None, None));
     }
 
     /// Review r194 final pass #1: only a plugin's or the kernel's step of the parent's own run inherits its hold.
