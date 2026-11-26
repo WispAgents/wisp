@@ -56,7 +56,7 @@ pub struct TaskDecl {
     pub crew: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub connectors: Vec<String>,
-    /// when it runs by itself: a cron or words ("every day at 2"), in UTC
+    /// when it runs by itself: a cron or words ("every day at 2"), in this computer's zone
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub schedule: String,
     /// paused: its schedule doesn't fire (it still runs by hand)

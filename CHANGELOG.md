@@ -32,6 +32,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Changes in a monorepo folder (a task opened at `packages/web`): every file is listed relative to that folder, and Stage, Revert and Undo act on the file listed. Revert no longer writes a stray `packages/web/packages/web/…` copy, and hunk staging works there. The scope is that folder everywhere the branch's changes are read: the PR text Ship drafts and the files Review reads now cover only that folder's changes, not the branch's edits in other packages.
+- A scheduled task (Start later) whose start fails, because wisp's runtime was away or refused it, is no longer deleted unseen. It tries again after a minute, then five, and after three failures it waits in **Drafts** with *Couldn’t start at its time*. **Start now**, an edit or Cancel on a scheduled task that is already starting at its time is refused (it says the task is starting) instead of starting it twice or losing the edit.
+- A follow-up's turn is always counted as the follow-up's, even when it starts before the send returns. The user's next turn then starts the agent's wake-up chain again, and a reminder that turn cleared stays cleared.
+- Crew check-ins and declared task schedules run in your time zone, not UTC: a `0 8 * * 1-5` check-in is at 08:00 where you are. A declared schedule missed while the computer slept runs once when it wakes, marked late, never twice.
+- wisp now prunes its change feed and frees unreferenced blobs every hour (the first a few minutes after start), so the database and `blobs/` stop growing without bound. A blob saved while the cleanup frees the same content keeps its file.
+- A task list that changed while its first look was read in pages, with the change feed pruned meanwhile, no longer drops the changes in between: the snapshot closes at the seq its pages cover.
 - Factories: a run wisp restarts in the middle of starting a station picks up where it was. It starts only the station tasks it hadn't started and sends only the follow-ups it hadn't sent. Before, it could end failed with "the spec station made no task", or take round 1's review as round 2's.
 - Factories: a run that fails now stops its station tasks, as a stopped run does. A build whose second agent couldn't start no longer leaves the first one running. A finished run still keeps its build for you to read or merge.
 - Factories: `factory.set` takes the loop as `back_to` (and `backTo`). Before, its tool said `backTo`, and a factory written that way was refused.

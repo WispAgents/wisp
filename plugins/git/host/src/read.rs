@@ -54,7 +54,8 @@ impl Inner {
     }
 
     pub async fn show(&self, rev: &str, path: &str) -> Result<Option<Vec<u8>>> {
-        let spec = format!("{rev}:{path}");
+        // `./`: the path is in Changes' frame, relative to `dir` (a monorepo subfolder), not to the top
+        let spec = format!("{rev}:./{}", path.trim_start_matches("./"));
         let r = self.git.exec(&self.dir, &read_args(&["show", &spec]), Opts::default()).await?;
         Ok(r.exit.success().then_some(r.stdout))
     }
@@ -108,8 +109,9 @@ impl Inner {
         let Some(at) = self.merge_base("HEAD", base_ref).await? else {
             return Ok(None);
         };
-        let committed = self.git.quiet(&self.dir, &["diff", "--name-only", &at, "HEAD"]).await;
-        let edited = self.git.quiet(&self.dir, &["diff", "--name-only", "HEAD"]).await;
+        // `--relative`, as `ls-files` and Changes: one frame, relative to `dir` (a monorepo subfolder's, its files only)
+        let committed = self.git.quiet(&self.dir, &["diff", "--relative", "--name-only", &at, "HEAD"]).await;
+        let edited = self.git.quiet(&self.dir, &["diff", "--relative", "--name-only", "HEAD"]).await;
         let added = self.git.quiet(&self.dir, &["ls-files", "--others", "--exclude-standard"]).await;
         let mut files: Vec<String> =
             committed.lines().chain(edited.lines()).chain(added.lines()).filter(|l| !l.is_empty()).map(str::to_owned).collect();
