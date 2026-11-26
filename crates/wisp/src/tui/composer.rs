@@ -150,11 +150,33 @@ impl Composer {
         }
     }
 
+    /// The box's text replaced (`$EDITOR` saved, history recalled, a refused send back). A collapsed paste or an
+    /// image whose token is still in the new text stays with it: an editor round trip used to drop every attachment.
+    /// The images left are numbered again from 1, so the next one pasted never reuses a token still in the text.
     pub fn set(&mut self, text: &str) {
         let walk = self.walk;
+        let pastes = std::mem::take(&mut self.pastes);
+        let attachments = std::mem::take(&mut self.attachments);
         self.clear();
         self.walk = walk;
-        self.insert(text);
+        self.pastes = pastes.into_iter().filter(|(token, _)| text.contains(token.as_str())).collect();
+        let mut text = text.to_owned();
+        for (i, path) in attachments.into_iter().enumerate() {
+            let token = format!("[image {}]", i + 1);
+            if text.contains(&token) {
+                self.attachments.push(path);
+                text = text.replace(&token, &format!("[image {}]", self.attachments.len()));
+            }
+        }
+        self.insert(&text);
+    }
+
+    /// `/id ` put before the draft (a command picked from the palette): what was written, its pastes and its images
+    /// stay, and the cursor waits after the command for its arguments.
+    pub fn prefix(&mut self, s: &str) {
+        self.ensure();
+        self.lines[0].insert_str(0, s);
+        self.cur = (0, s.chars().count());
     }
 
     /// A paste: long ones collapse; a path to an image becomes an attachment.
@@ -180,15 +202,21 @@ impl Composer {
         }
     }
 
-    /// What goes: the text with every collapsed paste put back.
-    pub fn take(&mut self) -> String {
+    /// The text with every collapsed paste put back (what is sent, and what `$EDITOR` gets).
+    pub fn expanded(&self) -> String {
         let mut t = self.text();
         for (token, whole) in &self.pastes {
             t = t.replace(token, whole);
         }
-        let t = t.trim().to_owned();
+        t
+    }
+
+    /// What goes: the text with every collapsed paste put back. History keeps that whole text: recalling the token
+    /// alone (`[pasted 40 lines]`) sent the token, since the paste it stood for was gone.
+    pub fn take(&mut self) -> String {
+        let t = self.expanded().trim().to_owned();
         if !t.is_empty() {
-            self.history.push(self.text().trim().to_owned());
+            self.history.push(t.clone());
         }
         self.clear();
         t
@@ -265,11 +293,58 @@ mod tests {
         let sent = c.take();
         assert!(sent.contains("line 39") && !sent.contains("[pasted"), "the paste goes whole");
         assert!(c.is_empty());
-        // history with ↑ in an empty box
+        // history with ↑ in an empty box: the whole text, the paste put back
         c.up();
-        assert_eq!(c.text(), "fix it\nand tes[pasted 40 lines]");
+        assert!(c.text().starts_with("fix it\nand tesline 0") && c.text().ends_with("line 39"), "{}", c.text());
+        assert_eq!(c.take(), sent, "a recalled collapsed paste sends its body, not its token");
+        c.up();
+        c.down();
         c.down();
         assert!(c.is_empty());
+    }
+
+    #[test]
+    fn an_editor_round_trip_keeps_a_long_paste_whole() {
+        let mut c = Composer::default();
+        c.insert("look at this ");
+        let big: String = (0..40).fold(String::new(), |acc, i| acc + &format!("line {i}\n"));
+        c.paste(&big);
+        // Ctrl-E hands the editor the expanded text; what it saves comes back through set()
+        let out = c.expanded();
+        assert!(out.contains("line 39") && !out.contains("[pasted"), "{out}");
+        c.set(&format!("{out}\nthanks"));
+        let sent = c.take();
+        assert!(sent.contains("line 0") && sent.contains("line 39") && sent.ends_with("thanks"), "{sent}");
+    }
+
+    #[test]
+    fn an_image_whose_token_survives_set_is_kept() {
+        let dir = std::env::temp_dir().join(format!("wisp-composer-img-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("a.png"), dir.join("b.png"));
+        std::fs::write(&a, b"x").unwrap();
+        std::fs::write(&b, b"y").unwrap();
+        let mut c = Composer::default();
+        c.paste(&a.display().to_string());
+        c.insert(" and ");
+        c.paste(&b.display().to_string());
+        assert_eq!(c.text(), "[image 1] and [image 2]");
+        c.set("only [image 2] now");
+        assert_eq!(c.attachments, vec![b.display().to_string()], "the image still named stays; the other goes");
+        assert_eq!(c.text(), "only [image 1] now", "numbered again, so the next paste never reuses a token");
+        c.set("none left");
+        assert_eq!(c.attachments, Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_prefix_goes_before_the_draft_and_keeps_it() {
+        let mut c = Composer::default();
+        c.insert("hello");
+        c.attachments.push("/tmp/x.png".into());
+        c.prefix("/goal ");
+        assert_eq!((c.text().as_str(), c.cur), ("/goal hello", (0, 6)));
+        assert_eq!(c.attachments, vec!["/tmp/x.png".to_owned()]);
     }
 
     #[test]

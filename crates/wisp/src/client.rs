@@ -92,6 +92,17 @@ impl Client {
         }
     }
 
+    /// The port this client reaches wisp on (the one `connect` found, not the default), so a child `wisp` it starts
+    /// (the TUI's Open in) talks to the same server.
+    pub fn port(&self) -> Option<u16> {
+        self.url.rsplit_once(':').and_then(|(_, p)| p.parse().ok())
+    }
+
+    /// `--on <machine>`: the peer its commands run on, if any.
+    pub fn on(&self) -> Option<&str> {
+        self.on.as_deref()
+    }
+
     pub async fn request(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
         let m = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| CliError::said(e.to_string()))?;
         let read = m == reqwest::Method::GET || m == reqwest::Method::HEAD;
