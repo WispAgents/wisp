@@ -379,7 +379,17 @@ async fn wisps_tools_work_in_plan_mode_and_in_codex_edits_and_plan() {
         run(&api, &dir, "codex", mode).await;
         let a = last_argv(&rec, "codex").join(" ");
         assert!(a.contains(r#"mcp_servers.wisp.default_tools_approval_mode="approve""#), "codex {mode}: wisp's tools aren't refused: {a}");
-        assert!(a.contains(r#"mcp_servers.docs.default_tools_approval_mode="approve""#), "codex {mode}: nor a connector's: {a}");
+        // a connector's tools are never pre-approved (connectors-r3, CONN-1): in Edits codex refuses its call rather
+        // than run it unasked, and Plan gets no connector at all unless the connector names plan in its modes
+        assert!(
+            !a.contains(r#"mcp_servers.docs.default_tools_approval_mode="approve""#),
+            "codex {mode}: a connector's tools aren't pre-approved: {a}"
+        );
+        if mode == "plan" {
+            assert!(!a.contains("mcp_servers.docs."), "codex plan: no connector without plan in its modes: {a}");
+        } else {
+            assert!(a.contains("mcp_servers.docs."), "codex edits: the connector is there: {a}");
+        }
     }
 }
 
