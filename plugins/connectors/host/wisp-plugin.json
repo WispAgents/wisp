@@ -66,6 +66,11 @@
         "title": "Sign out of a connector"
       },
       {
+        "id": "connectors.token",
+        "title": "A signed-in connector's token, refreshed when it ran out or was refused",
+        "uiOnly": "the connector proxy's own bearer; through an agent a live token would sit in a transcript"
+      },
+      {
         "id": "connectors.agent.list",
         "title": "The user's connectors, as a task's agent reads them (wisp_connectors)",
         "readOnly": true
