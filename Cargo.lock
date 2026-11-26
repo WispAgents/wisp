@@ -4853,6 +4853,7 @@ dependencies = [
 name = "wisp-goal"
 version = "1.0.0-alpha.17"
 dependencies = [
+ "futures",
  "schemars",
  "serde",
  "serde_json",
@@ -6214,6 +6215,7 @@ dependencies = [
  "wisp-resources-api",
  "wisp-runtime-api",
  "wisp-store",
+ "wisp-testkit",
  "wisp-workflows-api",
  "wisp-workflows-core",
 ]

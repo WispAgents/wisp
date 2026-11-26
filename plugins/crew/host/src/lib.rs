@@ -64,6 +64,38 @@ pub(crate) struct State {
     pub reporting: tokio::sync::Mutex<()>,
     /// the user's IANA zone (`settings.timeZone`, as the client sent it); None: the machine's
     pub zone: Mutex<Option<String>>,
+    /// member id → the jobs placed to start whose task isn't recorded in `jobs` yet (a [`Slot`] each): they count
+    /// against the member's limit, so two jobs given at once to an idle member never both start past it
+    pub(crate) starting: Mutex<std::collections::HashMap<String, u32>>,
+}
+
+/// A place taken under a member's limit for one job about to start (`State::reserve`). It counts until the job's task
+/// is recorded (`State::add_job`), or is given back when the start fails, however it ends.
+pub(crate) struct Slot<'a> {
+    st: &'a State,
+    member: String,
+    held: bool,
+}
+
+impl Slot<'_> {
+    fn release(&mut self) {
+        if !std::mem::take(&mut self.held) {
+            return;
+        }
+        let mut s = lock(&self.st.starting);
+        if let Some(n) = s.get_mut(&self.member) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                s.remove(&self.member);
+            }
+        }
+    }
+}
+
+impl Drop for Slot<'_> {
+    fn drop(&mut self) {
+        self.release();
+    }
 }
 
 /// The zone check-ins run in and notes write times in: the user's, else the machine's, as automations' triggers
@@ -115,6 +147,7 @@ impl State {
             reported: Mutex::default(),
             reporting: tokio::sync::Mutex::new(()),
             zone: Mutex::default(),
+            starting: Mutex::default(),
         }
     }
 
@@ -205,9 +238,31 @@ impl State {
         self.layout_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// A job started as task `session`.
-    pub async fn add_job(&self, member: &str, session: &str, at: i64) {
-        lock(&self.jobs).entry(member.to_owned()).or_default().push(session.to_owned());
+    /// The member's jobs that count against their limit now: `busy`, the live ones of the jobs `seen` when they were
+    /// read, with the ones recorded since and the ones still starting. Read under `saved` (in `State::update`) with
+    /// the place it decides taken there too ([`State::reserve`]), so no other job is placed between the two.
+    pub fn taken(&self, member: &str, busy: u32, seen: &[String]) -> u32 {
+        let jobs = lock(&self.jobs);
+        let since = jobs.get(member).map_or(0, |ids| ids.iter().filter(|id| !seen.contains(id)).count());
+        let starting = lock(&self.starting).get(member).copied().unwrap_or(0);
+        busy.saturating_add(u32::try_from(since).unwrap_or(u32::MAX)).saturating_add(starting)
+    }
+
+    /// A place under `member`'s limit for a job about to start.
+    pub fn reserve(&self, member: &str) -> Slot<'_> {
+        *lock(&self.starting).entry(member.to_owned()).or_default() += 1;
+        Slot { st: self, member: member.to_owned(), held: true }
+    }
+
+    /// A job started as task `session`: recorded, and its slot given back in the same breath (under `jobs`), so a
+    /// placement never counts it twice nor misses it.
+    pub async fn add_job(&self, mut slot: Slot<'_>, session: &str, at: i64) {
+        let member = slot.member.clone();
+        {
+            let mut jobs = lock(&self.jobs);
+            jobs.entry(member.clone()).or_default().push(session.to_owned());
+            slot.release();
+        }
         let Some(store) = self.store.get().cloned() else { return };
         let mut r = wisp_store::Row::new();
         r.insert("session_id".into(), serde_json::json!(session));

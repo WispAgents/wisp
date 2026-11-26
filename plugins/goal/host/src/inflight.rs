@@ -16,9 +16,10 @@ struct Run {
     machine: Option<String>,
 }
 
-/// Each task's judges' runs under way.
+/// Each task's judges' runs under way, and the tasks whose round was halted (you stopped the task it held in Working:
+/// its votes, cut short, decide nothing).
 #[derive(Debug, Clone, Default)]
-pub struct Inflight(Arc<Mutex<HashMap<String, Vec<Run>>>>);
+pub struct Inflight(Arc<Mutex<HashMap<String, Vec<Run>>>>, Arc<Mutex<std::collections::HashSet<String>>>);
 
 /// A run's place in [`Inflight`], gone with the judge however it ends.
 pub(crate) struct Held {
@@ -42,6 +43,20 @@ impl Drop for Held {
 impl Inflight {
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<Run>>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// `task`'s round is halted: no judge of it starts, and what its stopped ones said decides nothing.
+    pub(crate) fn halt(&self, task: &str) {
+        self.1.lock().unwrap_or_else(PoisonError::into_inner).insert(task.to_owned());
+    }
+
+    pub(crate) fn halted(&self, task: &str) -> bool {
+        self.1.lock().unwrap_or_else(PoisonError::into_inner).contains(task)
+    }
+
+    /// Whether `task`'s round was halted, the mark cleared (a new round starts unhalted).
+    pub(crate) fn take_halt(&self, task: &str) -> bool {
+        self.1.lock().unwrap_or_else(PoisonError::into_inner).remove(task)
     }
 
     /// `run` (on `machine`) is about to judge `task`'s goal: a stop from here on reaches it.

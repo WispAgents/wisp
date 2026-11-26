@@ -8,7 +8,8 @@ mod calls;
 mod egress;
 pub mod inflight;
 mod judging;
-use judging::{after, judge_turn, recover, wake_dropped};
+use judging::{Holds, judge_turn, recover, wake_dropped};
+mod hold;
 mod kinds;
 pub mod runs;
 mod slash;
@@ -21,7 +22,6 @@ use serde_json::{Value, json};
 use wisp_goal_api::{GoalState, PLUGIN};
 use wisp_goal_core::MAX_ROUNDS;
 use wisp_kernel::{Ctx, Manifest, Plugin, Result, Setup, WireError};
-use wisp_runtime_api::events::TurnEnded;
 use wisp_runtime_api::ext::update_ext;
 use wisp_runtime_api::model::{Session, TurnStatus};
 
@@ -185,7 +185,9 @@ async fn set(ctx: &Ctx, defaults: &kinds::Defaults, named: &kinds::Named, live: 
         let turns = turns_of(ctx, &call, &a.id).await.unwrap_or_default();
         if let Some(last) = turns.last().filter(|t| t.status == TurnStatus::Done) {
             let (c, d, l, id, turn) = (ctx.clone(), defaults.clone(), live.clone(), a.id.clone(), last.id.as_str().to_owned());
-            ctx.spawn(async move { judge_turn(&c, &d, &l, &id, &turn).await });
+            ctx.spawn(async move {
+                judge_turn(&c, &d, &l, &id, &turn).await;
+            });
             kicked = true;
         }
     }
@@ -329,7 +331,9 @@ async fn check_now(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, id: &
         return Err(WireError::invalid("No finished turn to check yet."));
     };
     let (c, d, l, id) = (ctx.clone(), defaults.clone(), live.clone(), id.to_owned());
-    ctx.spawn(async move { judge_turn(&c, &d, &l, &id, &turn).await });
+    ctx.spawn(async move {
+        judge_turn(&c, &d, &l, &id, &turn).await;
+    });
     Ok(json!({}))
 }
 
@@ -444,14 +448,15 @@ impl Plugin for GoalPlugin {
             async move { Ok(declared(&n)) }
         });
         crate::slash::register(s, named);
-        let (dr, lr) = (Arc::clone(&defaults), live.clone());
+        let holds = Holds::default();
+        let (dr, lr, hr) = (Arc::clone(&defaults), live.clone(), holds.clone());
         s.on_start(|ctx| async move {
             if let Ok(store) = ctx.service::<wisp_store::Store>() {
                 runs::install(&store).map_err(|e| WireError::internal(e.to_string()))?;
             }
             // checks a restart cut short: ended, and their goals judged again
             let c = ctx.clone();
-            ctx.spawn(async move { recover(&c, &dr, &lr).await });
+            ctx.spawn(async move { recover(&c, &dr, &lr, &hr).await });
             Ok(())
         });
         let mover = |to: &'static str| {
@@ -469,12 +474,10 @@ impl Plugin for GoalPlugin {
             let (d, l) = (dc.clone(), lc.clone());
             async move { check_now(&ctx, &d, &l, &a.id).await }
         });
-        let (dt, lt) = (Arc::clone(&defaults), live.clone());
-        s.on::<TurnEnded, _, _>(move |ctx, ev| {
-            let (d, l, ev, c) = (dt.clone(), lt.clone(), ev.clone(), ctx.clone());
-            ctx.spawn(async move { after(&c, &d, &l, &ev).await });
-            async {}
-        });
+        // a turn's end is judged as an after-turn step, which holds its task in Working while the judges vote (hold.rs);
+        // `turn.ended` judges nothing, so no round is judged twice
+        let round = hold::GoalHold { ctx: s.ctx(), defaults: Arc::clone(&defaults), live: live.clone(), hold: holds };
+        s.contribute(&wisp_runtime_api::points::AFTER, Arc::new(round) as Arc<dyn wisp_runtime_api::points::AfterTurn>);
         // a deleted task's goal checks go with it, and its judges still running stop
         let ld = live.clone();
         s.on::<wisp_runtime_api::events::SessionDeleted, _, _>(move |ctx, e| {

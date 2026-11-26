@@ -24,6 +24,8 @@ use wisp_workflows_core::{Action, Run, check, output_of};
 
 /// How often a run looks at its steps when nothing woke it (timeouts).
 const LOOK_MS: u64 = 2_000;
+/// How long a step stopped for its timeout is waited on to end (its turn's cost counted) before it's failed anyway.
+const STOP_WAIT_MS: i64 = 30_000;
 /// The runs a task keeps in its view (the newest).
 const KEEP: usize = 8;
 /// How much of a step's answer the owner is sent when the run ends (its task holds the rest).
@@ -31,8 +33,10 @@ const SAY_CHARS: usize = 700;
 /// How much of a step's output the task's view carries.
 const VIEW_CHARS: usize = 240;
 
-/// `(task, cost)` of every turn that ended, for the runs to wake on.
-pub(crate) type Ended = broadcast::Sender<(String, f64)>;
+/// The task of every turn that ended, for the runs to wake on. What a step cost is read from its task's turns when it
+/// ends, not summed from these: a wake missed (a lagged receiver) or one that came after its step was finished (a
+/// timeout's stopped turn) went uncounted, and the budget ran past.
+pub(crate) type Ended = broadcast::Sender<String>;
 
 /// What a run's driver is told while it goes: stop, or a change (ADR-0121) with who made it, the mode its steps
 /// may run at (an agent's: its task's), and where to say whether it took.
@@ -334,27 +338,34 @@ pub(crate) enum Look {
     Retry,
 }
 
-/// How the node's task stands (`goal`: the step has a goal of its own, judged before the step counts as done).
-async fn ended(ctx: &Ctx, call: &Call, task: &str, goal: bool) -> Look {
+/// How the node's task stands (`goal`: the step has a goal of its own, judged before the step counts as done), and
+/// what its turns cost so far (read once it's seen ending; 0 while it goes).
+async fn ended(ctx: &Ctx, call: &Call, task: &str, goal: bool) -> (Look, f64) {
     let id = SessionId(task.to_owned());
     let t = match ctx.run::<r::Get>(call, r::IdArgs { id: id.clone() }).await {
         Ok(t) => t,
-        Err(e) => return unread(&e),
+        Err(e) => return (unread(&e), 0.0),
     };
     // a goal that stalled asks you on its task (Waiting): the step has failed all the same, so it's read before busy
     if let Some(going) = busy(&t).filter(|_| !(goal && goal_failed(&t).is_some())) {
-        return going;
+        return (going, 0.0);
     }
     let turns = match ctx.run::<r::Turns>(call, r::TurnsArgs { id, before: None, limit: None, masked: None }).await {
         Ok(turns) => turns,
-        Err(e) => return unread(&e),
+        Err(e) => return (unread(&e), 0.0),
     };
+    let cost = cost_of(&turns);
     let seen = look(&t, turns.last(), goal);
     // nothing judges it (the goal plugin is off): its turn's outcome stands, or the step waited for ever
     if goal && seen == (Look::Going { held: None }) && goal_of(&t).is_none_or(|g| g.state.is_empty()) && !goal_on(ctx, call).await {
-        return look(&t, turns.last(), false);
+        return (look(&t, turns.last(), false), cost);
     }
-    seen
+    (seen, cost)
+}
+
+/// What a step's task cost: every turn of it, as the store has them.
+pub(crate) fn cost_of(turns: &[Turn]) -> f64 {
+    turns.iter().filter_map(|t| t.stats.as_ref().and_then(|s| s.cost_usd)).filter(|c| c.is_finite() && *c > 0.0).sum()
 }
 
 /// Whether the goal plugin is on to judge a step's goal (`goal.declared` answers; unknown or off says no).
@@ -482,13 +493,14 @@ pub(crate) fn ended_message(name: &str, state: &str, run: &Run, secs: i64) -> St
     out
 }
 
-/// Each running step's task looked at: the ones that ended are finished (with what they cost), a held one says why.
-/// The steps that failed for good.
+/// Each running step's task looked at: the ones that ended are finished (with what their turns cost), a held one says
+/// why. A step stopped for its timeout (`timed_out`: its task, and when) is finished once its stopped turn has ended,
+/// so that turn's cost is counted, or after [`STOP_WAIT_MS`] all the same. The steps that failed for good.
 async fn look_at_steps(
     ctx: &Ctx,
     call: &Call,
     run: &mut Run,
-    costs: &mut BTreeMap<String, f64>,
+    timed_out: &mut BTreeMap<String, (String, i64)>,
     holds: &mut BTreeMap<String, String>,
     now: i64,
 ) -> Vec<String> {
@@ -500,10 +512,22 @@ async fn look_at_steps(
         .collect();
     for (node, task) in running {
         let goal = run.nodes.iter().find(|n| n.id == node).is_some_and(|n| has_goal(n.spec.goal.as_ref()));
-        match ended(ctx, call, &task, goal).await {
+        let (seen, cost) = ended(ctx, call, &task, goal).await;
+        let stopped = timed_out.get(&node).filter(|(t, _)| *t == task).map(|(_, at)| *at);
+        let (seen, cost) = match (seen, stopped) {
+            // its timeout stopped it: failed for that, whatever its stopped turn said
+            (Look::Ended { output, .. }, Some(_)) => (Look::Ended { ok: false, output, why: TIMED_OUT.into() }, cost),
+            // it hasn't ended since it was stopped: failed all the same after a while, with what it cost by then
+            (Look::Going { .. } | Look::Retry, Some(at)) if now - at > STOP_WAIT_MS => {
+                (Look::Ended { ok: false, output: Value::Null, why: TIMED_OUT.into() }, last_cost(ctx, call, &task).await)
+            }
+            (seen, _) => (seen, cost),
+        };
+        match seen {
             Look::Ended { ok, output, why } => {
                 holds.remove(&node);
-                run.finished(&node, ok, output, &why, costs.remove(&task).unwrap_or(0.0));
+                timed_out.remove(&node);
+                run.finished(&node, ok, output, &why, cost);
                 run.ended_at(&node, now);
                 if run.runs.get(&node).is_some_and(|r| r.state == StepState::Failed) {
                     failed.push(node);
@@ -521,11 +545,21 @@ async fn look_at_steps(
     failed
 }
 
+/// Why a step stopped for its timeout failed.
+const TIMED_OUT: &str = "it ran past its timeout";
+
+/// What a step's task cost when [`ended`] didn't read it (failed while its stopped turn still went): its turns read
+/// again, 0 if they can't be.
+async fn last_cost(ctx: &Ctx, call: &Call, task: &str) -> f64 {
+    let a = r::TurnsArgs { id: SessionId(task.to_owned()), before: None, limit: None, masked: None };
+    ctx.run::<r::Turns>(call, a).await.map_or(0.0, |turns| cost_of(&turns))
+}
+
 /// Runs the workflow under its owner until every step has ended, or it's stopped.
 async fn drive(
     ctx: Ctx,
     st: Arc<State>,
-    mut wake: broadcast::Receiver<(String, f64)>,
+    mut wake: broadcast::Receiver<String>,
     mut ctl: mpsc::UnboundedReceiver<Ctl>,
     rc: RunCtx,
     mut run: Run,
@@ -538,7 +572,8 @@ async fn drive(
             notes.push(format!("{} runs on this computer: steps on another machine ({}) aren't wired yet", n.step, n.spec.on));
         }
     }
-    let mut costs: BTreeMap<String, f64> = BTreeMap::new();
+    // the steps stopped for their timeout, until their stopped turn has ended: (task, when)
+    let mut timed_out: BTreeMap<String, (String, i64)> = BTreeMap::new();
     let mut holds: BTreeMap<String, String> = BTreeMap::new();
     let mut last = Value::Null;
     let mut stopped = false;
@@ -552,12 +587,15 @@ async fn drive(
                     },
                     Err(why) => run.finished(&node, false, Value::Null, &why, 0.0),
                 },
+                // stopped once; the step is finished when its stopped turn has ended (look_at_steps), with that turn's cost
                 Action::Stop { node, task } => {
+                    if timed_out.get(&node).is_some_and(|(t, _)| *t == task) {
+                        continue;
+                    }
                     if let Err(err) = ctx.run::<r::Stop>(&call, r::StopArgs { id: SessionId(task.clone()), clear_queue: false }).await {
                         tracing::warn!(error = %err.message, task, "workflows: runtime.stop");
                     }
-                    run.finished(&node, false, Value::Null, "it ran past its timeout", costs.remove(&task).unwrap_or(0.0));
-                    run.ended_at(&node, clock.now_ms());
+                    timed_out.insert(node, (task, clock.now_ms()));
                 }
             }
         }
@@ -571,12 +609,9 @@ async fn drive(
             break;
         }
         // a turn ended somewhere, you stopped it, or it's time to look at the timeouts
+        // a wake that lagged behind (missed some) is a wake all the same: each step's cost is read from its task
         tokio::select! {
-            got = wake.recv() => {
-                if let Ok((task, cost)) = got {
-                    *costs.entry(task).or_default() += cost;
-                }
-            }
+            _ = wake.recv() => {}
             got = ctl.recv() => match got {
                 Some(Ctl::Edit(a, by, cap, reply)) => {
                     // all or nothing: changed on a copy, kept only when every part took
@@ -601,7 +636,7 @@ async fn drive(
             },
             () = clock.sleep(LOOK_MS) => {}
         }
-        let failed = look_at_steps(&ctx, &call, &mut run, &mut costs, &mut holds, clock.now_ms()).await;
+        let failed = look_at_steps(&ctx, &call, &mut run, &mut timed_out, &mut holds, clock.now_ms()).await;
         // a step failed for good while the run goes on: its agent hears now, so it can retry or skip it (the run's end
         // says the rest)
         if !failed.is_empty() && !run.over() && rc.notify && !rc.held {
@@ -849,6 +884,11 @@ pub(crate) fn stop(call: &Call, st: &State, id: &str) -> Result<Value> {
     let _ = l.ctl.send(Ctl::Stop);
     Ok(json!({ "ok": true }))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::float_cmp)]
+#[path = "run_tests.rs"]
+mod driven;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

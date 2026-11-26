@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A workflow run cut by a wisp restart lands its task.** Its view already said it stopped; the task it held in Working (the `<name> (workflow)` task, or a lead whose turn ended while its run went) now lands in Needs review, unread, instead of saying Working for ever.
+- **A task with a goal stays in Working while its judges vote**, and lands once when the goal is met. It used to land in Needs review, unread, with a notification, every round, while the judges were still voting; another round now starts without passing through Review.
+- **A goal's judges vote at once.** A round took the sum of every judge's time; now it takes the slowest one's, and with vote `any` (one yes) or `all` (one no) the rest stop as soon as the outcome is fixed, their records saying they weren't needed.
+- **A crew member given two jobs at once while idle runs one at a time.** Both started past their parallel limit; now one starts and the other waits first in line (a lead's second job is refused as busy).
+- **A workflow's budget counts every step's cost**, including a step stopped for its timeout (its stopped turn's cost was dropped) and a step whose end was missed under load. Each step's cost is read from its task's turns.
 - **`wisp tui`'s side panes scroll, show under 100 columns, and the Terminal shows only the terminal.** With a pane focused (Tab), j k, PgUp PgDn, g g / Home and G / End scroll it and the wheel over it scrolls it, instead of moving the transcript beside it; the Terminal follows its newest output and says how much is below when you scroll back. Under 100 columns `d`, `t` and `p` open the pane in the task's place (Esc or Tab goes back), and closing a pane gives the focus back to the task. The Terminal lists shell commands with their own output under each, and no longer shows what a Read or a fetch returned. `/` from a pane searches the transcript (typing there used to close the pane or ask to stop the task), ↓ ↑ Ctrl-N Ctrl-P and Enter jump to the next or previous match with a "2/5" count, and an open step with a long output says how many lines are cut, with Enter (or Space again) showing all of it.
 ### Changed
 

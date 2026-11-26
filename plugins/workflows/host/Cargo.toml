@@ -20,5 +20,8 @@ wisp-store.workspace = true
 wisp-workflows-api.workspace = true
 wisp-workflows-core.workspace = true
 
+[dev-dependencies]
+wisp-testkit.workspace = true
+
 [lints]
 workspace = true

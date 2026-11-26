@@ -254,7 +254,7 @@ pub fn interrupted(slot: &Value) -> Option<Value> {
     Some(v)
 }
 
-/// At start: every run a task still says is going was cut; each says so.
+/// At start: every run a task still says is going was cut; each says so, and its task lands.
 async fn recover(ctx: &wisp_kernel::Ctx) {
     let call = ctx.root_call();
     let a = r::SlotsArgs { plugins: vec![EXT.into()], all: false, having: vec!["runs".into()] };
@@ -265,8 +265,26 @@ async fn recover(ctx: &wisp_kernel::Ctx) {
         let a = r::SetExtArgs { id: t.id.clone(), plugin: EXT.into(), value: v, expect: None };
         if let Err(err) = ctx.run::<r::SetExt>(&call, a).await {
             tracing::warn!(error = %err.message, task = %t.id.as_str(), "workflows: a cut run couldn't say so");
+            continue;
         }
+        land_cut(ctx, &call, t.id.as_str()).await;
     }
+}
+
+/// A task held in Working on a run wisp's stop cut (a held run task, or one whose agent's turn Hold kept there): no
+/// run's end will land it now, so it lands here, in Needs review and unread, its view saying the run was cut. Before,
+/// it said Working for ever. A task with a turn still live (its own, which lands it) or waiting on you is left be.
+async fn land_cut(ctx: &wisp_kernel::Ctx, call: &Call, id: &str) {
+    let Ok(t) = ctx.run::<r::Get>(call, r::IdArgs { id: wisp_runtime_api::SessionId(id.to_owned()) }).await else { return };
+    if t.state != wisp_runtime_api::SessionState::Running {
+        return;
+    }
+    let a = r::TurnsArgs { id: t.id.clone(), before: None, limit: Some(1), masked: None };
+    let Ok(turns) = ctx.run::<r::Turns>(call, a).await else { return };
+    if turns.last().is_some_and(|l| l.status.is_live()) {
+        return;
+    }
+    run::settle(ctx, call, id).await;
 }
 
 #[derive(Debug, Default)]
@@ -338,7 +356,7 @@ impl Plugin for WorkflowsPlugin {
         let st3 = st;
         s.on::<TurnEnded, _, _>(move |_ctx, e| {
             // no run listening (none going) is fine: nothing waits on this turn
-            let _ = st3.ended.send((e.session_id.as_str().to_owned(), e.cost_usd.unwrap_or(0.0)));
+            let _ = st3.ended.send(e.session_id.as_str().to_owned());
             async move {}
         });
         s.on_start(|ctx| async move {

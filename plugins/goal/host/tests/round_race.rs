@@ -152,18 +152,20 @@ async fn a_drop_between_a_rounds_read_and_its_write_wins() {
     assert_eq!(drop_goal(&k).await.unwrap_err(), "This task has no goal to drop.");
 }
 
-/// A drop while the round's first judge is still answering: its answer stays on its record, no other judge is
-/// started for a goal that's gone, and nothing is written over the drop.
+/// A drop while the round's judges are answering (all at once): their answers stay on their records, and nothing is
+/// written over the drop.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_drop_mid_round_starts_no_further_judge() {
+async fn a_drop_mid_round_writes_nothing_over_it() {
     let (k, rt, mut rx) = start(&["claude", "codex"]).await;
     k.call(Caller::user(), "goal.check", json!({ "id": "t1" })).await.unwrap();
     assert_eq!(next(&mut rx).await, Seen::Wrote { state: "judging".into(), went: true });
-    assert_eq!(next(&mut rx).await, Seen::Quick("claude".into()));
+    let mut started = [next(&mut rx).await, next(&mut rx).await].map(|s| format!("{s:?}"));
+    started.sort();
+    assert_eq!(started, [r#"Quick("claude")"#, r#"Quick("codex")"#], "both judges at once");
     drop_goal(&k).await.unwrap();
     assert_eq!(next(&mut rx).await, Seen::Wrote { state: "cleared".into(), went: true });
     rt.judges.add_permits(2);
-    assert_eq!(next(&mut rx).await, Seen::Wrote { state: "again".into(), went: false }, "no codex run, and the drop stands");
+    assert_eq!(next(&mut rx).await, Seen::Wrote { state: "again".into(), went: false }, "the drop stands");
     assert_eq!(rt.goal()["state"], "cleared");
     assert_eq!(drop_goal(&k).await.unwrap_err(), "This task has no goal to drop.");
 }

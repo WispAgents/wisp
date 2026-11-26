@@ -24,6 +24,7 @@
     "runtime:followUp",
     "runtime:ask",
     "runtime:unask",
+    "runtime:settle",
     "later:list",
     "store:write{owner:goal}"
   ],
