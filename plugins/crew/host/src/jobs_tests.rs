@@ -277,3 +277,100 @@ async fn a_wake_on_no_source_is_refused() {
     assert!(unknown_sources(&ctx, &call, &bad, &bad).await.is_ok(), "one the member had already isn't asked again");
     assert!(unknown_sources(&ctx, &call, &bad[..1], &[]).await.is_ok());
 }
+
+fn waiting_ada(st: &State) {
+    st.insert(Member {
+        id: "ada1".into(),
+        name: "Ada".into(),
+        agent: "claude".into(),
+        mode: "edits".into(),
+        parallel: 1,
+        queue: vec![WaitingJob { id: "w1".into(), ..job("waiting") }],
+        ..Member::default()
+    });
+}
+
+fn agent_edit_args(fields: c::MemberBody) -> c::AgentEditArgs {
+    c::AgentEditArgs { session: "s1".into(), member: "Ada".into(), remember: None, fields }
+}
+
+/// The agent's edit (`wisp_crew_edit`) read Ada before a drain started her waiting job, and wrote back the queue it had
+/// read: the job ran and waited again. The edit lands on the queue as it is.
+#[tokio::test]
+async fn an_agent_edit_read_before_a_drain_doesnt_put_the_started_job_back() {
+    let rt = Rt::default();
+    let (_k, ctx, st, _clock) = kernel(&rt).await;
+    waiting_ada(&st);
+    let call = ctx.root_call();
+    let a = agent_edit_args(c::MemberBody { role: Some("Reviewer".into()), ..c::MemberBody::default() });
+    let (edit, ()) = tokio::join!(crate::agent::agent_edit(&ctx, &call, &st, &a), drain(&ctx, &call, &st, "ada1"));
+    assert!(edit.error.is_none(), "{edit:?}");
+    let now = st.member("ada1").unwrap();
+    assert_eq!(now.role, "Reviewer");
+    assert!(now.queue.is_empty(), "the job started: {:?}", now.queue);
+    assert_eq!(rt.made().len(), 1, "and ran once");
+}
+
+/// A job given to Ada while the agent's edit awaited: the edit's copy had no such job, and writing it back lost it.
+#[tokio::test]
+async fn a_job_queued_during_an_agent_edit_still_waits() {
+    let rt = Rt::default();
+    let (_k, ctx, st, _clock) = kernel(&rt).await;
+    let m = busy_ada(&st, &rt);
+    let call = ctx.root_call();
+    let a = agent_edit_args(c::MemberBody { role: Some("Reviewer".into()), ..c::MemberBody::default() });
+    let (edit, queued) = tokio::join!(crate::agent::agent_edit(&ctx, &call, &st, &a), assign(&ctx, &call, &st, &m, job("one")));
+    assert!(edit.error.is_none(), "{edit:?}");
+    assert!(queued.unwrap().queued.is_some());
+    let now = st.member("ada1").unwrap();
+    assert_eq!(now.role, "Reviewer");
+    assert_eq!(now.queue.iter().map(|w| w.prompt.as_str()).collect::<Vec<_>>(), ["one"]);
+}
+
+/// Ada removed while an edit (the app's or the agent's) awaited the harnesses: the write after it brought her back.
+#[tokio::test]
+async fn a_member_removed_during_an_edit_stays_removed() {
+    let rt = Rt::default();
+    let (_k, ctx, st, _clock) = kernel(&rt).await;
+    waiting_ada(&st);
+    let call = ctx.root_call();
+    let body = c::MemberBody { role: Some("Reviewer".into()), ..c::MemberBody::default() };
+    let a = c::UpdateArgs { id: "ada1".into(), member: body.clone(), ..c::UpdateArgs::default() };
+    let (r, ()) = tokio::join!(update(&ctx, &call, &st, &a), async { st.remove("ada1") });
+    assert_eq!(r.unwrap_err().message, "No such crew member.");
+    assert!(st.member("ada1").is_err(), "still gone after the app's edit");
+    waiting_ada(&st);
+    let a = agent_edit_args(body);
+    let (r, ()) = tokio::join!(crate::agent::agent_edit(&ctx, &call, &st, &a), async { st.remove("ada1") });
+    assert_eq!(r.error.as_deref(), Some("No such crew member."));
+    assert!(st.member("ada1").is_err(), "still gone after the agent's edit");
+}
+
+/// The agent's tools refuse a wake on no source as `crew.create` / `crew.update` do: the tool, the app and apply agree.
+#[tokio::test]
+async fn an_agents_wake_on_no_source_is_refused() {
+    let rt = Rt::default();
+    let (_k, ctx, st, _clock) = kernel(&rt).await;
+    let call = ctx.root_call();
+    let wakes = |on: &str| Some(vec![serde_json::from_value(json!({ "on": on })).unwrap()]);
+    let add = |on: &str| c::AgentAddArgs {
+        session: "s1".into(),
+        member: c::MemberBody {
+            name: Some("Ada".into()),
+            agent: Some("claude".into()),
+            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            wakes: wakes(on),
+            ..c::MemberBody::default()
+        },
+        ..c::AgentAddArgs::default()
+    };
+    let out = crate::agent::agent_add(&ctx, &call, &st, &add("not.an.event")).await;
+    assert!(out.error.as_deref().unwrap_or_default().starts_with("wakes[0].on: not.an.event is no source"), "{out:?}");
+    assert!(lock(&st.saved).crew.is_empty(), "no one joined");
+    let out = crate::agent::agent_add(&ctx, &call, &st, &add("pr.opened")).await;
+    assert!(out.error.is_none(), "{out:?}");
+    let edit = agent_edit_args(c::MemberBody { wakes: wakes("not.an.event"), ..c::MemberBody::default() });
+    let out = crate::agent::agent_edit(&ctx, &call, &st, &edit).await;
+    assert!(out.error.as_deref().unwrap_or_default().starts_with("wakes[0].on: not.an.event is no source"), "{out:?}");
+    assert_eq!(st.member("Ada").unwrap().wakes[0].on, "pr.opened", "unchanged");
+}

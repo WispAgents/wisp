@@ -231,7 +231,7 @@ async fn record_link(ctx: &Ctx, st: &State, id: &str, w: &WaitingJob) {
     }
 }
 
-fn gone() -> WireError {
+pub(crate) fn gone() -> WireError {
     WireError::not_found("No such crew member.")
 }
 
@@ -469,7 +469,7 @@ async fn update(ctx: &Ctx, call: &Call, st: &State, a: &c::UpdateArgs) -> Result
 /// (`wakes[i].on: …`), so the app, the CLI and `wisp apply` agree. Only a wake added or changed (`had`: the member's
 /// own): one whose source has gone since (its plugin removed) doesn't lock every other edit. With automations off,
 /// there is nothing to check against.
-async fn unknown_sources(ctx: &Ctx, call: &Call, wakes: &[TriggerSpec], had: &[TriggerSpec]) -> Result<(), WireError> {
+pub(crate) async fn unknown_sources(ctx: &Ctx, call: &Call, wakes: &[TriggerSpec], had: &[TriggerSpec]) -> Result<(), WireError> {
     if wakes.iter().all(|w| had.contains(w)) {
         return Ok(());
     }
