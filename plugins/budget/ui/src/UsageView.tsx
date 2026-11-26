@@ -1,18 +1,21 @@
 // Usage (v1 features/usage.js, Settings → Usage → Open usage): spend, tokens and outcomes over 7, 30 or 90 days.
-// The four summary tiles, daily bars (spend, tokens or turns per day), then breakdowns by harness, by project
-// and by harness · model. Every harness's tokens, turns and outcomes show even when the CLI reports no dollar cost.
-import { createResource, createSignal, Show, type JSX } from 'solid-js';
+// The four summary tiles, the bars per local day or ISO week (spend, tokens or turns, stacked by harness with a
+// legend that hides a series), a card per harness (tokens, spend, cache hit, turns, worked, and the fullest plan
+// window's share left with its reset) that Compare narrows to two or three side by side, then the breakdowns by
+// harness, by project and by harness · model. Every harness's tokens, turns and outcomes show even when the CLI
+// reports no dollar cost.
+import { createResource, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { DataCellLead, DataTable, DayBars, Inline, SettingsNote, Stack, Stats, Tabs, Text, useSignal } from '@wisp/ui';
-import { usage, type UsageRow } from './commands.ts';
-import { HARNESSES, tokenBreakdown, tokenWords, usageModel, type ChartMetric } from './plan.ts';
+import { Button, Card, DataCellLead, DataTable, DayBars, Grid, Inline, SettingsNote, Stack, Stats, Tabs, Text, useSignal, Wrap } from '@wisp/ui';
+import { plans, TOPIC, usage, type AccountPlan, type UsageRow } from './commands.ts';
+import { cliLine, HARNESSES, tokenBreakdown, tokenWords } from './plan.ts';
+import { cacheHit, costCell, limitLeft, spendTile, stackedModel, usageModel, type ChartMetric, type UsageScale } from './usage-model.ts';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
 
-export { usageModel, type ChartMetric } from './plan.ts';
+export { usageModel, type ChartMetric } from './usage-model.ts';
 
-const money = (n: number): string => `$${n.toFixed(2)}`;
 const pct = (n: number | null | undefined): string => (n === null || n === undefined ? '—' : `${Math.round(n)}%`);
 /** "2m 05s", "41s" (v1 fmtDuration) */
 const dur = (ms: number | null): string => {
@@ -20,6 +23,8 @@ const dur = (ms: number | null): string => {
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
 };
+/** Compare lays out at most this many harnesses side by side */
+const COMPARE_MAX = 3;
 
 function Table(props: {
   readonly rows: readonly UsageRow[];
@@ -39,7 +44,7 @@ function Table(props: {
           cells: [
             props.lead(r),
             tok > 0 ? <span title={tip || undefined}>{tokenWords(tok)}</span> : '—',
-            r.priced ? money(r.cost) : '—',
+            ((c) => (c.tip ? <span title={c.tip}>{c.text}</span> : c.text))(costCell(r)),
             String(r.turns),
             pct(r.worked),
             String(r.questions),
@@ -58,7 +63,34 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
   const logoOf = (id: string): string | undefined => marks().find((m) => m.id === id)?.logo;
   const [days, setDays] = createSignal(30);
   const [metric, setMetric] = createSignal<ChartMetric | undefined>(undefined);
-  const [u] = createResource(days, (d) => c.run(usage, { peer: c.home, days: d }).catch(() => undefined));
+  const [scale, setScale] = createSignal<UsageScale>('day');
+  const [hidden, setHidden] = createSignal<ReadonlySet<string>>(new Set());
+  const [picked, setPicked] = createSignal<readonly string[]>([]);
+  // the reader's local days: the runtime starts the window at local midnight and buckets by it
+  const tzOffsetMin = -new Date().getTimezoneOffset();
+  const [u] = createResource(days, (d) => c.run(usage, { peer: c.home, days: d, tzOffsetMin }).catch(() => undefined));
+  // each harness's plan windows (budget.view), for its card's limit and reset; none read is 'not reported'. A view of
+  // Cursor, opencode or Grok starts a background read of its CLI (ADR-0124): when it lands, the harness gets its first
+  // budget_acc row and this reads again, so the card shows the tier or spend the CLI gave.
+  const scope = c.scope.child('usage-view');
+  onCleanup(() => scope.dispose());
+  c.watch(c.home, TOPIC, scope, { passive: true });
+  const accs = useSignal(c.entities.list('budget_acc'));
+  const [limits] = createResource(() => accs().length + 1, async () => {
+    const out = new Map<string, readonly AccountPlan[]>();
+    await Promise.all(HARNESSES.map(async (h) => out.set(h.agent, await c.run(plans, { peer: c.home, agent: h.agent }).catch(() => [] as AccountPlan[]))));
+    return out;
+  });
+  const toggleSeries = (key: string): void => {
+    const next = new Set(hidden());
+    if (!next.delete(key)) next.add(key);
+    setHidden(next);
+  };
+  // a fourth pick drops the oldest: Compare stays two or three columns wide
+  const togglePick = (key: string): void => {
+    const p = picked();
+    setPicked(p.includes(key) ? p.filter((x) => x !== key) : p.length >= COMPARE_MAX ? [...p.slice(1), key] : [...p, key]);
+  };
   return (
     <Stack gap="6" part="budget.view">
       <Tabs
@@ -71,9 +103,18 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
       />
       <Show when={u()} fallback={<Text tone="muted">{t('budget.view.adding')}</Text>}>
         {(x) => {
-          const m = (): ReturnType<typeof usageModel> => usageModel(x(), metric());
-          const chartTitle = (): string =>
-            m().active === 'cost' ? t('budget.view.spendPerDay') : m().active === 'tokens' ? t('budget.view.tokensPerDay') : t('budget.view.turnsPerDay');
+          // the week scale: the runtime's ISO-week rollup, stacked or not
+          const weeks = (): boolean => (x().weekly?.length ?? 0) > 0 || stacked();
+          const m = (): ReturnType<typeof usageModel> => usageModel(x(), metric(), weeks() ? scale() : 'day');
+          // an older peer answers without the per-harness days: its bars stay one colour, per day
+          const stacked = (): boolean => (x().dailyByHarness?.length ?? 0) > 0;
+          const s = (): ReturnType<typeof stackedModel> => stackedModel(x(), m().active, { hidden: hidden(), scale: scale(), nameOf });
+          const chartTitle = (): string => {
+            const week = weeks() && scale() === 'week';
+            if (m().active === 'cost') return week ? `${t('budget.usage.spend')} · ${t('budget.view.perWeek')}` : t('budget.view.spendPerDay');
+            if (m().active === 'tokens') return week ? `${t('budget.usage.tokens')} · ${t('budget.view.perWeek')}` : t('budget.view.tokensPerDay');
+            return week ? `${t('budget.usage.turns')} · ${t('budget.view.perWeek')}` : t('budget.view.turnsPerDay');
+          };
           const spendNote = (): string => {
             const priceNote = m().unpriced ? t('budget.view.unpriced', { count: m().unpriced }) : t('budget.view.allPriced');
             return m().tokens > 0 ? `${t('budget.usage.harness.tokens', { n: tokenWords(m().tokens) })} · ${priceNote}` : priceNote;
@@ -82,17 +123,25 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
             const sess = t('budget.view.sessions', { count: x().sessions ?? 0 });
             return m().harnesses.length > 0 ? `${sess} · ${t('budget.view.harnessesCount', { count: m().harnesses.length })}` : sess;
           };
+          const cards = (): readonly UsageRow[] => {
+            const p = picked();
+            const rows = m().harnesses;
+            return p.length >= 2 ? p.flatMap((k) => rows.filter((r) => (r.agent || r.key) === k)) : rows;
+          };
+          const limitOf = (agent: string): string => {
+            const h = HARNESSES.find((x) => x.agent === agent) ?? { agent, name: nameOf(agent), key: '', planned: false, priced: false };
+            const l = limitLeft(h, limits()?.get(agent) ?? [], Date.now());
+            // no windows: say so, and what its CLI said of its plan and spend (Cursor's tier, opencode / Grok's own sum)
+            if ('none' in l) return [l.none, cliLine(h, limits()?.get(agent) ?? [])].filter(Boolean).join(' · ');
+            return [l.full ? t('budget.view.atLimit') : l.left, l.resets].filter(Boolean).join(' · ');
+          };
           return (
             <>
               <Stats
                 compact
                 part="budget.view.tiles"
                 items={[
-                  {
-                    label: t('budget.usage.spend'),
-                    value: m().byCost ? money(x().spend) : m().tokens > 0 ? tokenWords(m().tokens) : '—',
-                    note: spendNote(),
-                  },
+                  { ...spendTile(x()), note: spendNote() },
                   { label: t('budget.usage.turns'), value: x().turns, note: turnsNote() },
                   { label: t('budget.usage.worked'), value: pct(x().worked), note: t('budget.view.workedNote') },
                   { label: t('budget.usage.questions'), value: x().questions, note: t('budget.view.questionsNote') },
@@ -101,28 +150,98 @@ export default function UsageView(props: { readonly client: PluginClient }): JSX
               <Stack gap="3">
                 <Inline justify="between" align="center" gap="3">
                   <Text weight="medium">{chartTitle()}</Text>
-                  <Show when={m().byCost || m().byTokens}>
-                    <Tabs
-                      variant="pill"
-                      part="budget.view.metric"
-                      aria-label={chartTitle()}
-                      value={m().active}
-                      onChange={(v) => setMetric(v as ChartMetric)}
-                      items={[
-                        ...(m().byCost ? [{ value: 'cost', label: t('budget.usage.spend') }] : []),
-                        ...(m().byTokens ? [{ value: 'tokens', label: t('budget.usage.tokens') }] : []),
-                        { value: 'turns', label: t('budget.usage.turns') },
-                      ]}
-                    />
-                  </Show>
+                  <Inline gap="3" align="center">
+                    <Show when={weeks()}>
+                      <Tabs
+                        variant="pill"
+                        part="budget.view.scale"
+                        aria-label={t('budget.view.scale')}
+                        value={scale()}
+                        onChange={(v) => setScale(v as UsageScale)}
+                        items={[
+                          { value: 'day', label: t('budget.view.scale.day') },
+                          { value: 'week', label: t('budget.view.scale.week') },
+                        ]}
+                      />
+                    </Show>
+                    <Show when={m().byCost || m().byTokens}>
+                      <Tabs
+                        variant="pill"
+                        part="budget.view.metric"
+                        aria-label={chartTitle()}
+                        value={m().active}
+                        onChange={(v) => setMetric(v as ChartMetric)}
+                        items={[
+                          ...(m().byCost ? [{ value: 'cost', label: t('budget.usage.spend') }] : []),
+                          ...(m().byTokens ? [{ value: 'tokens', label: t('budget.usage.tokens') }] : []),
+                          { value: 'turns', label: t('budget.usage.turns') },
+                        ]}
+                      />
+                    </Show>
+                  </Inline>
                 </Inline>
-                <DayBars
-                  part="budget.view.chart"
-                  label={chartTitle()}
-                  bars={m().bars}
-                  axis={[m().first, m().max, t('budget.view.today')]}
-                />
+                <Show
+                  when={stacked()}
+                  fallback={<DayBars part="budget.view.chart" label={chartTitle()} bars={m().bars} axis={[m().first, m().max, t('budget.view.today')]} />}
+                >
+                  <DayBars
+                    part="budget.view.chart"
+                    label={chartTitle()}
+                    bars={s().bars}
+                    axis={[s().first, s().max, t('budget.view.today')]}
+                    legend={s().series}
+                    onToggle={toggleSeries}
+                  />
+                </Show>
               </Stack>
+              <Show when={m().harnesses.length > 0}>
+                <Stack gap="3">
+                  <Inline justify="between" align="center" gap="3">
+                    <Text weight="medium">{t('budget.view.cards')}</Text>
+                    <Show when={picked().length > 0}>
+                      <Button variant="link" size="sm" part="budget.view.compare.clear" onClick={() => setPicked([])}>
+                        {t('budget.view.compareAll')}
+                      </Button>
+                    </Show>
+                  </Inline>
+                  <Show when={m().harnesses.length > 1}>
+                    <Wrap gap="2" part="budget.view.compare" aria-label={t('budget.view.compare')}>
+                      <For each={m().harnesses}>
+                        {(r) => {
+                          const id = r.agent || r.key;
+                          return (
+                            <Button variant="chip" size="sm" logo={logoOf(id)} pressed={picked().includes(id)} onClick={() => togglePick(id)}>
+                              {nameOf(id)}
+                            </Button>
+                          );
+                        }}
+                      </For>
+                    </Wrap>
+                  </Show>
+                  <Grid part="budget.view.cards" gap="4" {...(picked().length >= 2 ? { columns: picked().length as 2 | 3 } : { min: 'popover' as const })}>
+                    <For each={cards()}>
+                      {(r) => {
+                        const id = r.agent || r.key;
+                        return (
+                          <Card part="budget.view.card" header={<DataCellLead logo={logoOf(id)} label={nameOf(id)} sub={limitOf(id)} />}>
+                            <Stats
+                              compact
+                              part="budget.view.card.stats"
+                              items={[
+                                { label: t('budget.usage.tokens'), value: (r.tokens ?? 0) > 0 ? tokenWords(r.tokens ?? 0) : '—' },
+                                { label: t('budget.usage.spend'), value: costCell(r).text },
+                                { label: t('budget.view.cacheHit'), value: cacheHit(r) },
+                                { label: t('budget.usage.turns'), value: r.turns },
+                                { label: t('budget.usage.worked'), value: pct(r.worked) },
+                              ]}
+                            />
+                          </Card>
+                        );
+                      }}
+                    </For>
+                  </Grid>
+                </Stack>
+              </Show>
               <Stack gap="3">
                 <Text weight="medium">{t('budget.view.byHarness')}</Text>
                 <Table

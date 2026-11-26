@@ -10,6 +10,7 @@ import { editorUrl } from '../editor.ts';
 import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, pickedTab, tabKey, type SidePane } from '../open-task.ts';
 import { showsPlace } from './place.ts';
 import { useShell } from '../shell.ts';
+import '../i18n/lazy.ts';
 import { useTask } from '../task-context.tsx';
 import { PrPane } from './PrPane.tsx';
 import { ShellPane, askShellFocus, shellWalkedTo, walksTabs } from './ShellPane.tsx';

@@ -1,0 +1,23 @@
+=== docs/adr/0001-one.md
+# ADR-0001: one
+
+=== docs/adr/0002-workflows.md
+# ADR-0002: workflows (landed first)
+
+=== docs/adr/0002-prices.md
+# ADR-0002: prices (a branch that took the same number)
+
+=== docs/adr/0003-heading-says-another.md
+# ADR-0004: renamed file, heading left behind
+
+=== docs/adr/notes.txt
+not an ADR
+
+=== docs/adr/README.md
+| ADR | Decision |
+|---|---|
+| [0001](0001-one.md) | fine |
+| [0002](0002-workflows.md) | fine |
+| [0002](0002-prices.md) | the duplicate file is the finding, not this row |
+| [0004](0003-heading-says-another.md) | row number and link disagree |
+| [0005](0005-gone.md) | links a file that is gone |

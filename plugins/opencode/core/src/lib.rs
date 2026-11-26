@@ -5,7 +5,9 @@
 mod argv;
 mod describe;
 mod parser;
+mod stats;
 
 pub use argv::{OpencodeArgs, args, config, has_key, major_version};
 pub use describe::describe_tool;
 pub use parser::{OpencodeOptions, OpencodeParser, RATE_LIMIT_GRACE_MS};
+pub use stats::{OpencodeStats, stats};

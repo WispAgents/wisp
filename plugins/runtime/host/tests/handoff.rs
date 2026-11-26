@@ -190,3 +190,57 @@ async fn set_agent_during_a_run_keeps_the_old_conversation_off_the_new_harness()
     let s = r.rt.get(id.as_str()).await.unwrap();
     assert_eq!((s.agent.as_str(), s.resume_id.as_deref()), ("other", None));
 }
+
+/// Continue on… (ADR-0125): a hand-off that asks for the summary only carries the latest turn it missed, not the ones
+/// before; the turn records the switch (from, to and the context); the preview sizes both choices with the same note.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_summary_only_handoff_carries_the_latest_turn_and_records_the_switch_adr_0125() {
+    use wisp_runtime_api::commands::HandoffContext;
+    let r = rig_on(Recorder::default(), vec![Fake::named("fake", "Fake CLI", &["low"]), Fake::named("other", "Other CLI", &["low"])]).await;
+    let start = StartArgs {
+        prompt: "fix the login. Don't touch the migrations.".into(),
+        agent: Some("fake".into()),
+        cwd: Some(common::tmp()),
+        ..StartArgs::default()
+    };
+    let id = r.rt.create(start).await.unwrap().id;
+    let done = |n: usize| {
+        let (rt, id) = (r.rt.clone(), id.0.clone());
+        async move { rt.turns(&id, None, None).await.unwrap().iter().filter(|t| t.status == TurnStatus::Done).count() == n }
+    };
+    until("the first turn", || done(1)).await;
+    r.rt.follow_up(FollowUpArgs { id: id.clone(), text: "and the signup page".into(), ..FollowUpArgs::default() }).await.unwrap();
+    until("the second turn", || done(2)).await;
+    // the preview: both turns missed; summary only writes one of them out, and is the smaller note
+    let p = r.rt.handoff_preview(id.as_str(), "other").await.unwrap();
+    assert_eq!((p.missed, p.brief.turns, p.full.turns, p.rules), (2, 1, 2, 1), "{p:?}");
+    assert!(p.brief.tokens > 0 && p.brief.tokens < p.full.tokens, "{p:?}");
+    let run = RunPick { agent: Some("other".into()), ..RunPick::default() };
+    r.rt.follow_up(FollowUpArgs {
+        id: id.clone(),
+        text: "now the tests".into(),
+        run: Some(run),
+        handoff: Some(HandoffContext::Summary),
+        ..FollowUpArgs::default()
+    })
+    .await
+    .unwrap();
+    until("the hand-off turn", || done(3)).await;
+    let sent = &r.sim.spawned()[2].args[0];
+    assert!(sent.contains("### Turn 2 · Fake CLI") && !sent.contains("### Turn 1 · Fake CLI"), "the latest turn only: {sent}");
+    assert!(
+        sent.contains("- Don't touch the migrations.") && sent.contains("left out: this hand-off carries the latest turn only"),
+        "{sent}"
+    );
+    let last = r.rt.turns(id.as_str(), None, Some(1)).await.unwrap().pop().unwrap();
+    assert_eq!(
+        last.ext["wisp.runtime"]["switch"],
+        serde_json::json!({ "from": { "agent": "fake", "model": "fake-m" }, "to": { "agent": "other", "model": "" }, "context": "summary" }),
+        "the switch is on the turn, for the Timeline's divider"
+    );
+    // the same harness again: no switch, no mark
+    r.rt.follow_up(FollowUpArgs { id: id.clone(), text: "thanks".into(), ..FollowUpArgs::default() }).await.unwrap();
+    until("the fourth turn", || done(4)).await;
+    let last = r.rt.turns(id.as_str(), None, Some(1)).await.unwrap().pop().unwrap();
+    assert!(last.ext.get("wisp.runtime").and_then(|r| r.get("switch")).is_none());
+}
