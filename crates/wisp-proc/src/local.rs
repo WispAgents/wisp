@@ -322,7 +322,20 @@ pub(crate) async fn collect(child: Child, opts: ExecOpts) -> Result<ExecResult> 
         truncated |= chunk.data.len() > room;
         buf.extend_from_slice(&chunk.data[..chunk.data.len().min(room)]);
     }
-    let exit = handle.exited().await;
+    // The deadline bounds the whole exec, not only the reads: a child that closed its stdio (`exec >/dev/null`) and
+    // runs on gives EOF at once, and waiting on its exit with no deadline hung the exec for as long as it ran.
+    let exit = match deadline {
+        Some(at) if !timed_out => {
+            if let Ok(exit) = tokio::time::timeout_at(at, handle.exited()).await {
+                exit
+            } else {
+                timed_out = true;
+                handle.kill_now().await;
+                handle.exited().await
+            }
+        }
+        _ => handle.exited().await,
+    };
     drop(ender);
     Ok(ExecResult { exit, stdout, stderr, timed_out, truncated })
 }
