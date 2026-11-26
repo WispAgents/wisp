@@ -208,3 +208,36 @@ async fn a_leftover_that_is_a_full_clone_is_skipped() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(clone.join("work.txt").is_file() && clone.join(".git").is_dir(), "the clone stays");
 }
+
+/// Done's "holds work" (wisp task 8501e0): an agent ran `git checkout -b fix/x` in its worktree and committed there.
+/// HEAD left the task's branch, but the commit lives on `fix/x`, so removing the folder loses nothing: no "Commits off
+/// its branch". A detached HEAD with a commit no branch has is still held; one back inside the task's branch isn't.
+#[tokio::test]
+async fn head_on_another_branch_is_not_work_only_the_folder_holds() {
+    let t = tmp("offbranch");
+    let root = repo(&t);
+    let e = engine(&t, 1);
+    let wt = add_tree(&root, &t.0.join("wts/app/task"), "wisp/task-1");
+    let dir = Path::new(&wt.path);
+    git(dir, &["checkout", "-q", "-b", "fix/x"]);
+    std::fs::write(dir.join("b.txt"), "two\n").unwrap();
+    git(dir, &["add", "b.txt"]);
+    git(dir, &["commit", "-q", "-m", "fix"]);
+    assert_eq!(e.folder_only(&user(), &wt).await.unwrap(), 0, "fix/x keeps the commit");
+
+    git(dir, &["checkout", "-q", "--detach"]);
+    std::fs::write(dir.join("c.txt"), "three\n").unwrap();
+    git(dir, &["add", "c.txt"]);
+    git(dir, &["commit", "-q", "-m", "stray"]);
+    assert_eq!(e.folder_only(&user(), &wt).await.unwrap(), 1, "a detached commit no branch has is held");
+
+    git(dir, &["checkout", "-q", "--detach", "wisp/task-1"]);
+    assert_eq!(e.folder_only(&user(), &wt).await.unwrap(), 0, "detached on the task's tip holds nothing");
+    let tip = git(&root, &["rev-parse", "wisp/task-1"]);
+    git(dir, &["checkout", "-q", "wisp/task-1"]);
+    std::fs::write(dir.join("d.txt"), "four\n").unwrap();
+    git(dir, &["add", "d.txt"]);
+    git(dir, &["commit", "-q", "-m", "ahead"]);
+    git(dir, &["checkout", "-q", "--detach", &tip]);
+    assert_eq!(e.folder_only(&user(), &wt).await.unwrap(), 0, "detached behind the task's branch holds nothing");
+}

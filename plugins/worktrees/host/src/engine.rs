@@ -441,7 +441,13 @@ impl Engine {
         if !wt.branch.is_empty() && tip.is_none() {
             return Err(WtError::Conflict(format!("branch {} is gone", wt.branch)));
         }
-        let only = removal::folder_only(u32::try_from(st.dirty()).unwrap_or(u32::MAX), &head, tip.as_deref());
+        // HEAD off the task's branch loses commits only when nothing else keeps them: on another local branch (an
+        // agent's `git checkout -b`) or already in the task's branch, the folder holds no commit of its own
+        let kept = match tip.as_deref() {
+            Some(t) if t != head => !st.branch.is_empty() || repo.is_ancestor(call, &head, t).await.unwrap_or(false),
+            _ => false,
+        };
+        let only = removal::folder_only(u32::try_from(st.dirty()).unwrap_or(u32::MAX), &head, tip.as_deref(), kept);
         let files = st.entries.into_iter().take(HELD_FILES_MAX).map(|e| HeldFile { path: e.path, xy: e.xy, from: e.from }).collect();
         Ok((only, files))
     }
