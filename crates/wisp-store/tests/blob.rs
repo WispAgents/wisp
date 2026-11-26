@@ -135,6 +135,27 @@ async fn a_put_in_a_transaction_that_rolls_back_leaves_no_row_and_its_file_is_sw
     assert!(files(&home).is_empty());
 }
 
+/// Audit doc14c: a `put_blob` of content a `gc_blobs` was freeing wrote its file, then gc removed it (no row named it
+/// yet) and the put recorded a row for a file that was gone. gc checks for a row on the writer thread before it
+/// removes a file, and a put records its row there with its file in place.
+#[tokio::test]
+async fn a_put_of_the_same_content_during_gc_keeps_its_file() {
+    let f = open_disk(None);
+    let big = noise(INLINE_MAX * 2);
+    let first = f.store.put_blob(big.clone(), owner("turn", "t1")).await.unwrap();
+    f.store.write(|w| w.blob_unref_owner("turn", "t1")).await.unwrap();
+    // the put's file is on disk, its row not recorded yet, while gc frees the old row and its file
+    let p = f.store.prepare_blob(big.clone()).await.unwrap();
+    let r = f.store.gc_blobs().await.unwrap();
+    assert_eq!(r.blobs, 1);
+    let again = f.store.record_blob(p, owner("turn", "t2")).await.unwrap();
+    assert_eq!(again.hash, first.hash);
+    assert_eq!(f.store.blob(&again.hash).unwrap(), Some(big.clone()), "recorded but its file is missing");
+    // a gc now (the row is referenced) keeps it
+    f.store.gc_blobs().await.unwrap();
+    assert_eq!(f.store.blob(&again.hash).unwrap(), Some(big));
+}
+
 #[tokio::test]
 async fn a_recorded_on_disk_blob_whose_file_is_gone_is_reported_not_returned_empty() {
     let f = open_disk(None);

@@ -61,10 +61,14 @@ pub fn hash_of(data: &[u8]) -> String {
     format!("{ALGO}:{}", blake3::hash(data).to_hex())
 }
 
-/// A blob ready to record: hashed, compressed, and (when big) already on disk.
-struct Prepared {
+/// A blob ready to record: hashed, compressed, and (when big) already on disk. The first half of `put_blob`, off
+/// the writer; [`Store::record_blob`] is the second.
+#[derive(Debug)]
+pub struct Prepared {
     info: BlobInfo,
     inline: Option<Vec<u8>>,
+    /// a big blob's file and its bytes: written again as the row is recorded if a `gc_blobs` took it meanwhile
+    file: Option<(PathBuf, Vec<u8>)>,
 }
 
 fn prepare(data: &[u8], home: Option<&Path>) -> Result<Prepared> {
@@ -74,10 +78,11 @@ fn prepare(data: &[u8], home: Option<&Path>) -> Result<Prepared> {
     let size = data.len() as u64;
     match home {
         Some(home) if bytes.len() > INLINE_MAX => {
-            write_atomic(&path_of(home, &hash)?, &bytes)?;
-            Ok(Prepared { info: BlobInfo { hash, size, codec, inline: false }, inline: None })
+            let file = path_of(home, &hash)?;
+            write_atomic(&file, &bytes)?;
+            Ok(Prepared { info: BlobInfo { hash, size, codec, inline: false }, inline: None, file: Some((file, bytes)) })
         }
-        _ => Ok(Prepared { info: BlobInfo { hash, size, codec, inline: true }, inline: Some(bytes) }), // in memory: no files
+        _ => Ok(Prepared { info: BlobInfo { hash, size, codec, inline: true }, inline: Some(bytes), file: None }), // in memory: no files
     }
 }
 
@@ -102,6 +107,13 @@ fn parse_codec(s: &str) -> Result<Codec> {
 
 fn record(w: &mut Writer<'_>, p: Prepared, owner: Option<Owner<'_>>) -> Result<BlobInfo> {
     let db = w.db;
+    // a `gc_blobs` between this put's file write and now found no row and removed the file (it checks on this
+    // thread, so never after): written again, or the row would name a file that's gone
+    if let Some((file, bytes)) = &p.file
+        && !file.exists()
+    {
+        write_atomic(file, bytes)?;
+    }
     let info = if let Some(had) = existing(db, &p.info.hash)? {
         had
     } else {
@@ -162,10 +174,18 @@ impl Store {
     /// Hashes and compresses on tokio's blocking pool (and writes a big blob's file there), then records
     /// the row on the writer thread, so a screenshot never holds up other writes.
     pub async fn put_blob(&self, data: Vec<u8>, owner: Option<(String, String)>) -> Result<BlobInfo> {
+        let p = self.prepare_blob(data).await?;
+        self.record_blob(p, owner).await
+    }
+
+    /// `put_blob`'s first half: hashed, compressed and (when big) on disk, not recorded yet.
+    pub async fn prepare_blob(&self, data: Vec<u8>) -> Result<Prepared> {
         let home = if self.shared.memory { None } else { self.shared.home.clone() };
-        let p = tokio::task::spawn_blocking(move || prepare(&data, home.as_deref()))
-            .await
-            .map_err(|e| StoreError::Internal(e.to_string()))??;
+        tokio::task::spawn_blocking(move || prepare(&data, home.as_deref())).await.map_err(|e| StoreError::Internal(e.to_string()))?
+    }
+
+    /// `put_blob`'s second half: the row (once per content) and the owner's ref, on the writer thread.
+    pub async fn record_blob(&self, p: Prepared, owner: Option<(String, String)>) -> Result<BlobInfo> {
         self.write(move |w| record(w, p, owner.as_ref().map(|(k, i)| (k.as_str(), i.as_str())))).await
     }
 
@@ -199,20 +219,27 @@ impl Store {
         let Some(home) = self.shared.home.clone().filter(|_| !self.shared.memory) else {
             return Ok(out);
         };
-        // Files go after the rows commit: a crash in between leaves an orphan file, never a row without one.
+        // Files go after the rows commit: a crash in between leaves an orphan file, never a row without one. Each
+        // only while no row names it, checked on the writer thread: a `put_blob` of the same content since (its row
+        // recorded on that thread too) keeps its file (audit doc14c: it lost it, and reads said the file was missing).
+        let h2 = home.clone();
+        let removed = self
+            .write(move |w| {
+                let mut n = 0;
+                for h in gone {
+                    if existing(w.db, &h)?.is_none() && fs::remove_file(path_of(&h2, &h)?).is_ok() {
+                        n += 1;
+                    }
+                }
+                Ok(n)
+            })
+            .await?;
         let store = self.clone();
         let now = self.shared.clock.now_ms();
-        out.files = tokio::task::spawn_blocking(move || -> Result<u64> {
-            let mut n = 0;
-            for h in gone {
-                if fs::remove_file(path_of(&home, &h)?).is_ok() {
-                    n += 1;
-                }
-            }
-            Ok(n + sweep_orphans(&store, &home, now)?)
-        })
-        .await
-        .map_err(|e| StoreError::Internal(e.to_string()))??;
+        out.files = removed
+            + tokio::task::spawn_blocking(move || sweep_orphans(&store, &home, now))
+                .await
+                .map_err(|e| StoreError::Internal(e.to_string()))??;
         Ok(out)
     }
 }

@@ -310,6 +310,48 @@ async fn a_write_between_two_pages_is_in_a_later_page_or_the_patches_after_the_s
     assert!(after.contains(&"k8".to_owned()) && after.contains(&"k3".to_owned()), "the patches after its seq: {after:?}");
 }
 
+/// Audit doc28: writes landed between two pages and retention then pruned part of them from the feed, so the last
+/// page had no delta to fold in, yet it closed the snapshot at the head it read to: the client dropped the patches
+/// up to it it had buffered, and kept rows older than that seq says. It closes at the first read's seq instead.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_paged_snapshot_whose_delta_was_pruned_closes_at_its_first_seq_not_the_head() {
+    let clock = Arc::new(ManualClock::new(1_000));
+    let s = Store::open(Location::Memory, clock.clone()).unwrap();
+    seven(&s).await;
+    let snaps = StoreSnapshots::new(s.clone(), Vec::new(), Vec::new()).with_pages(vec![paged(2, 3)]);
+    let head = snaps.head_seq();
+    let got = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (into, w) = (got.clone(), s.clone());
+    let sink: PageSink = Box::new(move |r, more| {
+        let first = into.lock().unwrap().is_empty();
+        let rows: Vec<(String, String)> = r.rows.iter().map(|x| (x.id.clone(), x.v["value"].as_str().unwrap_or("").to_owned())).collect();
+        into.lock().unwrap().push((r.seq, rows, more));
+        if first {
+            w.write_blocking(|w| {
+                w.upsert("setting", row!({"key": "k3", "value": "b", "locked_by": null}))?;
+                w.upsert("setting", row!({"key": "k8", "value": "a", "locked_by": null}))?;
+                Ok(())
+            })
+            .unwrap();
+            // a week on, retention prunes the feed up to (not) the newest: the change to k3 is gone from it
+            clock.advance(8 * 24 * 60 * 60 * 1000);
+            tokio::runtime::Handle::current().block_on(w.prune()).unwrap();
+            assert!(w.changed_since("config", i64::try_from(head).unwrap()).unwrap().is_none());
+        }
+    });
+    snaps.snapshot_pages(&Topic::parse("config").unwrap(), None, sink).await;
+    let pages = got.lock().unwrap().clone();
+    let (last, _) = pages.split_last().unwrap();
+    assert!(!last.2);
+    assert!(last.0 <= head, "closed at {} past the rows' seq {head}: the patches after it would be dropped", last.0);
+    // the client, every page keyed by id (a later page wins), ends with the rows as they are now; the patches after
+    // the snapshot's seq, which it keeps, only bring them again
+    let rows: std::collections::BTreeMap<String, String> = pages.iter().flat_map(|p| p.1.clone()).collect();
+    assert_eq!(rows.get("k3").map(String::as_str), Some("b"));
+    assert_eq!(rows.get("k8").map(String::as_str), Some("a"));
+    assert_eq!(rows.len(), 8);
+}
+
 #[tokio::test]
 async fn rows_that_end_on_a_page_close_the_snapshot_with_an_empty_last_page_and_a_small_topic_is_one_page() {
     let s = store();

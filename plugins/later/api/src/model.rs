@@ -10,6 +10,11 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // the same
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
 /// Automations stop at moved it to the reset (the page says Waits for your plan).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -221,13 +226,13 @@ pub enum PlanKind {
     Reminder,
 }
 
-/// Why a plan that waited for a task waits in Drafts now.
+/// Why a plan waits in Drafts now: the task it waited for went, or its start kept failing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "later/")]
 pub struct Lost {
     pub id: String,
     pub title: String,
-    /// "deleted" or "archived"
+    /// "deleted" or "archived" (the task it waited for), or "failed" (its start failed `rules::PLAN_TRIES` times)
     pub why: String,
 }
 
@@ -267,6 +272,14 @@ pub struct Plan {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub from: Option<TaskRef>,
+    /// starts that failed so far (runtime refused, a transient error): it backs off, then waits in Drafts
+    #[serde(default, skip_serializing_if = "is_zero")]
+    #[ts(as = "Option<u32>", optional)]
+    pub tries: u32,
+    /// after a failed start, not tried again before this
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub retry_at: Option<i64>,
 }
 
 impl Plan {

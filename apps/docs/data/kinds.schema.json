@@ -1707,7 +1707,7 @@
           "type": "string"
         },
         "schedule": {
-          "description": "when it runs by itself: a cron or words (\"every day at 2\"), in UTC",
+          "description": "when it runs by itself: a cron or words (\"every day at 2\"), in this computer's zone",
           "type": "string"
         },
         "steps": {
