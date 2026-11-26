@@ -38,7 +38,7 @@ mod store;
 mod thread;
 mod writer;
 
-pub use blob::{BlobInfo, Codec, GcResult, INLINE_MAX, Owner, hash_of};
+pub use blob::{BlobInfo, Codec, GcResult, INLINE_MAX, Owner, Prepared as PreparedBlob, hash_of};
 pub use changes::{ChangeOp, ChangeRow, Delta, MAX_LIMIT};
 pub use clock::{ManualClock, SystemClock};
 pub use coalescer::{Buffered, Coalescer, CoalescerOptions, OnError};

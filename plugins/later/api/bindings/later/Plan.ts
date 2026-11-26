@@ -18,4 +18,12 @@ after?: TaskRef, lost?: Lost,
 /**
  * the launch body (runtime `StartArgs`, v1's launch body) a task plan keeps
  */
-body?: Record<string, unknown>, title?: string, text?: string, from?: TaskRef, };
+body?: Record<string, unknown>, title?: string, text?: string, from?: TaskRef, 
+/**
+ * starts that failed so far (runtime refused, a transient error): it backs off, then waits in Drafts
+ */
+tries?: number, 
+/**
+ * after a failed start, not tried again before this
+ */
+retryAt?: number, };

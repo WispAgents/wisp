@@ -4544,6 +4544,7 @@ dependencies = [
 name = "wisp-crew"
 version = "1.0.0-alpha.14"
 dependencies = [
+ "jiff",
  "reqwest",
  "serde",
  "serde_json",
