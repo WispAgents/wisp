@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Mark done no longer says a worktree "holds work" when it doesn't.** An agent that switched to its own branch in a task's worktree (`git checkout -b fix/x`) left its commits on that branch, so removing the folder loses nothing, but the Done dialog warned "Commits off its branch" and wouldn't remove it unless you ticked it. Now only commits that no branch keeps (a detached HEAD) count as work the folder holds.
 - wisp Cloud computers' usage stats (app started, task turns) now carry the address you reach your computer from, so they're placed where you are instead of all showing the grid's server in Germany.
 - **`/wisp` comments on GitHub work again.** A task started from a comment on an issue or PR is now told which one it's on (repo, number, link and the `gh` command to read it), runs in that repo's project instead of your default one, and posts its report back on the issue or PR. A later `/wisp` there follows up the same task. Slack, Discord, Telegram and email lost the same link: a task started from a message there is tied to its thread or chat again, so replying to it follows that task up.
 ### Added
