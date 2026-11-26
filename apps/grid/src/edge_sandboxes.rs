@@ -75,7 +75,7 @@ impl Grid {
                 let list: Vec<Value> = s.list(&user.id)?.iter().map(|r| self.sandbox_view(r)).collect();
                 Ok(json(
                     200,
-                    &json!({ "enabled": s.enabled && s.secrets.is_some(), "logins": s.logins(&user.id), "env": s.env_keys(&user.id), "sandboxes": list }),
+                    &json!({ "enabled": s.enabled && s.secrets.is_some(), "logins": s.logins(&user.id), "env": s.env_keys(&user.id), "sandboxes": list, "limit": s.per_user }),
                 ))
             }
             ("POST", ["api", "sandboxes"]) => {

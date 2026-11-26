@@ -11,6 +11,8 @@ export interface SandboxView {
   readonly name: string;
   readonly owner: unknown;
   readonly state: string;
+  /** only the grid holds it (made elsewhere, or its machine here gone): no peer to open, Delete goes by its id */
+  readonly elsewhere?: boolean;
 }
 
 export interface Info {
@@ -19,6 +21,9 @@ export interface Info {
   readonly logins: readonly string[];
   readonly env: readonly string[];
   readonly sandboxes: readonly SandboxView[];
+  /** how many of the user's the grid holds, and the most it keeps (a grid that doesn't say: absent) */
+  readonly used?: number;
+  readonly limit?: number;
 }
 
 export interface ClaudeSignIn {
@@ -83,27 +88,48 @@ export const dismiss = defineCommand<{ peer: PeerId; id: string }, Record<string
   optimistic: (_base, a) => [{ e: LAUNCH, id: entityKey(a.peer, a.id), op: 'del' }],
 });
 export const claudeBegin = defineCommand<{ peer: PeerId }, ClaudeSignIn>({ id: 'sandbox.claude.begin', owner: (a) => a.peer, wire: () => ({}), ...none, pending: 'Sign in' });
-export const claudeCode = defineCommand<{ peer: PeerId; code: string }, ClaudeSignIn>({ id: 'sandbox.claude.code', owner: (a) => a.peer, wire: (a) => ({ code: a.code }), ...none, pending: 'Done' });
-export const logout = defineCommand<{ peer: PeerId; agent: string }, Info>({ id: 'sandbox.logout', owner: (a) => a.peer, wire: (a) => ({ agent: a.agent }), ...none, pending: 'Sign out' });
+// the pane says these refusals where they happened (under the env vars, on the row, under Sign in): `quiet`, no toast
+export const claudeCode = defineCommand<{ peer: PeerId; code: string }, ClaudeSignIn>({ id: 'sandbox.claude.code', owner: (a) => a.peer, wire: (a) => ({ code: a.code }), ...none, pending: 'Done', quiet: true });
+export const logout = defineCommand<{ peer: PeerId; agent: string }, Info>({ id: 'sandbox.logout', owner: (a) => a.peer, wire: (a) => ({ agent: a.agent }), ...none, pending: 'Sign out', quiet: true });
 export const env = defineCommand<{ peer: PeerId; key: string; value: string }, Info>({
   id: 'sandbox.env',
   owner: (a) => a.peer,
   wire: (a) => ({ key: a.key, value: a.value }),
   ...none,
   pending: 'the env var row',
+  quiet: true,
 });
-export const drop = defineCommand<{ peer: PeerId; machine: string }, { dropped: number }>({
+/** One sandbox: by its machine here, or (only the grid holds it) by its sandbox id on the grid. */
+export const drop = defineCommand<{ peer: PeerId; machine?: string; sandbox?: string }, { dropped: number }>({
   id: 'sandbox.drop',
   owner: (a) => a.peer,
-  wire: (a) => ({ machine: a.machine }),
+  wire: (a) => (a.machine ? { machine: a.machine } : { sandbox: a.sandbox }),
   ...none,
   pending: 'the sandbox row',
+  quiet: true,
 });
+/** What Codex's sign-in answers (wisp.accounts `LoginView`): its page and code come a moment after it started. */
+export interface LoginAnswer {
+  readonly state?: string;
+  readonly url?: string;
+  readonly code?: string;
+  readonly error?: string;
+}
 /** Codex's device login, run on the sandbox's own wisp (its peer). */
-export const codexLogin = defineCommand<{ peer: PeerId }, { url?: string; code?: string; state?: string }>({
+export const codexLogin = defineCommand<{ peer: PeerId }, LoginAnswer>({
   id: 'accounts.login.start',
   owner: (a) => a.peer,
   wire: () => ({ agent: 'codex' }),
   ...none,
   pending: 'Sign in to Codex there',
+  quiet: true,
+});
+/** That sign-in as it stands there (its page once the CLI printed it, done, failed): the row follows it. */
+export const codexState = defineCommand<{ peer: PeerId }, LoginAnswer>({
+  id: 'accounts.login',
+  owner: (a) => a.peer,
+  wire: () => ({ agent: 'codex' }),
+  ...none,
+  pending: 'the Codex sign-in under its row',
+  quiet: true,
 });

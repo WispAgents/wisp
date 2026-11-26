@@ -80,6 +80,56 @@ pub fn held(machines: &[Value]) -> Vec<Held> {
         .collect()
 }
 
+/// One sandbox as Settings → Computers → Sandboxes lists it: a machine here keeps it, or only the grid does
+/// (`elsewhere`: made from another computer, or its machine here gone), which still holds one of the user's slots.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listed {
+    /// its machine here (empty: elsewhere)
+    pub machine: String,
+    pub sandbox: String,
+    pub name: String,
+    pub owner: Value,
+    pub state: String,
+    pub elsewhere: bool,
+}
+
+/// The list Settings shows: every sandbox a machine here keeps (its owner and state as they are here), then each one
+/// the grid holds that none here keeps. `grid`: the grid's `sandboxes` (`{id, name}` each), None when it couldn't be
+/// asked, and then the list is this computer's alone rather than blank.
+pub fn listed(machines: &[Value], grid: Option<&[Value]>) -> Vec<Listed> {
+    let mut out: Vec<Listed> = machines
+        .iter()
+        .filter_map(|m| {
+            let data = if m.get("sandbox").is_some() { m } else { m.get("data")? };
+            let s = |k: &str| m.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
+            Some(Listed {
+                machine: s("id"),
+                sandbox: data.get("sandbox")?.as_str()?.to_owned(),
+                name: s("name"),
+                owner: data.get("owner").cloned().unwrap_or(Value::Null),
+                state: s("state"),
+                elsewhere: false,
+            })
+        })
+        .collect();
+    for g in grid.unwrap_or_default() {
+        let Some(id) = g.get("id").and_then(Value::as_str).filter(|id| !id.is_empty()) else { continue };
+        if out.iter().any(|l| l.sandbox == id) {
+            continue;
+        }
+        let name = g.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).unwrap_or(id).to_owned();
+        out.push(Listed {
+            machine: String::new(),
+            sandbox: id.to_owned(),
+            name,
+            owner: Value::Null,
+            state: String::new(),
+            elsewhere: true,
+        });
+    }
+    out
+}
+
 /// Whether a machine may be offered as a place (Run on, a delegate's place, *Their jobs run on*, Machines): never a
 /// sandbox, which belongs to its owner.
 pub fn placeable(machine: &Value) -> bool {
@@ -103,6 +153,50 @@ pub fn gone_with_task<'a>(all: &'a [Held], task: &str) -> Vec<&'a Held> {
             _ => false,
         })
         .collect()
+}
+
+/// The task an owner names (a task's, its judges', a delegate's lead, a crew job's task), as its own id; None for one
+/// that names no task (a launch, a crew member's own) or a crew job not named yet.
+fn task_of(owner: &Owner) -> Option<&str> {
+    match owner {
+        Owner::Task { task: t } | Owner::Judges { judges: t } | Owner::Delegate { lead: t, .. } | Owner::Job { job: t, .. } => {
+            Some(bare(t)).filter(|id| !id.is_empty())
+        }
+        Owner::Pending { .. } | Owner::Member { .. } => None,
+    }
+}
+
+/// Whether an agent of task `me` may drop or re-own a sandbox `owner` holds (ADR-0136): only one its own task owns (its
+/// `/sandbox`, its judges', its delegates', a crew job's when the job is its task). A launch's, a crew member's own,
+/// one with no owner (the user's `wisp sandbox new`) and another task's are the user's to delete.
+pub fn may_agent_touch(owner: Option<&Owner>, me: &str) -> bool {
+    let me = bare(me);
+    !me.is_empty() && owner.and_then(task_of) == Some(me)
+}
+
+/// Why an agent of task `me` may not drop `h`: another task's (or nobody's), or one still holding work its owner never
+/// got (a delegate's, `holds_work`), which only the user deletes. None: it may.
+pub fn agent_drop_refusal(h: &Held, me: &str, holds_work: bool) -> Option<String> {
+    if !may_agent_touch(h.owner.as_ref(), me) {
+        return Some(format!("{}: an agent drops only its own task's sandboxes", h.machine));
+    }
+    holds_work
+        .then(|| format!("{} still holds work that never came back; the user deletes it in Settings → Computers → Sandboxes", h.machine))
+}
+
+/// Why an agent of task `me` may not make `next` the owner of a sandbox `now` holds. It names its own task's only, and
+/// only on one its task owns already, or a crew job's not named yet that it names as a job of the same member (the
+/// job it just handed out starting there: crew names it under the agent's call). Never a launch's (`{pending}`), never
+/// someone else's box. None: it may.
+pub fn agent_own_refusal(now: Option<&Owner>, next: &Owner, me: &str) -> Option<String> {
+    let naming_a_job = matches!(
+        (now, next),
+        (Some(Owner::Job { crew: a, job: was }), Owner::Job { crew: b, job }) if a == b && bare(was).is_empty() && !bare(job).is_empty()
+    );
+    if naming_a_job || (may_agent_touch(now, me) && may_agent_touch(Some(next), me)) {
+        return None;
+    }
+    Some("an agent names only its own task's sandboxes, as its own task's".to_owned())
 }
 
 /// The sandboxes that go when crew member `crew` leaves: their own, and any job's still here.
@@ -370,6 +464,70 @@ mod tests {
         assert_eq!(ids(gone_with_task(&h, "t1")), ["s1", "s4", "s5"], "its own, its delegates', its judges'");
         assert_eq!(ids(gone_with_task(&h, "h:t9")), ["s3"], "a job's goes with the job");
         assert_eq!(ids(gone_with_member(&h, "ada")), ["s3", "s2"]);
+    }
+
+    /// SBX-A2: the grid counts every sandbox of the user's against their cap, but Settings listed only the ones a
+    /// machine here keeps; one made elsewhere (or whose machine went) held a slot nobody could see or delete.
+    #[test]
+    fn settings_lists_every_sandbox_the_grid_holds_and_this_computers_alone_when_the_grid_cant_be_asked() {
+        let local = vec![
+            json!({ "id": "m1", "name": "Sandbox web", "sandbox": "aa", "owner": { "task": "p:t1" }, "state": "asleep" }),
+            json!({ "id": "mac", "name": "Mac", "computer": "c1" }),
+        ];
+        let grid = vec![json!({ "id": "aa", "name": "web" }), json!({ "id": "bb", "name": "api" }), json!({ "id": "cc", "name": "" })];
+        let ids = |v: &[Listed]| v.iter().map(|l| (l.sandbox.clone(), l.elsewhere)).collect::<Vec<_>>();
+        // local only (the grid lists none)
+        let only = listed(&local, Some(&[]));
+        assert_eq!(ids(&only), [("aa".to_owned(), false)]);
+        assert_eq!((only[0].machine.as_str(), only[0].state.as_str()), ("m1", "asleep"), "its owner and state as here");
+        // both: the local row keeps its owner; the grid's others come after, elsewhere
+        let both = listed(&local, Some(&grid));
+        assert_eq!(ids(&both), [("aa".to_owned(), false), ("bb".to_owned(), true), ("cc".to_owned(), true)]);
+        assert_eq!(both[0].owner, json!({ "task": "p:t1" }));
+        assert_eq!((both[1].name.as_str(), both[1].machine.as_str(), &both[1].owner), ("api", "", &Value::Null));
+        assert_eq!(both[2].name, "cc", "no name: its id");
+        // grid only
+        assert_eq!(ids(&listed(&[], Some(&grid[1..2]))), [("bb".to_owned(), true)]);
+        // the grid unreachable: this computer's, never blank
+        assert_eq!(ids(&listed(&local, None)), [("aa".to_owned(), false)]);
+    }
+
+    /// SBX-A1: an agent's `sandbox.drop {machine}` and `sandbox.own` reached any sandbox; now only its own task's, and a
+    /// delegate's still holding work is the user's to delete.
+    #[test]
+    fn an_agent_touches_only_its_own_tasks_sandboxes() {
+        let h = held(&[
+            m("mine", json!({ "sandbox": "a1", "owner": { "task": "p:A" } })),
+            m("judges", json!({ "sandbox": "a2", "owner": { "judges": "A" } })),
+            m("delegate", json!({ "sandbox": "a3", "owner": { "lead": "h:A", "member": "codex" } })),
+            m("job", json!({ "sandbox": "a4", "owner": { "crew": "ada", "job": "m|A" } })),
+            m("theirs", json!({ "sandbox": "a5", "owner": { "task": "p:B" } })),
+            m("member", json!({ "sandbox": "a6", "owner": { "crew": "ada" } })),
+            m("pending", json!({ "sandbox": "a7", "owner": { "pending": 5 } })),
+            m("nobody", json!({ "sandbox": "a8" })),
+            m("unnamed", json!({ "sandbox": "a9", "owner": { "crew": "ada", "job": "" } })),
+        ]);
+        let ok: Vec<&str> = h.iter().filter(|x| may_agent_touch(x.owner.as_ref(), "srv:A")).map(|x| x.machine.as_str()).collect();
+        assert_eq!(ok, ["mine", "judges", "delegate", "job"], "own task allowed, every other refused");
+        assert!(!may_agent_touch(h[0].owner.as_ref(), ""), "no task, nothing");
+        // drop: its own goes; another task's is refused; its own still holding work is the user's
+        assert_eq!(agent_drop_refusal(&h[0], "A", false), None);
+        assert!(agent_drop_refusal(&h[4], "A", false).unwrap().contains("only its own task's"));
+        assert!(agent_drop_refusal(&h[2], "A", true).unwrap().contains("the user deletes it"));
+        // own: its own as its own; never another's, never a launch's, never `{pending}` on someone else's
+        let task = |t: &str| Owner::Task { task: t.into() };
+        assert_eq!(agent_own_refusal(h[0].owner.as_ref(), &Owner::Judges { judges: "A".into() }, "A"), None);
+        assert!(agent_own_refusal(h[4].owner.as_ref(), &task("p:A"), "A").is_some(), "stealing another task's");
+        assert!(agent_own_refusal(h[0].owner.as_ref(), &task("p:B"), "A").is_some(), "giving its own away");
+        assert!(agent_own_refusal(h[4].owner.as_ref(), &Owner::Pending { pending: 1 }, "A").is_some(), "pending-steal");
+        assert!(agent_own_refusal(h[0].owner.as_ref(), &Owner::Pending { pending: 1 }, "A").is_some());
+        assert!(agent_own_refusal(h[6].owner.as_ref(), &task("p:A"), "A").is_some(), "a launch's isn't its own");
+        assert!(agent_own_refusal(h[7].owner.as_ref(), &task("p:A"), "A").is_some(), "nobody's is the user's");
+        // a job it handed out starting in that member's sandbox: crew names it, under the agent's call
+        let job = |crew: &str| Owner::Job { crew: crew.into(), job: "m|J".into() };
+        assert_eq!(agent_own_refusal(h[8].owner.as_ref(), &job("ada"), "A"), None);
+        assert!(agent_own_refusal(h[8].owner.as_ref(), &job("bob"), "A").is_some(), "another member's job");
+        assert!(agent_own_refusal(h[3].owner.as_ref(), &job("ada"), "B").is_some(), "a named job isn't renamed");
     }
 
     #[test]
