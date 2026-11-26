@@ -96,6 +96,9 @@ pub struct Grid {
     pub keys: crate::keys::ApiKeys,
     /// per-user and per-address rate limits (a minute's window)
     limits: crate::http::Limiter,
+    /// share passwords' scrypt, a few at a time on the blocking pool (`edge_shares.rs` `off_the_workers`); public so
+    /// a test can hold them all
+    pub scrypt: Arc<tokio::sync::Semaphore>,
     /// a key just made, held for the one Account page that says it (`keys_fresh.rs`)
     fresh_keys: crate::keys_fresh::FreshKeys,
     pub shares: Shares,
@@ -311,21 +314,19 @@ impl Grid {
         }
         let (head, body) = req.into_parts();
         let bytes = read_bytes(body, crate::shares::MAX_BYTES * 2).await?;
+        let peer = head.extensions.get::<common::Peer>().map(|p| p.0);
         // the signed-in pages and their forms (edge_pages.rs)
         if let Some(r) = self.pages_route(method.as_str(), parts.as_slice(), q, &head.headers, &bytes, &who).await {
             return r;
         }
         // signing in: the device API, `/activate`, the providers' and the dev sign-in (edge_device.rs)
-        if let Some(r) = self.account_routes(&method, &parts, q, &head.headers, &bytes, &who).await {
+        if let Some(r) = self.account_routes(&method, &parts, q, &head.headers, peer, &bytes, &who).await {
             return r;
         }
         match (method.as_str(), parts.as_slice()) {
-            ("POST" | "OPTIONS", ["api", "waitlist"]) => {
-                let peer = head.extensions.get::<common::Peer>().map(|p| p.0);
-                Ok(self.waitlist_in(method.as_str(), &head.headers, peer, &bytes))
-            }
+            ("POST" | "OPTIONS", ["api", "waitlist"]) => Ok(self.waitlist_in(method.as_str(), &head.headers, peer, &bytes)),
             (_, ["api", "shares", ..] | ["api", "gallery"] | ["s", ..]) | ("GET", ["gallery"]) => {
-                self.shares_route(&method, &parts, q, &head.headers, &bytes, &who)
+                self.shares_route(&method, &parts, q, &head.headers, peer, &bytes, &who).await
             }
             (_, ["api", "keys"]) => self.keys_route(&method, None, &head.headers, &bytes, &who),
             (_, ["api", "keys", id]) => self.keys_route(&method, Some(id), &head.headers, &bytes, &who),

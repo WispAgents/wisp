@@ -9,6 +9,27 @@ use crate::rows::UserRow;
 impl Shares {
     /// Whether `who` (signed in, or not) with `password` may read `s`; why not otherwise.
     pub fn may_read(&self, s: &Rec, who: Option<&UserRow>, password: Option<&str>) -> Result<std::result::Result<(), Refused>> {
+        self.may_read_checked(s, who, |kept| password.is_some_and(|p| check_password(kept, p)))
+    }
+
+    /// Whether this read would have to check a password: a password share, open still, read by someone not its
+    /// sharer. Only then does the edge count a guess and hash it.
+    pub fn asks_password(&self, s: &Rec, who: Option<&UserRow>) -> bool {
+        s.access == "password"
+            && s.pass.is_some()
+            && who.is_none_or(|u| u.id != s.user_id)
+            && s.revoked_at.is_none()
+            && s.expires_at.is_none_or(|e| e > self.clock.now_ms())
+    }
+
+    /// `may_read`, with the password's check (`pass_ok`, given the kept `salt:hash`) done by the caller: the edge
+    /// runs scrypt on the blocking pool first and hands in its answer.
+    pub fn may_read_checked(
+        &self,
+        s: &Rec,
+        who: Option<&UserRow>,
+        pass_ok: impl FnOnce(&str) -> bool,
+    ) -> Result<std::result::Result<(), Refused>> {
         if who.is_some_and(|u| u.id == s.user_id) {
             return Ok(Ok(()));
         }
@@ -31,7 +52,7 @@ impl Shares {
                 }
                 None => false,
             },
-            "password" => s.pass.as_deref().zip(password).is_some_and(|(k, p)| check_password(k, p)),
+            "password" => s.pass.as_deref().is_some_and(pass_ok),
             _ => false,
         };
         Ok(if ok { Ok(()) } else { Err(Refused::Locked(s.access.clone())) })

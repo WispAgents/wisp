@@ -155,6 +155,10 @@ pub const MIGRATIONS: &[&str] = &[
     r"CREATE TABLE app_waitlist (
      email TEXT NOT NULL, kind TEXT NOT NULL, platform TEXT NOT NULL, source TEXT NOT NULL, created_at INTEGER NOT NULL,
      PRIMARY KEY (email, kind));",
+    // Where a device sign-in was asked from (ADR-0129): the approve page shows the address and warns when it isn't the
+    // approver's, and the grid caps the codes waiting from one address. The user-agent is kept to 200 characters.
+    r"ALTER TABLE device_codes ADD COLUMN requester_ip TEXT;
+   ALTER TABLE device_codes ADD COLUMN requester_agent TEXT;",
 ];
 
 /// Every table the migrations make (and `meta`), for tests and `wisp grid backup` checks.
