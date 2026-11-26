@@ -27,6 +27,8 @@ struct Rt {
     exts: Arc<AtomicUsize>,
     /// `runtime.followUp` starts the task's turn (and waits for later to hear it) before it answers
     turn_in_send: Arc<Mutex<bool>>,
+    /// `runtime.create` doesn't answer while this is set
+    slow: Arc<Mutex<bool>>,
 }
 
 struct Runtime(Rt);
@@ -52,7 +54,9 @@ impl Plugin for Runtime {
             if n > 0 && n != usize::MAX {
                 rt.fails.store(n - 1, Ordering::SeqCst);
             }
+            let slow = rt.slow.clone();
             async move {
+                until(|| !*slow.lock().unwrap()).await;
                 if n > 0 {
                     return Err(WireError::unavailable("wisp.runtime is restarting"));
                 }
@@ -198,4 +202,27 @@ async fn a_follow_ups_turn_starting_inside_the_send_counts_as_laters_and_the_use
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
     panic!("the user's turn was counted as later's: {}", row(&store, "later_meta", "t1").await.unwrap());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn start_now_or_an_edit_while_the_looks_start_is_in_flight_is_refused_and_one_task_starts() {
+    let (rt, clock) = (Rt::default(), FakeClock::at(T0));
+    let (k, store) = kernel(&rt, &clock).await;
+    let id = plan_in_a_minute(&k).await;
+    *rt.slow.lock().unwrap() = true;
+    armed(&clock).await;
+    clock.advance(61_000);
+    until(|| rt.creates.load(Ordering::SeqCst) == 1).await;
+    let now = k.call(Caller::user(), "later.editPlan", json!({ "id": id, "now": true })).await;
+    assert!(matches!(&now, Err(e) if e.code == wisp_kernel::Code::Conflict), "Start now while the look starts it: {now:?}");
+    let edit = k.call(Caller::user(), "later.editPlan", json!({ "id": id, "in": 30 })).await;
+    assert!(matches!(&edit, Err(e) if e.code == wisp_kernel::Code::Conflict), "an edit the start would throw away: {edit:?}");
+    let cancel = k.call(Caller::user(), "later.cancelPlan", json!({ "id": id })).await;
+    assert!(matches!(&cancel, Err(e) if e.code == wisp_kernel::Code::Conflict), "a cancel that can't stop the start: {cancel:?}");
+    *rt.slow.lock().unwrap() = false;
+    armed(&clock).await;
+    until(|| rt.creates.load(Ordering::SeqCst) == 1).await;
+    assert!(plans(&k).await.is_empty(), "started, then gone");
+    assert!(row(&store, "later_plan", &id).await.is_none());
+    assert_eq!(rt.creates.load(Ordering::SeqCst), 1, "one plan, one task");
 }

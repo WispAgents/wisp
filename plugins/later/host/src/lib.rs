@@ -34,6 +34,9 @@ struct State {
     ctx: Ctx,
     entries: Mutex<Vec<LaterEntry>>,
     plans: Mutex<Vec<Plan>>,
+    /// due plans whose start is in flight (`start_due`): Start now, an edit or Cancel is refused (conflict) until it lands,
+    /// rather than starting it twice or being dropped with it (audit doc23b). Taken under `plans`' lock, in that order.
+    starting: Mutex<BTreeSet<String>>,
     metas: Mutex<HashMap<String, TaskMeta>>,
     /// the user's IANA zone, as the client sent it
     zone: Mutex<Option<String>>,
@@ -240,24 +243,36 @@ impl State {
     /// went first and was never run when the start failed (audit doc23b). A failed start keeps it, backing off
     /// (`rules::failed_start`), until it is lost to Drafts, where you see it.
     async fn start_due(&self, ctx: &Ctx, call: &Call, id: &str, missed: bool) -> bool {
-        let Some(p) = lock(&self.plans).iter().find(|p| p.id == id).cloned() else { return false };
-        match self.run_plan(ctx, call, &p, missed).await {
-            Ok(_) => {
-                lock(&self.plans).retain(|x| x.id != id);
-                logged(self.write(store::Ops { drop_plans: vec![id.to_owned()], ..store::Ops::default() }).await, "a plan");
-                true
-            }
-            Err(err) => {
-                tracing::warn!(error = %err.message, plan = %id, tries = p.tries + 1, "later: plan run");
-                let next = rules::failed_start(&p, now(ctx));
-                // cancelled or edited while it ran: that one stands
-                let kept = lock(&self.plans).iter_mut().find(|x| x.id == id && **x == p).map(|x| x.clone_from(&next)).is_some();
-                if kept {
-                    logged(self.write(store::Ops { plans: vec![next], ..store::Ops::default() }).await, "a failed plan");
-                }
-                false
-            }
+        let p = {
+            let plans = lock(&self.plans);
+            let Some(p) = plans.iter().find(|p| p.id == id).cloned() else { return false };
+            lock(&self.starting).insert(id.to_owned());
+            p
+        };
+        let ran = self.run_plan(ctx, call, &p, missed).await;
+        if let Err(err) = &ran {
+            tracing::warn!(error = %err.message, plan = %id, tries = p.tries + 1, "later: plan run");
         }
+        // what the store hears, decided under `plans` with the start mark cleared in the same hold
+        let ops = {
+            let mut plans = lock(&self.plans);
+            lock(&self.starting).remove(id);
+            if ran.is_ok() {
+                plans.retain(|x| x.id != id);
+                Some(store::Ops { drop_plans: vec![id.to_owned()], ..store::Ops::default() })
+            } else {
+                let next = rules::failed_start(&p, now(ctx));
+                // gone or changed meanwhile (a restore, say): that one stands
+                plans.iter_mut().find(|x| x.id == id && **x == p).map(|x| {
+                    x.clone_from(&next);
+                    store::Ops { plans: vec![next], ..store::Ops::default() }
+                })
+            }
+        };
+        if let Some(ops) = ops {
+            logged(self.write(ops).await, if ran.is_ok() { "a plan" } else { "a failed plan" });
+        }
+        ran.is_ok()
     }
 
     /// `agent@account`'s plan reset early and nothing holds it (`budget.plan_free`): follow-ups held for it, or waiting
@@ -529,9 +544,19 @@ fn commands(s: &mut Setup, slot: &Slot) {
         Ok(p)
     });
     on!(s, slot, c::EditPlan, |st, ctx, call, a| {
-        let p = lock(&st.plans).iter().find(|p| p.id == a.id).cloned().ok_or_else(|| WireError::not_found("No such plan."))?;
+        let p = {
+            let mut plans = lock(&st.plans);
+            let p = plans.iter().find(|p| p.id == a.id).cloned().ok_or_else(|| WireError::not_found("No such plan."))?;
+            if lock(&st.starting).contains(&p.id) {
+                return Err(WireError::conflict("This plan is starting now."));
+            }
+            if a.now {
+                // taken before the await, so a look that comes due meanwhile doesn't find it and start it too
+                plans.retain(|x| x.id != p.id);
+            }
+            p
+        };
         if a.now {
-            lock(&st.plans).retain(|x| x.id != p.id);
             let started = match st.run_plan(&ctx, &call, &p, false).await {
                 Ok(id) => id,
                 Err(err) => {
@@ -550,10 +575,16 @@ fn commands(s: &mut Setup, slot: &Slot) {
         Ok(c::PlanEdited::Plan(Box::new(next)))
     });
     on!(s, slot, c::CancelPlan, |st, _ctx, _call, a| {
-        if !lock(&st.plans).iter().any(|p| p.id == a.id) {
-            return Err(WireError::not_found(format!("No plan has the id {}: wisp later plans lists them", a.id)));
+        {
+            let mut plans = lock(&st.plans);
+            if !plans.iter().any(|p| p.id == a.id) {
+                return Err(WireError::not_found(format!("No plan has the id {}: wisp later plans lists them", a.id)));
+            }
+            if lock(&st.starting).contains(&a.id) {
+                return Err(WireError::conflict("This plan is starting now."));
+            }
+            plans.retain(|p| p.id != a.id);
         }
-        lock(&st.plans).retain(|p| p.id != a.id);
         st.write(store::Ops { drop_plans: vec![a.id], ..store::Ops::default() }).await?;
         Ok(c::Okay { ok: true })
     });
@@ -703,6 +734,7 @@ impl Plugin for LaterPlugin {
                 metas: Mutex::new(metas.into_iter().collect()),
                 zone: Mutex::new(zone),
                 looking: tokio::sync::Mutex::new(()),
+                starting: Mutex::new(BTreeSet::new()),
             });
             let _ = start.set(st.clone());
             // the zone the client sent with its settings wins over the one later kept

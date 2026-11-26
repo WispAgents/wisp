@@ -508,12 +508,17 @@ async fn a_subdir_checkout_lists_stages_reverts_and_undoes_in_one_path_frame() {
     write(&web, "src/a.ts", "export const a = 2;\n");
     write(&web, "src/new.ts", "new\n");
     write(&dir, "packages/api/b.ts", "b changed\n");
-    let (svc, _) = service();
+    let (svc, s) = service();
     let d = web.display().to_string();
     let args = ChangesArgs { path: d.clone(), base: "HEAD".into(), stage_state: true, inline: true, ..Default::default() };
     let c = wisp_git::commands::changes(&svc, args.clone()).await.unwrap().unwrap();
     let paths: Vec<&str> = files(&c).iter().map(|f| f.path.as_str()).collect();
     assert_eq!(paths, ["src/a.ts", "src/new.ts"], "one frame, the subfolder's (its sibling package unseen)");
+    // the GitRepo service reads in that frame too: touched files, and a Changes path's bytes at a rev
+    let o = owner();
+    let r = s.repo(&user(), &o, &d).await.unwrap();
+    assert_eq!(r.touched(&user(), "HEAD").await.unwrap().unwrap().files, ["src/a.ts", "src/new.ts"]);
+    assert_eq!(r.show(&user(), "HEAD", "src/a.ts").await.unwrap().as_deref(), Some(&b"export const a = 1;\n"[..]));
     // a.ts by its hunk (a patch `git apply` reads in the subfolder), new.ts whole
     for (p, hunk) in [("src/a.ts", Some(0)), ("src/new.ts", None)] {
         let s = StageArgs { dir: d.clone(), base: "HEAD".into(), path: p.into(), hunk, key: None, unstage: false };
