@@ -19,6 +19,7 @@
     "runtime:setExt",
     "runtime:setState",
     "runtime:slots",
+    "goal:declared",
     "store:write{owner:workflows}"
   ],
   "activation": [
