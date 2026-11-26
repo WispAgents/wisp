@@ -17,6 +17,7 @@ export { loadPlatformStyles } from './platform/styles.ts';
 export { FAB_SLOP, FAB_START, barCollapsed, fabOnScroll, type FabScroll } from './nav/scroll-math.ts';
 export { isEnvFile, maskEdit } from './content/env-mask.ts';
 export type { DiffFile, DiffHunk, DiffLine, DiffStatus } from './content/diff/parse.ts';
+export { diffFileOf } from './blocks/content-diff.ts';
 export { makerOptions, type MakerOption } from './crew/maker-options.ts';
 export { GESTURES, defineGestures, gestureMarks, type GestureKind, type GestureName, type GestureSpec, type GestureTwin } from './gestures/registry.ts';
 export * from './gestures/gesture-math.ts';

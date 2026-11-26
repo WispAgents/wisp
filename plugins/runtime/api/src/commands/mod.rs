@@ -116,6 +116,10 @@ command!(Approval = "runtime.approval": ApprovalArgs => Value);
 command!(SetupAsk = "runtime.setup.ask": SetupAskArgs => SetupAsked);
 command!(PollAnswerOf = "runtime.pollAnswer": PollAnswerArgs => PollAnswer, read_only);
 command!(ApproveBlocked = "runtime.approveBlocked": ApproveBlockedArgs => Value);
+// a side discussion's write to a file its main task changed, proposed there: the user applies or discards it on the main
+// task's page. Additive (2026-11-25).
+command!(ProposalApply = "runtime.proposal.apply": ProposalArgs => Value);
+command!(ProposalDiscard = "runtime.proposal.discard": ProposalArgs => Value);
 command!(Btw = "runtime.btw": BtwArgs => BtwEntry);
 command!(BtwDrop = "runtime.btw.drop": BtwDropArgs => Ack);
 command!(Probe = "runtime.probe": ProbeArgs => ProbeAnswer);

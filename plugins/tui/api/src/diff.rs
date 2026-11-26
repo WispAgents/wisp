@@ -59,24 +59,53 @@ pub fn lines(before: &str, after: &str) -> Vec<Row> {
     out
 }
 
+/// `@@ -a[,n] +b[,m] @@`: how many old and new lines the hunk holds (a missing count means 1). None for a
+/// header without numbers (some tools print a bare `@@`).
+pub fn hunk_counts(line: &str) -> Option<(u32, u32)> {
+    let rest = line.strip_prefix("@@ -")?;
+    let (old, rest) = rest.split_once(' ')?;
+    let new = rest.strip_prefix('+')?.split(' ').next()?;
+    let count = |s: &str| s.split_once(',').map_or(Some(1), |(_, n)| n.parse().ok());
+    Some((count(old)?, count(new)?))
+}
+
 /// A unified diff's text (a tool's `detail`) as rows; `@@` headers and `---`/`+++` lines dropped. None when it isn't one.
+/// Inside a hunk whose header counts its lines, a `---…`/`+++…` line is a removed or added row, not a header.
 pub fn parse_unified(text: &str) -> Option<Vec<Row>> {
     if !text.lines().any(|l| l.starts_with("@@")) {
         return None;
     }
-    Some(
-        text.lines()
-            .filter(|l| {
-                !(l.starts_with("+++") || l.starts_with("---") || l.starts_with("diff ") || l.starts_with("index ") || l.starts_with("@@"))
-            })
-            .map(|l| match l.chars().next() {
-                Some('+') => Row::Add(l[1..].to_owned()),
-                Some('-') => Row::Del(l[1..].to_owned()),
-                Some(' ') => Row::Same(l[1..].to_owned()),
-                _ => Row::Same(l.to_owned()),
-            })
-            .collect(),
-    )
+    let (mut old_left, mut new_left) = (0u32, 0u32);
+    let mut out = Vec::new();
+    for l in text.lines() {
+        let in_hunk = old_left > 0 || new_left > 0;
+        if !in_hunk {
+            if l.starts_with("@@") {
+                (old_left, new_left) = hunk_counts(l).unwrap_or((0, 0));
+                continue;
+            }
+            if l.starts_with("+++") || l.starts_with("---") || l.starts_with("diff ") || l.starts_with("index ") {
+                continue;
+            }
+        }
+        out.push(match l.chars().next() {
+            Some('+') => {
+                new_left = new_left.saturating_sub(1);
+                Row::Add(l[1..].to_owned())
+            }
+            Some('-') => {
+                old_left = old_left.saturating_sub(1);
+                Row::Del(l[1..].to_owned())
+            }
+            Some(' ') => {
+                old_left = old_left.saturating_sub(1);
+                new_left = new_left.saturating_sub(1);
+                Row::Same(l[1..].to_owned())
+            }
+            _ => Row::Same(l.to_owned()),
+        });
+    }
+    Some(out)
 }
 
 /// `+added −removed`.
@@ -267,6 +296,12 @@ mod tests {
         let (shown, starts) = hunks(&rows, 2);
         assert_eq!(starts.len(), 2, "two hunks");
         assert!(shown.contains(&None), "a gap between them");
+    }
+
+    #[test]
+    fn dash_and_plus_rows_inside_a_hunk_are_kept() {
+        let u = parse_unified("--- a/n.md\n+++ b/n.md\n@@ -1,2 +1,2 @@\n----\n+++x\n end\n").unwrap();
+        assert_eq!(u, vec![Row::Del("---".into()), Row::Add("++x".into()), Row::Same("end".into())]);
     }
 
     #[test]

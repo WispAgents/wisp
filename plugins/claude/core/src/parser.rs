@@ -352,7 +352,14 @@ impl LineParser for ClaudeParser {
             return;
         };
         if msg::truthy(msg.session_id) {
-            out.push(ev(HarnessEvent::session(msg::text(msg.session_id).into_owned())));
+            let id = msg::text(msg.session_id).into_owned();
+            // a main-thread assistant message: where a fork from this turn ends its copy (`--resume-session-at`)
+            let main_says = &*msg::text(msg.ty) == "assistant" && !msg::truthy(msg.parent_tool_use_id) && msg::truthy(msg.uuid);
+            out.push(ev(if main_says {
+                HarnessEvent::session_at(id, msg::text(msg.uuid).into_owned())
+            } else {
+                HarnessEvent::session(id)
+            }));
         }
         match &*msg::text(msg.ty) {
             "assistant" => self.assistant(&msg, out),

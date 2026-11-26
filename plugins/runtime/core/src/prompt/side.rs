@@ -1,6 +1,7 @@
 //! /side (v1 server/side.js, its prompts): a side discussion about a task, a task of its own that
 //! works in the main task's folder as it is now and gets the main task's latest state with every
-//! message. Every write it makes goes through wisp's gate first. These are its texts.
+//! message. It has the main task's access; a write to a file the main task changed becomes a proposal on the main
+//! task, where its harness lets wisp see a write first. These are its texts.
 
 use super::btw::btw_digest;
 use super::handoff::{PastTurn, Render};
@@ -14,17 +15,9 @@ pub fn side_ask(text: &str) -> Option<String> {
     SIDE_CMD.is_match(t).then(|| trim(&SIDE_CMD.replace(t, "")).to_owned())
 }
 
-/// What a write refused on a side discussion that can't ask before a write says.
-pub const SIDE_DENIED: &str = "This is a read-only side discussion: this harness can't ask wisp before a write, so nothing may be changed here. Do not retry; answer from what you can read, and say what the main task (or the user) would have to do.";
-
-/// What a write the user turned down at a clash says. `other`: the clash was with another side discussion.
-pub fn side_kept(words: &str, other: bool) -> String {
-    let (whose, there) = if other { ("other side discussion", "that side discussion") } else { ("main task", "the main task") };
-    let said = if words.is_empty() { String::new() } else { format!(" They said: {words}") };
-    format!(
-        "The user kept the {whose}'s version: nothing was changed.{said} Do not retry this change. Say what the user could tell {there} instead (a follow-up they can send there)."
-    )
-}
+/// What a side run's write to a file the main task changed answers its CLI: nothing was written, the change waits on
+/// the main task as a proposal the user applies or discards there.
+pub const SIDE_PROPOSED: &str = "Not written here: the main task changed this file, so your change was proposed to the main task. The user applies or discards it there. Do not retry it or write the file another way; say what you proposed.";
 
 /// The task a side discussion is about (`sideOf`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -33,10 +26,10 @@ pub struct SideOf<'a> {
     pub title: &'a str,
 }
 
-/// The system prompt's part for a side discussion. `session_tool`: how the harness names
-/// `wisp_session` ('' without wisp's tools). `edits`: it may edit behind the gate; else it only reads,
-/// and `name` (its harness's) is why.
-pub fn side_note(of: SideOf<'_>, session_tool: &str, edits: bool, name: &str) -> String {
+/// The system prompt's part for a side discussion. `session_tool`: how the harness names `wisp_session` ('' without
+/// wisp's tools). `proposes`: its file writes go to wisp first (its harness can stop a write until wisp answers), and a
+/// write to a file the main task changed becomes a proposal on the main task; else its writes land as they are.
+pub fn side_note(of: SideOf<'_>, session_tool: &str, proposes: bool) -> String {
     let tool = if session_tool.is_empty() { String::new() } else { format!("`{session_tool}` with id {} reads its whole record.", of.id) };
     let read = format!("`git status`, `git diff`, `git log` show what it changed. {tool}");
     let open = format!(
@@ -44,21 +37,17 @@ pub fn side_note(of: SideOf<'_>, session_tool: &str, edits: bool, name: &str) ->
         of.title, of.id
     );
     let latest = "- Every message from the user starts with the main task's latest state (under \"The main task now\"). It may have moved on since your last answer: go by the latest one.";
-    if !edits {
-        return format!(
-            "{open}
-- Change nothing. No edits, no file writes, no commits, no branches, no installs, no commands with side effects, no new tasks. You run read-only; anything that would change something is refused. {name} can’t ask wisp before a write, so side discussions on it only read.
-- Read freely: the files in the folder you're in are the main task's work as it is right now ({read})
-{latest}
-- Answer as for any wisp task, wisp presentation block included. Where a change is wanted, say what to tell the main task (a follow-up the user can send there) instead of making it."
-        );
-    }
+    let writes = if proposes {
+        "- wisp sees each file edit or write before it happens. A file the main task hasn't changed is written at once. A file it changed, in an earlier turn or in the one it is running now, is not: your change goes to the main task as a proposal (a diff the user applies or discards there) and your call answers \"proposed to the main task\". Don't retry it or write that file another way (shell, `sed -i`, `>`, `cp`); say what you proposed."
+    } else {
+        "- Your writes land in the main task's folder as they are: nothing checks them first. Leave the files the main task changed to it unless the user asks you to change them; say what to tell the main task instead."
+    };
     format!(
         "{open}
 - You share the main task's folder: the files here are its work as it is right now ({read}) What you change lands in that work, and the main task may be editing at the same time.
-- You can do anything a task can: run commands, tests, builds and the app, start tasks, use wisp's tools and the connectors, and edit what the user asks you to. Never hand the user a command to run, or tell them to ask the main task for something, that you could do here yourself: do it and report what it showed. Leave the main task's ongoing work to it unless the user asks you to change it.
-- wisp checks every write before it happens. A file the main task hasn't touched goes through. One it changed elsewhere goes through with a warning. Lines it changed are a clash: the user sees a card here, and if they accept, wisp tells the main task. If they keep the main task's version your call is refused: don't retry it, and say what to tell the main task instead.
-- Commits, pushes, resets, stashes, rebases, merges and the like rewrite the main task's work: they count as clashes, and so does a command that removes or writes over a file it changed (`rm`, `>`, `sed -i`, `patch`, `cp`…). wisp's own Ship, rollback, fork, goals and terminal stay on the main task.
+- You have the main task's access: run commands, tests, builds and the app, start tasks, use wisp's tools and the connectors, and edit what the user asks you to. Never hand the user a command to run, or tell them to ask the main task for something, that you could do here yourself: do it and report what it showed. Leave the main task's ongoing work to it unless the user asks you to change it.
+{writes}
+- Don't commit, push, reset, stash, rebase or merge: that rewrites the main task's work. wisp's own Ship, rollback, fork, goals and terminal stay on the main task.
 {latest}
 - Answer as for any wisp task, wisp presentation block included."
     )

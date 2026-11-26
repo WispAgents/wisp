@@ -46,6 +46,9 @@ pub(crate) struct Live {
     pub label: Option<String>,
     /// the account the run is on (what `before:run` picked): its usage reports are that account's
     pub account: Option<String>,
+    /// the files the running turn changed so far, as its CLI named them: a side discussion's write to one is proposed
+    /// to this task before the turn's end writes them on the turn (`Runtime::touched`)
+    pub changes: Vec<String>,
     pub ctl: mpsc::UnboundedSender<Ctl>,
     /// closed once the run's drive let go: its CLI exited, its last output parsed (and the git work that does in
     /// the task's folder, `wisp_harness_kit` pin and snapshots) done. `Runtime::stop_and_wait` waits on it.
@@ -90,6 +93,29 @@ fn apply_opts(s: &mut Session, item: &QueueItem, harness: &dyn Fn(&str) -> Optio
 fn fresh_start(s: &mut Session, item: &QueueItem) -> Option<Value> {
     (item.opts.as_ref().and_then(|o| o.get("fresh")) == Some(&Value::Bool(true)))
         .then(|| serde_json::json!({ "fresh": true, "after": s.resume_id.take() }))
+}
+
+/// A run's one-off extras (`next`): approveBlocked's grants or Full auto, a fork's first run. `forks`: its harness
+/// works on a copy of a conversation.
+fn with_next(run: &mut HarnessRun, next: &Value, forks: bool) {
+    run.grants = next
+        .get("grants")
+        .and_then(Value::as_array)
+        .map(|g| g.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+        .unwrap_or_default();
+    run.fork = next.get("fork").and_then(Value::as_bool).unwrap_or(false) && forks;
+    // a forked task's first run: its copy of the conversation is the task's own from now on (kept, unlike a /btw's),
+    // ending where the turn it was forked at did
+    run.fork_keep = run.fork;
+    run.resume_at = next.get("at").and_then(Value::as_str).filter(|_| run.fork).map(str::to_owned);
+    if next.get("once").and_then(Value::as_str) == Some("auto") {
+        run.mode = Mode::Auto;
+    }
+}
+
+/// The task's team (`ext["wisp.runtime"].subagents`), as its run's MCP servers are asked for it (`McpQuery.team`).
+fn team_of(s: &Session) -> Vec<Value> {
+    s.ext.get("wisp.runtime").and_then(|o| o.get("subagents")).and_then(Value::as_array).cloned().unwrap_or_default()
 }
 
 /// The turn started a new conversation (`fresh_start`'s mark).
@@ -156,7 +182,7 @@ impl Runtime {
             Ok(c) => c,
             Err(e) => return self.refused(s, turn, &e.message, &claim).await,
         };
-        ctx.once = ctx.once.map(|m| wisp_runtime_core::cap::at_cap(m, capped));
+        ctx.once = self.side_once(&s, ctx.once).await.map(|m| wisp_runtime_core::cap::at_cap(m, capped));
         // the account wisp.accounts picked (an account at its limit or signed out is skipped on a run you start):
         // the turn says which, so its end and its usage reports count on that account, not the task's first pick
         if let Some(a) = ctx.account.clone().filter(|a| !a.is_empty()) {
@@ -180,8 +206,10 @@ impl Runtime {
             Ok(h) => h,
             Err(e) => return self.refused(s, turn, &e.to_string(), &claim).await,
         };
-        // one-off extras a command left for this run (approveBlocked's grants, a fork's first run)
-        let next = s.ext.get_mut("wisp.runtime").and_then(Value::as_object_mut).and_then(|o| o.remove("next")).unwrap_or(Value::Null);
+        // one-off extras for this run: approveBlocked's grants or Full auto ride on its own queue item, never on the task,
+        // where a prompt queued before it took them (audit doc19a); a fork's first run is the task's `next`
+        let left = s.ext.get_mut("wisp.runtime").and_then(Value::as_object_mut).and_then(|o| o.remove("next")).unwrap_or(Value::Null);
+        let next = item.opts.as_ref().and_then(|o| o.get("next")).filter(|n| n.is_object()).cloned().unwrap_or(left);
         // what other plugins keep on the turn before it runs (git: the checkpoint its rollback goes back to)
         self.kept_before(&s, &mut turn).await;
         s.state = SessionState::Running;
@@ -192,6 +220,9 @@ impl Runtime {
                 o.remove("forLater");
             }
         }
+        // what the user applied from a side discussion since the last turn: its agent hears it first (taken off the task
+        // with this start's write)
+        let applied = crate::more::take_applied(&mut s);
         s.updated_at = self.now();
         // from the moment the turn is saved as running until its CLI is in `live`: a run to the queue (B37)
         let _starting = self.mark_starting(s.id.as_str());
@@ -206,6 +237,9 @@ impl Runtime {
         // what plugins put right before the user's words (a long thread's Notes, ADR-0079)
         self.turn_notes(&s, &turn, harness.info(), &mut asked.prompt).await;
         crate::more::still_working(&s, &turn, &taken, &mut asked.prompt);
+        if let Some(note) = &applied {
+            asked.prompt.insert_str(0, note);
+        }
         // another harness taking over: what it missed goes first, with the user's rules (v1 handoff.js)
         let asked = Turn { prompt: Box::pin(self.with_handoff(&s, &asked, asked.prompt.clone())).await, ..asked };
         let mut run = self.harness_run(&s, &asked, &ctx, harness.as_ref());
@@ -215,20 +249,12 @@ impl Runtime {
         if is_side(&s) {
             self.side_discussion_run(&s, harness.info(), &mut run, &hooked.prompt).await;
         }
-        run.grants = next
-            .get("grants")
-            .and_then(Value::as_array)
-            .map(|g| g.iter().filter_map(Value::as_str).map(str::to_owned).collect())
-            .unwrap_or_default();
-        run.fork = next.get("fork").and_then(Value::as_bool).unwrap_or(false) && harness.info().fork;
+        with_next(&mut run, &next, harness.info().fork);
         // a resumed conversation's counters are its running total: what its last turn here left comes off
         (run.prior, run.unknown_prior) = self.prior_of(&s, &turn, run.resume_id.as_deref()).await;
-        if next.get("once").and_then(Value::as_str) == Some("auto") {
-            run.mode = Mode::Auto;
-        }
         run.mode = wisp_runtime_core::cap::at_cap(run.mode, capped);
         run.capped = capped.is_some();
-        // Plan that runs commands (v1 #794 `planRuns`): yours, not a side discussion's, nor from a channel or trigger
+        // Plan that runs commands (v1 #794 `planRuns`): yours or a side discussion's, not one from a channel or trigger
         let outside = run.mode == Mode::Plan && self.started_outside(&s).await;
         run.plan_commands = wisp_runtime_core::plan::runs_commands(run.mode, is_side(&s), outside);
         if turn.idx == 0 && !claim.cancelled() {
@@ -236,6 +262,15 @@ impl Runtime {
         }
         // boxed: every start comes through here, so its callers' futures stay small
         Box::pin(self.launch_turn(&s, turn, &harness, &run, &claim)).await
+    }
+
+    /// The mode this turn runs in when not the task's own (`before:run`'s `once`): a side discussion runs with its main
+    /// task's access, the main task's mode, never below Edits (audit user-side-full-access), decided before the run is
+    /// made so its MCP servers are that mode's too.
+    async fn side_once(&self, s: &Session, once: Option<Mode>) -> Option<Mode> {
+        let Some(main) = side_main(s) else { return once };
+        let floor = crate::side_task::side_mode(self.repo.session(main).await.map_or(s.mode, |m| m.mode));
+        Some(once.filter(|o| o.rank() > floor.rank()).unwrap_or(floor))
     }
 
     /// The turn's CLI spawned, or its turn ended at once when it couldn't be; refused when the task was deleted while
@@ -478,7 +513,9 @@ impl Runtime {
         let user_task = s.parent_id.is_none() && !s.ext.contains_key("wisp.crew");
         let plain = !self.on_unless_off("runtime.blocks") && user_task;
         let chat_mode = self.on_unless_switched_off("settings.transcript") && user_task;
-        let ask = s.parent_id.is_some().then(|| wisp_runtime_core::prompt::subagents::SUBAGENT_ASK.to_owned());
+        // a subagent asks its lead; a side discussion (a task under its main one) is the user's, as its main task is
+        let sub = s.parent_id.is_some() && !is_side(s);
+        let ask = sub.then(|| wisp_runtime_core::prompt::subagents::SUBAGENT_ASK.to_owned());
         let mut system = system_prompt(&SystemOpts {
             ask_tool: info.ask_tool.clone(),
             ask,
@@ -488,9 +525,8 @@ impl Runtime {
             chat_mode,
             ..SystemOpts::default()
         });
-        // a lead hears about its team (v1 runner.js:1379 `teamNote`): Delegate's rows, a preset, a crew member's
-        // linked delegates (orch #2), or ad-hoc delegation guidance when no team is pre-configured yet; only where
-        // wisp's MCP server (and so `delegate`) is offered (never a subagent or read-only side discussion)
+        // a lead hears about its team (v1 runner.js:1379 `teamNote`: Delegate's rows, a preset, a crew member's linked
+        // delegates, or ad-hoc delegation guidance) where `delegate` is offered; see `delegates_through_wisp`
         if self.delegates_through_wisp(s, info) {
             system.push_str(&self.team_note(s, info.ask_tool.as_deref()));
         }
@@ -542,15 +578,9 @@ impl Runtime {
         let q = wisp_runtime_api::points::McpQuery {
             mode: ctx.once.unwrap_or(s.mode),
             harness: s.agent.clone(),
-            team: s
-                .ext
-                .get("wisp.runtime")
-                .and_then(|o| o.get("subagents"))
-                .and_then(serde_json::Value::as_array)
-                .cloned()
-                .unwrap_or_default(),
+            team: team_of(s),
             turn_id: t.id.0.clone(),
-            sub: s.parent_id.is_some(),
+            sub,
         };
         for part in self.host.run_parts() {
             for (k, v) in part.mcp_servers(s, &q) {
@@ -589,11 +619,11 @@ impl Runtime {
     }
 
     /// A lead that delegates through wisp: told so in its system prompt (`team_note`), and its harness's own subagent
-    /// tool off (`HarnessRun::delegating`), one predicate so the two never drift apart. Never a subagent, a side
-    /// discussion, a host without wisp's MCP server, or a harness that can't take wisp's tools.
+    /// tool off (`HarnessRun::delegating`), one predicate so the two never drift apart. A top-level task or a side
+    /// discussion (it has its main task's team, ADR-0123); never a subagent, a host without wisp's MCP server, or a
+    /// harness that can't take wisp's tools.
     fn delegates_through_wisp(&self, s: &Session, info: &wisp_runtime_api::harness::HarnessInfo) -> bool {
-        s.parent_id.is_none()
-            && !is_side(s)
+        (s.parent_id.is_none() || is_side(s))
             && self.host.agent_access().is_some()
             && info.ask_tool.as_deref().is_some_and(|t| !t.is_empty())
     }
@@ -650,8 +680,18 @@ impl Runtime {
             } else if interrupting {
                 let _ = ctl.send(Ctl::Interrupt);
             }
-            let live =
-                Live { pid, resumable, finished: false, stopping, interrupting, label: None, account: t.account.clone(), ctl, ended };
+            let live = Live {
+                pid,
+                resumable,
+                finished: false,
+                stopping,
+                interrupting,
+                label: None,
+                account: t.account.clone(),
+                changes: Vec::new(),
+                ctl,
+                ended,
+            };
             all.insert(s.id.0.clone(), live);
             drop(all);
             // `live` has it now: no longer starting (cleared here, not when the start returns, so a run that ends at

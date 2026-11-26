@@ -105,6 +105,7 @@ pub struct RemoveOpts {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "worktrees/")]
+#[allow(clippy::struct_excessive_bools)] // facts a removal's caller reads, each on its own
 pub struct Removed {
     pub removed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -114,6 +115,9 @@ pub struct Removed {
     pub foreign: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub branch_deleted: bool,
+    /// kept because a working task is in it (another run sharing it, an extra folder, a turn starting): not a failure
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub busy: bool,
 }
 
 // ---------- Settings → Worktrees ----------
