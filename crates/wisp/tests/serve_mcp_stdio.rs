@@ -99,14 +99,15 @@ async fn wisp_mcp_hands_tasks_to_wisp_with_v1_s_tools() {
             call(2, "wisp_get", &json!({ "id": id })),
             call(3, "wisp_reply", &json!({ "id": id, "text": "also cover zero" })),
             call(4, "wisp_wait", &json!({ "id": id, "timeout_seconds": 60 })),
-            call(5, "wisp_stop", &json!({ "id": id })),
         ],
     );
+    // a session's requests run at once (`mcp_stdio`): the stop goes after the reply and the wait have answered
+    let stopped = session(&dir, port, &[call(5, "wisp_stop", &json!({ "id": id }))]);
     assert!(text(&answers, 1).contains(&id), "{}", text(&answers, 1));
     assert!(text(&answers, 2).contains("fix the add bug"), "{}", text(&answers, 2));
     assert!(text(&answers, 3).contains("sent") || text(&answers, 3).contains("queued"), "{}", text(&answers, 3));
     assert!(text(&answers, 4).contains(&id), "{}", text(&answers, 4));
-    assert!(text(&answers, 5).contains("stopped"), "{}", text(&answers, 5));
+    assert!(text(&stopped, 5).contains("stopped"), "{}", text(&stopped, 5));
     let turns = api.cmd("runtime.turns", json!({ "id": id })).await;
     assert!(turns.to_string().contains("also cover zero"), "the reply reached the task: {turns}");
     drop(serve);

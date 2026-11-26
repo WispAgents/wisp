@@ -270,11 +270,20 @@ const SWITCHES: &[&str] = &[
     "-upgrade",
     "--refresh-only",
     "-refresh-only",
+    // the scripted commands' switches (`commands::own_flags`): `ls --all --bogus` must not read --bogus as a value
+    "--all",
+    "--watch",
+    "--draft",
+    "--queue",
+    "--detach",
 ];
 
 fn takes_value(cmd: &str, flag: &str) -> bool {
     let follow = cmd == "events" && flag == "-f";
-    !follow && !SWITCHES.contains(&flag)
+    // `wisp ls --repo` (the repo's tracked tasks) and `wisp ls -a` (--all) are switches; `wisp mcp --repo <dir>` takes a
+    // folder, and `-a` elsewhere is --agent
+    let ls_repo = matches!(cmd, "ls" | "list") && (flag == "--repo" || flag == "-a");
+    !follow && !ls_repo && !SWITCHES.contains(&flag)
 }
 
 const TRIGGER: &[&str] = &[

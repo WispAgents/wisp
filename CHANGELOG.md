@@ -5,6 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **The CLI no longer runs your commands on another home's wisp.** With two homes (say `WISP_HOME=~/.wisp-work` beside `~/.wisp`), `wisp ls` and every other command used whichever wisp held the default port, so they listed and changed the other home's tasks. Each wisp now says which home it serves (a hash, never the path), and the CLI and `wisp desktop` refuse one that isn't theirs in one line: "port 4477 is the wisp for another home, not …: pass --port or run wisp serve". An older wisp that doesn't say is still used.
+- **`wisp mcp` answers requests at once.** A `wisp_wait` no longer holds up the editor's other calls (a `ping` behind it went unanswered for minutes), a cancelled request (`notifications/cancelled`) stops, and a line that isn't JSON gets a parse error (-32700) instead of silence. Its tool list is the full catalogue even when wisp wasn't running when the editor started (wisp is started for it), and the editor is told when the list changes.
+- **`wisp tui` without a terminal** (a pipe, CI) says "wisp tui needs a terminal: try wisp ls --watch or wisp attach <id>" and exits 2, instead of panicking.
+- **Scripted commands refuse flags they don't take.** `wisp ls --stat done` or `wisp ls --bogus` showed the whole list as if nothing was typed; now they print the command's usage and exit 2. `--limit` and `--days` take a whole number above 0 (`--limit abc` was dropped without a word), and `--host` is refused anywhere but `wisp serve`.
+
 ## [1.0.0-alpha.16] - 2026-11-26
 
 ### Fixed
