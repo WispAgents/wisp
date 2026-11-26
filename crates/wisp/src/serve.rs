@@ -512,8 +512,17 @@ mod tests {
         assert_eq!(said, "wisp is already running for this home at http://127.0.0.1:4477 (pid 42)");
         let other = super::lock_home(&b).unwrap_or_else(|e| panic!("another home: {e}"));
         drop(held);
-        assert!(!super::home_held(&a), "released with its holder");
-        let again = super::lock_home(&a).unwrap_or_else(|e| panic!("after the first is gone: {e}"));
+        // Not asserted straight after the drop: a test elsewhere in this binary forking a child at that moment shares
+        // the lock's open file description until the child execs (and O_CLOEXEC closes it), so the lock outlives the
+        // drop by that instant (as does `home_held`'s own probe). Released means taken again within a bounded wait.
+        let gone = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let again = loop {
+            match super::lock_home(&a) {
+                Ok(l) => break l,
+                Err(e) if std::time::Instant::now() >= gone => panic!("not released with its holder: {e}"),
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            }
+        };
         drop((again, other));
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -32,7 +32,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
-- `wisp wait` and `wisp "…" --wait` exit with how the task ended: 0 done or review, 1 failed, stopped or blocked, 2 when it asks you something, 124 when the wait timed out. They exited 0 every time. `--timeout 30s|10m|2h` sets how long they wait (30 minutes by default), and `--json` says `"timedOut": true` when the wait ran out.
+- `wisp wait` and `wisp "…" --wait` exit with how the task ended: 0 done or review, 1 failed, stopped or blocked, 2 when it asks you something, 124 when the wait timed out. So does `wisp "…" --try … --wait`, with the worse of its two runs. They exited 0 every time. `--timeout 30s|10m|2h` sets how long they wait (30 minutes by default), and `--json` says `"timedOut": true` when the wait ran out.
 - Installed from npm, one Ctrl-C in `wisp attach` detaches again, as it says. The launcher sent the terminal's Ctrl-C to wisp a second time, and a second Ctrl-C stops the task. `kill <pid>` and supervisors still reach wisp through the launcher.
 - Only one wisp server runs on a home (`~/.wisp`). A second `wisp serve` says `wisp is already running for this home at <url> (pid N)` and exits, instead of running every trigger and schedule a second time and taking over `server.json`. A command finds the running server instead of starting another.
 - `wisp merge last`, `wisp ship last` and a short id merge or ship that task. They launched an agent task with those words. `wisp held <id> start` with an id that names no task, and `wisp merge x`, say `no task x` and launch nothing.

@@ -114,7 +114,7 @@ async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str, limit: Durat
     }
     if !f.tries.is_empty() {
         // Try it two ways: one harness, run B with what --try names changed (ADR-0056)
-        return crate::trial_cli::launch(c, f, &prompt, cwd).await.map(|()| 0);
+        return crate::trial_cli::launch(c, f, &prompt, cwd, limit).await;
     }
     let mut made = Vec::new();
     // `--formula f.yml` is the shell's own path (where you typed it), whatever `--cwd` names for the task

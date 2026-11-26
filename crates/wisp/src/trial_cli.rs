@@ -65,8 +65,9 @@ fn differs_words(key: &str, values: &[String]) -> String {
     format!("{key} {}", shown.join(" → "))
 }
 
-/// Starts the pair and says each run's id (`--wait`: waits for both, A first).
-pub async fn launch(c: &Client, f: &Flags, prompt: &str, cwd: &str) -> Result<()> {
+/// Starts the pair and says each run's id (`--wait`: waits up to `limit` for each, A first, and gives the code a wait
+/// exits with, the worst of the two runs' ([`sc::wait_exit`]); 0 without `--wait`).
+pub async fn launch(c: &Client, f: &Flags, prompt: &str, cwd: &str, limit: Duration) -> Result<i32> {
     let call = trial_args(f, prompt, cwd).map_err(CliError::said)?;
     let r = c.cmd(Trial::ID, serde_json::to_value(&call).map_err(|e| CliError::said(e.to_string()))?).await?;
     let started: TrialStarted = serde_json::from_value(r.clone()).map_err(|e| CliError::said(e.to_string()))?;
@@ -80,17 +81,18 @@ pub async fn launch(c: &Client, f: &Flags, prompt: &str, cwd: &str) -> Result<()
             .chain(std::iter::once(format!("  differs: {}", differs.join(", "))))
             .collect();
         out(f, &r, &lines.join("\n"));
-        return Ok(());
+        return Ok(0);
     }
+    let mut code = 0;
     for m in &started.runs {
         let id = m.id.as_str();
         if !f.json {
             eprintln!("  ◌ launched: {id} — waiting…");
         }
-        let w = sc::wait(c, id, Duration::from_secs(30 * 60)).await?;
-        sc::show(c, f, id, Some(w)).await?;
+        let w = sc::wait(c, id, limit).await?;
+        code = code.max(sc::shown(c, f, id, Some(w)).await?);
     }
-    Ok(())
+    Ok(code)
 }
 
 #[cfg(test)]
