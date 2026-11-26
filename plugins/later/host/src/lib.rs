@@ -165,19 +165,37 @@ impl State {
     }
 
     /// A follow-up goes into its task now. Sends before deleting the entry so a transient error never drops it.
+    /// `sent` is recorded first: the turn the send starts (`turn.started`) can land before `follow_up` returns, and
+    /// it must find the send to count as later's (audit doc23a: it found none, reset the chain, and the next turn,
+    /// the user's, was counted as later's instead). A refused send takes it back.
     async fn fire(&self, ctx: &Ctx, call: &Call, l: &LaterEntry, late: bool) -> Result<wisp_runtime_api::commands::FollowedUp> {
         let sent = SentMeta { by: l.by.clone(), set_at: l.set_at, at: l.at, late };
         let note = rules::late_note(&sent, now(ctx), self.tz(now(ctx)));
         let text = format!("{note}\n\n{}", l.text);
-        let res = calls::follow_up(ctx, call, &l.session_id, text, &l.attachments).await?;
-        let mut m = self.meta(&l.session_id);
-        m.sent = Some(sent);
-        lock(&self.metas).insert(l.session_id.clone(), m.clone());
-        logged(
-            self.write(store::Ops { drop_entries: vec![l.id.clone()], metas: vec![(l.session_id.clone(), m)], ..store::Ops::default() })
-                .await,
-            "drop fired entry",
-        );
+        let sid = l.session_id.clone();
+        let (was, m) = {
+            let mut metas = lock(&self.metas);
+            let m = metas.entry(sid.clone()).or_default();
+            let was = m.sent.replace(sent.clone());
+            (was, m.clone())
+        };
+        logged(self.write(store::Ops { metas: vec![(sid.clone(), m)], ..store::Ops::default() }).await, "a follow-up's send");
+        let res = match calls::follow_up(ctx, call, &sid, text, &l.attachments).await {
+            Ok(res) => res,
+            Err(err) => {
+                // only the send this made, and only if no turn took it meanwhile
+                let back = lock(&self.metas).get_mut(&sid).filter(|m| m.sent.as_ref() == Some(&sent)).map(|m| {
+                    m.sent = was;
+                    m.clone()
+                });
+                if let Some(m) = back {
+                    logged(self.write(store::Ops { metas: vec![(sid, m)], ..store::Ops::default() }).await, "a refused send");
+                }
+                return Err(err);
+            }
+        };
+        // the entry only: the meta is as the turn left it (its reminder cleared, the send taken)
+        logged(self.write(store::Ops { drop_entries: vec![l.id.clone()], ..store::Ops::default() }).await, "drop fired entry");
         Ok(res)
     }
 
@@ -216,6 +234,30 @@ impl State {
             ext.insert(wisp_later_api::PLUGIN_ID.to_owned(), v);
         }
         calls::card(ctx, call, title, summary, text, ext).await
+    }
+
+    /// A due plan starts (or, missed, becomes its card), and only then leaves, as `fire` does for a follow-up: it
+    /// went first and was never run when the start failed (audit doc23b). A failed start keeps it, backing off
+    /// (`rules::failed_start`), until it is lost to Drafts, where you see it.
+    async fn start_due(&self, ctx: &Ctx, call: &Call, id: &str, missed: bool) -> bool {
+        let Some(p) = lock(&self.plans).iter().find(|p| p.id == id).cloned() else { return false };
+        match self.run_plan(ctx, call, &p, missed).await {
+            Ok(_) => {
+                lock(&self.plans).retain(|x| x.id != id);
+                logged(self.write(store::Ops { drop_plans: vec![id.to_owned()], ..store::Ops::default() }).await, "a plan");
+                true
+            }
+            Err(err) => {
+                tracing::warn!(error = %err.message, plan = %id, tries = p.tries + 1, "later: plan run");
+                let next = rules::failed_start(&p, now(ctx));
+                // cancelled or edited while it ran: that one stands
+                let kept = lock(&self.plans).iter_mut().find(|x| x.id == id && **x == p).map(|x| x.clone_from(&next)).is_some();
+                if kept {
+                    logged(self.write(store::Ops { plans: vec![next], ..store::Ops::default() }).await, "a failed plan");
+                }
+                false
+            }
+        }
     }
 
     /// `agent@account`'s plan reset early and nothing holds it (`budget.plan_free`): follow-ups held for it, or waiting
@@ -351,24 +393,8 @@ impl State {
         let pd = due_plans(&plans, &tasks, at, PER_TICK.saturating_sub(d.used));
         for a in pd.actions {
             match a {
-                PlanAction::Run { id } => {
-                    let Some(p) = lock(&self.plans).iter().find(|p| p.id == id).cloned() else { continue };
-                    lock(&self.plans).retain(|x| x.id != id);
-                    logged(self.write(store::Ops { drop_plans: vec![id], ..store::Ops::default() }).await, "a plan");
-                    match self.run_plan(ctx, call, &p, false).await {
-                        Ok(_) => fired += 1,
-                        Err(err) => tracing::warn!(error = %err.message, plan = %p.id, "later: plan run"),
-                    }
-                }
-                PlanAction::Missed { id } => {
-                    let Some(p) = lock(&self.plans).iter().find(|p| p.id == id).cloned() else { continue };
-                    lock(&self.plans).retain(|x| x.id != id);
-                    logged(self.write(store::Ops { drop_plans: vec![id], ..store::Ops::default() }).await, "a missed plan");
-                    match self.run_plan(ctx, call, &p, true).await {
-                        Ok(_) => fired += 1,
-                        Err(err) => tracing::warn!(error = %err.message, plan = %p.id, "later: missed plan"),
-                    }
-                }
+                PlanAction::Run { id } => fired += u32::from(self.start_due(ctx, call, &id, false).await),
+                PlanAction::Missed { id } => fired += u32::from(self.start_due(ctx, call, &id, true).await),
                 PlanAction::Lose { id, why } => {
                     let lost = lock(&self.plans).iter().find(|p| p.id == id).map(|p| rules::lose(p, why));
                     if let Some(p) = lost {
