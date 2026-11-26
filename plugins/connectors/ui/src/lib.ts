@@ -159,6 +159,14 @@ export function statusOf(c: ConnectorView, signing: boolean): Status {
   return { kind: 'failed', error: c.test.error ?? '' };
 }
 
+/** The row menu's sign-in items: a remote connector signs in, or out once signed in; a sign-in that ran out (the server
+ *  refused it and no refresh helped) offers Sign in again beside Sign out. */
+export function signItems(c: ConnectorView): ('signin' | 'signout')[] {
+  if (c.transport !== 'remote') return [];
+  if (!c.signed_in) return ['signin'];
+  return c.test?.auth === true ? ['signin', 'signout'] : ['signout'];
+}
+
 /** Whether the row's status pill gives way (cut, its words in its title): only a failure's sentence does. A short state
  *  ("1 tool", "Checking…") keeps its words and the command beside it is cut (audit F setup F9: "1 tool" read "1 …" on a
  *  phone since E3 cut every pill). */

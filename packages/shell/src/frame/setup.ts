@@ -7,6 +7,7 @@ import { defineCommand } from '@wisp/client';
 import type { LauncherSetupProps } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import type { AgentOffer } from './runner.ts';
+import '../i18n/home.ts';
 
 /** what wisp installs itself (accounts.install) */
 export const INSTALLABLE = 'opencode';

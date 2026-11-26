@@ -184,6 +184,16 @@ pub fn next_after_release(q: &mut Queue<'_>) -> Option<QueueItem> {
     Some(q.items.remove(0))
 }
 
+/// The run let go, or a held turn was released by hand (Start now, Run without them: `released`, its queue item's id,
+/// which went to the front): that one goes even when a Stop held the queue, since pressing it is the go-ahead for it
+/// alone; the rest stay held. Otherwise as [`next_after_release`].
+pub fn next_after_release_of(q: &mut Queue<'_>, released: Option<&str>) -> Option<QueueItem> {
+    if released.is_some_and(|id| q.items.first().is_some_and(|f| f.id == id)) {
+        return Some(q.items.remove(0));
+    }
+    next_after_release(q)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SendNow {
     /// nothing runs: start it now

@@ -9,11 +9,11 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use wisp_runtime_api::SessionId;
 use wisp_runtime_api::commands::SetupAsked;
-use wisp_runtime_api::model::{SessionState, ToolKind};
+use wisp_runtime_api::model::ToolKind;
 use wisp_runtime_core::setup::{self, Card, Write};
 
 use super::ask::{ALREADY, NOT_OPEN, open_setup};
-use super::{slot, str_at, tool_row, with_slot};
+use super::{slot, str_at, tool_row};
 use crate::error::{Result, RuntimeError};
 use crate::runtime::Runtime;
 
@@ -172,12 +172,12 @@ impl Runtime {
     /// The card taken off the task, the agent's answer kept for `pollAnswer`, the row on its turn.
     async fn finish_setup(self: &Arc<Self>, id: &SessionId, ask_id: &str, words: &str, label: String) -> Result<Value> {
         let mut s = self.repo.session(id.as_str()).await?;
-        with_slot(&mut s.ext, |m| m.remove("ask"));
+        // an approval asked while it was up comes onto the card next
+        self.take_ask(&mut s, ask_id);
         self.asks().remove(ask_id);
         self.close_ask(ask_id);
         self.keep_answer(ask_id, words);
-        s.state =
-            if self.run_state(id.as_str()) == wisp_runtime_core::queue::Run::Idle { SessionState::Review } else { SessionState::Running };
+        self.after_ask(&mut s);
         self.persist(&mut s, Vec::new()).await?;
         if let Some(t) = self.last_turn(id.as_str()).await? {
             self.add_row(id.as_str(), t.id.as_str(), tool_row(ToolKind::Answer, label.clone())).await?;
@@ -192,6 +192,7 @@ impl Runtime {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use wisp_runtime_api::model::SessionState;
 
     /// Review r194 row 66 #5, #6: an allow-list. A grid box's own page answers its owner's cards; a plugin only when it
     /// declared the relay permission; an API key only when the owner listed its set; agents never.

@@ -156,13 +156,24 @@ pub fn redirect_for(origin: &str) -> Result<String> {
         .ok_or_else(|| ConnectorError::invalid("origin: the page’s own address, where the browser comes back to"))
 }
 
-/// A sign-in waiting for the browser to come back.
+/// The client secret a sign-in uses: the stored one (the client was kept), or what a fresh registration gave
+/// (none: a stored one from an older client must go, or the token request would carry it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClientSecret {
+    Kept,
+    Fresh(Option<String>),
+}
+
+/// A sign-in waiting for the browser to come back, with the metadata and client it signs in with: nothing is
+/// stored until the code is traded, so an abandoned sign-in leaves a working one as it was.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pending {
     pub id: String,
     pub verifier: String,
     pub redirect: String,
     pub at: i64,
+    pub meta: OAuthMeta,
+    pub secret: ClientSecret,
 }
 
 /// state → pending sign-in, in memory (a restart forgets them, as v1 did).
@@ -261,29 +272,85 @@ pub fn token_reply(status: u16, text: &str) -> Result<Tokens> {
     Ok(Tokens { access, refresh: s("refresh_token"), expires_in })
 }
 
-/// The metadata after new tokens: when they run out, and since when it is signed in.
-pub fn after_tokens(o: &OAuthMeta, t: &Tokens, now: i64) -> OAuthMeta {
+/// The metadata after a sign-in's code was traded: signed in now. Signing in again with a kept client is a new
+/// sign-in too (the row waits for a `signed_in_at` after it started, or it reads "Signing in…" for 10 minutes).
+pub fn after_signin(o: &OAuthMeta, t: &Tokens, now: i64) -> OAuthMeta {
+    OAuthMeta { expires_at: t.expires_in.map(|s| now + s * 1000), signed_in_at: Some(now), ..o.clone() }
+}
+
+/// The metadata after a refresh: when the new token runs out; still signed in since the sign-in.
+pub fn after_refresh(o: &OAuthMeta, t: &Tokens, now: i64) -> OAuthMeta {
     OAuthMeta { expires_at: t.expires_in.map(|s| now + s * 1000), signed_in_at: Some(o.signed_in_at.unwrap_or(now)), ..o.clone() }
 }
 
 /// What a token request does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenStep {
-    /// this one works for the next minute at least (or none: sign in again)
-    Use(Option<String>),
+    /// this one works for the next minute at least
+    Use(String),
     Refresh(String),
+    /// none, or one that ran out (or was refused) with nothing to refresh it: only the user can sign in again
+    SignIn,
 }
 
 /// v1 `auth.token`: the saved one unless it runs out within a minute or the server refused it (`force`).
 pub fn token_step(o: Option<&OAuthMeta>, access: Option<String>, refresh: Option<String>, now: i64, force: bool) -> TokenStep {
-    let Some(o) = o else { return TokenStep::Use(None) };
-    let fresh = o.expires_at.is_none_or(|t| t > now + FRESH_MS);
-    if access.is_some() && !force && fresh {
-        return TokenStep::Use(access);
+    let fresh = o.is_none_or(|o| o.expires_at.is_none_or(|t| t > now + FRESH_MS));
+    match (access, refresh) {
+        (Some(a), _) if !force && fresh => TokenStep::Use(a),
+        (_, Some(r)) if o.is_some() => TokenStep::Refresh(r),
+        _ => TokenStep::SignIn,
     }
-    match refresh {
-        Some(r) => TokenStep::Refresh(r),
-        None if force => TokenStep::Use(None),
-        None => TokenStep::Use(access),
+}
+
+/// When to refresh a token ahead of its end (a minute before, as [`token_step`] reads it); none: it doesn't end.
+pub fn refresh_at(o: &OAuthMeta) -> Option<i64> {
+    o.expires_at.map(|t| t - FRESH_MS)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn meta(expires_at: Option<i64>, signed_in_at: Option<i64>) -> OAuthMeta {
+        OAuthMeta {
+            issuer: "https://auth.test".into(),
+            token: "https://auth.test/token".into(),
+            client_id: Some("c1".into()),
+            redirect: Some("http://localhost:4477/api/connectors/oauth/callback".into()),
+            expires_at,
+            signed_in_at,
+            ..OAuthMeta::default()
+        }
+    }
+
+    #[test]
+    fn a_token_is_refreshed_when_it_ran_out_is_about_to_or_was_refused() {
+        let s = |x: &str| Some(x.to_owned());
+        let o = meta(Some(100_000), Some(1));
+        assert_eq!(token_step(Some(&o), s("a"), s("r"), 200_000, false), TokenStep::Refresh("r".into()), "ran out");
+        assert_eq!(token_step(Some(&o), s("a"), s("r"), 100_000 - FRESH_MS, false), TokenStep::Refresh("r".into()), "within a minute");
+        assert_eq!(token_step(Some(&o), s("a"), s("r"), 0, false), TokenStep::Use("a".into()), "fresh");
+        assert_eq!(token_step(Some(&o), s("a"), None, 200_000, false), TokenStep::SignIn, "ran out, nothing to refresh it");
+        assert_eq!(token_step(Some(&o), s("a"), s("r"), 0, true), TokenStep::Refresh("r".into()), "refused");
+        assert_eq!(token_step(Some(&o), s("a"), None, 0, true), TokenStep::SignIn, "refused, nothing to refresh it");
+        assert_eq!(token_step(Some(&meta(None, Some(1))), s("a"), None, 1 << 50, false), TokenStep::Use("a".into()), "no end");
+        assert_eq!(refresh_at(&o), Some(100_000 - FRESH_MS));
+    }
+
+    /// Signing in again from the same place keeps the client (and its old `signed_in_at`), but the trade stamps now,
+    /// so the row stops reading "Signing in…" at once; a refresh keeps the sign-in's time and moves the end.
+    #[test]
+    fn a_sign_in_again_with_a_kept_client_is_signed_in_now_and_a_refresh_is_not() {
+        let had = meta(Some(5_000), Some(1_000));
+        let found = OAuthMeta { issuer: had.issuer.clone(), token: had.token.clone(), ..OAuthMeta::default() };
+        let kept = reuse_client(Some(&had), &found, had.redirect.as_deref().unwrap()).unwrap();
+        assert_eq!(kept.signed_in_at, Some(1_000));
+        let t = Tokens { access: "a2".into(), refresh: Some("r2".into()), expires_in: Some(3600) };
+        let signed = after_signin(&kept, &t, 9_000);
+        assert_eq!((signed.signed_in_at, signed.expires_at), (Some(9_000), Some(9_000 + 3_600_000)));
+        let later = after_refresh(&signed, &t, 20_000);
+        assert_eq!((later.signed_in_at, later.expires_at), (Some(9_000), Some(20_000 + 3_600_000)));
     }
 }

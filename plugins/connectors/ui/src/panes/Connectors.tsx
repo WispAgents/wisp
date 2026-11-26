@@ -9,7 +9,7 @@ import { Button, Inline, Menu, Pill, SettingsGroup, SettingsNote, SettingsRow, S
 import { addConnector, importFound, removeConnector, signIn, signOut, testConnector, updateConnector } from '../commands.ts';
 import { homeRow, homeRows } from '../data.ts';
 import { t } from '../i18n.ts';
-import { bodyOf, commandLine, draftOf, emptyDraft, EXAMPLES, exampleFor, isFor, harnessName, hostOf, listOf, sourcesOf, statusCuts, statusOf, stillSigning, type Draft } from '../lib.ts';
+import { bodyOf, commandLine, draftOf, emptyDraft, EXAMPLES, exampleFor, isFor, harnessName, hostOf, listOf, signItems, sourcesOf, statusCuts, statusOf, stillSigning, type Draft } from '../lib.ts';
 import { KIND, REACH_ID, TOPIC, type ConnectorView, type FoundServer, type Reach } from '../types.ts';
 import { Confirm } from './Confirm.tsx';
 import { Editor } from './Editor.tsx';
@@ -103,9 +103,9 @@ export default function Connectors(props: { readonly client: PluginClient }): JS
   const menu = (x: ConnectorView) => [
     { value: 'test', label: t('connectors.menu.test'), icon: 'replay' as const },
     { value: 'edit', label: t('connectors.menu.edit'), icon: 'pen' as const },
-    ...(x.transport === 'remote'
-      ? [x.signed_in ? { value: 'signout', label: t('connectors.menu.signout'), icon: 'lock' as const } : { value: 'signin', label: t('connectors.menu.signin'), icon: 'external' as const }]
-      : []),
+    ...signItems(x).map((v) =>
+      v === 'signout' ? { value: 'signout', label: t('connectors.menu.signout'), icon: 'lock' as const } : { value: 'signin', label: t('connectors.menu.signin'), icon: 'external' as const },
+    ),
     { kind: 'separator' as const },
     { value: 'remove', label: t('connectors.menu.remove'), icon: 'trash' as const, danger: true },
   ];
