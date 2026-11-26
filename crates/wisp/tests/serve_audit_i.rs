@@ -199,6 +199,10 @@ async fn no_listed_mcp_tool_takes_only_args_audit_i_d6() {
         ("automations_task_run", &["name", "params", "words"]),
         ("channels_extra", &["channel", "what"]),
         ("channels_update", &["channel", "sender", "enabled"]),
+        ("workflows_set", &["name", "tasks", "concurrency"]),
+        ("workflows_remove", &["name"]),
+        ("workflows_status", &["id"]),
+        ("workflows_stop", &["id"]),
     ] {
         let t = tools.iter().find(|t| t["name"] == name).unwrap_or_else(|| panic!("no {name}"));
         let props = t["inputSchema"]["properties"].as_object().cloned().unwrap_or_default();
