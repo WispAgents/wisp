@@ -123,6 +123,12 @@ pub(crate) async fn own(ctx: &Ctx, call: &Call, machine: &str, owner: Value) -> 
     ctx.run::<wisp_sandbox_api::Own>(call, wisp_sandbox_api::OwnArgs { machine: machine.to_owned(), owner }).await.map(|_| ())
 }
 
+/// `sandbox.drop {machine}`: that sandbox goes (a job's whose start failed half way).
+pub(crate) async fn drop_sandbox(ctx: &Ctx, call: &Call, machine: &str) -> R<()> {
+    let a = wisp_sandbox_api::DropArgs { machine: Some(machine.to_owned()), ..wisp_sandbox_api::DropArgs::default() };
+    ctx.run::<wisp_sandbox_api::Drop>(call, a).await.map(|_| ())
+}
+
 /// `runtime.profiles`: the agent profiles' names.
 pub(crate) async fn profile_names(ctx: &Ctx, call: &Call) -> Vec<String> {
     ctx.run::<rt::Profiles>(call, Value::Object(Map::new())).await.map(|v| v.into_iter().map(|p| p.name).collect()).unwrap_or_default()

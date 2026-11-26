@@ -1,7 +1,8 @@
 // Settings → Connectors (v1 web/js/features/connectors.js, design/v1-reference/settings.connectors): the MCP
 // servers every task's agent gets. Servers found in the harnesses' own configs are offered once (Review, or
-// Not now); each connector is a row with its check (tools, or why it failed), its switch and its menu (Check
-// again, Edit, Sign in or out, Remove); an empty list offers starting points. Every write shows at once.
+// Not now: those stay reachable under the review's Show hidden); each connector is a row with its check (tools, or why
+// it failed), which harnesses go without it and why, its switch and its menu (Check again, Edit, Sign in or out,
+// Remove); an empty list offers starting points. Every write shows at once.
 import { createMemo, createSignal, For, onCleanup, Show, untrack, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
@@ -9,7 +10,7 @@ import { Button, Inline, Menu, Pill, SettingsGroup, SettingsNote, SettingsRow, S
 import { addConnector, importFound, removeConnector, signIn, signOut, testConnector, updateConnector } from '../commands.ts';
 import { homeRow, homeRows } from '../data.ts';
 import { t } from '../i18n.ts';
-import { bodyOf, commandLine, draftOf, emptyDraft, EXAMPLES, exampleFor, isFor, harnessName, hostOf, listOf, signItems, sourcesOf, statusCuts, statusOf, stillSigning, type Draft } from '../lib.ts';
+import { bodyOf, commandLine, draftOf, emptyDraft, EXAMPLES, exampleFor, isFor, harnessName, hostOf, listOf, rowNotes, signItems, sourcesOf, statusCuts, statusOf, stillSigning, type Draft } from '../lib.ts';
 import { KIND, REACH_ID, TOPIC, type ConnectorView, type FoundServer, type Reach } from '../types.ts';
 import { Confirm } from './Confirm.tsx';
 import { Editor } from './Editor.tsx';
@@ -25,6 +26,8 @@ function statusLine(c: ConnectorView, signing: boolean): string {
   switch (s.kind) {
     case 'signing':
       return t('connectors.status.signing');
+    case 'retrying':
+      return t('connectors.status.retrying');
     case 'signin':
       return t('connectors.status.signin');
     case 'checking':
@@ -41,7 +44,21 @@ function statusLine(c: ConnectorView, signing: boolean): string {
 /** Green when it listed its tools, red when it didn't start, neutral while checking or signing in. */
 function toneOf(c: ConnectorView, signing: boolean): 'good' | 'bad' | 'warn' | 'neutral' {
   const k = statusOf(c, signing).kind;
-  return k === 'ok' ? 'good' : k === 'failed' ? 'bad' : k === 'signin' ? 'warn' : 'neutral';
+  return k === 'ok' ? 'good' : k === 'failed' ? 'bad' : k === 'signin' || k === 'retrying' ? 'warn' : 'neutral';
+}
+
+/** Which harnesses go without it and why, a line each under the row: a harness's own server by that name wins, and an
+ *  SSE server is left out where the harness can't speak it. */
+export function RowNotes(props: { readonly connector: Pick<ConnectorView, 'name' | 'own' | 'cant_reach'>; readonly names: ReadonlyMap<string, string> }): JSX.Element {
+  return (
+    <For each={rowNotes(props.connector)}>
+      {(n) => (
+        <Text tone="muted" size="sm" truncate part="connectors.row.note">
+          {t(n.kind === 'own' ? 'connectors.note.own' : 'connectors.note.sse', { harness: harnessName(n.harness, props.names), name: props.connector.name })}
+        </Text>
+      )}
+    </For>
+  );
 }
 
 export default function Connectors(props: { readonly client: PluginClient }): JSX.Element {
@@ -52,10 +69,13 @@ export default function Connectors(props: { readonly client: PluginClient }): JS
   onCleanup(() => scope.dispose());
   c.watch(peer, TOPIC, scope);
   const list = useSignal(homeRows<ConnectorView>(c, KIND.connector));
-  const found = useSignal(homeRows<FoundServer>(c, KIND.found));
+  // every found server; the card offers the ones "Not now" didn't hide (the review lists those under Show hidden)
+  const allFound = useSignal(homeRows<FoundServer>(c, KIND.found));
+  const found = createMemo(() => (allFound() as FoundServer[]).filter((f) => f.hidden !== true));
+  const hiddenCount = createMemo(() => (allFound() as FoundServer[]).length - found().length);
   const reach = useSignal(homeRow<Reach>(c, KIND.reach, REACH_ID));
   const [editing, setEditing] = createSignal<{ draft: Draft; id?: string } | undefined>();
-  const [reviewing, setReviewing] = createSignal(false);
+  const [reviewing, setReviewing] = createSignal<false | 'found' | 'hidden'>(false);
   const [removing, setRemoving] = createSignal<ConnectorView | undefined>();
   const [signing, setSigning] = createSignal<Record<string, number>>({});
   // opened for an issue source (the issue picker's Connect Linear… / Jira…: Settings' params `connector`): yours
@@ -135,7 +155,7 @@ export default function Connectors(props: { readonly client: PluginClient }): JS
                   <Button size="sm" variant="ghost" part="connectors.found.skip" onClick={() => quiet(c.run(importFound, { peer, names: [], dismiss: found().map((f) => f.name) }))}>
                     {t('connectors.found.skip')}
                   </Button>
-                  <Button size="sm" variant="primary" part="connectors.found.review" onClick={() => setReviewing(true)}>
+                  <Button size="sm" variant="primary" part="connectors.found.review" onClick={() => setReviewing('found')}>
                     {t('connectors.found.review')}
                   </Button>
                 </Inline>
@@ -148,9 +168,17 @@ export default function Connectors(props: { readonly client: PluginClient }): JS
           title={t('connectors.yours')}
           description={t('connectors.yours.description')}
           actions={
-            <Button size="sm" variant="ghost" icon="plus" part="connectors.add" onClick={() => setEditing({ draft: emptyDraft() })}>
-              {t('connectors.add')}
-            </Button>
+            <Inline gap="2">
+              {/* nothing left on the card, but "Not now" hid some: they're still a click away */}
+              <Show when={found().length === 0 && hiddenCount() > 0}>
+                <Button size="sm" variant="ghost" icon="download" part="connectors.found.hidden" onClick={() => setReviewing('hidden')}>
+                  {t('connectors.found.hidden', { count: hiddenCount() })}
+                </Button>
+              </Show>
+              <Button size="sm" variant="ghost" icon="plus" part="connectors.add" onClick={() => setEditing({ draft: emptyDraft() })}>
+                {t('connectors.add')}
+              </Button>
+            </Inline>
           }
         >
           <Show
@@ -180,16 +208,19 @@ export default function Connectors(props: { readonly client: PluginClient }): JS
                   part="connectors.row"
                   title={x.name}
                   description={
-                    <Inline gap="2">
-                      <Text tone="muted" truncate>
-                        {where(x)}
-                      </Text>
-                      {/* an error is cut in its row, its words in the title (v1 .cn-status; audit E3); a short state keeps
-                          its words (audit F setup F9) */}
-                      <Pill tone={toneOf(x, isSigning(x))} dot live={x.testing || isSigning(x)} truncate={statusCuts(x, isSigning(x))} title={statusLine(x, isSigning(x))}>
-                        {statusLine(x, isSigning(x))}
-                      </Pill>
-                    </Inline>
+                    <Stack gap="1">
+                      <Inline gap="2">
+                        <Text tone="muted" truncate>
+                          {where(x)}
+                        </Text>
+                        {/* an error is cut in its row, its words in the title (v1 .cn-status; audit E3); a short state keeps
+                            its words (audit F setup F9) */}
+                        <Pill tone={toneOf(x, isSigning(x))} dot live={x.testing || isSigning(x)} truncate={statusCuts(x, isSigning(x))} title={statusLine(x, isSigning(x))}>
+                          {statusLine(x, isSigning(x))}
+                        </Pill>
+                      </Inline>
+                      <RowNotes connector={x} names={names()} />
+                    </Stack>
                   }
                   control={
                     <Inline gap="2">
@@ -224,8 +255,9 @@ export default function Connectors(props: { readonly client: PluginClient }): JS
         }}
       </Show>
       <Review
-        open={reviewing()}
-        found={found() as FoundServer[]}
+        open={reviewing() !== false}
+        found={allFound() as FoundServer[]}
+        showHidden={reviewing() === 'hidden'}
         onImport={(names) => {
           setReviewing(false);
           quiet(c.run(importFound, { peer, names, dismiss: [] }));

@@ -1,10 +1,10 @@
 //! wisp.connectors' resource kind (ADR-0028): the MCP servers agents get. Kept as declared (`StoredKind`)
 //! and given to runs through `runtime.run@1`: a connector goes to a run when it's on, its `agents` list
-//! names the task's agent profile (or is empty) and its `modes` the task's mode (or is empty), or when
-//! the task names it. `${secret:NAME}` in its env and headers is read from secrets when it's applied
+//! names the task's agent profile (or is empty, or the task names it) and its `modes` the task's mode (empty: Edits and
+//! Full auto; Plan mode only when they name plan). `${secret:NAME}` in its env and headers is read from secrets when it's applied
 //! (and at start), so a run never waits on it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use schemars::JsonSchema;
@@ -27,6 +27,9 @@ pub struct ConnectorSpec {
     /// the server's URL (HTTP servers)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub url: String,
+    /// how a URL is spoken: `http` (streamable HTTP, the default) or `sse` (the 2024 SSE transport)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<RemoteTransport>,
     /// its environment; secrets as `${secret:NAME}`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
@@ -36,7 +39,7 @@ pub struct ConnectorSpec {
     /// the agent profiles that get it (empty: every one)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agents: Vec<String>,
-    /// the modes that get it (plan, edits, auto; empty: all)
+    /// the modes that get it (plan, edits, auto; empty: edits and auto, Plan mode only when named here)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modes: Vec<String>,
     /// off: declared but no agent gets it
@@ -45,6 +48,22 @@ pub struct ConnectorSpec {
     /// it signs in with OAuth (the token stays in secrets)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth: Option<bool>,
+}
+
+/// A remote server's transport.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RemoteTransport {
+    #[default]
+    Http,
+    Sse,
+}
+
+impl ConnectorSpec {
+    /// A remote server over the 2024 SSE transport.
+    pub fn sse(&self) -> bool {
+        !self.url.is_empty() && self.transport == Some(RemoteTransport::Sse)
+    }
 }
 
 /// The connectors as runs get them: (name, spec with secrets read).
@@ -189,24 +208,57 @@ pub fn server_of(c: &ConnectorSpec) -> Value {
     if c.url.is_empty() {
         json!({ "type": "stdio", "command": c.command, "args": c.args, "env": c.env })
     } else {
-        json!({ "type": "http", "url": c.url, "headers": c.headers })
+        json!({ "type": if c.sse() { "sse" } else { "http" }, "url": c.url, "headers": c.headers })
     }
 }
 
-/// Whether a run of `profile` in `mode`, naming `named`, gets connector `c` called `name`.
+/// Whether a run of `profile` in `mode`, naming `named`, gets connector `c` called `name`. Plan mode gets only one whose
+/// `modes` names plan: its tools would run in a read-only task, unasked (an empty list means Edits and Full auto). A task
+/// that names it gets it whatever its `agents` say, never in a mode it's not for.
 pub fn gets(name: &str, c: &ConnectorSpec, profile: &str, mode: &str, named: &[String]) -> bool {
     if c.enabled == Some(false) {
         return false;
     }
-    named.iter().any(|n| n == name)
-        || ((c.agents.is_empty() || c.agents.iter().any(|a| a == profile)) && (c.modes.is_empty() || c.modes.iter().any(|m| m == mode)))
+    let for_mode =
+        if mode == "plan" { c.modes.iter().any(|m| m == "plan") } else { c.modes.is_empty() || c.modes.iter().any(|m| m == mode) };
+    for_mode && (named.iter().any(|n| n == name) || c.agents.is_empty() || c.agents.iter().any(|a| a == profile))
 }
 
 /// A `wisp run --formula` overlay's connectors with their `${secret:}` read, by task: in memory only (a
 /// secret never goes in the task's row), filled by `before:run` and dropped when the plugin stops.
 type Revealed = Arc<Mutex<std::collections::HashMap<String, Vec<(String, ConnectorSpec)>>>>;
 
-struct Runs(Cache, Revealed);
+/// harness → the server names its own config already has (`harness::own_names`), as the pane last read them: kept here
+/// so a run's servers are made without reading a file.
+pub(crate) type Own = Arc<Mutex<BTreeMap<String, BTreeSet<String>>>>;
+
+/// A name wisp gives a server of its own (`wisp`, `browser`, `computer`, …: `OWN_MCP_SERVERS`): Claude Code and Codex
+/// run those servers' tools without asking, so a connector can't take one.
+pub(crate) fn reserved(name: &str) -> bool {
+    wisp_harness_kit::protocol::OWN_MCP_SERVERS.contains(&name)
+}
+
+struct Runs {
+    cache: Cache,
+    revealed: Revealed,
+    own: Own,
+    /// the harnesses an SSE connector is skipped for
+    no_sse: Vec<String>,
+}
+
+impl Runs {
+    /// Whether harness `h` gets connector `n`: not when its own config has a server by that name (Codex would merge the
+    /// two into one broken server, Claude list every tool twice), nor an SSE one it can't speak. Never one by the name
+    /// of a server wisp gives a run itself (`reserved`): the harnesses trust those by name, so it would run unasked.
+    fn reaches(&self, own: &BTreeMap<String, BTreeSet<String>>, h: &str, n: &str, c: &ConnectorSpec) -> bool {
+        if reserved(n) {
+            return false;
+        }
+        let own_one = own.get(h).is_some_and(|names| names.contains(n));
+        let no_sse = c.sse() && self.no_sse.iter().any(|x| x == h);
+        !(own_one || no_sse)
+    }
+}
 
 impl RunPart for Runs {
     fn id(&self) -> &'static str {
@@ -223,17 +275,16 @@ impl RunPart for Runs {
         let mode = serde_json::to_value(q.mode).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
         // a `wisp run --formula` overlay's connectors first: they're this task's alone
         let only = self
-            .1
+            .revealed
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(session.id.as_str())
             .cloned()
             .unwrap_or_else(|| overlay_of(session.ext.get("wisp.runtime")));
-        let mut out: BTreeMap<String, Value> =
-            only.iter().filter(|(n, c)| gets(n, c, profile, &mode, &named)).map(|(n, c)| (n.clone(), server_of(c))).collect();
-        for (n, c) in
-            self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|(n, c)| gets(n, c, profile, &mode, &named))
-        {
+        let own = self.own.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+        let wanted = |n: &String, c: &ConnectorSpec| gets(n, c, profile, &mode, &named) && self.reaches(&own, &q.harness, n, c);
+        let mut out: BTreeMap<String, Value> = only.iter().filter(|(n, c)| wanted(n, c)).map(|(n, c)| (n.clone(), server_of(c))).collect();
+        for (n, c) in self.cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|(n, c)| wanted(n, c)) {
             out.entry(n.clone()).or_insert_with(|| server_of(c));
         }
         out
@@ -279,11 +330,17 @@ async fn reveal_overlay(ctx: &Ctx, call: &Call, revealed: &Revealed, session: &s
 pub(crate) struct RunCache {
     inner: Arc<StoredKind>,
     cache: Cache,
+    own: Own,
 }
 
 impl RunCache {
     pub(crate) async fn rebuild(&self) {
         refresh(&self.inner, &self.cache).await;
+    }
+
+    /// The harnesses' own server names as just read (the pane's view, an import): what the next run skips.
+    pub(crate) fn set_own(&self, own: BTreeMap<String, BTreeSet<String>>) {
+        *self.own.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = own;
     }
 }
 
@@ -297,9 +354,11 @@ pub(crate) fn register(s: &mut Setup) -> (Arc<StoredKind>, Arc<dyn ResourceKind>
     let cache: Cache = Arc::default();
     let k: Arc<dyn ResourceKind> = Arc::new(ConnectorKind { inner: inner.clone(), cache: cache.clone() });
     s.contribute(&RESOURCE_KIND, k.clone());
-    let out = (inner.clone(), k, RunCache { inner: inner.clone(), cache: cache.clone() });
+    let own: Own = Arc::default();
+    let out = (inner.clone(), k, RunCache { inner: inner.clone(), cache: cache.clone(), own: own.clone() });
     let revealed: Revealed = Arc::default();
-    let runs: Arc<dyn RunPart> = Arc::new(Runs(cache.clone(), revealed.clone()));
+    let runs: Arc<dyn RunPart> =
+        Arc::new(Runs { cache: cache.clone(), revealed: revealed.clone(), own, no_sse: wisp_connectors_core::harness::without_sse() });
     s.contribute(&RUN, runs);
     s.intercept::<wisp_runtime_api::hooks::BeforeRun, _, _>(
         wisp_kernel::InterceptOpts { priority: 60, failure: wisp_kernel::Failure::Open, timeout_ms: 2000 },
@@ -325,15 +384,84 @@ mod tests {
     #[test]
     fn who_gets_a_connector() {
         let mut c = ConnectorSpec { url: "https://mcp.linear.app/sse".into(), agents: vec!["reviewer".into()], ..ConnectorSpec::default() };
-        assert!(gets("linear", &c, "reviewer", "plan", &[]));
-        assert!(!gets("linear", &c, "fixer", "plan", &[]));
-        assert!(gets("linear", &c, "fixer", "plan", &["linear".into()]), "the task names it");
-        c.enabled = Some(false);
+        assert!(gets("linear", &c, "reviewer", "edits", &[]));
+        assert!(gets("linear", &c, "reviewer", "auto", &[]));
+        assert!(!gets("linear", &c, "fixer", "edits", &[]));
+        assert!(gets("linear", &c, "fixer", "edits", &["linear".into()]), "the task names it");
+        // Plan mode: none unless its modes name plan, a task naming it included
         assert!(!gets("linear", &c, "reviewer", "plan", &[]));
+        assert!(!gets("linear", &c, "fixer", "plan", &["linear".into()]), "naming it doesn't open Plan mode");
+        let plan = ConnectorSpec { modes: vec!["plan".into()], ..c.clone() };
+        assert!(gets("linear", &plan, "reviewer", "plan", &[]));
+        assert!(!gets("linear", &plan, "reviewer", "edits", &[]), "modes: [plan] is for plan only");
+        c.enabled = Some(false);
+        assert!(!gets("linear", &c, "reviewer", "edits", &[]));
         assert_eq!(
             server_of(&ConnectorSpec { command: "npx".into(), args: vec!["x".into()], ..ConnectorSpec::default() })["type"],
             "stdio"
         );
+    }
+
+    /// SSE was lost on the way: every remote connector went to a harness as `"type": "http"`.
+    #[test]
+    fn an_sse_connector_goes_as_sse_and_an_old_spec_stays_http() {
+        let old: ConnectorSpec = serde_json::from_value(json!({ "url": "https://a.example/mcp" })).unwrap();
+        assert_eq!(server_of(&old)["type"], "http", "no transport: streamable HTTP");
+        let sse: ConnectorSpec = serde_json::from_value(json!({ "url": "https://a.example/sse", "transport": "sse" })).unwrap();
+        assert_eq!(server_of(&sse)["type"], "sse");
+        assert_eq!(serde_json::to_value(&sse).unwrap()["transport"], "sse");
+    }
+
+    fn runs(own: &[(&str, &[&str])], list: Vec<(String, ConnectorSpec)>) -> Runs {
+        let own = own.iter().map(|(h, ns)| ((*h).to_owned(), ns.iter().map(|n| (*n).to_owned()).collect())).collect();
+        Runs {
+            cache: Arc::new(Mutex::new(list)),
+            revealed: Arc::default(),
+            own: Arc::new(Mutex::new(own)),
+            no_sse: wisp_connectors_core::harness::without_sse(),
+        }
+    }
+
+    fn names(r: &Runs, harness: &str) -> Vec<String> {
+        let q = McpQuery {
+            mode: wisp_runtime_api::model::Mode::Edits,
+            harness: harness.into(),
+            team: Vec::new(),
+            turn_id: String::new(),
+            sub: false,
+        };
+        r.mcp_servers(&Session::default(), &q).into_keys().collect()
+    }
+
+    /// A harness whose own config already has a server by a connector's name got both (Codex merged them into one
+    /// broken server, Claude listed every tool twice): it keeps its own, the others get the connector.
+    #[test]
+    fn a_harness_with_its_own_server_by_that_name_keeps_its_own() {
+        let linear = ("linear".to_owned(), ConnectorSpec { url: "https://mcp.linear.app/mcp".into(), ..ConnectorSpec::default() });
+        let r = runs(&[("codex", &["linear"])], vec![linear]);
+        assert_eq!(names(&r, "codex"), Vec::<String>::new());
+        assert_eq!(names(&r, "claude"), ["linear"]);
+    }
+
+    /// Codex speaks stdio and streamable HTTP only: an SSE connector is left out for it, kept for the others.
+    #[test]
+    fn codex_gets_no_sse_connector() {
+        let sse = ConnectorSpec { url: "https://a.example/sse".into(), transport: Some(RemoteTransport::Sse), ..ConnectorSpec::default() };
+        let http = ConnectorSpec { url: "https://b.example/mcp".into(), ..ConnectorSpec::default() };
+        let r = runs(&[], vec![("old".into(), sse), ("new".into(), http)]);
+        assert_eq!(names(&r, "codex"), ["new"]);
+        assert_eq!(names(&r, "claude"), ["new", "old"]);
+    }
+
+    /// Claude and Codex trust wisp's own servers by name (`--allowedTools mcp__browser`, `default_tools_approval_mode`):
+    /// a connector stored (or carried by a formula) as `browser` or `computer` would run unasked. It never reaches a run.
+    #[test]
+    fn a_connector_by_the_name_of_wisps_own_server_never_reaches_a_run() {
+        let one = |n: &str| (n.to_owned(), ConnectorSpec { url: format!("https://{n}.example/mcp"), ..ConnectorSpec::default() });
+        let r = runs(&[], vec![one("browser"), one("computer"), one("wisp"), one("linear")]);
+        assert_eq!(names(&r, "claude"), ["linear"]);
+        assert_eq!(names(&r, "codex"), ["linear"]);
+        assert!(reserved("browser") && reserved("computer") && reserved("wisp") && !reserved("linear"));
     }
 
     fn from(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {

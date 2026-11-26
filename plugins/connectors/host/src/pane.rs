@@ -32,17 +32,27 @@ use wisp_kernel::{Ctx, Result, Setup, WireError};
 use wisp_resources_api::{Op, OpKind, ResourceKind, StoredKind};
 use wisp_store::{Col, EntityDef, Migration, Row, Store};
 
-use crate::kinds::{ConnectorSpec, RunCache};
+use crate::kinds::{ConnectorSpec, RemoteTransport, RunCache};
 
 pub const OWNER: &str = "connectors";
 
-const MIGRATIONS: &[Migration] = &[Migration::sql(
-    1,
-    "CREATE TABLE connectors_connector (id TEXT PRIMARY KEY, name TEXT NOT NULL, transport TEXT NOT NULL, command TEXT NOT NULL, args TEXT, url TEXT NOT NULL,
+const MIGRATIONS: &[Migration] = &[
+    Migration::sql(
+        1,
+        "CREATE TABLE connectors_connector (id TEXT PRIMARY KEY, name TEXT NOT NULL, transport TEXT NOT NULL, command TEXT NOT NULL, args TEXT, url TEXT NOT NULL,
        env TEXT, headers TEXT, enabled INTEGER NOT NULL, test TEXT, signed_in TEXT, added_at INTEGER NOT NULL, own TEXT, testing INTEGER NOT NULL) STRICT;
      CREATE TABLE connectors_found (id TEXT PRIMARY KEY, name TEXT NOT NULL, \"from\" TEXT, transport TEXT NOT NULL, command TEXT, args TEXT, url TEXT, env TEXT, headers TEXT) STRICT;
      CREATE TABLE connectors_reach (id TEXT PRIMARY KEY, harnesses TEXT) STRICT;",
-)];
+    ),
+    // which harnesses can't speak a connector's transport; a found server "Not now" hid, and the names it hid (kept
+    // across restarts: they lived in memory, so every restart offered them again)
+    Migration::sql(
+        2,
+        "ALTER TABLE connectors_connector ADD COLUMN cant_reach TEXT;
+     ALTER TABLE connectors_found ADD COLUMN hidden INTEGER;
+     CREATE TABLE connectors_dismissed (id TEXT PRIMARY KEY) STRICT;",
+    ),
+];
 
 fn topics(_: &Row) -> Vec<String> {
     vec![api::TOPIC.into()]
@@ -67,8 +77,9 @@ pub const CONNECTOR: EntityDef = EntityDef {
         ("added_at", Col::Int),
         ("own", Col::Text),
         ("testing", Col::Bool),
+        ("cant_reach", Col::Text),
     ],
-    json_columns: &["args", "env", "headers", "test", "signed_in", "own"],
+    json_columns: &["args", "env", "headers", "test", "signed_in", "own", "cant_reach"],
     parent: None,
     seq: None,
     topics,
@@ -87,6 +98,7 @@ pub const FOUND: EntityDef = EntityDef {
         ("url", Col::Text),
         ("env", Col::Text),
         ("headers", Col::Text),
+        ("hidden", Col::Bool),
     ],
     json_columns: &["from", "args", "env", "headers"],
     parent: None,
@@ -104,9 +116,22 @@ pub const REACH: EntityDef = EntityDef {
     topics,
 };
 
+/// The found servers' names "Not now" hid: the pane's own memory (the page reads the found rows' `hidden`; a row needs
+/// a topic, so it's the pane's).
+pub const DISMISSED: EntityDef = EntityDef {
+    kind: "connectors.dismissed",
+    table: "connectors_dismissed",
+    key: "id",
+    columns: &[("id", Col::Text)],
+    json_columns: &[],
+    parent: None,
+    seq: None,
+    topics,
+};
+
 pub fn install(store: &Store) -> wisp_store::Result<()> {
     store.migrate(OWNER, MIGRATIONS)?;
-    for d in [CONNECTOR, FOUND, REACH] {
+    for d in [CONNECTOR, FOUND, REACH, DISMISSED] {
         store.define_entity(d)?;
     }
     Ok(())
@@ -175,13 +200,15 @@ fn secrets_of(
 pub fn plan_of(id: &str, b: &ConnectorBody, prev: Option<&ConnectorSpec>) -> std::result::Result<Plan, WireError> {
     let was = prev.cloned().unwrap_or_default();
     let mut plan = Plan::default();
-    let remote = match b.transport.as_deref() {
-        Some("remote") => true,
-        Some("local") => false,
-        Some(t) => return Err(WireError::invalid(format!("transport: local or remote, not {t}"))),
+    // `remote` keeps an SSE connector one (the form sends remote for both); `sse` is a pasted or imported SSE server
+    let (remote, sse) = match b.transport.as_deref() {
+        Some("remote") => (true, was.sse()),
+        Some("sse") => (true, true),
+        Some("local") => (false, false),
+        Some(t) => return Err(WireError::invalid(format!("transport: local, remote or sse, not {t}"))),
         // v1 connectors.js: an edit keeps its kind; a new one is remote when it has a URL
-        None if prev.is_some() => !was.url.is_empty(),
-        None => b.url.as_deref().is_some_and(|u| !u.trim().is_empty()),
+        None if prev.is_some() => (!was.url.is_empty(), was.sse()),
+        None => (b.url.as_deref().is_some_and(|u| !u.trim().is_empty()), false),
     };
     let mut spec = ConnectorSpec {
         enabled: b.enabled.or(was.enabled),
@@ -196,6 +223,7 @@ pub fn plan_of(id: &str, b: &ConnectorBody, prev: Option<&ConnectorSpec>) -> std
             return Err(WireError::invalid("A remote connector needs its server's address (https://…)"));
         }
         spec.url = url;
+        spec.transport = sse.then_some(RemoteTransport::Sse);
         spec.headers = secrets_of(id, "headers", b.headers.as_ref(), &was.headers, &mut plan)?;
         plan.drop.extend(was.env.keys().map(|k| secret_key(id, "env", k)));
     } else {
@@ -258,6 +286,7 @@ pub fn view_of(
         signed_in,
         added_at: 0,
         own,
+        cant_reach: if c.sse() { wisp_connectors_core::harness::without_sse() } else { Vec::new() },
         testing,
     }
 }
@@ -297,7 +326,7 @@ fn row_of(id: &str, v: &impl serde::Serialize, def: &EntityDef) -> Row {
 pub fn rows(v: &ConnectorsView) -> Vec<(&'static EntityDef, Vec<Row>)> {
     vec![
         (&CONNECTOR, v.connectors.iter().map(|c| row_of(&c.id, c, &CONNECTOR)).collect()),
-        (&FOUND, v.found.iter().map(|f| row_of(&f.name, f, &FOUND)).collect()),
+        (&FOUND, v.found.iter().chain(&v.hidden).map(|f| row_of(&f.name, f, &FOUND)).collect()),
         (&REACH, vec![row_of("this", &json!({ "harnesses": v.reach }), &REACH)]),
     ]
 }
@@ -311,6 +340,8 @@ pub struct Pane {
     pending: Mutex<PendingSignins>,
     /// the run cache, read again after a token was refreshed
     pub(crate) runs: RunCache,
+    /// failed refreshes in a row that weren't refusals, per connector: how long the next try waits (`auth`)
+    pub(crate) retries: Mutex<HashMap<String, u32>>,
     /// one refresh at a time per connector (`auth`)
     pub(crate) refreshing: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// the refresh armed ahead of each connector's token end: only the latest acts
@@ -328,9 +359,17 @@ fn where_() -> Where {
     Where { home: std::env::var("HOME").map(Into::into).unwrap_or_default(), env: wisp_proc::vars().into_iter().collect() }
 }
 
+/// Where the harnesses' own configs are read when it isn't `$HOME` (a test's folder): a service, so the plugin never
+/// reads another person's files by mistake, and a test never reads yours.
+#[derive(Debug, Clone)]
+pub struct ConfigHome(pub std::path::PathBuf);
+
 /// Each harness's own servers, read from its config files.
-async fn sources() -> Vec<Source> {
-    let w = where_();
+async fn sources(ctx: &Ctx) -> Vec<Source> {
+    let w = match ctx.service::<ConfigHome>() {
+        Ok(h) => Where { home: h.0.clone(), env: BTreeMap::new() },
+        Err(_) => where_(),
+    };
     let mut out = Vec::new();
     for b in builtins() {
         let mut texts = Vec::new();
@@ -362,8 +401,10 @@ impl Pane {
     }
 
     pub async fn view(&self, ctx: &Ctx) -> ConnectorsView {
-        let srcs = sources().await;
+        let srcs = sources(ctx).await;
         let own = own_names(&srcs);
+        // the runs skip what each harness has of its own; read here, so a run never waits on a file
+        self.runs.set_own(own.clone());
         let specs = self.specs().await;
         let list: Vec<Connector> =
             specs.iter().map(|(n, _)| Connector { id: n.clone(), name: n.clone(), ..Connector::default() }).collect();
@@ -378,10 +419,36 @@ impl Pane {
             let mine: Vec<String> = own.iter().filter(|(_, names)| names.contains(n)).map(|(a, _)| a.clone()).collect();
             connectors.push(view_of(n, c, tests.get(n).cloned(), testing.contains(n), signed, mine));
         }
-        let hidden = lock(&self.dismissed).clone();
-        let found = found(&srcs, &list).into_iter().filter(|f| !hidden.contains(&f.name)).map(|f| f.public()).collect::<Vec<FoundServer>>();
+        let dismissed = lock(&self.dismissed).clone();
+        let (hidden, found): (Vec<Found>, Vec<Found>) = found(&srcs, &list).into_iter().partition(|f| dismissed.contains(&f.name));
+        let found = found.iter().map(Found::public).collect::<Vec<FoundServer>>();
+        let hidden = hidden.iter().map(|f| FoundServer { hidden: true, ..f.public() }).collect();
         let reach = builtins().into_iter().filter(HarnessMcp::per_turn).map(|b| b.agent().to_owned()).collect();
-        ConnectorsView { connectors, found, reach }
+        ConnectorsView { connectors, found, hidden, reach }
+    }
+
+    /// The names "Not now" hid, written over the pane's own rows: a restart reads them back.
+    async fn keep_dismissed(&self, ctx: &Ctx) {
+        let Ok(store) = ctx.service::<Store>() else { return };
+        let want = lock(&self.dismissed).clone();
+        let r = store
+            .write(move |w| {
+                for old in w.query(DISMISSED.kind, &wisp_store::Query::default())? {
+                    if let Some(id) = old.get("id").and_then(Value::as_str).filter(|id| !want.contains(*id)) {
+                        w.del(DISMISSED.kind, id.to_owned())?;
+                    }
+                }
+                for n in want {
+                    let mut r = Row::new();
+                    r.insert("id".into(), json!(n));
+                    w.upsert(DISMISSED.kind, r)?;
+                }
+                Ok(())
+            })
+            .await;
+        if let Err(e) = r {
+            tracing::warn!(error = %e, "connectors: keeping what Not now hid");
+        }
     }
 
     /// The view, also written as the pane's rows (a gone connector's row goes).
@@ -446,6 +513,9 @@ impl Pane {
         let name = b.name.clone().unwrap_or_default().trim().to_owned();
         if !valid_name(&name) {
             return Err(WireError::invalid("A name: 1 to 40 of a–z, 0–9 and _"));
+        }
+        if crate::kinds::reserved(&name) {
+            return Err(WireError::conflict(format!("{name} is the name of a server wisp gives every run: pick another name")));
         }
         if self.specs().await.iter().any(|(n, _)| *n == name) {
             return Err(WireError::conflict(format!("There's a connector called {name} already")));
@@ -533,16 +603,23 @@ impl Pane {
         lock(&self.dismissed).extend(dismiss.iter().cloned());
         let list: Vec<Connector> =
             self.specs().await.into_iter().map(|(n, _)| Connector { id: n.clone(), name: n, ..Connector::default() }).collect();
-        let all: Vec<Found> = found(&sources().await, &list);
+        let all: Vec<Found> = found(&sources(ctx).await, &list);
         let mut skipped = Vec::new();
         for n in names {
             let Some(f) = all.iter().find(|f| f.name == *n) else {
                 skipped.push(Skipped { name: n.clone(), error: "It isn't in a harness's config any more".into() });
                 continue;
             };
-            if let Err(e) = self.add(ctx, &f.body()).await {
-                skipped.push(Skipped { name: n.clone(), error: e.message });
+            match self.add(ctx, &f.body()).await {
+                // one added from Show hidden isn't hidden any more
+                Ok(_) => {
+                    lock(&self.dismissed).remove(n);
+                }
+                Err(e) => skipped.push(Skipped { name: n.clone(), error: e.message }),
             }
+        }
+        if !dismiss.is_empty() || !names.is_empty() {
+            self.keep_dismissed(ctx).await;
         }
         Ok(ImportView { view: self.publish(ctx).await, skipped })
     }
@@ -728,16 +805,115 @@ fn answer_of(r: &wisp_kernel::services::NetResponse) -> Option<String> {
     Some(String::from_utf8_lossy(&r.body).into_owned())
 }
 
-/// A remote server, asked over HTTP (streamable HTTP: `initialize`, then `tools/list` with its session).
+/// An HTTP status that ends a check: a 401 asks for a sign-in.
+fn refused(status: u16) -> Outcome {
+    Outcome::Failed(if status == 401 { "needs sign-in (HTTP 401)".into() } else { http_failure(status, "") })
+}
+
+/// A remote server over the 2024 SSE transport: a GET that stays open names (its `endpoint` event) where to POST, and
+/// the answers come back on it. ADR-0134: the kernel's `Net::stream` reads it while the POSTs go out.
+async fn probe_sse(n: &wisp_kernel::services::NetService, probe: &mut Probe, c: &ConnectorSpec) -> Outcome {
+    use futures::StreamExt as _;
+    let headers: Vec<(String, String)> = c.headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut get = headers.clone();
+    get.push(("accept".into(), "text/event-stream".into()));
+    let mut post = headers;
+    post.push(("content-type".into(), "application/json".into()));
+    post.push(("accept".into(), "application/json, text/event-stream".into()));
+    let talk = async {
+        let s = match n
+            .stream(NetRequest { method: "GET".into(), url: c.url.clone(), headers: get, body: Vec::new(), timeout_ms: PROBE_MS })
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => return Outcome::Failed(e.message),
+        };
+        if s.status >= 400 {
+            return refused(s.status);
+        }
+        let (mut body, mut sse, mut to) = (s.body, Sse::default(), None::<String>);
+        while let Some(chunk) = body.next().await {
+            let chunk = match chunk {
+                Ok(c) => c,
+                Err(e) => return Outcome::Failed(e.message),
+            };
+            for e in sse.push(&chunk) {
+                let mut send = std::collections::VecDeque::new();
+                if e.event == "endpoint" {
+                    if to.is_some() {
+                        continue;
+                    }
+                    let Some(u) = wisp_connectors_core::rpc::endpoint_url(&c.url, &e.data) else {
+                        return Outcome::Failed("Its event stream named no place on its own server to send to".into());
+                    };
+                    to = Some(u);
+                    send.push_back(initialize(env!("CARGO_PKG_VERSION")));
+                } else if e.event == "message" {
+                    let step = probe.on_line(&e.data);
+                    if let Some(done) = step.done {
+                        return done;
+                    }
+                    send.extend(step.send);
+                }
+                let Some(url) = &to else { continue };
+                if let Some(done) = post_sse(n, probe, url, &post, send).await {
+                    return done;
+                }
+            }
+        }
+        Outcome::Failed("It closed its event stream before it listed its tools".into())
+    };
+    tokio::time::timeout(Duration::from_millis(PROBE_MS), talk).await.unwrap_or_else(|_| Outcome::Failed(TIMEOUT_REASON.into()))
+}
+
+/// Each line sent as a `POST` to the SSE endpoint (a 202, its answer on the stream); a server that answers in the reply is read
+/// too. → the check's end, when one came.
+async fn post_sse(
+    n: &wisp_kernel::services::NetService,
+    probe: &mut Probe,
+    url: &str,
+    headers: &[(String, String)],
+    mut send: std::collections::VecDeque<String>,
+) -> Option<Outcome> {
+    while let Some(line) = send.pop_front() {
+        let req = NetRequest {
+            method: "POST".into(),
+            url: url.to_owned(),
+            headers: headers.to_vec(),
+            body: line.into_bytes(),
+            timeout_ms: 30_000,
+        };
+        let r = match n.fetch(req).await {
+            Ok(r) => r,
+            Err(e) => return Some(Outcome::Failed(e.message)),
+        };
+        if r.status >= 400 {
+            return Some(refused(r.status));
+        }
+        let step = probe.on_line(&answer_of(&r).unwrap_or_default());
+        if step.done.is_some() {
+            return step.done;
+        }
+        send.extend(step.send);
+    }
+    None
+}
+
+/// A remote server, asked over HTTP (streamable HTTP: `initialize`, then `tools/list` with its session). One set to
+/// SSE, or whose `initialize` POST gets a 404 or 405 (a server that speaks only the 2024 transport), is asked over SSE.
 async fn probe_remote(ctx: &Ctx, id: &str, c: &ConnectorSpec, at: i64) -> ProbeResult {
     let mut probe = Probe::new(id);
     let Ok(n) = net(ctx) else { return probe.result(Outcome::Failed("wisp can't reach the network here".into()), at) };
+    if c.sse() {
+        let done = probe_sse(&n, &mut probe, c).await;
+        return probe.result(done, at);
+    }
     let mut headers: Vec<(String, String)> = c.headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     headers.push(("content-type".into(), "application/json".into()));
     headers.push(("accept".into(), "application/json, text/event-stream".into()));
     let mut send = vec![initialize(env!("CARGO_PKG_VERSION"))];
     let mut session: Option<String> = None;
-    for _ in 0..6 {
+    for turn in 0..6 {
         let Some(body) = send.pop() else { break };
         let mut h = headers.clone();
         if let Some(s) = &session {
@@ -750,9 +926,12 @@ async fn probe_remote(ctx: &Ctx, id: &str, c: &ConnectorSpec, at: i64) -> ProbeR
             Ok(r) => r,
             Err(e) => return probe.result(Outcome::Failed(e.message), at),
         };
+        if turn == 0 && matches!(r.status, 404 | 405) {
+            let done = probe_sse(&n, &mut probe, c).await;
+            return probe.result(done, at);
+        }
         if r.status >= 400 {
-            let reason = if r.status == 401 { "needs sign-in (HTTP 401)" } else { "" };
-            return probe.result(Outcome::Failed(if reason.is_empty() { http_failure(r.status, "") } else { reason.into() }), at);
+            return probe.result(refused(r.status), at);
         }
         if let Some(s) = r.header("mcp-session-id") {
             session = Some(s.to_owned());
@@ -789,6 +968,7 @@ pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn
         dismissed: Mutex::default(),
         pending: Mutex::default(),
         runs,
+        retries: Mutex::default(),
         refreshing: Mutex::default(),
         timers: Mutex::default(),
         timer_seq: AtomicU64::default(),
@@ -814,6 +994,19 @@ pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn
     on!(api::Signout, |p, ctx, a| p.signout(&ctx, &a.id).await);
     on!(api::Token, |p, ctx, a| p.token_for(&ctx, &a.id, a.force).await);
     crate::agent::register(s, &pane);
+    // before a run reads its servers: a sign-in whose token is due is refreshed first, so the run never starts on a
+    // token that ran out (a timer armed before the computer slept may not have fired: this check catches it)
+    let due = pane.clone();
+    s.intercept::<wisp_runtime_api::hooks::BeforeRun, _, _>(
+        wisp_kernel::InterceptOpts { priority: 60, failure: wisp_kernel::Failure::Open, timeout_ms: 2000 },
+        move |ctx, _call, _c| {
+            let p = due.clone();
+            async move {
+                p.before_run(&ctx).await;
+                wisp_kernel::Verdict::Continue
+            }
+        },
+    );
     let (cb, out) = (pane.clone(), pane.clone());
     s.route(wisp_kernel::http::Route {
         method: "GET",
@@ -842,6 +1035,9 @@ pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn
     s.on_start(move |ctx| async move {
         if let Ok(store) = ctx.service::<Store>() {
             install(&store).map_err(|e| WireError::internal(e.to_string()))?;
+            // what "Not now" hid, before the first view (one small read): the card never offers it again for a moment
+            let hid = dismissed(&store).await;
+            lock(&pane.dismissed).extend(hid);
         }
         let (p, c) = (pane.clone(), ctx.clone());
         ctx.spawn(async move {
@@ -857,6 +1053,12 @@ pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn
         Ok(())
     });
     out
+}
+
+/// The found servers' names "Not now" hid, as the pane kept them.
+async fn dismissed(store: &Store) -> BTreeSet<String> {
+    let rows = store.read_async(|r| r.query(DISMISSED.kind, &wisp_store::Query::default())).await.unwrap_or_default();
+    rows.iter().filter_map(|r| r.get("id").and_then(Value::as_str).map(str::to_owned)).collect()
 }
 
 /// Each connector's last check, as its row on the pane's topic kept it.
@@ -931,6 +1133,21 @@ mod tests {
         let rename = ConnectorBody { enabled: Some(false), ..ConnectorBody::default() };
         assert_eq!(plan_of("docs", &rename, Some(&local)).unwrap().spec.command, "docs-mcp", "an edit keeps its kind");
         assert!(plan_of("x", &ConnectorBody::default(), None).is_err(), "neither: a local one without its command");
+    }
+
+    /// A pasted or imported SSE server stays one: as `sse`, and through an edit, which sends `remote` for every URL.
+    #[test]
+    fn an_sse_connector_stays_sse_through_an_edit() {
+        let b = ConnectorBody { transport: Some("sse".into()), url: Some("https://a.example/sse".into()), ..ConnectorBody::default() };
+        let spec = plan_of("old", &b, None).unwrap().spec;
+        assert!(spec.sse());
+        let edit =
+            ConnectorBody { transport: Some("remote".into()), url: Some("https://a.example/sse2".into()), ..ConnectorBody::default() };
+        assert!(plan_of("old", &edit, Some(&spec)).unwrap().spec.sse());
+        let plain =
+            ConnectorBody { transport: Some("remote".into()), url: Some("https://a.example/mcp".into()), ..ConnectorBody::default() };
+        assert!(!plan_of("new", &plain, None).unwrap().spec.sse());
+        assert_eq!(view_of("old", &spec, None, false, None, Vec::new()).cant_reach, ["codex"]);
     }
 
     /// A signed-in connector moved to another server kept its sign-in, and its next test sent the old server's token to
@@ -1021,6 +1238,7 @@ mod tests {
                 vec!["claude".into()],
             )],
             found: Vec::new(),
+            hidden: Vec::new(),
             reach: vec!["claude".into()],
         };
         let all = rows(&v);

@@ -272,6 +272,19 @@ pub fn token_reply(status: u16, text: &str) -> Result<Tokens> {
     Ok(Tokens { access, refresh: s("refresh_token"), expires_in })
 }
 
+/// Whether a refresh the token endpoint answered with `status` and `text` ended the sign-in: `invalid_grant`, or a 400
+/// or 401. Anything else (its 5xx, a 429, an answer it couldn't make sense of) is the server's trouble for now: the
+/// refresh is tried again and the user isn't asked to sign in (a blip read "needs sign-in" until they did).
+pub fn refresh_refused(status: u16, text: &str) -> bool {
+    let error = serde_json::from_str::<Value>(text).ok().and_then(|v| v.get("error").and_then(Value::as_str).map(str::to_owned));
+    status == 400 || status == 401 || error.as_deref() == Some("invalid_grant")
+}
+
+/// A refresh tried again after a failure that wasn't a refusal: 30 s, then twice as long each time, at most 30 min.
+pub fn retry_wait_ms(attempt: u32) -> u64 {
+    30_000u64.saturating_mul(1 << attempt.min(6)).min(30 * 60_000)
+}
+
 /// The metadata after a sign-in's code was traded: signed in now. Signing in again with a kept client is a new
 /// sign-in too (the row waits for a `signed_in_at` after it started, or it reads "Signing in…" for 10 minutes).
 pub fn after_signin(o: &OAuthMeta, t: &Tokens, now: i64) -> OAuthMeta {
@@ -337,6 +350,17 @@ mod tests {
         assert_eq!(token_step(Some(&o), s("a"), None, 0, true), TokenStep::SignIn, "refused, nothing to refresh it");
         assert_eq!(token_step(Some(&meta(None, Some(1))), s("a"), None, 1 << 50, false), TokenStep::Use("a".into()), "no end");
         assert_eq!(refresh_at(&o), Some(100_000 - FRESH_MS));
+    }
+
+    #[test]
+    fn only_a_refusal_ends_a_sign_in_and_the_rest_is_tried_again_later() {
+        assert!(refresh_refused(400, r#"{"error":"invalid_grant"}"#));
+        assert!(refresh_refused(401, "{}"));
+        assert!(refresh_refused(200, r#"{"error":"invalid_grant"}"#));
+        for (status, text) in [(503, ""), (500, r#"{"error":"server_error"}"#), (429, "{}"), (502, "<html>")] {
+            assert!(!refresh_refused(status, text), "{status}");
+        }
+        assert_eq!((retry_wait_ms(0), retry_wait_ms(1), retry_wait_ms(20)), (30_000, 60_000, 30 * 60_000));
     }
 
     /// Signing in again from the same place keeps the client (and its old `signed_in_at`), but the trade stamps now,

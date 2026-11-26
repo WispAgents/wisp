@@ -37,6 +37,10 @@ pub struct ProbeResult {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub auth: bool,
+    /// its sign-in couldn't be refreshed just now (no network, the server's 5xx): tried again, no sign-in asked for
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub retrying: bool,
 }
 
 /// Where a remote connector signs in (OAuth metadata, no secrets: the tokens are in the secrets file).
@@ -132,6 +136,9 @@ pub struct ConnectorView {
     pub added_at: i64,
     /// harnesses that keep their own server by this name (it is skipped for them)
     pub own: Vec<String>,
+    /// harnesses that can't speak its transport (an SSE server, on Codex): it is skipped for them
+    #[serde(default)]
+    pub cant_reach: Vec<String>,
     /// a test is running: the row shows Checking…
     pub testing: bool,
 }
@@ -158,6 +165,10 @@ pub struct FoundServer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub headers: Option<Vec<String>>,
+    /// "Not now" hid it: the import card leaves it out, the review lists it under Show hidden
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub hidden: bool,
 }
 
 /// `GET /api/connectors`, and the answer of every command that changes one.
@@ -165,6 +176,9 @@ pub struct FoundServer {
 pub struct ConnectorsView {
     pub connectors: Vec<ConnectorView>,
     pub found: Vec<FoundServer>,
+    /// found servers "Not now" hid (`hidden` set): the review offers them under Show hidden
+    #[serde(default)]
+    pub hidden: Vec<FoundServer>,
     /// harnesses that take connectors per turn
     pub reach: Vec<String>,
 }

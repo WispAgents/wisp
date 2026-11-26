@@ -31,11 +31,11 @@ export default defineConfig({
         { tag: 'meta', attrs: { property: 'og:image', content: 'https://trywisp.dev/assets/og.png' } },
         { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
         { tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
-        { tag: 'meta', attrs: { property: 'og:image:alt', content: 'Wisp Agents: manage the code your agents write' } },
+        { tag: 'meta', attrs: { property: 'og:image:alt', content: 'Wisp Agents: your coding agents, as code' } },
         { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
         { tag: 'meta', attrs: { name: 'twitter:site', content: '@trywispagents' } },
         { tag: 'meta', attrs: { name: 'twitter:image', content: 'https://trywisp.dev/assets/og.png' } },
-        { tag: 'meta', attrs: { name: 'twitter:image:alt', content: 'Wisp Agents: manage the code your agents write' } },
+        { tag: 'meta', attrs: { name: 'twitter:image:alt', content: 'Wisp Agents: your coding agents, as code' } },
         { tag: 'link', attrs: { rel: 'alternate', type: 'text/plain', href: '/docs/llms.txt', title: 'llms.txt' } },
         // How-to tabs (Desktop app · Phone app · TUI · CLI, synced as "way"): a reader on a phone who never picked one
         // gets Phone app first. Before paint, so Starlight's restore script draws it at once (no flash, no shift); with

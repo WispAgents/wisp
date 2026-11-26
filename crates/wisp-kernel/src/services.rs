@@ -70,9 +70,41 @@ impl NetResponse {
     }
 }
 
+/// A response whose body is read as it arrives (an event stream that stays open): status and headers at once, then
+/// the body in chunks. Dropping it closes the connection. ADR-0134.
+pub struct NetStream {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    /// the body's chunks as they come; an `unavailable` error ends it
+    pub body: futures::stream::BoxStream<'static, Result<Vec<u8>>>,
+}
+
+impl NetStream {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+    }
+}
+
+impl std::fmt::Debug for NetStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NetStream").field("status", &self.status).field("headers", &self.headers).finish_non_exhaustive()
+    }
+}
+
 pub trait Net: Send + Sync + 'static {
     /// Transport failures are `unavailable` (retry: true); any HTTP status is an `Ok` answer.
     fn fetch(&self, req: NetRequest) -> BoxFuture<'static, Result<NetResponse>>;
+    /// The same request with its body streamed: an SSE stream read while other requests go out. `timeout_ms` bounds
+    /// the whole stream. The default reads the whole body with `fetch` and gives it as one chunk, so a `Net` that
+    /// can't stream (a test's fake) still answers.
+    fn stream(&self, req: NetRequest) -> BoxFuture<'static, Result<NetStream>> {
+        let f = self.fetch(req);
+        Box::pin(async move {
+            let r = f.await?;
+            let body = r.body;
+            Ok(NetStream { status: r.status, headers: r.headers, body: Box::pin(futures::stream::once(async move { Ok(body) })) })
+        })
+    }
 }
 
 /// Ephemeral notices for every client: a `notice` frame for v2 clients, an event of that name for v1

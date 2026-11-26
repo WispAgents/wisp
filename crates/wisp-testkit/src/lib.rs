@@ -50,6 +50,12 @@ impl FakeClock {
             let _ = tx.send(());
         }
     }
+    /// Moves time forward and wakes no one: the computer slept, its wall clock moved and a timer armed before didn't
+    /// fire (a monotonic sleep doesn't count the time asleep), so code must notice the time itself.
+    pub fn jump(&self, ms: u64) {
+        let mut s = self.lock();
+        s.now += i64::try_from(ms).unwrap_or(i64::MAX);
+    }
     /// Sleepers waiting right now (a test waits for a timer to be armed before advancing).
     pub fn sleepers(&self) -> usize {
         self.lock().sleepers.len()

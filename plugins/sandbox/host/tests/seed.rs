@@ -264,3 +264,76 @@ async fn a_seed_is_byte_for_byte_what_came_whatever_the_boxs_git_says() {
         back.split('\n').filter(|l| (l.starts_with('+') || l.starts_with('-')) && !l.starts_with("+++") && !l.starts_with("---")).collect();
     assert_eq!(changed, ["+three\r"], "only the delegate's line: {back}");
 }
+
+/// A one-commit repo whose `.wisp/sandbox.sh` is `script`; its seed args (inline bundle, no patch), named `name`.
+fn with_setup(name: &str, script: &str) -> serde_json::Value {
+    let p = dir("proj-setup");
+    git(&p, &["init", "-q", "-b", "main"]);
+    git(&p, &["config", "core.autocrlf", "false"]);
+    std::fs::write(p.join("app.js"), "one\n").unwrap();
+    std::fs::create_dir_all(p.join(".wisp")).unwrap();
+    std::fs::write(p.join(".wisp/sandbox.sh"), script).unwrap();
+    git(&p, &["add", "."]);
+    git(&p, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "first"]);
+    let bundle = dir("bundle-setup").join("b.bundle");
+    git(&p, &["bundle", "create", bundle.to_str().unwrap(), "--all"]);
+    let b = base64::engine::general_purpose::STANDARD.encode(std::fs::read(&bundle).unwrap());
+    json!({ "name": name, "bundle": b, "branch": "main" })
+}
+
+/// SBX-7: a `.wisp/sandbox.sh` that failed wrote its mark anyway, so it never ran again, and nothing showed it had
+/// failed. Now the seed says it failed, and with no mark the next seed runs it again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_setup_says_so_and_runs_again_with_the_next_seed() {
+    let home = dir("home-setup-fail");
+    let count = home.join("ran");
+    let args = with_setup("app", &format!("echo ran >> '{}'\necho the db is down\nexit 1\n", count.display()));
+    let sb = app().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let out = sb.call(Caller::user(), "sandbox.seed", args.clone()).await.unwrap();
+    assert_eq!(out["setupFailed"], true, "{out}");
+    assert!(out["setup"].as_str().unwrap().contains("the db is down"), "{out}");
+    assert!(!home.join(".sandbox/setup-app").exists(), "no mark for a failed run");
+    let again = sb.call(Caller::user(), "sandbox.seed", args).await.unwrap();
+    assert_eq!(again["setupFailed"], true, "{again}");
+    assert_eq!(std::fs::read_to_string(&count).unwrap(), "ran\nran\n", "run again with the next seed");
+}
+
+/// SBX-7: one that succeeds writes its mark and doesn't run again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_setup_that_succeeds_runs_once() {
+    let home = dir("home-setup-ok");
+    let count = home.join("ran");
+    let args = with_setup("app", &format!("echo ran >> '{}'\n", count.display()));
+    let sb = app().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let out = sb.call(Caller::user(), "sandbox.seed", args.clone()).await.unwrap();
+    assert!(out.get("setupFailed").is_none(), "{out}");
+    assert!(home.join(".sandbox/setup-app").is_file());
+    let again = sb.call(Caller::user(), "sandbox.seed", args).await.unwrap();
+    assert!(again.get("setup").is_none(), "{again}");
+    assert_eq!(std::fs::read_to_string(&count).unwrap(), "ran\n", "once");
+}
+
+/// SBX-3: a crew member's own sandbox runs jobs side by side, and every seed wiped `~/code/<name>`: the other job's
+/// live folder, and the last one's unpushed work. Each seed there is a folder of its own (`core::seed_folder`): the
+/// second leaves the first and what was written in it, and each has its own base for `sandbox.patch`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_members_second_seed_leaves_the_first_jobs_folder_as_it_is() {
+    let home = dir("home-member");
+    let (_p, args) = project();
+    let one = wisp_sandbox_core::seed_folder("my app", "seed-1aaa");
+    let two = wisp_sandbox_core::seed_folder("my app", "seed-2bbb");
+    let sb = app().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let mut a = args.clone();
+    a["name"] = json!(one);
+    let first = PathBuf::from(sb.call(Caller::user(), "sandbox.seed", a).await.unwrap()["cwd"].as_str().unwrap());
+    std::fs::write(first.join("work.txt"), "not pushed yet\n").unwrap();
+    let mut b = args;
+    b["name"] = json!(two);
+    let second = PathBuf::from(sb.call(Caller::user(), "sandbox.seed", b).await.unwrap()["cwd"].as_str().unwrap());
+    assert_ne!(first, second);
+    assert_eq!(std::fs::read_to_string(first.join("work.txt")).unwrap(), "not pushed yet\n", "the first job's work is still there");
+    assert!(second.join("app.js").is_file());
+    assert!(home.join(format!(".sandbox/base-{one}")).is_file() && home.join(format!(".sandbox/base-{two}")).is_file());
+    let back = sb.call(Caller::user(), "sandbox.patch", json!({ "cwd": first })).await.unwrap();
+    assert!(back["patch"].as_str().unwrap().contains("work.txt"), "the first folder's own base: {back}");
+}

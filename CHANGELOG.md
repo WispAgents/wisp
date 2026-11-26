@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **New headline: "Your coding agents, as code."** It replaces "Manage the code your agents write" on the site, the docs, the README, the npm package, llms.txt and the link preview card, with "Declare them. Run them anywhere. Track every line they write." under it.
+
 ### Fixed
 
 - **A sandbox subagent's changes are never lost on the way back.** When they clash with yours, the patch is kept in a file and the lead's report says where (`git apply <path>` puts it in). A sandbox that's asleep or unreachable no longer counts its changes as brought: they're tried again on the next look. A deleted lead's sandbox that still holds work it never got stays until you delete it in Settings → Computers → Sandboxes.
@@ -16,6 +20,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`wisp mcp` answers requests at once.** A `wisp_wait` no longer holds up the editor's other calls (a `ping` behind it went unanswered for minutes), a cancelled request (`notifications/cancelled`) stops, and a line that isn't JSON gets a parse error (-32700) instead of silence. Its tool list is the full catalogue even when wisp wasn't running when the editor started (wisp is started for it), and the editor is told when the list changes.
 - **`wisp tui` without a terminal** (a pipe, CI) says "wisp tui needs a terminal: try wisp ls --watch or wisp attach <id>" and exits 2, instead of panicking.
 - **Scripted commands refuse flags they don't take.** `wisp ls --stat done` or `wisp ls --bogus` showed the whole list as if nothing was typed; now they print the command's usage and exit 2. `--limit` and `--days` take a whole number above 0 (`--limit abc` was dropped without a word), and `--host` is refused anywhere but `wisp serve`.
+- **Connectors ask before they act, and stay out of Plan mode.** In Edits a connector's tools now ask you first (wisp's approval card on Claude Code; Codex, which can't ask, refuses them outside Full auto), where every one ran unasked. Plan mode gets a connector only when its `modes` name plan. wisp's own tools still run without a card, and a connector can't take one of their names (`wisp`, `browser`, `computer`), which would have let it run unasked.
+- **Connectors meet the harnesses' own servers.** A harness whose own config already has a server by a connector's name keeps its own (the row says "Codex uses its own linear"), an SSE server stays SSE on import, on paste and in the run's config (Codex, which can't speak SSE, goes without it, and the row says so) and is checked over its event stream (also a server that answers the newer transport with a 404 or 405), so its row lists its tools instead of "Didn't start", a sign-in whose token is due is refreshed before a run starts (also after the computer slept), a refresh that fails for now reads "Couldn't refresh, retrying" and is tried again instead of asking you to sign in, and servers you hid with **Not now** stay hidden after a restart and are one click away under **Show hidden**.
+- **Sandboxes keep their work and their quota.** A crew job's sandbox is no longer deleted while it's still being set up (the minute's check asked about a task that didn't exist yet), and one crew never named goes after half an hour instead of staying for good. The minute's check only asks sandboxes that are awake, so an idle one finally gets to sleep, and a slow box no longer holds up the others. A sandbox that never came up, or whose owner couldn't be saved, is deleted at once instead of filling one of your 5. A crew member's own sandbox gives each job its own folder (`~/code/<project>-<id>`), so a job no longer wipes another job's live folder or the last job's unpushed work.
+- **A failing `.wisp/sandbox.sh` is shown, and runs again.** A `/sandbox` launch whose setup script failed now says so before it opens the task, with the end of what the script printed. A failed run no longer marks the setup as done, so the next seed tries it again.
 
 ## [1.0.0-alpha.16] - 2026-11-26
 

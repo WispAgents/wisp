@@ -4507,6 +4507,7 @@ dependencies = [
 name = "wisp-connectors"
 version = "1.0.0-alpha.16"
 dependencies = [
+ "futures",
  "schemars",
  "serde",
  "serde_json",
@@ -4515,6 +4516,7 @@ dependencies = [
  "tracing",
  "wisp-connectors-api",
  "wisp-connectors-core",
+ "wisp-harness-kit",
  "wisp-issues-api",
  "wisp-kernel",
  "wisp-proc",
@@ -5728,6 +5730,7 @@ name = "wisp-sandbox"
 version = "1.0.0-alpha.16"
 dependencies = [
  "base64 0.22.1",
+ "futures",
  "serde",
  "serde_json",
  "tokio",
