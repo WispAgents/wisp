@@ -4,7 +4,7 @@
 //! through the channel's `say` and the phone.
 use serde_json::Value;
 pub use wisp_channels_api::conversation::{BTW_HELP, Conversation, NO_PROJECTS, NO_PROMPT, failed_line, first_part};
-use wisp_channels_api::{ActArgs, ActKind, ChannelCtx, Mode, Parsed, Problem, RunOpts, StartOpts, Started, Thread};
+use wisp_channels_api::{ActArgs, ActKind, ChannelCtx, Mode, Parsed, Problem, RunOpts, SessionView, StartOpts, Started, Thread};
 use wisp_kernel::Result;
 
 use crate::grammar::parse_message;
@@ -109,6 +109,15 @@ async fn start(c: &dyn Conversation, p: &Parsed) -> Result<Value> {
     if p.crew.is_none() && p.project.is_none() && c.ctx().default_project.is_none() {
         return c.say(NO_PROJECTS.to_owned()).await;
     }
+    // a message that names no project runs in the one its place has (a GitHub comment: its repo's), else the
+    // default the context already holds
+    let homed;
+    let p = if p.project.is_none() && p.crew.is_none() && c.ctx().default_project.is_some() {
+        homed = Parsed { project: c.ctx().default_project.clone(), ..p.clone() };
+        &homed
+    } else {
+        p
+    };
     let thread = c.thread(p).await;
     let out: Started = match phone.start_parsed(p, &start_opts(c, thread.clone())).await {
         Ok(o) => o,
@@ -119,8 +128,28 @@ async fn start(c: &dyn Conversation, p: &Parsed) -> Result<Value> {
     let sent = c.say(out.ack.clone()).await.inspect_err(|_| {
         c.owe(&out.ack);
     })?;
-    c.acked(thread.as_ref(), &sent);
+    c.acked(with_session(thread, out.session.as_ref()).as_ref(), &sent);
     Ok(sent)
+}
+
+/// A task's first prompt with where it was asked (`StartOpts::about`: a GitHub PR's repo, number and link), after
+/// the message so the task's automatic title stays the message's.
+pub fn with_about(prompt: &str, about: Option<&str>) -> String {
+    match about.map(str::trim).filter(|a| !a.is_empty()) {
+        Some(a) => format!("{prompt}\n\n---\n{a}"),
+        None => prompt.to_owned(),
+    }
+}
+
+/// The thread a task was started from, with that task in it: `acked` links the two, so its report and the next
+/// message there reach it (the thread is made before the task exists).
+fn with_session(thread: Option<Thread>, session: Option<&SessionView>) -> Option<Thread> {
+    thread.map(|mut t| {
+        if t.session.is_none() {
+            t.session = session.map(|s| s.id.clone());
+        }
+        t
+    })
 }
 
 async fn mention_in(c: &dyn Conversation, session_id: &str, p: &Parsed, name: &str) -> Result<Value> {
@@ -133,7 +162,7 @@ async fn mention_in(c: &dyn Conversation, session_id: &str, p: &Parsed, name: &s
         Err(e) => return c.say(c.failed("ask them", &e)).await,
     };
     let sent = c.say(out.ack).await?;
-    c.acked(thread.as_ref(), &sent);
+    c.acked(with_session(thread, out.session.as_ref()).as_ref(), &sent);
     Ok(sent)
 }
 

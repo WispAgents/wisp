@@ -10,7 +10,7 @@ id: string,
  */
 force: boolean, 
 /**
- * who reviews this time instead of the setting (ship's Steward asks for `other-vendor`, ADR-0132): runs even when
- * the setting is off. Additive (2026-11-26).
+ * who reviews this time instead of the setting (ship's Steward asks for `other-vendor`): runs even when the
+ * setting is off. Additive (2026-11-26).
  */
 pick?: string, };
