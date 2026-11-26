@@ -3,6 +3,7 @@
 // ⋯ action was taken for the old task's). Pure: TaskView navigates, toasts and sends.
 import { nextNeedsYou } from './rows-view.ts';
 import type { SessionRow } from '../rows.ts';
+import '../i18n/lazy.ts';
 
 export type Leave = { readonly t: 'openTask'; readonly id: string } | { readonly t: 'home' };
 

@@ -6,6 +6,7 @@ import type { ShellContext } from '../contract.ts';
 import type { HarnessUiDef } from '../contract.ts';
 import { harnessOf } from './harness.ts';
 import { FACTORY } from './launch-pick.ts';
+import '../i18n/home.ts';
 
 export type Mode = 'plan' | 'edits' | 'auto';
 export const MODES: readonly Mode[] = ['plan', 'edits', 'auto'];

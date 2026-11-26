@@ -585,5 +585,8 @@
   "shell.runner.recent": "Recent",
   "shell.runner.favourites": "Favourites",
   "shell.runner.star": "Favourite (f)",
-  "shell.runner.signIn": "Sign in"
+  "shell.runner.signIn": "Sign in",
+  "shell.toast.unread": "“{title}” marked unread",
+  "shell.toast.savedForLater": "Saved for later",
+  "shell.toast.unsaved": "Unsaved"
 }

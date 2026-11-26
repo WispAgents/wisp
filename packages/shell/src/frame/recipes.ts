@@ -6,6 +6,7 @@ import { createResource } from 'solid-js';
 import { defineCommand, type Json } from '@wisp/client';
 import type { LauncherRecipe } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
+import '../i18n/home.ts';
 
 export interface RecipeRow {
   readonly name: string;
