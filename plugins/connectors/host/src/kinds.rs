@@ -232,6 +232,12 @@ type Revealed = Arc<Mutex<std::collections::HashMap<String, Vec<(String, Connect
 /// so a run's servers are made without reading a file.
 pub(crate) type Own = Arc<Mutex<BTreeMap<String, BTreeSet<String>>>>;
 
+/// A name wisp gives a server of its own (`wisp`, `browser`, `computer`, …: `OWN_MCP_SERVERS`): Claude Code and Codex
+/// run those servers' tools without asking, so a connector can't take one.
+pub(crate) fn reserved(name: &str) -> bool {
+    wisp_harness_kit::protocol::OWN_MCP_SERVERS.contains(&name)
+}
+
 struct Runs {
     cache: Cache,
     revealed: Revealed,
@@ -242,8 +248,12 @@ struct Runs {
 
 impl Runs {
     /// Whether harness `h` gets connector `n`: not when its own config has a server by that name (Codex would merge the
-    /// two into one broken server, Claude list every tool twice), nor an SSE one it can't speak.
+    /// two into one broken server, Claude list every tool twice), nor an SSE one it can't speak. Never one by the name
+    /// of a server wisp gives a run itself (`reserved`): the harnesses trust those by name, so it would run unasked.
     fn reaches(&self, own: &BTreeMap<String, BTreeSet<String>>, h: &str, n: &str, c: &ConnectorSpec) -> bool {
+        if reserved(n) {
+            return false;
+        }
         let own_one = own.get(h).is_some_and(|names| names.contains(n));
         let no_sse = c.sse() && self.no_sse.iter().any(|x| x == h);
         !(own_one || no_sse)
@@ -441,6 +451,17 @@ mod tests {
         let r = runs(&[], vec![("old".into(), sse), ("new".into(), http)]);
         assert_eq!(names(&r, "codex"), ["new"]);
         assert_eq!(names(&r, "claude"), ["new", "old"]);
+    }
+
+    /// Claude and Codex trust wisp's own servers by name (`--allowedTools mcp__browser`, `default_tools_approval_mode`):
+    /// a connector stored (or carried by a formula) as `browser` or `computer` would run unasked. It never reaches a run.
+    #[test]
+    fn a_connector_by_the_name_of_wisps_own_server_never_reaches_a_run() {
+        let one = |n: &str| (n.to_owned(), ConnectorSpec { url: format!("https://{n}.example/mcp"), ..ConnectorSpec::default() });
+        let r = runs(&[], vec![one("browser"), one("computer"), one("wisp"), one("linear")]);
+        assert_eq!(names(&r, "claude"), ["linear"]);
+        assert_eq!(names(&r, "codex"), ["linear"]);
+        assert!(reserved("browser") && reserved("computer") && reserved("wisp") && !reserved("linear"));
     }
 
     fn from(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {

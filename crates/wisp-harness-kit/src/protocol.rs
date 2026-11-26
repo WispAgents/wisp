@@ -15,7 +15,8 @@ pub const ASK_TIMEOUT_MS: u64 = 7 * 24 * 3600 * 1000;
 /// The MCP servers a run gets from wisp itself (its own server, a repo's history, the run's browser, computer use):
 /// their tools run without a prompt, since wisp already decides what they may do. Every other server in a run is a
 /// user's connector, and its calls ask first outside Full auto (wisp's approval card on Claude Code; Codex exec,
-/// which can't ask, refuses them). A list, not "everything in the run": a connector named here would be trusted too.
+/// which can't ask, refuses them). A list, not "everything in the run", trusted by name: so these names are reserved,
+/// and the connectors plugin refuses a connector by one of them and never gives a run one (`kinds::reserved`).
 pub const OWN_MCP_SERVERS: [&str; 4] = ["wisp", "wisp-history", "browser", "computer"];
 
 /// The result text for a CLI that ended without saying why: "claude exited with code 1" / "with SIGTERM".

@@ -514,6 +514,9 @@ impl Pane {
         if !valid_name(&name) {
             return Err(WireError::invalid("A name: 1 to 40 of a–z, 0–9 and _"));
         }
+        if crate::kinds::reserved(&name) {
+            return Err(WireError::conflict(format!("{name} is the name of a server wisp gives every run: pick another name")));
+        }
         if self.specs().await.iter().any(|(n, _)| *n == name) {
             return Err(WireError::conflict(format!("There's a connector called {name} already")));
         }
@@ -802,16 +805,115 @@ fn answer_of(r: &wisp_kernel::services::NetResponse) -> Option<String> {
     Some(String::from_utf8_lossy(&r.body).into_owned())
 }
 
-/// A remote server, asked over HTTP (streamable HTTP: `initialize`, then `tools/list` with its session).
+/// An HTTP status that ends a check: a 401 asks for a sign-in.
+fn refused(status: u16) -> Outcome {
+    Outcome::Failed(if status == 401 { "needs sign-in (HTTP 401)".into() } else { http_failure(status, "") })
+}
+
+/// A remote server over the 2024 SSE transport: a GET that stays open names (its `endpoint` event) where to POST, and
+/// the answers come back on it. ADR-0134: the kernel's `Net::stream` reads it while the POSTs go out.
+async fn probe_sse(n: &wisp_kernel::services::NetService, probe: &mut Probe, c: &ConnectorSpec) -> Outcome {
+    use futures::StreamExt as _;
+    let headers: Vec<(String, String)> = c.headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut get = headers.clone();
+    get.push(("accept".into(), "text/event-stream".into()));
+    let mut post = headers;
+    post.push(("content-type".into(), "application/json".into()));
+    post.push(("accept".into(), "application/json, text/event-stream".into()));
+    let talk = async {
+        let s = match n
+            .stream(NetRequest { method: "GET".into(), url: c.url.clone(), headers: get, body: Vec::new(), timeout_ms: PROBE_MS })
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => return Outcome::Failed(e.message),
+        };
+        if s.status >= 400 {
+            return refused(s.status);
+        }
+        let (mut body, mut sse, mut to) = (s.body, Sse::default(), None::<String>);
+        while let Some(chunk) = body.next().await {
+            let chunk = match chunk {
+                Ok(c) => c,
+                Err(e) => return Outcome::Failed(e.message),
+            };
+            for e in sse.push(&chunk) {
+                let mut send = std::collections::VecDeque::new();
+                if e.event == "endpoint" {
+                    if to.is_some() {
+                        continue;
+                    }
+                    let Some(u) = wisp_connectors_core::rpc::endpoint_url(&c.url, &e.data) else {
+                        return Outcome::Failed("Its event stream named no place on its own server to send to".into());
+                    };
+                    to = Some(u);
+                    send.push_back(initialize(env!("CARGO_PKG_VERSION")));
+                } else if e.event == "message" {
+                    let step = probe.on_line(&e.data);
+                    if let Some(done) = step.done {
+                        return done;
+                    }
+                    send.extend(step.send);
+                }
+                let Some(url) = &to else { continue };
+                if let Some(done) = post_sse(n, probe, url, &post, send).await {
+                    return done;
+                }
+            }
+        }
+        Outcome::Failed("It closed its event stream before it listed its tools".into())
+    };
+    tokio::time::timeout(Duration::from_millis(PROBE_MS), talk).await.unwrap_or_else(|_| Outcome::Failed(TIMEOUT_REASON.into()))
+}
+
+/// Each line sent as a `POST` to the SSE endpoint (a 202, its answer on the stream); a server that answers in the reply is read
+/// too. → the check's end, when one came.
+async fn post_sse(
+    n: &wisp_kernel::services::NetService,
+    probe: &mut Probe,
+    url: &str,
+    headers: &[(String, String)],
+    mut send: std::collections::VecDeque<String>,
+) -> Option<Outcome> {
+    while let Some(line) = send.pop_front() {
+        let req = NetRequest {
+            method: "POST".into(),
+            url: url.to_owned(),
+            headers: headers.to_vec(),
+            body: line.into_bytes(),
+            timeout_ms: 30_000,
+        };
+        let r = match n.fetch(req).await {
+            Ok(r) => r,
+            Err(e) => return Some(Outcome::Failed(e.message)),
+        };
+        if r.status >= 400 {
+            return Some(refused(r.status));
+        }
+        let step = probe.on_line(&answer_of(&r).unwrap_or_default());
+        if step.done.is_some() {
+            return step.done;
+        }
+        send.extend(step.send);
+    }
+    None
+}
+
+/// A remote server, asked over HTTP (streamable HTTP: `initialize`, then `tools/list` with its session). One set to
+/// SSE, or whose `initialize` POST gets a 404 or 405 (a server that speaks only the 2024 transport), is asked over SSE.
 async fn probe_remote(ctx: &Ctx, id: &str, c: &ConnectorSpec, at: i64) -> ProbeResult {
     let mut probe = Probe::new(id);
     let Ok(n) = net(ctx) else { return probe.result(Outcome::Failed("wisp can't reach the network here".into()), at) };
+    if c.sse() {
+        let done = probe_sse(&n, &mut probe, c).await;
+        return probe.result(done, at);
+    }
     let mut headers: Vec<(String, String)> = c.headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     headers.push(("content-type".into(), "application/json".into()));
     headers.push(("accept".into(), "application/json, text/event-stream".into()));
     let mut send = vec![initialize(env!("CARGO_PKG_VERSION"))];
     let mut session: Option<String> = None;
-    for _ in 0..6 {
+    for turn in 0..6 {
         let Some(body) = send.pop() else { break };
         let mut h = headers.clone();
         if let Some(s) = &session {
@@ -824,9 +926,12 @@ async fn probe_remote(ctx: &Ctx, id: &str, c: &ConnectorSpec, at: i64) -> ProbeR
             Ok(r) => r,
             Err(e) => return probe.result(Outcome::Failed(e.message), at),
         };
+        if turn == 0 && matches!(r.status, 404 | 405) {
+            let done = probe_sse(&n, &mut probe, c).await;
+            return probe.result(done, at);
+        }
         if r.status >= 400 {
-            let reason = if r.status == 401 { "needs sign-in (HTTP 401)" } else { "" };
-            return probe.result(Outcome::Failed(if reason.is_empty() { http_failure(r.status, "") } else { reason.into() }), at);
+            return probe.result(refused(r.status), at);
         }
         if let Some(s) = r.header("mcp-session-id") {
             session = Some(s.to_owned());

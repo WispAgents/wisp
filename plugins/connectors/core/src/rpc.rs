@@ -78,6 +78,14 @@ pub fn is_legacy(url: &str) -> bool {
     })
 }
 
+/// The 2024 transport's `endpoint` event: where to POST, a path or a whole URL, read against the stream's URL. Only
+/// on the stream's own origin (a server can't send the client's headers somewhere else).
+pub fn endpoint_url(stream: &str, data: &str) -> Option<String> {
+    let base = url::Url::parse(stream).ok()?;
+    let to = base.join(data.trim()).ok()?;
+    (to.origin() == base.origin()).then(|| to.to_string())
+}
+
 /// initialize's reply says which protocol version later requests carry (a batch: its first answer).
 pub fn protocol_version(text: &str) -> Option<String> {
     let v: Value = serde_json::from_str(text).ok()?;
@@ -158,4 +166,18 @@ pub fn http_failure(code: u16, reason: &str) -> String {
 /// The `initialize` line a probe sends first.
 pub fn initialize(version: &str) -> String {
     json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": crate::oauth::PROTOCOL_VERSION, "capabilities": {}, "clientInfo": { "name": "wisp", "version": version } } }).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_endpoint_event_is_read_against_the_stream_and_kept_on_its_origin() {
+        let s = "https://a.example/mcp/sse";
+        assert_eq!(endpoint_url(s, "/messages?sessionId=1").as_deref(), Some("https://a.example/messages?sessionId=1"));
+        assert_eq!(endpoint_url(s, "messages").as_deref(), Some("https://a.example/mcp/messages"));
+        assert_eq!(endpoint_url(s, "https://a.example/m").as_deref(), Some("https://a.example/m"));
+        assert_eq!(endpoint_url(s, "https://evil.example/m"), None);
+    }
 }
