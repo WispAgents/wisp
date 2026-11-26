@@ -286,7 +286,9 @@ async fn not_a_task(p: &Parsed, home: &Path, port: u16, mut cat: Option<wisp_cli
     let first = p.words.first()?;
     // `wisp held x start`, `wisp merge x`: a task's command naming no task, never a prompt (nothing is launched)
     if let Some(w) = words::no_task(&p.words, p.literal) {
-        eprintln!("  ✗ no task {w}");
+        // the way out every slip has (QA round 15): the words as a prompt
+        let all = p.words.join(" ").replace('"', "\\\"");
+        eprintln!("  ✗ no task {w}\n  To start a task with these words: wisp -- \"{all}\"   (or quote them as one: wisp \"{all}\")");
         return Some(cli::USAGE_EXIT);
     }
     // a built-in group and another word (`wisp crew start`): its plugin verbs too, to name them
