@@ -34,7 +34,7 @@ export function moduleSideEffects(id: string): boolean {
   if (!path.startsWith(REPO)) return true;
   const rel = path.slice(REPO.length);
   if (rel.includes('node_modules/') || !/^(packages|plugins)\//.test(rel) || !/\.tsx?$/.test(rel)) return true;
-  return /^packages\/ui\/src\/(shell|platform)\/[\w-]*styles\.ts$/.test(rel) || /^(packages\/shell\/src|plugins\/[\w-]+\/ui\/src)\/i18n\/lazy\.ts$/.test(rel);
+  return /^packages\/ui\/src\/(shell|platform)\/[\w-]*styles\.ts$/.test(rel) || /^(packages\/shell\/src|plugins\/[\w-]+\/ui\/src)\/i18n\/lazy\.ts$/.test(rel) || rel === 'packages/shell/src/i18n/home.ts';
 }
 
 /** `npm run dev` (tools/dev.ts): WISP_DEV_API is the checkout's own `wisp serve`; /api goes there instead of the mock.

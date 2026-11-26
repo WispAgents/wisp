@@ -380,6 +380,8 @@ mod tests {
         assert!(!allowed(&a, "plugins:install"));
         assert!(!allowed(&a, "settings:write{scope:server}"));
         assert!(!allowed(&a, "settings:write{scope:device}"), "settings:* is not in agent:session's allow list");
+        assert!(!allowed(&a, "connectors:token"), "a connector's live bearer is the proxy's only (connectors:* allows the rest)");
+        assert!(allowed(&a, "connectors:call"));
         let edits = Caller::agent_at("s1", "edits", false);
         assert!(allowed(&edits, "runtime:start{mode:edits}"));
         let e = explain(&edits, "runtime:start{mode:auto}").err().unwrap_or_default();

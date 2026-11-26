@@ -39,6 +39,54 @@ async fn stopped(stop: Option<watch::Receiver<bool>>) {
     std::future::pending::<()>().await;
 }
 
+/// The side run's CLI, killed (its whole tree) however its run ends: an early return, an error, or the run's future
+/// dropped (a /btw's caller gone, a goal's judge cancelled). A side run's CLI never outlives its run.
+struct KillOnDrop(wisp_proc::ChildHandle);
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        if self.0.running()
+            && let Ok(rt) = tokio::runtime::Handle::try_current()
+        {
+            rt.spawn(self.0.kill());
+        }
+    }
+}
+
+/// The prompt on the CLI's stdin, when its launch asks for it there. One it can't take (it went before reading it) is
+/// killed now, never left running with nobody reading it. One that already went (it answered without reading it, as
+/// `side_runs`' `noeol` can on a busy runner) is no refusal: what it printed is its answer.
+async fn send_prompt(handle: &wisp_proc::ChildHandle, stdin: &Stdin) -> Result<()> {
+    let Stdin::Bytes(b) = stdin else { return Ok(()) };
+    if let Err(e) = handle.write(b.clone()) {
+        if matches!(e, wisp_proc::ProcError::Exited) {
+            return Ok(());
+        }
+        let _ = handle.kill().await;
+        return Err(e.into());
+    }
+    handle.close_stdin();
+    Ok(())
+}
+
+/// One stdout line into the driver, its stdin writes out, its events into the answer.
+async fn feed_line(
+    driver: &mut dyn wisp_runtime_api::RunDriver,
+    line: &[u8],
+    now: i64,
+    sys: &ProcSys,
+    handle: &wisp_proc::ChildHandle,
+    acc: (&mut SideOut, &mut Head, &mut bool),
+) {
+    let line = String::from_utf8_lossy(line).trim_end_matches('\r').to_owned();
+    let mut out = ParserOutput::default();
+    driver.on(ParserInput::Stdout(&line), now, sys, &mut out).await;
+    for w in std::mem::take(&mut out.writes) {
+        let _ = handle.write(w);
+    }
+    take(out, acc.0, acc.1, acc.2);
+}
+
 /// A side run keeps this many steps at most (a runaway judge can't grow one answer without bound).
 const MAX_STEPS: usize = 500;
 
@@ -120,6 +168,8 @@ impl Runtime {
                 remove: launch.env_remove.clone(),
             },
             no_stdin: launch.stdin == Stdin::Null,
+            // its tree goes with the plugin's scope (switching wisp.runtime off), as a turn's CLI does
+            scope: self.host.scope(),
             ..SpawnOpts::default()
         };
         // a cancel that came before the spawn (a goal's judge dropped, its task deleted) spawns nothing; the stop's
@@ -133,10 +183,8 @@ impl Runtime {
         };
 
         let (handle, mut rx) = child.split();
-        if let Stdin::Bytes(b) = &launch.stdin {
-            handle.write(b.clone())?;
-            handle.close_stdin();
-        }
+        let _kill = KillOnDrop(handle.clone());
+        send_prompt(&handle, &launch.stdin).await?;
         let sys = ProcSys::new(self.proc.clone());
         let mut driver = h.driver(run);
         // a /btw or a goal check on a task knows what the task's turns read (ADR-0050)
@@ -160,19 +208,20 @@ impl Runtime {
                         buf.extend_from_slice(&o.data);
                         while let Some(i) = buf.iter().position(|&b| b == b'\n') {
                             let line: Vec<u8> = buf.drain(..=i).collect();
-                            let line = String::from_utf8_lossy(&line[..line.len() - 1]).trim_end_matches('\r').to_owned();
-                            let mut out = ParserOutput::default();
-                            driver.on(ParserInput::Stdout(&line), self.now(), &sys, &mut out).await;
-                            for w in std::mem::take(&mut out.writes) {
-                                let _ = handle.write(w);
-                            }
-                            take(out, &mut side, &mut head, &mut done);
+                            feed_line(&mut *driver, &line[..line.len() - 1], self.now(), &sys, &handle, (&mut side, &mut head, &mut done)).await;
                         }
                         if done {
                             break;
                         }
                     }
-                    None => break,
+                    None => {
+                        // its last line, when the CLI ended without a newline after it (often its result)
+                        if !buf.is_empty() && !done {
+                            let line = std::mem::take(&mut buf);
+                            feed_line(&mut *driver, &line, self.now(), &sys, &handle, (&mut side, &mut head, &mut done)).await;
+                        }
+                        break;
+                    }
                 },
                 () = &mut deadline => {
                     side.timed_out = true;
