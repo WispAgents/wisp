@@ -90,6 +90,45 @@ async fn a_stranger_is_told_once_and_link_with_the_code_lets_them_in() {
     assert_eq!(h.cfg("slack")["senders"], json!(["U9"]));
 }
 
+/// The code stayed after it linked someone (anyone who saw it could link later), and wrong guesses never changed it:
+/// it links one person, then it's used up; five wrong codes from anyone and a new one is stored for Settings.
+#[tokio::test]
+async fn a_link_code_links_one_person_and_five_wrong_guesses_change_it() {
+    let h = hub(&[]);
+    let dm = |n: usize, user: &str, text: &str| {
+        let ts = format!("1700000000.{:06}", 200 + n);
+        envelope(
+            &format!("e{n}"),
+            &json!({ "type": "message", "channel_type": "im", "user": user, "channel": format!("D{user}"), "ts": ts, "text": text }),
+        )
+    };
+    h.ws.push(vec![
+        ScriptWs::text(&json!({ "type": "hello" })),
+        dm(1, "U9", "link ab12cd"),
+        dm(2, "U8", "link ab12cd"),
+        ScriptWs::text(&json!({ "type": "disconnect", "reason": "token_revoked" })),
+    ]);
+    let t = transport(&h);
+    t.start(h.stop.clone()).await;
+    h.run_spawned().await;
+    assert_eq!(h.cfg("slack")["senders"], json!(["U9"]), "the used code links nobody else");
+    assert_eq!(h.cfg("slack")["linkCode"], "");
+
+    let h = hub(&[]);
+    let mut frames = vec![ScriptWs::text(&json!({ "type": "hello" }))];
+    // one guess each from five strangers: no one's own limit stops them, the shared count does
+    frames.extend((0..5).map(|i| dm(10 + i, &format!("U{i}"), "link 000000")));
+    frames.push(dm(20, "U7", "link ab12cd"));
+    frames.push(ScriptWs::text(&json!({ "type": "disconnect", "reason": "token_revoked" })));
+    h.ws.push(frames);
+    let t = transport(&h);
+    t.start(h.stop.clone()).await;
+    h.run_spawned().await;
+    let code = h.cfg("slack")["linkCode"].as_str().unwrap_or_default().to_owned();
+    assert!(!code.is_empty() && code != "ab12cd", "a new code is stored: {code}");
+    assert_eq!(h.cfg("slack")["senders"], json!([]), "the old code links nobody");
+}
+
 #[tokio::test]
 async fn a_dropped_socket_is_dialled_again_after_a_wait() {
     let h = hub(&["U1"]);

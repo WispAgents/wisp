@@ -55,17 +55,97 @@ struct ConnectorKind {
     cache: Cache,
 }
 
-/// `${secret:NAME}` read from secrets (an unknown one stays as it is: the plan said so already).
-pub(crate) async fn reveal(ctx: &Ctx, text: &str) -> String {
-    let mut out = text.to_owned();
-    let Ok(secrets) = wisp_kernel::services::secrets(ctx) else { return out };
-    while let Some(a) = out.find("${secret:") {
-        let Some(b) = out[a..].find('}') else { break };
-        let name = out[a + 9..a + b].to_owned();
-        let Ok(Some(v)) = secrets.get(&name).await else { break };
-        out.replace_range(a..=a + b, &v);
+const SECRET_REF: &str = "${secret:";
+
+/// Whether connector `id` may read the secret `name`: its own (`connector:<id>:…`, what Settings → Connectors keeps) or
+/// a formula's (`LINEAR_KEY`: `wisp secret set`'s names), never another connector's token nor a plugin's own secret
+/// (`channels/sign`): a header naming one would send it to the connector's server.
+fn may_read(id: &str, name: &str) -> bool {
+    name.strip_prefix(&wisp_connectors_api::secrets_ns(id)).is_some_and(|r| r.starts_with(':')) || wisp_resources_api::secret_name_ok(name)
+}
+
+/// The `${secret:NAME}` references in `text` connector `id` may read, in order.
+fn refs(id: &str, text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(a) = rest.find(SECRET_REF) {
+        let Some(b) = rest[a..].find('}') else { break };
+        let name = &rest[a + SECRET_REF.len()..a + b];
+        if may_read(id, name) && !out.iter().any(|n| n == name) {
+            out.push(name.to_owned());
+        }
+        rest = &rest[a + b + 1..];
     }
     out
+}
+
+/// `text` with each `${secret:NAME}` connector `id` may read filled from `lookup`, once, left to right: a value put in
+/// is never read again (a value holding a reference, its own included, stays as it is; it looped for good), and a
+/// reference it may not read, or that isn't set, stays as written.
+pub(crate) fn expand(id: &str, text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(a) = rest.find(SECRET_REF) {
+        let Some(b) = rest[a..].find('}') else { break };
+        let name = &rest[a + SECRET_REF.len()..a + b];
+        out.push_str(&rest[..a]);
+        match Some(name).filter(|n| may_read(id, n)).and_then(lookup) {
+            Some(v) => out.push_str(&v),
+            None => out.push_str(&rest[a..=a + b]),
+        }
+        rest = &rest[a + b + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Connector `id`'s `${secret:NAME}` references in `text` read from secrets (`expand`).
+pub(crate) async fn reveal(ctx: &Ctx, id: &str, text: &str) -> String {
+    let Ok(secrets) = wisp_kernel::services::secrets(ctx) else { return text.to_owned() };
+    let mut got = std::collections::HashMap::new();
+    for name in refs(id, text) {
+        if let Ok(Some(v)) = secrets.get(&name).await {
+            got.insert(name, v);
+        }
+    }
+    expand(id, text, &|n| got.get(n).cloned())
+}
+
+/// A URL's origin (scheme, host and port, in lower case, the scheme's own port left out): what a sign-in is for.
+pub(crate) fn origin(url: &str) -> String {
+    let url = url.trim();
+    let Some((scheme, rest)) = url.split_once("://") else { return url.to_lowercase() };
+    let scheme = scheme.to_lowercase();
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = host.rsplit_once('@').map_or(host, |(_, h)| h).to_lowercase();
+    let host = match (scheme.as_str(), host.strip_suffix(":443"), host.strip_suffix(":80")) {
+        ("https", Some(h), _) | ("http", _, Some(h)) => h.to_owned(),
+        _ => host,
+    };
+    format!("{scheme}://{host}")
+}
+
+/// Whether a sign-in's token may go to `url` as a bearer header: over https, or plain http to this computer only (a
+/// token sent in the clear to another host can be read on the way).
+pub(crate) fn bearer_ok(url: &str) -> bool {
+    let o = origin(url);
+    if o.starts_with("https://") {
+        return true;
+    }
+    let Some(host) = o.strip_prefix("http://") else { return false };
+    let host =
+        if host.starts_with('[') { host.split(']').next().map_or(host, |h| &h[1..]) } else { host.split(':').next().unwrap_or(host) };
+    host == "localhost" || host == "::1" || host.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| ip.is_loopback())
+}
+
+/// A signed-in connector's stored token, as it is (never expanded: a server's `access_token` of `${secret:…}` is
+/// a value, not a reference), when its URL may carry one (`bearer_ok`).
+pub(crate) async fn bearer(ctx: &Ctx, id: &str, url: &str) -> Option<String> {
+    if !bearer_ok(url) {
+        return None;
+    }
+    let s = wisp_kernel::services::secrets(ctx).ok()?;
+    s.get(&format!("{}:token", wisp_connectors_api::secrets_ns(id))).await.ok().flatten().filter(|t| !t.is_empty())
 }
 
 /// Reads every stored connector into the cache, secrets read.
@@ -74,14 +154,14 @@ async fn refresh(inner: &StoredKind, cache: &Cache) {
     for (name, v) in inner.specs().await.unwrap_or_default() {
         let Ok(mut c) = serde_json::from_value::<ConnectorSpec>(v) else { continue };
         for x in c.env.values_mut().chain(c.headers.values_mut()) {
-            *x = reveal(&inner.ctx, x).await;
+            *x = reveal(&inner.ctx, &name, x).await;
         }
         // signed in (Settings → Connectors): the token goes as a bearer header
-        if c.oauth == Some(true) && !c.headers.contains_key("Authorization") {
-            let t = reveal(&inner.ctx, &format!("${{secret:{}:token}}", wisp_connectors_api::secrets_ns(&name))).await;
-            if !t.starts_with("${secret:") {
-                c.headers.insert("Authorization".into(), format!("Bearer {t}"));
-            }
+        if c.oauth == Some(true)
+            && !c.headers.contains_key("Authorization")
+            && let Some(t) = bearer(&inner.ctx, &name, &c.url).await
+        {
+            c.headers.insert("Authorization".into(), format!("Bearer {t}"));
         }
         list.push((name, c));
     }
@@ -186,9 +266,9 @@ async fn reveal_overlay(ctx: &Ctx, call: &Call, revealed: &Revealed, session: &s
     if list.is_empty() {
         return;
     }
-    for (_, c) in &mut list {
+    for (name, c) in &mut list {
         for x in c.env.values_mut().chain(c.headers.values_mut()) {
-            *x = reveal(ctx, x).await;
+            *x = reveal(ctx, name, x).await;
         }
     }
     revealed.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(session.to_owned(), list);
@@ -254,5 +334,55 @@ mod tests {
             server_of(&ConnectorSpec { command: "npx".into(), args: vec!["x".into()], ..ConnectorSpec::default() })["type"],
             "stdio"
         );
+    }
+
+    fn from(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {
+        let m: std::collections::HashMap<String, String> = pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+        move |n| m.get(n).cloned()
+    }
+
+    /// `reveal` re-read the text from the start after each value it put in: a secret holding its own reference looped
+    /// for good, one holding another's was read again, and any name was read (another connector's token, a plugin's own
+    /// secret), so a header could carry it to the connector's server. Once, left to right, its own and a formula's only.
+    #[test]
+    fn reveal_expands_once_left_to_right_and_only_what_the_connector_may_read() {
+        let own = "connector:linear:headers:Authorization";
+        let own_ref = format!("${{secret:{own}}}");
+        // a value holding its own reference: it ends, the value as it is
+        let got = expand("linear", &own_ref, &from(&[(own, own_ref.as_str())]));
+        assert_eq!(got, own_ref);
+        // a value holding another reference isn't read again
+        let got = expand("linear", &format!("Bearer {own_ref}"), &from(&[(own, "${secret:LINEAR_KEY}"), ("LINEAR_KEY", "lin-1")]));
+        assert_eq!(got, "Bearer ${secret:LINEAR_KEY}");
+        // another connector's token, a plugin's own secret: left as written
+        let all = from(&[("connector:github:token", "gho-1"), ("channels/sign", "k"), (own, "tok-1"), ("LINEAR_KEY", "lin-1")]);
+        assert_eq!(expand("linear", "${secret:connector:github:token}", &all), "${secret:connector:github:token}");
+        assert_eq!(expand("linear", "${secret:channels/sign}", &all), "${secret:channels/sign}");
+        assert_eq!(expand("linearx", &own_ref, &all), own_ref, "a namespace that only starts the same isn't its own");
+        // its own and a formula's (`wisp secret set`), each in its place; an unset one stays
+        assert_eq!(
+            expand("linear", &format!("a {own_ref} b ${{secret:LINEAR_KEY}} c ${{secret:NOPE}}"), &all),
+            "a tok-1 b lin-1 c ${secret:NOPE}"
+        );
+        assert_eq!(expand("linear", "no ref ${secret:open", &all), "no ref ${secret:open");
+        let twice = format!("{own_ref}${{secret:connector:github:token}}{own_ref}");
+        assert_eq!(refs("linear", &twice), vec![own.to_owned()]);
+    }
+
+    /// A sign-in is for its URL's origin; its token goes over https, or plain http to this computer only.
+    #[test]
+    fn a_sign_in_is_for_its_origin_and_its_token_never_goes_in_the_clear_to_another_host() {
+        assert_eq!(origin("https://MCP.Linear.app:443/mcp?x=1"), "https://mcp.linear.app");
+        assert_eq!(origin("https://mcp.linear.app/sse"), origin("https://mcp.linear.app/mcp"));
+        assert_ne!(origin("https://mcp.linear.app/mcp"), origin("https://evil.example/mcp"));
+        assert_ne!(origin("https://a.example/mcp"), origin("http://a.example/mcp"));
+        assert_ne!(origin("http://127.0.0.1:1/mcp"), origin("http://127.0.0.1:2/mcp"));
+        assert_ne!(origin("https://a.example/mcp"), origin(""));
+        for ok in ["https://a.example/mcp", "http://127.0.0.1:9/mcp", "http://localhost:9/mcp", "http://[::1]:9/mcp", "http://127.1.2.3/"] {
+            assert!(bearer_ok(ok), "{ok}");
+        }
+        for no in ["http://example.com/mcp", "http://10.0.0.2:9/mcp", "http://localhost.evil.example/mcp", "ftp://x/", ""] {
+            assert!(!bearer_ok(no), "{no}");
+        }
     }
 }

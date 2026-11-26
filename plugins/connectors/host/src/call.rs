@@ -87,12 +87,13 @@ pub async fn call(ctx: &Ctx, pane: &Pane, a: &CallArgs) -> Result<CallOut> {
         return Err(WireError::invalid(format!("{} runs on this computer: wisp calls only remote connectors' tools", a.id)));
     }
     for v in c.headers.values_mut() {
-        *v = crate::kinds::reveal(ctx, v).await;
+        *v = crate::kinds::reveal(ctx, &a.id, v).await;
     }
     let mut headers: Vec<(String, String)> = c.headers.into_iter().collect();
     headers.push(("content-type".into(), "application/json".into()));
     headers.push(("accept".into(), "application/json, text/event-stream".into()));
-    if c.oauth != Some(true) {
+    // a sign-in's token goes only over https or to this computer (`bearer_ok`): elsewhere the call goes without it
+    if c.oauth != Some(true) || !crate::kinds::bearer_ok(&c.url) {
         return exchange(ctx, &c.url, &headers, a).await;
     }
     // signed in: a token that ran out is refreshed first; a refused one is refreshed and tried once more, and a
@@ -155,11 +156,11 @@ impl wisp_issues_api::Connectors for ForIssues {
             for (id, c) in specs(&kind).await {
                 let mut env = Vec::new();
                 for (k, v) in &c.env {
-                    env.push((k.clone(), crate::kinds::reveal(&ctx, v).await));
+                    env.push((k.clone(), crate::kinds::reveal(&ctx, &id, v).await));
                 }
                 let mut headers = Vec::new();
                 for (k, v) in &c.headers {
-                    headers.push((k.clone(), crate::kinds::reveal(&ctx, v).await));
+                    headers.push((k.clone(), crate::kinds::reveal(&ctx, &id, v).await));
                 }
                 let signed_in = c.oauth == Some(true) && token(&ctx, &id).await.is_some();
                 out.push(wisp_issues_api::Connector {
