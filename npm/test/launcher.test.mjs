@@ -1,7 +1,7 @@
 // The real bin/wisp.js, run end to end against a fake binary named by WISP_BINARY.
 
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -74,6 +74,64 @@ test('forwards SIGTERM to the child and dies of the same signal', { skip: skipOn
   const [code, signal] = await new Promise((resolve) => child.on('exit', (c, s) => resolve([c, s])));
   assert.equal(code, null);
   assert.equal(signal, 'SIGTERM');
+});
+
+// A fake that counts the SIGINTs it gets (in WISP_COUNT_FILE, with its parent's pid, the launcher), then exits 3.
+function counter() {
+  const file = path.join(tmp, 'fake-count');
+  fs.writeFileSync(
+    file,
+    `#!${process.execPath}
+const fs = require('node:fs');
+const out = process.env.WISP_COUNT_FILE;
+let n = 0;
+const say = () => fs.writeFileSync(out, JSON.stringify({ n, launcher: process.ppid }));
+process.on('SIGINT', () => { n += 1; say(); setTimeout(() => process.exit(3), 400); });
+say();
+setInterval(() => {}, 1000);
+`,
+  );
+  fs.chmodSync(file, 0o755);
+  return file;
+}
+
+const readCount = async (file) => {
+  for (let i = 0; i < 200; i += 1) {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  }
+  throw new Error('the fake never started');
+};
+
+// `script` gives the launcher a terminal of its own, as a shell in one would (BSD and util-linux spell it differently).
+const scriptArgs = (cmd) => (process.platform === 'darwin' ? ['-q', '/dev/null', ...cmd] : ['-qec', cmd.map((a) => `'${a}'`).join(' '), '/dev/null']);
+const hasScript = process.platform !== 'win32' && spawnSync('script', scriptArgs(['true']), { stdio: 'ignore' }).status === 0;
+
+test('one Ctrl-C in a terminal reaches the child once, never forwarded again', { skip: !hasScript && 'no script(1) here' }, async () => {
+  const count = path.join(tmp, 'count-tty.json');
+  const child = spawn('script', scriptArgs([process.execPath, launcher]), {
+    env: { ...process.env, WISP_BINARY: counter(), WISP_COUNT_FILE: count, SHELL: '/bin/sh' },
+    stdio: 'ignore',
+  });
+  const { launcher: pid } = await readCount(count);
+  // the terminal's Ctrl-C: SIGINT to the whole foreground process group, the launcher and the child alike
+  const pgid = Number(execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8' }).trim());
+  process.kill(-pgid, 'SIGINT');
+  await new Promise((resolve) => child.on('exit', resolve));
+  assert.equal(JSON.parse(fs.readFileSync(count, 'utf8')).n, 1);
+});
+
+test('without a terminal, SIGINT to the launcher alone reaches the child once and its exit code comes back', { skip: skipOnWindows }, async () => {
+  const count = path.join(tmp, 'count-pipe.json');
+  const child = spawn(process.execPath, [launcher], { env: { ...process.env, WISP_BINARY: counter(), WISP_COUNT_FILE: count } });
+  await readCount(count);
+  child.kill('SIGINT');
+  const code = await new Promise((resolve) => child.on('exit', resolve));
+  assert.equal(JSON.parse(fs.readFileSync(count, 'utf8')).n, 1);
+  assert.equal(code, 3, "the launcher exits with the child's code");
 });
 
 test('finds the binary in the installed wisp-agents-<os>-<arch> package for this platform', { skip: skipOnWindows }, async () => {
