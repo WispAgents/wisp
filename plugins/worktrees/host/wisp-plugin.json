@@ -33,6 +33,7 @@
     "runtime:slots",
     "runtime:get",
     "runtime:release",
+    "runtime:note",
     "runtime:setExt",
     "runtime:sessions",
     "runtime:adopt",
