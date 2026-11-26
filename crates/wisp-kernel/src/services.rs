@@ -98,3 +98,28 @@ pub fn net(ctx: &Ctx) -> Result<NetService> {
 pub fn notify(ctx: &Ctx) -> Result<NotifyService> {
     ctx.service::<NotifyService>().map(|s| (*s).clone())
 }
+
+/// The address of whoever last reached this wisp through a trusted proxy (wisp Grid's edge sends it as
+/// `x-wisp-proxy-client-ip`; a box has one user). The edge writes it; usage stats send it as `$ip`, so a box's
+/// events are placed where its user is, not where the grid runs. Empty on a computer: nothing proxies to it.
+#[derive(Debug, Default)]
+pub struct ClientAddr(std::sync::Mutex<Option<String>>);
+
+impl ClientAddr {
+    pub fn set(&self, ip: &str) {
+        let mut g = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if g.as_deref() != Some(ip) {
+            *g = Some(ip.to_owned());
+        }
+    }
+    pub fn get(&self) -> Option<String> {
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+    }
+}
+
+pub type ClientAddrService = Arc<ClientAddr>;
+
+/// The proxied user's address, when this wisp has one (see [`ClientAddr`]).
+pub fn client_addr(ctx: &Ctx) -> Option<String> {
+    ctx.service::<ClientAddrService>().ok().and_then(|c| c.get())
+}

@@ -19,7 +19,7 @@ pub struct Mark {
     pub values: &'static [&'static str],
 }
 
-pub const MARKS: [Mark; 6] = [
+pub const MARKS: [Mark; 7] = [
     Mark { header: "x-wisp-proxy-secret", set_by: "the edge, towards a box: trusted-proxy mode (box side: BoxTrust)", values: &[] },
     // 'inbox' only from delivery (inbox → to_box), 'key' only from the edge for an API key. A box acts
     // on these (a channel's message never counts as use; a key can't manage keys), so nothing outside
@@ -29,6 +29,8 @@ pub const MARKS: [Mark; 6] = [
         set_by: "the grid: inbox delivery sets \"inbox\", the edge sets \"key\" for an API key",
         values: &["inbox", "key"],
     },
+    // the box's telemetry sends it as `$ip`, so a user is placed where they are, not where the grid runs
+    Mark { header: "x-wisp-proxy-client-ip", set_by: "the edge, towards a box: the address of who is asking", values: &[] },
     Mark { header: "x-wisp-route", set_by: "route delivery, through a computer’s tunnel, only", values: &["grid"] },
     Mark { header: "x-wisp-preview", set_by: "the preview edge: which port of the box the page is on", values: &[] },
     Mark { header: "x-wisp-upgrade", set_by: "the tunnel: what a websocket asked to upgrade to (HTTP/2 has no Upgrade)", values: &[] },

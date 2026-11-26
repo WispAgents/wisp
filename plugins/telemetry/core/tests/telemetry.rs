@@ -201,3 +201,16 @@ fn shells_hosts_and_the_batch_request() {
     assert_eq!(shell_of(&e(&[])), "browser");
     // the endpoint, the key and the request are the PostHog sink's (plugins/posthog, ADR-0021)
 }
+
+#[test]
+fn a_grid_box_places_its_batch_where_its_user_is() {
+    let mut batch = vec![
+        json!({ "event": "app_started", "properties": { "distinct_id": "d" } }),
+        json!({ "event": "turn_ended", "properties": { "distinct_id": "d", "$ip": "198.51.100.1" } }),
+        json!({ "event": "odd" }),
+    ];
+    wisp_telemetry_core::events::with_client_ip(&mut batch, "203.0.113.7");
+    assert_eq!(batch[0]["properties"]["$ip"], json!("203.0.113.7"));
+    assert_eq!(batch[1]["properties"]["$ip"], json!("198.51.100.1"), "an address already there is kept");
+    assert_eq!(batch[2], json!({ "event": "odd" }), "no properties: left alone");
+}
