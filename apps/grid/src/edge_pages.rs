@@ -348,13 +348,34 @@ impl Grid {
         if confirm.trim().to_lowercase() != u.handle {
             return Ok(self.back("/account", &format!("Type {} to delete your account.", u.handle), true));
         }
-        let bu = BoxUser { id: u.id.clone(), handle: u.handle.clone(), sandbox: None, owner: None };
-        if let Err(e) = self.boxes.remove(&bu).await {
-            tracing::warn!("grid: deleting {}'s box: {e}", u.handle);
+        self.delete_user(u).await?;
+        Ok(self.cleared(redirect(&format!("/signin?m={}", encode_component("Your account is deleted.")), &[])))
+    }
+
+    /// An account, gone for good: its box and every sandbox's (their homes and logins), its bot off Telegram, its
+    /// published apps, its data key and everything sealed with it (crypto-shred), then the user and what hangs off it.
+    /// Sandbox rows go with the user, so they're read first; a box that won't go is logged and the rest goes on.
+    /// Every path that deletes a user comes here.
+    pub async fn delete_user(&self, u: &UserRow) -> Result<()> {
+        let mut boxes = vec![BoxUser { id: u.id.clone(), handle: u.handle.clone(), sandbox: None, owner: None }];
+        boxes.extend(self.sandboxes.list(&u.id)?.iter().map(crate::sandboxes::Sandboxes::box_user));
+        for bu in &boxes {
+            if let Err(e) = self.boxes.remove(bu).await {
+                tracing::warn!("grid: deleting {}'s box {}: {e}", u.handle, bu.id);
+            }
+        }
+        // a bot is sealed, so without a master key there's none to take down
+        if self.routes.secrets.is_some()
+            && let Err(e) = self.routes.remove(u).await
+        {
+            tracing::warn!("grid: deleting {}'s channel route: {e}", u.handle);
         }
         self.sites.remove_all(&u.id)?;
+        if let Some(s) = &self.sandboxes.secrets {
+            s.forget(&u.id)?;
+        }
         self.accounts.db.with(|c| c.execute("DELETE FROM users WHERE id = ?1", [&u.id]))?;
-        Ok(self.cleared(redirect(&format!("/signin?m={}", encode_component("Your account is deleted.")), &[])))
+        Ok(())
     }
 
     /// What the cloud wisp is (the container's limits: v1 showed boxd's defaults when grid.json set none; a process
