@@ -54,7 +54,11 @@ pub async fn serve(edge: Arc<Edge>, listener: TcpListener) -> std::io::Result<Se
     let addr = listener.local_addr()?;
     edge.port.store(addr.port(), Ordering::Relaxed);
     let server_json = match &edge.cfg.home {
-        Some(home) => Some(write_server_json(home, addr.port(), &edge.cfg.version).await?),
+        Some(home) => {
+            tokio::fs::create_dir_all(home).await?;
+            let id = edge.ident.get_or_init(|| Ident::new(&edge.cfg.master, home));
+            Some(write_server_json(home, addr.port(), &edge.cfg.version, id).await?)
+        }
         None => None,
     };
     if let Some(s) = edge.statics.clone() {
@@ -98,10 +102,36 @@ async fn accept_loop(edge: Arc<Edge>, listener: TcpListener) {
     let _ = tokio::time::timeout(DRAIN, graceful.shutdown()).await;
 }
 
-async fn write_server_json(home: &Path, port: u16, version: &str) -> std::io::Result<PathBuf> {
-    tokio::fs::create_dir_all(home).await?;
+/// Who a server is, in `server.json` and `/api/health`: an id new at each boot, and the hash of the canonical home it
+/// serves. A CLI on another home (another `WISP_HOME` on the same default port) compares the hash with its own and
+/// refuses that wisp, instead of running its commands on someone else's tasks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ident {
+    pub instance: String,
+    pub home_hash: String,
+}
+
+impl Ident {
+    /// The instance id is derived from this boot's master token (random): new each boot, and it tells nothing of it.
+    pub fn new(master: &str, home: &Path) -> Self {
+        let id = blake3::derive_key("wisp server instance id", master.as_bytes());
+        Self { instance: crate::auth::hex(&id[..12]), home_hash: home_hash(home) }
+    }
+}
+
+/// A stable hash of `home` as the file system resolves it (links, `/var` and `/private/var`, case on a Mac), never the
+/// path itself (`/api/health` is open). A home that isn't there yet hashes as spelled. The server and the CLI both
+/// hash through this one function, so they agree on every OS.
+pub fn home_hash(home: &Path) -> String {
+    // canonicalize: only hashed and compared with another hash from here, never handed to git or a shell
+    let canon = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_owned());
+    let digest = <sha2::Sha256 as sha2::Digest>::digest(canon.as_os_str().as_encoded_bytes());
+    crate::auth::hex(&digest[..16])
+}
+
+async fn write_server_json(home: &Path, port: u16, version: &str, id: &Ident) -> std::io::Result<PathBuf> {
     let file = home.join("server.json");
-    let body = json!({"url": format!("http://127.0.0.1:{port}"), "port": port, "pid": std::process::id(), "version": version, "apiVersion": API_VERSION, "startedAt": now_ms()});
+    let body = json!({"url": format!("http://127.0.0.1:{port}"), "port": port, "pid": std::process::id(), "version": version, "apiVersion": API_VERSION, "startedAt": now_ms(), "instance": id.instance, "homeHash": id.home_hash});
     let tmp = home.join(format!("server.json.{}.tmp", std::process::id()));
     tokio::fs::write(&tmp, serde_json::to_vec_pretty(&body).unwrap_or_default()).await?;
     tokio::fs::rename(&tmp, &file).await?;

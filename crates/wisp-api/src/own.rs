@@ -43,7 +43,14 @@ pub(crate) async fn run(
 
 fn health(edge: &Edge) -> Value {
     let url = edge.cfg.proxy.origin().map_or_else(|| format!("http://127.0.0.1:{}", edge.port()), str::to_owned);
-    json!({"ok": true, "name": "wisp", "version": edge.cfg.version, "apiVersion": API_VERSION, "pid": std::process::id(), "url": url})
+    let mut v =
+        json!({"ok": true, "name": "wisp", "version": edge.cfg.version, "apiVersion": API_VERSION, "pid": std::process::id(), "url": url});
+    // which home this wisp serves, as a hash (health is open: never the path): a CLI for another home must not use it
+    if let Some(id) = edge.ident.get() {
+        v["instance"] = json!(id.instance);
+        v["homeHash"] = json!(id.home_hash);
+    }
+    v
 }
 
 fn encoded(mut a: Answer, enc: respond::Encoding) -> Answer {

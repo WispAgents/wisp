@@ -857,3 +857,14 @@ fn a_new_task_from_a_git_repo_gets_its_own_worktree_and_a_follow_up_none() {
     assert_eq!((a["cwd"].as_str(), a["worktree"].as_bool()), (Some("/var/p/src"), Some(false)));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+// `wisp tui </dev/null >out` panicked in ratatui::init: without a terminal it says what works there and exits 2
+#[test]
+fn no_terminal_is_a_usage_line_never_a_panic() {
+    for (stdin, stdout) in [(false, true), (true, false), (false, false)] {
+        let e = super::terminal_guard(stdin, stdout).unwrap_err();
+        assert_eq!(e.to_string(), "wisp tui needs a terminal: try wisp ls --watch or wisp attach <id>");
+        assert_eq!(e.exit_code(), crate::cli::USAGE_EXIT);
+    }
+    assert!(super::terminal_guard(true, true).is_ok());
+}

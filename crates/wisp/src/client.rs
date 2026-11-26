@@ -15,11 +15,18 @@ pub enum CliError {
     Http { status: u16, message: String, body: Value },
     #[error("{0}")]
     Io(#[from] std::io::Error),
+    /// the command can't run as typed or where it was typed: exits `cli::USAGE_EXIT`, not 1
+    #[error("{0}")]
+    Usage(String),
 }
 
 impl CliError {
     pub fn said(m: impl Into<String>) -> Self {
         Self::Said(m.into())
+    }
+    /// What `wisp` exits with when the command ends on this error.
+    pub fn exit_code(&self) -> i32 {
+        if matches!(self, Self::Usage(_)) { crate::cli::USAGE_EXIT } else { 1 }
     }
     pub fn status(&self) -> u16 {
         if let Self::Http { status, .. } = self { *status } else { 0 }
@@ -71,6 +78,18 @@ pub fn find_peer(list: &Value, on: &str) -> std::result::Result<(String, String)
         }
         None => Err(format!("there's no machine {on}; there's {}", all.iter().map(|p| s(p, "name")).collect::<Vec<_>>().join(", "))),
     }
+}
+
+/// Whether the wisp whose `/api/health` this is serves the home hashed `mine` (`wisp_api::home_hash`). One with no
+/// `homeHash` is an older wisp, from before it said: taken as ours, so an upgrade keeps working with it.
+pub fn serves_home(health: &Value, mine: &str) -> bool {
+    health.get("homeHash").and_then(Value::as_str).is_none_or(|h| h == mine)
+}
+
+/// The one line for a wisp on the port that serves another home (two `WISP_HOME`s, one default port).
+pub fn other_home(url: &str, home: &Path) -> CliError {
+    let port = url.rsplit(':').next().unwrap_or(url);
+    CliError::said(format!("port {port} is the wisp for another home, not {}: pass --port or run wisp serve", home.display()))
 }
 
 /// The port `server.json` advertises, if any.
@@ -216,21 +235,39 @@ impl Client {
         r.json().await.map_err(|e| CliError::said(format!("wisp at {}: /api/mcp: {e}", self.url)))
     }
 
-    /// Whether a wisp answers here, bounded: something that takes the connection and never answers isn't a wisp.
-    pub async fn ping(&self) -> bool {
+    /// The wisp answering here (its `/api/health`), bounded: something that takes the connection and never answers
+    /// isn't a wisp.
+    pub async fn health(&self) -> Option<Value> {
         let health = tokio::time::timeout(Duration::from_secs(2), self.get("/health")).await;
-        health.ok().and_then(Result::ok).and_then(|v| v.get("ok").and_then(Value::as_bool)) == Some(true)
+        health.ok().and_then(Result::ok).filter(|v| v.get("ok").and_then(Value::as_bool) == Some(true))
     }
 
-    /// The running wisp, else a headless one started now (v1 `WispClient.connect`).
+    /// Whether a wisp answers here, whichever home it serves.
+    pub async fn ping(&self) -> bool {
+        self.health().await.is_some()
+    }
+
+    /// What answers on this port for `home`: None (no wisp), Ok (this home's), or the refusal for another home's.
+    pub async fn found(&self, home: &Path) -> Option<Result<()>> {
+        let h = self.health().await?;
+        Some(if serves_home(&h, &wisp_api::home_hash(home)) { Ok(()) } else { Err(other_home(&self.url, home)) })
+    }
+
+    /// Whether this home's own wisp answers here (another home's is refused by the command itself, `connect`).
+    pub async fn serves(&self, home: &Path) -> bool {
+        matches!(self.found(home).await, Some(Ok(())))
+    }
+
+    /// The running wisp, else a headless one started now (v1 `WispClient.connect`). A wisp for another home on the
+    /// port is refused, never used and never raced by a second server.
     pub async fn connect(port: u16, start: bool) -> Result<Self> {
         let c = Self::new(port);
-        if c.ping().await {
-            return Ok(c);
+        let home = crate::services::home(std::env::var("WISP_HOME").ok().as_deref(), crate::services::user_home());
+        if let Some(found) = c.found(&home).await {
+            return found.map(|()| c);
         }
         // a server already holds this home (still starting, or on a port server.json didn't say yet): that one, never a
         // second headless server on the same home (it would refuse to start)
-        let home = crate::services::home(std::env::var("WISP_HOME").ok().as_deref(), crate::services::user_home());
         if crate::serve::home_held(&home) {
             let end = Instant::now() + Duration::from_secs(15);
             while Instant::now() < end {
@@ -273,7 +310,7 @@ impl Client {
 mod tests {
     use serde_json::json;
 
-    use super::still_waking;
+    use super::{serves_home, still_waking};
 
     // B51: only route's "waiting for <box> to wake" (retry) is waited out; any other refusal is the answer
     #[test]
@@ -284,5 +321,20 @@ mod tests {
         assert!(!still_waking(&json!({ "ok": false, "error": { "message": "waiting for Cloud to wake", "retry": false } })));
         assert!(!still_waking(&json!({ "ok": false, "error": { "message": "Cloud is offline", "retry": true } })));
         assert!(!still_waking(&json!({})));
+    }
+
+    // two homes, one default port: a wisp is used only for the home it serves; one too old to say is taken as ours
+    #[test]
+    fn a_wisp_is_ours_only_for_the_home_it_serves() {
+        let dir = std::env::temp_dir().join(format!("wisp-home-hash-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::create_dir_all(dir.join("b")).unwrap();
+        let a = wisp_api::home_hash(&dir.join("a"));
+        assert_eq!(a, wisp_api::home_hash(&dir.join("b/../a")), "one home however it's spelled");
+        assert!(serves_home(&json!({ "ok": true, "homeHash": a }), &a), "a match");
+        assert!(!serves_home(&json!({ "ok": true, "homeHash": wisp_api::home_hash(&dir.join("b")) }), &a), "a mismatch");
+        assert!(serves_home(&json!({ "ok": true, "name": "wisp" }), &a), "an older wisp, no homeHash");
+        assert!(!a.contains("wisp-home-hash"), "a hash, never the path");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

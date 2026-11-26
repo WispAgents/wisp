@@ -56,7 +56,7 @@ fn flags() {
 #[test]
 fn a_flag_without_its_value_is_a_usage_error() {
     let v = vec!["--port".to_owned()];
-    assert_eq!(parse(&v, None, Path::new("/"), Path::new("/")).unwrap_err(), UsageError("--port".into()));
+    assert_eq!(parse(&v, None, Path::new("/"), Path::new("/")).unwrap_err(), UsageError("--port needs a value — see wisp --help".into()));
     let v = vec!["--port".to_owned(), "nope".to_owned()];
     assert!(parse(&v, None, Path::new("/"), Path::new("/")).is_err());
 }
@@ -230,4 +230,39 @@ fn ship_takes_the_steward_mode() {
     let a = p(&["ship", "0123456789ab", "--steward", "review"]);
     assert_eq!((a.command, a.flags.steward.as_deref()), (Some("ship"), Some("review")));
     assert_eq!(p(&["ship", "0123456789ab"]).flags.steward, None);
+}
+
+/// Audit cli-r3: `wisp ls --stat done`, `--bogus`, `--limit abc`, `--limit 0` and `--days x` ran and showed the default
+/// list as if nothing was typed. A bad count is a usage error naming it; a flag ls doesn't read is refused with its
+/// usage (as `wisp mcp --x`), `--host` (serve's alone) included; `--` still makes anything words.
+#[test]
+fn a_scripted_command_refuses_a_flag_it_does_not_read_and_a_bad_count() {
+    let err = |a: &[&str]| parse(&a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(), None, Path::new("/"), Path::new("/")).unwrap_err();
+    assert_eq!(err(&["ls", "--limit", "abc"]).to_string(), "--limit abc: a whole number above 0");
+    assert_eq!(err(&["ls", "--limit=0"]).to_string(), "--limit 0: a whole number above 0");
+    assert_eq!(err(&["ls", "--days", "x"]).to_string(), "--days x: a whole number above 0");
+    let refused = |a: &[&str]| crate::commands::refused_flag(&p(a), p(a).command.unwrap());
+    for (a, bad) in [
+        (&["ls", "--stat", "done"][..], "--stat"),
+        (&["ls", "--bogus"], "--bogus"),
+        (&["ls", "--all", "--bogus"], "--bogus"),
+        (&["ls", "--host", "0.0.0.0"], "--host"),
+    ] {
+        let said = refused(a).unwrap_or_else(|| panic!("{a:?} ran"));
+        assert!(said.starts_with(&format!("  ✗ wisp ls doesn't take {bad}\n")), "{said}");
+    }
+    let ok = p(&["ls", "--state", "done", "--limit", "5"]);
+    assert_eq!((ok.flags.state.as_deref(), ok.flags.limit), (Some("done"), Some(5)));
+    for a in [
+        &["ls", "--state", "done", "--limit", "5"][..],
+        &["ls", "-a", "--json", "--port", "4500"],
+        &["ls", "--repo", "--json"],
+        &["ship", "last", "--draft"],
+        &["wait", "abc123abc123", "--timeout", "10m"],
+        &["reply", "abc123abc123", "--", "use --force"],
+        &["reply", "abc123abc123", "ok", "--", "--force"],
+    ] {
+        assert_eq!(refused(a), None, "{a:?}");
+    }
+    assert_eq!(p(&["--", "ls", "--bogus"]).command, None, "after --: a task");
 }

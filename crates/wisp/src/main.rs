@@ -20,6 +20,7 @@ mod fresh_cli;
 mod groups;
 mod history_cli;
 mod hook_cli;
+mod mcp_stdio;
 mod mcp_tasks;
 mod notes_cli;
 mod offload_cli;
@@ -67,7 +68,11 @@ fn main() {
     let cwd = services::plain(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let parsed = match args::parse(&argv, std::env::var("WISP_PORT").ok().as_deref(), &user_home, &cwd) {
         Ok(p) => p,
-        Err(e) => die(&e.to_string()),
+        // a usage error (`--limit abc`, `--port` with no value): said, exit 2 as every usage error
+        Err(e) => {
+            eprintln!("  ✗ {e}");
+            std::process::exit(cli::USAGE_EXIT)
+        }
     };
     match parsed.action {
         Action::Version => return say(serve::VERSION),
@@ -104,7 +109,7 @@ async fn run(p: Parsed, user_home: &Path, cwd: &Path) -> i32 {
         Ok(code) => code,
         Err(e) => {
             eprintln!("  ✗ {e}");
-            1
+            e.exit_code()
         }
     }
 }
@@ -121,7 +126,7 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
     }
     let rest = p.words.get(1..).unwrap_or_default();
     // a task this terminal left running that finished, asks or failed: one line before anything else
-    if !matches!(p.command, Some("serve" | "mcp" | "grid" | "desktop" | "completions" | "sdk")) && Client::new(port).ping().await {
+    if !matches!(p.command, Some("serve" | "mcp" | "grid" | "desktop" | "completions" | "sdk")) && Client::new(port).serves(&home).await {
         attach::notices(&Client::new(port), &home).await;
     }
     // `wisp import --help` (audit I IS10), then a built-in verb path its arm didn't take
@@ -189,7 +194,7 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         }
         Some("serve") => serve_here(&home, f.port, f.host.as_deref(), false, None).await?,
         Some("desktop") => {
-            desktop::desktop(&home, user_home, port, desktop::reach(port).await?, true).await?;
+            desktop::desktop(&home, user_home, port, desktop::reach(port, &home).await?, true).await?;
         }
         Some("plugin" | "plugins") if rest.first().map(String::as_str) == Some("new") => {
             let name = scripted::need(rest.get(1), "a plugin name")?;
@@ -593,7 +598,11 @@ async fn areas(first: &str, p: &Parsed, o: &code::Opts, port: u16, cwd: &Path) -
         {
             hook_cli::run(&o.words, cwd)?
         }
-        "tui" if o.words.is_empty() => tui::run(&connect().await?, &cwd.display().to_string()).await?,
+        // no terminal (a pipe, CI): said before a wisp is reached or started
+        "tui" if o.words.is_empty() => {
+            tui::needs_terminal()?;
+            tui::run(&connect().await?, &cwd.display().to_string()).await?
+        }
         // QA round 11 #1: what people type for these (`wisp version`, v1's `wisp usage`)
         "version" if o.words.is_empty() => {
             say(serve::VERSION);

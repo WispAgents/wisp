@@ -13,9 +13,49 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v.get(k).and_then(Value::as_str).unwrap_or("")
 }
 
+/// The flags each command here reads, besides the ones every command takes (`words::GLOBAL_FLAGS`). None: it reads
+/// launch flags or its own verbs' (`run`, `plugin`, `crew`, a launch), checked where they're read. `--host` is
+/// `wisp serve`'s alone: on any of these it's refused, never ignored.
+pub fn own_flags(cmd: &str) -> Option<&'static [&'static str]> {
+    Some(match cmd {
+        // `--agent`, `--crew`, `--workflow`, `--formula`, `--since`, `--project`: the history list (`history_cli::ls`)
+        "ls" | "list" => &[
+            "--state",
+            "--limit",
+            "--all",
+            "-a",
+            "--watch",
+            "--repo",
+            "--agent",
+            "--crew",
+            "--workflow",
+            "--formula",
+            "--since",
+            "--project",
+        ],
+        "show" => &["--watch"],
+        "wait" => &["--timeout"],
+        "reply" => &["--queue", "--mode", "-m", "--agent", "-a", "--model", "--effort", "--wait", "-w", "--timeout", "--detach", "-d"],
+        "ship" => &["--draft", "--steward"],
+        "btw" | "stop" | "held" | "merge" | "recipes" => &[],
+        _ => return None,
+    })
+}
+
+/// A flag `cmd` doesn't read (`wisp ls --stat done`, `wisp ls --bogus`): its usage, refused before anything runs, as
+/// `wisp mcp --x` is. The list it would have shown, unfiltered, was the silent wrong answer. Text after `--` is words.
+pub fn refused_flag(p: &Parsed, cmd: &str) -> Option<String> {
+    let bad = crate::words::stray_flag(cmd, own_flags(cmd)?, &p.argv)?;
+    Some(format!("  ✗ wisp {cmd} doesn't take {bad}\n{}", crate::words::usage(cmd)))
+}
+
 #[allow(clippy::many_single_char_names)]
 pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -> Result<i32> {
     let f = &p.flags;
+    if let Some(said) = refused_flag(p, cmd) {
+        eprintln!("{said}");
+        return Ok(crate::cli::USAGE_EXIT);
+    }
     // a bad --timeout is said before anything starts or launches
     let limit = match sc::wait_timeout(f.timeout.as_deref()) {
         Ok(d) => d,
