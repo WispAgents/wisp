@@ -371,8 +371,23 @@ export const COMMANDS: Record<string, CommandFn> = {
       const item = { id: typeof x['turnId'] === 'string' ? x['turnId'] : `q${ctx.now().toString(36)}`, text, at: ctx.now() };
       return { ops: setQueue(ctx, id, [...queueOf(ctx, id), item]), result: { queued: true } };
     }
+    const turnId = typeof x['turnId'] === 'string' ? x['turnId'] : undefined;
+    // while it works, a direct follow-up interrupts it (the runtime's Plan::Interrupt): it waits in the queue until the
+    // running turn has stopped (Interrupted), then starts as its own turn under the client's id
+    if (obj(ctx.row('list', 'session', id))['state'] === 'running') {
+      const item = { id: turnId ?? `q${ctx.now().toString(36)}`, text, at: ctx.now() };
+      ctx.later(700, () => {
+        ctx.stream(id, { prompt: text, ...(turnId !== undefined && { turnId }) });
+        return setQueue(
+          ctx,
+          id,
+          queueOf(ctx, id).filter((q) => q.id !== item.id),
+        );
+      });
+      return { ops: setQueue(ctx, id, [...queueOf(ctx, id), item]), result: { queued: item.id, interrupts: true } };
+    }
     const ops = sessionPatch(ctx, id, [touch(ctx)]);
-    ctx.stream(id, { prompt: text, ...(typeof x['turnId'] === 'string' && { turnId: x['turnId'] }) });
+    ctx.stream(id, { prompt: text, ...(turnId !== undefined && { turnId }) });
     return { ops, result: { queued: false } };
   },
   // the queue over the reply box (shell-composer's QueueFoot): edit, send now, combine, reorder, cancel

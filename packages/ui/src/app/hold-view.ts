@@ -1,7 +1,7 @@
 // Where the task's page holds the reader while it changes under them (v1 tail.js, turns.js renderBody): pictures growing,
 // the reply box growing, a turn landing, streaming output. Every read comes before the one write in a frame.
 import { atTail, dockShift, mediaShift, turnsShift, type Grew } from './media-shift.ts';
-import { awayFromEnd, END_PX, follow, FOLLOWING, PAUSED, type FollowEvent, type FollowState } from './follow.ts';
+import { awayFromEnd, END_PX, follow, FOLLOWING, NUDGE_PX, PAUSED, type FollowEvent, type FollowState } from './follow.ts';
 
 const PENDING = Symbol('pending');
 const UP_KEYS = new Set(['PageUp', 'Home', 'ArrowUp']);
@@ -177,6 +177,7 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
   const toEnd = (): void => {
     turns?.armNow();
     turns?.clearHand();
+    turns?.stayEnd();
     const before = body.scrollTop;
     body.scrollTop = body.scrollHeight;
     const top = body.scrollTop;
@@ -296,6 +297,16 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement, away?: (o: { rea
     onEnd: toEnd,
     onScroll: () => {
       const top = body.scrollTop;
+      // following, and the page moved up with nothing of the reader's behind it (wheel, touch and keys pause through
+      // onUp before their scroll lands; the scrollbar and a fold opened by hand are theirs): the browser clamped the
+      // view while the page shrank and grew again before this event (a follow-up interrupting a run: that turn folds
+      // as the next one lands). That isn't the reader leaving the end, so the end it stays.
+      if (state.following && !scrollbarDrag && !turns?.byHand() && top < lastTop - NUDGE_PX && distOf(body) > 1) {
+        pin();
+        tail = atTail(body);
+        turns?.onScroll();
+        return void tell(false);
+      }
       set({ type: 'scroll', top, max: maxOf(body), moved: top - lastTop });
       lastTop = top;
       tail = atTail(body);
@@ -337,6 +348,8 @@ export function turnFollower(
   armNow: () => void;
   byHand: () => boolean;
   clearHand: () => void;
+  /** the reader asked for the end (a follow-up sent, Jump to latest, End): the turns on the page now never land */
+  stayEnd: () => void;
   stop: () => void;
 } {
   let armed = false;
@@ -345,6 +358,9 @@ export function turnFollower(
   let byHand = false;
   let atEnd = atTail(body);
   let reading: { el: HTMLElement; top: number } | undefined;
+  // turns that were there when the reader asked for the end: one finishing later (the run a follow-up interrupted)
+  // isn't a fresh landing, so the view stays at the end rather than jumping back to that turn's start
+  let before = new Set<string>();
   const all = (): HTMLElement[] => [...turnsEl.querySelectorAll<HTMLElement>('[data-turn]')];
   const readLine = (): void => {
     if (anchors) return;
@@ -395,6 +411,7 @@ export function turnFollower(
         if (r.type === 'childList' && [...r.addedNodes].some((n) => n === last || (n instanceof HTMLElement && n.contains(last)))) landed = last;
         if (r.type === 'attributes' && r.target === last && !last.hasAttribute('data-live')) landed = last;
       }
+      if (landed && before.has(landed.dataset['turn'] ?? '')) landed = undefined;
     },
     grew: (by) => {
       if (!armed || byHand || (by < 0 && !landed)) {
@@ -426,6 +443,9 @@ export function turnFollower(
     },
     byHand: () => byHand,
     clearHand,
+    stayEnd: () => {
+      before = new Set(all().map((t) => t.dataset['turn'] ?? ''));
+    },
     stop: () => {
       if (frame !== undefined) cancelAnimationFrame(frame);
       if (clear !== undefined) cancelAnimationFrame(clear);

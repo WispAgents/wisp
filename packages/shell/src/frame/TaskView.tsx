@@ -705,6 +705,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         const el = document.querySelector(`[data-kit="turn"][data-turn="${CSS.escape(hit.turnId)}"] [data-anchor="${CSS.escape(id)}"]`) ?? undefined;
         if (el || ++tries > 8) {
           el?.scrollIntoView({ block: 'center' });
+          // the reader went to the hit: the view stays there as output streams (hold-view keeps an unasked move at the end)
+          if (el && scrollCtrl && bodyEl) scrollCtrl.place(bodyEl.scrollTop, false);
           return done(el);
         }
         requestAnimationFrame(look);
