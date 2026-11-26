@@ -32,11 +32,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # Build and deploy are two jobs: in one job, deploy-pages lists the run's artifacts a few hundred ms after the
+  # upload and often finds none yet ("No artifacts named github-pages"). Across a job boundary it's always listed.
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      urls: ${{ steps.urls.outputs.urls }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -50,17 +51,29 @@ jobs:
       # only the built site goes up: the generated pages, their assets and root files, and the docs under /docs.
       # docs/ also holds the plan, ADRs, QA notes and research, which are never published
       - run: bash scripts/stage-site.sh _site
+      # every page's address, for the IndexNow ping once the deploy is live
+      - id: urls
+        run: echo "urls=$(grep -ho '<loc>[^<]*' _site/sitemap.xml _site/docs/sitemap-0.xml 2>/dev/null | sed 's/<loc>//' | sort -u | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
       # Tell Bing, Yandex and the other IndexNow engines what's new (Google reads the sitemap).
       - name: Ping IndexNow
         if: github.event_name == 'push'
         continue-on-error: true
+        env:
+          URLS: ${{ needs.build.outputs.urls }}
         run: |
-          urls=$(grep -ho '<loc>[^<]*' _site/sitemap.xml _site/docs/sitemap-0.xml 2>/dev/null | sed 's/<loc>//' | sort -u | jq -R . | jq -sc .)
           curl -fsS -X POST https://api.indexnow.org/indexnow -H 'Content-Type: application/json; charset=utf-8' \
-            -d "{\"host\":\"trywisp.dev\",\"key\":\"c74d7dc2f8b011de1d62484d8507a500\",\"keyLocation\":\"https://trywisp.dev/c74d7dc2f8b011de1d62484d8507a500.txt\",\"urlList\":$urls}"
+            -d "{\"host\":\"trywisp.dev\",\"key\":\"c74d7dc2f8b011de1d62484d8507a500\",\"keyLocation\":\"https://trywisp.dev/c74d7dc2f8b011de1d62484d8507a500.txt\",\"urlList\":$URLS}"
