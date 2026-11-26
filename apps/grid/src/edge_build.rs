@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use super::{Grid, SignIn, route};
 use crate::accounts::Accounts;
+use crate::boxhost::BoxHost as _;
 use crate::clock::SharedClock;
 use crate::config::GridConfig;
 use crate::db::Db;
@@ -24,9 +25,23 @@ const SCRYPT_PERMITS: usize = 4;
 
 impl Grid {
     pub fn new(cfg: GridConfig, db: Arc<Db>, clock: SharedClock, boxes: Arc<ProcessHost>) -> Arc<Self> {
+        let telemetry = crate::telemetry::GridTelemetry::new(cfg.telemetry, &cfg.domain, &crate::config::process_env());
+        Self::with_telemetry(cfg, db, clock, boxes, telemetry)
+    }
+
+    /// [`Grid::new`] with its usage stats made by the caller (a test sends them to its own `PostHog`).
+    pub fn with_telemetry(
+        cfg: GridConfig,
+        db: Arc<Db>,
+        clock: SharedClock,
+        boxes: Arc<ProcessHost>,
+        telemetry: crate::telemetry::GridTelemetry,
+    ) -> Arc<Self> {
         let teams = Teams { db: db.clone(), clock: clock.clone() };
         let shares = Shares { db: db.clone(), clock: clock.clone(), teams: teams.clone(), public_url: cfg.public_url.clone() };
-        let accounts = Accounts { db: db.clone(), clock: clock.clone() };
+        let telemetry = Arc::new(telemetry);
+        telemetry.run(boxes.changes(), clock.clone());
+        let accounts = Accounts { db: db.clone(), clock: clock.clone(), telemetry: Some(telemetry.clone()) };
         let roots = root_hosts(&cfg.domain, &cfg.port_suffix, cfg.listen.port);
         let page = PageCfg::of(&cfg);
         let client = Client::builder(TokioExecutor::new()).build_http();
@@ -71,6 +86,7 @@ impl Grid {
             page,
             client,
             signin,
+            telemetry,
             sandboxes,
             sites,
             inbox,

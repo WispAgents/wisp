@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn a_wish_is_kept_changed_and_dropped_and_audited() {
         let clock = ManualClock::new(1_000);
-        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: clock.clone() };
+        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: clock.clone(), telemetry: None };
         let ada = a.dev_user("ada").unwrap();
         assert_eq!(a.machine_wish(&ada.id).unwrap(), None);
         let w = a.wish_machines(&ada.id, &["gpu".into(), "more".into()], "  a 70B model  ").unwrap().unwrap();
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn the_operator_s_list_shows_seats_waiting_and_who_wants_more() {
-        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: ManualClock::new(1_792_920_800_000) };
+        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: ManualClock::new(1_792_920_800_000), telemetry: None };
         assert_eq!(report(&a).unwrap(), "Nobody is waiting.\n");
         let ada = a.dev_user("ada").unwrap();
         a.db.with(|c| {

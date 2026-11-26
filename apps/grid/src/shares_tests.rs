@@ -17,7 +17,7 @@ fn t() -> T {
     let clock = ManualClock::new(1_000);
     let teams = Teams { db: db.clone(), clock: clock.clone() };
     T {
-        a: Accounts { db: db.clone(), clock: clock.clone() },
+        a: Accounts { db: db.clone(), clock: clock.clone(), telemetry: None },
         s: Shares { db, clock: clock.clone(), teams, public_url: "http://wisp.localhost:8080".into() },
         clock,
     }

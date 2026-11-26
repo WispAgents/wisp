@@ -90,6 +90,11 @@ pre { margin: 0; padding: 16px 18px; background: var(--code); border: 1px solid 
 .lede { font-size: clamp(1.08rem, 2.2vw, 1.3rem); color: var(--muted); max-width: 40em; margin: 0 auto 28px; }
 .lede b { color: var(--fg); font-weight: 600; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; }
+/* a phone gets Send and Cloud in place of npx and the desktop download (scripts/site.mjs phoneCta) */
+.only-phone { display: none; }
+[data-device='phone'] .not-phone { display: none; }
+[data-device='phone'] .cta.only-phone { display: flex; }
+[data-device='phone'] .phone-note { display: block; margin: 12px auto 0; max-width: 34em; }
 .install { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 6px 6px 18px; font-family: var(--mono); font-size: 0.95rem; max-width: 100%; }
 .install code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; border: 0; padding: 0; }
 .install .dollar { color: var(--muted); user-select: none; }

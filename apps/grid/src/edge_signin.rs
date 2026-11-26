@@ -104,7 +104,8 @@ impl Grid {
             error: error.to_owned(),
             linking,
             waitlisted: false,
-            analytics: None,
+            // the hosted grid only: its PostHog script, so the funnel reads site → this page → provider
+            analytics: self.telemetry.page_key(),
             ua,
             last: cookies(h).get(LAST_WAY).filter(|v| self.page_providers().iter().any(|p| &p.id == *v)).cloned().unwrap_or_default(),
             focus,
@@ -158,6 +159,9 @@ impl Grid {
         let ret = query(q, "return").unwrap_or_default();
         let f = self.signin.flows.begin(&p.id, safe_path(&ret, "/"), if link { me.map(|u| u.id) } else { None }, self.clock.now_ms());
         let to = p.start(self.signin.http.as_ref(), &self.redirect_uri(&p.id), &f).await?;
+        if !link {
+            self.telemetry.funnel("grid_auth_started", self.telemetry.visitor(&cookies(h)), serde_json::json!({ "provider": p.id }));
+        }
         let mut r = redirect(&to, &[]);
         add_cookie(
             &mut r,
@@ -187,6 +191,10 @@ impl Grid {
         let state = query(q, "state").unwrap_or_default();
         let held = cookies(h).get(FLOW_COOKIE).cloned().unwrap_or_default();
         let linking = std::sync::atomic::AtomicBool::new(false);
+        // a new account (signed up) or one that was there (signed in), for the funnel
+        let signup = std::sync::atomic::AtomicBool::new(false);
+        // the provider sent the person back with an error (they said no, or it refused them)
+        let declined = std::sync::atomic::AtomicBool::new(false);
         let out: Result<Resp> = async {
             let p = self
                 .signin
@@ -197,6 +205,7 @@ impl Grid {
             let f = self.signin.flows.finish(id, &state, &held, self.clock.now_ms())?;
             linking.store(f.link_to.is_some(), std::sync::atomic::Ordering::Relaxed);
             if let Some(e) = query(q, "error") {
+                declined.store(true, std::sync::atomic::Ordering::Relaxed);
                 return Err(bad(query(q, "error_description").unwrap_or_else(|| format!("{} said: {e}", p.label)), 400));
             }
             let idn = p
@@ -206,7 +215,9 @@ impl Grid {
             if f.link_to.is_some() && me.as_ref().map(|u| &u.id) != f.link_to.as_ref() {
                 return Err(bad("You were signed out while connecting it. Sign in and try again.", 401));
             }
+            let before = self.clock.now_ms();
             let user = self.accounts.sign_in(&self.cfg.auth, &idn, f.link_to.as_deref())?;
+            signup.store(user.created_at >= before, std::sync::atomic::Ordering::Relaxed);
             if f.link_to.is_some() {
                 return Ok(redirect(&format!("/?m={}", crate::http::encode_component(&format!("{} connected.", p.label))), &[]));
             }
@@ -223,6 +234,35 @@ impl Grid {
             Ok(r)
         }
         .await;
+        let linked = linking.load(std::sync::atomic::Ordering::Relaxed);
+        if !linked {
+            let visitor = self.telemetry.visitor(&cookies(h));
+            match &out {
+                Ok(_) => self.telemetry.funnel(
+                    "grid_auth_finished",
+                    visitor,
+                    serde_json::json!({ "provider": id, "signup": signup.load(std::sync::atomic::Ordering::Relaxed) }),
+                ),
+                Err(e) => {
+                    let reason = if declined.load(std::sync::atomic::Ordering::Relaxed) {
+                        "provider"
+                    } else {
+                        match e.status() {
+                            403 => "refused",
+                            401 => "signed out",
+                            404 => "no provider",
+                            s if s >= 500 => "error",
+                            _ => "expired",
+                        }
+                    };
+                    self.telemetry.funnel(
+                        "grid_auth_failed",
+                        visitor,
+                        serde_json::json!({ "provider": id, "reason": reason, "status": e.status() }),
+                    );
+                }
+            }
+        }
         let mut r = out.unwrap_or_else(|e| {
             tracing::info!("grid: sign-in with {id} failed: {e}");
             let status = e.status();
