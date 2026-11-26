@@ -14,9 +14,10 @@ pub const HELP: &str = "usage:
                                 --watch: follow the list)
   wisp show <id>                state + latest presentation as markdown   (--watch: follow its turn live)
   wisp wait <id>                block until it finishes or asks you something   (--timeout 30s|10m|2h, default 30m)
-                                exit 0 done or review, 1 failed/stopped/blocked, 2 asks you something, 124 timed out
+                                exit 0 done or review, 1 failed/stopped/blocked, 3 asks you something, 124 timed out
   wisp reply <id> \"text\"        follow up (answers a pending question)   (--queue  --mode plan|edits|auto
-                                --agent ID  --model ID  --effort LEVEL: switch harness / model from here on)
+                                --agent ID  --model ID  --effort LEVEL: switch harness / model from here on
+                                --wait [--timeout D]: then wait, and exit as wisp wait does)
   wisp btw <id> \"question\"      ask on the side without interrupting the run; prints the answer
   wisp stop <id>                stop a run
   wisp held <id> start|without|skip   a turn held before it started: start it (Trust and start), run it without the
@@ -97,7 +98,7 @@ pub const HELP: &str = "usage:
 
 launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|antigravity|grok|copilot  --model ID  --effort LEVEL
                 --cwd DIR  --also DIR (repeatable)  --wait  --json  --no-worktree  --compare agent[:model],…: one task per harness
-                --wait exits as wisp wait does (0, 1, 2, 124)   --timeout 30s|10m|2h  how long it waits (30m)
+                --wait exits as wisp wait does (0, 1, 3, 124)   --timeout 30s|10m|2h  how long it waits (30m)
                 --try subagents=haiku|sonnet|task  --try skills=off  run it twice on --agent, the second with
                 that changed (repeatable or comma separated); Compare says what differed
                 --goal NAME  keep going until a goal declared by name (goals: in a formula) is met
@@ -108,7 +109,9 @@ launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|ant
 terminal context: wisp \"check the error above\" attaches what just happened in this terminal: its last commands, their
                 exit codes, the failing one's output (tmux, WezTerm, kitty, iTerm2, Terminal), the folder and git status,
                 secrets masked; never runs a command again   (--context  --no-context  --show-context  --lines N)
-options:        --port N  --browser  --no-open  --json  --version";
+options:        --port N  --browser  --no-open  --json  --version
+exit codes:     0 it worked  1 refused or the task failed  2 the command line didn't fit (nothing ran)
+                3 the task waits on you (wait, --wait)  4 no task of that id  124 a wait timed out";
 
 pub const COMMANDS: [&str; 26] = [
     "attach",

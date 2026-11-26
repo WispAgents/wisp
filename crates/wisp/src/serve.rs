@@ -321,8 +321,28 @@ fn upkeep(store: wisp_store::Store) -> tokio::task::JoinHandle<()> {
     })
 }
 
+/// The address `wisp serve` binds: `--host`, else `WISP_HOST`, else `127.0.0.1`; `localhost` (any case) is
+/// `127.0.0.1`. A value that's no IP address is a usage error naming where it came from (it always said `WISP_HOST`,
+/// even for `--host foo`).
+pub fn bind_host(flag: Option<&str>, env: Option<&str>) -> Result<IpAddr> {
+    let (from, v) = match (flag, env.filter(|e| !e.trim().is_empty())) {
+        (Some(f), _) => ("--host", f),
+        (None, Some(e)) => ("WISP_HOST", e),
+        (None, None) => return Ok(IpAddr::from([127, 0, 0, 1])),
+    };
+    let v = v.trim();
+    if v.eq_ignore_ascii_case("localhost") {
+        return Ok(IpAddr::from([127, 0, 0, 1]));
+    }
+    // `[::1]` as a URL spells it is the address too
+    let bare = v.strip_prefix('[').and_then(|x| x.strip_suffix(']')).unwrap_or(v);
+    bare.parse().map_err(|_| CliError::usage(format!("{from} {v} is not an IP address (127.0.0.1, 0.0.0.0, ::1 or localhost)")))
+}
+
 pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running> {
     let started = Instant::now();
+    // a bad address is said before the home is locked or anything in it is made (it was parsed after the store opened)
+    let ip = bind_host(host, env("WISP_HOST").as_deref())?;
     // Windows (ADR-0070): every process this server starts is born in a job that ends with it, however it ends
     #[cfg(feature = "proc")]
     if let Err(e) = wisp_proc::nursery() {
@@ -341,11 +361,6 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     let home_lock = lock_home(home)?;
     let store = open_store(home)?;
     // bound first: the agents' runs are told this address before the edge serves it
-    let ip: IpAddr = host
-        .or(env("WISP_HOST").as_deref())
-        .unwrap_or("127.0.0.1")
-        .parse()
-        .map_err(|_| CliError::said("WISP_HOST is not an IP address"))?;
     let listener = tokio::net::TcpListener::bind((ip, port)).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
             CliError::said(format!("port {port} is in use: is wisp already running? (wisp --port N picks another)"))
@@ -355,7 +370,7 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     })?;
     let master = master_token();
     let access: Arc<dyn wisp_runtime_api::points::AgentAccess> =
-        Arc::new(Access { url: format!("http://127.0.0.1:{}", listener.local_addr().map_or(port, |a| a.port())), master: master.clone() });
+        Arc::new(Access { url: wisp_api::advertised_url(listener.local_addr().unwrap_or((ip, port).into())), master: master.clone() });
     // settings outlive a restart: the kernel's registry saves them through the store
     let settings =
         crate::settings_store::StoreSettings::open(&store).map_err(|e| CliError::said(format!("wisp could not read its settings: {e}")))?;
@@ -513,6 +528,37 @@ pub fn open_url(url: &str) {
 #[cfg(test)]
 mod tests {
     use super::FromShell;
+
+    /// cli-r6 M4: `--host localhost` was "not an IP address", a bad value was found only after the home was locked and
+    /// its store opened, and the words always blamed `WISP_HOST`.
+    #[test]
+    fn serve_host_takes_localhost_and_names_where_a_bad_one_came_from() {
+        use std::net::IpAddr;
+        let lo = IpAddr::from([127, 0, 0, 1]);
+        assert_eq!(super::bind_host(None, None).unwrap(), lo);
+        assert_eq!(super::bind_host(Some("localhost"), None).unwrap(), lo);
+        assert_eq!(super::bind_host(Some("LocalHost"), None).unwrap(), lo);
+        assert_eq!(super::bind_host(None, Some("localhost")).unwrap(), lo);
+        assert_eq!(super::bind_host(Some("::1"), None).unwrap(), "::1".parse::<IpAddr>().unwrap());
+        assert_eq!(super::bind_host(Some("[::1]"), None).unwrap(), "::1".parse::<IpAddr>().unwrap());
+        assert_eq!(super::bind_host(Some("0.0.0.0"), Some("garbage")).unwrap(), IpAddr::from([0, 0, 0, 0]), "the flag wins");
+        let flag = super::bind_host(Some("foo"), Some("127.0.0.1")).unwrap_err();
+        assert!(flag.to_string().starts_with("--host foo is not an IP address"), "{flag}");
+        assert_eq!(flag.exit_code(), crate::cli::USAGE_EXIT);
+        let env = super::bind_host(None, Some("foo")).unwrap_err();
+        assert!(env.to_string().starts_with("WISP_HOST foo is not an IP address"), "{env}");
+        assert_eq!(env.exit_code(), crate::cli::USAGE_EXIT);
+    }
+
+    /// cli-r6 M4: a bad --host leaves a fresh home as it was: nothing locked, no store, no server.json.
+    #[tokio::test]
+    async fn a_bad_host_touches_nothing_in_the_home() {
+        let home = std::env::temp_dir().join(format!("wisp-bad-host-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let Err(e) = super::boot(&home, 0, Some("not-an-ip")).await else { panic!("booted") };
+        assert_eq!(e.exit_code(), crate::cli::USAGE_EXIT);
+        assert!(!home.exists(), "the home was made");
+    }
 
     #[cfg(feature = "threads")]
     #[test]

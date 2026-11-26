@@ -61,7 +61,7 @@ async fn a_misspelled_launch_flag_launches_nothing_audit_h2() {
         (&["H later", "--at", "23:55"], None),
     ] {
         let (code, out, err) = wisp(&dir, port, args);
-        assert_eq!(code, 1, "{args:?}: {out}{err}");
+        assert_eq!(code, 2, "a usage error: {args:?}: {out}{err}");
         assert!(err.contains(&format!("wisp takes no {}", args[1])) && err.contains("Nothing was launched"), "{args:?}: {err}");
         if let Some(c) = close {
             assert!(err.contains(c), "{args:?}: {err}");

@@ -69,10 +69,10 @@ pub fn access_of(a: &str, password: Option<&str>) -> std::result::Result<Value, 
 pub fn send_args(o: &Opts) -> Result<Value> {
     let mut v = json!({ "to": "wisp-cloud" });
     if let Some(a) = &o.access {
-        v["access"] = access_of(a, o.password.as_deref()).map_err(CliError::said)?;
+        v["access"] = access_of(a, o.password.as_deref()).map_err(CliError::usage)?;
     }
     if let Some(e) = &o.expires {
-        let ms = duration_ms(e).ok_or_else(|| CliError::said(format!("--expires {e}: like 7d, 12h or 30m")))?;
+        let ms = duration_ms(e).ok_or_else(|| CliError::usage(format!("--expires {e}: like 7d, 12h or 30m")))?;
         v["expiresAt"] = json!(now_ms() + ms);
     }
     if o.publish {
@@ -214,7 +214,7 @@ pub async fn cloud(c: &Client, o: &Opts) -> Result<i32> {
             Ok(0)
         }
         Some(verb @ ("switch" | "remove" | "rm")) => {
-            let Some(want) = o.words.get(1) else { return Err(CliError::said(format!("wisp cloud {verb} <handle | handle@host>"))) };
+            let Some(want) = o.words.get(1) else { return Err(CliError::usage(format!("wisp cloud {verb} <handle | handle@host>"))) };
             let all = c.cmd("grid-client.accounts", json!({})).await?;
             let key = pick_account(all.as_array().map_or(&[][..], Vec::as_slice), want).map_err(CliError::said)?;
             let cmd = if verb == "switch" { "grid-client.accountSwitch" } else { "grid-client.accountRemove" };
@@ -226,7 +226,7 @@ pub async fn cloud(c: &Client, o: &Opts) -> Result<i32> {
             }
             Ok(0)
         }
-        Some(other) => Err(CliError::said(format!("wisp cloud {other}: signin, status, accounts, switch, remove or signout"))),
+        Some(other) => Err(CliError::usage(format!("wisp cloud {other}: signin, status, accounts, switch, remove or signout"))),
     }
 }
 
@@ -359,11 +359,11 @@ pub async fn sandbox(c: &Client, o: &Opts) -> Result<i32> {
             }
         }
         "rm" | "remove" | "delete" => {
-            let id = o.words.get(1).ok_or_else(|| CliError::said("wisp sandbox rm <id>"))?;
+            let id = o.words.get(1).ok_or_else(|| CliError::usage("wisp sandbox rm <id>"))?;
             c.cmd("grid-client.sandboxRemove", json!({ "id": id })).await?;
             say(&format!("  {} sandbox {id} deleted, with its home", paint(&st, GREEN, "✓")));
         }
-        other => return Err(CliError::said(format!("wisp sandbox {other}: new, ls or rm"))),
+        other => return Err(CliError::usage(format!("wisp sandbox {other}: new, ls or rm"))),
     }
     Ok(0)
 }
@@ -506,7 +506,7 @@ pub async fn share_setup(c: &Client, o: &Opts) -> Result<i32> {
     if !o.yes {
         if !tty() {
             eprintln!("  ✗ not a terminal: share with --yes once you've read what goes");
-            return Ok(1);
+            return Ok(crate::cli::USAGE_EXIT);
         }
         let mut l = String::new();
         eprint!("\n  Share it to wisp Cloud? [y/N] ");
@@ -608,7 +608,7 @@ async fn apply_setup(c: &Client, o: &Opts, link: &str, f: &Value) -> Result<i32>
     if !o.yes {
         if !tty() {
             eprintln!("  ✗ not a terminal: apply it with --yes");
-            return Ok(1);
+            return Ok(crate::cli::USAGE_EXIT);
         }
         let mut l = String::new();
         eprint!("\n  Apply it? [y/N] ");
@@ -676,6 +676,15 @@ mod tests {
                 && is_link("wisp://open/AbC")
                 && !is_link("https://example.com/x.wisp-task")
         );
+    }
+
+    /// cli-r6 L1: a bad `--access` or `--expires` is the command line (exit 2), never a refusal's 1.
+    #[test]
+    fn a_bad_share_flag_is_a_usage_error() {
+        for o in [Opts { access: Some("secret".into()), ..Opts::default() }, Opts { expires: Some("soon".into()), ..Opts::default() }] {
+            assert_eq!(send_args(&o).unwrap_err().exit_code(), crate::cli::USAGE_EXIT);
+        }
+        assert!(send_args(&Opts { expires: Some("7d".into()), ..Opts::default() }).is_ok());
     }
 
     #[test]

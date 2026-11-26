@@ -49,6 +49,12 @@ pub fn refused_flag(p: &Parsed, cmd: &str) -> Option<String> {
     Some(format!("  ✗ wisp {cmd} doesn't take {bad}\n{}", crate::words::usage(cmd)))
 }
 
+/// Whether `--timeout` is read, so a bad value is a usage error before anything runs: `wisp wait`, and a launch or a
+/// reply with `--wait` (a reply's was dropped to no wait at all).
+pub fn validates_timeout(cmd: &str, wait: bool) -> bool {
+    cmd == "wait" || (wait && matches!(cmd, "launch" | "reply"))
+}
+
 #[allow(clippy::many_single_char_names)]
 pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -> Result<i32> {
     let f = &p.flags;
@@ -56,10 +62,10 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
         eprintln!("{said}");
         return Ok(crate::cli::USAGE_EXIT);
     }
-    // a bad --timeout is said before anything starts or launches
+    // a bad --timeout is said before anything starts, launches or is sent
     let limit = match sc::wait_timeout(f.timeout.as_deref()) {
         Ok(d) => d,
-        Err(e) if cmd == "wait" || (cmd == "launch" && f.wait) => {
+        Err(e) if validates_timeout(cmd, f.wait) => {
             eprintln!("  ✗ {e}");
             return Ok(crate::cli::USAGE_EXIT);
         }
@@ -76,31 +82,33 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
     } else {
         args
     };
-    // the two that wait exit with how the task ended (`sc::wait_exit`); every other command 0 when it worked
+    // the ones that wait exit with how the task ended (`sc::wait_exit`); every other command 0 when it worked
     match cmd {
         "launch" => return launch(&c, p, args, cwd, limit).await,
         "wait" => {
             let id = need(args.first(), "session id")?;
             // a task that isn't there is said at once, never waited for (QA round 11: `wisp wait x` hung 30 minutes)
-            c.cmd("runtime.get", json!({ "id": id })).await?;
+            c.cmd("runtime.get", json!({ "id": id })).await.map_err(CliError::not_found)?;
             let w = sc::wait(&c, id, limit).await?;
             return sc::shown(&c, f, id, Some(w)).await;
         }
+        // `reply --wait` exits as `wisp wait` does, within --timeout (it waited a fixed 30 minutes and exited 0)
+        "reply" => return sc::reply(&c, f, args, limit).await,
         _ => {}
     }
     let done: Result<()> = match cmd {
         "ls" | "list" => sc::ls(&c, f).await,
         "show" => sc::show(&c, f, need(args.first(), "session id")?, None).await,
-        "reply" => sc::reply(&c, f, args).await,
         "btw" => {
             let id = need(args.first(), "session id")?;
             let q = args[1..].join(" ");
-            let r = c.cmd("runtime.btw", json!({ "id": id, "question": need(Some(&q), "question")? })).await?;
+            let r =
+                c.cmd("runtime.btw", json!({ "id": id, "question": need(Some(&q), "question")? })).await.map_err(CliError::not_found)?;
             sc::btw_out(f, &sc::btw_answer(&c, id, s(&r, "id")).await?);
             Ok(())
         }
         "stop" => {
-            let r = c.cmd("runtime.stop", json!({ "id": need(args.first(), "session id")? })).await?;
+            let r = c.cmd("runtime.stop", json!({ "id": need(args.first(), "session id")? })).await.map_err(CliError::not_found)?;
             out(f, &r, "  ✓ stopped");
             Ok(())
         }

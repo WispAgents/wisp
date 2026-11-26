@@ -5,7 +5,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **Each `wisp` exit code means one thing.** 0 it worked, 1 wisp refused or the task failed, 2 the command line didn't fit (nothing ran), 3 the task waits on you, 4 no task with that id, 124 a wait timed out. A task that asks you something now makes `wisp wait` and `--wait` exit 3 (it was 2, the same as a typo). `wisp show`, `wait`, `reply`, `btw`, `stop` and `attach` with no id, a launch with a misspelled flag or a bad `--mode`, `--effort` or `--model`, and a bad `wisp share`, `wisp trigger` or `wisp cloud` argument now exit 2 (they exited 1), and an unknown task id exits 4. `wisp --help` and the wisp skill list the codes.
+
 ### Fixed
+
+- **`wisp reply <id> "…" --wait` waits as `wisp wait` does.** It honours `--timeout` (a bad value is said before anything is sent) and exits with how the task ended; it used to wait a fixed 30 minutes and exit 0.
+- **`wisp ls --watch` follows the list you asked for.** `--state`, `--agent`, `--crew`, `--project`, `--since` and `--limit` narrow it at each redraw (it showed every task), it fits your terminal's height, and `--json` prints one JSON object per change. `wisp ls --watch` and `wisp show --watch` refuse a flag they don't take instead of ignoring it.
+- **`wisp serve --host localhost` works**, and a bad `--host` or `WISP_HOST` is said (naming which) before anything in your wisp home is touched. A wisp bound to `::1` or another address now advertises the URL it answers on, so `wisp ls` and the agents reach it.
+- **`--host` is refused outside `wisp serve`** (`wisp --host 0.0.0.0`, `wisp ls --host …`) with "--host is wisp serve's alone"; it was silently ignored.
+- **`wisp help` and `wisp completions` never start a background wisp.** With none running they use the commands the last one listed, or the built-in ones.
 
 - **`wisp tui` never stops a task by accident.** Esc only goes back now (to the list, out of the composer); it used to stop a running task. `s` and `/stop` ask "Stop <task>?" first (y or Enter stops it, n or Esc doesn't), and do nothing on a task that isn't running.
 - **y, a and n in `wisp tui` answer only tool approvals**, with the approval's own Allow, Always or Deny. On a question ("Postgres or SQLite?") they used to send "allow" or "deny" as the answer.

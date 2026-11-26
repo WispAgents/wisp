@@ -11,8 +11,16 @@ use wisp_cli_core::{Images, Style, completions, human};
 use crate::client::{CliError, Client, Result};
 use crate::scripted::say;
 
-/// What `wisp` exits with when the command line didn't fit (a refusal from wisp exits 1).
+// What `wisp` exits with, one meaning each, so a script can branch on it (`wisp --help` and the wisp skill list them):
+// 0 it worked, 1 wisp refused or the task failed, then the three below, and 124 a wait that timed out (as `timeout(1)`).
+
+/// The command line didn't fit (a missing id, a flag or value no command takes): nothing ran.
 pub const USAGE_EXIT: i32 = 2;
+/// `wisp wait` and `--wait`: the task waits on you (a question, a permission, a turn held before it started). It was 2,
+/// a usage error's code, so a script couldn't tell "answer it" from "you typed it wrong".
+pub const WAIT_ASKS: i32 = 3;
+/// The task a command names isn't there (`wisp show <typo>`): its own code, never a refusal's 1.
+pub const NOT_FOUND: i32 = 4;
 
 /// The terminal's width: `COLUMNS`, else `stty size` on the terminal, else 80.
 pub fn columns() -> usize {
@@ -28,6 +36,22 @@ pub fn columns() -> usize {
         return n;
     }
     80
+}
+
+/// The terminal's height: `LINES`, else `stty size` on the terminal, else 24.
+pub fn lines() -> usize {
+    if let Some(n) = std::env::var("LINES").ok().and_then(|c| c.parse::<usize>().ok()).filter(|n| *n >= 5) {
+        return n;
+    }
+    #[cfg(unix)]
+    if let Ok(tty) = std::fs::File::open("/dev/tty")
+        && let Ok(o) = std::process::Command::new("stty").arg("size").stdin(tty).stderr(std::process::Stdio::null()).output()
+        && let Some(n) = String::from_utf8_lossy(&o.stdout).split_whitespace().next().and_then(|c| c.parse::<usize>().ok())
+        && n >= 5
+    {
+        return n;
+    }
+    24
 }
 
 /// How stdout draws: colour on a terminal unless `NO_COLOR` (or `TERM=dumb`); OSC 8 links with colour;
@@ -261,7 +285,40 @@ pub fn sdk_types(cat: &Catalogue, lang: Option<&String>, out: Option<&String>) -
     }
 }
 
-pub async fn completions(c: &Client, cat: &Catalogue, shell: Option<&String>) -> i32 {
+/// `wisp completions zsh|bash|fish`: from the running wisp when one answers (`c`), else from the catalogue it last left
+/// here or the built-in words alone, never starting one (audit cli-r6: it spawned a background wisp to print a script).
+pub async fn completions(c: Option<&Client>, cat: Option<&Catalogue>, shell: Option<&String>) -> i32 {
+    let extra = match c {
+        Some(c) => live_extra(c).await,
+        None => builtin_extra(),
+    };
+    let none = Catalogue::new(Vec::new());
+    let Some(s) = completions_script(cat.unwrap_or(&none), shell, &extra) else {
+        eprintln!("  ✗ wisp completions zsh|bash|fish");
+        return USAGE_EXIT;
+    };
+    say(&s);
+    0
+}
+
+/// The script for `shell` (None: no such shell), from the catalogue and what it doesn't say.
+pub fn completions_script(cat: &Catalogue, shell: Option<&String>, extra: &completions::Extra) -> Option<String> {
+    shell.and_then(|sh| completions::script_with(sh, cat, &crate::args::COMMANDS, extra))
+}
+
+/// What completion knows with nothing running: wisp's own groups' verbs and export's flags (no harnesses, settings or
+/// goals: those are the running wisp's).
+pub fn builtin_extra() -> completions::Extra {
+    completions::Extra {
+        groups: crate::words::group_verbs(),
+        after: vec![("export".to_owned(), EXPORT_FLAGS.map(str::to_owned).to_vec())],
+        ..completions::Extra::default()
+    }
+}
+
+const EXPORT_FLAGS: [&str; 5] = ["--format", "--out", "--include", "--with-deps", "--single-file"];
+
+async fn live_extra(c: &Client) -> completions::Extra {
     // what the catalogue doesn't say (setup audit F27): wisp's own groups' verbs, the harnesses, the setting keys
     // every harness here, as `--agent` takes it (setup audit B10: accounts' rows named only claude and codex)
     let agents = c.cmd("runtime.agents", json!({})).await.ok();
@@ -283,22 +340,38 @@ pub async fn completions(c: &Client, cat: &Catalogue, shell: Option<&String>) ->
     // `wisp export <TAB>`: the kinds this wisp has (by section, as a formula names them), then export's flags
     let kinds = c.cmd("resources.kinds", json!({})).await.ok();
     let mut export = strings(kinds.as_ref(), "section");
-    export.extend(["--format", "--out", "--include", "--with-deps", "--single-file"].map(str::to_owned));
+    export.extend(EXPORT_FLAGS.map(str::to_owned));
     // `--goal <TAB>`: the goals declared by name (`goals:` in a formula, ADR-0110; none from a wisp without wisp.goal)
     let goals = c.cmd("goal.declared", json!({})).await.ok();
-    let extra = completions::Extra {
+    completions::Extra {
         groups: crate::words::group_verbs(),
         agents: strings(agents.as_ref(), "id"),
         settings: strings(settings.as_ref(), "key"),
         values,
         after: vec![("export".to_owned(), export)],
         goals: strings(goals.as_ref(), "name"),
-    };
-    let Some(s) = shell.and_then(|sh| completions::script_with(sh, cat, &crate::args::COMMANDS, &extra)) else {
-        eprintln!("  ✗ wisp completions zsh|bash|fish");
-        return USAGE_EXIT;
-    };
-    say(&s);
+    }
+}
+
+/// `wisp help [word]` with nothing running and no catalogue left here (audit cli-r6: it started a background wisp to
+/// print the usage): the usage, a built-in word's lines, or the refusal `help` says for a word that's none (exit 2).
+pub fn help_alone(words: &[String]) -> i32 {
+    let words: Vec<String> = words.iter().flat_map(|w| w.split_whitespace()).map(str::to_owned).collect();
+    match words.get(1) {
+        None => say(crate::args::HELP),
+        Some(p) => {
+            let usage = if crate::words::is_group(p) { Some(crate::words::usage(p)) } else { crate::words::documented(p) };
+            let Some(u) = usage else {
+                eprintln!(
+                    "  ✗ wisp help {}: no command named {p} (wisp isn't running, so plugins' commands aren't listed)\n  wisp help lists every command; wisp --help the usage\n  a task that says this: wisp -- help {}",
+                    words[1..].join(" "),
+                    words[1..].join(" ")
+                );
+                return USAGE_EXIT;
+            };
+            say(&u);
+        }
+    }
     0
 }
 
@@ -322,6 +395,31 @@ mod tests {
             assert_eq!(a["text"], text, "{rest}");
         }
         assert!(!goal_by_name("crew.update", &w("t1 x"), &mut json!({ "id": "t1", "text": "x" })), "only goal.set");
+    }
+
+    /// cli-r6: `wisp completions` with nothing running started a background wisp; with no client and no catalogue it
+    /// still writes a script with the built-in commands and groups.
+    #[test]
+    fn completions_without_a_running_wisp_still_name_the_built_in_commands() {
+        let none = Catalogue::new(Vec::new());
+        for sh in ["zsh", "bash", "fish"] {
+            let s = completions_script(&none, Some(&sh.to_owned()), &builtin_extra()).unwrap_or_else(|| panic!("{sh}: no script"));
+            for word in ["attach", "ls", "wait", "export"] {
+                assert!(s.contains(word), "{sh}: no {word}");
+            }
+        }
+        assert!(completions_script(&none, Some(&"tcsh".to_owned()), &builtin_extra()).is_none());
+        assert!(completions_script(&none, None, &builtin_extra()).is_none());
+    }
+
+    /// cli-r6: `wisp help` with nothing running and no catalogue: the usage, a built-in's lines, exit 2 for no command.
+    #[test]
+    fn help_with_nothing_running_says_the_usage() {
+        let w = |s: &str| s.split(' ').map(str::to_owned).collect::<Vec<_>>();
+        assert_eq!(help_alone(&w("help")), 0);
+        assert_eq!(help_alone(&w("help ls")), 0);
+        assert_eq!(help_alone(&w("help crew")), 0);
+        assert_eq!(help_alone(&w("help nosuchword")), USAGE_EXIT);
     }
 
     /// Audit M5: `wisp ship --help` (and `wisp help ship`) listed only the ship plugin's verbs: `wisp ship <id>` and its

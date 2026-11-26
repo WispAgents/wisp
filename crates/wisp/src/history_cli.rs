@@ -28,13 +28,13 @@ pub fn since_ms(text: &str, now: i64) -> Result<i64> {
     let t = text.trim();
     let (n, unit) = t.split_at(t.find(|c: char| !c.is_ascii_digit()).unwrap_or(t.len()));
     let n: i64 =
-        n.parse().map_err(|_| CliError::said(format!("--since {t}: a number of days (7d), hours (12h), minutes (30m) or weeks (2w)")))?;
+        n.parse().map_err(|_| CliError::usage(format!("--since {t}: a number of days (7d), hours (12h), minutes (30m) or weeks (2w)")))?;
     let ms = match unit {
         "" | "d" => 86_400_000,
         "h" => 3_600_000,
         "m" => 60_000,
         "w" => 7 * 86_400_000,
-        _ => return Err(CliError::said(format!("--since {t}: d, h, m or w"))),
+        _ => return Err(CliError::usage(format!("--since {t}: d, h, m or w"))),
     };
     Ok(now - n * ms)
 }

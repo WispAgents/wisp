@@ -1,7 +1,7 @@
 //! Which words on the launch path are a task (round 255: `wisp tasks` started one). Pure, beside
 //! [`crate::args`]: a command word alone prints its usage, a typo of one says did you mean, a plugin's
 //! name lists its verbs; `wisp -- <word>` is always the task.
-use crate::args::{COMMANDS, HELP, Literal};
+use crate::args::{COMMANDS, HELP, Literal, Parsed};
 
 /// The first words main.rs routes on itself besides COMMANDS (wisp as code, areas, shared and cloud: its
 /// `match first` arms). `every_word_main_routes_on_is_a_known_word` reads main.rs and keeps them in step.
@@ -845,6 +845,30 @@ pub fn bad_model(m: &str) -> Option<String> {
 /// The first of `--mode`, `--effort` and `--model` given a word it doesn't take, in words (audit I9).
 pub fn bad_launch_words(mode: Option<&str>, effort: Option<&str>, model: Option<&str>) -> Option<String> {
     mode.and_then(bad_mode).or_else(|| effort.and_then(bad_effort)).or_else(|| model.and_then(bad_model))
+}
+
+/// A prompt's launch refused before anything starts: a flag no launch takes ([`launch_stray`]) or a word `--mode`,
+/// `--effort` or `--model` doesn't take ([`bad_launch_words`]). Both are the command line, so they exit
+/// `cli::USAGE_EXIT` (they exited 1, a refusal's code). None: a command, or a launch to go ahead with.
+pub fn launch_refused(p: &Parsed) -> Option<(String, i32)> {
+    if p.command.is_some() {
+        return None;
+    }
+    let f = &p.flags;
+    let said = p
+        .strays
+        .first()
+        .map(|stray| launch_stray(&p.words, stray))
+        .or_else(|| bad_launch_words(f.mode.as_deref(), f.effort.as_deref(), f.model.as_deref()))?;
+    Some((said, crate::cli::USAGE_EXIT))
+}
+
+/// `--host` on anything but `wisp serve` (and `wisp grid`, whose own binary parses its flags): it was read only there
+/// and silently ignored elsewhere, so `wisp --host 0.0.0.0` opened wisp on 127.0.0.1 and said nothing. The refusal,
+/// said before any server starts, task launches or file is written; None: no `--host`, or serve's.
+pub fn host_refused(p: &Parsed) -> Option<String> {
+    (p.flags.host.is_some() && !matches!(p.command, Some("serve" | "grid")))
+        .then(|| "--host is wisp serve's alone (wisp serve --host ADDR)".to_owned())
 }
 
 /// Edit distance with adjacent swaps (`shwo` is one from `show`).

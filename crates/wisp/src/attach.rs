@@ -497,10 +497,11 @@ fn ls_line(st: &Style, v: &Value) -> String {
     term::truncate(&format!("{}  {:<9}  {:<8}  {}", s("id"), state_line(st, &s("state")), s("agent"), s("title")), st.width)
 }
 
-/// `wisp ls --watch`: the list, redrawn in a terminal as it changes; a line per change in a pipe.
-pub async fn ls_watch(c: &Client, all: bool) -> Result<i32> {
+/// `wisp ls --watch`: the list `keep` narrows it to ([`crate::scripted::RowFilter`]: `--state`, `--agent`, `--limit` …),
+/// redrawn in a terminal as it changes; a line per change in a pipe; with `--json`, a JSON object per change (NDJSON).
+pub async fn ls_watch(c: &Client, f: &crate::args::Flags, keep: &crate::scripted::RowFilter) -> Result<i32> {
     let st = crate::cli::style();
-    let tty = std::io::stdout().is_terminal();
+    let tty = std::io::stdout().is_terminal() && !f.json;
     let mut conn = Conn::new(c, &[wisp_runtime_api::TOPIC_LIST.to_owned()]);
     let mut rows: BTreeMap<String, Value> = BTreeMap::new();
     let mut got = conn.start().await?;
@@ -537,13 +538,14 @@ pub async fn ls_watch(c: &Client, all: bool) -> Result<i32> {
             }
         }
         if !changed.is_empty() {
-            let mut list: Vec<&Value> = rows.values().filter(|v| all || v.get("archived").and_then(Value::as_bool) != Some(true)).collect();
-            list.sort_by_key(|v| std::cmp::Reverse(v.get("updated_at").and_then(Value::as_i64).unwrap_or(0)));
             if tty {
+                let mut list: Vec<&Value> = rows.values().collect();
+                list.sort_by_key(|v| std::cmp::Reverse(v.get("updated_at").and_then(Value::as_i64).unwrap_or(0)));
+                let list = keep.rows(list);
                 let mut text = String::from("\x1b[H\x1b[2J");
                 text.push_str(&term::bold(&st, "wisp ls --watch"));
                 text.push_str(&term::dim(&st, "   Ctrl-C to stop\n\n"));
-                for v in list.iter().take(40) {
+                for v in &list {
                     text.push_str(&ls_line(&st, v));
                     text.push('\n');
                 }
@@ -552,9 +554,12 @@ pub async fn ls_watch(c: &Client, all: bool) -> Result<i32> {
                 }
                 prompt(&text);
             } else {
-                for id in changed {
-                    if let Some(v) = rows.get(&id) {
-                        out_line(&ls_line(&st, v));
+                // each change the filter keeps: a line, or with --json the row as one JSON object (never a human line)
+                for id in &changed {
+                    match rows.get(id) {
+                        Some(v) if keep.keep(v) => out_line(&if f.json { v.to_string() } else { ls_line(&st, v) }),
+                        None if f.json => out_line(&json!({ "id": id, "deleted": true }).to_string()),
+                        _ => {}
                     }
                 }
             }
