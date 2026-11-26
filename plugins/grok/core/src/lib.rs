@@ -412,6 +412,17 @@ mod tests {
         assert_eq!((tool.as_str(), detail.as_str()), ("Edit", "calc.py"));
     }
 
+    /// ADR-0128: the run's browser (runtime.browser on) is the runtime's `browser` stdio server, which reaches Grok in its agent definition.
+    #[test]
+    fn the_agent_definition_brings_the_browser_in() {
+        let m = BTreeMap::from([(
+            "browser".to_owned(),
+            json!({ "type": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp@0.0.86", "--headless", "--isolated"] }),
+        )]);
+        let d = agent_definition(&m);
+        assert!(d.contains(r#""name":"browser""#) && d.contains(r#""command":"npx""#) && d.contains("@playwright/mcp@0.0.86"), "{d}");
+    }
+
     #[test]
     fn the_agent_definition_brings_wisp_in() {
         let mut m = BTreeMap::new();

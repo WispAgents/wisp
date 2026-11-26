@@ -60,7 +60,8 @@ async fn hash_at(file: &Path) -> Option<String> {
 }
 
 /// A path a revert may write or remove (v1 targetFile): lexically inside, and its nearest folder that
-/// exists is really inside `root` (no link out of it).
+/// exists is really inside `root` (no link out of it). `root` is the handle's `dir`, the frame every
+/// Changes path is in (a monorepo subfolder's paths are relative to it, see `Inner::collect`).
 async fn target(root: &Path, rel: &str) -> Result<PathBuf> {
     let rel = lexical_path(rel).ok_or_else(|| GitError::NoFolder(NOT_HERE.into()))?;
     let file = root.join(&rel);
@@ -193,6 +194,7 @@ pub async fn stage(svc: &Arc<GitServiceImpl>, a: StageArgs) -> Result<Done> {
         }
         StagePlan::Hunk { index } => {
             let rows = f.map(|f| f.rows).unwrap_or_default();
+            // `a.path` is a pathspec relative to `dir`; the patch keeps git's top-relative header, which `git apply` reads
             let mut un: Vec<&str> = APPLY_DIFF.to_vec();
             un.extend(["--", &a.path]);
             let unstaged = split_diff(&String::from_utf8_lossy(&me.git.raw(&me.dir, &un).await.unwrap_or_default())).into_iter().next();

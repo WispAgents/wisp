@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wisp_later_api::{
     AGENT_MAX_MS, AddArgs, BY_USER, BY_WISP, CHAIN_MAX, EditArgs, EditPlanArgs, FILES_MAX, ForLater, LaterEntry, LaterExt, LaterView, Lost,
-    MAX_MS, Origin, PER_TASK, ParkArgs, Plan, PlanArgs, PlanKind, Reminder, SentMeta, TEXT_MAX, TaskRef,
+    MAX_MS, MIN_MS, Origin, PER_TASK, ParkArgs, Plan, PlanArgs, PlanKind, Reminder, SentMeta, TEXT_MAX, TaskRef,
 };
 
 use crate::decide::{Task, TaskState};
@@ -259,6 +259,8 @@ pub fn new_plan(id: String, a: &PlanArgs, after: Option<(&Task, bool)>, now: i64
         title: None,
         text: None,
         from: None,
+        tries: 0,
+        retry_at: None,
     };
     if a.draft {
         p.draft = true;
@@ -314,6 +316,8 @@ pub fn edit_plan(p: &Plan, a: &EditPlanArgs, now: i64, tz: i32) -> Result<Plan> 
         p.draft = false;
         p.after = None;
         p.lost = None;
+        p.tries = 0;
+        p.retry_at = None;
     }
     if let (Some(t), PlanKind::Reminder) = (a.text.as_deref(), p.kind) {
         p.text = Some(text_of(Some(t), "text")?);
@@ -326,13 +330,38 @@ pub fn edit_plan(p: &Plan, a: &EditPlanArgs, now: i64, tz: i32) -> Result<Plan> 
     Ok(p)
 }
 
-/// Waiting for a task that can't be done any more (deleted, archived): it waits in Drafts.
+/// Waiting for a task that can't be done any more (deleted, archived), or a start that kept failing
+/// (`failed`): it waits in Drafts, with why, until you start it.
 pub fn lose(p: &Plan, why: &str) -> Plan {
     let mut p = p.clone();
     if let Some(after) = p.after.take() {
         p.draft = true;
         p.lost = Some(Lost { id: after.id, title: after.title, why: why.to_owned() });
+    } else if why == FAILED {
+        let title = p.title.clone().or_else(|| p.text.clone()).unwrap_or_default();
+        p.draft = true;
+        p.at = None;
+        p.retry_at = None;
+        p.lost = Some(Lost { id: p.id.clone(), title, why: why.to_owned() });
     }
+    p
+}
+
+/// `Lost::why` of a plan whose start failed `PLAN_TRIES` times.
+pub const FAILED: &str = "failed";
+/// Starts a due plan gets before it waits in Drafts instead (a lost card the user sees, never a silent drop).
+pub const PLAN_TRIES: u32 = 3;
+
+/// A due plan's start failed (runtime refused or was away): tried again after a backoff (a minute, then
+/// five), and after `PLAN_TRIES` failures lost to Drafts (`lose`).
+pub fn failed_start(p: &Plan, now: i64) -> Plan {
+    let mut p = p.clone();
+    p.tries = p.tries.saturating_add(1);
+    if p.tries >= PLAN_TRIES {
+        return lose(&p, FAILED);
+    }
+    let wait = MIN_MS.saturating_mul(5_i64.saturating_pow(p.tries - 1));
+    p.retry_at = Some(now.saturating_add(wait));
     p
 }
 

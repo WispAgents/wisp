@@ -8,7 +8,6 @@ use serde_json::{Value, json};
 use wisp_automations_api::TriggerSpec;
 use wisp_crew_api::commands as c;
 use wisp_crew_api::{CrewExt, JobKind, JobSummary, Member, MemberView, PLUGIN_ID, RunPick, TICK_MS, WaitingJob};
-use wisp_crew_core::cron::Utc;
 use wisp_crew_core::layout::{layout_of, normalize_layout};
 use wisp_crew_core::note::checkin_prompt;
 use wisp_crew_core::queue::{Placement, checkin_already, count_checkin, drain_count, place, place_delegated};
@@ -121,7 +120,7 @@ async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, c
     let mut ext = CrewExt { id: m.id.clone(), job, prompt: asked, from: w.from.clone(), reply: w.reply.clone(), ..CrewExt::default() };
     if place.is_some() {
         // no such member over there: the note goes with the job (`Note::part` reads it)
-        ext.note = Some(wisp_crew_core::note::crew_note(m, &ext, None, &Utc));
+        ext.note = Some(wisp_crew_core::note::crew_note(m, &ext, None, &st.local()));
     }
     let (agent, model, effort, mode) = job_body(m, w.run.as_ref());
     let mode = at_cap(&mode, capped.map(|c| c.get("mode").and_then(Value::as_str).unwrap_or("edits")));
@@ -527,6 +526,11 @@ fn work_commands(s: &mut Setup, st: &Arc<State>) {
 
 /// Every 20 s (v1 `tick`): the check-ins that are due, then each queue with room.
 pub(crate) fn start_ticks(ctx: &Ctx, st: Arc<State>) {
+    // the zone the client sent with its settings, and each change of it
+    let zone_of = |v: Option<Value>| v.and_then(|v| v.as_str().map(str::to_owned)).filter(|z| !z.is_empty());
+    *lock(&st.zone) = zone_of(ctx.setting("settings.timeZone"));
+    let st2 = st.clone();
+    ctx.watch_setting("settings.timeZone", move |v| *lock(&st2.zone) = zone_of(v));
     let scope = ctx.scope().clone();
     let c2 = ctx.clone();
     let Ok(clock) = ctx.clock() else { return };
@@ -546,11 +550,12 @@ async fn run_tick(ctx: &Ctx, st: &State) {
     let call = ctx.root_call();
     let ids: Vec<String> = lock(&st.saved).crew.iter().map(|m| m.id.clone()).collect();
     let t = now(ctx);
+    let zone = st.local();
     for id in ids {
         // each member as they are now (the one before awaited), the minute marked on their live row
         let Ok(m) = st.member(&id) else { continue };
-        if due_now(&m, t, &Utc)
-            && let Some(fire) = st.update(&id, |live| tick(live, t, &Utc)).flatten()
+        if due_now(&m, t, &zone)
+            && let Some(fire) = st.update(&id, |live| tick(live, t, &zone)).flatten()
         {
             match checkin(ctx, &call, st, &id, fire.wake).await {
                 // a wake-up is used up only once its check-in started or queued

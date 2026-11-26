@@ -87,6 +87,8 @@ export function runLine(p: Plan, agentName: (id: string) => string = (id) => id)
 export function planSub(p: Plan, afterTitle: string): string {
   if (p.kind !== 'task') return t('wisp.later.plan.reminder');
   if (p.after) return t('wisp.later.plan.after', { title: afterTitle, run: runLine(p) });
+  // its start kept failing (runtime away, a refused launch): it waits in Drafts, not lost silently
+  if (p.lost?.why === 'failed') return t('wisp.later.plan.failed', { run: runLine(p) });
   if (p.lost) return t('wisp.later.plan.lost', { title: p.lost.title, why: t(`wisp.later.plan.lost.${p.lost.why}` as Key), run: runLine(p) });
   return runLine(p);
 }

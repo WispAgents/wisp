@@ -40,3 +40,16 @@ export { loadHome, TaskView } from './frame/Panes.tsx';
 export { defaultModels } from './frame/default-models.ts';
 export { MODES_FOR_HARNESS, harnessDefaults, withHarnessDefaults, type HarnessDefaults } from './frame/harness-defaults.ts';
 export { LAUNCH_SETTING } from './frame/launch-pick.ts';
+export {
+  BROWSER_CAN_UNKNOWN,
+  BROWSER_SETTING,
+  BROWSERS_SETTING,
+  BROWSER_VALUES,
+  browserGlobal,
+  browserOwn,
+  browserRow,
+  browserSetting,
+  withBrowser,
+  type BrowserCan,
+  type BrowserValue,
+} from './frame/browser-pick.ts';

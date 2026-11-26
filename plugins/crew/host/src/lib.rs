@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use serde::{Deserialize, Serialize};
 use wisp_crew_api::commands::{self as c, Layout};
 use wisp_crew_api::{CrewExt, Member, MemberView};
-use wisp_crew_core::cron::{CronOnly, Utc};
+use wisp_crew_core::cron::{CronOnly, Zone};
 use wisp_crew_core::kit::Ids;
 use wisp_crew_core::member::{Checks, normalize_member};
 use wisp_crew_core::mentions::handle_of;
@@ -62,6 +62,24 @@ pub(crate) struct State {
     pub reported: Mutex<std::collections::HashMap<String, u32>>,
     /// one sandbox report at a time (its row can change twice before the first is read back)
     pub reporting: tokio::sync::Mutex<()>,
+    /// the user's IANA zone (`settings.timeZone`, as the client sent it); None: the machine's
+    pub zone: Mutex<Option<String>>,
+}
+
+/// The zone check-ins run in and notes write times in: the user's, else the machine's, as automations' triggers
+/// read theirs (audit doc23c: a member's `0 8 * * 1-5` checked in at 08:00 UTC).
+pub(crate) struct Local(jiff::tz::TimeZone);
+
+impl Local {
+    pub fn named(name: Option<&str>) -> Self {
+        Self(name.filter(|n| !n.is_empty()).and_then(|n| jiff::tz::TimeZone::get(n).ok()).unwrap_or_else(jiff::tz::TimeZone::system))
+    }
+}
+
+impl Zone for Local {
+    fn offset_min(&self, utc_ms: i64) -> i32 {
+        jiff::Timestamp::from_millisecond(utc_ms).map_or(0, |ts| self.0.to_offset(ts).seconds() / 60)
+    }
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -96,7 +114,12 @@ impl State {
             answering: tokio::sync::Mutex::new(()),
             reported: Mutex::default(),
             reporting: tokio::sync::Mutex::new(()),
+            zone: Mutex::default(),
         }
+    }
+
+    pub fn local(&self) -> Local {
+        Local::named(lock(&self.zone).as_deref())
     }
 
     /// The tables, then v1's crew once, then the cache. At start, before any command.
@@ -253,7 +276,7 @@ impl State {
             member: m.clone(),
             running,
             jobs,
-            next_at: next_checkin(m, now, &Utc),
+            next_at: next_checkin(m, now, &self.local()),
             handle: handle_of(&m.name),
             on: m.wakes.iter().map(|w| w.on.clone()).collect(),
         }
@@ -297,7 +320,7 @@ impl PromptPart for Note {
         };
         // a job from another wisp (this one runs it for a member over there) carries its note
         let Ok(m) = self.0.member(&job.id) else { return job.note.unwrap_or_default() };
-        wisp_crew_core::note::crew_note(&m, &job, None, &Utc)
+        wisp_crew_core::note::crew_note(&m, &job, None, &self.0.local())
     }
 }
 
@@ -472,6 +495,23 @@ mod tests {
         let pause = c::MemberBody { paused: Some(true), ..c::MemberBody::default() };
         assert!(st.normalize(&pause, Some(&m), 2_000, &[], &[], "auto").unwrap().paused);
         assert!(st.normalize(&on("elsewhere"), Some(&m), 3_000, &[], &[], "auto").is_err(), "nor moved to one it doesn't know");
+    }
+
+    /// Audit doc23c: check-ins ran on UTC, so `0 8 * * 1-5` in New York checked in at 03:00 or 04:00 local.
+    #[test]
+    fn a_weekday_8am_check_in_is_at_8am_in_the_users_zone_not_utc() {
+        let st = State::new();
+        *lock(&st.zone) = Some("America/New_York".into());
+        let body = c::MemberBody { name: Some("Ada".into()), cron: Some("0 8 * * 1-5".into()), ..c::MemberBody::default() };
+        let m = st.normalize(&body, None, 1_000, &[], &[], "auto").unwrap();
+        // Monday 2026-11-23, 12:00 UTC (07:00 in New York): 08:00 New York that day, 13:00 UTC
+        let now = jiff::Timestamp::from_second(1_795_435_200).unwrap().as_millisecond();
+        let at = st.view(&m, 0, now).next_at.unwrap();
+        let local = jiff::Timestamp::from_millisecond(at).unwrap().to_zoned(jiff::tz::TimeZone::get("America/New_York").unwrap());
+        assert_eq!((local.hour(), local.minute(), local.day()), (8, 0, 23), "{local}");
+        assert_eq!(at, now + 3_600_000);
+        // and the note's times are the zone's too
+        assert_eq!(st.local().offset_min(now), -300);
     }
 
     #[test]
