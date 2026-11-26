@@ -58,3 +58,14 @@ test('the rest of the URL keeps its place', () => {
   assert.equal(history.read(), '/task/abc');
   assert.equal(nav.takeShare?.(), LINK);
 });
+
+// the installed web app's share target: the worker opens the app on `/?shared=<id>` (@wisp/shell sw.ts). The id is
+// taken once, and the URL drops it at start (the first navigation would have, before the page's reader ran)
+test('a_share_sheet_id_is_taken_once_and_the_url_drops_it', () => {
+  const history = memoryHistory('/?shared=k1-abc&x=1');
+  const nav = createNavigation({ scope: createScope('t'), width: 1280, history });
+  assert.equal(history.read(), '/?x=1');
+  assert.equal(nav.takeShared?.(), 'k1-abc');
+  assert.equal(nav.takeShared?.(), undefined, 'a second read gets nothing');
+  assert.equal(createNavigation({ scope: createScope('t'), width: 1280, history: memoryHistory('/') }).takeShared?.(), undefined);
+});

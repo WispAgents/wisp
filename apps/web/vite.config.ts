@@ -2,11 +2,11 @@
 // writes dist/ with content-hashed assets, which `wisp serve` serves (crates/wisp/src/serve.rs
 // web_dir: WISP_WEB_DIR, else web/ by the binary, else this checkout's apps/web/dist) and the
 // desktop and Android apps ship. The service worker (@wisp/shell's platform/sw.ts) builds to dist/sw.js (a fixed name: its scope
-// is the site, and the page registers it by that name).
+// is the site, and the page registers it by that name), in a build of its own (serviceWorker below).
 
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { defineConfig, type ProxyOptions } from 'vite';
+import { build as viteBuild, defineConfig, type Plugin, type ProxyOptions } from 'vite';
 import solid from 'vite-plugin-solid';
 import { mockPeer } from './dev/vite-mock.ts';
 // the kit's class mirror of data-kit, so its rules are bucketed by class (ADR-0104, perf audit 2026-11-18 #5)
@@ -55,9 +55,38 @@ export function devProxy(target: string, vitePort: number): Record<string, Proxy
   };
 }
 
+const SW = fileURLToPath(new URL('../../packages/shell/src/platform/sw.ts', import.meta.url));
+
+/** dist/sw.js, built on its own once the page's bundle is written: a classic worker script (no `import`), so nothing
+ *  it shares with the page (share-form.ts: the share target's caps, which the page reads too) may become a chunk it
+ *  would import. One file, every module inlined. */
+export function serviceWorker(): Plugin {
+  let outDir = 'dist';
+  return {
+    name: 'wisp-sw',
+    apply: 'build',
+    configResolved(c) {
+      outDir = c.build.outDir;
+    },
+    async closeBundle() {
+      await viteBuild({
+        configFile: false,
+        logLevel: 'warn',
+        build: {
+          outDir,
+          emptyOutDir: false,
+          target: 'es2022',
+          copyPublicDir: false,
+          rollupOptions: { treeshake: { moduleSideEffects }, input: { sw: SW }, output: { format: 'iife', entryFileNames: 'sw.js', inlineDynamicImports: true } },
+        },
+      });
+    },
+  };
+}
+
 export default defineConfig(({ command }) => ({
   root: fileURLToPath(new URL('.', import.meta.url)),
-  plugins: [kitClasses(), solid(), ...(command === 'serve' && !DEV_API && process.env['WISP_MOCK'] !== '0' ? [mockPeer()] : [])],
+  plugins: [kitClasses(), solid(), serviceWorker(), ...(command === 'serve' && !DEV_API && process.env['WISP_MOCK'] !== '0' ? [mockPeer()] : [])],
   define: { __WISP_BUILD__: JSON.stringify(build()) },
   server: { port: Number(process.env['PORT'] ?? 5180), strictPort: false, host: '127.0.0.1', ...(DEV_API ? { proxy: devProxy(DEV_API, Number(process.env['PORT'] ?? 5180)) } : {}) },
   preview: { port: Number(process.env['PORT'] ?? 5181), host: '127.0.0.1' },
@@ -71,9 +100,10 @@ export default defineConfig(({ command }) => ({
     assetsInlineLimit: (file: string) => (/[\\/]plugins[\\/][^\\/]+[\\/]ui[\\/]src[\\/]logo\.svg$/.test(file) ? false : undefined),
     rollupOptions: {
       treeshake: { moduleSideEffects },
-      input: { index: fileURLToPath(new URL('index.html', import.meta.url)), sw: fileURLToPath(new URL('../../packages/shell/src/platform/sw.ts', import.meta.url)) },
+      // the service worker is built apart (serviceWorker above)
+      input: { index: fileURLToPath(new URL('index.html', import.meta.url)) },
       output: {
-        entryFileNames: (chunk) => (chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js'),
+        entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
       },
