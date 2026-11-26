@@ -201,8 +201,12 @@ pub fn args(a: &CodexArgs<'_>) -> Vec<String> {
             }
         }
         c(&mut out, format!("{key}.tool_timeout_sec={ASK_TIMEOUT_S}"));
-        // wisp's own tools need no approval: outside Full auto, exec's approval policy refuses every MCP call
-        c(&mut out, format!("{key}.default_tools_approval_mode={}", s("approve")));
+        // wisp's own tools need no approval: outside Full auto, exec's approval policy refuses every MCP call. A
+        // connector's stay refused there (exec can't ask, so the call fails at once with codex's refusal in the
+        // transcript, never a wait): approving them ran a user's server unasked in Edits
+        if wisp_harness_kit::protocol::OWN_MCP_SERVERS.contains(&name.as_str()) {
+            c(&mut out, format!("{key}.default_tools_approval_mode={}", s("approve")));
+        }
     }
     for img in a.images {
         out.push("-i".into());
@@ -238,6 +242,8 @@ mod tests {
         let a = args(&CodexArgs { mode: "edits", mcp_servers: Some(&m), ..CodexArgs::default() }).join(" ");
         assert!(a.contains(r#"-c mcp_servers.wisp.url="http://127.0.0.1:1/api/mcp" -c mcp_servers.wisp.env_http_headers={x-wisp-token="WISP_MCP_TOKEN_0_0"} -c mcp_servers.wisp.tool_timeout_sec=604800 -c mcp_servers.wisp.default_tools_approval_mode="approve""#), "{a}");
         assert!(a.contains(r#"-c mcp_servers.x.command="node" -c mcp_servers.x.args=["s.js"] -c mcp_servers.x.env_vars=["A"]"#), "{a}");
+        // `x` is a connector: its calls aren't approved for it (a user's server ran unasked in Edits)
+        assert!(!a.contains("mcp_servers.x.default_tools_approval_mode"), "{a}");
         assert_eq!(
             mcp_env(Some(&m)),
             BTreeMap::from([("WISP_MCP_TOKEN_0_0".to_owned(), "t".to_owned()), ("A".to_owned(), "1".to_owned())])

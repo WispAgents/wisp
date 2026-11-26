@@ -56,6 +56,8 @@ struct St {
     valid: HashSet<String>,
     reject_all: bool,
     refresh_ok: bool,
+    /// the token endpoint answers a refresh with this status and nothing else (a 503: it's down)
+    refresh_status: Option<u16>,
     refresh: Option<String>,
     reg_secret: Option<String>,
     n: u32,
@@ -68,6 +70,7 @@ impl Default for Server {
                 valid: HashSet::new(),
                 reject_all: false,
                 refresh_ok: true,
+                refresh_status: None,
                 refresh: None,
                 reg_secret: None,
                 n: 0,
@@ -121,6 +124,9 @@ impl Server {
             }
             ("POST", TOKEN) => {
                 let f = url_decode(&body);
+                if let (Some(st), "refresh_token") = (s.refresh_status, f["grant_type"].as_str()) {
+                    return reply(st, &json!({}));
+                }
                 let ok = match f["grant_type"].as_str() {
                     "authorization_code" => true,
                     "refresh_token" => s.refresh_ok && s.refresh.as_deref() == f.get("refresh_token").map(String::as_str),
@@ -261,10 +267,19 @@ impl App {
     fn token(&self) -> Option<String> {
         self.secrets.get("connector:fake:token")
     }
+    /// What wisp.runtime asks before a run: every `before:run` interceptor, the connectors' included.
+    async fn before_run(&self) {
+        let c: wisp_runtime_api::hooks::BeforeRunCtx =
+            serde_json::from_value(json!({ "sessionId": "t1", "turnId": "u1", "agent": "claude",
+            "model": "", "effort": "", "mode": "edits", "cwd": "/repo", "prompt": "go", "by": "user", "kind": "first" }))
+            .unwrap();
+        let ctx = self.k.ctx("wisp.connectors").unwrap();
+        ctx.run_hook::<wisp_runtime_api::hooks::BeforeRun>(&ctx.root_call(), c).await.unwrap();
+    }
     /// The bearer a new run of any task gets for the connector.
     fn run_bearer(&self) -> Option<String> {
         let q = McpQuery {
-            mode: wisp_runtime_api::model::Mode::default(),
+            mode: wisp_runtime_api::model::Mode::Edits,
             harness: "claude".into(),
             team: Vec::new(),
             turn_id: String::new(),
@@ -348,6 +363,60 @@ async fn a_new_run_gets_the_refreshed_bearer() {
     assert_ne!(new, old);
     assert_eq!(forced["token"], new);
     assert_eq!(a.run_bearer(), Some(format!("Bearer {new}")));
+}
+
+/// A run read its servers with the stored bearer whatever its end: a token that ran out while its timer didn't fire
+/// (the computer slept: the wall clock moved on, the timer's sleep didn't) went to the run as it was. Before the run
+/// it's refreshed, and the run's servers carry the new bearer.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_token_that_ran_out_while_asleep_is_refreshed_before_the_run() {
+    let a = app("before-run").await;
+    a.signed_in().await;
+    let old = a.token().unwrap();
+    a.clock.jump(3_600_000 + 1_000);
+    assert_eq!(a.run_bearer(), Some(format!("Bearer {old}")), "nothing woke up: the run would get the old one");
+    a.before_run().await;
+    let new = a.token().unwrap();
+    assert_ne!(new, old);
+    assert_eq!(a.server.refreshes(), 1);
+    assert_eq!(a.run_bearer(), Some(format!("Bearer {new}")));
+    a.before_run().await;
+    assert_eq!(a.server.refreshes(), 1, "a fresh token isn't refreshed again");
+}
+
+/// A refresh the token endpoint couldn't answer (a 503) marked the row "needs sign-in" for good, with no retry. It
+/// says "retrying", never asks for a sign-in, and is tried again later; once the server is back the row is fine.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refresh_that_fails_for_now_is_retried_and_asks_for_no_sign_in() {
+    let a = app("retry").await;
+    a.signed_in().await;
+    let old = a.token().unwrap();
+    a.server.with(|s| s.refresh_status = Some(503));
+    a.clock.jump(3_600_000 + 1_000);
+    let sleeping = a.clock.sleepers();
+    a.before_run().await;
+    let r = a.row().await;
+    assert_eq!(r["test"]["retrying"], true, "{r}");
+    assert!(r["test"]["auth"].is_null(), "no sign-in asked for: {r}");
+    assert_eq!(r["test"]["ok"], true, "its last check kept: {r}");
+    assert_eq!(a.token(), Some(old.clone()));
+    eventually("a retry is armed", async || a.clock.sleepers() > sleeping).await;
+    a.server.with(|s| s.refresh_status = None);
+    a.clock.advance(30_000);
+    eventually("the retry refreshed it", async || a.token().is_some_and(|t| t != old)).await;
+    eventually("the row isn't retrying any more", async || a.row().await["test"]["retrying"].is_null()).await;
+}
+
+/// `invalid_grant` from the token endpoint is the sign-in's end: the row asks for one.
+#[tokio::test(flavor = "multi_thread")]
+async fn invalid_grant_before_a_run_asks_for_a_sign_in() {
+    let a = app("invalid-grant").await;
+    a.signed_in().await;
+    a.server.with(|s| s.refresh_ok = false);
+    a.clock.jump(3_600_000 + 1_000);
+    a.before_run().await;
+    let r = a.row().await;
+    assert_eq!((r["test"]["auth"].clone(), r["test"]["retrying"].clone()), (json!(true), Value::Null), "{r}");
 }
 
 /// doc29a: the refresh runs ahead of the token's end by itself, on the plugin's clock.
