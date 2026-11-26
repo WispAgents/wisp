@@ -676,7 +676,7 @@
       "description": "Where a failed check or review goes, how many rounds it may take, and what happens past them.",
       "properties": {
         "back_to": {
-          "description": "build (the default) | spec",
+          "description": "build (the default) | spec. `backTo` is read too: the factory's other fields are camelCase, so a factory written\nthat way (as `factory.set` once said it) isn't refused for it",
           "type": "string"
         },
         "max": {
