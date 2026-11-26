@@ -492,3 +492,58 @@ async fn a_snapshot_sees_a_same_size_edit_in_the_index_s_own_second() {
     let snap = r.snapshot(&user()).await.unwrap().expect("the edit: a snapshot");
     assert_eq!(git(&dir, &["show", &format!("{snap}:m.js")]), "a + b");
 }
+
+/// Audit doc13: a monorepo checkout opened at `packages/web` listed diff rows from the repo's top
+/// (`packages/web/src/a.ts`) and untracked files from the subfolder (`src/new.ts`); Revert then wrote
+/// `packages/web/packages/web/src/a.ts`. Every path is now the subfolder's, and every command resolves it there.
+#[tokio::test]
+async fn a_subdir_checkout_lists_stages_reverts_and_undoes_in_one_path_frame() {
+    let t = tmp("subdir");
+    let dir = repo(&t);
+    write(&dir, "packages/web/src/a.ts", "export const a = 1;\n");
+    write(&dir, "packages/api/b.ts", "b\n");
+    git(&dir, &["add", "-A"]);
+    git(&dir, &["commit", "-q", "-m", "web"]);
+    let web = dir.join("packages/web");
+    write(&web, "src/a.ts", "export const a = 2;\n");
+    write(&web, "src/new.ts", "new\n");
+    write(&dir, "packages/api/b.ts", "b changed\n");
+    let (svc, _) = service();
+    let d = web.display().to_string();
+    let args = ChangesArgs { path: d.clone(), base: "HEAD".into(), stage_state: true, inline: true, ..Default::default() };
+    let c = wisp_git::commands::changes(&svc, args.clone()).await.unwrap().unwrap();
+    let paths: Vec<&str> = files(&c).iter().map(|f| f.path.as_str()).collect();
+    assert_eq!(paths, ["src/a.ts", "src/new.ts"], "one frame, the subfolder's (its sibling package unseen)");
+    // a.ts by its hunk (a patch `git apply` reads in the subfolder), new.ts whole
+    for (p, hunk) in [("src/a.ts", Some(0)), ("src/new.ts", None)] {
+        let s = StageArgs { dir: d.clone(), base: "HEAD".into(), path: p.into(), hunk, key: None, unstage: false };
+        wisp_git::commands::stage(&svc, s).await.unwrap();
+    }
+    let c = wisp_git::commands::changes(&svc, args.clone()).await.unwrap().unwrap();
+    assert!(files(&c).iter().all(|f| f.staged == Some(true) && f.unstaged == Some(false)), "{:?}", files(&c));
+    assert_eq!(c.staged, Some(2));
+    let s = StageArgs { dir: d.clone(), base: "HEAD".into(), path: "src/a.ts".into(), hunk: None, key: None, unstage: true };
+    wisp_git::commands::stage(&svc, s).await.unwrap();
+    let revert = RevertArgs { dir: d.clone(), base: "HEAD".into(), path: "src/a.ts".into(), ..Default::default() };
+    let r = wisp_git::commands::revert(&svc, revert).await.unwrap();
+    assert_eq!(std::fs::read_to_string(web.join("src/a.ts")).unwrap(), "export const a = 1;\n");
+    assert!(!web.join("packages").exists(), "no packages/web/packages/web");
+    let undo = RevertArgs {
+        dir: d.clone(),
+        base: "HEAD".into(),
+        path: "src/a.ts".into(),
+        restore: Some(Some("export const a = 2;\n".into())),
+        hash: r.hash,
+        ..Default::default()
+    };
+    wisp_git::commands::revert(&svc, undo).await.unwrap();
+    assert_eq!(std::fs::read_to_string(web.join("src/a.ts")).unwrap(), "export const a = 2;\n");
+    assert!(!web.join("packages").exists());
+    let out = wisp_git::commands::revert(
+        &svc,
+        RevertArgs { dir: d.clone(), base: "HEAD".into(), path: "../api/b.ts".into(), ..Default::default() },
+    )
+    .await;
+    assert!(out.is_err(), "nothing outside the checkout's folder");
+    assert_eq!(std::fs::read_to_string(dir.join("packages/api/b.ts")).unwrap(), "b changed\n");
+}
