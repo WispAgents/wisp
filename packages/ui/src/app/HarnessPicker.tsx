@@ -7,6 +7,9 @@
 // under the pill or above it. Under 560px the harnesses become one row of chips over the pane (v1 @media 560).
 // Keys (v1 keys()): ↑↓ move in a pane (on the left the right pane follows), → or Enter go right (Enter uses the
 // harness), ← goes back left, Enter picks, a letter types into the search, Escape or a click outside closes.
+// With `find` (harness audit r2): one search over every harness and model sits across the top, focused on open; its
+// results come as the pane's groups (one per harness), ↓ goes into them, Tab jumps to the next group, Enter picks.
+// A model row with `star` set shows a star that toggles it as a favourite (or f on the row).
 import { Index, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { flag, styleOf } from '../core/props.ts';
@@ -19,6 +22,8 @@ import { Sheet } from '../controls/Dialog.tsx';
 
 export interface HarnessPickerRow {
   readonly id: string;
+  /** a small action under the row (a signed-out harness's Sign in). Additive (2026-11-25). */
+  readonly action?: { readonly label: string; readonly onClick: () => void } | undefined;
   readonly name: string;
   /** the harness's logo (an image URL); Auto draws the spark */
   readonly logo?: string | undefined;
@@ -37,6 +42,10 @@ export interface HarnessPickerOption {
   readonly id: string;
   readonly label: string;
   readonly hint?: string | undefined;
+  /** a favourite (true) or one that can be (false); undefined: no star. Additive (2026-11-25). */
+  readonly star?: boolean | undefined;
+  /** a logo before the label (a Recent pick's harness). Additive (2026-11-25). */
+  readonly logo?: string | undefined;
 }
 
 export interface HarnessPickerPane {
@@ -75,6 +84,9 @@ export interface HarnessPickerPane {
     | undefined;
   /** in place of the list: how to set up or sign in to a harness that can't run yet */
   readonly body?: JSX.Element;
+  /** a star pressed (or f on a row): toggle that option as a favourite; `starLabel` names the star. Additive (2026-11-25). */
+  readonly onStar?: ((id: string) => void) | undefined;
+  readonly starLabel?: string | undefined;
 }
 
 export interface HarnessPickerProps {
@@ -98,6 +110,9 @@ export interface HarnessPickerProps {
   /** the way to a harness that isn't installed, under the list (UX 2026-11-18 #9: only the ones that can run are
    *  listed). Additive (2026-11-18). */
   readonly setup?: { readonly label: string; readonly onClick: () => void } | undefined;
+  /** one search across every harness and model, over both panes and focused on open; while it holds text the caller
+   *  gives the results as `pane`'s groups. Additive (2026-11-25). */
+  readonly find?: { readonly placeholder: string; readonly value: string; readonly onInput: (v: string) => void } | undefined;
 }
 
 const EDGE = 12;
@@ -124,6 +139,7 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
   const look = usePlatform();
   let box: HTMLDivElement | undefined;
   let input: HTMLInputElement | undefined;
+  let findInput: HTMLInputElement | undefined;
   const [pos, setPos] = createSignal<{ x: number; w: number; top?: number; bottom?: number }>({ x: EDGE, w: WIDTH, top: EDGE });
   const place = (): void => {
     const el = props.anchor();
@@ -164,12 +180,42 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
     if (!at || !box?.contains(at)) return;
     const inSide = at.dataset['kit'] === 'pk-h';
     const inList = at.dataset['kit'] === 'pk-m';
-    const inSearch = at === input;
+    const inSearch = at === input || at === findInput;
+    const inFind = at === findInput;
+    // Tab in the find results: the next harness's group (Shift: the one before); from the find box, the first
+    if (e.key === 'Tab' && props.find?.value && (inList || inFind)) {
+      const groups = [...(box?.querySelectorAll<HTMLElement>('[data-kit="pk-group"]') ?? [])];
+      if (groups.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        const gi = inList ? groups.findIndex((g) => g.contains(at)) : -1;
+        const d = e.shiftKey ? -1 : 1;
+        const next = groups[gi < 0 ? (d > 0 ? 0 : groups.length - 1) : (gi + d + groups.length) % groups.length];
+        const first = next?.querySelector<HTMLButtonElement>('[data-kit="pk-m"]');
+        first?.focus();
+        first?.scrollIntoView?.({ block: 'nearest' });
+        return;
+      }
+    }
+    if ((e.key === 'f' || e.key === 'F') && inList && props.pane.onStar && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const id = at.dataset['id'];
+      const opt = props.pane.groups.flatMap((g) => g.items).find((o) => o.id === id);
+      if (id !== undefined && opt?.star !== undefined) {
+        e.preventDefault();
+        e.stopPropagation();
+        props.pane.onStar(id);
+        return;
+      }
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       if (!inSide && !inList && !inSearch) return; // the slider and the accounts keep their own keys
       e.preventDefault();
       e.stopPropagation();
       const d = e.key === 'ArrowDown' ? 1 : -1;
+      if (inFind && props.find?.value) {
+        if (d > 0) step(options(), 1);
+        return;
+      }
       if (inSide) {
         const next = step(sideRows(), d);
         if (next?.dataset['id']) props.onPreview(next.dataset['id']);
@@ -202,7 +248,8 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
       if (first !== undefined) props.pane.onPick(first);
       return;
     }
-    if (e.key.length === 1 && e.key !== ' ' && !e.metaKey && !e.ctrlKey && !e.altKey && input && !inSearch && (inSide || inList)) input.focus(); // type-to-search
+    const typeInto = props.find ? findInput : input;
+    if (e.key.length === 1 && e.key !== ' ' && !e.metaKey && !e.ctrlKey && !e.altKey && typeInto && !inSearch && (inSide || inList)) typeInto.focus(); // type-to-search
   };
   const onDown = (e: PointerEvent): void => {
     // the phone's sheet closes on its own scrim, ✕ and swipe; its handle and head are outside the card
@@ -215,9 +262,10 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
   // frame after (audit H tasks NEW #3: building both in the press took 102–130 ms in WebKit, over ADR-0017's 100)
   const [drawn, setDrawn] = createSignal(typeof requestAnimationFrame !== 'function');
   const focusPick = (): void => {
-    // v1 focusModels: the pick, then the search when there is one
+    // v1 focusModels: the pick, then the search when there is one; the find box over both panes first of all
     if (!focusOptions()) focusSide(props.focused);
-    if (props.pane.search) input?.focus({ preventScroll: true });
+    if (props.find) findInput?.focus({ preventScroll: true });
+    else if (props.pane.search) input?.focus({ preventScroll: true });
   };
   onMount(() => {
     place();
@@ -257,10 +305,19 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
         data-kit="picker"
         data-part="runner.picker"
         data-up={flag(pos().bottom !== undefined)}
+        data-find={flag(props.find !== undefined)}
         role="dialog"
         aria-label={props.label}
         style={styleOf({ '--k-x': `${pos().x}px`, '--k-w': `${pos().w}px`, '--k-top': pos().top === undefined ? 'auto' : `${pos().top}px`, '--k-bottom': pos().bottom === undefined ? 'auto' : `${pos().bottom}px` })}
       >
+        <Show when={props.find}>
+          {(f) => (
+            <label data-kit="pk-search" data-find="" data-part="runner.find">
+              <Icon name="search" />
+              <input ref={(el) => (findInput = el)} spellcheck={false} autocomplete="off" placeholder={f().placeholder} aria-label={f().placeholder} value={f().value} onInput={(e) => f().onInput(e.currentTarget.value)} />
+            </label>
+          )}
+        </Show>
         <div data-kit="pk-side" role="listbox" aria-label={props.head} aria-orientation={narrow() ? 'horizontal' : 'vertical'}>
           <div data-kit="pk-head" aria-hidden="true">
             {props.head}
@@ -268,6 +325,7 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
           {/* by place, not by object: a row updated in place (a harness settling, ADR-0066) keeps its node and its focus */}
           <Index each={props.rows}>
             {(r) => (
+              <>
               <button
                 type="button"
                 data-kit="pk-h"
@@ -296,6 +354,14 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
                   <span data-kit="pk-dot" title={props.inUseLabel} />
                 </Show>
               </button>
+              <Show when={r().action}>
+                {(a) => (
+                  <button type="button" data-kit="pk-hact" data-part="runner.harness.action" onClick={() => a().onClick()}>
+                    {a().label}
+                  </button>
+                )}
+              </Show>
+              </>
             )}
           </Index>
           <Show when={props.setup}>
@@ -329,10 +395,33 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
                     <Index each={g().items}>
                       {(m) => (
                         <button type="button" data-kit="pk-m" data-part="runner.option" data-id={m().id} role="option" aria-selected={m().id === p().value ? 'true' : 'false'} onClick={() => p().onPick(m().id)}>
+                          <Show when={m().logo}>
+                            {(src) => (
+                              <span data-kit="pk-logo">
+                                <img src={src()} alt="" />
+                              </span>
+                            )}
+                          </Show>
                           <span data-kit="pk-text">
                             <b data-text="control">{m().label}</b>
                             <small>{m().hint ?? ''}</small>
                           </span>
+                          <Show when={m().star !== undefined && p().onStar}>
+                            <span
+                              data-kit="pk-star"
+                              data-on={flag(m().star === true)}
+                              role="switch"
+                              aria-checked={m().star === true ? 'true' : 'false'}
+                              aria-label={p().starLabel}
+                              title={p().starLabel}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                p().onStar?.(m().id);
+                              }}
+                            >
+                              <Icon name="star" />
+                            </span>
+                          </Show>
                           <Icon name="check" />
                         </button>
                       )}

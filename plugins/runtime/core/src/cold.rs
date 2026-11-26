@@ -26,30 +26,8 @@ const COMPACT_WRITE: f64 = 30_000.0;
 const WRITE_1H: f64 = 2.0;
 const WRITE_5M: f64 = 1.25;
 
-/// USD per million tokens, API list, by the main thread's model: input, cache read, output.
-pub const PRICES: [(&str, [f64; 3]); 5] = [
-    ("claude-opus-5-5", [4.0, 0.2, 20.0]),
-    ("claude-sonnet-5-5", [2.0, 0.2, 10.0]),
-    // v1 #763: Fable 5.2 lists at $8 / $0.20 / $40
-    ("claude-fable-5-2", [8.0, 0.2, 40.0]),
-    ("claude-fable-5-1", [10.0, 0.25, 50.0]),
-    ("claude-fable-5", [10.0, 0.25, 50.0]),
-];
-
-/// A model's list price, by its bare id (`[1m]` and a `-YYYYMMDD` date dropped).
-pub fn price(model: &str) -> Option<[f64; 3]> {
-    let id = bare_model(model);
-    PRICES.iter().find(|(k, _)| *k == id).map(|(_, p)| *p)
-}
-
-/// v1 `bareModel`: `claude-opus-5-5[1m]` → `claude-opus-5-5`, `…-20261101` → `…`.
-pub fn bare_model(id: &str) -> &str {
-    let id = id.strip_suffix("[1m]").or_else(|| id.strip_suffix("[1M]")).unwrap_or(id);
-    match id.rsplit_once('-') {
-        Some((head, d)) if d.len() == 8 && d.bytes().all(|b| b.is_ascii_digit()) => head,
-        _ => id,
-    }
-}
+// One price table for the whole runtime (ADR-0124): Compact now and Usage's estimates read the same numbers.
+pub use crate::prices::{bare_model, price};
 
 fn agent<'a>(s: &'a Session, t: &'a Turn) -> &'a str {
     if t.agent.is_empty() { &s.agent } else { &t.agent }
@@ -95,7 +73,7 @@ pub fn main_model(st: &TurnStats) -> String {
     st.models
         .iter()
         .flatten()
-        .map(|(id, v)| (bare_model(id).to_owned(), n(v, "input") + n(v, "cacheRead") + n(v, "cacheWrite")))
+        .map(|(id, v)| (bare_model(id), n(v, "input") + n(v, "cacheRead") + n(v, "cacheWrite")))
         .max_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(id, _)| id)
         .unwrap_or_default()

@@ -7,7 +7,7 @@ use wisp_runtime_api::commands::{FollowUpArgs, FollowedUp};
 use wisp_runtime_api::model::TurnStatus;
 use wisp_runtime_api::{SessionId, TurnId};
 
-use super::{SLOT, slot, with_slot};
+use super::{SLOT, with_slot};
 use crate::error::{Result, RuntimeError};
 use crate::runtime::Runtime;
 
@@ -55,9 +55,6 @@ impl Runtime {
             if blocked.is_empty() {
                 return Err(RuntimeError::NoTurn("Nothing on that turn is waiting for approval.".into()));
             }
-            if allow && slot(&s).and_then(|m| m.get("sideOf")).is_some() {
-                return Err(RuntimeError::Conflict("A side discussion can’t allow this: ask the main task to do it.".into()));
-            }
             if let Some(done) = t.ext.get(SLOT).and_then(|x| x.get("approval")).and_then(Value::as_str) {
                 return Err(RuntimeError::Conflict(format!("Already {done}.")));
             }
@@ -83,15 +80,10 @@ impl Runtime {
         Ok(json!({ "turnId": out.turn_id, "queued": out.queued, "scoped": scoped }))
     }
 
-    /// A follow-up with run extras in its queue item (`grants`, `once`, `fork`): read by `start_turn`.
+    /// A follow-up with run extras (`grants`, `once`) on its own queue item, queued under the task's lock with them:
+    /// `start_turn` reads them from that item, so a prompt queued before it runs as it was sent (audit doc19a).
     async fn follow_up_with(self: &Arc<Self>, id: &SessionId, text: String, extras: Value) -> Result<FollowedUp> {
-        {
-            let _g = self.task_lock(id.as_str()).await;
-            let mut s = self.repo.session(id.as_str()).await?;
-            with_slot(&mut s.ext, |m| m.insert("next".into(), extras));
-            self.persist(&mut s, Vec::new()).await?;
-        }
-        self.follow_up(FollowUpArgs { id: id.clone(), text, queue: Some(true), ..FollowUpArgs::default() }).await
+        self.follow_up_with_next(FollowUpArgs { id: id.clone(), text, queue: Some(true), ..FollowUpArgs::default() }, Some(extras)).await
     }
 }
 

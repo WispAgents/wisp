@@ -23,8 +23,9 @@ use crate::fsx;
 /// root's own entries plus each literal path a pattern names. What's tracked is already in the new
 /// checkout and `copy_included` skips anything already there, so the result is the same for the
 /// patterns repos use (`.env*`, `node_modules/`, `config/local.json`).
-pub async fn included_paths(root: &str) -> Vec<String> {
-    let file = fsx::read_opt(fsx::join(root, ".worktreeinclude")).await;
+/// `all` false: the default (the root's `.env` files) whatever the repo's file says.
+pub async fn included_paths(root: &str, all: bool) -> Vec<String> {
+    let file = if all { fsx::read_opt(fsx::join(root, ".worktreeinclude")).await } else { None };
     let pats = include::patterns(file.as_deref());
     if pats.is_empty() {
         return Vec::new();
@@ -32,10 +33,11 @@ pub async fn included_paths(root: &str) -> Vec<String> {
     let mut listing: Vec<String> =
         fsx::entries(root).await.into_iter().filter(|(n, _)| n != ".git").map(|(n, d)| if d { format!("{n}/") } else { n }).collect();
     for line in file.as_deref().unwrap_or("").lines().map(str::trim) {
-        let lit = line.trim_start_matches('/').trim_end_matches('/');
+        let lit = line.trim_end_matches('/');
         if lit.contains('/')
             && !lit.contains(['*', '?'])
             && !line.starts_with(['#', '!'])
+            && !include::leaves_repo(line)
             && let Ok(m) = tokio::fs::metadata(fsx::join(root, lit)).await
         {
             listing.push(if m.is_dir() { format!("{lit}/") } else { lit.to_owned() });
@@ -56,11 +58,29 @@ pub struct Copied {
 
 /// The included files from the checkout into `dir`. Never fails.
 pub async fn copy_included(e: &Engine, root: &str, dir: &str) -> Copied {
+    copy_some(e, root, dir, true).await
+}
+
+/// `copy_included`; `all` false copies only the default root `.env` files: a repo not trusted yet doesn't pick what
+/// gets copied (its `.worktreeinclude` waits with its held steps, `run_held`).
+pub async fn copy_some(e: &Engine, root: &str, dir: &str, all: bool) -> Copied {
     let mut out = Copied::default();
-    for rel in included_paths(root).await {
+    if all {
+        let file = fsx::read_opt(fsx::join(root, ".worktreeinclude")).await;
+        for line in include::rejected(file.as_deref()) {
+            out.problems.push(format!("skipped {line} in .worktreeinclude: it names a path outside the repo"));
+        }
+    }
+    for rel in included_paths(root, all).await {
         let clean = rel.trim_end_matches('/'); // `cp -R dir/` would copy what's in it
         let (from, to) = (fsx::join(root, clean), fsx::join(dir, clean));
         if fsx::exists(&to).await {
+            continue;
+        }
+        // as the disk sees them: a symlink in the checkout (or in the new folder) that points out of it is never
+        // followed, so nothing outside the repo is read and nothing outside the worktree is written
+        if !fsx::within_real(&from, root).await || !fsx::within_real(&fsx::parent(&to), dir).await {
+            out.problems.push(format!("skipped {rel}: it leads outside the repo"));
             continue;
         }
         let done = match fsx::mkdirp(fsx::parent(&to)).await {
@@ -224,13 +244,15 @@ pub async fn run_setup(e: &Engine, root: &str, dir: &str, commands: &[String], e
     (ran, problems)
 }
 
-/// Copy, then set up. `hold`: the steps the repo isn't trusted for: they wait in `held`.
+/// Copy, then set up. `hold`: the steps the repo isn't trusted for: they wait in `held`, and so does its
+/// `.worktreeinclude` (only the root's `.env` files are copied till then).
 pub async fn prepare(e: &Engine, root: &str, dir: &str, hold: Option<Vec<TrustItem>>, branch: &str) -> Prepared {
-    let Copied { copied, mut problems, cloned } = copy_included(e, root, dir).await;
+    let hold = hold.filter(|h| !h.is_empty());
+    let Copied { copied, mut problems, cloned } = copy_some(e, root, dir, hold.is_none()).await;
     let (rs, other) = repo_setup(e, root).await;
     problems.extend(rs.problem.clone());
     let cloned = (cloned > 0).then_some(cloned);
-    if let Some(held) = hold.filter(|h| !h.is_empty()) {
+    if let Some(held) = hold {
         return Prepared { copied, ran: Vec::new(), problems, held: Some(held), cloned };
     }
     let env = source_env(e, &rs, other.as_ref(), &SetupEnvCtx { root: root.into(), dir: dir.into(), branch: branch.into() });
@@ -243,6 +265,10 @@ pub async fn prepare(e: &Engine, root: &str, dir: &str, hold: Option<Vec<TrustIt
 pub async fn run_held(e: &Engine, wt: &Worktree) -> Option<Prepared> {
     let mut p = wt.prepared.clone()?;
     let held = p.held.take()?;
+    // trusted now: the rest of what its `.worktreeinclude` names (what's there already is skipped)
+    let c = copy_included(e, &wt.root, &wt.path).await;
+    p.copied.extend(c.copied);
+    p.problems.extend(c.problems);
     let commands: Vec<String> = held.iter().map(|x| x.command.clone()).collect();
     let (rs, other) = repo_setup(e, &wt.root).await;
     let env = source_env(e, &rs, other.as_ref(), &SetupEnvCtx { root: wt.root.clone(), dir: wt.path.clone(), branch: wt.base.clone() });

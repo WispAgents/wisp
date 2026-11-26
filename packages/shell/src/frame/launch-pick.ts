@@ -24,6 +24,9 @@ export interface LaunchPick {
   readonly models?: Readonly<Record<string, string>>;
   readonly labels?: Readonly<Record<string, string>>;
   readonly efforts?: Readonly<Record<string, string>>;
+  /** each harness's mode for a new task (plan, edits, auto), set in Settings → Agents; none: New task's own. Additive
+   *  (2026-11-25). */
+  readonly modes?: Readonly<Record<string, string>>;
   /** Run on (v1 launch.where): the computer (a peer id) or plugin place New task last ran on; absent is this one. */
   readonly where?: string;
 }
@@ -49,11 +52,13 @@ export function readLaunch(v: unknown): LaunchPick {
   const models = strings(o['models']);
   const labels = strings(o['labels']);
   const efforts = strings(o['efforts']);
+  const modes = strings(o['modes']);
   return {
     ...(typeof o['agent'] === 'string' && o['agent'] && { agent: o['agent'] }),
     ...(models && { models }),
     ...(labels && { labels }),
     ...(efforts && { efforts }),
+    ...(modes && { modes }),
     ...(typeof o['where'] === 'string' && o['where'] && { where: o['where'] }),
   };
 }
@@ -61,6 +66,7 @@ export function readLaunch(v: unknown): LaunchPick {
 /** A pick made: this harness, and its model, the model's name and level (each harness keeps its own). */
 export function withPick(prev: LaunchPick, agent: string, model: string, label: string, effort: string): LaunchPick {
   return {
+    ...prev,
     agent,
     models: { ...prev.models, [agent]: model },
     labels: { ...prev.labels, [agent]: label },

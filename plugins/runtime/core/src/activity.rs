@@ -110,6 +110,9 @@ pub fn allowable(mode: Mode, blocked: &[BlockedAction]) -> &[BlockedAction] {
 pub struct Head {
     /// the harness conversation to resume
     pub resume_id: Option<String>,
+    /// where the conversation stood at the turn's last word (`HarnessEvent::Session`'s `at`): a fork from this turn
+    /// resumes there
+    pub resume_at: Option<String>,
     /// the last agent message
     pub text: Option<String>,
     pub changes: Vec<FileChange>,
@@ -318,7 +321,12 @@ fn flag_quotes(head: &mut Head, ev: &HarnessEvent, mut a: Activity) -> Activity 
 /// parser's `fallback`), passed in so this module stays independent of it.
 pub fn apply(head: &mut Head, ev: &HarnessEvent, plain: bool, is_fallback: &dyn Fn(&str) -> bool) -> Effect {
     match ev {
-        HarnessEvent::Session { id } => head.resume_id = Some(id.clone()),
+        HarnessEvent::Session { id, at } => {
+            head.resume_id = Some(id.clone());
+            if at.is_some() {
+                head.resume_at.clone_from(at);
+            }
+        }
         HarnessEvent::Text { text } => {
             head.text = Some(text.clone());
             // the answer's prose: where it quotes a value the task read, or reads like a .env line (ADR-0050)

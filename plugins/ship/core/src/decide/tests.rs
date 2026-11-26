@@ -70,6 +70,16 @@ fn merge_squashes_the_reviewed_head_and_readies_a_draft_first() {
     assert!(!cleans_up(&Worktree { foreign: true, ..wt("x") }), "a foreign worktree is never ours to tidy");
 }
 
+/// A merged task's folder that stays says why: kept, working, holding work, or not removable.
+#[test]
+fn a_merge_says_why_the_folder_stayed() {
+    assert_eq!(tidy_note("/w/x", &Tidied::Removed), None);
+    assert_eq!(tidy_note("/w/x", &Tidied::Kept).as_deref(), Some("The worktree /w/x was kept: Keep worktree is on for its task."));
+    assert!(tidy_note("/w/x", &Tidied::Busy).is_some_and(|n| n.contains("still working")));
+    assert!(tidy_note("/w/x", &Tidied::Dirty(2)).is_some_and(|n| n.contains("2 changes")));
+    assert!(tidy_note("/w/x", &Tidied::Failed("locked".into())).is_some_and(|n| n.contains("(locked)")));
+}
+
 /// Edge case Git 6 (v1 "after its PR merged elsewhere, new changes on the task show Ship it again").
 #[test]
 fn unpushed_counts_from_the_merged_head_else_the_remote_branch_else_ahead() {

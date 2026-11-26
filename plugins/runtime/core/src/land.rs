@@ -148,6 +148,7 @@ pub fn turn_stats(s: &HarnessStats) -> TurnStats {
         cache_ttl_ms: whole("cacheTtlMs"),
         subagents: subagents_of(s.extra.get("subagents"), true),
         compactions: whole("compactions").and_then(|n| u32::try_from(n).ok()).filter(|n| *n > 0),
+        premium_requests: whole("premiumRequests").and_then(|n| u32::try_from(n).ok()).filter(|n| *n > 0),
         cache_read_tokens: s.cache_read_tokens,
         cache_write_tokens: s.cache_write_tokens,
         // what the next resume of this conversation starts from (dropped here, every resumed turn counted it all again)

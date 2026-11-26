@@ -17,6 +17,7 @@ export { loadPlatformStyles } from './platform/styles.ts';
 export { FAB_SLOP, FAB_START, barCollapsed, fabOnScroll, type FabScroll } from './nav/scroll-math.ts';
 export { isEnvFile, maskEdit } from './content/env-mask.ts';
 export type { DiffFile, DiffHunk, DiffLine, DiffStatus } from './content/diff/parse.ts';
+export { diffFileOf } from './blocks/content-diff.ts';
 export { makerOptions, type MakerOption } from './crew/maker-options.ts';
 export { GESTURES, defineGestures, gestureMarks, type GestureKind, type GestureName, type GestureSpec, type GestureTwin } from './gestures/registry.ts';
 export * from './gestures/gesture-math.ts';
@@ -25,3 +26,5 @@ export * from './app/ledger-model.ts';
 export { foldTail, tailFold, type FoldExtras, type FoldInput, type LauncherTool } from './app/launcher-fold.ts';
 // work that waits for the first screen (ADR-0105): plain plugin modules (a watcher started at setup) queue on it
 export { afterFirstScreen } from './controls/lazy-part.ts';
+// the one reset duration ("2h 10m"): the runner picker and Usage both say it
+export { untilLabel } from './content/until-label.ts';

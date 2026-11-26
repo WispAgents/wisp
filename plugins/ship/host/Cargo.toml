@@ -15,6 +15,7 @@ wisp-history-api.workspace = true
 wisp-runtime-api.workspace = true
 wisp-review-api.workspace = true
 wisp-ship-api.workspace = true
+wisp-worktrees-api.workspace = true
 wisp-ship-core.workspace = true
 futures.workspace = true
 serde.workspace = true

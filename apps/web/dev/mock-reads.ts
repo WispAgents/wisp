@@ -188,6 +188,7 @@ const reason = (why: string, ids: readonly string[]): [string, string][] => ids.
 
 /** Commands the UI defines that the mock refuses on purpose, each with why. Add a command to COMMANDS or here. */
 export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
+  ...reason('Continue on…\'s preview (ADR-0125): built by the runtime\'s hand-off note over real turns; the dialog says it is reading', ['runtime.handoffPreview']),
   ...reason('a software factory run (ADR-0114): its stations are real tasks a server drives; the mock lists none', ['factory.names', 'factory.stop']),
   ...reason('a workflow run (ADR-0119, ADR-0121): its steps are real tasks a server drives, and the saved and prebuilt workflows live on disk; the mock runs none, so /workflow suggests none', [
     'workflows.edit', 'workflows.list', 'workflows.set', 'workflows.starters', 'workflows.stop',
@@ -199,7 +200,8 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
   ]),
   ...reason('wisp Grid / cloud: needs a signed-in grid (the mock has none)', [
     'grid-client.computer', 'grid-client.revoke', 'grid-client.signin', 'grid-client.signinCancel', 'grid-client.signout',
-    'sandbox.claude.begin', 'sandbox.claude.code', 'sandbox.drop', 'sandbox.env', 'sandbox.launch', 'sandbox.logout',
+    'sandbox.claude.begin', 'sandbox.claude.code', 'sandbox.dismiss', 'sandbox.drop', 'sandbox.env', 'sandbox.launch',
+    'sandbox.logout', 'sandbox.retry', 'sandbox.start',
     'share.create', 'share.import', 'share.peek', 'share.stop', 'stuff.publish', 'stuff.unpublish', 'crew.share',
   ]),
   ...reason('another computer: the mock has one peer (?seed=computers adds a read-only Studio)', [

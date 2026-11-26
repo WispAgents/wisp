@@ -111,7 +111,7 @@ impl Ship {
         for i in own {
             let (wt, number, name) =
                 (task.repos[i].worktree.clone(), task.repos[i].pr.as_ref().map_or(0, |p| p.number), task.repos[i].name.clone());
-            match self.shipper.merge(call, &wt, number).await {
+            match self.shipper.merge(call, session, &wt, number).await {
                 Ok((pr, sync, left)) => {
                     task.repos[i].pr = Some(pr);
                     synced.push(sync);

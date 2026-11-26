@@ -36,6 +36,7 @@
     "git:worktree.add",
     "git:worktree.remove",
     "git:branch.delete",
+    "worktrees:remove",
     "proc:exec{bin:gh}"
   ],
   "activation": [

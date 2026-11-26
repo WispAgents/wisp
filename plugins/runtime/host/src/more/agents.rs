@@ -90,6 +90,7 @@ fn status_of(h: &dyn Harness, found: HarnessFound) -> AgentStatus {
         efforts: found.efforts.unwrap_or(info.efforts),
         delegates: info.ask_tool.is_some(),
         signed_in: found.signed_in,
+        bin: found.bin,
     }
 }
 
@@ -107,6 +108,7 @@ fn declared_status(h: &dyn Harness) -> AgentStatus {
         efforts: info.efforts,
         delegates: info.ask_tool.is_some(),
         signed_in: None,
+        bin: None,
     }
 }
 

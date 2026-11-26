@@ -1,62 +1,15 @@
 // Plan budget's words past the bars (v1 features/budget.js windowLine, bankedHtml, overHtml, whereHtml, compareHtml;
 // banked.js; receipt.js compareWords/compareParts), DOM-free so tests read them.
 
-import type { AccountPlan, Usage, UsageDay, UsageRow } from './commands.ts';
+import type { AccountPlan, Usage, UsageRow } from './commands.ts';
 import { pct } from './drain.ts';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
 
 const DAY = 24 * 3600_000;
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
-const money = (n: number): string => `$${n.toFixed(2)}`;
-/** "Nov 12" of a `YYYY-MM-DD` */
-export const dayLabel = (d: string): string => `${MONTHS[Number(d.slice(5, 7)) - 1] ?? ''} ${Number(d.slice(8, 10))}`;
 
-export type ChartMetric = 'cost' | 'tokens' | 'turns';
-
-/** The chart from one answer: pure, so a test reads it. */
-export function usageModel(
-  u: Usage,
-  metric?: ChartMetric,
-): {
-  byCost: boolean;
-  byTokens: boolean;
-  active: ChartMetric;
-  bars: { key: string; share: number; tip: string }[];
-  max: string;
-  first: string;
-  unpriced: number;
-  tokens: number;
-  harnesses: readonly UsageRow[];
-} {
-  const byCost = (u.priced ?? 0) > 0;
-  const harnesses = harnessesOf(u);
-  const tokens = u.tokens ?? harnesses.reduce((s, r) => s + (r.tokens ?? 0), 0);
-  const daily = u.daily ?? [];
-  const byTokens = tokens > 0 && daily.some((d) => (d.tokens ?? 0) > 0);
-  const active: ChartMetric =
-    metric === 'cost' && byCost ? 'cost' : metric === 'tokens' && byTokens ? 'tokens' : metric === 'turns' ? 'turns' : byCost ? 'cost' : byTokens ? 'tokens' : 'turns';
-  const val = (d: UsageDay): number => (active === 'cost' ? d.cost : active === 'tokens' ? (d.tokens ?? 0) : d.turns);
-  const top = Math.max(0, ...daily.map(val)) || 1;
-  const maxStr = active === 'cost' ? money(top) : active === 'tokens' ? tokenWords(top) : String(top);
-  return {
-    byCost,
-    byTokens,
-    active,
-    bars: daily.map((d) => {
-      const parts: string[] = [];
-      if (byCost && d.cost > 0) parts.push(money(d.cost));
-      if ((d.tokens ?? 0) > 0) parts.push(t('budget.usage.harness.tokens', { n: tokenWords(d.tokens ?? 0) }));
-      parts.push(t('budget.view.turns', { count: d.turns }));
-      return { key: d.date, share: val(d) / top, tip: `${dayLabel(d.date)}: ${parts.join(' · ')}` };
-    }),
-    max: t('budget.view.max', { v: maxStr }),
-    first: daily[0] ? dayLabel(daily[0].date) : '',
-    unpriced: u.turns - (u.priced ?? 0),
-    tokens,
-    harnesses,
-  };
-}
+/** Whether wisp knows a harness's plan limits: one that reports quota windows by design, or any account with one. */
+export const limitsReported = (h: HarnessBudgetMeta, accounts: readonly AccountPlan[]): boolean => h.planned || accounts.some((a) => a.windows.length > 0);
 
 export interface HarnessBudgetMeta {
   readonly agent: string;
@@ -88,13 +41,15 @@ export function plannedHarnesses(accs: readonly unknown[] = []): readonly Harnes
   const withRows = new Set(
     accs.flatMap((r) => {
       if (!r || typeof r !== 'object') return [];
-      const rec = r as { readonly id?: unknown; readonly agent?: unknown };
+      const rec = r as { readonly id?: unknown; readonly agent?: unknown; readonly body?: { readonly agent?: unknown } | null };
+      if (typeof rec.body?.agent === 'string' && rec.body.agent) return [rec.body.agent];
       if (typeof rec.agent === 'string' && rec.agent) return [rec.agent];
       if (typeof rec.id !== 'string' || !rec.id) return [];
+      // budget store.rs writes `{agent}|{account}`; a peer's copy carries a `peer:` prefix in front of it.
       const colon = rec.id.indexOf(':');
       const key = colon >= 0 ? rec.id.slice(colon + 1) : rec.id;
-      const slash = key.indexOf('/');
-      return [slash >= 0 ? key.slice(0, slash) : key];
+      const cut = key.search(/[|/]/);
+      return [cut >= 0 ? key.slice(0, cut) : key];
     }),
   );
   return HARNESSES.filter((h) => h.planned || withRows.has(h.agent));
@@ -193,20 +148,42 @@ export function tokenBreakdown(r: { readonly inputTokens?: number | undefined; r
 }
 
 /** One harness's 7-day usage + plan status line for its row in Settings → Usage. */
+/** What a harness's own CLI said of the plan and its recent spend (ADR-0124): "Cursor plan: Pro", "opencode says
+ *  $1.25 · 287M tokens in 7 days". Its CLI's number, so never marked `~`; '' when it said nothing. */
+export function cliLine(h: Pick<HarnessBudgetMeta, 'name'>, accounts: readonly AccountPlan[]): string {
+  const parts: string[] = [];
+  const plan = accounts.find((a) => a.plan)?.plan;
+  if (plan) parts.push(t('budget.usage.cli.plan', { name: h.name, plan }));
+  const sp = accounts.find((a) => a.spent && (a.spent.cost !== undefined || a.spent.tokens !== undefined))?.spent;
+  if (sp) {
+    const what = [sp.cost !== undefined ? `$${sp.cost.toFixed(2)}` : '', sp.tokens !== undefined ? t('budget.usage.harness.tokens', { n: tokenWords(sp.tokens) }) : '']
+      .filter(Boolean)
+      .join(' · ');
+    parts.push(sp.days ? t('budget.usage.cli.spentDays', { name: h.name, what, count: sp.days }) : t('budget.usage.cli.spent', { name: h.name, what }));
+  }
+  return parts.join(' · ');
+}
+
 export function harnessUsageDescription(h: HarnessBudgetMeta, row: UsageRow | undefined, accounts: readonly AccountPlan[] = []): string {
   const parts: string[] = [];
   if (row && row.turns > 0) {
     parts.push(t('budget.plan.turns', { count: row.turns }));
     if ((row.tokens ?? 0) > 0) parts.push(t('budget.usage.harness.tokens', { n: tokenWords(row.tokens ?? 0) }));
-    if (row.priced > 0) parts.push(`$${row.cost.toFixed(2)}`);
+    // `~` an estimate at list price, `+` some turns unpriced (usage-model.ts costWords, ADR-0124)
+    if (row.priced > 0) parts.push(`${row.costEstimated ? '~' : ''}$${row.cost.toFixed(2)}${row.priced < row.turns ? '+' : ''}`);
     if (row.worked !== null && row.worked !== undefined) parts.push(t('budget.usage.harness.worked', { pct: `${Math.round(row.worked)}%` }));
   }
   const fullest = accounts
     .flatMap((a) => a.windows)
     .reduce<{ label: string; used: number } | undefined>((best, w) => (!best || w.used > best.used ? { label: w.label, used: w.used } : best), undefined);
   if (fullest) parts.push(t('budget.usage.harness.window', { label: fullest.label, pct: pct(fullest.used) }));
-  const note =
-    h.agent === 'codex'
+  // a harness whose CLI gives wisp no quota window says so: its stop line has nothing to read
+  const silent = !limitsReported(h, accounts);
+  const cli = cliLine(h, accounts);
+  if (cli) parts.push(cli);
+  const note = silent
+    ? `${t(h.priced ? 'budget.usage.track.priced' : 'budget.usage.track.tokens')} · ${t('budget.usage.limits.none', { name: h.name })}`
+    : h.agent === 'codex'
       ? t('budget.usage.stop.codex')
       : h.agent === 'antigravity'
         ? t('budget.usage.stop.antigravity')
