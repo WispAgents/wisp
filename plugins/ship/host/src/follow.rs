@@ -70,13 +70,18 @@ impl Ship {
         self.save(task);
         self.emit(Out::PrChanged { session: session.into(), pr: pr.clone(), news: is_news(&prev, &pr) });
         self.fix_conflicts(call, session, false).await.ok();
+        if let Err(e) = self.steward_look(call, session).await {
+            tracing::warn!(error = %e, task = session, "ship: the Steward's look");
+        }
         Ok(Some(pr))
     }
 
     /// Sends the task a follow-up to merge its base in, when the user asked (force) or Auto-fix is on.
     pub async fn fix_conflicts(&self, call: &Call, session: &str, force: bool) -> Result<Option<ConflictFix>> {
         let task = self.task(session)?;
-        match follow::should_fix(&task, self.auto_fix(), force, self.tasks.busy(&task, self.is_starting(session))) {
+        // the Steward fixes conflicts too (ADR-0132), whatever Settings → Ship says
+        let auto = self.auto_fix() || Self::steward_on(&task);
+        match follow::should_fix(&task, auto, force, self.tasks.busy(&task, self.is_starting(session))) {
             Fix::Skip => return Ok(None),
             Fix::CheckBase => {
                 self.starting(session, true);
@@ -232,6 +237,7 @@ impl Ship {
         let mut seen = Vec::new();
         for mut t in self.tasks.all() {
             after_restart(&mut t);
+            wisp_ship_core::steward::after_restart(&mut t);
             seen.push(BootTask {
                 id: t.session.clone(),
                 has_trees: !t.repos.is_empty(),

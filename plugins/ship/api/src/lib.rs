@@ -87,6 +87,11 @@ pub struct ShipArgs {
     #[serde(default, rename = "saveTask", skip_serializing_if = "std::ops::Not::not")]
     #[ts(rename = "saveTask", type = "boolean | undefined")]
     pub save_task: bool,
+    /// the Steward for this task's PR (ADR-0132): "" leaves it as it is, `fix`, `review` (fix + another vendor's
+    /// review) or `off`. Additive (2026-11-26).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(type = "string | undefined")]
+    pub steward: String,
 }
 
 /// Refreshes the task's PRs from GitHub (POST /sessions/:id/pr).
@@ -240,6 +245,29 @@ impl Command for FixConflicts {
         ))
     }
     type Out = ConflictFix;
+}
+
+/// The Steward of a task's PR on or off (ADR-0132): the ship dialog's toggle, the PR row's Stop, `wisp_ship_steward`.
+#[derive(Debug)]
+pub struct SetSteward;
+impl Command for SetSteward {
+    const ID: &'static str = "ship.steward";
+    type Args = StewardArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <StewardArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <StewardArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
+    type Out = Option<Steward>;
+}
+
+/// `ship.steward`'s arguments: the task, and `fix`, `review` (fix + another vendor's review) or `off`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
+pub struct StewardArgs {
+    pub session: String,
+    pub mode: String,
 }
 
 /// Recheck what the task has to ship (a turn ended, a card opened).

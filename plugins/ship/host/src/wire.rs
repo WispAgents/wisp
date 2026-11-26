@@ -172,7 +172,7 @@ fn ask_review(ctx: &Ctx, id: &str) {
     let (c, id) = (ctx.clone(), id.to_owned());
     ctx.spawn(async move {
         // wisp.review may be off or absent: then nobody reviews, as asked
-        let _ = c.run::<wisp_review_api::MaybeReview>(&c.root_call(), wisp_review_api::MaybeArgs { id, force: false }).await;
+        let _ = c.run::<wisp_review_api::MaybeReview>(&c.root_call(), wisp_review_api::MaybeArgs { id, force: false, pick: None }).await;
     });
 }
 
@@ -210,7 +210,10 @@ async fn turn_ended(ctx: &Ctx, ship: &Arc<Ship>, known: &Known, e: &TurnEnded) {
         return;
     }
     let end = TurnEnd { interrupted: e.interrupted, queued: s.as_ref().is_some_and(|s| !s.queue.is_empty()), error: e.error_text.clone() };
-    let _ = ship.finish_fix(&call, id, end).await;
+    let _ = ship.finish_fix(&call, id, end.clone()).await;
+    if let Err(e) = ship.finish_steward(&call, id, &end).await {
+        tracing::warn!(error = %e, task = id, "ship: pushing the Steward's pass");
+    }
     let _ = ship.recheck(&call, id, false).await;
 }
 
