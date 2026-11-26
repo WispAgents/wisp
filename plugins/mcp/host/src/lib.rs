@@ -97,15 +97,11 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
                 // `args` as documented, and a run's own task filled in (audit E10)
                 let session = call.caller().session.clone();
                 let args = wisp_mcp_core::generated::call_args(&spec, &input, session.as_deref());
-                // a field the command doesn't take is refused, never dropped (audit D6)
-                if let Some(e) = wisp_mcp_core::generated::unknown_field(&wisp_mcp_core::generated::tool_name(&id), &spec, &args) {
-                    return Ok(wisp_mcp_api::ToolText { text: None, error: Some(e) });
-                }
                 // the user's harness lowering a safety guard: the user's Allow in wisp first (ADR-0115); on a grid box the
-                // user's set is `box`. A guarded write isn't sent to another computer: its value there isn't known here
+                // user's set is `box`
                 let harness = session.is_none() && (call.caller().set.starts_with("user:") || call.caller().set == "box");
-                if harness && peer.is_some() && wisp_mcp_core::guard::guarded(&id, &args) {
-                    return Ok(wisp_mcp_api::ToolText { text: None, error: Some(wisp_mcp_core::guard::NOT_ON_A_PEER.into()) });
+                if let Some(e) = refused_first(&id, &spec, &args, session.is_none() && !read_only, harness && peer.is_some()) {
+                    return Ok(wisp_mcp_api::ToolText { text: None, error: Some(e) });
                 }
                 if harness && let Some(l) = guard_lowered(&ctx, &call, &id, &args).await {
                     return Ok(match crate::run::guard_card(&ctx, &call, &id, args, &l).await {
@@ -178,6 +174,20 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
     (ex, list)
 }
 
+/// Why a generated tool's call is refused before it runs, on its args as the command reads them: a field the command
+/// doesn't take (refused, never dropped: audit D6); `user_write`, the task asking the user about a guard (ADR-0115),
+/// in any field a task is named by (`rpc`'s first pass sees only a top-level `id`, and `{"args": {"id": …}}` is lifted
+/// to one here); `harness_on_peer`, a guarded write, which isn't sent to another computer (its value there isn't known).
+fn refused_first(id: &str, spec: &wisp_kernel::decl::ArgSpec, args: &Value, user_write: bool, harness_on_peer: bool) -> Option<String> {
+    if let Some(e) = wisp_mcp_core::generated::unknown_field(&wisp_mcp_core::generated::tool_name(id), spec, args) {
+        return Some(e);
+    }
+    if user_write && args.as_object().is_some_and(names_guard_task) {
+        return Some(wisp_mcp_core::guard::NOT_YOURS.into());
+    }
+    (harness_on_peer && wisp_mcp_core::guard::guarded(id, args)).then(|| wisp_mcp_core::guard::NOT_ON_A_PEER.into())
+}
+
 /// What a write from the user's harness would lower (ADR-0115), as its card says it. None: it lowers nothing, or it
 /// changes nothing (switching on a plugin that's already on; audit I, smaller notes). `runtime.exec`'s card names the
 /// folder it runs in: its task's (a worktree's), read here.
@@ -208,6 +218,11 @@ pub(crate) static GUARD_TASKS: std::sync::LazyLock<std::sync::Mutex<std::collect
 /// Whether `id` is a task asking the user about their harness's guard change.
 pub(crate) fn guard_task(id: &str) -> bool {
     GUARD_TASKS.lock().is_ok_and(|g| g.contains(id))
+}
+
+/// Whether a call's args name a guard task in any field a command takes a task by (`id`, `sessionId`, `session`).
+pub(crate) fn names_guard_task(args: &serde_json::Map<String, Value>) -> bool {
+    ["id", "sessionId", "session"].iter().any(|k| args.get(*k).and_then(Value::as_str).is_some_and(guard_task))
 }
 
 /// The catalogue commands that change the user's setup and that an agent reaches as a card (ADR-0113); the crew and

@@ -253,6 +253,8 @@ impl Slack {
                 return Ok(());
             }
             if !code_matches(code, s(&cfg, "linkCode")) {
+                // counted for everyone: five wrong and the code changes (Settings shows the new one)
+                wisp_channels_api::link::miss(self.hub.as_ref(), NAME);
                 self.post(&m.channel, &root, WRONG_CODE).await?;
                 return Ok(());
             }
@@ -262,6 +264,8 @@ impl Slack {
                 senders.push(json!(m.user));
             }
             c["senders"] = Value::Array(senders);
+            // one code, one person: a second one needs Relink's fresh code
+            wisp_channels_api::link::use_up(&mut c);
             self.hub.set_cfg(NAME, c);
             self.post(&m.channel, &root, LINKED).await?;
             return Ok(());

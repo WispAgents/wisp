@@ -221,9 +221,18 @@ pub fn plan_of(id: &str, b: &ConnectorBody, prev: Option<&ConnectorSpec>) -> std
         spec.env = secrets_of(id, "env", b.env.as_ref(), &was.env, &mut plan)?;
         plan.drop.extend(was.headers.keys().map(|k| secret_key(id, "headers", k)));
     }
+    // a sign-in is for the server it was made with: moved to another origin, it's signed out (the row shows Sign in),
+    // or the next test would send that server's token to the new one
+    if was.oauth.is_some() && crate::kinds::origin(&was.url) != crate::kinds::origin(&spec.url) {
+        spec.oauth = None;
+        plan.drop.extend(SIGNIN_KEYS.iter().map(|k| format!("{}:{k}", secrets_ns(id))));
+    }
     plan.spec = spec;
     Ok(plan)
 }
+
+/// What a sign-in keeps in secrets, under the connector's namespace.
+const SIGNIN_KEYS: [&str; 4] = ["token", "refresh", "oauth", "client_secret"];
 
 /// What the page shows of a connector.
 pub fn view_of(
@@ -491,10 +500,10 @@ impl Pane {
         self.publish(ctx).await;
         let mut c = spec.clone();
         for v in c.env.values_mut().chain(c.headers.values_mut()) {
-            *v = crate::kinds::reveal(ctx, v).await;
+            *v = crate::kinds::reveal(ctx, id, v).await;
         }
         let mut bearer = None;
-        if c.oauth == Some(true) && !c.url.is_empty() {
+        if c.oauth == Some(true) && crate::kinds::bearer_ok(&c.url) {
             // a token that ran out is refreshed first; one that can't be leaves the row asking for a sign-in
             let Ok(t) = self.fresh_token(ctx, id, None).await else { return Ok(self.tested(ctx, id, None).await) };
             c.headers.insert("Authorization".into(), format!("Bearer {t}"));
@@ -658,7 +667,7 @@ impl Pane {
     pub async fn signout(&self, ctx: &Ctx, id: &str) -> Result<ConnectorsView> {
         let prev = self.spec(id).await?;
         let s = secrets(ctx)?;
-        for k in ["token", "refresh", "oauth", "client_secret"] {
+        for k in SIGNIN_KEYS {
             let _ = s.delete(&format!("{}:{k}", secrets_ns(id))).await;
         }
         self.apply(ctx, OpKind::Update, id, &ConnectorSpec { oauth: None, ..prev.clone() }, Some(&prev)).await?;
@@ -922,6 +931,26 @@ mod tests {
         let rename = ConnectorBody { enabled: Some(false), ..ConnectorBody::default() };
         assert_eq!(plan_of("docs", &rename, Some(&local)).unwrap().spec.command, "docs-mcp", "an edit keeps its kind");
         assert!(plan_of("x", &ConnectorBody::default(), None).is_err(), "neither: a local one without its command");
+    }
+
+    /// A signed-in connector moved to another server kept its sign-in, and its next test sent the old server's token to
+    /// the new one. Another origin signs it out (its tokens dropped); another path on the same server keeps it.
+    #[test]
+    fn a_signed_in_connector_moved_to_another_origin_is_signed_out() {
+        let was = ConnectorSpec { url: "https://mcp.linear.app/mcp".into(), oauth: Some(true), ..ConnectorSpec::default() };
+        let to = |u: &str| ConnectorBody { url: Some(u.into()), ..ConnectorBody::default() };
+        let p = plan_of("linear", &to("https://evil.example/mcp"), Some(&was)).unwrap();
+        assert_eq!(p.spec.oauth, None);
+        for k in SIGNIN_KEYS {
+            assert!(p.drop.contains(&format!("connector:linear:{k}")), "{k}: {:?}", p.drop);
+        }
+        let p = plan_of("linear", &to("http://mcp.linear.app/mcp"), Some(&was)).unwrap();
+        assert_eq!(p.spec.oauth, None, "https to http is another origin");
+        let p = plan_of("linear", &to("https://MCP.linear.app/sse"), Some(&was)).unwrap();
+        assert_eq!(p.spec.oauth, Some(true));
+        assert!(p.drop.is_empty(), "{:?}", p.drop);
+        let local = ConnectorBody { transport: Some("local".into()), command: Some("x".into()), ..ConnectorBody::default() };
+        assert_eq!(plan_of("linear", &local, Some(&was)).unwrap().spec.oauth, None, "local: no server to be signed in to");
     }
 
     #[test]
