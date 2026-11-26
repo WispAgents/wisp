@@ -103,7 +103,8 @@ export default function Launching(props: { readonly client: PluginClient; readon
           <Callout tone="warn" title={t('sandbox.setup.failed')} part="sandbox.launching.setup">
             <Stack gap="2">
               <Text size="sm">{t('sandbox.setup.failed.hint')}</Text>
-              <Code block plain wrap part="sandbox.launching.setup.tail">
+              {/* up to 4000 chars: a dozen lines, scrolled to the end where the error is, so Open the task stays on screen */}
+              <Code block plain wrap lines={12} tail part="sandbox.launching.setup.tail">
                 {setup()?.tail ?? ''}
               </Code>
             </Stack>

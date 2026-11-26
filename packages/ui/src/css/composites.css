@@ -936,6 +936,10 @@
     padding-top: var(--space-5);
     border-top: var(--size-hairline) solid var(--line);
   }
+  /* a below that renders nothing (an element whose own Show is off is still truthy): no stray hairline and gap */
+  [data-kit='settings-row-below']:empty {
+    display: none;
+  }
   [data-kit='settings-row'][data-tile] > [data-kit='settings-row-below'] {
     grid-column: 2 / -1;
   }
@@ -966,6 +970,14 @@
     display: flex;
     justify-content: flex-end;
     min-width: 0;
+  }
+  /* a Meter as a row's control (a quota): the Meter grows into the room it's given (flex: 1, min-width: 0), and a
+     control box sized by its content gives it none, so it drew 0px wide. It keeps a size of its own here, in the narrow
+     wrap layouts too (UI QA r1) */
+  [data-kit='settings-row-control'] > [data-kit='meter'] {
+    flex: 0 0 auto;
+    inline-size: 7.5rem;
+    max-inline-size: 100%;
   }
   /* a row's choices that wrap (v1 .ro-allowed: Auto's harnesses): at most 360px, from the right */
   [data-kit='settings-row'][data-choices] > [data-kit='settings-row-control'] > [data-kit='wrap'] {

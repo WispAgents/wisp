@@ -2,11 +2,12 @@
 // sandbox (`claude setup-token` runs here; its link opens, its code goes back; the token goes to the grid sealed,
 // never kept here), the env vars every sandbox gets (names only come back), and each sandbox with whose it is,
 // Open its task, Sign in to Codex there (its own device login), and Delete.
-import { For, Show, createEffect, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
 import { entityKey, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Callout, IconButton, Inline, Input, SettingsGroup, SettingsRow, Stack, Text, useSignal } from '@wisp/ui';
-import { claudeBegin, claudeCode, codexLogin, drop, env, info, logout, type ClaudeSignIn, type Info, type SigninRow } from './commands.ts';
+import { Button, Callout, IconButton, Inline, Input, SettingsGroup, SettingsRow, Skeleton, Stack, Text, useSignal } from '@wisp/ui';
+import { Confirm, type Ask } from './Confirm.tsx';
+import { claudeBegin, claudeCode, codexLogin, drop, env, info, logout, type ClaudeSignIn, type Info, type SandboxView, type SigninRow } from './commands.ts';
 import { LAUNCHES_TOPIC } from './launches.ts';
 import { SIGNIN } from './signin-kind.ts';
 import { t } from './i18n.ts';
@@ -18,7 +19,18 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
   const shell = useShell();
   const peer = c.home as PeerId;
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
-  const [data, { mutate, refetch }] = createResource(() => c.run(info, { peer }).catch((): Info | undefined => undefined));
+  // why sandbox.info failed, kept: a pending or failed answer isn't "not signed in, none yet" (UI QA r1)
+  const [failed, setFailed] = createSignal<string | undefined>(undefined);
+  const [data, { mutate, refetch }] = createResource(() =>
+    c.run(info, { peer }).then(
+      (d) => (setFailed(undefined), d),
+      (e: unknown): Info | undefined => (setFailed(e instanceof Error ? e.message : String(e)), undefined),
+    ),
+  );
+  const again = (): void => {
+    setFailed(undefined);
+    void refetch();
+  };
   const claudeOn = (): boolean => !!data()?.logins.includes('claude');
   // the Claude sign-in: its link, then the code
   const [flow, setFlow] = createSignal<ClaudeSignIn | undefined>(undefined);
@@ -67,6 +79,8 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
     setValue('');
     setVar(k, value());
   };
+  // Delete asks first (Confirm): only its Delete drops the sandbox
+  const [asking, setAsking] = createSignal<Ask | undefined>(undefined);
   const remove = (machine: string): void => {
     const d = data();
     if (d) mutate({ ...d, sandboxes: d.sandboxes.filter((s) => s.machine !== machine) });
@@ -82,7 +96,8 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
       () => undefined,
     );
   };
-  return (
+  const askRemove = (s: SandboxView): void => void setAsking({ name: s.name, owner: ownerWords(s.owner, say, crewName), run: () => remove(s.machine) });
+  const pane = (): JSX.Element => (
     <>
       <Text as="p" tone="muted" part="sandbox.lede">
         {t('sandbox.lede')}
@@ -182,13 +197,42 @@ export default function Sandboxes(props: { readonly client: PluginClient }): JSX
                       {t('sandbox.list.codex')}
                     </Button>
                   </Show>
-                  <IconButton icon="trash" size="sm" variant="ghost" label={say('sandbox.list.remove', { name: s.name })} onClick={() => remove(s.machine)} />
+                  <IconButton icon="trash" size="sm" variant="ghost" label={say('sandbox.list.remove', { name: s.name })} onClick={() => askRemove(s)} />
                 </Inline>
               }
             />
           )}
         </For>
       </SettingsGroup>
+      <Confirm ask={asking()} onClose={() => setAsking(undefined)} />
     </>
+  );
+  // the pane once sandbox.info has answered; until then a skeleton, and why when it couldn't, with Try again
+  return (
+    <Switch
+      fallback={
+        <Stack gap="3" part="sandbox.loading">
+          <Skeleton width="3/4" />
+          <Skeleton shape="block" width="full" />
+          <Skeleton shape="block" width="full" />
+        </Stack>
+      }
+    >
+      <Match when={failed()}>
+        {(why) => (
+          <Callout tone="bad" title={t('sandbox.info.failed')} part="sandbox.info.error">
+            <Stack gap="2">
+              <Text size="sm">{why()}</Text>
+              <span>
+                <Button size="sm" variant="secondary" icon="rotate" onClick={again} part="sandbox.info.retry">
+                  {t('sandbox.retry')}
+                </Button>
+              </span>
+            </Stack>
+          </Callout>
+        )}
+      </Match>
+      <Match when={data()}>{pane()}</Match>
+    </Switch>
   );
 }

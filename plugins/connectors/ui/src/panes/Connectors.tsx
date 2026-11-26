@@ -48,12 +48,12 @@ function toneOf(c: ConnectorView, signing: boolean): 'good' | 'bad' | 'warn' | '
 }
 
 /** Which harnesses go without it and why, a line each under the row: a harness's own server by that name wins, and an
- *  SSE server is left out where the harness can't speak it. */
+ *  SSE server is left out where the harness can't speak it. Each wraps: cut with "…" it couldn't be read on a phone. */
 export function RowNotes(props: { readonly connector: Pick<ConnectorView, 'name' | 'own' | 'cant_reach'>; readonly names: ReadonlyMap<string, string> }): JSX.Element {
   return (
     <For each={rowNotes(props.connector)}>
       {(n) => (
-        <Text tone="muted" size="sm" truncate part="connectors.row.note">
+        <Text tone="muted" size="sm" part="connectors.row.note">
           {t(n.kind === 'own' ? 'connectors.note.own' : 'connectors.note.sse', { harness: harnessName(n.harness, props.names), name: props.connector.name })}
         </Text>
       )}
