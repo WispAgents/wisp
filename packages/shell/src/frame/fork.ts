@@ -1,7 +1,9 @@
 // Fork… (v1 actions.js forkTask, QA round 14 desktop #1): a new task that carries on from one of this one's turns (the
 // latest finished by default), with the conversation up to there and its files as they were then, on a branch of its
-// own; this one stays as it is. The dialog asks what the fork should try (it's named after it), its mode, harness, model
-// and thinking among the harnesses on the task's machine; nothing is sent until its Fork. DOM-free.
+// own; this one stays as it is. An earlier turn forks only where its harness kept where that turn left the conversation
+// (runtime's fork.rs: Claude Code's `--resume-session-at`); elsewhere only the latest does, never with later context.
+// The dialog asks what the fork should try (it's named after it), its mode, harness, model and thinking among the
+// harnesses on the task's machine; nothing is sent until its Fork. DOM-free.
 
 export interface ForkPick {
   readonly prompt: string;
@@ -33,6 +35,22 @@ export function forkTurn<T extends { readonly id: string; readonly status?: stri
   const done = turns.filter((t) => t.status !== 'running' && t.status !== 'starting');
   const at = asked ? turns.find((t) => t.id === asked) : undefined;
   return at && at.status !== 'running' && at.status !== 'starting' ? at : done.at(-1);
+}
+
+/** A turn as far as `forkReach` reads it: a store row's ext is under `body`, `runtime.turns`' at the top. */
+export interface ForkPoint {
+  readonly id: string;
+  readonly ext?: Readonly<Record<string, unknown>> | undefined;
+  readonly body?: { readonly ext?: Readonly<Record<string, unknown>> | undefined } | undefined;
+}
+
+/** What a fork from `at` carries on from, as runtime's fork does it: `whole` from the latest turn; `upTo` an earlier
+ *  turn whose harness kept where it left the conversation (`resumeAt`); `latestOnly` an earlier one without (Codex and
+ *  the rest): runtime refuses it rather than fork with the turns after it, so the dialog says so and won't send it. */
+export function forkReach(turns: readonly ForkPoint[], at: ForkPoint | undefined): 'whole' | 'upTo' | 'latestOnly' {
+  if (!at || at.id === turns.at(-1)?.id) return 'whole';
+  const own = (at.ext ?? at.body?.ext)?.['wisp.runtime'] as { readonly resumeAt?: unknown } | undefined;
+  return typeof own?.resumeAt === 'string' && own.resumeAt !== '' ? 'upTo' : 'latestOnly';
 }
 
 /** The two commands its Fork sends, in order: the copy (`runtime.fork`, after `turnId`), then what it should try as the

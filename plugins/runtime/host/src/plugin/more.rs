@@ -27,6 +27,8 @@ pub(super) fn more(s: &mut Setup, slot: &Slot, harness_kind: Arc<StoredKind>, ki
     cmd!(s, slot, c::PollAnswerOf, |r, call, a| Ok(r.poll_answer(&a.ask_id)));
     cmd!(s, slot, c::Approval, |r, call, a| r.approval(a).await);
     cmd!(s, slot, c::ApproveBlocked, |r, call, a| r.approve_blocked(&a.id, a.turn_id.as_ref(), a.allow, &call.caller().set).await);
+    cmd!(s, slot, c::ProposalApply, |r, call, a| r.apply_proposal(&a.id, &a.proposal).await);
+    cmd!(s, slot, c::ProposalDiscard, |r, call, a| r.discard_proposal(&a.id, &a.proposal).await);
     cmd!(s, slot, c::Btw, |r, call, a| r.btw(a).await);
     cmd!(s, slot, c::Probe, |r, call, a| r.probe(a).await);
     cmd!(s, slot, c::BtwDrop, |r, call, a| r.btw_drop(a.id.as_str(), &a.btw_id).await.map(|()| c::Ack {}));
@@ -181,6 +183,13 @@ async fn own_folder(ctx: &wisp_kernel::Ctx, r: &Arc<crate::runtime::Runtime>, pa
         // the parent's folder gone (its worktree went with its merge, audit F orchestration F2): a fresh branch from the
         // project's base, which holds the merged work, rather than a fork in a folder that isn't there
         from: wisp_proc::canonical(&src.cwd).await.is_ok().then(|| src.cwd.clone()),
+        // a fork from an earlier turn: its files as they were then, not with the later turns' edits (`Runtime::fork`
+        // kept the checkpoint from before the turn after it)
+        at: made
+            .ext
+            .get("wisp.runtime")
+            .and_then(|o| o.pointer("/forkOf/checkpoint"))
+            .and_then(|c| serde_json::from_value::<wisp_worktrees_api::ForkPoint>(c.clone()).ok()),
         ..wisp_worktrees_api::CreateArgs::default()
     };
     // on runtime's own grant, as a new task's (create.rs `in_worktree`): an agent's set has no worktrees:create

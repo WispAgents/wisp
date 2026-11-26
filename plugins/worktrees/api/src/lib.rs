@@ -30,6 +30,11 @@ pub struct CreateArgs {
     /// uncommitted and untracked ones too (audit A orch #4: a fork used to run in its parent's folder)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
+    /// a fork from an earlier turn: where its folder was then (the checkpoint git kept before the turn after it). The
+    /// branch starts at its `head` and the folder holds its snapshot `to`, instead of `from` as it is now. Additive
+    /// (2026-11-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<ForkPoint>,
     /// a recurring run's key (a crew member's check-ins, a trigger's runs): the one worktree kept for it in
     /// this project (`<home>/worktrees/<project>-<key>`, branch `wisp/<key>`) is reused, made when it isn't there; a
     /// fresh one of the task's own when another working task is in it. Additive (2026-11-19).
@@ -39,6 +44,14 @@ pub struct CreateArgs {
     /// nothing changed. Additive (2026-11-19).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tidy: bool,
+}
+
+/// A folder as it was at a point in the past: its commit, and the snapshot of its files then (uncommitted and
+/// untracked ones too), as git's turn checkpoint keeps them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
+pub struct ForkPoint {
+    pub head: String,
+    pub to: String,
 }
 
 /// A fresh worktree and branch for a session; None outside a repo with commits.

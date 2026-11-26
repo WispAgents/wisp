@@ -41,6 +41,8 @@
         { "permission": "runtime:setExt", "why": "write a task’s plugin fields: the plugins do" },
         { "permission": "runtime:turn.setExt", "why": "write a turn’s plugin fields: the plugins do" },
         { "permission": "runtime:approveBlocked", "why": "approve what it was blocked from: the user does" },
+        { "permission": "runtime:proposal.apply", "why": "apply a side discussion's proposed change: the user does, on the main task" },
+        { "permission": "runtime:proposal.discard", "why": "discard a side discussion's proposed change: the user does, on the main task" },
         { "permission": "runtime:overage", "why": "spend past a plan’s limit: the user does" },
         { "permission": "runtime:trial", "why": "start Try it two ways: the user does" },
         { "permission": "runtime:trial.keep", "why": "keep a run of Try it two ways: the user does" },

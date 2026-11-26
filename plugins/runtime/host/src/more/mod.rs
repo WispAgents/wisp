@@ -13,6 +13,7 @@ mod delegate;
 mod far_watch;
 mod fork;
 mod machine;
+mod propose;
 mod quick;
 mod report_back;
 mod sandbox;
@@ -33,6 +34,7 @@ use crate::runtime::Runtime;
 
 pub(crate) use agents::Rounds;
 pub(crate) use ask::{ask_id, reconcile_ask};
+pub(crate) use propose::take_applied;
 pub(crate) use quick::QuickRuns;
 pub(crate) use report_back::{lead_of, still_working};
 pub(crate) use sign_in::SignIn;
