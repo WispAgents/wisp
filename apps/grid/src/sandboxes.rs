@@ -257,7 +257,7 @@ mod tests {
     fn sb() -> (Sandboxes, UserRow) {
         let db = Arc::new(Db::memory().unwrap());
         let secrets = Some(Arc::new(Secrets::for_test(db.clone(), [3u8; 32]).unwrap()));
-        let a = crate::accounts::Accounts { db: db.clone(), clock: ManualClock::new(1) };
+        let a = crate::accounts::Accounts { db: db.clone(), clock: ManualClock::new(1), telemetry: None };
         let ada = a.dev_user("ada").unwrap();
         (Sandboxes { db, clock: ManualClock::new(1_000), secrets, enabled: true, per_user: 2 }, ada)
     }

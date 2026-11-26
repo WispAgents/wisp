@@ -122,6 +122,8 @@ pub fn unique_handle(c: &rusqlite::Connection, base: &str) -> rusqlite::Result<S
 pub struct Accounts {
     pub db: Arc<Db>,
     pub clock: SharedClock,
+    /// sign-ups, sign-ins and refusals as usage stats (`telemetry.rs`), when the grid sends them
+    pub telemetry: Option<Arc<crate::telemetry::GridTelemetry>>,
 }
 
 impl Accounts {
@@ -251,7 +253,11 @@ impl Accounts {
     fn audit(&self, user: Option<&str>, action: &str, provider: &str) -> Result<()> {
         let now = self.now();
         let meta = json!({ "provider": provider });
-        self.db.with(|c| crate::rows::find::audit(c, user, action, Some(&meta), now))
+        self.db.with(|c| crate::rows::find::audit(c, user, action, Some(&meta), now))?;
+        if let Some(t) = &self.telemetry {
+            t.audit(user, action, provider);
+        }
+        Ok(())
     }
 
     // --- browser sessions -------------------------------------------------------------------------

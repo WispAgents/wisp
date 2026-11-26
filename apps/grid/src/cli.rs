@@ -225,7 +225,7 @@ fn waitlist(data: Option<PathBuf>) -> crate::Result<String> {
     let cfg = crate::config::load(crate::config::LoadOptions { data_dir: data, ..crate::config::LoadOptions::default() })?;
     let clock = crate::clock::system();
     let db = std::sync::Arc::new(crate::db::Db::open(&cfg.data_dir, clock.now_ms())?);
-    crate::wishes::report(&crate::accounts::Accounts { db, clock })
+    crate::wishes::report(&crate::accounts::Accounts { db, clock, telemetry: None })
 }
 
 async fn serve(data: Option<PathBuf>) -> crate::Result<()> {

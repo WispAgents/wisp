@@ -98,7 +98,7 @@ mod tests {
 
     fn accounts() -> (Accounts, Arc<ManualClock>) {
         let clock = ManualClock::new(1_000_000);
-        (Accounts { db: Arc::new(Db::memory().unwrap()), clock: clock.clone() }, clock)
+        (Accounts { db: Arc::new(Db::memory().unwrap()), clock: clock.clone(), telemetry: None }, clock)
     }
 
     #[test]

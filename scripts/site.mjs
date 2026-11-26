@@ -262,6 +262,7 @@ const ANALYTICS = `<script>
 function go() { if (done) return; done = true; evs.forEach(function (e) { removeEventListener(e, go); });
 !function(t,e){var o,n,p,r;e.__SV||(window.posthog&&window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}p||((p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",p.onerror=function(){p=null},(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r));var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],o="init capture register register_once identify reset opt_in_capturing opt_out_capturing".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
 posthog.init('phc_wowwZkbP8e4zYuwT67JtX6oxdPwkMWL5kKnrUmYYXhcD', { api_host: 'https://us.i.posthog.com', defaults: '2026-05-30', person_profiles: 'identified_only' });
+posthog.register({ device: document.documentElement.dataset.device || 'desktop' });
 }
 evs.forEach(function (e) { addEventListener(e, go, { once: true, passive: true }); });
 addEventListener('load', function () { setTimeout(go, 4000); }); })();
@@ -274,13 +275,31 @@ const PAGE_JS = `<script>
   var d = document, root = d.documentElement, WAY_KEY = 'starlight-synced-tabs__way';
   var LABEL = { desktop: 'Desktop app', phone: 'Phone app', tui: 'TUI', cli: 'CLI' };
   function track(e, p) { try { window.posthog && posthog.capture && posthog.capture(e, p); } catch (x) {} }
+  // where on the page a click was: its block's data-where (hero, close), else its section's id
+  function where(el) { var w = el.closest('[data-where]'), s = el.closest('section[id]'); return w ? w.getAttribute('data-where') : s ? s.id : 'page'; }
+  // a phone can't run npx: Send hands this page to the share sheet (Mail, Messages, AirDrop…) to open on a computer,
+  // or copies its link where there's no share sheet
+  var SEND = { title: 'Wisp Agents', text: 'Try Wisp Agents on my computer: npx wisp-agents', url: 'https://trywisp.dev/?utm_source=send' };
+  function send(b) {
+    var label = b.querySelector('span');
+    function said(t) { if (label) { var was = label.textContent; label.textContent = t; setTimeout(function () { label.textContent = was; }, 2400); } }
+    if (navigator.share) {
+      navigator.share(SEND).then(function () { track('site send', { how: 'share', done: true, where: where(b) }); }, function () { track('site send', { how: 'share', done: false, where: where(b) }); });
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(SEND.url).then(function () { said('Link copied: paste it to yourself'); track('site send', { how: 'copy', done: true, where: where(b) }); });
+    }
+  }
   d.addEventListener('click', function (ev) {
     var c = ev.target.closest('[data-copy]');
-    if (c) { navigator.clipboard && navigator.clipboard.writeText(c.getAttribute('data-copy')).then(function () { c.setAttribute('data-done', ''); c.setAttribute('aria-label', 'Copied'); setTimeout(function () { c.removeAttribute('data-done'); c.setAttribute('aria-label', 'Copy command'); }, 1600); }); track('site copy', { what: c.getAttribute('data-copy') }); return; }
+    if (c) { navigator.clipboard && navigator.clipboard.writeText(c.getAttribute('data-copy')).then(function () { c.setAttribute('data-done', ''); c.setAttribute('aria-label', 'Copied'); setTimeout(function () { c.removeAttribute('data-done'); c.setAttribute('aria-label', 'Copy command'); }, 1600); }); track('site copy', { what: c.getAttribute('data-copy'), where: where(c) }); return; }
+    var sb = ev.target.closest('[data-send]');
+    if (sb) { send(sb); return; }
+    var cta = ev.target.closest('a[data-cta]');
+    if (cta) track('site cta', { cta: cta.getAttribute('data-cta'), where: where(cta) });
     var w = ev.target.closest('[data-way-pick]');
     if (w) { setWay(w.getAttribute('data-way-pick')); try { localStorage.setItem(WAY_KEY, LABEL[root.dataset.way]); } catch (x) {} return; }
     var a = ev.target.closest('a[data-dl]');
-    if (a) track('site download', { what: a.getAttribute('data-dl') });
+    if (a) track('site download', { what: a.getAttribute('data-dl'), where: where(a) });
   });
   function setWay(k) {
     root.dataset.way = k;
@@ -294,6 +313,14 @@ const PAGE_JS = `<script>
   });
   // the head's script already chose (the reader's pick, else Desktop app, Phone app on a phone): the tabs' state follows
   setWay(root.dataset.way || 'desktop');
+
+  // how far down readers get: each section with an id, once, when most of its top is in view
+  if (window.IntersectionObserver) {
+    var seen = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { seen.unobserve(e.target); track('site section', { id: e.target.id }); } });
+    }, { threshold: 0.25 });
+    d.querySelectorAll('main section[id]').forEach(function (s) { seen.observe(s); });
+  }
 
   // the phone app waitlist: the email goes to wisp Cloud's list only (docs/privacy.md)
   var EMAIL = /^[^@\\s<>"']{1,64}@[^@\\s<>"']+\\.[^@\\s<>"']{2,}$/;
@@ -318,6 +345,7 @@ const PAGE_JS = `<script>
           t.innerHTML = '<b>You’re on the list.</b> We’ll email <span></span> once, when Wisp Agents is out for ' + phone + '. Nothing else.';
           t.querySelector('span').textContent = email;
           f.replaceWith(t); t.focus();
+          track('site waitlist', { platform: platform, where: where(f) });
         } else if (r.status === 429) say('Too many tries from here. Wait a minute, then try again.', true);
         else say((r.j && r.j.error) || 'That didn’t work. Try again in a moment.', true);
       }, function () { btn.disabled = false; say('Couldn’t reach the list. Try again, or email hello@trywisp.dev.', true); });
@@ -328,8 +356,9 @@ const PAGE_JS = `<script>
 
 // Before paint (no flash, no shift): which how-to tab every block shows. The reader's last pick, shared with the docs'
 // synced tabs (same key, same labels); else Phone app on a phone (touch and narrow, or a mobile browser), else Desktop
-// app, which is also what the HTML says for a reader without JavaScript.
-const WAY_HEAD = `<script>try{var r=document.documentElement,l=localStorage.getItem('starlight-synced-tabs__way'),k={'Desktop app':'desktop','Phone app':'phone','TUI':'tui','CLI':'cli'}[l];if(!k){var n=navigator,m=n.userAgentData&&n.userAgentData.mobile;k=m||matchMedia('(max-width: 700px) and (pointer: coarse)').matches||/iPhone|iPod|Android.+Mobile/.test(n.userAgent)?'phone':'desktop'}r.dataset.way=k}catch(e){}</script>`;
+// app, which is also what the HTML says for a reader without JavaScript. data-device is the phone itself, whatever
+// tab was picked: the hero offers a phone what it can do there (send the link to a computer, or Cloud), not npx.
+const WAY_HEAD = `<script>try{var r=document.documentElement,l=localStorage.getItem('starlight-synced-tabs__way'),k={'Desktop app':'desktop','Phone app':'phone','TUI':'tui','CLI':'cli'}[l],n=navigator,m=n.userAgentData&&n.userAgentData.mobile,p=m||matchMedia('(max-width: 700px) and (pointer: coarse)').matches||/iPhone|iPod|Android.+Mobile/.test(n.userAgent);r.dataset.device=p?'phone':'desktop';r.dataset.way=k||(p?'phone':'desktop')}catch(e){}</script>`;
 
 const NAV = [
   ['Docs', DOCS_URL, ''],
@@ -454,6 +483,14 @@ const phoneShot = (name, alt, o) => `<div class="phone">${shot(name, PHONE, [390
 const wayShot = (html, phone = false) => `<div class="way-shot${phone ? ' is-phone' : ''}">${html}</div>`;
 /** Where install is shown: wisp is in alpha, and where to say what broke. */
 const ALPHA_NOTE = `<p class="muted small alpha-note">Wisp Agents is in alpha: expect rough edges, and <a href="${REPO}/issues">tell us what breaks</a>.</p>`;
+// On a phone, instead of npx and the desktop download: send this page to a computer, or start in Wisp Agents Cloud
+// from the phone. 60% of the home page's readers came on a phone (PostHog, Nov 2026), mostly from X.
+const SEND_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M12 3v12M7 8l5-5 5 5"/></svg>';
+const phoneCta = (where) => `<div class="cta only-phone" data-where="${where}">
+      <button class="btn primary" type="button" data-send>${SEND_ICON}<span>Send it to my computer</span></button>
+      <a class="btn ghost" href="https://grid.trywisp.dev/" data-cta="cloud">Try it in the cloud</a>
+    </div>
+    <p class="muted small only-phone phone-note">Wisp Agents runs on your computer, next to Claude Code or Codex. Send yourself the link for later, or start now in Wisp Agents Cloud.</p>`;
 const install = (cmd = 'npx wisp-agents') =>
   `<div class="install"><span class="dollar" aria-hidden="true">$</span><code>${esc(cmd)}</code><button class="copy" type="button" data-copy="${esc(cmd)}" aria-label="Copy command">${COPY_ICON}</button></div>`;
 
@@ -500,11 +537,12 @@ function landing() {
     <p class="kicker"><b>Wisp Agents</b> · Open source · MIT</p>
     <h1 id="hero-h">Your coding agents, as code.</h1>
     <p class="lede"><b>Declare</b> them. <b>Run</b> them anywhere. <b>Track</b> every line they write. From the desktop app, your phone or the terminal.</p>
-    <div class="cta" id="install">
+    <div class="cta not-phone" id="install" data-where="hero">
       ${install()}
       <a class="btn primary" href="/app.html" data-dl="hero">${DL_ICON}Get the app</a>
-      <a class="btn ghost" href="/docs/start/install/">Read the docs</a>
+      <a class="btn ghost" href="/docs/start/install/" data-cta="docs">Read the docs</a>
     </div>
+    ${phoneCta('hero')}
     <p class="muted small" style="margin-top:14px">Works with Claude Code, Codex, Cursor, opencode, Copilot, Grok and Antigravity, on the plans you already pay for.</p>
     ${ALPHA_NOTE}
     <div class="stage">
@@ -713,7 +751,8 @@ ${sh('wisp grid serve', 'run a Grid on your own server')}`,
   <section class="close" aria-labelledby="close-h">
     <h2 id="close-h">Declare. Run. Track.</h2>
     <p class="lede">Your agents write the code. Wisp Agents keeps them busy, checks their work and remembers why.</p>
-    <div class="cta">${install()}<a class="btn primary" href="/app.html">${DL_ICON}Get the app</a></div>
+    <div class="cta not-phone" data-where="close">${install()}<a class="btn primary" href="/app.html" data-dl="close">${DL_ICON}Get the app</a></div>
+    ${phoneCta('close')}
   </section>
 </div>`;
   const homeDesc = 'Wisp Agents is an open-source app, TUI and CLI to run Claude Code, Codex and Cursor in parallel, declare agents as code, and track every line they write.';

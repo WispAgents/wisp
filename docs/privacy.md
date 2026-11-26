@@ -76,7 +76,9 @@ When you sign in to wisp Cloud with Google or GitHub, we store:
 wisp Cloud runs on [Hetzner](https://www.hetzner.com) in Germany. It uses three cookies, only to
 keep you signed in: `__Host-grid`, `__Host-wisp` (30 days) and `__Host-grid_oauth` (10 minutes,
 during sign-in). It may also count events such as sign-ups, sign-ins and computers starting or
-sleeping, with your account replaced by a one-way hash.
+sleeping, with your account replaced by a one-way hash. Its sign-in page counts visits and clicks
+with PostHog like this site, and the steps of a sign-in (sent to Google or GitHub, back signed in,
+or turned away and why) are counted as that page's anonymous visitor, never as your account.
 
 A wisp Cloud (a *wisp Grid*) run by someone else on their own server is theirs, under their
 policy, not this one.
@@ -101,8 +103,10 @@ Uninstalling the Android app deletes everything it stored on your phone.
 
 ## This site
 
-trywisp.dev uses PostHog to count page views and clicks, such as copying the install command or
-opening wisp Cloud. It sets no advertising cookies and loads no tracking pixels.
+trywisp.dev uses PostHog to count page views and clicks, such as copying the install command,
+sending the page to your computer or opening wisp Cloud, how far down a page you read (by
+section), and whether you're on a phone or a computer. Joining the phone app waitlist is counted
+without your email address. It sets no advertising cookies and loads no tracking pixels.
 
 ### The phone app waitlist
 
