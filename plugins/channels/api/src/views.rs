@@ -497,6 +497,29 @@ pub struct ActArgs {
     pub person: bool,
 }
 
+/// What a tap or a reply did (`act`): `done` when it went through (answered, sent, marked done, stopped), so a
+/// transport takes the message's buttons away and says who; refused when nothing changed (a setup card's tap from
+/// someone the channel can't vouch for, a stale button), so the buttons stay and only the presser is told. One signal
+/// for Slack, Discord and Telegram (it was a string each read its own way: Slack waited for a `✓` no answer has, so
+/// every click ended as an ephemeral; Discord took the buttons on a refusal too).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Acted {
+    pub done: bool,
+    /// what to say: the result, or why not
+    pub words: String,
+}
+
+impl Acted {
+    #[must_use]
+    pub fn done(words: impl Into<String>) -> Self {
+        Self { done: true, words: words.into() }
+    }
+    #[must_use]
+    pub fn refused(words: impl Into<String>) -> Self {
+        Self { done: false, words: words.into() }
+    }
+}
+
 /// `Phone::start_parsed`'s answer.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Started {
