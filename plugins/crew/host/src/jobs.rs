@@ -17,7 +17,7 @@ use wisp_crew_core::tick::{clear_wake, tick};
 use wisp_kernel::{Call, Command as _, Ctx, Setup, WireError};
 use wisp_runtime_api::commands as rt;
 
-use crate::{State, calls, lock, wire};
+use crate::{Slot, State, calls, lock, wire};
 
 pub(crate) fn now(ctx: &Ctx) -> i64 {
     ctx.clock().map_or(0, |c| c.now_ms())
@@ -77,6 +77,18 @@ async fn sandbox_for(ctx: &Ctx, call: &Call, m: &Member) -> Result<Option<(Strin
 /// The member's jobs as the runtime has them now.
 async fn jobs_of(ctx: &Ctx, call: &Call, st: &State, m: &Member) -> Vec<JobSummary> {
     let ids = lock(&st.jobs).get(&m.id).cloned().unwrap_or_default();
+    jobs_in(ctx, call, m, ids).await
+}
+
+/// How many of the member's jobs are live, and which jobs that read (for `State::taken`, which adds the ones started
+/// since).
+async fn busy_of(ctx: &Ctx, call: &Call, st: &State, m: &Member) -> (u32, Vec<String>) {
+    let ids = lock(&st.jobs).get(&m.id).cloned().unwrap_or_default();
+    let live = jobs_in(ctx, call, m, ids.clone()).await.iter().filter(|j| j.live()).count();
+    (u32::try_from(live).unwrap_or(u32::MAX), ids)
+}
+
+async fn jobs_in(ctx: &Ctx, call: &Call, m: &Member, ids: Vec<String>) -> Vec<JobSummary> {
     let mut out = Vec::new();
     for id in ids {
         let Ok(s) = job_task(ctx, call, &id).await else { continue };
@@ -102,10 +114,19 @@ pub(crate) fn tree_reuse(args: &mut Value, m: &Member, job: JobKind) {
     }
 }
 
-/// Starts one job as a task.
+/// Starts one job as a task, in the place `slot` took under the member's limit (given back once the job is recorded,
+/// or when it fails to start).
 /// `w.run`: this job's own pick (`wisp_crew_core::run`), already checked. `capped`: a capped lead's cap
 /// (`{ mode }`), which a job it delegated runs under (v1 `atCap`, and the job keeps it as a child would).
-async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, capped: Option<&Value>) -> Result<Value, WireError> {
+async fn start(
+    ctx: &Ctx,
+    call: &Call,
+    st: &State,
+    m: &Member,
+    w: &WaitingJob,
+    capped: Option<&Value>,
+    slot: Slot<'_>,
+) -> Result<Value, WireError> {
     let (prompt, job, attachments) = (&w.prompt, w.job, &w.attachments);
     // what it was asked, for its page (a check-in's prompt is the crew's own)
     let asked = (job != JobKind::Checkin && !prompt.trim().is_empty()).then(|| prompt.chars().take(2000).collect::<String>());
@@ -195,7 +216,7 @@ async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, c
         if let Some(r) = &w.reply {
             crate::answers::started(ctx, call, st, r, id).await;
         }
-        st.add_job(&m.id, id, now(ctx)).await;
+        st.add_job(slot, id, now(ctx)).await;
         if let Some((machine, task)) = id.split_once('|') {
             crate::remote::check(ctx, st, machine, task).await;
         }
@@ -241,27 +262,40 @@ pub(crate) fn gone() -> WireError {
 
 /// A job for `m`: now when a slot is free, else in its queue (v1 `assign`).
 /// Placed against the member as they are after the awaits, not the copy `m`: two jobs given at once both wait (each
-/// wrote back its own copy's queue, and one was lost), and a member removed meanwhile isn't brought back.
+/// wrote back its own copy's queue, and one was lost), and a member removed meanwhile isn't brought back. The place a
+/// job that starts takes is reserved as it's decided: two given at once to an idle member both read it idle, and both
+/// started past its limit. A job that fails to start gives its place back and waits at the head of the queue.
 pub(crate) async fn assign(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: WaitingJob) -> Result<c::Started, WireError> {
     record_link(ctx, st, &m.id, &w).await;
-    let busy = u32::try_from(jobs_of(ctx, call, st, m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
+    let (busy, seen) = busy_of(ctx, call, st, m).await;
     let (id, at) = (wisp_kernel::ids::uuid7(), now(ctx));
     let placed = st
-        .update(&m.id, |live| -> wisp_crew_core::Result<(Placement, u32)> {
-            let p = place(live, busy, w.job)?;
+        .update(&m.id, |live| -> wisp_crew_core::Result<(Option<Slot<'_>>, u32)> {
+            let p = place(live, st.taken(&live.id, busy, &seen), w.job)?;
             if p == Placement::Queue {
                 live.queue.push(WaitingJob { id: id.clone(), at, ..w.clone() });
             }
-            Ok((p, u32::try_from(live.queue.len()).unwrap_or(u32::MAX)))
+            Ok(((p == Placement::Start).then(|| st.reserve(&live.id)), u32::try_from(live.queue.len()).unwrap_or(u32::MAX)))
         })
         .ok_or_else(gone)?
         .map_err(wire)?;
     match placed {
-        (Placement::Start, _) => {
+        (Some(slot), _) => {
             let m = st.member(&m.id)?;
-            Ok(c::Started { session: Some(start(ctx, call, st, &m, &w, None).await?), ..c::Started::default() })
+            match start(ctx, call, st, &m, &w, None, slot).await {
+                Ok(session) => Ok(c::Started { session: Some(session), ..c::Started::default() }),
+                // its place is given back (the slot dropped) and the job waits first in line, as a drain's does on a
+                // full grid: it's never lost, and the next drain tries it again
+                Err(e) => {
+                    tracing::warn!(member = %m.name, error = %e.message, "crew job didn't start; it waits first in line");
+                    let back = WaitingJob { id: id.clone(), at, ..w };
+                    st.update(&m.id, |live| live.queue.insert(0, back)).ok_or_else(gone)?;
+                    st.save().await;
+                    Ok(c::Started { queued: Some(id), position: Some(1), session: None })
+                }
+            }
         }
-        (Placement::Queue, position) => {
+        (None, position) => {
             st.save().await;
             Ok(c::Started { queued: Some(id), position: Some(position), session: None })
         }
@@ -274,11 +308,15 @@ async fn delegated(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: WaitingJob
     if capped.is_some() && m.elsewhere() {
         return Err(WireError::conflict(wisp_kernel::caps::capped_refusal("send work to another machine")));
     }
-    let busy = u32::try_from(jobs_of(ctx, call, st, m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
-    place_delegated(m, busy).map_err(wire)?;
+    let (busy, seen) = busy_of(ctx, call, st, m).await;
+    // decided and reserved at once, against the jobs starting meanwhile (two handed out at once both started)
+    let slot = st
+        .update(&m.id, |live| place_delegated(live, st.taken(&live.id, busy, &seen)).map(|()| st.reserve(&live.id)))
+        .ok_or_else(gone)?
+        .map_err(wire)?;
     record_link(ctx, st, &m.id, &w).await;
     let m = st.member(&m.id)?;
-    Ok(c::Started { session: Some(start(ctx, call, st, &m, &w, capped).await?), ..c::Started::default() })
+    Ok(c::Started { session: Some(start(ctx, call, st, &m, &w, capped, slot).await?), ..c::Started::default() })
 }
 
 /// `crew.checkin`: one check-in at a time per member (v1 `checkin`).
@@ -586,20 +624,21 @@ pub(crate) async fn drain_and_save(ctx: &Ctx, call: &Call, st: &State, id: &str)
 /// The member's waiting jobs that may start now (room, and not paused) start (v1 `drain`); the caller saves.
 async fn drain(ctx: &Ctx, call: &Call, st: &State, id: &str) {
     let Ok(m) = st.member(id) else { return };
-    let busy = u32::try_from(jobs_of(ctx, call, st, &m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
+    let (busy, seen) = busy_of(ctx, call, st, &m).await;
     if drain_count(&m, busy) == 0 {
         return;
     }
-    // the head of the queue as it is now: a job queued or dropped while the jobs were read is neither lost nor run
+    // the head of the queue as it is now: a job queued or dropped while the jobs were read is neither lost nor run;
+    // each one taken reserves its place, as a job given meanwhile does
     let Some(due) = st.update(id, |live| {
-        let n = drain_count(live, busy);
-        live.queue.drain(..n).collect::<Vec<WaitingJob>>()
+        let n = drain_count(live, st.taken(&live.id, busy, &seen));
+        live.queue.drain(..n).map(|w| (w, st.reserve(id))).collect::<Vec<(WaitingJob, Slot<'_>)>>()
     }) else {
         return;
     };
-    for w in due {
+    for (w, slot) in due {
         let Ok(m) = st.member(id) else { return };
-        if let Err(e) = start(ctx, call, st, &m, &w, None).await {
+        if let Err(e) = start(ctx, call, st, &m, &w, None, slot).await {
             tracing::warn!(member = %m.name, error = %e.message, "crew job");
             // a full grid (its sandboxes): the job waits its turn again instead of being lost (ADR-0047)
             if wisp_sandbox_api::full(&e) {

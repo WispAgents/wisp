@@ -13,8 +13,8 @@ use tokio::sync::mpsc;
 use wisp_goal::GoalPlugin;
 use wisp_kernel::{Kernel, Manifest, Plugin, Result, Setup, WireError};
 use wisp_runtime_api::commands as r;
-use wisp_runtime_api::events::TurnEnded;
 use wisp_runtime_api::model::{Session, Turn, TurnStatus};
+use wisp_runtime_api::points::{AFTER, TurnEnd};
 use wisp_testkit::TestApp;
 
 #[derive(Clone)]
@@ -101,13 +101,15 @@ fn child(goal: Option<Value>) -> Session {
     t
 }
 
-/// A child task's turn ended (`inner`, as runtime says of any task with a parent).
-fn turn_ended(k: &Kernel) {
+/// A child task's turn ended done: runtime asks its after-turn steps (`runtime.after@1`) whether one holds it, and runs
+/// the one that does (the goal's round).
+fn turn_ended(k: &Kernel, task: &Session) {
     let ctx = k.ctx("wisp.runtime").unwrap();
-    let e: TurnEnded = serde_json::from_value(json!({ "sessionId": "t1", "turnId": "u1", "status": "done", "interrupted": false,
-        "agent": "claude", "model": "", "inner": true }))
-    .unwrap();
-    ctx.emit(&ctx.root_call(), &e);
+    let turn = Turn { id: "u1".into(), session_id: "t1".into(), status: TurnStatus::Done, ..Turn::default() };
+    let end = TurnEnd { stopped: false, is_error: false };
+    if let Some((_, step)) = ctx.contributions_by(&AFTER).into_iter().find(|(_, a)| a.wants(task, &turn, end)) {
+        tokio::spawn(step.run(task.clone(), turn));
+    }
 }
 
 async fn next(rx: &mut mpsc::UnboundedReceiver<String>) -> Option<String> {
@@ -116,16 +118,18 @@ async fn next(rx: &mut mpsc::UnboundedReceiver<String>) -> Option<String> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_child_task_with_a_goal_of_its_own_is_judged() {
-    let (k, mut rx) = start(child(Some(json!({ "text": "the tests pass", "judges": ["claude"] })))).await;
-    turn_ended(&k);
+    let task = child(Some(json!({ "text": "the tests pass", "judges": ["claude"] })));
+    let (k, mut rx) = start(task.clone()).await;
+    turn_ended(&k, &task);
     assert_eq!(next(&mut rx).await.as_deref(), Some("judging"), "its step's goal is judged");
     assert_eq!(next(&mut rx).await.as_deref(), Some("met"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_subagents_task_without_a_goal_of_its_own_is_not_judged() {
-    let (k, mut rx) = start(child(None)).await;
-    turn_ended(&k);
+    let task = child(None);
+    let (k, mut rx) = start(task.clone()).await;
+    turn_ended(&k, &task);
     assert_eq!(tokio::time::timeout(Duration::from_millis(300), rx.recv()).await.ok().flatten(), None, "nothing judged");
 }
 

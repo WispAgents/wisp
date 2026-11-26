@@ -13,9 +13,10 @@ use wisp_testkit::{FakeClock, TestApp};
 use super::*;
 use crate::CrewPlugin;
 
-/// wisp.runtime with tasks in memory: `runtime.get`, `.create` and `.profiles`, each yielding once first.
+/// wisp.runtime with tasks in memory: `runtime.get`, `.create` and `.profiles`, each yielding once first. `.create`
+/// fails while `.1` says so.
 #[derive(Clone, Default)]
-struct Rt(Arc<Mutex<BTreeMap<String, Session>>>);
+struct Rt(Arc<Mutex<BTreeMap<String, Session>>>, Arc<std::sync::atomic::AtomicBool>);
 
 impl Rt {
     fn task(&self, id: &str, state: SessionState, job: JobKind) {
@@ -49,6 +50,9 @@ impl Plugin for Rt {
             let me = me.clone();
             async move {
                 tokio::task::yield_now().await;
+                if me.1.load(std::sync::atomic::Ordering::SeqCst) {
+                    return Err(WireError::unavailable("the harness couldn't start"));
+                }
                 let mut t = lock(&me.0);
                 let id = format!("made-{}", t.len());
                 let mut s = Session { id: id.as_str().into(), state: SessionState::Running, ..Session::default() };
@@ -136,6 +140,69 @@ async fn two_jobs_given_at_once_both_wait() {
     let mut at = [a.position, b.position];
     at.sort();
     assert_eq!(at, [Some(1), Some(2)], "each its own place");
+}
+
+/// Ada, idle, one job at a time.
+fn idle_ada(st: &State) -> Member {
+    let m =
+        Member { id: "ada1".into(), name: "Ada".into(), agent: "claude".into(), mode: "edits".into(), parallel: 1, ..Member::default() };
+    st.insert(m.clone());
+    m
+}
+
+/// Two jobs given at once to idle Ada (one at a time): each read her idle before the other's job was recorded, and
+/// both started. One starts; the other waits first in line.
+#[tokio::test]
+async fn two_jobs_given_at_once_to_an_idle_member_start_one() {
+    let rt = Rt::default();
+    let (_k, ctx, st, _clock) = kernel(&rt).await;
+    let m = idle_ada(&st);
+    let call = ctx.root_call();
+    let (a, b) = tokio::join!(assign(&ctx, &call, &st, &m, job("one")), assign(&ctx, &call, &st, &m, job("two")));
+    let (a, b) = (a.unwrap(), b.unwrap());
+    assert_eq!(rt.made().len(), 1, "one started: {:?}", rt.made());
+    assert_eq!([a.session.is_some(), b.session.is_some()].iter().filter(|x| **x).count(), 1);
+    let waits = if a.queued.is_some() { a } else { b };
+    assert_eq!(waits.position, Some(1), "the other waits first in line");
+    assert_eq!(st.member("ada1").unwrap().queue.len(), 1);
+    assert!(lock(&st.starting).is_empty(), "every place reserved was given back");
+}
+
+/// Two jobs handed out at once by leads to idle Ada (one at a time): both started. One starts; the other is refused,
+/// busy, as a lead's job never waits in the queue.
+#[tokio::test]
+async fn two_jobs_handed_out_at_once_to_an_idle_member_start_one() {
+    let rt = Rt::default();
+    let (_k, ctx, st, _clock) = kernel(&rt).await;
+    let m = idle_ada(&st);
+    let call = ctx.root_call();
+    let handed = |p: &str| WaitingJob { job: JobKind::Delegated, ..job(p) };
+    let (a, b) = tokio::join!(delegated(&ctx, &call, &st, &m, handed("one"), None), delegated(&ctx, &call, &st, &m, handed("two"), None));
+    assert_eq!(rt.made().len(), 1, "one started");
+    let refused = if a.is_ok() { b.unwrap_err() } else { a.unwrap_err() };
+    assert!(refused.message.contains("already running 1 job, their limit"), "{}", refused.message);
+    assert!(st.member("ada1").unwrap().queue.is_empty(), "never queued");
+}
+
+/// A job whose start fails gives its place back and waits first in line (it was lost): the next one given starts.
+#[tokio::test]
+async fn a_job_that_fails_to_start_gives_its_place_back() {
+    let rt = Rt::default();
+    let (_k, ctx, st, _clock) = kernel(&rt).await;
+    let m = idle_ada(&st);
+    let call = ctx.root_call();
+    rt.1.store(true, std::sync::atomic::Ordering::SeqCst);
+    let failed = assign(&ctx, &call, &st, &m, job("one")).await.unwrap();
+    assert_eq!(failed.position, Some(1), "it waits first in line: {failed:?}");
+    assert!(failed.session.is_none());
+    assert!(lock(&st.starting).is_empty());
+    let queue = st.member("ada1").unwrap().queue;
+    assert_eq!(queue.len(), 1);
+    assert_eq!(queue[0].prompt, "one");
+    assert_eq!(Some(&queue[0].id), failed.queued.as_ref());
+    rt.1.store(false, std::sync::atomic::Ordering::SeqCst);
+    let next = assign(&ctx, &call, &st, &m, job("two")).await.unwrap();
+    assert!(next.session.is_some(), "it started: {next:?}");
 }
 
 /// An edit read Ada before a drain started her waiting job, and wrote back the queue it had read: the job ran and

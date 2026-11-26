@@ -89,6 +89,11 @@ pub enum Ended<'a> {
     Cancelled {
         why: &'a str,
     },
+    /// stopped because the round's vote was already decided without it (`all` with a no, `any` with a yes): not a
+    /// failure, and no vote
+    NotNeeded {
+        why: &'a str,
+    },
 }
 
 /// The record once the check ended: its vote and why, everything it said (`turn.text`) and did (`turn.activity`).
@@ -106,6 +111,10 @@ pub fn ended(c: &Check<'_>, e: &Ended<'_>, at: i64) -> Row {
         Ended::Cancelled { why } => {
             let turn = json!({ "id": c.id, "prompt": c.prompt, "status": "stopped", "startedAt": c.at, "endedAt": at, "activity": [] });
             row(c, "error", Some("cancelled"), None, why, &turn)
+        }
+        Ended::NotNeeded { why } => {
+            let turn = json!({ "id": c.id, "prompt": c.prompt, "status": "stopped", "startedAt": c.at, "endedAt": at, "activity": [] });
+            row(c, "done", Some("not-needed"), None, why, &turn)
         }
     }
 }
