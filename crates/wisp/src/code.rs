@@ -149,6 +149,9 @@ pub fn opts(argv: &[String]) -> Opts {
             "--json" => o.json = true,
             "--wait" | "-w" => o.wait = true,
             "--fill-from-snapshot" => o.fill = true,
+            // the parser's (main.rs answers it before any command): never a word a command reads as its argument (audit
+            // H1: `wisp workspace new --help` made a workspace named `--help`)
+            "--help" | "-h" => {}
             _ => o.words.push(a.clone()),
         }
     }
