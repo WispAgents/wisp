@@ -32,6 +32,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Secrets are never lost to a bad `secrets.json`**: a file wisp can't read for a moment (permissions, a disk error) or that isn't valid JSON is no longer taken as empty and then written over on the next sign-in or token, which cost every saved key. Reading it fails with the file's name instead, and wisp leaves the file alone until it's fixed. A namespace or value that isn't the right shape is skipped with a warning, and the rest is kept.
+- Plugins: a plugin's HTTP route now runs within that plugin's permissions, and an agent's token is checked against its task before any of the route's code runs, however the request reaches it. An exec plugin (a child process) can only emit events under its own id or the types its manifest declares, and a call token that ended, timed out or was never issued is refused instead of running as a new call.
+- Switching a plugin off while events were on their way to it no longer leaves `wisp` waiting forever for them to be handled. `wisp events retry` on an event parked for a plugin that's off now says to switch it on first, and keeps the event parked, instead of dropping it.
 - Channels: a reply button under a finished task's report (**Ship it**, **Revise**, …) now sends that choice as the follow-up. Before, it sent an empty message that wisp refused. A button under an older turn says it's out of date and sends nothing.
 - Slack: a button click that answers or follows up now updates the message: the buttons go and a line says who clicked. Before, every click got a private reply and the buttons stayed. A refused click (a stale button, a setup question only you can answer) still gets a private reply and keeps the buttons.
 - Discord: a button press that is refused or fails keeps the message's buttons, so it can be pressed again. Before, they went whatever happened.

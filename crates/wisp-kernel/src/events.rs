@@ -285,9 +285,13 @@ impl Bus {
             return 0;
         };
         let Some(q) = qs.remove(owner) else { return 0 };
+        // stop and empty it under its items lock: a publish that took its index snapshot before this still holds the
+        // queue, and `enqueue` checks `stop` under the same lock, so nothing lands after the take (a count never done
+        // would keep `idle` waiting forever)
+        let items = q.items.lock();
         q.stop.cancel();
+        let queued = items.map_or(0, |mut i| std::mem::take(&mut *i).len());
         let n = q.subs.read().map_or(0, |s| s.len());
-        let queued = q.items.lock().map_or(0, |mut i| std::mem::take(&mut *i).len());
         self.work.done(queued);
         self.reindex(&qs);
         n
@@ -425,6 +429,10 @@ impl Bus {
         let Ok(mut items) = q.items.lock() else {
             return false;
         };
+        // its owner was dropped after this publish's index snapshot: nobody would ever take it off
+        if q.stop.is_cancelled() {
+            return false;
+        }
         if items.len() >= QUEUE_CAP {
             drop(items);
             if let Ok(mut l) = q.lagging.lock()
@@ -605,6 +613,69 @@ async fn deliver(q: &Queue, k: &Weak<KernelState>, s: &Sub, env: &Arc<EventEnvel
         {
             tracing::warn!(plugin = %q.owner, ty = %env.ty, seq = env.seq, "subscriber failed {ATTEMPTS} times: {why}");
             k.diag.record(k.now_ms(), &q.owner, "event", "internal", format!("{} (seq {}): {why}", env.ty, env.seq), Vec::new());
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn env(seq: u64) -> Arc<EventEnvelope> {
+        Arc::new(EventEnvelope {
+            seq,
+            ty: "x.y".into(),
+            plugin: "acme.p".into(),
+            at: 0,
+            root: String::new(),
+            cursor: None,
+            durable_seq: None,
+            subject: None,
+            key: None,
+            cause: None,
+            depth: 0,
+            data: Payload::Json(Arc::new(Value::Null)),
+        })
+    }
+
+    fn sub(k: &Arc<KernelState>, owner: &Arc<str>) {
+        let scope = CancellationToken::new();
+        let f: SubFn = Arc::new(|_, _| Box::pin(async { Ok(()) }));
+        let s = Sub { pattern: "x.*".into(), f, ctx: Ctx::new(k, owner, scope.clone()) };
+        k.bus.subscribe(k, owner, s, &scope);
+    }
+
+    #[tokio::test]
+    async fn enqueue_after_drop_owner_keeps_idle_reachable() {
+        let k = Arc::new(KernelState::default());
+        let owner: Arc<str> = Arc::from("acme.p");
+        sub(&k, &owner);
+        // a publish's snapshot of the index, taken before the plugin went off
+        let stale = k.bus.queues.lock().unwrap().get(&owner).cloned().unwrap();
+        k.bus.drop_owner(&owner);
+        assert!(!k.bus.enqueue(&k, &stale, &env(1), None), "a dropped queue takes nothing");
+        tokio::time::timeout(std::time::Duration::from_secs(1), k.work.idle()).await.expect("idle is reachable");
+    }
+
+    #[tokio::test]
+    async fn publish_racing_deactivate_keeps_idle_reachable() {
+        let k = Arc::new(KernelState::default());
+        let owner: Arc<str> = Arc::from("acme.p");
+        for i in 0..200 {
+            sub(&k, &owner);
+            let stale = k.bus.queues.lock().unwrap().get(&owner).cloned().unwrap();
+            let (k2, q) = (k.clone(), stale.clone());
+            let publish = tokio::spawn(async move {
+                for j in 0..8 {
+                    k2.bus.enqueue(&k2, &q, &env(i * 8 + j), None);
+                    tokio::task::yield_now().await;
+                }
+            });
+            tokio::task::yield_now().await;
+            k.bus.drop_owner(&owner);
+            publish.await.unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(1), k.work.idle()).await.expect("idle is reachable");
         }
     }
 }
