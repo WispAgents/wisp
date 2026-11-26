@@ -236,7 +236,14 @@ impl Harness for CodexHarness {
             };
             let version = Some(version_in(&line)).filter(|v| !v.is_empty());
             let home = codex_home(sys);
-            let config = sys.read_file(&format!("{home}/config.toml")).await.unwrap_or_default();
+            let mut config = sys.read_file(&format!("{home}/config.toml")).await.unwrap_or_default();
+            // wisp's own `[mcp_servers.wisp]` (the history server, as `wisp skill install` wrote it) made codex refuse
+            // every run's `wisp` server: it goes by `wisp-history`, as in runs. A read-only home: codex says why.
+            if let Some(moved) = wisp_codex_core::move_history_server(&config)
+                && sys.write_file(&format!("{home}/config.toml"), moved.clone()).await.is_ok()
+            {
+                config = moved;
+            }
             let v = version_triple(version.as_deref().unwrap_or(""));
             let at_least = v.len() == 3 && (v[0], v[1], v[2]) >= (0, 53, 0);
             let own = config.lines().any(|l| l.trim_start().starts_with("developer_instructions") && l.contains('='));

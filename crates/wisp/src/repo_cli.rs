@@ -649,11 +649,16 @@ pub fn skill_install(argv: &[String], cwd: &Path) -> Result<i32> {
                     .map_or_else(|_| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".codex"), PathBuf::from);
                 let cfg = home.join("config.toml");
                 let had = std::fs::read_to_string(&cfg).unwrap_or_default();
-                if !had.contains("[mcp_servers.wisp]") {
+                // `wisp-history`, the name runs give it: a `wisp` table here clashed with each run's own `wisp`
+                // server and Codex refused its config (wisp.codex moves one an older wisp wrote)
+                if !had.contains("[mcp_servers.wisp-history]") {
                     std::fs::create_dir_all(&home).map_err(|e| CliError::said(e.to_string()))?;
                     std::fs::write(&cfg, format!("{had}{}", codex_mcp_table(&exe))).map_err(|e| CliError::said(e.to_string()))?;
                 }
-                say(&format!("  ✓ {} ([mcp_servers.wisp]); Codex has no session-end hook: wisp adopt --all --since 1d", cfg.display()));
+                say(&format!(
+                    "  ✓ {} ([mcp_servers.wisp-history]); Codex has no session-end hook: wisp adopt --all --since 1d",
+                    cfg.display()
+                ));
             }
             "opencode" => say("  · opencode: its skill is in place; add wisp mcp to its MCP servers by hand (opencode.json) for the tools"),
             other => return Err(CliError::said(format!("wisp skill install --agent claude|codex|opencode|all (not {other})"))),
@@ -678,11 +683,11 @@ fn adopt_hook(exe: &str, windows: bool) -> Value {
     }
 }
 
-/// Codex's `[mcp_servers.wisp]` table for wisp at `exe`. The path is a TOML string quoted as JSON quotes it (`\\` for
+/// Codex's `[mcp_servers.wisp-history]` table for wisp at `exe`. The path is a TOML string quoted as JSON quotes it (`\\` for
 /// a backslash, valid TOML escapes): written raw between quotes, Windows' `C:\Users\…` had `\U` read as an escape and
 /// Codex refused its whole config.
 fn codex_mcp_table(exe: &str) -> String {
-    format!("\n[mcp_servers.wisp]\ncommand = {}\nargs = [\"mcp\"]\n", Value::String(exe.to_owned()))
+    format!("\n[mcp_servers.wisp-history]\ncommand = {}\nargs = [\"mcp\"]\n", Value::String(exe.to_owned()))
 }
 
 fn tool_text(text: &str) -> Value {
