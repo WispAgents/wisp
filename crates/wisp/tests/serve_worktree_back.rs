@@ -126,9 +126,11 @@ async fn a_btw_on_an_archived_task_runs_in_its_worktree_brought_back() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// ADR-0131: a task whose worktree and branch are both gone (merged then deleted, or tidied) isn't refused: the follow-up
+/// runs in the worktree made again from the base, and a line in its turn says the worktree was deleted.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_task_whose_worktree_cant_come_back_is_refused_with_why_and_runs_nowhere() {
-    let dir = temp("serve-wt-refused");
+async fn a_task_whose_branch_is_gone_goes_on_in_a_fresh_worktree_and_says_so() {
+    let dir = temp("serve-wt-fresh");
     let rec = dir.join("rec");
     let repo = repo(&dir);
     let (serve, port) = start_with(&dir, &[("FAKE_RECORD", rec.to_str().unwrap())]);
@@ -140,16 +142,19 @@ async fn a_task_whose_worktree_cant_come_back_is_refused_with_why_and_runs_nowhe
     git(&repo, &["branch", "-D", branch]); // nothing left to bring it back from
 
     api.cmd("runtime.followUp", json!({ "id": id, "text": "one more" })).await;
-    let turns = api.until(&id, "the follow-up is refused", |t| t.len() == 2 && t.last().is_some_and(ended)).await;
+    let turns = api.until(&id, "the follow-up runs", |t| t.len() == 2 && t.last().is_some_and(ended)).await;
     let hero = &turns[1]["presentation"]["blocks"][0];
-    assert_eq!(hero["title"], "Not started", "{:?}", turns[1]);
-    let why = hero["summary"].as_str().unwrap();
-    // its branch gone: said in plain words, never git's "invalid reference" (audit F orchestration F2)
-    assert!(why.contains(&format!("branch {branch} is gone")) && !why.contains("invalid reference"), "{why}");
-    assert!(!Path::new(path).exists(), "no folder made at its path");
-    assert_eq!(run_folders(&rec).len(), 1, "nothing ran for the refused turn, here or anywhere else");
-    let task = api.cmd("runtime.get", json!({ "id": id })).await;
-    assert_eq!(task["archived"], false, "out of Archived, where the refusal would go unseen: {task}");
+    assert_ne!(hero["title"], "Not started", "{:?}", turns[1]);
+    assert_eq!(git(Path::new(path), &["branch", "--show-current"]), branch, "made again on its branch");
+    assert_eq!(run_folders(&rec).len(), 2, "the follow-up ran");
+    let tid = turns[1]["id"].as_str().unwrap();
+    let steps = api.cmd("runtime.activity", json!({ "id": id, "turnId": tid })).await;
+    let said = steps["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|s| s["kind"] == "notice" && s["text"].as_str().is_some_and(|t| t.contains("worktree was deleted") && t.contains(branch)));
+    assert!(said, "the turn says its worktree was made again: {steps}");
     drop(serve);
     let _ = std::fs::remove_dir_all(&dir);
 }

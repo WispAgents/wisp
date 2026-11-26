@@ -36,8 +36,9 @@ pub struct Worktree {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub snap: Option<String>,
-    /// a run started for you (`CreateArgs::tidy`, ADR-0108): when its turn ends with nothing only the folder holds,
-    /// the folder goes (and its branch when nothing is on it). Additive (2026-11-19).
+    /// a run started for you (`CreateArgs::tidy`, ADR-0108): once its task is done or archived (ADR-0131, never on a turn
+    /// ending alone) with nothing only the folder holds, the folder goes (and its branch when nothing is on it).
+    /// Additive (2026-11-19).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub tidy: bool,
