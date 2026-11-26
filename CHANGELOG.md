@@ -5,7 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.16] - 2026-11-26
+
 ### Fixed
+
+- **`wisp tui` polish.** A reply follows the open task's mode (the status bar shows it, and a capped task says so) instead of sending the bar's mode, which lifted a channel task's cap without you choosing it; Shift-Tab picks one and warns when that lifts the cap. `Ctrl-E` gives your editor the whole text (long pastes put back) in a private 0600 file, keeps images whose `[image N]` is still there, and says so when the editor didn't save. ↑ history recalls a long paste whole. A new task that didn't start puts your prompt back in the box with a plain "wisp isn't answering" instead of jumping to another task. `/` search moves between matches with ↑ ↓ (Ctrl-N, Ctrl-P), and Enter with no match does nothing and says "No task matches". `o` opens the task in its harness on the TUI's own wisp (`--port`, `--on`) and says when it couldn't. A palette command goes before your draft instead of replacing it, and `i` with no task starts one.
 
 - **`--help` after any wisp command prints its usage and never runs it.** `wisp destroy --help` planned a destroy, `wisp graph --help` printed the graph, `wisp workspace new --help` made a workspace named `--help`, and `wisp run -f x.task.yml --help`, `wisp apply -f x.yml --help` and `wisp secret set FOO --help` ran the command. Now each prints that command's lines and exits 0, whatever follows; a plugin verb's `--help` (`wisp crew create --help`) still lists its flags, and `wisp -- "explain --help"` is still a task. `wisp ship --help` shows `wisp ship <id>` and its `--draft` first, then the ship plugin's verbs under "more:". `wisp tui` and `wisp schema` have lines of their own in `wisp --help`, `wisp list --help` prints what `wisp ls --help` does, and `wisp output`, `wisp graph` and `wisp mv` each have their own line.
 - **A mistyped command line never starts wisp in the background.** `wisp serve --bogus` (or any `--help`) started a background wisp just to read the plugin list, then said serve's usage. Help and refusals now read the list from the wisp that's running, or the one it last saved, and otherwise print the built-in usage.

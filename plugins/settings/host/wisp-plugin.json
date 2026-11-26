@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.settings",
   "name": "Settings",
-  "version": "1.0.0-alpha.15",
+  "version": "1.0.0-alpha.16",
   "api": "^1",
   "description": "wisp.settings: list, read and change every plugin's settings (the kernel's registry), and v1's /config",
   "server": {

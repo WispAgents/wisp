@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.plugins",
   "name": "Plugins",
-  "version": "1.0.0-alpha.15",
+  "version": "1.0.0-alpha.16",
   "api": "^1",
   "description": "The plugin manager: which plugins this wisp has, switching them on and off (the plugin kind)",
   "server": {

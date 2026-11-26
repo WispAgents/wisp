@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.ship",
   "name": "Ship it",
-  "version": "1.0.0-alpha.15",
+  "version": "1.0.0-alpha.16",
   "api": "1",
   "description": "Ship it: commit what a worktree task left, push its branch, open or update its PR; follow its checks and reviews, fix conflicts with a follow-up, squash-merge the reviewed head and fast-forward the user's checkout.",
   "kind": "plugin",
