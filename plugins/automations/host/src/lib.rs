@@ -18,7 +18,8 @@ use serde_json::{Value, json};
 use wisp_automations_api::tasks::{
     DEFAULT, NamedTask, RunTask, TaskDecl, TaskRemove, TaskRun, TaskSet, Tasks, default_problems, fill, goal_arg, goal_ref, with_defaults,
 };
-use wisp_automations_api::{Utc, matches, parse_cron, read_schedule};
+use wisp_automations_api::{parse_cron, read_schedule};
+use wisp_automations_core::schedule::{self, Due};
 use wisp_kernel::{BoxFuture, Call, Command, Ctx, Manifest, Plugin, Result, Setup, WireError};
 use wisp_resources_api::{CrudKind, KindInfo, Op, RESOURCE_KIND, Resource, ResourceKind, schema_of};
 use wisp_runtime_api::Mode;
@@ -222,43 +223,54 @@ pub async fn run_by(ctx: &Ctx, call: &Call, store: &Store, name: &str, cwd: &str
     run(ctx, call, store, RunTask { name: name.to_owned(), over, ..RunTask::default() }, by).await
 }
 
-/// Once a minute: every declared task whose schedule matches this minute, once.
+/// Once a minute: every declared task whose schedule came due since its last run, once. On local wall-clock minutes
+/// in this computer's zone, as a `schedule` trigger is (`schedule::due`): a minute the tick missed (asleep, a slow
+/// tick) runs once, late, never twice (audit doc23c: it matched this UTC minute only, so `0 9 * * *` ran at 09:00 UTC
+/// and a missed 09:00 never ran).
 async fn tick(ctx: &Ctx, store: &Store, now: i64) {
-    let minute = now / 60_000;
     let Ok(tasks) = list(store).await else { return };
+    let zone = engine::zone("");
     for t in tasks.into_iter().filter(|t| !t.spec.paused && !t.spec.schedule.is_empty()) {
         let Ok(c) = parse_cron(&t.spec.schedule) else { continue };
-        if !matches(&c, now, &Utc) {
-            continue;
+        let due = claim(store, &t.name, c, zone.clone(), now).await.unwrap_or_else(|e| {
+            // not marked: the minute isn't run, so a store that can't record it can't run it twice either
+            tracing::warn!(task = %t.name, "couldn't record the scheduled minute, so it doesn't run: {e}");
+            None
+        });
+        let Some(due) = due else { continue };
+        let call = ctx.root_call();
+        let name = t.name.clone();
+        let mut r = RunTask { name: name.clone(), ..RunTask::default() };
+        if due.late {
+            tracing::info!(task = %name, "a scheduled run missed while this computer was off runs now, once");
+            r.over.insert("ext".into(), json!({ wisp_automations_api::PLUGIN_ID: { "task": name, "late": true } }));
         }
-        let id = t.name.clone();
-        let fresh = store
-            .write(move |w| {
-                let last = w.get(RUN.kind, id.as_str())?.and_then(|r| r.get("body").and_then(|b| b.get("minute")).and_then(Value::as_i64));
-                if last == Some(minute) {
-                    return Ok(false);
-                }
-                let mut r = Row::new();
-                r.insert("id".into(), json!(id));
-                r.insert("body".into(), json!({ "minute": minute }));
-                w.upsert(RUN.kind, r)?;
-                Ok(true)
-            })
-            .await
-            .unwrap_or_else(|e| {
-                // not marked: the minute isn't run, so a store that can't record it can't run it twice either
-                tracing::warn!(task = %t.name, "couldn't record the scheduled minute, so it doesn't run: {e}");
-                false
-            });
-        if fresh {
-            let call = ctx.root_call();
-            let name = t.name.clone();
-            if let Err(e) = run(ctx, &call, store, RunTask { name: name.clone(), ..RunTask::default() }, &format!("schedule:{name}")).await
-            {
-                tracing::warn!(task = %name, "scheduled run failed: {}", e.message);
-            }
+        if let Err(e) = run(ctx, &call, store, r, &format!("schedule:{name}")).await {
+            tracing::warn!(task = %name, "scheduled run failed: {}", e.message);
         }
     }
+}
+
+/// The run declared task `name`'s schedule owes at `now`, recorded (in one write, so it's claimed once) as the local
+/// minute it is for: None when nothing came due since the last. A row from before local minutes (`minute`, UTC) is
+/// read in this zone.
+async fn claim(store: &Store, name: &str, c: wisp_automations_api::Cron, zone: engine::Tz, now: i64) -> wisp_store::Result<Option<Due>> {
+    let id = name.to_owned();
+    store
+        .write(move |w| {
+            let body = w.get(RUN.kind, id.as_str())?.and_then(|r| r.get("body").cloned()).unwrap_or(Value::Null);
+            let last = body
+                .get("local")
+                .and_then(Value::as_i64)
+                .or_else(|| body.get("minute").and_then(Value::as_i64).map(|m| schedule::local_minute(m.saturating_mul(60_000), &zone)));
+            let Some(d) = schedule::due(&c, &zone, last, now) else { return Ok(None) };
+            let mut r = Row::new();
+            r.insert("id".into(), json!(id));
+            r.insert("body".into(), json!({ "local": d.minute, "late": d.late }));
+            w.upsert(RUN.kind, r)?;
+            Ok(Some(d))
+        })
+        .await
 }
 
 /// The `task` resource kind: schedules in words are read as the store keeps them (`0 2 * * *`).
@@ -413,6 +425,35 @@ mod tests {
             assert_eq!(a.worktree_key.as_deref(), key, "{by}");
             assert_eq!(a.worktree_tidy, key.is_some(), "{by}");
         }
+    }
+
+    /// Audit doc23c: a declared task's schedule matched the tick's UTC minute only. Now local minutes, in the zone,
+    /// and a minute the tick missed runs once, late; the next tick doesn't run it again.
+    #[tokio::test]
+    async fn a_declared_schedule_missed_at_9_runs_once_late_at_9_03_and_not_again_at_9_04() {
+        let store = Store::open(wisp_store::Location::Memory, Arc::new(wisp_store::SystemClock)).unwrap();
+        store.migrate(OWNER, MIGRATIONS).unwrap();
+        store.define_entity(RUN).unwrap();
+        let ny = engine::zone("America/New_York");
+        let c = parse_cron("0 9 * * *").unwrap();
+        // Monday 2026-11-23: 08:00 in New York is 13:00 UTC
+        let eight = 1_795_438_800_000;
+        let at = |min: i64| eight + min * 60_000;
+        for (i, kept) in
+            [json!({ "local": schedule::local_minute(eight, &ny) }), json!({ "minute": eight / 60_000 })].into_iter().enumerate()
+        {
+            let id = format!("nightly{i}");
+            let row = json!({ "id": id, "body": kept });
+            store.write(move |w| w.upsert(RUN.kind, serde_json::from_value(row).unwrap()).map(|_| ())).await.unwrap();
+            // 09:03 local: 09:00 came and went unrun (asleep, a slow tick)
+            let missed = claim(&store, &id, c, ny.clone(), at(63)).await.unwrap().expect("the missed 09:00 runs");
+            assert_eq!(missed, Due { minute: schedule::local_minute(at(60), &ny), late: true });
+            assert_eq!(claim(&store, &id, c, ny.clone(), at(64)).await.unwrap(), None, "not again at 09:04");
+            // the next day's 09:00, on time
+            assert_eq!(claim(&store, &id, c, ny.clone(), at(24 * 60 + 60)).await.unwrap().map(|d| d.late), Some(false));
+        }
+        // 09:00 UTC is 04:00 here: nothing
+        assert_eq!(claim(&store, "other", c, ny.clone(), 1_795_424_400_000).await.unwrap(), None);
     }
 
     #[test]

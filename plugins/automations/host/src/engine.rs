@@ -78,7 +78,7 @@ fn store_err(e: wisp_store::StoreError) -> WireError {
 }
 
 /// The machine's zone, or a named one (`Europe/Zurich`).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tz(jiff::tz::TimeZone);
 impl Zone for Tz {
     fn offset_ms(&self, utc_ms: i64) -> i64 {

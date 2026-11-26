@@ -186,7 +186,9 @@ pub struct PlanDecision {
 /// done. At most `room` start; a draft never comes due by itself.
 pub fn due_plans(plans: &[Plan], tasks: &BTreeMap<String, Task>, now: i64, room: usize) -> PlanDecision {
     let mut d = PlanDecision::default();
-    let mut timed: Vec<&Plan> = plans.iter().filter(|p| p.at.is_some_and(|at| at <= now)).collect();
+    // a plan whose start failed waits out its backoff (`rules::failed_start`), not tried again every look
+    let ready = |p: &&Plan| p.retry_at.is_none_or(|r| r <= now);
+    let mut timed: Vec<&Plan> = plans.iter().filter(|p| p.at.is_some_and(|at| at <= now)).filter(ready).collect();
     timed.sort_by_key(|p| p.sort_key());
     for p in timed {
         if d.used >= room {
@@ -200,7 +202,7 @@ pub fn due_plans(plans: &[Plan], tasks: &BTreeMap<String, Task>, now: i64, room:
     for p in plans.iter().filter(|p| p.at.is_none()) {
         let Some(after) = &p.after else { continue };
         match tasks.get(&after.id) {
-            Some(t) if t.state == TaskState::Done => {
+            Some(t) if t.state == TaskState::Done && ready(&p) => {
                 if d.used >= room {
                     d.retry = true;
                     continue;
@@ -248,6 +250,6 @@ pub fn pull_forward(entries: &[LaterEntry], tasks: &BTreeMap<String, Task>, agen
 /// nothing but its reminders.
 pub fn next_at(entries: &[LaterEntry], plans: &[Plan], tasks: &BTreeMap<String, Task>, now: i64) -> Option<i64> {
     let ents = entries.iter().filter(|l| tasks.get(&l.session_id).is_some_and(|t| !t.archived && (l.remind || !t.asking))).map(|l| l.at);
-    let next = plans.iter().filter_map(|p| p.at).chain(ents).min()?;
+    let next = plans.iter().filter_map(|p| p.at.map(|at| at.max(p.retry_at.unwrap_or(at)))).chain(ents).min()?;
     Some(next.max(now + MIN_MS))
 }

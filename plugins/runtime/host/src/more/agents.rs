@@ -91,6 +91,7 @@ fn status_of(h: &dyn Harness, found: HarnessFound) -> AgentStatus {
         delegates: info.ask_tool.is_some(),
         signed_in: found.signed_in,
         bin: found.bin,
+        browser: crate::browser::support(info.own_chrome, info.ask_tool.is_some()),
     }
 }
 
@@ -109,6 +110,7 @@ fn declared_status(h: &dyn Harness) -> AgentStatus {
         delegates: info.ask_tool.is_some(),
         signed_in: None,
         bin: None,
+        browser: crate::browser::support(info.own_chrome, info.ask_tool.is_some()),
     }
 }
 

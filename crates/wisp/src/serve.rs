@@ -91,6 +91,8 @@ pub struct Running {
     pub feed: wisp_store::Subscription,
     /// glibc's heap handed back after bursts of first looks (ADR-0084), stopped with the server
     pub trimmer: Option<tokio::task::JoinHandle<()>>,
+    /// the store's hourly prune and blob gc (`upkeep`), stopped with the server
+    pub upkeep: tokio::task::JoinHandle<()>,
     /// this home's one server ([`lock_home`]): held until the server is gone
     _home_lock: HomeLock,
 }
@@ -294,6 +296,31 @@ fn open_store(home: &Path) -> Result<wisp_store::Store> {
         .map_err(|e| CliError::said(format!("wisp could not open its database: {e}")))
 }
 
+/// The first upkeep this long after start: a cold start does none of it.
+const UPKEEP_FIRST: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+const UPKEEP_EVERY: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// The store's upkeep (plan §4.1), hourly: change rows and mutation records past retention pruned, then the blobs
+/// nobody refs freed. Nothing ran either (audit doc14c), so the feed and `blobs/` only ever grew. A failure is
+/// logged and the next hour tries again.
+fn upkeep(store: wisp_store::Store) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        tokio::time::sleep(UPKEEP_FIRST).await;
+        let mut every = tokio::time::interval(UPKEEP_EVERY);
+        loop {
+            every.tick().await;
+            match store.prune().await {
+                Ok(r) => tracing::info!(changes = r.changes, mutations = r.mutations, "store upkeep: pruned"),
+                Err(e) => tracing::warn!(error = %e, "store upkeep: prune failed"),
+            }
+            match store.gc_blobs().await {
+                Ok(r) => tracing::info!(blobs = r.blobs, files = r.files, bytes = r.bytes, "store upkeep: blobs freed"),
+                Err(e) => tracing::warn!(error = %e, "store upkeep: blob gc failed"),
+            }
+        }
+    })
+}
+
 pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running> {
     let started = Instant::now();
     // Windows (ADR-0070): every process this server starts is born in a job that ends with it, however it ends
@@ -372,7 +399,8 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     let edge = Edge::new(cfg, backend, hub);
 
     let server = wisp_api::serve(edge, listener).await?;
-    Ok(Running { server, kernel, started, store, feed, trimmer, _home_lock: home_lock })
+    let upkeep = upkeep(store.clone());
+    Ok(Running { server, kernel, started, store, feed, trimmer, upkeep, _home_lock: home_lock })
 }
 
 /// What the desktop app may tell its server on the stdin pipe, one line each. Nothing else is read there, and nothing
@@ -447,6 +475,7 @@ pub async fn until_signal(r: Running) {
     if let Some(t) = &r.trimmer {
         t.abort();
     }
+    r.upkeep.abort();
     // every plugin off, in reverse order: their scopes end their tasks and children
     let ids: Vec<String> = r.kernel.status().into_iter().filter(|s| s.state == "active").map(|s| s.id).collect();
     for id in ids.iter().rev() {

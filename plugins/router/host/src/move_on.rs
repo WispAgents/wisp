@@ -82,6 +82,7 @@ mod tests {
             signed_in: None,
             setup: None,
             bin: None,
+            browser: wisp_runtime_api::harness::browser::BrowserSupport::default(),
         }
     }
 

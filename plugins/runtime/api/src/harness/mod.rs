@@ -16,6 +16,7 @@
 //! Wire compatibility: the JSON of wisp-harness-kit's `HarnessEvent` (v1's `onEvent` shapes) deserializes
 //! into this crate's [`HarnessEvent`] unchanged (`HarnessEvent::from_v1`).
 
+pub mod browser;
 mod event;
 mod info;
 mod run;
