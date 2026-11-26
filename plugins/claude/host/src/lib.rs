@@ -18,6 +18,7 @@ use wisp_claude_core::{ClaudeOptions, ClaudeParser};
 use wisp_harness_kit::Re;
 use wisp_harness_kit::RunPaths;
 use wisp_kernel::{BoxFuture, Manifest, Plugin, Result, Setup};
+use wisp_runtime_api::harness::browser::Browser;
 use wisp_runtime_api::harness::{
     ExecReq, FileChangeOf, FileWrite, HarnessAccounts, HarnessFound, HarnessInfo, HarnessLogin, HarnessModel, HarnessRun, HarnessSys,
     Launch, PermissionAsk, RunDriver, SetupTip, TextEdit,
@@ -53,7 +54,29 @@ pub fn info() -> HarnessInfo {
         system_prompt_flag: true,
         // Try it two ways: CLAUDE_CODE_SUBAGENT_MODEL and --disable-slash-commands (launch.rs)
         variants: [wisp_runtime_api::commands::SUBAGENT_MODEL, wisp_runtime_api::commands::SKILLS].map(str::to_owned).to_vec(),
+        // Claude in Chrome: `--chrome` (launch.rs), the user's own Chrome with their sign-ins
+        own_chrome: true,
     }
+}
+
+/// Claude in Chrome "enabled by default" (`/chrome` in Claude Code: `claudeInChromeDefaultEnabled` in the account's
+/// `.claude.json`), what a run follows when `runtime.browser` is unset (v1 claude.js `chromeEnabled`);
+/// `WISP_CLAUDE_CHROME=1/0` overrides it. A small read once per run, as v1's.
+fn chrome_default(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    if let Some(v) = env("WISP_CLAUDE_CHROME").filter(|v| !v.is_empty()) {
+        return v != "0";
+    }
+    let file = match env("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()) {
+        Some(d) => std::path::PathBuf::from(d).join(".claude.json"),
+        None => match env("HOME").or_else(|| env("USERPROFILE")) {
+            Some(h) => std::path::PathBuf::from(h).join(".claude.json"),
+            None => return false,
+        },
+    };
+    std::fs::read(file)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .is_some_and(|j| j["claudeInChromeDefaultEnabled"] == serde_json::Value::Bool(true))
 }
 
 /// What a run says when it is signed out (v1 agent-login.js LOGINS.claude.authFailed).
@@ -254,6 +277,10 @@ impl Harness for ClaudeHarness {
             .or_else(|| self.found_bin())
             .or_else(|| std::env::var("WISP_CLAUDE_BIN").ok().filter(|b| !b.is_empty()))
             .unwrap_or_else(|| DEFAULT_BIN.to_owned());
+        // `runtime.browser` unset: the user's own `/chrome` choice, as in v1 (ADR-0128)
+        if run.browser == Browser::Default && chrome_default(&|k| run.account_env.get(k).cloned().or_else(|| std::env::var(k).ok())) {
+            return Ok(launch(&HarnessRun { browser: Browser::Chrome, ..run.clone() }, &bin));
+        }
         Ok(launch(run, &bin))
     }
 
@@ -359,6 +386,28 @@ fn file_write(tool: &str, input: &serde_json::Value) -> Option<FileWrite> {
 
 #[cfg(test)]
 mod tests {
+    /// v1 test/adapters.test.js "passes --chrome when Claude in Chrome is enabled by default": unset, a run follows the
+    /// account's `/chrome` choice, and `WISP_CLAUDE_CHROME` wins over it.
+    #[test]
+    fn an_unset_browser_follows_the_accounts_chrome_choice() {
+        let dir = std::env::temp_dir().join(format!("wisp-claude-chrome-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap_or_default();
+        let at = dir.display().to_string();
+        let env = |over: Option<&'static str>| {
+            let at = at.clone();
+            move |k: &str| match k {
+                "CLAUDE_CONFIG_DIR" => Some(at.clone()),
+                "WISP_CLAUDE_CHROME" => over.map(str::to_owned),
+                _ => None,
+            }
+        };
+        assert!(!super::chrome_default(&env(None)), "no config: off");
+        std::fs::write(dir.join(".claude.json"), r#"{"claudeInChromeDefaultEnabled":true}"#).unwrap_or_default();
+        assert!(super::chrome_default(&env(None)), "follows the /chrome default");
+        assert!(!super::chrome_default(&env(Some("0"))), "the env override wins");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn resume_command_is_v1s() {
         use wisp_runtime_api::harness::ResumeOptions;

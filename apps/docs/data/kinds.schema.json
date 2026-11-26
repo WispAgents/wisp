@@ -1411,6 +1411,19 @@
           "description": "wisp blocks: answers come as cards (off: plain markdown)",
           "type": "boolean"
         },
+        "runtime.browser": {
+          "description": "The browser agents drive (ADR-0128): default, Claude Code follows its /chrome choice and the others have none; chrome, your own Chrome (Claude in Chrome on Claude Code); headless, Playwright's own browser, hidden. In a sandbox, anything but off is its browser",
+          "enum": [
+            "default",
+            "off",
+            "chrome",
+            "headless"
+          ],
+          "type": "string"
+        },
+        "runtime.browsers": {
+          "description": "One harness's own browser, over runtime.browser: { <harness>: off | chrome | headless }"
+        },
         "runtime.followUp": {
           "description": "A follow-up while a task works: interrupt it, or queue after it",
           "enum": [
