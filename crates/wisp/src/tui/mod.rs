@@ -87,22 +87,56 @@ fn send_cmd(
     task: Option<String>,
     text: &str,
     attachments: &[String],
-    mode: app::Mode,
+    mode: Option<app::Mode>,
     queue: bool,
     local: String,
     cwd: &str,
 ) -> (String, Value, Then) {
     let att: Vec<Value> = attachments.iter().map(|a| attachment(a)).collect();
-    match task {
-        None => {
-            ("runtime.create".into(), json!({ "prompt": text, "cwd": cwd, "mode": mode.wire(), "attachments": att }), Then::Created(local))
-        }
-        Some(id) => (
-            "runtime.followUp".into(),
-            json!({ "id": id, "text": text, "queue": queue, "mode": mode.wire(), "attachments": att }),
-            Then::Sent(local),
+    let (id, mut args, then) = match task {
+        None => (
+            "runtime.create".to_owned(),
+            json!({ "prompt": text, "cwd": cwd, "attachments": att }),
+            Then::Created(local, text.to_owned(), attachments.to_vec()),
         ),
+        Some(id) => {
+            ("runtime.followUp".to_owned(), json!({ "id": id, "text": text, "queue": queue, "attachments": att }), Then::Sent(local))
+        }
+    };
+    // a follow-up without one keeps the task's mode: one above a cap, sent as the user's, lifts it (runtime's cap::ask)
+    if let Some(m) = mode {
+        args["mode"] = json!(m.wire());
     }
+    (id, args, then)
+}
+
+/// `wisp open <task>` as the TUI runs it: on the TUI's own wisp (its port, and its `--on` machine), not whichever one
+/// `server.json` names (a TUI on `--port 4800` opened 4477's task, or none).
+fn open_args(id: &str, port: Option<u16>, on: Option<&str>) -> Vec<String> {
+    let mut a = Vec::new();
+    if let Some(p) = port {
+        a.extend(["--port".to_owned(), p.to_string()]);
+    }
+    if let Some(m) = on {
+        a.extend(["--on".to_owned(), m.to_owned()]);
+    }
+    a.extend(["open".to_owned(), id.to_owned()]);
+    a
+}
+
+/// A private file for `$EDITOR` (0600, a name no one can guess, made only if nothing is there, so never through a
+/// link someone left at that path): the composer's text, which can hold secrets, was a world-readable
+/// `wisp-tui-<pid>.md` in the shared temp dir.
+fn editor_file(dir: &std::path::Path, text: &str) -> std::io::Result<std::path::PathBuf> {
+    use std::io::Write as _;
+    let path = dir.join(format!("wisp-tui-{}.md", crate::services::hex(&rand::random::<[u8; 12]>())));
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    let mut f = o.open(&path)?;
+    f.write_all(text.as_bytes())?;
+    Ok(path)
 }
 
 /// Whether a send starts a new task: it is then filed under its project, with a worktree of its own in a git repo, as
@@ -112,40 +146,47 @@ fn launches(cmd: &str) -> bool {
     cmd == "runtime.create"
 }
 
-/// The terminal handed to `cmd` until it ends (the input thread paused), then taken back. → it succeeded.
-fn handed(paused: &AtomicBool, mut cmd: std::process::Command) -> bool {
+/// The terminal handed to `cmd` until it ends (the input thread paused), then taken back. Err: why it didn't work
+/// (it couldn't start, or it exited non-zero).
+fn handed(paused: &AtomicBool, mut cmd: std::process::Command) -> std::result::Result<(), String> {
     paused.store(true, Ordering::Relaxed);
     ratatui::restore();
     let _ = execute!(std::io::stdout(), event::DisableMouseCapture, event::DisableBracketedPaste);
-    let ok = cmd.status().is_ok_and(|s| s.success());
+    let got = match cmd.status() {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(s.code().map_or_else(|| "it was stopped".to_owned(), |c| format!("exit {c}"))),
+        Err(e) => Err(format!("{}: {e}", cmd.get_program().to_string_lossy())),
+    };
     // try_init, never init (it panics): a terminal that can't be taken back fails the next draw, which ends the TUI
     let _ = ratatui::try_init();
     let _ = execute!(std::io::stdout(), event::EnableMouseCapture, event::EnableBracketedPaste);
     paused.store(false, Ordering::Relaxed);
-    ok
+    got
 }
 
-/// Open in <harness>: `wisp open <task>` in this terminal (v1's Take over), the TUI back after.
-fn open_in(id: &str, paused: &AtomicBool) {
+/// Open in <harness>: `wisp open <task>` in this terminal (v1's Take over), on this TUI's wisp, the TUI back after.
+fn open_in(id: &str, c: &Client, paused: &AtomicBool) -> std::result::Result<(), String> {
     let me = std::env::current_exe().map_or_else(|_| "wisp".into(), std::path::PathBuf::into_os_string);
     let mut cmd = std::process::Command::new(me);
-    cmd.args(["open", id]);
-    handed(paused, cmd);
+    cmd.args(open_args(id, c.port(), c.on()));
+    handed(paused, cmd)
 }
 
-/// `$EDITOR` on the composer's text; the terminal is handed over and back.
-fn editor(text: &str, paused: &AtomicBool) -> Option<String> {
-    let path = std::env::temp_dir().join(format!("wisp-tui-{}.md", std::process::id()));
-    std::fs::write(&path, text).ok()?;
+/// `$EDITOR` on the composer's text; the terminal is handed over and back. Err: why nothing came back.
+fn editor(text: &str, paused: &AtomicBool) -> std::result::Result<String, String> {
+    let path = editor_file(&std::env::temp_dir(), text).map_err(|e| format!("no temp file: {e}"))?;
     let ed = std::env::var("VISUAL").or_else(|_| std::env::var("EDITOR")).unwrap_or_else(|_| "vi".into());
     let mut parts = ed.split_whitespace();
-    let ok = parts.next().is_some_and(|bin| {
-        // the file goes in with the rest: on Windows a `.cmd` editor's whole line is escaped as one
-        let mut args: Vec<String> = parts.map(str::to_owned).collect();
-        args.push(path.display().to_string());
-        handed(paused, crate::repo_cli::terminal(bin, &args))
-    });
-    let out = ok.then(|| std::fs::read_to_string(&path).ok()).flatten();
+    let ran = match parts.next() {
+        Some(bin) => {
+            // the file goes in with the rest: on Windows a `.cmd` editor's whole line is escaped as one
+            let mut args: Vec<String> = parts.map(str::to_owned).collect();
+            args.push(path.display().to_string());
+            handed(paused, crate::repo_cli::terminal(bin, &args))
+        }
+        None => Err("$EDITOR is empty".to_owned()),
+    };
+    let out = ran.and_then(|()| std::fs::read_to_string(&path).map_err(|e| e.to_string()));
     let _ = std::fs::remove_file(&path);
     out
 }
@@ -212,13 +253,13 @@ pub async fn run(c: &Client, cwd: &str) -> Result<i32> {
                 }
                 Effect::Files => list_files(cwd.to_owned(), done_tx.clone()),
                 Effect::OpenIn(id) => {
-                    open_in(&id, &paused);
+                    let got = open_in(&id, c, &paused);
+                    app.opened_in(&id, got);
                     let _ = term.clear();
                 }
                 Effect::Editor(text) => {
-                    if let Some(t) = editor(&text, &paused) {
-                        app.edited(&t);
-                    }
+                    let got = editor(&text, &paused);
+                    app.edited(got);
                     let _ = term.clear();
                 }
             }
@@ -348,6 +389,7 @@ fn fold_task(app: &mut App, got: Vec<Got>) {
             Got::Ops(ops) => t.ops(ops),
         }
     }
+    app.task_mode_came();
 }
 
 #[cfg(test)]

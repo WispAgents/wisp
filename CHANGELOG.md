@@ -11,9 +11,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`wisp mcp` answers requests at once.** A `wisp_wait` no longer holds up the editor's other calls (a `ping` behind it went unanswered for minutes), a cancelled request (`notifications/cancelled`) stops, and a line that isn't JSON gets a parse error (-32700) instead of silence. Its tool list is the full catalogue even when wisp wasn't running when the editor started (wisp is started for it), and the editor is told when the list changes.
 - **`wisp tui` without a terminal** (a pipe, CI) says "wisp tui needs a terminal: try wisp ls --watch or wisp attach <id>" and exits 2, instead of panicking.
 - **Scripted commands refuse flags they don't take.** `wisp ls --stat done` or `wisp ls --bogus` showed the whole list as if nothing was typed; now they print the command's usage and exit 2. `--limit` and `--days` take a whole number above 0 (`--limit abc` was dropped without a word), and `--host` is refused anywhere but `wisp serve`.
+
+## [1.0.0-alpha.16] - 2026-11-26
+
+### Fixed
+
+- **`wisp tui` polish.** A reply follows the open task's mode (the status bar shows it, and a capped task says so) instead of sending the bar's mode, which lifted a channel task's cap without you choosing it; Shift-Tab picks one and warns when that lifts the cap. `Ctrl-E` gives your editor the whole text (long pastes put back) in a private 0600 file, keeps images whose `[image N]` is still there, and says so when the editor didn't save. ↑ history recalls a long paste whole. A new task that didn't start puts your prompt back in the box with a plain "wisp isn't answering" instead of jumping to another task. `/` search moves between matches with ↑ ↓ (Ctrl-N, Ctrl-P), and Enter with no match does nothing and says "No task matches". `o` opens the task in its harness on the TUI's own wisp (`--port`, `--on`) and says when it couldn't. A palette command goes before your draft instead of replacing it, and `i` with no task starts one.
+
 - **Mark done no longer says a worktree "holds work" when it doesn't.** An agent that switched to its own branch in a task's worktree (`git checkout -b fix/x`) left its commits on that branch, so removing the folder loses nothing, but the Done dialog warned "Commits off its branch" and wouldn't remove it unless you ticked it. Now only commits that no branch keeps (a detached HEAD) count as work the folder holds.
 - wisp Cloud computers' usage stats (app started, task turns) now carry the address you reach your computer from, so they're placed where you are instead of all showing the grid's server in Germany.
 - **`/wisp` comments on GitHub work again.** A task started from a comment on an issue or PR is now told which one it's on (repo, number, link and the `gh` command to read it), runs in that repo's project instead of your default one, and posts its report back on the issue or PR. A later `/wisp` there follows up the same task. Slack, Discord, Telegram and email lost the same link: a task started from a message there is tied to its thread or chat again, so replying to it follows that task up.
+- A command wisp runs with a time limit (a harness probe, a git read) now always stops at that limit. One that closed its output and kept running used to hold wisp waiting for as long as it ran.
+- **Stop on This Mac never signals the wrong process.** The list can be up to a minute old, and by then a process that ended may have handed its number to another. Stop now checks it's still the same process (by when it started) before it sends anything, and before the kill that follows 5 seconds later. If it isn't, Stop says it already ended.
+- A terminal that failed to start halfway no longer leaves its program running in the background, outside every way wisp ends its processes.
+- wisp's memory no longer grows with every deduplicated event for as long as it runs: keys older than the 24-hour dedupe window are now dropped.
 ### Added
 
 - **Find in task**: press ⌘F (Ctrl+F) on a task, or pick **Find in task** in its menu on a phone. wisp searches every step of the task: labels, commands, outputs, and the agent's messages, including steps inside folded groups and closed steps. It also searches older turns that haven't loaded yet, which the server searches for you. **Enter** and **Shift+Enter** (or the arrows) go to the next and previous match, which opens its turn, group and step and highlights the words. A hidden .env value is never matched unless you revealed it.
@@ -54,6 +65,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- When a task hits a usage limit, the card's **Hand to** button now picks the harness with the most plan left (from Settings → Usage's windows) and skips one that's used up too. Before, it picked the first one set up. The button's tip says how much is left.
 - The npm package, the README and the site's structured data now say **Wisp Agents** and point to trywisp.dev, so searches for "Wisp Agents" find the project.
 
 ### Fixed

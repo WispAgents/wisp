@@ -32,6 +32,11 @@ const EOT: u8 = 0x04;
 /// background process keeps the terminal open (and the reader blocked in `read`).
 type Slot = Arc<Mutex<Option<mpsc::Sender<Output>>>>;
 
+type PtyChild = Box<dyn portable_pty::Child + Send + Sync>;
+
+/// The started child until its wait thread takes it: a setup step that fails after the start gets it back to end it.
+type Held = Arc<Mutex<Option<PtyChild>>>;
+
 pub(crate) fn spawn(bin: &str, r: &Resolved, opts: &SpawnOpts, size: PtySize) -> Result<Child> {
     // The size goes on when the PTY is made, before the program starts: v1 learned that a size set
     // afterwards races the program's first look (`stty size` said 0 0 on a busy machine).
@@ -40,12 +45,52 @@ pub(crate) fn spawn(bin: &str, r: &Resolved, opts: &SpawnOpts, size: PtySize) ->
     let child = pair.slave.spawn_command(command(r, opts)).map_err(|e| ProcError::spawn(bin, e))?;
     // Our copy of the slave side would keep the terminal open after the program exits.
     drop(pair.slave);
-    let pid = child.process_id().ok_or_else(|| ProcError::spawn(bin, "no pid"))?;
+    let pid = child.process_id();
+    let held: Held = Arc::new(Mutex::new(Some(child)));
+    #[cfg(test)]
+    STARTED.with(|c| c.set(pid.unwrap_or(0)));
+    // Every failure from here on ends the child it started: dropped, it ran on, its own session, outside the guard.
+    let started = pid.ok_or_else(|| ProcError::spawn(bin, "no pid")).and_then(|pid| wire(bin, pid, pair.master, &held, opts));
+    if started.is_err() {
+        abandon(&held, pid);
+    }
+    started
+}
+
+/// The child that failed to start whole: its group sent SIGKILL (Windows: its job, which closes with the `Tree` the
+/// failed setup dropped, and the root itself), the root reaped, then let go by the guard.
+fn abandon(held: &Held, pid: Option<u32>) {
+    let child = held.lock().unwrap_or_else(PoisonError::into_inner).take();
+    #[cfg(unix)]
+    if let Some(pid) = pid {
+        let _ = crate::sys::signal_group(pid, crate::pipes::sig_number(Signal::Kill));
+    }
+    if let Some(mut child) = child {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    #[cfg(unix)]
+    if let Some(pid) = pid {
+        crate::guard::reaped(pid);
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
+}
+
+// Test only: the wait thread's start fails, as it does when the OS has no thread left to give.
+#[cfg(test)]
+thread_local! {
+    static FAIL_WAIT_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static STARTED: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// The started child's threads and handle.
+fn wire(bin: &str, pid: u32, master: Box<dyn MasterPty + Send>, held: &Held, opts: &SpawnOpts) -> Result<Child> {
     // Windows: portable-pty can't start it suspended, so it joins its job here, already running; anything it starts
     // before this line is outside the job (ADR-0063). The cursor answer ConPTY waits for goes only after this.
     let tree = Tree::new(pid);
-    let reader = pair.master.try_clone_reader().map_err(|e| ProcError::spawn(bin, e))?;
-    let writer = pair.master.take_writer().map_err(|e| ProcError::spawn(bin, e))?;
+    let reader = master.try_clone_reader().map_err(|e| ProcError::spawn(bin, e))?;
+    let writer = master.take_writer().map_err(|e| ProcError::spawn(bin, e))?;
     let (out_tx, out_rx) = crate::output_channel();
     let slot: Slot = Arc::new(Mutex::new(Some(out_tx)));
     let (done_tx, done_rx) = std_mpsc::channel();
@@ -63,7 +108,13 @@ pub(crate) fn spawn(bin: &str, r: &Resolved, opts: &SpawnOpts, size: PtySize) ->
     // Listed with the guard once nothing but the wait thread can fail; that thread unlists it after the reap.
     #[cfg(unix)]
     crate::guard::watch(pid);
+    let held = held.clone();
+    #[cfg(test)]
+    if FAIL_WAIT_THREAD.with(std::cell::Cell::get) {
+        return Err(io::Error::other("no wait thread (test)").into());
+    }
     let waiter = thread::Builder::new().name(format!("{name}-wait")).spawn(move || {
+        let Some(child) = held.lock().unwrap_or_else(PoisonError::into_inner).take() else { return };
         let exit = wait(child);
         alive2.store(false, Ordering::SeqCst);
         #[cfg(unix)]
@@ -74,12 +125,8 @@ pub(crate) fn spawn(bin: &str, r: &Resolved, opts: &SpawnOpts, size: PtySize) ->
         tracing::debug!(pid, code = ?exit.code, signal = ?exit.signal, "pty exit");
         let _ = exit_tx.send(Some(exit));
     });
-    if let Err(e) = waiter {
-        #[cfg(unix)]
-        crate::guard::reaped(pid);
-        return Err(e.into());
-    }
-    let control = PtyControl { input: Mutex::new(Some(in_tx)), master: Mutex::new(pair.master), tree, alive };
+    waiter?;
+    let control = PtyControl { input: Mutex::new(Some(in_tx)), master: Mutex::new(master), tree, alive };
     let handle = ChildHandle::new(pid, true, opts.grace.unwrap_or(crate::KILL_GRACE), Arc::new(control), exit_rx);
     Ok(Child { handle, output: out_rx })
 }
@@ -203,7 +250,7 @@ fn feed(rx: &std_mpsc::Receiver<Vec<u8>>, mut writer: Box<dyn Write + Send>) {
 }
 
 /// portable-pty reports a signal as strsignal(3) text; the std status underneath has the number.
-fn wait(child: Box<dyn portable_pty::Child + Send + Sync>) -> Exit {
+fn wait(child: PtyChild) -> Exit {
     let child: Box<dyn portable_pty::Child> = child;
     match child.downcast::<std::process::Child>() {
         Ok(mut c) => c.wait().map(crate::pipes::exit_of).unwrap_or_default(),
@@ -260,6 +307,27 @@ mod tests {
         assert_eq!(plain, b"serving\r\n");
         let mut half = b"\x1b[6".to_vec();
         assert!(!answer_startup_query(&mut half), "not a query yet");
+    }
+
+    /// A start that fails after the child is running (here the wait thread's) ends the child and reaps it: before, the
+    /// `?` dropped it, and it ran on in its own session, unwatched by the guard.
+    #[cfg(unix)]
+    #[test]
+    fn a_spawn_that_fails_midway_ends_its_child() {
+        let r = Resolved { command: "sleep".into(), args: s(&["30"]), verbatim: false };
+        FAIL_WAIT_THREAD.with(|f| f.set(true));
+        let err = spawn("sleep", &r, &SpawnOpts::default(), PtySize { cols: 80, rows: 24 });
+        FAIL_WAIT_THREAD.with(|f| f.set(false));
+        assert!(err.is_err());
+        let pid = STARTED.with(std::cell::Cell::get);
+        assert!(pid > 1, "the child was started");
+        let end = std::time::Instant::now() + Duration::from_secs(1);
+        while crate::pid_alive(pid) {
+            assert!(std::time::Instant::now() < end, "{pid} still running");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // reaped too: no zombie left in the table
+        assert!(!crate::processes().unwrap().iter().any(|p| p.pid == pid), "{pid} never reaped");
     }
 
     fn s(v: &[&str]) -> Vec<String> {

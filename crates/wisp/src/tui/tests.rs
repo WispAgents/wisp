@@ -195,10 +195,10 @@ fn a_new_task_appears_at_once_and_the_real_one_replaces_it() {
     }
     let fx = a.key(key(KeyCode::Enter));
     let Some(Effect::Send { task: None, local, mode, .. }) = fx.first().cloned() else { panic!("{fx:?}") };
-    assert_eq!(mode, super::app::Mode::Auto);
+    assert_eq!(mode, Some(super::app::Mode::Auto), "a new task always says its mode");
     assert_eq!(a.sel.as_deref(), Some(local.as_str()), "selected at once");
     assert!(screen(&a, 160, 48).contains("write docs"));
-    let fx = a.done(Then::Created(local.clone()), Ok(json!({ "id": "t9", "title": "write docs" })));
+    let fx = a.done(Then::Created(local.clone(), "write docs".into(), Vec::new()), Ok(json!({ "id": "t9", "title": "write docs" })));
     assert_eq!((a.sel.as_deref(), fx), (Some("t9"), vec![Effect::Watch(Some("t9".into()))]));
     assert!(!a.tasks.rows.contains_key(&local));
 }
@@ -841,7 +841,7 @@ fn a_new_task_from_a_git_repo_gets_its_own_worktree_and_a_follow_up_none() {
     std::fs::create_dir_all(root.join(".git")).unwrap();
     let cwd = root.display().to_string();
     let sent = |task: Option<String>, mode| {
-        let (id, mut args, _) = super::send_cmd(task, "fix it", &[], mode, false, "local-1".into(), &cwd);
+        let (id, mut args, _) = super::send_cmd(task, "fix it", &[], Some(mode), false, "local-1".into(), &cwd);
         if super::launches(&id) {
             crate::scripted::file_in(&mut args, &json!([]));
         }
@@ -867,4 +867,171 @@ fn no_terminal_is_a_usage_line_never_a_panic() {
         assert_eq!(e.exit_code(), crate::cli::USAGE_EXIT);
     }
     assert!(super::terminal_guard(true, true).is_ok());
+}
+
+fn typed(a: &mut App, text: &str) -> Vec<Effect> {
+    for c in text.chars() {
+        a.key(ch(c));
+    }
+    a.key(key(KeyCode::Enter))
+}
+
+/// A reply sent the bar's mode (Auto by default) to every task: a plan-capped task (a channel's) read it as the user
+/// lifting its cap. The bar now shows the open task's own mode, and a reply carries a mode only once the user picked
+/// one with Shift-Tab, warned when that lifts the cap.
+#[test]
+fn a_reply_keeps_the_open_tasks_mode_unless_the_user_picks_one() {
+    use super::app::Mode;
+    let mut a = app();
+    a.tasks.rows.insert(
+        "tp".into(),
+        json!({ "id": "tp", "title": "From Slack", "state": "running", "mode": "plan", "capped": "plan", "updated_at": NOW }),
+    );
+    a.listed(&[]);
+    assert_eq!((a.sel.as_deref(), a.mode), (Some("tp"), Mode::Plan), "the bar shows the selected task's mode");
+    assert!(screen(&a, 160, 48).contains(" plan ") && screen(&a, 160, 48).contains("capped at plan"));
+    // its session row says otherwise later: the bar follows, the user having picked nothing
+    a.open.as_mut().unwrap().snapshot(vec![row("session", "tp", json!({ "id": "tp", "mode": "edits" }))]);
+    a.task_mode_came();
+    assert_eq!(a.mode, Mode::Edits);
+    a.open.as_mut().unwrap().snapshot(vec![row("session", "tp", json!({ "id": "tp", "mode": "plan" }))]);
+    a.task_mode_came();
+    a.key(ch('i'));
+    let fx = typed(&mut a, "go on");
+    let Some(Effect::Send { task, text, attachments, mode, queue, local, .. }) = fx.first().cloned() else { panic!("{fx:?}") };
+    assert_eq!(mode, None, "no mode picked: none sent");
+    let (id, args, _) = super::send_cmd(task.clone(), &text, &attachments, mode, queue, local, "/w/api");
+    assert_eq!(id, "runtime.followUp");
+    assert!(args.get("mode").is_none(), "the task keeps its mode and its cap: {args}");
+    // Shift-Tab picks one: above the cap, a toast says sending lifts it, and the reply carries it
+    a.key(key(KeyCode::BackTab));
+    assert_eq!(a.mode, Mode::Edits);
+    assert!(a.toasts.iter().any(|t| t.text.contains("lifts this task's plan cap")), "{:?}", a.toasts);
+    let fx = typed(&mut a, "now edit");
+    let Some(Effect::Send { task, text, attachments, mode, queue, local, .. }) = fx.first().cloned() else { panic!("{fx:?}") };
+    assert_eq!(mode, Some(Mode::Edits));
+    let (_, args, _) = super::send_cmd(task, &text, &attachments, mode, queue, local, "/w/api");
+    assert_eq!(args["mode"], "edits");
+    // another task opened: picked afresh from its row, nothing carried over
+    a.focus = Zone::List;
+    a.key(ch('j'));
+    assert_eq!((a.sel.as_deref(), a.mode, a.mode_touched), (Some("t2"), Mode::Auto, false));
+}
+
+/// A new task that didn't start (wisp down) jumped to another task, its prompt gone, with reqwest's words in the
+/// toast. The prompt now comes back to New task, said plainly.
+#[test]
+fn a_new_task_that_did_not_start_puts_its_prompt_back() {
+    let mut a = opened();
+    a.focus = Zone::List;
+    a.key(ch('n'));
+    let fx = typed(&mut a, "write docs");
+    let Some(Effect::Send { task: None, text, attachments, local, mode, .. }) = fx.first().cloned() else { panic!("{fx:?}") };
+    let (_, _, then) = super::send_cmd(None, &text, &attachments, mode, false, local.clone(), "/w/api");
+    assert_eq!(then, Then::Created(local.clone(), "write docs".into(), Vec::new()));
+    let err = "wisp at http://127.0.0.1:4477: error sending request for url (http://127.0.0.1:4477/api/cmd/runtime.create)";
+    a.done(then, Err(err.into()));
+    assert_eq!((a.composer.text().as_str(), a.new_task, a.focus), ("write docs", true, Zone::Composer));
+    assert_eq!(a.sel, None, "no other task selected");
+    assert!(!a.tasks.rows.contains_key(&local));
+    let toast = a.toasts.last().unwrap();
+    assert!(toast.text.contains("isn't answering") && !toast.text.contains("error sending request"), "{}", toast.text);
+    // the list coming back doesn't take the box away
+    a.listed(&[]);
+    assert_eq!((a.composer.text().as_str(), a.sel.as_ref()), ("write docs", None));
+}
+
+/// `/` in the list: ↓ (Ctrl-N) and ↑ move between the matches and Enter opens the highlighted one; Enter with no
+/// match did open nothing and left the list, and the list said "No tasks yet".
+#[test]
+fn list_search_moves_between_matches_and_enter_with_none_does_nothing() {
+    let mut a = app();
+    a.listed(&[]);
+    a.key(ch('/'));
+    a.key(ch('o'));
+    assert_eq!(a.order(), vec!["t2", "t1", "t0"], "three match");
+    a.key(key(KeyCode::Down));
+    a.key(key(KeyCode::Enter));
+    assert_eq!((a.sel.as_deref(), a.focus, a.search.as_ref()), (Some("t1"), Zone::Task, None), "the second match");
+    let mut b = app();
+    b.listed(&[]);
+    b.key(ch('/'));
+    b.key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL));
+    b.key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL));
+    b.key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    assert_eq!(b.sel.as_deref(), Some("t1"), "Ctrl-N Ctrl-N Ctrl-P");
+    b.key(ch('z'));
+    b.key(ch('z'));
+    assert_eq!(b.key(key(KeyCode::Enter)), Vec::new());
+    assert_eq!((b.sel.as_deref(), b.focus), (Some("t1"), Zone::List), "nothing matched: nothing changed");
+    let s = screen(&b, 160, 48);
+    assert!(s.contains("No task matches \"zz\"") && !s.contains("No tasks yet"), "{s}");
+}
+
+/// `o` ran `wisp open` on whichever wisp `server.json` named, not the TUI's, and a failure flashed past.
+#[test]
+fn open_in_goes_to_the_tuis_own_wisp_and_a_failure_says_so() {
+    assert_eq!(super::open_args("t2", Some(4800), Some("laptop")), ["--port", "4800", "--on", "laptop", "open", "t2"]);
+    assert_eq!(super::open_args("t2", None, None), ["open", "t2"]);
+    assert_eq!(crate::client::Client::new(4801).port(), Some(4801));
+    let mut a = opened();
+    a.opened_in("t2", Ok(()));
+    assert_eq!(a.toasts, Vec::new());
+    a.opened_in("t2", Err("exit 1".into()));
+    assert!(a.toasts.iter().any(|t| t.bad && t.text == "Couldn't open in codex (exit 1)"), "{:?}", a.toasts);
+}
+
+/// `$EDITOR` that didn't save (missing, non-zero exit) left no word; the box stays as it was, and a toast says why.
+#[test]
+fn an_editor_that_did_not_save_leaves_the_box_and_says_so() {
+    let mut a = opened();
+    a.key(ch('i'));
+    for c in "draft".chars() {
+        a.key(ch(c));
+    }
+    a.edited(Err("exit 1".into()));
+    assert_eq!(a.composer.text(), "draft");
+    assert!(a.toasts.iter().any(|t| t.bad && t.text == "Editor didn't save (exit 1)"));
+    a.edited(Ok("draft, edited\n".into()));
+    assert_eq!(a.composer.text(), "draft, edited");
+}
+
+/// The editor's file was `wisp-tui-<pid>.md` in the shared temp dir, readable by anyone and written through any
+/// link left at that name. It is now made new (`O_EXCL`), 0600, under a random name.
+#[cfg(unix)]
+#[test]
+fn the_editors_file_is_private_and_new() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = std::env::temp_dir().join(format!("wisp-tui-ed-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = super::editor_file(&dir, "a secret").unwrap();
+    let q = super::editor_file(&dir, "another").unwrap();
+    assert_ne!(p, q, "a name no one can guess, never reused");
+    assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "a secret");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A command picked in the palette replaced the draft (its pastes and images too); and with no task, `i` did nothing
+/// though the empty list's hint is about starting one.
+#[test]
+fn a_palette_command_keeps_the_draft_and_i_with_no_task_starts_one() {
+    use super::palette::{Item, Palette, Pick};
+    let mut a = opened();
+    a.key(ch('i'));
+    for c in "hello".chars() {
+        a.key(ch(c));
+    }
+    a.composer.attachments.push("/tmp/shot.png".into());
+    let it = Item { label: "goal set".into(), kind: "goal set".into(), pick: Pick::Command("goal set".into()) };
+    a.overlay = Some(Overlay::Palette(Palette::new("Go to", vec![it]), super::app::For::Everything));
+    a.key(key(KeyCode::Enter));
+    assert_eq!(a.composer.text(), "/goal set hello");
+    assert_eq!(a.composer.attachments, vec!["/tmp/shot.png".to_owned()]);
+    let mut b = App::new(super::views::registry(), Theme::DARK, "/w/api");
+    b.listed(&[]);
+    b.key(ch('i'));
+    b.key(ch('h'));
+    b.key(ch('i'));
+    assert_eq!((b.focus, b.new_task, b.composer.text().as_str()), (Zone::Composer, true, "hi"));
 }

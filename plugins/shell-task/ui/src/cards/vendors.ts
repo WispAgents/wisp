@@ -38,6 +38,8 @@ export interface Target {
   readonly agent: string;
   readonly model: string;
   readonly vendor: string;
+  /** the limit card: what its plan has left, 0–1 (wisp.budget), when known */
+  readonly left?: number;
 }
 
 /** The harnesses a refused turn may go to, each with the model to pin (v1 handoffTargets). A harness qualifies
@@ -70,8 +72,46 @@ export function handoffTargets(o: { from: string; fromModel?: string; vendor?: s
   return out;
 }
 
-/** The usage-limit card's one other harness (v1 limitCard): the first available that isn't this one. */
-export function limitTarget(from: string, agents: readonly AgentLike[]): Target | undefined {
-  const a = agents.find((x) => x.id !== from && x.id !== 'wisp' && x.id !== 'auto' && x.available);
-  return a ? { agent: a.id, model: '', vendor: vendorOf('', a.id) } : undefined;
+/** One plan window as wisp.budget's `budget.view` reads it (budget-api WindowView): `used` 0–1. */
+export interface PlanWindowLike {
+  readonly used: number;
+  readonly resetsAt?: number | null;
+}
+/** One account of a harness (budget-api AccountView): its windows. */
+export interface PlanLike {
+  readonly account: string;
+  readonly windows: readonly PlanWindowLike[];
+}
+
+/** What a harness has left now, 0–1: its roomiest account's tightest window still in its period. undefined: wisp.budget
+ * knows no window for it (not read yet, or a CLI that reports none). */
+export function headroom(plans: readonly PlanLike[] | undefined, now: number): number | undefined {
+  let best: number | undefined;
+  for (const a of plans ?? []) {
+    const live = a.windows.filter((w) => (w.resetsAt ?? 0) > now);
+    if (!live.length) continue;
+    const left = Math.max(0, Math.min(...live.map((w) => 1 - w.used)));
+    best = best === undefined ? left : Math.max(best, left);
+  }
+  return best;
+}
+
+/** A harness at or past this share left is used up: handing a limited task to it would only hit its limit. */
+const SPENT = 0.005;
+
+/** The usage-limit card's other harness (v1 limitCard, check-in 50): every available one but this, ranked by what
+ * its plan has left (wisp.budget's windows): the most room first, then the ones wisp knows nothing about (in the
+ * order set up), never one that's used up itself. `left` rides along for the button's tip. */
+export function limitTargets(from: string, agents: readonly AgentLike[], plans: Readonly<Record<string, readonly PlanLike[]>> = {}, now = 0): Target[] {
+  const ranked = agents
+    .filter((x) => x.id !== from && x.id !== 'wisp' && x.id !== 'auto' && x.available)
+    .map((a, i) => ({ a, i, left: headroom(plans[a.id], now) }))
+    .filter((x) => x.left === undefined || x.left > SPENT);
+  ranked.sort((p, q) => (q.left ?? -1) - (p.left ?? -1) || p.i - q.i);
+  return ranked.map(({ a, left }) => ({ agent: a.id, model: '', vendor: vendorOf('', a.id), ...(left !== undefined && { left }) }));
+}
+
+/** The usage-limit card's one other harness: the best of `limitTargets`. */
+export function limitTarget(from: string, agents: readonly AgentLike[], plans?: Readonly<Record<string, readonly PlanLike[]>>, now?: number): Target | undefined {
+  return limitTargets(from, agents, plans, now)[0];
 }

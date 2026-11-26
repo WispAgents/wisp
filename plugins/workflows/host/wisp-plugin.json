@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.workflows",
   "name": "Workflows",
-  "version": "1.0.0-alpha.15",
+  "version": "1.0.0-alpha.16",
   "api": "^1",
   "description": "orchestration as code: DAGs of agent tasks on any harness (needs, if, matrix, foreach fan-out, phases, outputs, retries, timeouts, budget, concurrency), run by an agent or by you under a task, watched live on it",
   "kind": "plugin",
