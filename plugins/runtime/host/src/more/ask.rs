@@ -28,12 +28,31 @@ pub(crate) const ALREADY: &str = "That card was already answered: nothing ran ag
 pub(crate) const ANSWER_KEEP_MS: i64 = ASK_TIMEOUT_MS;
 /// How long an answered or taken-back question's id is remembered: far longer than any write in flight.
 pub(crate) const CLOSED_KEEP_MS: i64 = 6 * 60 * 60_000;
+/// What a plain question's agent reads (after "The user answered: ") once a newer question replaced it: the user
+/// never got to answer it, so this says so instead of a false "the user did not answer (cancelled)".
+pub(crate) fn replaced_reply(newer: &str) -> String {
+    format!("Replaced by a newer question: “{newer}”. The user did not answer this one; their answer comes on the newer question.")
+}
+
 /// An answer to a question that's no longer the open one.
 pub(crate) const NOT_OPEN: &str = "That question was already answered, or a newer one replaced it: nothing was sent.";
 /// An answer to a question when none is open now: answered already, or taken back as the task or its factory run
 /// stopped (audit H tasks NEW #1: a stopped run's answer read as "already answered").
 pub(crate) const NONE_OPEN: &str =
     "That question isn't open any more (it was answered, or taken back when the task or its run stopped): nothing was sent.";
+/// What an agent reads when its approval went unanswered for `ASK_TIMEOUT_MS`.
+const NO_ANSWER_DENIED: &str =
+    "No answer from the user in 30 minutes, so it was denied. Do not retry it; carry on without it and say what was skipped.";
+
+/// How a live approval's wait ended without an answer read in time.
+enum Late {
+    /// answered just as the wait gave up
+    Answered(String),
+    /// still open: it timed out, and was taken off the task
+    TimedOut,
+    /// taken back (the task stopped, its turn ended)
+    Gone,
+}
 
 /// The open question of `row`, as a write is about to store it, settled against the stored one (`stored`): an ask
 /// answered or taken back (`closed`) is never stored again (a stale copy still had it), and an open one (`open`, not
@@ -60,6 +79,11 @@ pub(crate) fn reconcile_ask(row: &mut Session, stored: Option<&Value>, open: imp
         row.state = SessionState::Waiting;
     }
     true
+}
+
+/// A plain question (an agent's `ask_user`), not an approval, a guard question or a setup card: a newer one replaces it.
+fn is_question(a: &Value) -> bool {
+    ["permission", "guard", "setup"].iter().all(|k| a.get(*k).is_none())
 }
 
 /// The open setup card on a task (ADR-0113), if its open question is one.
@@ -148,7 +172,10 @@ impl Runtime {
     }
 
     /// Puts a question on task `id`: `state: waiting`, unread, back from the archive, and an
-    /// "Asked you: …" (or "Needs your OK to …") row on its turn. A question already open is replaced.
+    /// "Asked you: …" (or "Needs your OK to …") row on its turn. An approval (or a guard question, a setup card) never
+    /// takes the place of one still open: it waits behind it (`behind`), and the card shows it once the one before is
+    /// answered (a parallel tool call's second approval denied the first, which read "No answer from the user in
+    /// time"). A plain question replaces the plain question still waiting, and the turn says so.
     pub(crate) async fn ask_in(
         self: &Arc<Self>,
         id: &SessionId,
@@ -157,19 +184,17 @@ impl Runtime {
         options: &[String],
         permission: Option<(&'static str, Value)>,
     ) -> Result<String> {
-        let (tid, label, ask_id) = {
+        let (tid, label, ask_id, replaced) = {
             let _g = self.task_lock(id.as_str()).await;
             let mut s = self.repo.session(id.as_str()).await?;
             // a setup card stays until the user answers it (ADR-0113): nothing asked after it replaces it
             if open_setup(&s).is_some() {
                 return Err(RuntimeError::Conflict(SETUP_OPEN.into()));
             }
-            if let Some(old) = ask_id(&s) {
-                self.asks().remove(&old);
-                self.close_ask(&old);
-            }
-            let ask_id = wisp_kernel::ids::uuid7();
             let question = if question.trim().is_empty() { "The agent has a question.".to_owned() } else { question.trim().to_owned() };
+            let replaced = if permission.is_none() { self.drop_questions(&mut s, &question) } else { Vec::new() };
+            let open = ask_id(&s).is_some();
+            let ask_id = wisp_kernel::ids::uuid7();
             let options: Vec<String> = options.iter().take(6).cloned().collect();
             // `permission` (a live approval) or `setup` (ADR-0113), each with the `action` its row names
             let label = match permission.as_ref().and_then(|(_, p)| p.get("action")).and_then(Value::as_str) {
@@ -182,23 +207,118 @@ impl Runtime {
                 o.insert(key.into(), p);
             }
             with_slot(&mut s.ext, |m| {
-                m.insert("ask".into(), ask);
+                if !open {
+                    m.insert("ask".into(), ask.clone());
+                }
                 if guard {
                     m.insert(GUARD_TASK.into(), json!("asking"));
                 }
             });
+            if open {
+                self.behind().entry(s.id.0.clone()).or_default().push_back(ask);
+            }
             s.state = SessionState::Waiting;
             s.unread = true;
             s.archived = false; // a question needs the user: it comes back to the feed
             self.asks().insert(ask_id.clone(), s.id.0.clone());
             self.persist(&mut s, Vec::new()).await?;
             self.host.emit(crate::host::Emitted::Task("task.asked", crate::host::fact(&s, None, "asked", &question, None)));
-            (self.last_turn(id.as_str()).await?.map(|t| t.id), label, ask_id)
+            (self.last_turn(id.as_str()).await?.map(|t| t.id), label, ask_id, replaced)
         };
         if let Some(t) = tid {
+            for q in replaced {
+                self.add_row(id.as_str(), t.as_str(), tool_row(ToolKind::Answer, format!("Replaced by a newer question: {q}"))).await?;
+            }
             self.add_row(id.as_str(), t.as_str(), tool_row(ToolKind::Ask, label)).await?;
         }
         Ok(ask_id)
+    }
+
+    /// The plain questions open on `s` (on its card, or waiting behind it), taken off as a newer one replaces them:
+    /// their agent's `pollAnswer` reads that it was replaced (by `newer`), never a false "the user did not answer".
+    /// What they asked, for the turn's rows.
+    fn drop_questions(&self, s: &mut Session, newer: &str) -> Vec<String> {
+        let mut gone = Vec::new();
+        if slot(s).and_then(|m| m.get("ask")).is_some_and(is_question)
+            && let Some(a) = with_slot(&mut s.ext, |m| m.remove("ask"))
+        {
+            gone.push(a);
+        }
+        if let Some(list) = self.behind().get_mut(s.id.as_str()) {
+            let (questions, rest): (Vec<Value>, Vec<Value>) = list.drain(..).partition(is_question);
+            list.extend(rest);
+            gone.extend(questions);
+        }
+        for a in &gone {
+            let id = str_at(a, "id");
+            self.asks().remove(&id);
+            self.close_ask(&id);
+            self.keep_answer(&id, &replaced_reply(newer));
+        }
+        self.bring_forward(s);
+        gone.iter().map(|a| str_at(a, "question")).collect()
+    }
+
+    /// The ask waiting longest behind the card comes onto it, once nothing is open there.
+    fn bring_forward(&self, s: &mut Session) {
+        if ask_id(s).is_some() {
+            return;
+        }
+        let next = {
+            let mut behind = self.behind();
+            let next = behind.get_mut(s.id.as_str()).and_then(std::collections::VecDeque::pop_front);
+            if behind.get(s.id.as_str()).is_some_and(std::collections::VecDeque::is_empty) {
+                behind.remove(s.id.as_str());
+            }
+            next
+        };
+        if let Some(a) = next {
+            with_slot(&mut s.ext, |m| m.insert("ask".into(), a));
+        }
+    }
+
+    /// Ask `ask` taken off task `s`, on its card or behind it (the next one comes onto the card): no longer open, and
+    /// never brought back by a write. The ask, when it was there.
+    pub(crate) fn take_ask(&self, s: &mut Session, ask: &str) -> Option<Value> {
+        let taken = if ask_id(s).as_deref() == Some(ask) {
+            with_slot(&mut s.ext, |m| m.remove("ask"))
+        } else {
+            let mut behind = self.behind();
+            let list = behind.get_mut(s.id.as_str());
+            let at = list.as_ref().and_then(|l| l.iter().position(|a| str_at(a, "id") == ask));
+            at.and_then(|i| list.and_then(|l| l.remove(i)))
+        };
+        if taken.is_some() {
+            self.asks().remove(ask);
+            self.close_ask(ask);
+            self.bring_forward(s);
+        }
+        taken
+    }
+
+    /// What task `s` is once an ask went: still waiting while one is open, else its run's state.
+    pub(crate) fn after_ask(&self, s: &mut Session) {
+        s.state = if ask_id(s).is_some() {
+            SessionState::Waiting
+        } else if self.run_state(s.id.as_str()) == wisp_runtime_core::queue::Run::Idle {
+            SessionState::Review
+        } else {
+            SessionState::Running
+        };
+    }
+
+    /// The asks waiting behind task `id`'s card, all taken back (the task stopped, its turn ended): a setup card's agent
+    /// reads that nothing changed.
+    fn take_back_behind(&self, id: &str) {
+        let gone = self.behind().remove(id).unwrap_or_default();
+        for a in gone {
+            let ask = str_at(&a, "id");
+            self.asks().remove(&ask);
+            self.close_ask(&ask);
+            if a.get("setup").is_some() {
+                self.keep_answer(&ask, TAKEN_BACK);
+            }
+        }
     }
 
     /// `runtime.answer`: the user's answer to the open question. `ask`: the question it answers (a card's, a channel's
@@ -225,7 +345,8 @@ impl Runtime {
     /// recorded on the turn (v1 `answer`).
     pub(crate) async fn answer_locked(self: &Arc<Self>, id: &SessionId, text: &str) -> Result<Value> {
         let mut s = self.repo.session(id.as_str()).await?;
-        let Some(ask) = with_slot(&mut s.ext, |m| m.remove("ask")) else {
+        // the card's ask: the next one waiting behind it comes onto the card
+        let Some(ask) = ask_id(&s).and_then(|open| self.take_ask(&mut s, &open)) else {
             return Err(RuntimeError::Conflict("Nothing is being asked on this task.".into()));
         };
         let ask_id = ask.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
@@ -252,14 +373,12 @@ impl Runtime {
             }
             None => format!("You answered: {text}"),
         };
-        self.asks().remove(&ask_id);
-        self.close_ask(&ask_id);
         self.keep_answer(&ask_id, text);
         if ask.get("guard") == Some(&Value::Bool(true)) {
             with_slot(&mut s.ext, |m| m.insert(GUARD_TASK.into(), json!("answered")));
         }
-        s.state =
-            if self.run_state(id.as_str()) == wisp_runtime_core::queue::Run::Idle { SessionState::Review } else { SessionState::Running };
+        // back to Running only once nothing else is asked
+        self.after_ask(&mut s);
         self.persist(&mut s, turns).await?;
         if let Some(t) = last {
             self.add_row(id.as_str(), t.id.as_str(), tool_row(ToolKind::Answer, label)).await?;
@@ -273,16 +392,19 @@ impl Runtime {
     pub async fn unask(self: &Arc<Self>, id: &SessionId, question: &str) -> Result<Value> {
         let _g = self.task_lock(id.as_str()).await;
         let mut s = self.repo.session(id.as_str()).await?;
-        let open = slot(&s).and_then(|m| m.get("ask")).and_then(|a| a.get("question")).and_then(Value::as_str).map(str::to_owned);
-        if open.is_none_or(|q| q != question.trim()) {
+        let asks = |a: &Value| (str_at(a, "question") == question.trim()).then(|| str_at(a, "id"));
+        let on_card = slot(&s).and_then(|m| m.get("ask")).and_then(asks);
+        let Some(which) = on_card.clone().or_else(|| self.behind().get(s.id.as_str()).and_then(|l| l.iter().find_map(asks))) else {
             return Ok(json!({ "withdrawn": false }));
-        }
+        };
         // a guard question taken back: the harness call that asked is gone (audit I IS2)
-        if open_guard(&s) {
+        if on_card.is_some() && open_guard(&s) {
             self.guard_gone(&mut s).await?;
             return Ok(json!({ "withdrawn": true }));
         }
-        self.cancel_asks(&mut s);
+        // only that one: the others asked on the task stay open
+        self.take_ask(&mut s, &which);
+        self.after_ask(&mut s);
         self.persist(&mut s, Vec::new()).await?;
         if let Some(t) = self.last_turn(id.as_str()).await? {
             self.add_row(id.as_str(), t.id.as_str(), tool_row(ToolKind::Answer, "The question was taken back".to_owned())).await?;
@@ -300,6 +422,7 @@ impl Runtime {
             self.asks().remove(id);
             self.close_ask(id);
         }
+        self.take_back_behind(s.id.as_str());
         with_slot(&mut s.ext, |m| m.insert(GUARD_TASK.into(), json!("gone")));
         s.queue.clear();
         s.queue_held = false;
@@ -328,6 +451,8 @@ impl Runtime {
     /// The task stopped: what its agent asked goes unanswered, and the task stops waiting. A setup card's agent reads
     /// that it was taken back and nothing changed (audit G GS5: a card is never taken back without an answer).
     pub(crate) fn cancel_asks(&self, s: &mut Session) {
+        // what waited behind the card goes with it
+        self.take_back_behind(s.id.as_str());
         if let Some(ask) = with_slot(&mut s.ext, |m| m.remove("ask")) {
             let id = ask.get("id").and_then(Value::as_str).unwrap_or_default();
             self.asks().remove(id);
@@ -387,6 +512,36 @@ impl Runtime {
         }
     }
 
+    /// A live approval whose wait ended without an answer. Still open: it timed out, and it goes (its card, or its
+    /// place behind it), the task stops waiting on it, and its turn says it was denied; a late Allow then finds nothing
+    /// to allow (the card stayed up, and an Allow after the call gave up wrote "You allowed" for a call that never
+    /// ran). Taken back meanwhile (a Stop): gone. Answered just then: that answer.
+    async fn approval_timed_out(self: &Arc<Self>, id: &SessionId, ask: &str, action: &str) -> Result<Late> {
+        let timed_out = {
+            let _g = self.task_lock(id.as_str()).await;
+            let mut s = self.repo.session(id.as_str()).await?;
+            let open = self.asks().contains_key(ask);
+            if open {
+                self.take_ask(&mut s, ask);
+                self.after_ask(&mut s);
+                self.persist(&mut s, Vec::new()).await?;
+            }
+            open
+        };
+        if !timed_out {
+            return Ok(match self.poll_answer(ask) {
+                PollAnswer::Answered { answer } => Late::Answered(answer),
+                _ => Late::Gone,
+            });
+        }
+        if let Some(t) = self.last_turn(id.as_str()).await? {
+            let mins = ASK_TIMEOUT_MS / 60_000;
+            self.add_row(id.as_str(), t.id.as_str(), tool_row(ToolKind::Answer, format!("No answer in {mins} min: denied {action}")))
+                .await?;
+        }
+        Ok(Late::TimedOut)
+    }
+
     /// `runtime.approval` (v1 `requestApproval`): a live permission prompt. What the user allowed
     /// always in this task goes through at once; else Allow / Always allow in this task / Deny.
     /// Answers Claude Code's permission-prompt-tool shape.
@@ -429,8 +584,13 @@ impl Runtime {
             self.ask_in(&a.id, &question, p.why.as_deref().unwrap_or_default(), &options, Some(("permission", permission))).await?;
         // v1 internal.js: an approval that asked you (not one an "always" already let through) counts
         self.host.track("approval", json!({ "agent": s.agent }));
-        let Some(answer) = self.wait_answer(&ask_id, ASK_TIMEOUT_MS).await else {
-            return Ok(json!({ "behavior": "deny", "message": "No answer from the user in time, or the task was stopped." }));
+        let answer = match self.wait_answer(&ask_id, ASK_TIMEOUT_MS).await {
+            Some(answer) => answer,
+            None => match self.approval_timed_out(&a.id, &ask_id, &p.action).await? {
+                Late::Answered(answer) => answer,
+                Late::TimedOut => return Ok(json!({ "behavior": "deny", "message": NO_ANSWER_DENIED })),
+                Late::Gone => return Ok(json!({ "behavior": "deny", "message": "The task was stopped before the user answered." })),
+            },
         };
         let d = approval_decision(&answer);
         Ok(if d.allow {

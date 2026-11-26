@@ -204,7 +204,9 @@ impl Host for Recorder {
             let e = WireError::new(wisp_kernel::Code::Vetoed, m.clone());
             return Box::pin(async move { Err(e) });
         }
-        if let Some(kind) = &self.hold {
+        // a yes to its own hold (Start now) goes through, as a real hook trusts a yes to its own hold
+        let yes_to_mine = c.released.as_ref().is_some_and(|h| h.by == "test");
+        if let Some(kind) = self.hold.as_ref().filter(|_| !yes_to_mine) {
             c.hold =
                 Some(wisp_runtime_api::model::Held { by: "test".into(), kind: kind.clone(), until: None, data: serde_json::Value::Null });
         }

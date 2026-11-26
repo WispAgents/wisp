@@ -106,6 +106,32 @@ fn a_plain_text_result_with_background_tasks_keeps_the_turn_open() {
     ));
 }
 
+/// Chat mode (and blocks off) ask for prose: an answer that left a dev server up is the whole answer, and the turn
+/// ends. The blocks protocol's prose fallback still waits, on the background shell only (its quiet deadline applies).
+#[test]
+fn a_plain_or_chat_mode_answer_with_a_background_task_up_finishes_the_turn() {
+    let mut h = Head::default();
+    activity::apply(&mut h, &ev(json!({"type":"background","tasks":["npm run dev"]})), true, &fallback);
+    let e = activity::apply(
+        &mut h,
+        &ev(json!({"type":"result","text":"The dev server is up on :3000.","isError":false,"background":1})),
+        true,
+        &fallback,
+    );
+    assert!(matches!(e, Effect::Finish { ref text, is_error: false, .. } if text == "The dev server is up on :3000."), "{e:?}");
+    assert!(!h.waits_on_shell());
+    // the blocks protocol: prose is a fallback, and it waits on the shell
+    let mut h = Head::default();
+    let e = apply(&mut h, json!({"type":"result","text":"I'll report once it's done","isError":false,"background":1}));
+    assert!(matches!(e, Effect::Waiting(_)), "{e:?}");
+    assert!(h.waits_on_shell(), "only a shell is up: the quiet deadline applies");
+    // its subagents at work: no deadline, their reports come back into the run
+    let mut h = Head::default();
+    let e = apply(&mut h, json!({"type":"result","text":"on it","isError":false,"background":1,"backgroundAgents":1}));
+    assert!(matches!(e, Effect::Waiting(_)), "{e:?}");
+    assert!(!h.waits_on_shell());
+}
+
 #[test]
 fn a_run_that_exits_without_a_result_ends_with_the_interim_or_an_error() {
     let mut h = Head { interim: Some(("so far".into(), None)), ..Head::default() };

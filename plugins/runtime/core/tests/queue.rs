@@ -339,3 +339,15 @@ fn quick_follow_ups_each_run_once_in_order_and_no_queued_one_is_stopped() {
         assert_eq!(ran.len() + stopped.len(), 26, "every turn ended once");
     }
 }
+
+/// Start now on a held turn after a Stop held the queue: the released turn goes (pressing it is the go-ahead for it
+/// alone), the rest stay held; the queue's own front item never goes past the hold.
+#[test]
+fn a_held_turn_released_by_hand_goes_past_a_stops_hold_and_the_rest_stay_held() {
+    let mut t = Task::new(&["held", "after"]);
+    t.held = true;
+    assert_eq!(queue::next_after_release_of(&mut t.q(), None), None, "nothing goes by itself after a Stop");
+    assert_eq!(queue::next_after_release_of(&mut t.q(), Some("after")), None, "only the front item, released by hand");
+    assert_eq!(queue::next_after_release_of(&mut t.q(), Some("held")).map(|q| q.id), Some("held".into()));
+    assert_eq!((t.ids(), t.held), (vec!["after"], true));
+}
