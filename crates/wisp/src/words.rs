@@ -669,6 +669,23 @@ fn held_slip(words: &[String]) -> Option<UnknownVerb> {
     .then(|| UnknownVerb { group: "held".into(), verbs, at: 2 })
 }
 
+/// A line that can only be a task's command but names no task: `wisp held x start` (one of held's own actions after a
+/// word that's no task) or `wisp merge x` / `wisp ship x` (the command and one word). The word, said as `no task <word>`
+/// (exit 2): `wisp held x start` launched a Full-auto task with that line as its prompt. `wisp held up the release`,
+/// `wisp ship the docs to prod` and one quoted argument (`wisp ship "the docs"`) stay prompts.
+pub fn no_task(words: &[String], literal: Literal) -> Option<String> {
+    if literal != Literal::No {
+        return None;
+    }
+    let said: Vec<&String> = words.iter().filter(|w| !flag_shaped(w)).collect();
+    let named = match said.as_slice() {
+        [held, w, action] if held.as_str() == "held" && crate::args::HELD_ACTIONS.contains(&action.as_str()) => *w,
+        [cmd, w] if matches!(cmd.as_str(), "merge" | "ship") && !w.contains(char::is_whitespace) => *w,
+        _ => return None,
+    };
+    (!crate::args::task_ref(named)).then(|| named.clone())
+}
+
 /// QA round 10 #1, then audit I2 (owner's delegate, 2026-11-20, refined by the owner the same day): the words start with
 /// a built-in command group (a [`VERB_PATHS`] or [`GROUPS`] word; `catalogue`, each command's path such as
 /// `["crew", "create"]`, adds its plugin verbs) or a plugin's name, and the next word is none of its verbs: a command

@@ -1,7 +1,7 @@
 //! `wisp_proc::vars()`: this process's variables with the PATH the desktop app handed over (ADR-0057), for code
 //! that reads the environment itself. Its own test binary, since the PATH is the process's.
-#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "a test: failing loudly is the point")]
+#![cfg(unix)]
 
 #[test]
 fn vars_holds_the_handed_over_path_once_and_every_other_variable() {
