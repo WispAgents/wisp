@@ -5715,6 +5715,7 @@ dependencies = [
 name = "wisp-runtime-core"
 version = "1.0.0-alpha.14"
 dependencies = [
+ "blake3",
  "regex",
  "serde",
  "serde_json",

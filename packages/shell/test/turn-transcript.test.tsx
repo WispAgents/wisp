@@ -98,3 +98,43 @@ test('streaming_more_steps_keeps_earlier_mid_turn_markdown_dom_nodes_intact', ()
   ]);
   expect(host.querySelector('[data-kit="markdown"] p')).toBe(msgBefore);
 });
+
+// audit F8: a step kept only its output's start and end, and what the clip cut was gone for good
+test('a_clipped_step_offers_its_whole_output_and_fetches_it_only_when_asked', async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const asked: number[] = [];
+  const whole = (seq: number): Promise<string> => {
+    asked.push(seq);
+    return Promise.resolve('HEAD\nthe middle the clip cut\nTAIL');
+  };
+  dispose = render(
+    () => (
+      <TurnTranscript
+        steps={[
+          { kind: 'run', label: 'npm test', out: 'HEAD\n… 1 lines cut …\nTAIL', seq: 7, full: { lines: 3 } },
+          { kind: 'run', label: 'npm run lint', out: 'ok', seq: 8 },
+        ]}
+        changes={[]}
+        here={(s) => s}
+        status="done"
+        whole={whole}
+        t={(k, v) => (k === 'shell.task.showAllLines' ? `Show all ${String(v?.['n'])} lines` : k)}
+      />
+    ),
+    host,
+  );
+  const rows = (): HTMLButtonElement[] => [...host.querySelectorAll<HTMLButtonElement>('button[data-kit="timeline-row"]')];
+  const showAll = (): HTMLButtonElement | null => host.querySelector('[data-part="turn.transcript.showAll"]');
+  rows()[1]?.click();
+  expect(showAll(), 'a step that kept all of it offers nothing').toBeNull();
+  rows()[0]?.click();
+  expect(showAll()?.textContent).toContain('Show all 3 lines');
+  expect(asked, 'nothing is fetched until it is asked for').toEqual([]);
+  showAll()?.click();
+  expect(asked).toEqual([7]);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(host.textContent).toContain('the middle the clip cut');
+  expect(showAll(), 'shown whole: nothing more to offer').toBeNull();
+});

@@ -35,6 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Task chat: a long tool output you open has **Show all N lines** under it. The step shows the start and end of a long output, and the server keeps the whole text, so you can still read the part in the middle. wisp loads it only when you click. An output that read a .env file, or that quotes one of its values, is never kept whole.
+- Task chat: a failed tool call keeps the end of its error, where a test run or a build says what went wrong. Before, only its first 400 characters were kept. The error now shows on the call that failed, marked red, with the error as the call's output, instead of as a row of its own under a call that looked fine. This works on Claude Code, Codex and opencode.
 - opencode 2 tasks get wisp's tools again (`ask_user`, delegating, saving, connectors, the browser). When another opencode was already running on the computer (yours, or one wisp started to list models), a task's run joined it and none of the tools wisp gives a run reached the agent. Each run now has its own opencode server.
 - **Task chat: the agent's thoughts show as messages.** A thought no longer folds into the commands pill or shows as a one-line step to expand; it reads in full on the rail like the agent's other messages, in Chat and Transcript, running or finished.
 - Crew: two jobs given to a member at once both wait in their queue (one was lost), an edit saved while a waiting job started or a new one was queued (from wisp or from an agent's `wisp_crew_edit`) no longer puts that job back in the queue or drops the new one, and a member removed while a job for them was being placed or a check-in ran stays removed.

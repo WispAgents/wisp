@@ -261,6 +261,12 @@
         "uiOnly": "the Reveal button on a masked .env view; an agent reads the file itself, and a capped agent is refused"
       },
       {
+        "id": "runtime.fullOutput",
+        "title": "A step's whole output, when the transcript kept only its start and end",
+        "readOnly": true,
+        "uiOnly": "the Show all button on an opened step; an agent reads its own commands' output"
+      },
+      {
         "id": "runtime.compact",
         "title": "Compact the conversation"
       },

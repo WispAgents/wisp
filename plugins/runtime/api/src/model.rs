@@ -113,6 +113,18 @@ pub enum Tone {
     Danger,
 }
 
+/// A call's whole output when the step keeps only its start and end (`clip_output`): kept once in the store's blobs
+/// (`blob`, its hash), fetched only when an opened step asks to show all of it (`runtime.fullOutput`). Never for an
+/// output that read or quotes a .env value (ADR-0050). Additive (2026-11-26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct FullOutput {
+    pub blob: String,
+    /// its lines and UTF-8 bytes, for the step's "Show all N lines"
+    pub lines: u32,
+    pub bytes: u64,
+}
+
 /// One step of a turn's activity: a row of the append-only event log (`kind` is the event kind).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -164,6 +176,10 @@ pub enum Activity {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         parent: Option<String>,
+        /// its whole `output`, when it was clipped (`FullOutput`). Additive (2026-11-26).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        full: Option<FullOutput>,
     },
     ToolOutput {
         #[serde(rename = "callId")]
@@ -180,14 +196,27 @@ pub enum Activity {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(optional, as = "Option<Vec<[u32; 2]>>")]
         hide: Vec<[u32; 2]>,
+        /// its whole `text`, when it was clipped (`FullOutput`). Additive (2026-11-26).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        full: Option<FullOutput>,
     },
     ToolError {
         name: String,
         text: String,
+        /// the call it ends, when its harness says: the transcript shows it as that call's output, the call marked
+        /// failed, not as a row of its own. Additive (2026-11-26).
+        #[serde(default, rename = "callId", skip_serializing_if = "Option::is_none")]
+        #[ts(optional, rename = "callId")]
+        call_id: Option<String>,
         /// byte ranges of `text` that quote a .env value (ADR-0050): they leave the server as `••••`. Additive (2026-11-14).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(optional, as = "Option<Vec<[u32; 2]>>")]
         hide: Vec<[u32; 2]>,
+        /// its whole `text`, when it was clipped (`FullOutput`). Additive (2026-11-26).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        full: Option<FullOutput>,
     },
     Blocked {
         tool: String,

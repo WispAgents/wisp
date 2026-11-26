@@ -4,7 +4,7 @@
 // where the turn ended. The answer follows it (TaskView). What a step printed of a .env file (`cat .env`) reads
 // KEY=•••• under v1's Reveal line (env-reveal.ts keeps what's shown, per task).
 import { Index, Show, createMemo, createSignal, type JSX } from 'solid-js';
-import { Answer, EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineGroup, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type BlockContext, type EnvReveal, type IconName } from '@wisp/ui';
+import { Answer, Button, EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineGroup, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type BlockContext, type EnvReveal, type IconName } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { parseInlineChatBlocks } from './chat-blocks.ts';
 import { changeFigures } from './rows-view.ts';
@@ -33,6 +33,8 @@ export interface TranscriptStepRow {
   readonly file?: string;
   /** the event (its per-session seq) that carried `out`: what Reveal asks the server for */
   readonly seq?: number;
+  /** `out` is the start and end of a longer output the server keeps whole: Show all asks for it (`runtime.fullOutput`) */
+  readonly full?: { readonly lines: number };
 }
 
 type Change = Parameters<typeof changeFigures>[0][number];
@@ -49,6 +51,10 @@ export function stepOutput(a: TranscriptStepRow, maskOn: boolean, shown: boolean
   return { text: shown ? (raw ?? (a.out.includes(DOTS) ? masked : a.out)) : masked, env };
 }
 
+/** Asks the server for a step's whole output by the event that carried it (`runtime.fullOutput`); rejects with nothing
+ *  more to show (the caller says why). */
+export type WholeOutput = (seq: number) => Promise<string>;
+
 type FileFigures = ReadonlyMap<string, { readonly plus: number; readonly minus: number }>;
 
 /** An agent's message mid-turn: Markdown, or (chat mode) an Answer once it holds a ```wisp fence. The Answer draws
@@ -63,15 +69,40 @@ export function MessageBody(props: { readonly text: string; readonly here: (s: s
   );
 }
 
+/** An opened step's "Show all N lines": asks for the whole output only when pressed, busy until it comes. */
+function ShowAll(props: { readonly lines: number; readonly seq: number; readonly whole: WholeOutput; readonly got: (seq: number, text: string) => void; readonly t: ShellContext['t'] }): JSX.Element {
+  const [fetching, setFetching] = createSignal(false);
+  const ask = (): void => {
+    const seq = props.seq;
+    setFetching(true);
+    props.whole(seq).then(
+      (text) => {
+        setFetching(false);
+        props.got(seq, text);
+      },
+      () => setFetching(false),
+    );
+  };
+  return (
+    <Button part="turn.transcript.showAll" variant="link" size="xs" loading={fetching()} onClick={ask}>
+      {props.t('shell.task.showAllLines', { n: props.lines })}
+    </Button>
+  );
+}
+
 function Step(props: {
   readonly a: TranscriptStepRow;
   readonly index: number;
   readonly figures: FileFigures;
   readonly here: (s: string) => string;
   readonly env: EnvReveal | undefined;
+  readonly whole: WholeOutput | undefined;
   readonly t: ShellContext['t'];
 }): JSX.Element {
   const [open, setOpen] = createSignal(false);
+  // a clipped output's whole text, fetched only when Show all is pressed (audit F8), kept for the step it was asked of
+  const [whole, setWhole] = createSignal<{ readonly seq: number; readonly text: string }>();
+  const wholeText = (): string | undefined => (whole()?.seq === props.a.seq ? whole()?.text : undefined);
   // Read props.a and props.figures reactively: <Index> keeps this Step mounted while live tool_output/changes arrive.
   const id = (): string => (props.a.seq !== undefined ? `step:${props.a.seq}` : `index:${props.index}`);
   const shown = (): boolean => props.env?.shown(id()) ?? false;
@@ -112,7 +143,10 @@ function Step(props: {
                   onToggle={(on) => props.env?.set(id(), on)}
                 />
               </Show>
-              <pre>{props.here(out()?.text ?? m)}</pre>
+              <pre>{props.here(wholeText() ?? out()?.text ?? m)}</pre>
+              <Show when={props.a.seq !== undefined && props.whole && !out()?.env && wholeText() === undefined ? props.a.full : undefined}>
+                {(full) => <ShowAll lines={full().lines} seq={props.a.seq ?? 0} whole={props.whole!} got={(seq, text) => setWhole({ seq, text })} t={t} />}
+              </Show>
             </>
           );
         },
@@ -125,6 +159,8 @@ export function TurnTranscript(props: {
   readonly steps: readonly TranscriptStepRow[];
   /** masked .env output shown (Reveal), per task; without it the output stays masked */
   readonly env?: EnvReveal;
+  /** a clipped step's whole output, on Show all; without it the step shows what it kept */
+  readonly whole?: WholeOutput;
   readonly changes: readonly Change[];
   readonly here: (s: string) => string;
   readonly status: string;
@@ -200,7 +236,7 @@ export function TurnTranscript(props: {
               return (
                 <Show
                   when={s().kind === 'text' || s().kind === 'thinking'}
-                  fallback={<Step a={s()} index={idx()} figures={figuresByFile()} here={props.here} env={props.env} t={t} />}
+                  fallback={<Step a={s()} index={idx()} figures={figuresByFile()} here={props.here} env={props.env} whole={props.whole} t={t} />}
                 >
                   <TimelineMessage>
                     <MessageBody text={(s().kind === 'thinking' ? s().out : undefined) ?? s().label ?? ''} here={props.here} chat={props.chat === true} answerCtx={props.answerCtx} />
@@ -223,7 +259,7 @@ export function TurnTranscript(props: {
                 >
                   {g().rest.length > 0 ? (
                     <Index each={g().rest}>
-                      {(it) => <Step a={it().step} index={it().index} figures={figuresByFile()} here={props.here} env={props.env} t={t} />}
+                      {(it) => <Step a={it().step} index={it().index} figures={figuresByFile()} here={props.here} env={props.env} whole={props.whole} t={t} />}
                     </Index>
                   ) : undefined}
                 </TimelineGroup>
