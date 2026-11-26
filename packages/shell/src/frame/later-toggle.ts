@@ -2,6 +2,7 @@
 // toggleForLater): "Saved for later" / "Unsaved", each with Undo; Undo of Unsave puts back the time it was saved at
 // (audit B #7: the head saved quietly, with no Undo). Pure: TaskView sends and toasts.
 import { isSaved } from './rows-view.ts';
+import '../i18n/lazy.ts';
 
 type Later = { readonly forLater: boolean; readonly at?: number };
 

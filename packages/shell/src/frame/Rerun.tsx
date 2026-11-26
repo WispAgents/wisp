@@ -11,6 +11,7 @@ import { RunnerPicker } from './RunnerPicker.tsx';
 import { rerunArgs, rerunPlace, startEdits, type RerunEdits } from './rerun.ts';
 import { placeOn } from './run-on.ts';
 import '../i18n/lazy.ts';
+import '../i18n/home.ts';
 
 export default function Rerun(props: { readonly params: { readonly id: string; readonly agent?: string } }): JSX.Element {
   const shell = useShell();

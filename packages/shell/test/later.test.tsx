@@ -88,6 +88,8 @@ test('laterReady_waits_for_parts_on_their_way_and_tries_a_failed_one_again_so_a_
   const root = document.createElement('div');
   document.body.append(root);
   const stop = shell.render(root);
+  // the shell's own later part (its palette sources and keys, builtins-later.ts) first: then nothing is on its way
+  await shell.context.laterReady?.();
   expect(shell.context.laterReady?.()).toBeUndefined();
   let tries = 0;
   const flaky = (): Promise<{ default: PluginUiLater }> => {

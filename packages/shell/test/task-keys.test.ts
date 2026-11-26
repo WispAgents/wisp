@@ -1,7 +1,7 @@
 // v1's keys (kbd.js) as the shell registers them: J/K walk the list's rows, E / A / Delete act on the picked row,
 // and the open task's keys go to its page, which says what it handled.
 import { afterEach, expect, test } from 'vitest';
-import { shellUi } from '../src/builtins.tsx';
+import { shellLater } from '../src/builtins-later.ts';
 import type { ShellContext, ShortcutDef } from '../src/contract.ts';
 import { PENDING_KEY, PENDING_KEY_MS, TASK_KEY, takePendingKey } from '../src/frame/task-keys.ts';
 import { isTyping } from '../src/keyboard.ts';
@@ -26,7 +26,7 @@ function fake(main: { kind: string; id?: string }) {
     focusTargets: { focus: () => false },
     t: (k: string) => k,
   } as unknown as ShellContext;
-  const keys = (shellUi(ctx).shortcuts ?? []) as ShortcutDef[];
+  const keys = (shellLater(ctx).shortcuts ?? []) as ShortcutDef[];
   const press = (id: string): boolean | void => keys.find((s) => s.id === id)?.run({ event: new KeyboardEvent('keydown') } as never);
   return { ctx, keys, press, went, ran, toasts, picked: () => picked };
 }

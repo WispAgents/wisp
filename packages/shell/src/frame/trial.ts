@@ -3,6 +3,7 @@
 // launch sends, a run's variant in words for its row and Compare's column, and what differed. Pure, DOM-free.
 import type { MenuEntry } from '@wisp/ui';
 import { modelWord, type Runner } from './runner.ts';
+import '../i18n/home.ts';
 
 type T = (key: string, params?: Readonly<Record<string, string | number>>) => string;
 
