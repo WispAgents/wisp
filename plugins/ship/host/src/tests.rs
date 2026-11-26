@@ -6,6 +6,7 @@ mod fake_gh;
 mod fake_git;
 mod flows;
 mod follows;
+mod steward;
 mod wire;
 
 use std::path::PathBuf;

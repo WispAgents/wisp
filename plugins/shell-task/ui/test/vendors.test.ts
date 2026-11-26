@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { handoffTargets, limitTarget, vendorOf } from '../src/cards/vendors.ts';
 
@@ -26,4 +28,12 @@ test('a_refused_turn_goes_only_to_a_harness_on_another_vendors_model_with_that_m
   // the limit card: the first other harness that's set up
   expect(limitTarget('claude', agents)?.agent).toBe('copilot');
   expect(limitTarget('claude', [{ id: 'claude', available: true }])).toBeUndefined();
+});
+
+// the same table as wisp.review's (review-core vendor.rs, ADR-0132): one golden on disk, both sides read it
+test('the_vendor_table_matches_the_golden_review_reads_too', () => {
+  const file = join(import.meta.dirname, '..', '..', '..', 'review', 'core', 'tests', 'goldens', 'vendors.json');
+  const cases = JSON.parse(readFileSync(file, 'utf8')) as readonly (readonly [string, string, string])[];
+  expect(cases.length).toBeGreaterThan(10);
+  for (const [model, agent, want] of cases) expect([model, agent, vendorOf(model, agent)]).toEqual([model, agent, want]);
 });
