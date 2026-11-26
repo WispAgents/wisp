@@ -1,6 +1,6 @@
 //! wisp.ship's slot on a task (`ext["wisp.ship"]`): what it ships and follows, kept on the session so a
 //! restart picks it up again, the fields it adds to the task's list row (`pr`, `also`, `prs`, `toShip`,
-//! `shipping`, `conflictFix`: the shapes Ship it's UI reads), and how a session's facts (its worktree,
+//! `shipping`, `conflictFix`, `steward`: the shapes Ship it's UI reads), and how a session's facts (its worktree,
 //! archived, a subagent's) start or update the task it tracks. Pure.
 
 use std::collections::BTreeMap;
@@ -133,6 +133,9 @@ pub fn row_fields(slot: &Value, out: &mut BTreeMap<String, Value>) {
     }
     if let Some(c) = &t.conflict_fix {
         out.insert("conflictFix".into(), json!(c));
+    }
+    if let Some(s) = &t.steward {
+        out.insert("steward".into(), json!(s));
     }
 }
 

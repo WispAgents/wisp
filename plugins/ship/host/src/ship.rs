@@ -64,6 +64,8 @@ pub struct Ship {
     starting: Mutex<HashSet<String>>,
     /// v1 `defaults.fixConflicts: 'on'`: conflicts are fixed without the user asking
     auto_fix: AtomicBool,
+    /// wisp.review, for the Steward's `review` (ADR-0132): set once the plugin starts
+    review: Mutex<Option<crate::steward::ReviewPort>>,
 }
 
 impl std::fmt::Debug for Ship {
@@ -82,7 +84,16 @@ impl Ship {
             polling: AtomicBool::new(false),
             starting: Mutex::default(),
             auto_fix: AtomicBool::new(false),
+            review: Mutex::new(None),
         }
+    }
+
+    pub fn set_review_port(&self, port: crate::steward::ReviewPort) {
+        *self.review.lock().unwrap_or_else(PoisonError::into_inner) = Some(port);
+    }
+
+    pub(crate) fn review_port(&self) -> Option<crate::steward::ReviewPort> {
+        self.review.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
     pub fn set_auto_fix(&self, on: bool) {

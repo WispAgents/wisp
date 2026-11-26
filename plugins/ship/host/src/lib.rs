@@ -11,6 +11,7 @@ pub mod follow;
 pub mod gh;
 pub mod ops;
 pub mod ship;
+pub mod steward;
 pub mod tasks;
 pub mod wire;
 
@@ -134,6 +135,7 @@ fn commands(s: &mut Setup, slot: &Slot) {
                 Err(e) => return Err(why(&ctx, &call, &a.session, e).await),
             };
             track(&ctx, "ship", serde_json::json!({ "draft": a.draft }));
+            steward_after_ship(&ctx, &ship, &a.session, &a.steward);
             Ok(out)
         }
     });
@@ -197,11 +199,6 @@ fn commands(s: &mut Setup, slot: &Slot) {
         let sl = sl.clone();
         async move { Ok(get(&sl)?.recheck(&call, &a.session, a.lazy).await?) }
     });
-    let sl = slot.clone();
-    s.command::<api::CheckLog, _, _>(move |_ctx, _call, a| {
-        let sl = sl.clone();
-        async move { Ok(get(&sl)?.check_log(&a.session, &a.url).await?) }
-    });
 }
 
 impl Plugin for ShipPlugin {
@@ -211,6 +208,7 @@ impl Plugin for ShipPlugin {
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
         commands(s, &self.slot);
+        follow_commands(s, &self.slot);
         agent::register(s, &self.slot);
         let known = wire::register(s, &self.slot);
         let slot = self.slot.clone();
@@ -230,6 +228,7 @@ impl Plugin for ShipPlugin {
                     tidier: wire::tidier(&ctx),
                 };
                 let ship = Arc::new(Ship::new(shipper, Arc::new(Tasks::default()), sink(&ctx)));
+                ship.set_review_port(review_port(&ctx));
                 slot.set(ship.clone());
                 wire::start(&ctx, &ship, &known);
                 start_timers(&ctx, &ship, known)
@@ -237,6 +236,73 @@ impl Plugin for ShipPlugin {
         });
         Ok(())
     }
+}
+
+/// What follows a PR after it's open: a failing check's log, and `ship.steward` (the dialog's toggle, the PR row's
+/// Stop, `wisp_ship_steward`, ADR-0132).
+fn follow_commands(s: &mut Setup, slot: &Slot) {
+    let sl = slot.clone();
+    s.command::<api::CheckLog, _, _>(move |_ctx, _call, a| {
+        let sl = sl.clone();
+        async move { Ok(get(&sl)?.check_log(&a.session, &a.url).await?) }
+    });
+    let sl = slot.clone();
+    s.command::<api::SetSteward, _, _>(move |ctx, _call, a| {
+        let sl = sl.clone();
+        async move {
+            let ship = get(&sl)?;
+            let st = ship.set_steward(&a.session, &a.mode)?;
+            if st.is_some() {
+                look_soon(&ctx, &ship, &a.session);
+            }
+            track(&ctx, "ship.steward", serde_json::json!({ "mode": a.mode }));
+            Ok(st)
+        }
+    });
+}
+
+/// The dialog's Keep it green (ADR-0132): set once the PR is there, so its first look has a PR to read.
+fn steward_after_ship(ctx: &Ctx, ship: &Arc<Ship>, session: &str, mode: &str) {
+    if mode.is_empty() {
+        return;
+    }
+    match ship.set_steward(session, mode) {
+        Ok(Some(_)) => look_soon(ctx, ship, session),
+        Ok(None) => {}
+        Err(e) => tracing::warn!(error = %e, task = session, "ship: the Steward"),
+    }
+}
+
+/// The Steward's first look right after it's switched on, off the command's way (gh takes a few seconds).
+fn look_soon(ctx: &Ctx, ship: &Arc<Ship>, session: &str) {
+    let (ship, call, id) = (ship.clone(), ctx.root_call(), session.to_owned());
+    ctx.spawn(async move {
+        if let Err(e) = ship.refresh(&call, &id).await {
+            tracing::warn!(error = %e, task = %id, "ship: the Steward's first look");
+        }
+    });
+}
+
+/// wisp.review for the Steward's `review`: its view of the task, and a review by another vendor asked for when the
+/// head isn't read yet (`review.maybe` is quiet when one is running or done for that head).
+fn review_port(ctx: &Ctx) -> steward::ReviewPort {
+    let ctx = ctx.clone();
+    Arc::new(move |call, id, head| {
+        let c = ctx.clone();
+        Box::pin(async move {
+            let view = c.run::<wisp_review_api::View>(&call, wisp_review_api::ViewArgs { id: id.clone() }).await.ok().flatten();
+            let read = view.as_ref().is_some_and(|v| v.head == head && v.status != wisp_review_api::Status::Running);
+            if read {
+                return steward::ReviewSaid { view, why: String::new() };
+            }
+            let a = wisp_review_api::MaybeArgs { id, force: false, pick: Some("other-vendor".into()) };
+            let why = match c.run::<wisp_review_api::MaybeReview>(&call, a).await {
+                Ok(m) => m.why,
+                Err(e) => e.message,
+            };
+            steward::ReviewSaid { view, why }
+        })
+    })
 }
 
 /// Fix a task's PR conflicts without asking (v1 `defaults.fixConflicts: 'on'`); off unless on.
