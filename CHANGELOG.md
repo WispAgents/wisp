@@ -5,9 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.17] - 2026-11-26
+
 ### Changed
 
 - **Each `wisp` exit code means one thing.** 0 it worked, 1 wisp refused or the task failed, 2 the command line didn't fit (nothing ran), 3 the task waits on you, 4 no task with that id, 124 a wait timed out. A task that asks you something now makes `wisp wait` and `--wait` exit 3 (it was 2, the same as a typo). `wisp show`, `wait`, `reply`, `btw`, `stop` and `attach` with no id, a launch with a misspelled flag or a bad `--mode`, `--effort` or `--model`, and a bad `wisp share`, `wisp trigger` or `wisp cloud` argument now exit 2 (they exited 1), and an unknown task id exits 4. `wisp --help` and the wisp skill list the codes.
+
+- **New headline: "Your coding agents, as code."** It replaces "Manage the code your agents write" on the site, the docs, the README, the npm package, llms.txt and the link preview card, with "Declare them. Run them anywhere. Track every line they write." under it.
 
 ### Fixed
 
@@ -21,14 +25,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Answers from `wisp tui` and `wisp attach` name the question they answer.** Setup cards can now be answered from the terminal, and an answer to a question that was already answered or replaced is refused with that reason instead of landing on the next one.
 - **`/btw` works in `wisp tui`.** It was refused every time; now it asks the open task on the side and shows the answer in the transcript, and says so when there's no question or no task open.
 - **The `?` keys in `wisp tui` match what the keys do.** It shows the rows that were missing (`s`, `p`, `h`/←, `/`, Ctrl-A), and the goto row lists every view's letter, a plugin's included (Blame's `b`).
-
-## [1.0.0-alpha.17] - 2026-11-26
-
-### Changed
-
-- **New headline: "Your coding agents, as code."** It replaces "Manage the code your agents write" on the site, the docs, the README, the npm package, llms.txt and the link preview card, with "Declare them. Run them anywhere. Track every line they write." under it.
-
-### Fixed
 
 - **Plan mode can't change your files, on every agent.** A Claude Code task in Plan still runs commands, tests and builds, but its shell now runs in a read-only sandbox: a write into the project, an added folder or your home fails, and /tmp stays writable. Where your computer has no sandbox for it (Linux without `bwrap` and `socat`, Windows, wisp Cloud), Plan is Claude Code's own read-only plan mode instead. An opencode task in Plan can't edit even when your opencode config allows it, and its shell only runs reads (`git status`, `git diff`, `ls`, `cat`, `rg` and the like); a Plan task a trigger or a channel started has no shell.
 - **A sandbox subagent's changes are never lost on the way back.** When they clash with yours, the patch is kept in a file and the lead's report says where (`git apply <path>` puts it in). A sandbox that's asleep or unreachable no longer counts its changes as brought: they're tried again on the next look. A deleted lead's sandbox that still holds work it never got stays until you delete it in Settings → Computers → Sandboxes.
