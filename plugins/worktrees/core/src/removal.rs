@@ -30,9 +30,11 @@ pub fn porcelain_count(out: &str) -> u32 {
     u32::try_from(out.lines().filter(|l| !l.trim().is_empty()).count()).unwrap_or(u32::MAX)
 }
 
-/// What only this folder holds: changed paths, plus one when HEAD isn't the branch's tip.
-pub fn folder_only(changed: u32, head: &str, branch_tip: Option<&str>) -> u32 {
-    changed + u32::from(branch_tip.is_some_and(|tip| tip != head))
+/// What only this folder holds: changed paths, plus one when HEAD left the branch's tip for commits no ref keeps.
+/// `kept`: something outlives the folder with HEAD in it (HEAD is on another local branch, as when the agent ran
+/// `git checkout -b fix/x`, or HEAD is already in the task's branch); removing the folder loses no commit then.
+pub fn folder_only(changed: u32, head: &str, branch_tip: Option<&str>, kept: bool) -> u32 {
+    changed + u32::from(!kept && branch_tip.is_some_and(|tip| tip != head))
 }
 
 /// The dirt a removal weighs: strict reads what only the folder holds (None = can't tell = 1), else the
@@ -149,9 +151,11 @@ mod tests {
 
     #[test]
     fn dirt_keeps_it_unless_forced_and_cant_tell_is_dirty() {
-        assert_eq!(folder_only(0, "a", Some("a")), 0);
-        assert_eq!(folder_only(2, "a", Some("b")), 3, "HEAD left the branch");
-        assert_eq!(folder_only(0, "a", None), 0, "no branch to leave");
+        assert_eq!(folder_only(0, "a", Some("a"), false), 0);
+        assert_eq!(folder_only(2, "a", Some("b"), false), 3, "HEAD left the branch");
+        assert_eq!(folder_only(0, "a", None, false), 0, "no branch to leave");
+        assert_eq!(folder_only(0, "a", Some("b"), true), 0, "HEAD on another branch keeps its commits");
+        assert_eq!(folder_only(2, "a", Some("b"), true), 2, "uncommitted files still count");
         assert_eq!(removal_dirt(true, None, 0), 1, "can't tell = dirty");
         assert_eq!(removal_dirt(false, None, 2), 2);
         assert_eq!(decide_removal(false, true, 3, false, None), RemoveStep::KeepDirty(3));
