@@ -1,7 +1,7 @@
 //! wisp.later against a stand-in wisp.runtime whose answers a test sets, on a fake clock: a due plan whose start
 //! fails stays, backs off, and is lost to Drafts after its tries, never deleted unseen (audit doc23b); a follow-up's
 //! turn that starts before `runtime.followUp` returns counts as later's, and the user's next turn as theirs (doc23a).
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::assert_is_empty)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,7 +19,7 @@ const T0: i64 = 1_800_000_000_000;
 
 #[derive(Clone, Default)]
 struct Rt {
-    /// `runtime.create` refuses this many more times (usize::MAX: always)
+    /// `runtime.create` refuses this many more times (`usize::MAX`: always)
     fails: Arc<AtomicUsize>,
     creates: Arc<AtomicUsize>,
     sent: Arc<Mutex<Vec<String>>>,
@@ -48,10 +48,12 @@ impl Plugin for Runtime {
         let rt = self.0.clone();
         s.command::<r::Create, _, _>(move |_, _, _a: r::StartArgs| {
             rt.creates.fetch_add(1, Ordering::SeqCst);
-            let failed =
-                rt.fails.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| if n == usize::MAX { Some(n) } else { n.checked_sub(1) });
+            let n = rt.fails.load(Ordering::SeqCst);
+            if n > 0 && n != usize::MAX {
+                rt.fails.store(n - 1, Ordering::SeqCst);
+            }
             async move {
-                if failed.is_ok() {
+                if n > 0 {
                     return Err(WireError::unavailable("wisp.runtime is restarting"));
                 }
                 Ok(r::Created { id: "t9".into(), turn_id: None })

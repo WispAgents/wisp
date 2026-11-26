@@ -10,6 +10,7 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // the same
 fn is_zero(n: &u32) -> bool {
     *n == 0
 }
