@@ -147,8 +147,51 @@ pub fn describe_tool(name: &str, input: &Value, paths: &RunPaths) -> Tool {
     }
 }
 
+/// A browser tool's action in words (Claude in Chrome's `mcp__claude-in-chrome__*`, Playwright's `mcp__browser__*`,
+/// ADR-0128): what the card asks about is the page and the step, never "use claude-in-chrome · computer".
+fn browser_action(name: &str, input: &Value) -> Option<String> {
+    let tool = name.strip_prefix("mcp__claude-in-chrome__").or_else(|| name.strip_prefix("mcp__browser__"))?;
+    let text = |k: &str| clip_value(&input[k], 80);
+    let on = |verb: &str| {
+        let el = or(&input["element"], &input["ref"]);
+        if truthy(el) { format!("{verb} {} in the browser", clip_value(el, 60)) } else { format!("{verb} in the browser") }
+    };
+    Some(match tool {
+        "navigate" | "browser_navigate" => match input["url"].as_str() {
+            Some("back") => "go back in the browser".into(),
+            Some("forward") => "go forward in the browser".into(),
+            _ => format!("open {}", clip_value(&input["url"], 120)),
+        },
+        "tabs_create_mcp" | "browser_tabs" => "open a browser tab".into(),
+        "computer" => match input["action"].as_str().unwrap_or("") {
+            "screenshot" | "zoom" => "take a screenshot of the page".into(),
+            "type" => format!("type “{}” in the browser", text("text")),
+            "key" => format!("press {} in the browser", text("text")),
+            "scroll" | "scroll_to" => "scroll the page".into(),
+            a if a.contains("click") => "click on the page".into(),
+            "" => "use the browser".into(),
+            a => format!("{} in the browser", a.replace('_', " ")),
+        },
+        "browser_click" => on("click"),
+        "browser_hover" => on("hover over"),
+        "browser_type" => format!("type “{}” in the browser", text("text")),
+        "browser_press_key" => format!("press {} in the browser", text("key")),
+        "browser_take_screenshot" | "browser_snapshot" => "take a screenshot of the page".into(),
+        "javascript_tool" | "browser_evaluate" => "run JavaScript in the page".into(),
+        "form_input" | "browser_fill_form" | "browser_select_option" => "fill in a form in the browser".into(),
+        "file_upload" | "browser_file_upload" | "upload_image" => "upload a file in the browser".into(),
+        "find" => format!("find “{}” on the page", text("query")),
+        "read_page" | "get_page_text" => "read the page".into(),
+        "browser_navigate_back" => "go back in the browser".into(),
+        other => format!("use the browser ({})", other.trim_start_matches("browser_").replace('_', " ")),
+    })
+}
+
 /// A permission prompt's subject: "run `npm publish`", "edit src/a.ts", "fetch https://…".
 pub fn action_of(name: &str, input: &Value, paths: &RunPaths) -> String {
+    if let Some(a) = browser_action(name, input) {
+        return a;
+    }
     let f = file_of(input, paths);
     match name {
         "Bash" => format!("run `{}`", clip_value(&input["command"], 200)),

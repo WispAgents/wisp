@@ -587,6 +587,12 @@ impl Runtime {
                 mcp_servers.entry(k).or_insert(v);
             }
         }
+        // the browser its agent drives (ADR-0128): a headless one or a sandbox's as the `browser` server, after the
+        // connectors so one the user named `browser` stays theirs; Claude in Chrome goes by flag (`HarnessRun::browser`)
+        let (browser, server) = self.run_browser(&s.agent, info);
+        if let Some(server) = server {
+            mcp_servers.entry(wisp_runtime_api::harness::browser::BROWSER_SERVER.to_owned()).or_insert(server);
+        }
         let variant = crate::trial::variant_of(s);
         HarnessRun {
             session_id: s.id.0.clone(),
@@ -614,6 +620,7 @@ impl Runtime {
             subagent_model: crate::trial::subagents_on(variant.subagent_model.as_deref(), &self.text_setting("runtime.subagentModel")),
             skills: if variant.skills.as_deref() == Some("off") { "off".into() } else { String::new() },
             delegating: self.delegates_through_wisp(s, info),
+            browser,
             ..HarnessRun::default()
         }
     }

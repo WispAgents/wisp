@@ -57,6 +57,7 @@ import {
   type VaryKey,
 } from './picker.ts';
 import { SUBAGENT_NAME, type Variant } from './trial.ts';
+import { BROWSER_CAN_UNKNOWN, BROWSER_SETTING, BROWSERS_SETTING, browserRow, browserSetting, withBrowser, type BrowserValue } from './browser-pick.ts';
 import { AUTO_SETTING, FACTORY, autoEnabled } from './launch-pick.ts';
 import { FACTORY_HOW_URL, factoryNames, factoryPane, factoryPick, factoryRow, useFactory } from './factory-pick.ts';
 import '../i18n/lazy.ts';
@@ -155,6 +156,13 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
   const remember = (m: PickerMemory): void =>
     void shell.client.commands.run(setSetting, { peer: props.peer, key: PICKER_SETTING, value: m as unknown as never }).catch(() => undefined);
   const star = (p: PickRef): void => remember(toggleFavourite(memory(), p));
+  // the browser (ADR-0128): every harness's (`runtime.browser`) and each one's own (`runtime.browsers`), which a pick here sets
+  const browserAll = useSignal(shell.client.entities.row<SettingRow>('setting', entityKey(props.peer as PeerId, BROWSER_SETTING)));
+  const browserEach = useSignal(shell.client.entities.row<SettingRow>('setting', entityKey(props.peer as PeerId, BROWSERS_SETTING)));
+  const setBrowser = (agent: string, v: BrowserValue): void =>
+    void shell.client.commands
+      .run(setSetting, { peer: props.peer, key: BROWSERS_SETTING, value: withBrowser(browserEach()?.value, agent, v) as unknown as never })
+      .catch(() => undefined);
   const picked = (p: PickRef): void => remember(withRecent(memory(), p));
   // the find box over both panes: every harness and model
   const [find, setFind] = createSignal('');
@@ -359,6 +367,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
     const varied = vary ? varyRows(vary.can(id, current()), was, vary.setting) : [];
     const accs = accounts();
     const accValue = accountFor(accs, current().account);
+    const br = browserRow(a?.browser ?? BROWSER_CAN_UNKNOWN, browserSetting(browserAll()?.value, browserEach()?.value, id));
     const accNotes = accs.filter((x) => x.state === 'limit' || x.state === 'signedOut').map((x) => t(x.state === 'limit' ? 'shell.runner.accountAtLimit' : 'shell.runner.accountIsOut', { name: x.label }));
     return {
       ...base,
@@ -392,6 +401,18 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
           ...(accNotes.length > 0 && { note: accNotes.join(' ') }),
         },
       }),
+      browser: {
+        label: t('shell.browser.label'),
+        options: br.choices.map((c) => ({
+          id: c.id,
+          label: t(`shell.browser.${c.id}`),
+          off: c.why !== undefined,
+          title: c.why ? t(`shell.browser.why.${c.why}`, { name }) : t(`shell.browser.hint.${c.id}`),
+        })),
+        value: br.value,
+        onPick: (v: string) => setBrowser(id, v as BrowserValue),
+        ...(br.note && { note: t(br.note === 'sandboxBrowser' ? 'shell.browser.sandboxNote' : `shell.browser.why.${br.note}`, { name }) }),
+      },
       ...(vary &&
         varied.length > 0 && {
           vary: {
