@@ -125,7 +125,13 @@ impl Plugin for Machines {
 /// `sandbox.place` for the judges' sandbox `m1` already holds; the wait's 1.5 s polls tick by on a fake clock.
 async fn place(b: &Box_) -> std::result::Result<Value, wisp_kernel::WireError> {
     let clock = FakeClock::at(1_000);
-    let k = TestApp::new().clock(&clock).with(SandboxPlugin { inside: Some(false), home: None }).with(Machines(b.clone())).start().await;
+    let k = TestApp::new()
+        .clock(&clock)
+        .service(wisp_store::Store::open(wisp_store::Location::Memory, Arc::new(wisp_store::SystemClock)).unwrap())
+        .with(SandboxPlugin { inside: Some(false), home: None })
+        .with(Machines(b.clone()))
+        .start()
+        .await;
     let tick = clock.clone();
     let ticker = tokio::spawn(async move {
         loop {

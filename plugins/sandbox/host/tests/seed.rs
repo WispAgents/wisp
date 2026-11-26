@@ -12,6 +12,11 @@ use wisp_kernel::Caller;
 use wisp_sandbox::SandboxPlugin;
 use wisp_testkit::TestApp;
 
+/// A computer's wisp.sandbox keeps its launches (`sandbox.start`) as rows in the store, so it starts only with one.
+fn store() -> wisp_store::Store {
+    wisp_store::Store::open(wisp_store::Location::Memory, std::sync::Arc::new(wisp_store::SystemClock)).unwrap()
+}
+
 fn dir(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("wisp-sbx-{name}-{}", wisp_kernel::ids::uuid7()));
     std::fs::create_dir_all(&d).unwrap();
@@ -53,8 +58,12 @@ async fn only_a_sandbox_takes_a_seed_and_its_setup_runs_once() {
     let home = dir("home");
     let (_p, args) = project();
     // a computer refuses: a seed would write into its ~/code
-    let here =
-        TestApp::new().with(SandboxPlugin { inside: Some(false), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let here = TestApp::new()
+        .with(SandboxPlugin { inside: Some(false), home: Some(home.clone()) })
+        .service(wisp_proc::local())
+        .service(store())
+        .start()
+        .await;
     let no = here.call(Caller::user(), "sandbox.seed", args.clone()).await.unwrap_err();
     assert!(no.message.contains("Only a sandbox"), "{no:?}");
     let sb = TestApp::new().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
@@ -124,8 +133,12 @@ async fn only_a_sandbox_takes_an_upload_and_a_seed_reads_it_by_key() {
     let bytes = std::fs::read(&bundle).unwrap();
 
     let home = dir("home3");
-    let here =
-        TestApp::new().with(SandboxPlugin { inside: Some(false), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let here = TestApp::new()
+        .with(SandboxPlugin { inside: Some(false), home: Some(home.clone()) })
+        .service(wisp_proc::local())
+        .service(store())
+        .start()
+        .await;
     let no = here.serve(Caller::user(), upload("k1", "bundle", bytes.clone())).await.unwrap_err();
     assert!(no.message.contains("Only a sandbox"), "{no:?}");
     assert!(!home.join(".sandbox").exists(), "nothing written on a computer");
