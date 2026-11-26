@@ -212,6 +212,14 @@ fn place(body: &MemberBody, prev: Option<&Member>, c: &Checks) -> Result<(String
     Ok((sandbox, machine, agent, cwd))
 }
 
+/// What's wrong with one of `member`'s wakes, read as a trigger aimed at them (its target is the member, so "what it
+/// does" is never missing). `None`: it's fine. The member's save and `wisp validate` read it alike.
+pub fn wake_problem(member: &str, w: &wisp_automations_api::TriggerSpec) -> Option<String> {
+    let mut t = w.clone();
+    member.clone_into(&mut t.crew);
+    wisp_automations_api::spec::check(&t).into_iter().find(|p| !p.starts_with("what it does"))
+}
+
 /// body → a clean member. `prev`: the member being edited (its memory and bookkeeping carry on).
 /// The task panel's tint (v1 crewEditor `bg`): their glow (''), none, or one of the crew colours; anything else keeps
 /// what they had.
@@ -292,9 +300,7 @@ pub fn normalize_member(body: &MemberBody, prev: Option<&Member>, c: &Checks, id
         (None, None) => prev.map(|p| p.wakes.clone()).unwrap_or_default(),
     };
     for w in &wakes {
-        let mut t = w.clone();
-        t.crew.clone_from(&m.name);
-        if let Some(p) = wisp_automations_api::spec::check(&t).into_iter().find(|p| !p.starts_with("what it does")) {
+        if let Some(p) = wake_problem(&m.name, w) {
             return Err(bad(format!("{}'s wake on {}: {p}", m.name, w.on)));
         }
     }

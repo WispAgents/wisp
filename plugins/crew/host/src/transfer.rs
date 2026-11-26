@@ -198,7 +198,7 @@ pub(crate) async fn take_in(
     }
     if !joined.is_empty() {
         for m in &joined {
-            st.put(m.clone());
+            st.insert(m.clone());
             ctx.emit(call, &wisp_crew_api::events::Joined { crew_id: m.id.clone(), name: m.name.clone(), how: "import".into() });
         }
         st.save().await;

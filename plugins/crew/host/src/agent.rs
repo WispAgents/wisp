@@ -9,49 +9,57 @@ use std::sync::Arc;
 use wisp_crew_api::commands as c;
 use wisp_crew_core::mentions::handle_of;
 use wisp_crew_core::tools::{member_detail, member_line};
-use wisp_kernel::{Setup, WireError};
+use wisp_kernel::{Call, Ctx, Setup};
 
-use crate::jobs::{checkin, now};
+use crate::jobs::{checkin, gone, now, unknown_sources};
 use crate::{State, calls};
 
 pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {
     let st = st.clone();
     s.command::<c::AgentAdd, _, _>(move |ctx, call, a| {
         let st = st.clone();
-        async move {
-            let refuse = |e: WireError| Ok(c::AgentText { text: None, error: Some(e.message) });
-            let project = match &a.member.cwd {
-                Some(cwd) => cwd.clone(),
-                None => calls::task(&ctx, &call, &a.session).await.map(|t| t.cwd).unwrap_or_default(),
-            };
-            if let Some(from) = a.from.as_deref().filter(|f| !f.trim().is_empty()) {
-                let args = crate::transfer::from_args(from);
-                return match Box::pin(crate::transfer::take_in(&ctx, &call, &st, args, "agent", Some(&project))).await {
-                    Ok(out) => Ok(c::AgentText { text: Some(crate::transfer::joined_text(&out.members, &project)), error: None }),
-                    Err(e) => refuse(e),
-                };
-            }
-            let body = c::MemberBody { cwd: Some(project), ..a.member.clone() };
-            let m = match st.normalize(
-                &body,
-                None,
-                now(&ctx),
-                &calls::profile_names(&ctx, &call).await,
-                &calls::machine_ids(&ctx, &call).await,
-                &calls::default_agent(&ctx),
-            ) {
-                Ok(m) => m,
-                Err(e) => return refuse(e),
-            };
-            st.put(m.clone());
-            st.save().await;
-            ctx.emit(&call, &wisp_crew_api::events::Joined { crew_id: m.id.clone(), name: m.name.clone(), how: "create".into() });
-            if a.checkin == Some(true) {
-                crate::calls::warn("the first check-in", checkin(&ctx, &call, &st, &m.id, false).await.map(|_| ()));
-            }
-            Ok(c::AgentText { text: Some(format!("Added {} to your crew (@{}).", m.name, handle_of(&m.name))), error: None })
-        }
+        async move { Ok(agent_add(&ctx, &call, &st, &a).await) }
     });
+}
+
+/// `crew.agent.add`. A wake on no known source is refused here as `crew.create` refuses it, so the tool and the app
+/// agree.
+pub(crate) async fn agent_add(ctx: &Ctx, call: &Call, st: &Arc<State>, a: &c::AgentAddArgs) -> c::AgentText {
+    let project = match &a.member.cwd {
+        Some(cwd) => cwd.clone(),
+        None => calls::task(ctx, call, &a.session).await.map(|t| t.cwd).unwrap_or_default(),
+    };
+    if let Some(from) = a.from.as_deref().filter(|f| !f.trim().is_empty()) {
+        let args = crate::transfer::from_args(from);
+        return match Box::pin(crate::transfer::take_in(ctx, call, st, args, "agent", Some(&project))).await {
+            Ok(out) => said(crate::transfer::joined_text(&out.members, &project)),
+            Err(e) => refused(e.message),
+        };
+    }
+    if let Some(w) = &a.member.wakes
+        && let Err(e) = unknown_sources(ctx, call, w, &[]).await
+    {
+        return refused(e.message);
+    }
+    let body = c::MemberBody { cwd: Some(project), ..a.member.clone() };
+    let m = match st.normalize(
+        &body,
+        None,
+        now(ctx),
+        &calls::profile_names(ctx, call).await,
+        &calls::machine_ids(ctx, call).await,
+        &calls::default_agent(ctx),
+    ) {
+        Ok(m) => m,
+        Err(e) => return refused(e.message),
+    };
+    st.insert(m.clone());
+    st.save().await;
+    ctx.emit(call, &wisp_crew_api::events::Joined { crew_id: m.id.clone(), name: m.name.clone(), how: "create".into() });
+    if a.checkin == Some(true) {
+        crate::calls::warn("the first check-in", checkin(ctx, call, st, &m.id, false).await.map(|_| ()));
+    }
+    said(format!("Added {} to your crew (@{}).", m.name, handle_of(&m.name)))
 }
 
 /// v1's `named`: the member, or the words that send the agent to `wisp_crew`.
@@ -120,38 +128,7 @@ pub(crate) fn register_changes(s: &mut Setup, st: &Arc<State>) {
     let st2 = st.clone();
     s.command::<c::AgentEdit, _, _>(move |ctx, call, a| {
         let st = st2.clone();
-        async move {
-            let prev = match named(&st, &a.member) {
-                Ok(m) => m,
-                Err(e) => return Ok(refused(e)),
-            };
-            // the tool's fields only (v1 `pick(EDIT_FIELDS)`): its kit, team, machine and colours aren't set here
-            let mut body = c::MemberBody { kit: None, team: None, machine: None, sandbox: None, color: None, bg: None, ..a.fields.clone() };
-            let given_notebook = body.notebook.is_some();
-            if let Some(n) = remembered(body.notebook.as_deref().unwrap_or(&prev.notebook), a.remember.as_deref().unwrap_or_default()) {
-                body.notebook = Some(n);
-            }
-            let m = match st.normalize(
-                &body,
-                Some(&prev),
-                now(&ctx),
-                &calls::profile_names(&ctx, &call).await,
-                &calls::machine_ids(&ctx, &call).await,
-                &calls::default_agent(&ctx),
-            ) {
-                Ok(m) => m,
-                Err(e) => return Ok(refused(e.message)),
-            };
-            st.put(m.clone());
-            st.save().await;
-            ctx.emit(&call, &wisp_crew_api::events::MemberChanged { crew_id: m.id.clone() });
-            let nb = if given_notebook || a.remember.as_ref().is_some_and(|r| !r.is_empty()) {
-                format!("\n\nTheir notebook now has {} characters.", m.notebook.encode_utf16().count())
-            } else {
-                String::new()
-            };
-            Ok(said(format!("Updated {}.\n\n{}{nb}", m.name, member_line(&crate::jobs::view(&ctx, &call, &st, &m).await))))
-        }
+        async move { Ok(agent_edit(&ctx, &call, &st, &a).await) }
     });
     let st = st.clone();
     s.command::<c::AgentRemove, _, _>(move |ctx, call, a| {
@@ -177,4 +154,43 @@ pub(crate) fn register_changes(s: &mut Setup, st: &Arc<State>) {
             )))
         }
     });
+}
+
+/// `crew.agent.edit`, as `crew.update`: the wakes checked against the sources, then the edit applied to the member as
+/// they are after the awaits (the harnesses, the machines), not a copy read before them: a job queued meanwhile isn't
+/// lost, one started from the queue isn't put back, and a member removed meanwhile stays removed.
+pub(crate) async fn agent_edit(ctx: &Ctx, call: &Call, st: &Arc<State>, a: &c::AgentEditArgs) -> c::AgentText {
+    let before = match named(st, &a.member) {
+        Ok(m) => m,
+        Err(e) => return refused(e),
+    };
+    // the tool's fields only (v1 `pick(EDIT_FIELDS)`): its kit, team, machine and colours aren't set here
+    let mut body = c::MemberBody { kit: None, team: None, machine: None, sandbox: None, color: None, bg: None, ..a.fields.clone() };
+    if let Some(w) = &body.wakes
+        && let Err(e) = unknown_sources(ctx, call, w, &before.wakes).await
+    {
+        return refused(e.message);
+    }
+    let (profiles, machines) = (calls::profile_names(ctx, call).await, calls::machine_ids(ctx, call).await);
+    // read again, and written with no await between
+    let Ok(prev) = st.member(&before.id) else { return refused(gone().message) };
+    let given_notebook = body.notebook.is_some();
+    if let Some(n) = remembered(body.notebook.as_deref().unwrap_or(&prev.notebook), a.remember.as_deref().unwrap_or_default()) {
+        body.notebook = Some(n);
+    }
+    let m = match st.normalize(&body, Some(&prev), now(ctx), &profiles, &machines, &calls::default_agent(ctx)) {
+        Ok(m) => m,
+        Err(e) => return refused(e.message),
+    };
+    if st.update(&m.id, |live| *live = m.clone()).is_none() {
+        return refused(gone().message);
+    }
+    st.save().await;
+    ctx.emit(call, &wisp_crew_api::events::MemberChanged { crew_id: m.id.clone() });
+    let nb = if given_notebook || a.remember.as_ref().is_some_and(|r| !r.is_empty()) {
+        format!("\n\nTheir notebook now has {} characters.", m.notebook.encode_utf16().count())
+    } else {
+        String::new()
+    };
+    said(format!("Updated {}.\n\n{}{nb}", m.name, member_line(&crate::jobs::view(ctx, call, st, &m).await)))
 }

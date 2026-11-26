@@ -33,6 +33,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Crew: two jobs given to a member at once both wait in their queue (one was lost), an edit saved while a waiting job started or a new one was queued (from wisp or from an agent's `wisp_crew_edit`) no longer puts that job back in the queue or drops the new one, and a member removed while a job for them was being placed or a check-in ran stays removed.
+- Crew: a wake-up a member asked for is kept until its check-in starts. Before, a wake-up that came while they were still checking in, or with their queue full, was dropped.
+- Crew: a message that tags several members (`@ada @bob`) wakes every one who can take the job. Before, one with a full queue stopped the rest from waking.
+- Crew: `wisp validate`, `wisp diff` and `wisp apply --dry-run` report a member's `cron` that can't be read and a wake the crew would refuse (`crew.ada: wakes[0]: a schedule needs cron`), instead of failing half-way through the apply. Saving a member with a wake on an event no source offers (`on: not.an.event`) is refused with the list of sources, as a trigger is, from wisp and from an agent's `wisp_crew_add` and `wisp_crew_edit` alike.
 - `wisp wait` and `wisp "…" --wait` exit with how the task ended: 0 done or review, 1 failed, stopped or blocked, 2 when it asks you something, 124 when the wait timed out. So does `wisp "…" --try … --wait`, with the worse of its two runs. They exited 0 every time. `--timeout 30s|10m|2h` sets how long they wait (30 minutes by default), and `--json` says `"timedOut": true` when the wait ran out.
 - Installed from npm, one Ctrl-C in `wisp attach` detaches again, as it says. The launcher sent the terminal's Ctrl-C to wisp a second time, and a second Ctrl-C stops the task. `kill <pid>` and supervisors still reach wisp through the launcher.
 - Only one wisp server runs on a home (`~/.wisp`). A second `wisp serve` says `wisp is already running for this home at <url> (pid N)` and exits, instead of running every trigger and schedule a second time and taking over `server.json`. A command finds the running server instead of starting another.
