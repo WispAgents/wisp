@@ -52,6 +52,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- When a task hits a usage limit, the card's **Hand to** button now picks the harness with the most plan left (from Settings → Usage's windows) and skips one that's used up too. Before, it picked the first one set up. The button's tip says how much is left.
 - The npm package, the README and the site's structured data now say **Wisp Agents** and point to trywisp.dev, so searches for "Wisp Agents" find the project.
 
 ### Fixed
