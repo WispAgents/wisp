@@ -133,14 +133,14 @@ impl Probe {
     /// refused for want of a sign-in is marked `auth`, and the row offers Sign in.
     pub fn result(&self, outcome: Outcome, at: i64) -> ProbeResult {
         match outcome {
-            Outcome::Ok { tools, count } => ProbeResult { at, ok: true, tools: Some(tools), count: Some(count), error: None, auth: false },
+            Outcome::Ok { tools, count } => ProbeResult { at, ok: true, tools: Some(tools), count: Some(count), ..ProbeResult::default() },
             Outcome::Failed(fallback) => {
                 let lines: Vec<&str> = self.stderr.trim().lines().filter(|l| !l.is_empty()).collect();
                 let tail = lines[lines.len().saturating_sub(3)..].join(" · ");
                 let error = clip(&self.tidy(if tail.is_empty() { &fallback } else { &tail }), 300);
                 let lower = error.to_lowercase();
                 let auth = lower.contains("needs sign-in") || lower.contains("http 401") || lower.contains("http 403");
-                ProbeResult { at, ok: false, tools: None, count: None, error: Some(error), auth }
+                ProbeResult { at, ok: false, error: Some(error), auth, ..ProbeResult::default() }
             }
         }
     }

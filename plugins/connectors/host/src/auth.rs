@@ -2,8 +2,11 @@
 //! else refreshed with the stored refresh token first. `connectors.call`, a check and `connectors.token` all ask
 //! here; a refresh also runs a minute before the token ends, on the plugin's scope (switching it off cancels it).
 //! Refreshing runs once per connector however many ask at once, and the run cache is read again after it, so a
-//! new run gets the new bearer. A sign-in it can't renew (no refresh token, refused, no network) marks the row
-//! "needs sign-in", kept and published as a check is, so the row offers Sign in without a check again.
+//! new run gets the new bearer, and before a run a token that's due is refreshed first (a timer may not have fired
+//! while the computer slept). A sign-in it can't renew (no refresh token, `invalid_grant`, a 400 or 401) marks the row
+//! "needs sign-in", kept and published as a check is, so the row offers Sign in without a check again; a refresh that
+//! couldn't be made just now (no network, the server's 5xx) marks it "retrying" and is tried again, waiting longer
+//! each time.
 
 use std::sync::atomic::Ordering;
 
@@ -26,9 +29,21 @@ fn key(id: &str, what: &str) -> String {
     format!("{}:{what}", secrets_ns(id))
 }
 
+/// Why a refresh failed: the sign-in is over (the user signs in again), or the server couldn't be asked now (later).
+enum Renewal {
+    Refused(WireError),
+    Later(WireError),
+}
+
 /// A form to the token endpoint (a code or a refresh token) → the tokens, or why not in the server's words.
 pub(crate) async fn token_request(ctx: &Ctx, url: &str, form: &[(String, String)]) -> Result<Tokens> {
-    let r = net(ctx)?
+    let r = token_post(ctx, url, form).await?;
+    Ok(oauth::token_reply(r.status, &String::from_utf8_lossy(&r.body))?)
+}
+
+/// The form sent to the token endpoint: its answer, whatever the status (an error is the network's).
+async fn token_post(ctx: &Ctx, url: &str, form: &[(String, String)]) -> Result<wisp_kernel::services::NetResponse> {
+    net(ctx)?
         .fetch(NetRequest {
             method: "POST".into(),
             url: url.to_owned(),
@@ -39,8 +54,7 @@ pub(crate) async fn token_request(ctx: &Ctx, url: &str, form: &[(String, String)
             body: oauth::form_encode(form).into_bytes(),
             timeout_ms: 15_000,
         })
-        .await?;
-    Ok(oauth::token_reply(r.status, &String::from_utf8_lossy(&r.body))?)
+        .await
 }
 
 impl Pane {
@@ -61,33 +75,104 @@ impl Pane {
         let force = refused.is_some_and(|r| access.as_deref() == Some(r));
         let at = now(ctx);
         let next = match (oauth::token_step(meta.as_ref(), access, refresh, at, force), meta) {
-            (TokenStep::Use(t), _) => return Ok(t),
+            (TokenStep::Use(t), _) => {
+                drop(guard);
+                self.settled(ctx, id).await;
+                return Ok(t);
+            }
             (TokenStep::Refresh(r), Some(o)) => self.renew(ctx, id, &o, &r, at).await,
-            _ => Err(WireError::forbidden("its sign-in ran out")),
+            _ => Err(Renewal::Refused(WireError::forbidden("its sign-in ran out"))),
         };
         drop(guard);
         match next {
             Ok((t, o)) => {
                 self.runs.rebuild().await;
+                self.settled(ctx, id).await;
                 self.refresh_later(ctx, id, &o);
                 Ok(t)
             }
-            Err(e) => Err(self.needs_signin(ctx, id, &e.message).await),
+            Err(Renewal::Refused(e)) => {
+                lock(&self.retries).remove(id);
+                Err(self.needs_signin(ctx, id, &e.message).await)
+            }
+            Err(Renewal::Later(e)) => Err(self.retry_later(ctx, id, &e.message).await),
+        }
+    }
+
+    /// The token works again: no retry counted, and a row that said "retrying" doesn't any more.
+    async fn settled(&self, ctx: &Ctx, id: &str) {
+        lock(&self.retries).remove(id);
+        let was = lock(&self.tests).get_mut(id).filter(|t| t.retrying).map(|t| t.retrying = false).is_some();
+        if was {
+            self.publish(ctx).await;
+        }
+    }
+
+    /// A refresh that couldn't be made just now: the row says so (its last check kept, no sign-in asked for), and it's
+    /// tried again, waiting longer each time; the error the caller gets.
+    async fn retry_later(&self, ctx: &Ctx, id: &str, why: &str) -> WireError {
+        let attempt = {
+            let mut r = lock(&self.retries);
+            let n = r.entry(id.to_owned()).or_default();
+            *n += 1;
+            *n - 1
+        };
+        {
+            let mut tests = lock(&self.tests);
+            let t = tests.entry(id.to_owned()).or_insert_with(|| ProbeResult { at: now(ctx), ..ProbeResult::default() });
+            t.retrying = true;
+            t.auth = false;
+        }
+        self.publish(ctx).await;
+        self.arm(ctx, id, oauth::retry_wait_ms(attempt));
+        WireError::unavailable(format!("Couldn't refresh its sign-in, trying again: {why}"))
+    }
+
+    /// Before a run: each signed-in connector it may get whose token is due is refreshed (`fresh_token` reads the run
+    /// cache again), so the run's servers carry a fresh bearer. Off the hook's clock: one that outlives the hook's
+    /// time finishes anyway, and the run goes on without waiting for it.
+    pub(crate) async fn before_run(&self, ctx: &Ctx) {
+        let Some(me) = self.me.upgrade() else { return };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let cx = ctx.clone();
+        ctx.spawn(async move {
+            me.refresh_due(&cx).await;
+            let _ = tx.send(());
+        });
+        let _ = rx.await;
+    }
+
+    async fn refresh_due(&self, ctx: &Ctx) {
+        for (id, c) in self.specs().await {
+            if c.oauth != Some(true) || c.enabled == Some(false) {
+                continue;
+            }
+            let Some(o) = Self::oauth_of(ctx, &id).await else { continue };
+            if oauth::refresh_at(&o).is_some_and(|t| t <= now(ctx))
+                && let Err(e) = self.fresh_token(ctx, &id, None).await
+            {
+                tracing::debug!(connector = %id, error = %e.message, "connectors: a token due before a run");
+            }
         }
     }
 
     /// The refresh itself: the new token, the rotated refresh token (a reply without one keeps the old) and when it
     /// ends, stored. The sign-in's time stays: a refresh isn't a sign-in.
-    async fn renew(&self, ctx: &Ctx, id: &str, o: &OAuthMeta, refresh: &str, at: i64) -> Result<(String, OAuthMeta)> {
-        let s = secrets(ctx)?;
+    async fn renew(&self, ctx: &Ctx, id: &str, o: &OAuthMeta, refresh: &str, at: i64) -> std::result::Result<(String, OAuthMeta), Renewal> {
+        let s = secrets(ctx).map_err(Renewal::Later)?;
         let secret = s.get(&key(id, "client_secret")).await.ok().flatten();
-        let t = token_request(ctx, &o.token, &oauth::refresh_form(o, refresh, secret.as_deref())).await?;
-        s.set(&key(id, "token"), &t.access).await?;
+        let r = token_post(ctx, &o.token, &oauth::refresh_form(o, refresh, secret.as_deref())).await.map_err(Renewal::Later)?;
+        let text = String::from_utf8_lossy(&r.body);
+        let t = oauth::token_reply(r.status, &text).map_err(|e| {
+            // only the server saying the grant is over ends the sign-in; its 5xx or a garbled answer is tried again
+            if oauth::refresh_refused(r.status, &text) { Renewal::Refused(e.into()) } else { Renewal::Later(e.into()) }
+        })?;
+        s.set(&key(id, "token"), &t.access).await.map_err(Renewal::Later)?;
         if let Some(rf) = &t.refresh {
-            s.set(&key(id, "refresh"), rf).await?;
+            s.set(&key(id, "refresh"), rf).await.map_err(Renewal::Later)?;
         }
         let next = oauth::after_refresh(o, &t, at);
-        s.set(&key(id, "oauth"), &serde_json::to_string(&next).unwrap_or_default()).await?;
+        s.set(&key(id, "oauth"), &serde_json::to_string(&next).unwrap_or_default()).await.map_err(Renewal::Later)?;
         Ok((t.access, next))
     }
 
@@ -103,10 +188,19 @@ impl Pane {
 
     /// A refresh a minute before `o`'s token ends; the one armed before for `id` stands down.
     pub(crate) fn refresh_later(&self, ctx: &Ctx, id: &str, o: &OAuthMeta) {
+        let Some(at) = oauth::refresh_at(o) else {
+            lock(&self.timers).insert(id.to_owned(), self.timer_seq.fetch_add(1, Ordering::Relaxed) + 1);
+            return;
+        };
+        let wait = u64::try_from((at - now(ctx)).max(MIN_WAIT_MS)).unwrap_or(0);
+        self.arm(ctx, id, wait);
+    }
+
+    /// A refresh of `id` in `wait` ms; the one armed before for it stands down.
+    fn arm(&self, ctx: &Ctx, id: &str, wait: u64) {
         let mine = self.timer_seq.fetch_add(1, Ordering::Relaxed) + 1;
         lock(&self.timers).insert(id.to_owned(), mine);
-        let (Some(at), Ok(clock), Some(me)) = (oauth::refresh_at(o), ctx.clock(), self.me.upgrade()) else { return };
-        let wait = u64::try_from((at - clock.now_ms()).max(MIN_WAIT_MS)).unwrap_or(0);
+        let (Ok(clock), Some(me)) = (ctx.clock(), self.me.upgrade()) else { return };
         let (cx, id) = (ctx.clone(), id.to_owned());
         ctx.spawn(async move {
             clock.sleep(wait).await;

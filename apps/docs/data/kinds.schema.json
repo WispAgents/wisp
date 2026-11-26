@@ -270,7 +270,7 @@
           "type": "object"
         },
         "modes": {
-          "description": "the modes that get it (plan, edits, auto; empty: all)",
+          "description": "the modes that get it (plan, edits, auto; empty: edits and auto, Plan mode only when named here)",
           "items": {
             "type": "string"
           },
@@ -283,6 +283,17 @@
             "null"
           ]
         },
+        "transport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/connector.RemoteTransport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "how a URL is spoken: `http` (streamable HTTP, the default) or `sse` (the 2024 SSE transport)"
+        },
         "url": {
           "description": "the server's URL (HTTP servers)",
           "type": "string"
@@ -290,6 +301,14 @@
       },
       "title": "ConnectorSpec",
       "type": "object"
+    },
+    "connector.RemoteTransport": {
+      "description": "A remote server's transport.",
+      "enum": [
+        "http",
+        "sse"
+      ],
+      "type": "string"
     },
     "crew": {
       "additionalProperties": false,

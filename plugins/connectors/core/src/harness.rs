@@ -104,6 +104,19 @@ fn dir(w: &Where, var: &str, fallback: &[&str]) -> PathBuf {
     w.var(var).map_or_else(|| fallback.iter().fold(w.home.clone(), |p, s| p.join(s)), PathBuf::from)
 }
 
+impl Builtin {
+    /// Whether it reaches a server over the 2024 SSE transport: Codex speaks stdio and streamable HTTP only (an SSE
+    /// server given to it fails its handshake, and the run with it).
+    pub fn takes_sse(&self) -> bool {
+        self.kind != Kind::Codex
+    }
+}
+
+/// The harnesses an SSE connector is skipped for (`Builtin::takes_sse`).
+pub fn without_sse() -> Vec<String> {
+    builtins().into_iter().filter(|b| !b.takes_sse()).map(|b| b.agent.to_owned()).collect()
+}
+
 impl HarnessMcp for Builtin {
     fn agent(&self) -> &str {
         self.agent
@@ -177,6 +190,8 @@ pub struct Found {
     pub url: String,
     /// env (local) or headers (remote), with values
     pub secrets: BTreeMap<String, String>,
+    /// remote over the 2024 SSE transport (`"type": "sse"`), not streamable HTTP
+    pub sse: bool,
 }
 
 impl Found {
@@ -193,6 +208,7 @@ impl Found {
             url: (!local).then(|| self.url.clone()),
             env: if local { keys.clone() } else { None },
             headers: if local { None } else { keys },
+            hidden: false,
         }
     }
 
@@ -202,7 +218,16 @@ impl Found {
         let local = self.transport == Transport::Local;
         ConnectorBody {
             name: Some(self.name.clone()),
-            transport: Some(if local { "local" } else { "remote" }.into()),
+            transport: Some(
+                if local {
+                    "local"
+                } else if self.sse {
+                    "sse"
+                } else {
+                    "remote"
+                }
+                .into(),
+            ),
             command: local.then(|| self.command.clone()),
             args: local.then(|| self.args.clone()),
             url: (!local).then(|| self.url.clone()),
@@ -213,7 +238,8 @@ impl Found {
     }
 }
 
-/// `{url | serverUrl, headers}` is remote, `{command, args, env}` local; anything else is skipped.
+/// `{url | serverUrl, headers}` is remote (over SSE when its `type` or `transport` says `sse`), `{command, args, env}`
+/// local; anything else is skipped.
 fn shape(name: String, label: &str, raw: &Value) -> Option<Found> {
     let s = obj(Some(raw));
     let url = ["url", "serverUrl"].iter().find_map(|k| s.get(*k).and_then(Value::as_str).filter(|u| !u.is_empty()));
@@ -225,9 +251,11 @@ fn shape(name: String, label: &str, raw: &Value) -> Option<Found> {
         args: Vec::new(),
         url: String::new(),
         secrets: BTreeMap::new(),
+        sse: false,
     };
     if let Some(url) = url {
-        return Some(Found { url: url.to_owned(), secrets: str_map(s.get("headers")), ..base });
+        let sse = ["type", "transport"].iter().any(|k| s.get(*k).and_then(Value::as_str).is_some_and(|t| t.eq_ignore_ascii_case("sse")));
+        return Some(Found { url: url.to_owned(), secrets: str_map(s.get("headers")), sse, ..base });
     }
     let command = s.get("command").and_then(Value::as_str).filter(|c| !c.is_empty())?;
     let args = s.get("args").and_then(Value::as_array).map(|a| a.iter().map(as_text).collect()).unwrap_or_default();
@@ -262,6 +290,29 @@ pub fn found(sources: &[Source], list: &[Connector]) -> Vec<Found> {
 #[allow(clippy::unwrap_used)]
 mod name_tests {
     use super::*;
+
+    /// An SSE server in a harness's config came in as streamable HTTP (`type` was dropped), so the import broke it.
+    #[test]
+    fn an_sse_server_is_imported_as_sse() {
+        let src = |servers: Value| Source {
+            agent: "claude".into(),
+            label: "Claude Code".into(),
+            servers: serde_json::from_value(servers).unwrap(),
+        };
+        let all = found(
+            &[src(serde_json::json!({
+                "old": { "type": "sse", "url": "https://mcp.example.com/sse" },
+                "also": { "transport": "SSE", "url": "https://b.example.com/sse" },
+                "new": { "type": "http", "url": "https://mcp.example.com/mcp" },
+            }))],
+            &[],
+        );
+        let by = |n: &str| all.iter().find(|f| f.name == n).unwrap();
+        assert!(by("old").sse && by("also").sse && !by("new").sse);
+        assert_eq!(by("old").body().transport.as_deref(), Some("sse"));
+        assert_eq!(by("new").body().transport.as_deref(), Some("remote"));
+        assert_eq!(without_sse(), ["codex"]);
+    }
 
     #[test]
     fn each_harness_is_named_as_its_own_plugin_names_it_qa_r1_28() {

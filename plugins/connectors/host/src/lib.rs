@@ -10,6 +10,8 @@ mod pane;
 
 use wisp_kernel::{Manifest, Plugin, Result, Setup};
 
+pub use crate::pane::ConfigHome;
+
 #[derive(Debug, Default)]
 pub struct ConnectorsPlugin;
 

@@ -39,7 +39,8 @@ pub struct ConnectorBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub name: Option<String>,
-    /// `local` or `remote`; left out: remote when there is a URL
+    /// `local`, `remote` or `sse` (remote over the 2024 SSE transport); left out: remote when there is a URL, and an
+    /// edit keeps what it was (`remote` too: an SSE connector stays one)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub transport: Option<String>,

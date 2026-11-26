@@ -339,7 +339,7 @@ const NAV = [
   ['Changelog', '/changelog.html', 'opt'],
 ];
 
-function page({ path: p, title, description, crumbs = [], body, schema = [], noindex = false, image = '/assets/og.png', imageAlt = 'Wisp Agents: manage the code your agents write', head = '', type = 'website', main = 'doc' }) {
+function page({ path: p, title, description, crumbs = [], body, schema = [], noindex = false, image = '/assets/og.png', imageAlt = 'Wisp Agents: your coding agents, as code', head = '', type = 'website', main = 'doc' }) {
   const url = `${SITE}${p.replace(/index\.html$/, '')}`;
   const trail = [['Wisp Agents', '/'], ...crumbs];
   const breadcrumb = {
@@ -403,7 +403,7 @@ ${crumbs.length ? `<div class="wrap"><nav class="crumbs" aria-label="Breadcrumb"
   <div class="wrap foot-in">
     <div>
       <a class="brand" href="/">${MARK}Wisp Agents</a>
-      <p class="muted small" style="margin-top:10px">Manage the code your agents write.<br />Open source, MIT. Runs on your machines.</p>
+      <p class="muted small" style="margin-top:10px">Your coding agents, as code.<br />Open source, MIT. Runs on your machines.</p>
     </div>
     <div><h2>Product</h2><ul>
       <li><a href="/app.html">Desktop and phone apps</a></li>
@@ -498,8 +498,8 @@ function landing() {
 <div class="wrap">
   <section class="hero" aria-labelledby="hero-h">
     <p class="kicker"><b>Wisp Agents</b> · Open source · MIT</p>
-    <h1 id="hero-h">Manage the code your agents write.</h1>
-    <p class="lede"><b>Declare</b> your coding agents as code. <b>Run</b> them anywhere, many at once. <b>Track</b> every line they write, right next to your code. From the desktop app, your phone or the terminal.</p>
+    <h1 id="hero-h">Your coding agents, as code.</h1>
+    <p class="lede"><b>Declare</b> them. <b>Run</b> them anywhere. <b>Track</b> every line they write. From the desktop app, your phone or the terminal.</p>
     <div class="cta" id="install">
       ${install()}
       <a class="btn primary" href="/app.html" data-dl="hero">${DL_ICON}Get the app</a>
@@ -719,7 +719,7 @@ ${sh('wisp grid serve', 'run a Grid on your own server')}`,
   const homeDesc = 'Wisp Agents is an open-source app, TUI and CLI to run Claude Code, Codex and Cursor in parallel, declare agents as code, and track every line they write.';
   return page({
     path: '/',
-    title: 'Wisp Agents — Manage the code your coding agents write',
+    title: 'Wisp Agents — Your coding agents, as code',
     description: homeDesc,
     body,
     main: '',
@@ -1121,7 +1121,7 @@ function redirectPage(from, to, title) {
 function llmsTxt() {
   return `# Wisp Agents
 
-> Wisp Agents manages the code your agents write: an open-source app, terminal UI and CLI that runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel (each task in its own git worktree, on your own plans), lets you declare agents, crew, machines, skills and MCP servers as code in a repo's .wisp/ folder, and keeps every task next to the code it wrote (wisp blame, wisp resume). Desktop app for macOS, Windows and Linux; phone apps for iPhone and Android on a waitlist; Wisp Agents Cloud and self-hosted Grids for always-on agents.
+> Wisp Agents: your coding agents, as code. An open-source app, terminal UI and CLI that runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel (each task in its own git worktree, on your own plans), lets you declare agents, crew, machines, skills and MCP servers as code in a repo's .wisp/ folder, and keeps every task next to the code it wrote (wisp blame, wisp resume). Desktop app for macOS, Windows and Linux; phone apps for iPhone and Android on a waitlist; Wisp Agents Cloud and self-hosted Grids for always-on agents.
 
 Install: \`npm install -g wisp-agents\` (Node.js 18+), \`brew install --cask wispagents/tap/wisp\` (desktop app), or \`npx wisp-agents\` to try it. Every feature works from the desktop app, the phone app, \`wisp tui\` and the CLI, and from your own agent through \`wisp mcp\`.
 

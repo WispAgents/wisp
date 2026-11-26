@@ -4,10 +4,9 @@
 
 # Wisp Agents
 
-**Manage the code your agents write.**
+**Your coding agents, as code.**
 
-Declare your coding agents as code. Run them anywhere, many at once. Track every line they write, right next to your
-code. From the desktop app, the terminal UI, the command line or your phone.
+Declare them. Run them anywhere, many at once. Track every line they write, right next to your code. From the desktop app, the terminal UI, the command line or your phone.
 
 [![npm](https://img.shields.io/npm/v/wisp-agents?color=cb3837&logo=npm)](https://www.npmjs.com/package/wisp-agents)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6a5cff.svg)](#license)
