@@ -97,6 +97,11 @@ const dist = arg('dist') ?? join(import.meta.dirname, '..', 'apps', 'web', 'dist
 
 const br = (buf: Buffer): number => brotliCompressSync(buf, { params: { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: buf.length } }).length;
 const kb = (n: number): string => `${(n / 1024).toFixed(1)} KB`;
+/** A miss in exact bytes: `kb` rounds to 0.1 KB, so a build 212 B over read "167.0 KB br > 167.0 KB". */
+const by = (got: number, max: number): string => `(+${got - max} B)`;
+
+/** A budget this close (or closer) without a miss is said, not failed: the next change will likely tip it. */
+export const NEAR_BUDGET_B = 512;
 
 export interface Measured {
   /** index.html's own files (its module script, modulepreloads and stylesheets): gated at BUDGETS */
@@ -168,26 +173,52 @@ export function overBudget(
   for (const c of m.lazy) {
     const own = lazy.find((b) => b.pattern.test(c.file));
     const max = own?.brMax ?? lazyMax;
-    if (c.br > max) over.push(`lazy chunk ${own ? `${own.name} ` : ''}${c.file.replace('assets/', '')} ${kb(c.br)} br > ${kb(max)}`);
+    if (c.br > max) over.push(`lazy chunk ${own ? `${own.name} ` : ''}${c.file.replace('assets/', '')} ${kb(c.br)} br > ${kb(max)} ${by(c.br, max)}`);
   }
   const first = new Set([...m.entry.js.files, ...LOOKS.flatMap((look) => m.looks?.[look]?.js.files ?? [])].map((f) => f.replace(/^\//, '')));
   for (const b of lazy) if (b.neverFirst) for (const f of first) if (b.pattern.test(f)) over.push(`${b.name} chunk ${f.replace('assets/', '')} is on the first screen: it loads lazily only`);
-  if (m.entry.js.br > budgets.initialJsBr) over.push(`initial JS ${kb(m.entry.js.br)} br > ${kb(budgets.initialJsBr)}`);
-  if (m.entry.css.br > budgets.initialCssBr) over.push(`initial CSS ${kb(m.entry.css.br)} br > ${kb(budgets.initialCssBr)}`);
+  for (const [name, got, max] of gated(m, budgets, firstScreen)) if (got > max) over.push(`${name} ${kb(got)} br > ${kb(max)} ${by(got, max)}`);
+  return over;
+}
+
+/** Every gated number against its budget: [name, brotli bytes, budget], the entry first, then each measured look. */
+function gated(m: Measured, budgets: { initialJsBr: number; initialCssBr: number }, firstScreen: Readonly<Record<Look, LookBudget>>): [string, number, number][] {
+  const out: [string, number, number][] = [
+    ['initial JS', m.entry.js.br, budgets.initialJsBr],
+    ['initial CSS', m.entry.css.br, budgets.initialCssBr],
+  ];
   for (const look of LOOKS) {
     const x = m.looks?.[look];
     if (!x) continue;
-    const b = firstScreen[look];
-    if (x.js.br > b.jsBr) over.push(`first screen JS (${look}) ${kb(x.js.br)} br > ${kb(b.jsBr)}`);
-    if (x.css.br > b.cssBr) over.push(`first screen CSS (${look}) ${kb(x.css.br)} br > ${kb(b.cssBr)}`);
+    out.push([`first screen JS (${look})`, x.js.br, firstScreen[look].jsBr], [`first screen CSS (${look})`, x.css.br, firstScreen[look].cssBr]);
   }
-  return over;
+  return out;
+}
+
+/** Each budget met with less than NEAR_BUDGET_B to spare, in words: a warning, never a miss (a ratchet that is nearly
+ *  full is the cue to cut before the next change fails CI). */
+export function nearBudget(
+  m: Measured,
+  budgets: { initialJsBr: number; initialCssBr: number } = BUDGETS,
+  firstScreen: Readonly<Record<Look, LookBudget>> = FIRST_SCREEN_BUDGETS,
+  lazy: readonly LazyChunkBudget[] = LAZY_CHUNK_BUDGETS,
+  lazyMax: number = LAZY_CHUNK_MAX_BR,
+): string[] {
+  const near = (got: number, max: number): boolean => got <= max && max - got <= NEAR_BUDGET_B;
+  const out: string[] = [];
+  for (const [name, got, max] of gated(m, budgets, firstScreen)) if (near(got, max)) out.push(`${name} ${kb(got)} br is ${max - got} B under its ${kb(max)} budget`);
+  for (const c of m.lazy) {
+    const own = lazy.find((b) => b.pattern.test(c.file));
+    const max = own?.brMax ?? lazyMax;
+    if (near(c.br, max)) out.push(`lazy chunk ${own ? `${own.name} ` : ''}${c.file.replace('assets/', '')} ${kb(c.br)} br is ${max - c.br} B under its ${kb(max)} ceiling`);
+  }
+  return out;
 }
 
 /** The job summary: every gated number against its budget, then the largest lazy chunks (markdown). */
 export function summary(m: Measured, budgets: { initialJsBr: number; initialCssBr: number } = BUDGETS, firstScreen: Readonly<Record<Look, LookBudget>> = FIRST_SCREEN_BUDGETS, top = 10): string {
   const row = (name: string, got: { br: number; raw: number; files: string[] }, max: number): string =>
-    `| ${name} | ${kb(got.br)} | ${kb(max)} | ${kb(got.raw)} | ${got.files.length} | ${got.br > max ? `❌ over by ${kb(got.br - max)}` : '✅'} |`;
+    `| ${name} | ${kb(got.br)} | ${kb(max)} | ${kb(got.raw)} | ${got.files.length} | ${got.br > max ? `❌ over by ${kb(got.br - max)} ${by(got.br, max)}` : max - got.br <= NEAR_BUDGET_B ? `⚠️ ${max - got.br} B under` : '✅'} |`;
   const lazy = (list: { file: string; br: number }[]): string =>
     list.length === 0 ? 'none' : list.slice(0, top).map((l) => `\`${l.file.replace('assets/', '')}\` ${kb(l.br)}`).join(', ');
   return [
@@ -234,7 +265,7 @@ async function main(): Promise<void> {
   const to = arg('summary') ?? process.env['GITHUB_STEP_SUMMARY'];
   if (to) appendFileSync(to, summary(m));
   if (process.argv.includes('--json')) {
-    console.log(JSON.stringify({ ...m, budgets: BUDGETS, firstScreenBudgets: FIRST_SCREEN_BUDGETS, over }, null, 2));
+    console.log(JSON.stringify({ ...m, budgets: BUDGETS, firstScreenBudgets: FIRST_SCREEN_BUDGETS, over, near: nearBudget(m) }, null, 2));
   } else {
     const line = (name: string, x: { br: number; raw: number; files: string[] }, max: number): void =>
       console.log(`${name.padEnd(28)} ${kb(x.br).padStart(9)} br  (${kb(x.raw)} raw, ${x.files.length} files)  budget ${kb(max)}`);
@@ -250,6 +281,7 @@ async function main(): Promise<void> {
     console.log(`lazy CSS     ${m.lazyCss.length}, largest: ${m.lazyCss.slice(0, 5).map((l) => `${l.file.replace('assets/', '')} ${kb(l.br)}`).join(', ') || 'none'}`);
     // a GitHub annotation on the run as well as the log line
     for (const o of over) console.error(`${process.env['GITHUB_ACTIONS'] ? '::error title=Bundle budget::' : ''}OVER BUDGET: ${o}`);
+    for (const n of nearBudget(m)) console.error(`${process.env['GITHUB_ACTIONS'] ? '::warning title=Bundle budget::' : ''}NEAR BUDGET: ${n}`);
   }
   process.exitCode = over.length > 0 ? 1 : 0;
 }

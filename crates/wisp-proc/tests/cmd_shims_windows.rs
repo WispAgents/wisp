@@ -2,8 +2,8 @@
 //! `terminal_command` (`wisp open`'s harness, `$EDITOR`), found without its extension by PATHEXT, with a prompt full
 //! of cmd metacharacters arriving as text and never running a command. Every wait has a deadline ([`LIMIT`]): a start that
 //! never ends fails the test instead of hanging the suite.
-#![cfg(windows)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "a test: failing loudly is the point")]
+#![cfg(windows)]
 
 use std::path::PathBuf;
 use std::process::Stdio;

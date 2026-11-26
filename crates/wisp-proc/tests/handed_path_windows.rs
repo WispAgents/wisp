@@ -1,8 +1,8 @@
 //! ADR-0057 on Windows: the environment spells it `Path`, and the desktop app never hands one over there, so
 //! `set_path` is a no-op: a handed `PATH` would be a second variable beside `Path`. Its own test binary, since the
 //! PATH is the process's.
-#![cfg(windows)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "a test: failing loudly is the point")]
+#![cfg(windows)]
 
 #[test]
 fn set_path_is_a_no_op_on_windows_so_no_second_path_variable_appears() {

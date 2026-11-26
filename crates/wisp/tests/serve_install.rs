@@ -1,10 +1,10 @@
 //! `accounts.install` on a computer without Node (owner, 2026-11-25: 68 of 72 alpha installs started with no harness
 //! and none of them ran a task): with no npm, wisp downloads opencode's own platform package from the npm registry
 //! (here a fake one), checks its sha512, unpacks the binary into its tools folder and finds it there. Every outcome
-//! reaches PostHog's `harness_install` with how and, on a failure, why (v1 only counted npm's successes).
+//! reaches `PostHog`'s `harness_install` with how and, on a failure, why (v1 only counted npm's successes).
 //! Unix only: the fake binary is a shell script (Windows' would be an `.exe`).
-#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::doc_markdown, clippy::type_complexity)]
+#![cfg(unix)]
 
 mod common;
 

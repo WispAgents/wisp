@@ -67,7 +67,11 @@ jobs:
         with:
           toolchain: 1.100.0
           components: clippy, rustfmt
+      # one cache per Node leg: with a shared key the legs race to save it and the loser logs "Unable to reserve
+      # cache", and only the first Node's leg builds target/budgets (server budgets below), so its cache keeps them
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: node${{ matrix.node }}
 
       - id: install
         run: npm ci --no-audit --no-fund

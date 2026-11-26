@@ -1,0 +1,26 @@
+A crate-level #![cfg] above a test file's #![allow] fails (the allow is stripped where the cfg is false); allow first passes, src files are not read.
+=== Cargo.toml
+[workspace]
+members = ["crates/*"]
+=== crates/a/Cargo.toml
+[package]
+name = "a"
+=== crates/a/tests/bad.rs
+//! Talks to PostHog's API.
+#![cfg(unix)]
+#![allow(clippy::unwrap_used, clippy::doc_markdown, reason = "a test")]
+#![expect(clippy::panic)]
+
+#[test]
+fn t() {}
+=== crates/a/tests/good.rs
+//! Talks to `PostHog`'s API.
+// #![cfg(unix)] in a comment is not an attribute
+#![allow(clippy::unwrap_used, clippy::doc_markdown, reason = "a test")]
+#![cfg(unix)]
+
+#[test]
+fn t() {}
+=== crates/a/src/lib.rs
+#![cfg(unix)]
+#![allow(clippy::unwrap_used)]
