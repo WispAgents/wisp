@@ -352,6 +352,19 @@ async fn fake_cli(mut io: SimIo) -> Exit {
         }
         return Exit { code: Some(0), signal: None };
     }
+    // `devserver…`: it starts a dev server in the background, answers in prose with it still up, and stays (the CLI
+    // keeps running while its background task does) until it is killed
+    if prompt.starts_with("devserver") {
+        for l in [
+            json!({"type":"session","id":"conv-1"}),
+            json!({"type":"background","tasks":["npm run dev"]}),
+            json!({"type":"result","text":"The dev server is up on http://localhost:3000.","isError":false,"background":1}),
+        ] {
+            io.print(format!("{l}\n").as_bytes()).await;
+        }
+        io.killed.cancelled().await;
+        return Exit { code: None, signal: Some("SIGTERM".into()) };
+    }
     // a /btw's prompt is its rules and the task so far, then its question (v1 btwPrompt): the question is what it asks
     let asked = prompt.rsplit_once("## Side question\n\n").map_or(prompt.as_str(), |(_, q)| q);
     if prompt.starts_with("hang") || asked.starts_with("hang") {
@@ -448,6 +461,17 @@ pub async fn rig_clocked(clock: Arc<wisp_store::ManualClock>) -> Rig {
     let sim = SimProc::new().program("fake", fake_cli);
     let host = Arc::new(Recorder { harnesses: vec![Fake::harness()], ..Recorder::default() });
     let rt = Runtime::new(Repo::new(store.clone()), host.clone(), Arc::new(sim.clone()), Arc::new(SystemClock));
+    rt.start().await.unwrap();
+    Rig { rt, host, store, sim }
+}
+
+/// A rig whose runtime runs on `clock` (a test's `FakeClock`: deadlines, an ask's timeout); its store's clock is real.
+pub async fn rig_timed(host: Recorder, clock: Arc<dyn wisp_kernel::Clock>) -> Rig {
+    let store = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
+    schema::install(&store).unwrap();
+    let sim = SimProc::new().program("fake", fake_cli);
+    let host = Arc::new(Recorder { harnesses: vec![Fake::harness()], ..host });
+    let rt = Runtime::new(Repo::new(store.clone()), host.clone(), Arc::new(sim.clone()), clock);
     rt.start().await.unwrap();
     Rig { rt, host, store, sim }
 }

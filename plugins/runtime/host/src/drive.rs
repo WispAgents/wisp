@@ -36,9 +36,19 @@ pub const ACTIVITY_WINDOW_MS: u64 = 100;
 /// once, then the latest one a second (each is a write of the task's row, so never once per step).
 const ROW_EVERY: Duration = Duration::from_secs(1);
 
+/// The turn a drive runs, and how it was asked to answer.
+pub(crate) struct Driven {
+    pub sid: String,
+    pub tid: String,
+    /// the run was asked for prose (wisp blocks off, or Chat mode): a prose answer is its whole answer, never a
+    /// fallback that waits on the background tasks it left up
+    pub prose: bool,
+}
+
 pub(crate) struct Drive {
     pub sid: String,
     pub tid: String,
+    prose: bool,
     pub head: Head,
     pub seq: u64,
     pub coal: Coalescer,
@@ -75,13 +85,13 @@ fn take_lines(buf: &mut Vec<u8>, data: &[u8], last: bool) -> Vec<String> {
 impl Runtime {
     pub(crate) async fn drive(
         self: Arc<Self>,
-        sid: String,
-        tid: String,
+        run: Driven,
         mut driver: Box<dyn RunDriver>,
         handle: ChildHandle,
         mut rx: mpsc::Receiver<Output>,
         mut ctl: mpsc::UnboundedReceiver<Ctl>,
     ) {
+        let Driven { sid, tid, prose } = run;
         let sys = ProcSys::new(self.proc.clone());
         let seq = self.repo.next_seq(&sid).await.unwrap_or(1);
         // the .env values the task's earlier turns read (ADR-0050); a store that can't say is read again next turn
@@ -92,6 +102,7 @@ impl Runtime {
         let mut d = Drive {
             sid,
             tid,
+            prose,
             head: Head::seeded(known),
             seq,
             coal: self.coalescer(),
@@ -105,7 +116,11 @@ impl Runtime {
             row_at: Instant::now(),
         };
         let mut linger: Option<Instant> = None;
+        // when a turn that waits only on a background shell gives up on it (the kernel's clock, `BACKGROUND_QUIET_MS`
+        // after the CLI's last output): its answer is the one it gave, and the queue behind it goes on
+        let mut quiet_until: Option<i64> = None;
         loop {
+            let quiet_ms = quiet_until.map_or(0, |at| u64::try_from(at - self.now()).unwrap_or(0));
             tokio::select! {
                 o = rx.recv() => match o {
                     Some(o) => {
@@ -121,9 +136,20 @@ impl Runtime {
                                 linger = Some(Instant::now() + LINGER);
                             }
                         }
+                        quiet_until = (!d.finished && d.head.waits_on_shell()).then(|| self.now() + activity::BACKGROUND_QUIET_MS);
                     }
                     None => break,
                 },
+                () = self.clock.sleep(quiet_ms), if quiet_until.is_some() => {
+                    quiet_until = None;
+                    if !d.finished && d.head.waits_on_shell() {
+                        tracing::info!(task = %d.sid, "runtime: nothing new while it waited on its background task: the turn ends with its answer");
+                        let effect = activity::exit_without_result(&mut d.head);
+                        self.publish(&mut d, true);
+                        self.finish(&mut d, effect).await;
+                        linger.get_or_insert_with(|| Instant::now() + LINGER);
+                    }
+                }
                 c = ctl.recv() => match c {
                     Some(Ctl::Stop | Ctl::Interrupt) => {
                         let out = self.feed(&mut *driver, ParserInput::Stop, &sys).await;
@@ -227,7 +253,7 @@ impl Runtime {
             if d.finished {
                 break;
             }
-            match activity::apply(&mut d.head, ev, false, &fallback) {
+            match activity::apply(&mut d.head, ev, d.prose, &fallback) {
                 Effect::Append(a) => {
                     // a tool's result is something to read now (and the next step waits on it): no window
                     now |= matches!(a, Activity::ToolOutput { .. } | Activity::ToolError { .. } | Activity::Tool { output: Some(_), .. });

@@ -8,6 +8,12 @@ use serde_json::Value;
 use wisp_runtime_api::harness::{HarnessEvent, HarnessStats};
 use wisp_runtime_api::model::{Activity, ChangeOp, Edit, FileChange, Mode, ToolKind};
 
+/// How long a turn waits on a background shell (a dev server, a watcher) with nothing new from its CLI before it ends
+/// with the answer it already gave (`Head::interim`): an answer that said "I'll report once it's done" over a task that
+/// never ends held its turn, and the follow-ups queued behind it, for good. Never while its subagents work (their
+/// reports come back into the run).
+pub const BACKGROUND_QUIET_MS: i64 = 30 * 60_000;
+
 /// An agent message is kept whole up to this (UTF-16 units, as v1 counted).
 pub const MAX_TEXT: usize = 20_000;
 /// A tool call's output: its start and end past this.
@@ -118,6 +124,8 @@ pub struct Head {
     pub background: Vec<String>,
     /// a result that left background tasks running: the best we have if nothing follows
     pub interim: Option<(String, Option<HarnessStats>)>,
+    /// that result's run still has subagents at work (their reports come back into it), not only a background shell
+    pub interim_agents: bool,
     pub tools: Option<Vec<Value>>,
     pub cli: Option<Value>,
     /// the calls that read a .env file: their `tool_output` is flagged `env` (ADR-0050)
@@ -129,6 +137,13 @@ pub struct Head {
 }
 
 impl Head {
+    /// The turn waits only on a background shell it left up (a dev server), not on its subagents: after
+    /// [`BACKGROUND_QUIET_MS`] with nothing new from its CLI it ends with the answer it gave.
+    #[must_use]
+    pub fn waits_on_shell(&self) -> bool {
+        self.interim.is_some() && !self.interim_agents
+    }
+
     /// A turn's head that already knows the .env values its task's earlier turns read (ADR-0050): a value read in
     /// one turn and quoted in a later one is flagged too.
     #[must_use]
@@ -314,7 +329,7 @@ fn flag_quotes(head: &mut Head, ev: &HarnessEvent, mut a: Activity) -> Activity 
 }
 
 /// Applies one event to the head and says what else to do. `plain`: the turn asked for a plain answer
-/// (wisp blocks off); `is_fallback`: whether a text is an answer that broke the protocol (the block
+/// (wisp blocks off, or Chat mode: no end-of-turn report), so its prose is the whole answer; `is_fallback`: whether a text is an answer that broke the protocol (the block
 /// parser's `fallback`), passed in so this module stays independent of it.
 pub fn apply(head: &mut Head, ev: &HarnessEvent, plain: bool, is_fallback: &dyn Fn(&str) -> bool) -> Effect {
     match ev {
@@ -374,16 +389,19 @@ pub fn apply(head: &mut Head, ev: &HarnessEvent, plain: bool, is_fallback: &dyn 
             // and the answer after them ends the turn (v1 #775: a goal is checked on that one, not this).
             if background_agents.unwrap_or(0) > 0 && !*is_error && !*stopped {
                 head.interim = Some((text.clone(), stats.clone()));
+                head.interim_agents = true;
                 return Effect::Waiting(waiting_step(&head.background));
             }
             // It ended its turn in plain text with background tasks still running ("I'll report once it's
             // done"): the CLI wakes it when they finish. A full presentation is a finished task that left
-            // something up (a dev server).
+            // something up (a dev server), and so is any answer of a plain or Chat mode turn: prose is all it gives.
             if background.unwrap_or(0) > 0 && !*is_error && !plain && is_fallback(text) {
                 head.interim = Some((text.clone(), stats.clone()));
+                head.interim_agents = false;
                 return Effect::Waiting(waiting_step(&head.background));
             }
             head.interim = None;
+            head.interim_agents = false;
             return Effect::Finish {
                 text: text.clone(),
                 is_error: *is_error,
