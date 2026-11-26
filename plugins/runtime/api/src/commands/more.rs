@@ -175,7 +175,7 @@ pub struct UnmaskedArgs {
     pub file: Option<String>,
 }
 
-/// Find in a task (R4-3, ADR-0133): the steps of its turns that hold `query` (case-insensitive), searched on the
+/// Find in a task: the steps of its turns that hold `query` (case-insensitive), searched on the
 /// server for the turns the window sends as stubs, with no events. `turnIds`: those turns (default: every turn older
 /// than the window's latest). A .env value is masked before it is matched, as the wire masks it. Additive (2026-11-26).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
