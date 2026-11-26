@@ -10,8 +10,8 @@
 //! Nothing here may block for ever (CI 8bb8ccd0 hung 26 minutes on this test): the server's lines are read on a thread
 //! of their own and waited for with a deadline, every wait for an exit polls with one, and the server ends itself
 //! after [`SERVER_LIFE`] whoever forgets it. A failure says what the server printed.
-#![cfg(windows)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "a test: failing loudly is the point")]
+#![cfg(windows)]
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::windows::process::CommandExt as _;
