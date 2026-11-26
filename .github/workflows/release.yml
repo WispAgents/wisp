@@ -93,8 +93,14 @@ permissions:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    # the main gate below waits up to 90 min for main's run on the commit
+    timeout-minutes: 100
+    permissions:
+      contents: read
+      actions: read # gh run list: main's run on this commit
     outputs:
-      go: ${{ steps.nightly.outputs.go || steps.stable.outputs.go }}
+      # the gate's go, when it ran, overrides the stable plan's (a 'false' string is truthy here)
+      go: ${{ steps.nightly.outputs.go || steps.gate.outputs.go || steps.stable.outputs.go }}
       version: ${{ steps.nightly.outputs.version || steps.stable.outputs.version }}
       npm: ${{ steps.nightly.outputs.npm || steps.stable.outputs.npm }}
       prerelease: ${{ steps.nightly.outputs.prerelease || steps.stable.outputs.prerelease }}
@@ -183,6 +189,41 @@ jobs:
         run: |
           echo "tag=$(node npm/scripts/release.mjs npm-tag "$VERSION" "$CHANNEL")" | tee -a "$GITHUB_OUTPUT"
           echo "extra=$(node npm/scripts/release.mjs extra-tags "$VERSION" "$CHANNEL")" | tee -a "$GITHUB_OUTPUT"
+      # A version bump merged to main ships only once main's own run (every OS, main.yml) passed on that commit: the
+      # PR run is Linux only, so a Windows or macOS break would otherwise go out on npm `latest`. Both start on the
+      # same push, so this waits for it (up to WAIT_MIN). Failed, cancelled or still running at the deadline: no
+      # release. Running release by hand (workflow_dispatch) is the deliberate override and skips this.
+      - id: gate
+        name: main passed on this commit
+        if: github.event_name == 'push' && steps.stable.outputs.go == 'true' && steps.stable.outputs.dry != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WAIT_MIN: 90
+          EVERY_S: 60
+        run: |
+          go=false status='' conclusion='' url=''
+          tries=$(( WAIT_MIN * 60 / EVERY_S ))
+          for i in $(seq 1 "$tries"); do
+            # "-" stands for an empty field (no run yet, no conclusion while it runs), so read splits it right
+            line=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow main.yml --commit "$GITHUB_SHA" --event push --limit 1 \
+              --json status,conclusion,url -q '.[0] // {} | [.status, .conclusion, .url] | map(if . == null or . == "" then "-" else . end) | join(" ")' 2>/dev/null || true)
+            read -r status conclusion url <<< "${line:-- - -}"
+            if [ "$status" = completed ]; then
+              if [ "$conclusion" = success ]; then
+                echo "main passed on $GITHUB_SHA: $url"
+                go=true
+              else
+                echo "::error::main didn't pass on $GITHUB_SHA ($conclusion): $url. No release: fix main, or run release by hand to ship it anyway."
+              fi
+              break
+            fi
+            echo "main on $GITHUB_SHA: ${status/#-/not started} ($i/$tries)"
+            if [ "$i" -lt "$tries" ]; then sleep "$EVERY_S"; fi
+          done
+          if [ "$status" != completed ]; then
+            echo "::error::main hasn't finished on $GITHUB_SHA after $WAIT_MIN min (${url/#-/no run yet}). No release: run release by hand once it passes."
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
 
   # `wisp` for every target the launcher knows (npm/wisp-agents/lib/resolve.js TARGETS), on the runner
   # release.mjs picks: Mac and Windows natively, Linux static musl for every arch through cargo-zigbuild.

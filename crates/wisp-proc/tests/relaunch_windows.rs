@@ -8,8 +8,8 @@
 //! nursery of its own (in a job, but not its nursery: the case that went wrong), starts the helper with
 //! `spawn_detached`, prints its pid and exits; the shell passes the pid on and exits, closing its job. The helper must
 //! still be running. Every wait has a deadline and the helper is killed at the end whatever happens.
-#![cfg(windows)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "a test: failing loudly is the point")]
+#![cfg(windows)]
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::process::{Child, Command, Stdio};
