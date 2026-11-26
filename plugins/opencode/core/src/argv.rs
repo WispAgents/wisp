@@ -188,6 +188,18 @@ mod tests {
         assert_eq!(capped["permission"]["webfetch"], "ask");
     }
 
+    /// ADR-0128: the run's browser (runtime.browser on) is the runtime's `browser` stdio server, which reaches opencode in its inline config.
+    #[test]
+    fn the_browser_server_goes_in_the_inline_config() {
+        let m = BTreeMap::from([(
+            "browser".to_owned(),
+            json!({ "type": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp@0.0.86", "--headless", "--isolated"] }),
+        )]);
+        let c: Value = serde_json::from_str(&config(None, &m, &[], "edits", false, false).unwrap_or_default()).unwrap_or_default();
+        assert_eq!(c["mcp"]["browser"]["type"], "local");
+        assert_eq!(c["mcp"]["browser"]["command"], json!(["npx", "-y", "@playwright/mcp@0.0.86", "--headless", "--isolated"]));
+    }
+
     #[test]
     fn a_delegating_run_turns_task_off_with_nothing_else_to_add() {
         let c = config(None, &BTreeMap::new(), &[], "edits", true, false).expect("a config: its own subagents are off");

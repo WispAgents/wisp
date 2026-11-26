@@ -3,6 +3,7 @@
 
 use std::collections::BTreeSet;
 
+use wisp_runtime_api::harness::browser::Browser;
 use wisp_runtime_api::harness::{HarnessRun, Launch, LaunchFile, MCP_CONFIG_FILE, Stdin};
 use wisp_runtime_api::model::{Attachment, Mode};
 
@@ -34,6 +35,9 @@ pub const ENV_REMOVE: [&str; 10] = [
 ];
 const SUBAGENT_MODELS: [&str; 2] = ["haiku", "sonnet"];
 pub const APPROVE_TOOL: &str = "mcp__wisp__approve";
+/// Claude in Chrome's tools (`--chrome`): allowed with the rest of the run's MCP servers, or in Edits every navigate,
+/// click and screenshot would wait on wisp's approval card.
+pub const CHROME_TOOLS: &str = "mcp__claude-in-chrome";
 /// Plan that runs commands (`HarnessRun::plan_commands`, v1 #794): Claude Code's own plan mode refuses any command
 /// with a side effect, so the run goes without prompts and only these file-editing tools are off (v1 `EDIT_TOOLS`).
 pub const EDIT_TOOLS: [&str; 4] = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
@@ -120,6 +124,21 @@ fn resume(run: &HarnessRun, args: &mut Vec<String>) {
     }
 }
 
+/// Claude in Chrome turns itself on only in interactive sessions; `-p` needs `--chrome` (v1 claude.js). A headless or a
+/// sandbox's browser is the run's `browser` MCP server instead (ADR-0128); a lean side run has no tools at all. The
+/// runtime never hands a sandbox's run Chrome: a sandbox has no Chrome of the user's. True: Claude in Chrome is on.
+fn chrome_flag(run: &HarnessRun, args: &mut Vec<String>) -> bool {
+    if run.lean {
+        return false;
+    }
+    match run.browser {
+        Browser::Chrome => args.push("--chrome".into()),
+        Browser::Off => args.push("--no-chrome".into()),
+        Browser::Default | Browser::Headless | Browser::Sandbox => {}
+    }
+    run.browser == Browser::Chrome
+}
+
 /// The launch for `run`, with `bin` the program to start.
 pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
     // Plan that runs commands: a task you started (the runtime says), never past a side discussion's gate
@@ -147,6 +166,7 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
     } else if run.untrusted {
         args.extend(UNTRUSTED.iter().map(|s| (*s).to_owned()));
     }
+    let chrome = chrome_flag(run, &mut args);
     let compact = run.prompt.trim().strip_prefix("/compact").is_some_and(|r| r.is_empty() || r.starts_with(char::is_whitespace));
     if run.skills == "off" && !run.lean && !compact {
         args.push("--disable-slash-commands".into());
@@ -172,7 +192,14 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         args.push(APPROVE_TOOL.into());
     }
     let free = SIDE_FREE.iter().filter(|_| run.gate && run.side).map(|t| (*t).to_owned());
-    let allowed: Vec<String> = run.mcp_servers.keys().map(|n| format!("mcp__{n}")).chain(run.grants.iter().cloned()).chain(free).collect();
+    let allowed: Vec<String> = run
+        .mcp_servers
+        .keys()
+        .map(|n| format!("mcp__{n}"))
+        .chain(chrome.then(|| CHROME_TOOLS.to_owned()))
+        .chain(run.grants.iter().cloned())
+        .chain(free)
+        .collect();
     if !allowed.is_empty() {
         args.push("--allowedTools".into());
         args.extend(allowed);
@@ -403,6 +430,65 @@ mod tests {
         assert_eq!(flag(&edits, "--permission-mode"), "acceptEdits", "only Plan");
         assert!(!edits.iter().any(|x| x == "--disallowedTools"));
         assert!(!flag(&edits, "--append-system-prompt").contains("# Plan mode"));
+    }
+
+    fn mcp_config(l: &Launch) -> serde_json::Value {
+        l.files.iter().find(|f| f.path == MCP_CONFIG_FILE).map(|f| serde_json::from_str(&f.contents).unwrap()).unwrap_or_default()
+    }
+
+    /// ADR-0128: `runtime.browser` reaches Claude Code. Chrome is Claude in Chrome (`--chrome`, which `-p` needs), off says
+    /// `--no-chrome`, and headless takes neither: its browser is the run's `browser` MCP server. Unset says nothing (the
+    /// host resolves it from the user's `/chrome` choice first), and a lean side run has no tools at all.
+    #[test]
+    fn the_browser_setting_is_chrome_by_flag_or_the_browser_mcp_server() {
+        let with = |b: Browser| HarnessRun { browser: b, ..run() };
+        let a = launch(&with(Browser::Chrome), "claude").args;
+        assert!(a.iter().any(|x| x == "--chrome") && !a.iter().any(|x| x == "--no-chrome"), "{a:?}");
+        let a = launch(&with(Browser::Off), "claude").args;
+        assert!(a.iter().any(|x| x == "--no-chrome") && !a.iter().any(|x| x == "--chrome"), "{a:?}");
+        let a = launch(&with(Browser::Default), "claude").args;
+        assert!(!a.iter().any(|x| x == "--chrome" || x == "--no-chrome"), "{a:?}");
+        let mut h = with(Browser::Headless);
+        let server = wisp_runtime_api::harness::browser::mcp_server(Browser::Headless, true, None, false).unwrap();
+        h.mcp_servers.insert("browser".into(), server);
+        let l = launch(&h, "claude");
+        assert!(!l.args.iter().any(|x| x == "--chrome" || x == "--no-chrome"), "{:?}", l.args);
+        assert_eq!(mcp_config(&l)["mcpServers"]["browser"]["command"], "npx", "the browser server in the run's MCP file");
+        assert!(after(&l.args, "--allowedTools").iter().any(|x| x == "mcp__browser"), "its tools run without a card");
+        let lean = launch(&HarnessRun { lean: true, ..with(Browser::Chrome) }, "claude").args;
+        assert!(!lean.iter().any(|x| x == "--chrome"));
+    }
+
+    /// Audit browser-chrome-tools-each-need-approval: in Edits, Claude in Chrome's tools are allowed with the run's other
+    /// MCP servers, so a navigate, a click or a screenshot never waits on wisp's card; everything else still asks.
+    #[test]
+    fn in_edits_claude_in_chrome_is_allowed_and_the_rest_still_asks_wisp() {
+        let mut r = HarnessRun { mode: Mode::Edits, browser: Browser::Chrome, ..run() };
+        r.mcp_servers.insert("wisp".into(), serde_json::json!({ "type": "http", "url": "http://x/api/mcp" }));
+        let a = launch(&r, "claude").args;
+        let allowed = after(&a, "--allowedTools");
+        assert!(allowed.iter().any(|x| x == CHROME_TOOLS), "{allowed:?}");
+        assert_eq!(flag(&a, "--permission-prompt-tool"), APPROVE_TOOL);
+        for b in [Browser::Off, Browser::Default] {
+            let a = launch(&HarnessRun { browser: b, ..r.clone() }, "claude").args;
+            let allowed = after(&a, "--allowedTools");
+            assert!(!allowed.iter().any(|x| x == CHROME_TOOLS || x == "mcp__browser"), "{b:?}: {allowed:?}");
+        }
+    }
+
+    /// In a sandbox the Chrome setting is the box's browser: no `--chrome` (there's no Chrome of the user's there), and
+    /// the `browser` MCP server on the box's `wisp-browser-mcp`.
+    #[test]
+    fn in_a_sandbox_chrome_is_the_boxs_browser_not_claude_in_chrome() {
+        use wisp_runtime_api::harness::browser::{BrowserSupport, mcp_server, resolve};
+        let can = BrowserSupport { mcp: true, own_chrome: true, sandbox: true };
+        let b = resolve(Browser::Chrome, can);
+        let mut r = HarnessRun { browser: b, ..run() };
+        r.mcp_servers.insert("browser".into(), mcp_server(b, true, Some("/usr/local/bin/wisp-browser-mcp"), false).unwrap());
+        let l = launch(&r, "claude");
+        assert!(!l.args.iter().any(|x| x == "--chrome"), "{:?}", l.args);
+        assert_eq!(mcp_config(&l)["mcpServers"]["browser"]["command"], "/usr/local/bin/wisp-browser-mcp");
+        assert!(!after(&l.args, "--allowedTools").iter().any(|x| x == CHROME_TOOLS));
     }
 
     /// v1 lean.js `LEAN_ENV`: a quiet run goes without Claude Code's nonessential traffic.

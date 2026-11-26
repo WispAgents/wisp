@@ -446,6 +446,8 @@
       { "key": "runtime.apps", "type": "bool", "default": true, "title": "Interactive answers: agents may answer with a small app" },
       { "key": "runtime.watch", "type": "bool", "default": true, "title": "Watch agents work: agents may open what they built in wisp's browser to check it" },
       { "key": "runtime.blocks", "type": "bool", "default": true, "title": "wisp blocks: answers come as cards (off: plain markdown)" },
+      { "key": "runtime.browser", "type": "enum", "values": ["default", "off", "chrome", "headless"], "default": "default", "title": "The browser agents drive (ADR-0128): default, Claude Code follows its /chrome choice and the others have none; chrome, your own Chrome (Claude in Chrome on Claude Code); headless, Playwright's own browser, hidden. In a sandbox, anything but off is its browser" },
+      { "key": "runtime.browsers", "type": "json", "default": {}, "title": "One harness's own browser, over runtime.browser: { <harness>: off | chrome | headless }" },
       { "key": "runtime.subagentModel", "type": "enum", "values": ["task", "haiku", "sonnet"], "default": "task", "title": "The model Claude Code's subagents run on (task: the task's own)" },
       { "key": "runtime.projectOrder", "type": "json", "default": [], "title": "Your project order (names): the chips, New task's row and the Projects list show them so; drag to change it" },
       { "key": "runtime.subagents", "type": "json", "default": [], "title": "The team new tasks start with: [{ name, agent, model?, effort?, use? }] (New task pre-fills it; a task's own team wins)" },
