@@ -1,0 +1,22 @@
+/* Find in a task (FindBar, R4-3): one line held at the top of the turns as they scroll, and the marks on what it
+   found (the CSS Custom Highlight API: nothing in the page is rewritten; a ring on the step where it is missing). */
+@layer kit {
+  [data-kit='find-bar'] {
+    position: sticky; top: var(--space-3); z-index: var(--z-raised); display: flex; align-items: center; gap: var(--space-2);
+    width: min(100%, calc(var(--size-hover-max) * 3 / 2)); margin: 0 0 var(--space-4) auto; padding: 0 var(--space-2) 0 var(--space-4);
+    height: var(--size-control-md); border: var(--size-hairline) solid var(--line-2); border-radius: var(--radius-control);
+    background: var(--surface); box-shadow: var(--shadow-2); color: var(--faint);
+  }
+  [data-kit='find-bar']:focus-within { border-color: var(--accent); }
+  [data-kit='find-bar'] input {
+    flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: none; font: inherit; font-size: var(--fs-md); color: var(--ink);
+  }
+  [data-kit='find-bar'] input::-webkit-search-cancel-button { display: none; }
+  [data-kit='find-count'] { flex: none; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  [data-kit='find-count'][data-busy] { opacity: 0.6; }
+
+  ::highlight(wisp-find) { background-color: color-mix(in srgb, var(--warn) 22%, transparent); }
+  ::highlight(wisp-find-current) { background-color: color-mix(in srgb, var(--warn) 55%, transparent); color: var(--ink); }
+  /* no Highlight API: the hit's step is ringed instead */
+  [data-find] { outline: var(--size-ring) solid var(--accent); outline-offset: var(--size-hairline); border-radius: var(--radius-sm); }
+}

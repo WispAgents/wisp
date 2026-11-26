@@ -3,11 +3,12 @@
 // already its label, what it printed or the error in full behind a chevron), the agent's messages as prose, and
 // where the turn ended. The answer follows it (TaskView). What a step printed of a .env file (`cat .env`) reads
 // KEY=•••• under v1's Reveal line (env-reveal.ts keeps what's shown, per task).
-import { Index, Show, createMemo, createSignal, type JSX } from 'solid-js';
+import { Index, Show, createEffect, createMemo, createSignal, type JSX } from 'solid-js';
 import { Answer, Button, EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineGroup, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type BlockContext, type EnvReveal, type IconName } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { parseInlineChatBlocks } from './chat-blocks.ts';
 import { changeFigures } from './rows-view.ts';
+import { stepIdOf, stepOpen, type StepOpen } from './step-open.ts';
 import { clusterLabel, groupFinishedSteps, type ClusterCounts } from './transcript-group.ts';
 import '../i18n/lazy.ts';
 
@@ -33,6 +34,8 @@ export interface TranscriptStepRow {
   readonly file?: string;
   /** the event (its per-session seq) that carried `out`: what Reveal asks the server for */
   readonly seq?: number;
+  /** a tool's own event, when `seq` is its separate output's or it has none: what Find's server hit may name */
+  readonly at?: number;
   /** `out` is the start and end of a longer output the server keeps whole: Show all asks for it (`runtime.fullOutput`) */
   readonly full?: { readonly lines: number };
 }
@@ -96,15 +99,17 @@ function Step(props: {
   readonly figures: FileFigures;
   readonly here: (s: string) => string;
   readonly env: EnvReveal | undefined;
+  readonly open: StepOpen;
   readonly whole: WholeOutput | undefined;
   readonly t: ShellContext['t'];
 }): JSX.Element {
-  const [open, setOpen] = createSignal(false);
-  // a clipped output's whole text, fetched only when Show all is pressed (audit F8), kept for the step it was asked of
-  const [whole, setWhole] = createSignal<{ readonly seq: number; readonly text: string }>();
-  const wholeText = (): string | undefined => (whole()?.seq === props.a.seq ? whole()?.text : undefined);
+  // a clipped output's whole text, fetched only when Show all is pressed (audit F8), kept by the turn for the step it
+  // was asked of (step-open.ts): the finished transcript keeps what the live one fetched, Find and Copy read it
+  const wholeText = (): string | undefined => (props.a.seq !== undefined && !out()?.env ? props.open.whole(props.a.seq) : undefined);
   // Read props.a and props.figures reactively: <Index> keeps this Step mounted while live tool_output/changes arrive.
-  const id = (): string => (props.a.seq !== undefined ? `step:${props.a.seq}` : `index:${props.index}`);
+  // Open is the turn's (step-open.ts), by this id: a Step under <Index> is a place, and the step in it can change.
+  const id = (): string => stepIdOf(props.a, props.index);
+  const open = (): boolean => props.open.isOpen(id());
   const shown = (): boolean => props.env?.shown(id()) ?? false;
   const rawOut = (): string | undefined => {
     const r = props.env?.raw?.(id());
@@ -124,12 +129,16 @@ function Step(props: {
       icon={ICON[props.a.kind] ?? 'tool'}
       label={props.here(open() && props.a.title ? props.a.title : (props.a.label ?? props.a.kind))}
       kind={props.a.kind}
+      anchor={id()}
       {...(command() !== undefined ? { command: command() as string } : {})}
       {...(nums() ? { nums: { add: nums()!.plus, del: nums()!.minus } } : {})}
       {...(props.a.bad || props.a.kind === 'error' ? { tone: 'bad' as const } : props.a.kind === 'thinking' ? { tone: 'quiet' as const } : {})}
       {...(opens() && {
         expanded: open(),
-        onToggle: () => setOpen(!open()),
+        onToggle: () => props.open.toggle(id()),
+        // Copy takes what the step shows: masked until Reveal, Reveal's copy after (stepOutput)
+        // and the whole output once Show all fetched it
+        ...(more() !== undefined && { copy: () => props.here(wholeText() ?? out()?.text ?? more() ?? '') }),
         detail: () => {
           const m = more();
           return m === undefined ? null : (
@@ -145,7 +154,7 @@ function Step(props: {
               </Show>
               <pre>{props.here(wholeText() ?? out()?.text ?? m)}</pre>
               <Show when={props.a.seq !== undefined && props.whole && !out()?.env && wholeText() === undefined ? props.a.full : undefined}>
-                {(full) => <ShowAll lines={full().lines} seq={props.a.seq ?? 0} whole={props.whole!} got={(seq, text) => setWhole({ seq, text })} t={t} />}
+                {(full) => <ShowAll lines={full().lines} seq={props.a.seq ?? 0} whole={props.whole!} got={(seq, text) => props.open.setWhole(seq, text)} t={t} />}
               </Show>
             </>
           );
@@ -170,9 +179,12 @@ export function TurnTranscript(props: {
   readonly quiet?: boolean;
   /** Block host context so mid-chat messages containing ```wisp fences render rich blocks inline. */
   readonly answerCtx?: BlockContext;
+  /** what of this turn is open (step-open.ts): the turn's own, shared by its live and finished transcripts */
+  readonly open?: StepOpen;
   readonly t: ShellContext['t'];
 }): JSX.Element {
   const t = props.t;
+  const open = props.open ?? stepOpen();
   const live = (): boolean => props.status === 'running' || props.status === 'starting';
   const msgs = (): number => props.steps.filter((a) => a.kind === 'text').length;
   const steps = (): number => props.steps.length - msgs();
@@ -189,15 +201,18 @@ export function TurnTranscript(props: {
     }
     return out;
   });
-  const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set());
-  const toggleGroup = (key: string): void => {
-    setOpened((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+  // a step asked into sight (Find's hit) inside a folded cluster: the cluster opens with it
+  createEffect(() => {
+    const want = open.wanted();
+    if (want === undefined) return;
+    for (const e of entries()) {
+      if (e.kind !== 'group' || !e.items.some((it) => stepIdOf(it.step, it.index) === want)) continue;
+      open.openAll([e.key]);
+      open.took(want);
+      return;
+    }
+    if (entries().some((e) => e.kind === 'step' && stepIdOf(e.step, e.index) === want)) open.took(want);
+  });
   const count = (): string =>
     [
       msgs() ? t(msgs() === 1 ? 'shell.task.messages.one' : 'shell.task.messages.other', { n: msgs() }) : '',
@@ -236,9 +251,9 @@ export function TurnTranscript(props: {
               return (
                 <Show
                   when={s().kind === 'text' || s().kind === 'thinking'}
-                  fallback={<Step a={s()} index={idx()} figures={figuresByFile()} here={props.here} env={props.env} whole={props.whole} t={t} />}
+                  fallback={<Step a={s()} index={idx()} figures={figuresByFile()} here={props.here} env={props.env} open={open} whole={props.whole} t={t} />}
                 >
-                  <TimelineMessage>
+                  <TimelineMessage anchor={stepIdOf(s(), idx())}>
                     <MessageBody text={(s().kind === 'thinking' ? s().out : undefined) ?? s().label ?? ''} here={props.here} chat={props.chat === true} answerCtx={props.answerCtx} />
                   </TimelineMessage>
                 </Show>
@@ -254,12 +269,12 @@ export function TurnTranscript(props: {
                   label={clusterLabel(g().counts, g().items.length, t)}
                   count={g().items.length}
                   files={g().files}
-                  expanded={opened().has(g().key)}
-                  onToggle={() => toggleGroup(g().key)}
+                  expanded={open.isOpen(g().key)}
+                  onToggle={() => open.toggle(g().key)}
                 >
                   {g().rest.length > 0 ? (
                     <Index each={g().rest}>
-                      {(it) => <Step a={it().step} index={it().index} figures={figuresByFile()} here={props.here} env={props.env} whole={props.whole} t={t} />}
+                      {(it) => <Step a={it().step} index={it().index} figures={figuresByFile()} here={props.here} env={props.env} open={open} whole={props.whole} t={t} />}
                     </Index>
                   ) : undefined}
                 </TimelineGroup>

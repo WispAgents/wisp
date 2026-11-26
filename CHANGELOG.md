@@ -8,6 +8,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **`/wisp` comments on GitHub work again.** A task started from a comment on an issue or PR is now told which one it's on (repo, number, link and the `gh` command to read it), runs in that repo's project instead of your default one, and posts its report back on the issue or PR. A later `/wisp` there follows up the same task. Slack, Discord, Telegram and email lost the same link: a task started from a message there is tied to its thread or chat again, so replying to it follows that task up.
+### Added
+
+- **Find in task**: press ⌘F (Ctrl+F) on a task, or pick **Find in task** in its menu on a phone. wisp searches every step of the task: labels, commands, outputs, and the agent's messages, including steps inside folded groups and closed steps. It also searches older turns that haven't loaded yet, which the server searches for you. **Enter** and **Shift+Enter** (or the arrows) go to the next and previous match, which opens its turn, group and step and highlights the words. A hidden .env value is never matched unless you revealed it.
+- **Copy a step's output**: an opened step has a Copy button in its corner. It copies what the step shows: a .env file's masked text, or the value once you revealed it.
+- **Copy turn as Markdown**: a turn's tools (in the answer's menu on a phone) copy the prompt, each step with its output in a code fence, and the answer as the agent wrote it.
+
+### Fixed
+
+- An opened step in the transcript stays open when the turn ends, when Show thinking or a hidden tool call moves the rows, and a step opened in a folded group keeps the group open. Before, the open step could jump to its neighbour, or close as the turn finished.
 
 ## [1.0.0-alpha.15] - 2026-11-26
 

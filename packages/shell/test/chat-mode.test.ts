@@ -100,9 +100,9 @@ test('a tool error that names its call marks that call failed, with the error as
   ];
   for (const toolCalls of ['showAll', 'hideSuccessful', 'hideAll', 'zen'] as const) {
     const rows = buildChatSteps(events, [], { chatMode: true, toolCalls, showThinking: true, running: false });
-    expect(rows, toolCalls).toEqual([{ kind: 'run', label: 'Running tests', out: 'assertion failed', seq: 2, bad: true }]);
+    expect(rows, toolCalls).toEqual([{ kind: 'run', label: 'Running tests', out: 'assertion failed', seq: 2, at: 1, bad: true }]);
   }
-  expect(turnSteps(events, [])).toEqual([{ kind: 'run', label: 'Running tests', out: 'assertion failed', seq: 2, bad: true }]);
+  expect(turnSteps(events, [])).toEqual([{ kind: 'run', label: 'Running tests', out: 'assertion failed', seq: 2, at: 1, bad: true }]);
   // while it runs, the failed call is done: not the active one
   expect(buildChatSteps(events, [], { chatMode: true, toolCalls: 'hideSuccessful', showThinking: true, running: true }).length).toBe(1);
 });

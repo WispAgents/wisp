@@ -175,6 +175,44 @@ pub struct UnmaskedArgs {
     pub file: Option<String>,
 }
 
+/// Find in a task (R4-3, ADR-0133): the steps of its turns that hold `query` (case-insensitive), searched on the
+/// server for the turns the window sends as stubs, with no events. `turnIds`: those turns (default: every turn older
+/// than the window's latest). A .env value is masked before it is matched, as the wire masks it. Additive (2026-11-26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct SearchTaskArgs {
+    pub id: SessionId,
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_ids: Option<Vec<TurnId>>,
+    /// at most this many hits (default and most: 200)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limit: Option<u32>,
+}
+
+/// One step that holds the words: its turn, its event (`seq`) and a line around them, masked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct SearchTaskHit {
+    pub turn_id: TurnId,
+    pub seq: u64,
+    pub snippet: String,
+}
+
+/// `runtime.searchTask`'s answer: the hits in turn order, and whether the cap cut it short.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct SearchTaskOut {
+    pub hits: Vec<SearchTaskHit>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub more: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]
 pub struct DelegateTask {

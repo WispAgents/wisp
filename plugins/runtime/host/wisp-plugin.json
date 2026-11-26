@@ -261,6 +261,12 @@
         "uiOnly": "the Reveal button on a masked .env view; an agent reads the file itself, and a capped agent is refused"
       },
       {
+        "id": "runtime.searchTask",
+        "title": "Find words in a task's older turns, .env values masked",
+        "readOnly": true,
+        "uiOnly": "Find in task (mod+f) over the turns the window sends as stubs; an agent reads a task's turns with wisp_session"
+      },
+      {
         "id": "runtime.fullOutput",
         "title": "A step's whole output, when the transcript kept only its start and end",
         "readOnly": true,

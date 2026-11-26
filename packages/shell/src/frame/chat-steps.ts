@@ -110,6 +110,8 @@ function toolRow(e: RawTurnEvent, outputs: ReadonlyMap<string, Said>, errors: Re
     ...(e.body?.detail && { detail: e.body.detail }),
     ...(e.body?.file && { file: e.body.file }),
     ...(said && { out: said.text, seq: said.seq }),
+    // the tool's own event, when `seq` names its separate output or error, or it has none (Find's server hit names it)
+    ...(said?.seq !== e.seq && { at: e.seq }),
     ...(said?.full && { full: said.full }),
     ...(err && { bad: true }),
   };

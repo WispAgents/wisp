@@ -328,6 +328,40 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
         let slot = sl.clone();
         async move { unmasked(&slot, a).await }
     });
+    let sl = slot.clone();
+    s.command::<c::SearchTask, _, _>(move |ctx, _call, a| {
+        let slot = sl.clone();
+        async move { search_task(&rt(&slot)?, &a, on(&ctx)).await }
+    });
+}
+
+/// The most hits `runtime.searchTask` answers (R4-3): Find counts them, nobody reads more.
+const FIND_CAP: usize = 200;
+
+/// `runtime.searchTask` (R4-3, ADR-0133): the steps of this task's stubbed turns that hold the words, masked as the
+/// wire masks them (`mask`: Hide .env values on) before they are matched, so a .env value is never found.
+async fn search_task(r: &Arc<crate::runtime::Runtime>, a: &c::SearchTaskArgs, mask: bool) -> Result<c::SearchTaskOut, WireError> {
+    let cap = a.limit.map_or(FIND_CAP, |n| usize::try_from(n).unwrap_or(FIND_CAP).clamp(1, FIND_CAP));
+    let turns = r.turns(a.id.as_str(), None, None).await.map_err(WireError::from)?;
+    // only this task's turns, whatever ids were named (the capability was checked against this task)
+    let ids: Vec<&wisp_runtime_api::TurnId> = match &a.turn_ids {
+        Some(want) => turns.iter().map(|t| &t.id).filter(|id| want.contains(id)).collect(),
+        None => turns.iter().take(turns.len().saturating_sub(wisp_runtime_core::turn_window::WHOLE_TURNS)).map(|t| &t.id).collect(),
+    };
+    let known = if mask { r.env_known(a.id.as_str()).await.ok().map(|v| v.0) } else { None };
+    let mut out = c::SearchTaskOut::default();
+    for id in ids {
+        let page = r.activity(id.as_str(), None).await.map_err(WireError::from)?;
+        let steps: Vec<Value> = page.items.iter().filter_map(|s| serde_json::to_value(s).ok()).collect();
+        for f in wisp_runtime_core::step_find::find_steps(steps, &a.query, mask, known.as_deref(), cap - out.hits.len() + 1) {
+            if out.hits.len() == cap {
+                out.more = true;
+                return Ok(out);
+            }
+            out.hits.push(c::SearchTaskHit { turn_id: id.clone(), seq: f.seq, snippet: f.snippet });
+        }
+    }
+    Ok(out)
 }
 
 /// `runtime.get`, `runtime.list` and `runtime.search`: what an agent wrote in a task's row masked (ADR-0050). Another plugin reads its
@@ -542,5 +576,70 @@ mod tests {
         let v = sent(&old, None);
         assert_eq!(v["body"]["title"], "••••");
         assert!(!v.to_string().contains("sk-live"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn search_task_finds_a_stub_turns_step_and_never_a_env_reads_value() {
+        use wisp_runtime_api::model::{Activity, ToolKind, Turn};
+        let slot = slot();
+        let r = rt(&slot).unwrap();
+        let dir = std::env::temp_dir().join(format!("wisp-findtask-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let start = wisp_runtime_api::commands::StartArgs {
+            prompt: "rotate".into(),
+            cwd: Some(dir.display().to_string()),
+            hold: true,
+            ..Default::default()
+        };
+        let sid = r.create(start).await.unwrap().id.0;
+        let tid = wisp_runtime_api::TurnId::from("t-old");
+        let turn = Turn { id: tid.clone(), session_id: sid.as_str().into(), prompt: "rotate".into(), ..Turn::default() };
+        r.repo
+            .store
+            .write(move |w| crate::repo::save_turn(w, &turn, Some(&[])).map_err(|e| wisp_store::StoreError::Internal(e.to_string())))
+            .await
+            .unwrap();
+        let tool = |tool, label: &str, file: Option<&str>, call: &str| Activity::Tool {
+            tool,
+            label: label.into(),
+            file: file.map(Into::into),
+            detail: None,
+            call_id: Some(call.into()),
+            output: None,
+            title: None,
+            hide: std::collections::BTreeMap::new(),
+            parent: None,
+            full: None,
+        };
+        r.add_row(&sid, tid.as_str(), tool(ToolKind::Read, "Reading .env", Some(".env"), "c1")).await.unwrap();
+        r.add_row(
+            &sid,
+            tid.as_str(),
+            Activity::ToolOutput { call_id: "c1".into(), text: "API_KEY=sk-live-zebra".into(), env: true, hide: Vec::new(), full: None },
+        )
+        .await
+        .unwrap();
+        r.add_row(&sid, tid.as_str(), tool(ToolKind::Run, "Running the zebra suite", None, "c2")).await.unwrap();
+        let ask = |query: &str, turns: Option<Vec<wisp_runtime_api::TurnId>>| c::SearchTaskArgs {
+            id: sid.as_str().into(),
+            query: query.into(),
+            turn_ids: turns,
+            limit: None,
+        };
+        // one turn is inside the window, so nothing is a stub by default
+        assert_eq!(search_task(&r, &ask("zebra", None), true).await.unwrap().hits, Vec::new());
+        // named as the stub the client holds: its step is found, with a line around the words
+        let out = search_task(&r, &ask("ZEBRA", Some(vec![tid.clone()])), true).await.unwrap();
+        assert_eq!(out.hits.len(), 1, "{out:?}");
+        assert_eq!(out.hits[0].turn_id, tid);
+        assert!(out.hits[0].snippet.contains("zebra suite"), "{out:?}");
+        // the .env file's value is masked before it is matched, and never sent back
+        let out = search_task(&r, &ask("sk-live", Some(vec![tid.clone()])), true).await.unwrap();
+        assert!(out.hits.is_empty(), "{out:?}");
+        let out = search_task(&r, &ask("api_key", Some(vec![tid.clone()])), true).await.unwrap();
+        assert!(out.hits.iter().all(|h| !h.snippet.contains("sk-live")), "{out:?}");
+        // a turn of another task is not searched, whatever it is named
+        let other = search_task(&r, &c::SearchTaskArgs { id: "nope".into(), ..ask("zebra", Some(vec![tid])) }, true).await.unwrap();
+        assert_eq!(other.hits, Vec::new());
     }
 }
