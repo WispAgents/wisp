@@ -85,7 +85,6 @@ async fn every_harness_gets_the_computer_behind_wisps_policy() {
     assert!(server["url"].as_str().unwrap().ends_with("/api/computer/mcp"), "{server}");
     assert_eq!(server["headers"]["x-wisp-session"], id.as_str());
     assert_eq!(server["headers"]["x-wisp-token"], cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"], "the task's own token");
-    assert!(cfg["mcpServers"].get("browser").is_none(), "no browser outside a box: {cfg}");
 
     let http = reqwest::Client::new();
     let (_, init) =

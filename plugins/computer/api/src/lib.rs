@@ -6,7 +6,7 @@
 //! [`MCP_PATH`] with the task's own token, and passed on to one supervised driver. wisp decides what a task
 //! may call (off unless switched on, read-only tools in Plan mode, a short deny list), so the user's harness
 //! never talks to the driver directly. On a grid box or a sandbox the image ships the driver, a screen and
-//! a browser, and runs also get `browser` (Playwright on that browser).
+//! a browser (whose Playwright server is ADR-0128's).
 
 use serde::{Deserialize, Serialize};
 use wisp_kernel::Command;
@@ -19,8 +19,6 @@ pub const MCP_PATH: &str = "/computer/mcp";
 
 /// The MCP server's name in a run's config (the harness shows `mcp__computer__click`).
 pub const SERVER: &str = "computer";
-/// The browser's MCP server's name in a run's config, on a box.
-pub const BROWSER_SERVER: &str = "browser";
 
 /// The setting that switches computer use on (off by default, D-0023).
 pub const SETTING_ENABLED: &str = "computer.enabled";
@@ -29,8 +27,6 @@ pub const SETTING_ENABLED: &str = "computer.enabled";
 pub const ENV_ON: &str = "WISP_COMPUTER";
 /// Env: the driver's command (a grid box's image points it at `wisp-computer`, which starts the screen first).
 pub const ENV_DRIVER: &str = "WISP_COMPUTER_DRIVER";
-/// Env: the browser's MCP command (a grid box's `wisp-browser-mcp`); unset, runs get no `browser` server.
-pub const ENV_BROWSER: &str = "WISP_COMPUTER_BROWSER";
 
 /// The driver's command when [`ENV_DRIVER`] isn't set.
 pub const DRIVER_BIN: &str = "cua-driver";
@@ -64,8 +60,6 @@ pub struct Status {
     pub version: Option<String>,
     /// the driver is running now
     pub running: bool,
-    /// runs get the `browser` server too
-    pub browser: bool,
     /// what to do next when it can't work yet, in words
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -99,8 +93,8 @@ mod tests {
 
     #[test]
     fn status_is_camel_case_and_drops_what_it_doesnt_know() {
-        let s = Status { enabled: true, running: false, browser: true, ..Status::default() };
+        let s = Status { enabled: true, running: false, ..Status::default() };
         let v = serde_json::to_value(&s).ok();
-        assert_eq!(v, Some(serde_json::json!({ "enabled": true, "running": false, "browser": true })));
+        assert_eq!(v, Some(serde_json::json!({ "enabled": true, "running": false })));
     }
 }

@@ -56,8 +56,8 @@ RUN apt-get update \
 RUN npm install -g @playwright/mcp && npm cache clean --force && command -v playwright-mcp
 # Computer use (wisp.computer, ADR-0127): Cua Driver (MIT, trycua/cua), the version wisp is tested with, checked
 # against the release's SHA256SUMS; wisp-computer starts the screen (wisp-desktop: its window manager and the
-# accessibility bus too) and the driver on it. The box is the sandbox, so computer use is on here, and runs get
-# the browser's Playwright server too. Never the AGPL perception extension (`cua-driver perception`).
+# accessibility bus too) and the driver on it. The box is the sandbox, so computer use is on here (the browser server
+# is ADR-0128's, wisp-browser-mcp on the same Chromium). Never the AGPL perception extension (`cua-driver perception`).
 ARG CUA_DRIVER_VERSION=0.62.1
 RUN arch="$(dpkg --print-architecture | sed 's/amd64/x86_64/')" && f="cua-driver-rs-${CUA_DRIVER_VERSION}-linux-${arch}-binary.tar.gz" && cd /tmp \
  && curl -fsSLO "https://github.com/trycua/cua/releases/download/cua-driver-rs-v${CUA_DRIVER_VERSION}/${f}" \
@@ -65,7 +65,7 @@ RUN arch="$(dpkg --print-architecture | sed 's/amd64/x86_64/')" && f="cua-driver
  && mkdir -p /opt/cua-driver && tar xzf "${f}" -C /opt/cua-driver && rm "${f}" \
  && ln -sf /opt/cua-driver/cua-driver /usr/local/bin/cua-driver && chmod -R a+rX /opt/cua-driver \
  && cua-driver --version | grep -qF "${CUA_DRIVER_VERSION}"
-ENV WISP_COMPUTER=on WISP_COMPUTER_DRIVER=/usr/local/bin/wisp-computer WISP_COMPUTER_BROWSER=wisp-browser-mcp \
+ENV WISP_COMPUTER=on WISP_COMPUTER_DRIVER=/usr/local/bin/wisp-computer \
     CUA_DRIVER_RS_TELEMETRY_ENABLED=0 CUA_TELEMETRY_ENABLED=0 CUA_DRIVER_RS_UPDATE_CHECK=false
 # apt and apt-get remember what a sandbox installs (secure_path puts /usr/local/sbin first under sudo).
 COPY apps/grid/deploy/image/sandbox/apt apps/grid/deploy/image/sandbox/apt-get /usr/local/sbin/

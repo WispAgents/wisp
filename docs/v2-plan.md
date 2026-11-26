@@ -1165,7 +1165,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| cu | Computer use for every harness (ADR-0127): plugin wisp.computer (Cua Driver 0.62.1 behind `POST /api/computer/mcp`, policy, off by default), grid image (driver pinned, window manager, AT-SPI, `browser` for runs); tests core/host + serve_computer.rs. Left: per-action approvals locally, recordings into the task, own Settings pane | built, PR |
+| cu | Computer use for every harness (ADR-0127): plugin wisp.computer (Cua Driver 0.62.1 behind `POST /api/computer/mcp`, policy, off by default), grid image (driver pinned, window manager, AT-SPI; the browser server stays ADR-0128's); tests core/host + serve_computer.rs. Left: per-action approvals locally, recordings into the task, own Settings pane | built, PR |
 | fac | Software factories (row 65, ADR-0114): plugin wisp.factory, CLI/MCP/picker/band/TUI, docs, e2e serve_factory.rs | built, uncommitted |
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |

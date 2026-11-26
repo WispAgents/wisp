@@ -1,7 +1,7 @@
 //! wisp.computer (ADR-0127): computer use for every harness, through Cua Driver. Three pieces:
 //!
 //! - a run part: every task's run gets the `computer` MCP server (HTTP, this wisp, the task's own token) while
-//!   computer use is on, and on a grid box `browser` too (Playwright on the box's watched Chromium)
+//!   computer use is on (the browser server is ADR-0128's, not this plugin's)
 //! - the route behind it, `POST /api/computer/mcp`: wisp-computer-core's gateway answers what it can and judges
 //!   each call (the task's mode, the deny list); the rest goes to the driver
 //! - the driver ([`driver::Driver`]), started on the first call and kept in the plugin's scope
@@ -165,7 +165,6 @@ impl State {
             enabled: on,
             driver: path.as_ref().map(|p| p.display().to_string()),
             running: self.driver.lock().await.as_ref().is_some_and(|d| d.running()),
-            browser: on && env(api::ENV_BROWSER).is_some(),
             ..Status::default()
         };
         if let Some(p) = &path {
@@ -199,12 +198,6 @@ impl State {
             api::SERVER.to_owned(),
             json!({ "type": "http", "url": format!("{url}/api{}", api::MCP_PATH), "headers": { "x-wisp-token": token, "x-wisp-session": session.id.0 } }),
         );
-        // the box's browser, for Playwright's tools: it drives the page, so a Plan mode run doesn't get it
-        if q.mode != Mode::Plan
-            && let Some(b) = env(api::ENV_BROWSER)
-        {
-            out.insert(api::BROWSER_SERVER.to_owned(), json!({ "type": "stdio", "command": b, "args": [] }));
-        }
         out
     }
 }

@@ -56,9 +56,9 @@ the address bar took the browser to a page. The driver's 65 tool schemas are 226
 6. **A grid box and a sandbox come ready.** The image has the driver, a window manager (matchbox, no title bars),
    the session and accessibility buses, and Chromium with its accessibility on (`wisp-desktop`), and sets
    `WISP_COMPUTER=on`: the box is the sandbox. `WISP_COMPUTER_DRIVER=wisp-computer` brings the screen up before the
-   driver; `WISP_COMPUTER_BROWSER=wisp-browser-mcp` gives every run that isn't in Plan mode `browser` too
-   (Playwright on that same Chromium), so an agent tests a page with page tools or with the screen, and the user
-   watches it in the task's browser view.
+   driver. The same Chromium is the one ADR-0128's `browser` server (Playwright, `runtime.browser`) drives in a
+   sandbox, so an agent tests a page with page tools or with the screen, and the user watches it in the task's
+   browser view. wisp.computer adds no browser server of its own: the browser is ADR-0128's, with its setting.
 
 ## Consequences
 
