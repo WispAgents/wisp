@@ -69,8 +69,8 @@ impl Phone for FakePhone {
     async fn launch(&self, _p: &ProjectView, _x: &str) -> Result<Option<SessionView>> {
         Ok(None)
     }
-    async fn act(&self, _a: &ActArgs) -> Result<String> {
-        Ok("Marked done.".into())
+    async fn act(&self, _a: &ActArgs) -> Result<wisp_channels_api::Acted> {
+        Ok(wisp_channels_api::Acted::done("Marked done."))
     }
     async fn projects(&self) -> Result<Vec<ProjectView>> {
         Ok(Vec::new())
