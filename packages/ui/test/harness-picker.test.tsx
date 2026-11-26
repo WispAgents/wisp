@@ -600,3 +600,61 @@ test('harness picker: the find box is focused on open, Tab jumps between harness
   document.querySelectorAll('[data-kit="picker"]').forEach((n) => n.remove());
   anchor.remove();
 });
+
+/** ADR-0128: the Browser row, as Cursor shows it (no per-run MCP): its choices greyed out with why, Off in effect, and
+ *  the reason under them; a greyed choice can't be picked. */
+test('the_browser_row_greys_out_what_the_harness_cant_take_with_why', async () => {
+  const anchor = document.createElement('button');
+  document.body.append(anchor);
+  const picked: string[] = [];
+  const why = 'Cursor takes no MCP servers from wisp, so it has no browser here';
+  const pane: HarnessPickerPane = {
+    label: 'Model',
+    groups: [{ items: [{ id: '', label: 'Default' }] }],
+    value: '',
+    onPick: () => undefined,
+    empty: 'No models match',
+    browser: {
+      label: 'Browser',
+      options: [
+        { id: 'default', label: 'Default', off: true, title: why },
+        { id: 'off', label: 'Off' },
+        { id: 'chrome', label: 'On (Chrome)', off: true, title: why },
+        { id: 'headless', label: 'Headless', off: true, title: why },
+      ],
+      value: 'off',
+      onPick: (b) => picked.push(b),
+      note: why,
+    },
+  };
+  mount(() => (
+    <HarnessPicker
+      anchor={() => anchor}
+      label="Harness and model"
+      head="Harness"
+      rows={[{ id: 'cursor', name: 'Cursor', sub: '1 model' }]}
+      inUse="cursor"
+      inUseLabel="In use"
+      focused="cursor"
+      onPreview={() => undefined}
+      onUse={() => undefined}
+      pane={pane}
+      onClose={() => undefined}
+    />
+  ));
+  await frame();
+  const row = document.querySelector('[data-part="runner.browser"]') as HTMLElement;
+  expect(row.getAttribute('aria-label')).toBe('Browser');
+  const segs = [...row.querySelectorAll<HTMLButtonElement>('[data-kit="pk-seg"] > button')];
+  expect(segs.map((b) => [b.textContent, b.getAttribute('aria-checked'), b.getAttribute('aria-disabled')])).toEqual([
+    ['Default', 'false', 'true'],
+    ['Off', 'true', null],
+    ['On (Chrome)', 'false', 'true'],
+    ['Headless', 'false', 'true'],
+  ]);
+  expect(segs[2]?.title).toBe(why);
+  expect(row.querySelector('[data-kit="pk-anote"]')?.textContent).toBe(why);
+  segs[3]?.click();
+  segs[1]?.click();
+  expect(picked).toEqual(['off']);
+});
