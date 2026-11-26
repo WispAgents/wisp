@@ -25,6 +25,11 @@ pub const QUEUE_MAX: usize = 100;
 pub const MAX_DEPTH: u32 = 3;
 /// Failed runs in a row that pause a trigger.
 pub const PAUSE_AFTER: u32 = 3;
+/// Why a job queued outside its `when` hours waits: `drain` keeps it until they open.
+pub const HOURS: &str = "waits for its hours";
+/// The starts one `drain` has decided, held in `running` while it decides the next (the host fills it only after):
+/// never saved, never stopped.
+const DECIDED: &str = "\u{0}decided:";
 
 /// A job a trigger wants to start: one event, or a batch.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -104,6 +109,9 @@ pub struct State {
     /// the runs it started, by task id, and how many causes deep each is (a loop of triggers is cut at 3)
     #[serde(default)]
     pub depths: std::collections::BTreeMap<String, u32>,
+    /// the runs found idle at the last tick (an end it never heard): idle again at the next, they're ended
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub idle: Vec<String>,
     /// a run it started waits for its plan (Automations stop at): the row says so until the plan frees
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<crate::plan::PlanWait>,
@@ -380,9 +388,8 @@ pub fn admit(name: &str, spec: &TriggerSpec, st: &mut State, ev: TriggerEvent, w
     }
     if spec.when.is_some() && !w.in_window {
         if spec.when.as_ref().is_some_and(|x| x.outside == "queue") {
-            let job = st.job(vec![ev], w.now);
-            let mut job = job;
-            job.why = "waits for its hours".into();
+            let mut job = st.job(vec![ev], w.now);
+            HOURS.clone_into(&mut job.why);
             st.queue.push_back(job);
             st.log(w.now, "queued", "outside its hours: waits for them", &key, None);
             return Decision::Queued("outside its hours".into());
@@ -486,12 +493,27 @@ fn start(spec: &TriggerSpec, st: &mut State, job: Job, w: &World, stop: Option<V
 }
 
 /// The queued jobs that may go now, in order (a resumed member, a rate window that opened, a run that ended):
-/// it stops at the first one that's still held.
+/// it stops at the first one that's still held. A trigger switched off or paused drains nothing, a job that waits for
+/// its hours stays until they open, and each start decided here counts against `concurrency` for the next (the host
+/// adds it to `running` only once it started: five queued jobs of a `queue` trigger started all five at once).
 pub fn drain(spec: &TriggerSpec, st: &mut State, w: &World) -> Vec<Decision> {
     let mut out = Vec::new();
+    if !spec.on() || st.paused.is_some() {
+        return out;
+    }
+    let real = st.running.len();
     while let Some(job) = st.queue.pop_front() {
+        if job.why == HOURS && spec.when.is_some() && !w.in_window {
+            st.queue.push_front(job);
+            break;
+        }
         let before = st.queue.len();
-        let d = gate(spec, st, job.clone(), w);
+        st.running.extend((0..out.len()).map(|k| format!("{DECIDED}{k}")));
+        let mut d = gate(spec, st, job.clone(), w);
+        st.running.truncate(real);
+        if let Decision::Replace { stop, .. } = &mut d {
+            stop.retain(|s| !s.starts_with(DECIDED));
+        }
         let held = matches!(d, Decision::Held(_) | Decision::Queued(_) | Decision::Skipped(_));
         if held {
             // put it back where it was (gate queued it at the end)
@@ -528,6 +550,8 @@ pub struct Outcome {
     pub failed: bool,
     /// its member answered `quiet` (nothing to do)
     pub quiet: bool,
+    /// it was stopped or its task deleted before it finished: neither done nor a failure (its trigger may run again)
+    pub stopped: bool,
     pub cost: f64,
 }
 
@@ -542,6 +566,10 @@ pub fn ended(spec: &TriggerSpec, st: &mut State, session: &str, o: Outcome, now:
     st.spent = if st.spent.0 == day { (day, st.spent.1 + o.cost) } else { (day, o.cost) };
     if o.quiet {
         st.log(now, "skipped by member", "nothing to do, it said", "", Some(session.to_owned()));
+        return None;
+    }
+    if o.stopped {
+        st.log(now, "stopped", "it was stopped before it finished", "", Some(session.to_owned()));
         return None;
     }
     if !o.failed {

@@ -711,6 +711,31 @@ mod tests {
         assert!(check(&bad).iter().any(|p| p.contains("foreach")), "{:?}", check(&bad));
     }
 
+    /// build failed, so test was skipped, and deploy (which needs only test) still ran: a skip by cascade was read as
+    /// satisfied, as a skip by `if` is.
+    #[test]
+    fn a_failure_cascades_through_the_steps_it_skips() {
+        let w = wf(vec![("build", step("build", &[])), ("test", step("test", &["build"])), ("deploy", step("deploy", &["test"]))]);
+        let mut r = Run::new(w, &BTreeMap::new());
+        assert_eq!(starts(&r.next(0)), ["build"]);
+        r.started("build", "T1");
+        r.finished("build", false, Value::Null, "it ended error", 0.0);
+        assert_eq!(starts(&r.next(1)), Vec::<String>::new(), "deploy doesn't start");
+        assert_eq!((r.runs["test"].state, r.runs["deploy"].state), (StepState::Skipped, StepState::Skipped));
+        assert_eq!(r.runs["deploy"].why, "a task it needs failed");
+        assert!(r.over() && !r.ok());
+        // a step skipped by its `if` still lets the ones after it run
+        let mut gated = step("test", &["build"]);
+        gated.when = "${{ inputs.run_tests }}".into();
+        let mut w = wf(vec![("build", step("build", &[])), ("test", gated), ("deploy", step("deploy", &["test"]))]);
+        w.inputs.insert("run_tests".into(), json!(false));
+        let mut r = Run::new(w, &BTreeMap::new());
+        r.next(0);
+        r.finished("build", true, json!({}), "", 0.0);
+        assert_eq!(starts(&r.next(1)), ["deploy"], "test's if was false: deploy runs");
+        assert_eq!(r.runs["test"].state, StepState::Skipped);
+    }
+
     #[test]
     fn stopping_a_run_stops_whats_working_and_skips_the_rest() {
         let w = wf(vec![("a", step("a", &[])), ("b", step("b", &["a"]))]);
