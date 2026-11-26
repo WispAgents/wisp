@@ -8,6 +8,7 @@
 /// plugin reaches them through this api, as the layers require).
 pub mod conversation;
 pub mod hub;
+pub mod link;
 pub mod markup;
 pub mod policy;
 pub mod scrub;

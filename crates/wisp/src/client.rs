@@ -228,6 +228,21 @@ impl Client {
         if c.ping().await {
             return Ok(c);
         }
+        // a server already holds this home (still starting, or on a port server.json didn't say yet): that one, never a
+        // second headless server on the same home (it would refuse to start)
+        let home = crate::services::home(std::env::var("WISP_HOME").ok().as_deref(), crate::services::user_home());
+        if crate::serve::home_held(&home) {
+            let end = Instant::now() + Duration::from_secs(15);
+            while Instant::now() < end {
+                if let Some(at) = discover(&home).map(Self::new)
+                    && at.ping().await
+                {
+                    return Ok(at);
+                }
+                tokio::time::sleep(Duration::from_millis(150)).await;
+            }
+            return Err(CliError::said(format!("wisp is running for {} but does not answer", home.display())));
+        }
         if !start {
             return Err(CliError::said(format!("wisp is not running at {}", c.url)));
         }

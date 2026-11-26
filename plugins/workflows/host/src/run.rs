@@ -652,6 +652,23 @@ async fn finish(ctx: &Ctx, st: &State, call: &Call, rc: &RunCtx, run: &Run, stop
         "failed"
     };
     let now = clock.now_ms();
+    // the owner was held in Working on this run (Hold): wisp's message with the results starts its agent's next turn.
+    // It is queued before the view says the run ended, so nobody (the agent polling workflows.status, a test) sees
+    // a run done whose message isn't in the queue yet
+    let tell = rc.notify && !stopped && !rc.held;
+    if tell {
+        let text = ended_message(&rc.name, state, run, (now - rc.started_at) / 1000);
+        let a = r::FollowUpArgs {
+            id: SessionId(rc.owner.clone()),
+            text,
+            queue: Some(true),
+            by: Some("workflow".into()),
+            ..r::FollowUpArgs::default()
+        };
+        if let Err(err) = ctx.run::<r::FollowUp>(call, a).await {
+            tracing::warn!(error = %err.message, task = rc.owner, "workflows: runtime.followUp");
+        }
+    }
     write_view(ctx, call, st, rc, view(run, rc, state, notes, Some(now), &BTreeMap::new())).await;
     st.live.lock().unwrap_or_else(PoisonError::into_inner).remove(&rc.id);
     let total = u32::try_from(run.nodes.len()).unwrap_or(u32::MAX);
@@ -670,21 +687,8 @@ async fn finish(ctx: &Ctx, st: &State, call: &Call, rc: &RunCtx, run: &Run, stop
         set_state(ctx, call, &rc.owner, if run.ok() && !stopped { SessionState::Review } else { SessionState::Error }).await;
         return;
     }
-    // the owner was held in Working on this run (Hold): wisp's message with the results starts its agent's next turn;
-    // with none to send (stopped, notify off), it lands, unless another of its runs still goes
-    if rc.notify && !stopped {
-        let text = ended_message(&rc.name, state, run, (now - rc.started_at) / 1000);
-        let a = r::FollowUpArgs {
-            id: SessionId(rc.owner.clone()),
-            text,
-            queue: Some(true),
-            by: Some("workflow".into()),
-            ..r::FollowUpArgs::default()
-        };
-        if let Err(err) = ctx.run::<r::FollowUp>(call, a).await {
-            tracing::warn!(error = %err.message, task = rc.owner, "workflows: runtime.followUp");
-        }
-    } else if !st.owns_live(&rc.owner) {
+    // with no message to send (stopped, notify off), the owner lands, unless another of its runs still goes
+    if !tell && !st.owns_live(&rc.owner) {
         settle(ctx, call, &rc.owner).await;
     }
 }

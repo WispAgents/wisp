@@ -1,6 +1,6 @@
 //! The real proc service on this computer: pipes, PTYs, exec, scopes and tree kills.
-#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "a test: failing loudly is the point")]
+#![cfg(unix)]
 
 mod common;
 

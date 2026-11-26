@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { after } from 'node:test';
-import { BUDGETS, FIRST_SCREEN_BUDGETS, LAZY_CHUNK_BUDGETS, SERVER_BUDGETS, initialFiles, measure, overBudget, summary } from '../budgets.ts';
+import { BUDGETS, FIRST_SCREEN_BUDGETS, LAZY_CHUNK_BUDGETS, SERVER_BUDGETS, initialFiles, measure, nearBudget, overBudget, summary, type Measured } from '../budgets.ts';
 import { beforeMark } from '../first-screen.ts';
 
 const roots: string[] = [];
@@ -56,7 +56,7 @@ test('budgets: a build within both budgets passes; one over either names that bu
   assert.deepEqual(overBudget(small), []);
   const over = overBudget(small, { initialJsBr: 10, initialCssBr: 10 });
   assert.equal(over.length, 2);
-  assert.match(over[0] ?? '', /^initial JS [\d.]+ KB br > 0\.0 KB$/);
+  assert.match(over[0] ?? '', /^initial JS [\d.]+ KB br > 0\.0 KB \(\+\d+ B\)$/);
   assert.match(over[1] ?? '', /^initial CSS /);
 });
 
@@ -68,7 +68,7 @@ test('budgets: the job summary has a row per budget with the miss, and the lazy 
   assert.match(ok, /Lazy JS: 1 chunks, largest `TaskView-d\.js`/);
   assert.match(ok, /Lazy CSS: 1 sheets, largest `TaskView-e\.css`/);
   const miss = summary(m, { initialJsBr: 10, initialCssBr: BUDGETS.initialCssBr });
-  assert.match(miss, /\| initial JS \|.*❌ over by [\d.]+ KB \|/);
+  assert.match(miss, /\| initial JS \|.*❌ over by [\d.]+ KB \(\+\d+ B\) \|/);
 });
 
 test('budgets: the CLI exits 1 on a miss, 0 within budget, and appends the summary to --summary', () => {
@@ -167,9 +167,9 @@ test('budgets: each look is gated at its own ratchet and the entry at the target
   const tight = { desktop: { jsBr: 3500, cssBr: 64 * 1024 }, phone: { jsBr: 64 * 1024, cssBr: 64 * 1024 } };
   const over = overBudget(m, BUDGETS, tight);
   assert.equal(over.length, 1);
-  assert.match(over[0] ?? '', /^first screen JS \(desktop\) [\d.]+ KB br > 3\.4 KB$/);
+  assert.match(over[0] ?? '', /^first screen JS \(desktop\) [\d.]+ KB br > 3\.4 KB \(\+\d+ B\)$/);
   // the entry (index.html's tags) over the target fails even when every look is within its ratchet
-  assert.match(overBudget(m, { initialJsBr: 10, initialCssBr: BUDGETS.initialCssBr }).join('\n'), /^initial JS [\d.]+ KB br > 0\.0 KB$/m);
+  assert.match(overBudget(m, { initialJsBr: 10, initialCssBr: BUDGETS.initialCssBr }).join('\n'), /^initial JS [\d.]+ KB br > 0\.0 KB \(\+\d+ B\)$/m);
   // the summary: each look's row against its ratchet, the entry's against the target
   const sum = summary(m, BUDGETS, tight);
   assert.match(sum, /\| first screen JS \(desktop\) \|.*\| 3\.4 KB \|.*❌ over by/);
@@ -185,11 +185,44 @@ test('budgets: a lazy chunk over its own ceiling is a miss that names it; mermai
   assert.ok(lazyOnly.lazy.some((l) => l.file === 'assets/mermaid.core-h1.js'));
   assert.deepEqual(overBudget(lazyOnly), []);
   const tight = overBudget(lazyOnly, BUDGETS, FIRST_SCREEN_BUDGETS, [{ name: 'mermaid', pattern: /^assets\/mermaid\.core-[\w-]+\.js$/, brMax: 1024 }], 1024);
-  assert.ok(tight.some((o) => /^lazy chunk mermaid mermaid\.core-h1\.js [\d.]+ KB br > 1\.0 KB$/.test(o)), tight.join('\n'));
+  assert.ok(tight.some((o) => /^lazy chunk mermaid mermaid\.core-h1\.js [\d.]+ KB br > 1\.0 KB \(\+\d+ B\)$/.test(o)), tight.join('\n'));
   assert.ok(tight.some((o) => /^lazy chunk elk-i2\.js /.test(o)), tight.join('\n'));
   // the real build's mermaid entry is named, and a look that loads it first fails
   const mermaid = LAZY_CHUNK_BUDGETS.find((b) => b.name === 'mermaid');
   assert.ok(mermaid?.neverFirst && mermaid.pattern.test('assets/mermaid.core-Cg3TSjcw.js'));
   const first = measure(root, { phone: { js: ['/assets/index-a.js', '/assets/mermaid.core-h1.js'], css: ['/assets/index-c.css'] } });
   assert.deepEqual(overBudget(first), ['mermaid chunk mermaid.core-h1.js is on the first screen: it loads lazily only']);
+});
+
+test('budgets: a miss says its overage in bytes (0.1 KB hid it); a budget met with under 512 B to spare is a warning, not a miss', () => {
+  const KB = 1024;
+  const part = (br: number): { files: string[]; raw: number; br: number } => ({ files: ['/assets/x.js'], raw: br * 3, br });
+  const at = (phoneJs: number): Measured => ({
+    entry: { js: part(100 * KB), css: part(20 * KB) },
+    initialJs: part(phoneJs),
+    initialCss: part(20 * KB),
+    looks: { desktop: { js: part(150 * KB), css: part(20 * KB) }, phone: { js: part(phoneJs), css: part(20 * KB) } },
+    lazy: [],
+    lazyCss: [],
+  });
+  const budget = FIRST_SCREEN_BUDGETS.phone.jsBr;
+  // 212 B over: the bytes say by how much (at 0.1 KB a miss under 52 B read "167.0 KB br > 167.0 KB")
+  const over = at(budget + 212);
+  assert.deepEqual(overBudget(over), ['first screen JS (phone) 167.2 KB br > 167.0 KB (+212 B)']);
+  assert.match(summary(over), /\| first screen JS \(phone\) \|.*❌ over by 0\.2 KB \(\+212 B\) \|/);
+  // 100 B under: no miss, a warning naming what's left
+  const near = at(budget - 100);
+  assert.deepEqual(overBudget(near), []);
+  assert.deepEqual(nearBudget(near), ['first screen JS (phone) 166.9 KB br is 100 B under its 167.0 KB budget']);
+  assert.match(summary(near), /\| first screen JS \(phone\) \|.*⚠️ 100 B under \|/);
+  // well under: neither
+  assert.deepEqual(nearBudget(at(budget - 4 * KB)), []);
+  // a lazy chunk near its ceiling too
+  assert.deepEqual(nearBudget({ ...at(budget - 4 * KB), lazy: [{ file: 'assets/elk-a.js', br: 1024 - 12 }] }, BUDGETS, FIRST_SCREEN_BUDGETS, [], 1024), ['lazy chunk elk-a.js 1.0 KB br is 12 B under its 1.0 KB ceiling']);
+});
+
+test('budgets: a miss smaller than 0.1 KB still shows, in bytes', () => {
+  const part = (br: number): { files: string[]; raw: number; br: number } => ({ files: ['/assets/x.js'], raw: br, br });
+  const m: Measured = { entry: { js: part(BUDGETS.initialJsBr + 30), css: part(1) }, initialJs: part(1), initialCss: part(1), lazy: [], lazyCss: [] };
+  assert.deepEqual(overBudget(m), ['initial JS 120.0 KB br > 120.0 KB (+30 B)']);
 });

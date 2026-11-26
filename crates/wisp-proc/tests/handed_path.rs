@@ -1,7 +1,7 @@
 //! The PATH the desktop app hands its server after start (F-desk-5): its own test binary, since the PATH is the
 //! process's.
-#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "a test: failing loudly is the point")]
+#![cfg(unix)]
 
 mod common;
 
