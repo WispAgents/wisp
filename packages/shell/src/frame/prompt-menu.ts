@@ -4,6 +4,7 @@
 import { createMemo, createSignal, type Accessor } from 'solid-js';
 import type { PromptSuggest } from '@wisp/ui';
 import { useDerived } from '@wisp/ui/pure';
+import { ownerOf, type Json } from '@wisp/client';
 import type { PromptItem, PromptSourceDef, ShellContext } from '../contract.ts';
 
 export interface MenuAt {
@@ -36,16 +37,53 @@ export interface Mentioned {
   readonly title: string;
 }
 
-/** What is sent: each picked `@Title` still in the text as `@[Title](scheme:id)` (v1's stored form); the rest as typed. */
+/** v1's stored form of one mention, `@[Title](scheme:id)`: a title without `]` or a line break, an id without `)` or a space */
+const STORED = /@\[([^\]\n]+)\]\((wisp|crew|stuff):([^)\s]+)\)/g;
+/** what may follow a whole `@Title` besides a space or the end: a sentence's punctuation (never a letter, digit, `-` or
+ *  `'`: `@Authentic` and `@Auth-bug` are other words than `@Auth`) */
+const ENDS = /[.,;:!?)\]}"]/;
+const spansOf = (text: string): (readonly [number, number])[] => [...text.matchAll(STORED)].map((m) => [m.index, m.index + m[0].length] as const);
+
+/**
+ * What is sent: each picked `@Title` still in the text as `@[Title](scheme:id)` (v1's stored form); the rest as typed.
+ * A `@Title` counts only as a whole word, where menuAt opens (the start or after a space) up to the end, a space or
+ * punctuation, every time it's there; the longest title first and what is already stored left as it is, so picking
+ * `Auth` and `Auth bug` never sends `@[Auth](…) bug` nor reads `@Auth` inside `@[Auth bug](…)` (doc25b).
+ */
 export function encodeMentions(text: string, mentions: readonly Mentioned[]): string {
   let out = text;
-  for (const m of mentions) {
+  for (const m of [...mentions].sort((a, b) => b.title.length - a.title.length)) {
+    if (!m.title) continue;
     const shown = `@${m.title}`;
-    const i = out.indexOf(shown);
-    if (i < 0) continue;
-    out = `${out.slice(0, i)}@[${m.title}](${m.scheme}:${m.id})${out.slice(i + shown.length)}`;
+    const stored = spansOf(out);
+    let next = '';
+    let from = 0;
+    for (let i = out.indexOf(shown); i >= 0; i = out.indexOf(shown, i + 1)) {
+      const at = i;
+      const end = at + shown.length;
+      if (at < from || stored.some(([a, b]) => at >= a && at < b)) continue;
+      if (at > 0 && !/\s/.test(out[at - 1] ?? '')) continue;
+      if (end < out.length && !/\s/.test(out[end] ?? '') && !ENDS.test(out[end] ?? '')) continue;
+      next += `${out.slice(from, at)}@[${m.title}](${m.scheme}:${m.id})`;
+      from = end;
+    }
+    out = next + out.slice(from);
   }
   return out;
+}
+
+/**
+ * The box's form of sent text (doc25a): each `@[Title](scheme:id)` back to the `@Title` the box shows, with its mention
+ * (in order, once each), so a prompt put back (↑'s history, a refused send) sends its mentions again. Anything else,
+ * half-written markup included, stays as it is. `decodeMentions(encodeMentions(t, ms))` gives back `t` and `ms`.
+ */
+export function decodeMentions(text: string): { text: string; mentions: Mentioned[] } {
+  const mentions: Mentioned[] = [];
+  const out = text.replace(STORED, (_, title: string, scheme: Mentioned['scheme'], id: string) => {
+    if (!mentions.some((m) => m.scheme === scheme && m.id === id && m.title === title)) mentions.push({ scheme, id, title });
+    return `@${title}`;
+  });
+  return { text: out, mentions };
 }
 
 /** The items for a menu: every source for its trigger and box, in order, at most `max`. */
@@ -102,6 +140,22 @@ export function putMentions(text: string, from: number, to: number, got: readonl
   return { text: `${text.slice(0, from)}${words}${text.slice(to)}`, caret: from + words.length };
 }
 
+/** The title of the task `id` names on `peer` (`peek` reads a session row by key), else undefined: a key of another
+ *  computer's task is not one there (new1). */
+export function titleOn(peer: string, id: string, peek: (key: string) => string | undefined): string | undefined {
+  if (id.includes(':') && ownerOf(id) !== peer) return undefined;
+  return peek(id.includes(':') ? id : `${peer}:${id}`);
+}
+
+/** Mentions kept in a draft (persisted: read as data, anything else dropped) */
+const asMentions = (v: Json | undefined): readonly Mentioned[] =>
+  Array.isArray(v)
+    ? (v as unknown[]).filter((m): m is Mentioned => {
+        const x = m as Partial<Mentioned> | null;
+        return !!x && typeof x.id === 'string' && typeof x.title === 'string' && (x.scheme === 'wisp' || x.scheme === 'crew' || x.scheme === 'stuff');
+      })
+    : [];
+
 export interface PromptMenu {
   readonly suggest: Accessor<PromptSuggest | undefined>;
   /** call from the box's input: what's typed and where the caret is; with its input event, task ids a phone
@@ -111,6 +165,9 @@ export interface PromptMenu {
   readonly encode: (text: string) => string;
   /** after a send: the mentions go */
   readonly reset: () => void;
+  /** a sent prompt back in the box (↑'s history, a refused send): its stored mentions shown as `@Title` and kept, so
+   *  sending it again sends them (doc25a). The box's text after it. */
+  readonly restore: (stored: string) => string;
   /** a paste: task ids become their mentions (true: taken) */
   readonly paste: (e: ClipboardEvent) => boolean;
 }
@@ -121,6 +178,12 @@ export function usePromptMenu(o: {
   readonly task?: string;
   /** New task's picked project's folder (its files for @) */
   readonly project?: () => string | undefined;
+  /** the computer the box sends to (New task's Run on): its tasks are the ones @ offers and a pasted id is read on
+   *  (new1). A reply box's is its task's; unset, this wisp's own */
+  readonly peer?: () => string | undefined;
+  /** the box's draft (drafts.ts): its mentions are kept beside it, `<field>.mentions`, so a reload or a task switch
+   *  keeps what its `@Title`s send (doc25a); unset (a test's box), they live as long as the box */
+  readonly draft?: readonly [string, string];
   readonly text: Accessor<string>;
   readonly setText: (v: string) => void;
   readonly input: () => HTMLTextAreaElement | undefined;
@@ -129,12 +192,19 @@ export function usePromptMenu(o: {
   const sources = o.shell.promptSources();
   const [at, setAt] = createSignal<MenuAt | null>(null);
   const [active, setActive] = createSignal(0);
-  const [mentions, setMentions] = createSignal<readonly Mentioned[]>([]);
+  const [own, setOwn] = createSignal<readonly Mentioned[]>([]);
+  const kept = o.draft && o.shell.client.drafts.get<Json>(o.draft[0], `${o.draft[1]}.mentions`);
+  const mentions = (): readonly Mentioned[] => (kept ? asMentions(kept()) : own());
+  const setMentions = (ms: readonly Mentioned[]): void => {
+    if (o.draft) o.shell.client.drafts.set(o.draft[0], `${o.draft[1]}.mentions`, ms.length > 0 ? (ms as unknown as Json) : undefined);
+    else setOwn(ms);
+  };
   const base = { client: o.shell.client.plugin('shell'), ...(o.task !== undefined && { task: o.task }) };
-  // New task's picked project, read when the menu asks (its files for @)
+  const peerNow = (): string => o.peer?.() ?? (o.task?.includes(':') ? ownerOf(o.task) : (o.shell.client.plugin('shell') as { home: string }).home);
+  // New task's picked project and Run on, read when the menu asks (its files and its computer's tasks for @)
   const ctxNow = (): Parameters<PromptSourceDef['items']>[1] => {
     const project = o.project?.();
-    return project ? { ...base, project } : base;
+    return { ...base, peer: peerNow(), ...(project && { project }) };
   };
   // useDerived, not createMemo (round 324): the sources the registry holds and what each source's items read (the
   // entity store's tasks for @) are alien signals; a Solid memo read them once, so a task that landed, was renamed or
@@ -178,11 +248,9 @@ export function usePromptMenu(o: {
       onClose: () => setAt(null),
     };
   });
-  const titleOf = (id: string): string | undefined => {
-    const peer = (o.shell.client.plugin('shell') as { home: string }).home;
-    const key = id.includes(':') ? id : `${peer}:${id}`;
-    return o.shell.client.entities.peek<{ title?: string }>('session', key as never)?.title;
-  };
+  // a pasted id is a task on the computer the box sends to: the reply reads its mentions there (runtime mentions.rs),
+  // so another computer's task would be dropped unsaid (new1)
+  const titleOf = (id: string): string | undefined => titleOn(peerNow(), id, (key) => o.shell.client.entities.peek<{ title?: string }>('session', key as never)?.title);
   // the span becomes the mentions' @Titles, the caret after them
   const put = (text: string, from: number, to: number, got: readonly Mentioned[]): string => {
     const el = o.input();
@@ -208,6 +276,12 @@ export function usePromptMenu(o: {
     },
     encode: (text) => encodeMentions(text, mentions()),
     reset: () => setMentions([]),
+    restore: (stored) => {
+      const back = decodeMentions(stored);
+      setMentions([...mentions().filter((x) => !back.mentions.some((g) => g.title === x.title)), ...back.mentions]);
+      o.setText(back.text);
+      return back.text;
+    },
     paste: (e) => {
       const got = pastedTasks(e.clipboardData?.getData('text/plain') ?? '', titleOf);
       if (!got) return false;
