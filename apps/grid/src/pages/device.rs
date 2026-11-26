@@ -162,8 +162,9 @@ fn in_line(at: usize) -> String {
 
 /// Shown at a box's address the moment a browser opens it asleep, while it starts in the background: never a blank
 /// tab. It follows `/_grid/state` (starting, its place in line, or why it didn't start) and reloads to what was asked
-/// for once it's running. A failed start says why with Try again (a reload starts it again and waits again), and
-/// Home; never a dead end.
+/// for once it's running. A failed start says why with Try again (`POST /_grid/start`: the old failure forgotten at
+/// once, a new start, and the page waits again), and Home; never a dead end. Served `failed` (a start that just
+/// failed, opened again) it says why straight away and waits for Try again.
 pub fn waking_page(cfg: &PageCfg, p: &WakingPage) -> String {
     let failed = p.state == "failed";
     let (title, text) = match p.state.as_str() {
@@ -178,12 +179,12 @@ pub fn waking_page(cfg: &PageCfg, p: &WakingPage) -> String {
     let body = format!(
         r#"<div class="center" style="padding-top:48px"><div class="orb"></div><h1 class="h1" id="t">{title}</h1><p class="sub" id="msg" role="status">{text}</p>
       <p class="acts" id="acts" style="justify-content:center"{hidden}><button class="primary tall" id="again" type="button">Try again</button><a class="ghost line tall" href="{home}">Home</a></p></div>
-      <script>(function(){{const t=document.getElementById('t'),m=document.getElementById('msg'),a=document.getElementById('acts');document.getElementById('again').onclick=()=>location.reload();
-const say=(h,s,f)=>{{t.textContent=h;m.textContent=s;a.hidden=!f}};
+      <script>(function(){{const t=document.getElementById('t'),m=document.getElementById('msg'),a=document.getElementById('acts');const say=(h,s,f)=>{{t.textContent=h;m.textContent=s;a.hidden=!f}};
+document.getElementById('again').onclick=async()=>{{say({wt},{wb},false);try{{await fetch('/_grid/start',{{method:'POST',cache:'no-store'}})}}catch{{}}poll(0)}};
 async function poll(n){{let j={{}};try{{const r=await fetch('/_grid/state',{{cache:'no-store'}});j=await r.json()}}catch{{}}
 if(j.state==='running')return location.reload();
 if(j.state==='queued')say({qt},j.position>1?{qb}+'number '+j.position+{qa}:{qn},false);
-else if(j.state==='stopped'&&(j.error||n>3))return say({ft},j.error||{fb},true);
+else if(j.state==='stopped'&&(j.error||n>8))return say({ft},j.error||{fb},true);
 else if(j.state==='starting')say({wt},{wb},false);
 setTimeout(()=>poll(n+1),n<20?700:2000)}}{kick}}})()</script>"#,
         title = esc(&title),
@@ -310,7 +311,8 @@ mod tests {
             "{failed}"
         );
         assert!(failed.contains(r#"id="acts" style="justify-content:center"><button class="primary tall" id="again" type="button">Try again</button><a class="ghost line tall" href="https://grid.test">Home</a>"#), "{failed}");
-        assert!(!failed.contains("poll(0)"), "a failed page waits for Try again");
+        assert!(!failed.contains("}poll(0)})()"), "a failed page waits for Try again");
+        assert!(failed.contains("fetch('/_grid/start',{method:'POST'"), "Try again starts it again and waits: {failed}");
         assert!(!failed.contains(">Back<"), "no dead end");
     }
 }

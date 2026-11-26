@@ -197,11 +197,26 @@ impl Grid {
         self.proxy(req, &BoxUser::user(&user), handle).await
     }
 
+    /// Starts the box in the background (unless a start is under way): what its waiting page waits for.
+    fn start_behind(&self, bu: &BoxUser) {
+        if self.boxes.state(&bu.id) == BoxState::Starting {
+            return;
+        }
+        let (boxes, who) = (self.boxes.clone(), bu.clone());
+        tokio::spawn(async move {
+            if let Err(e) = boxes.ensure(&who, false).await {
+                tracing::info!("grid: opening {}: {e}", who.handle);
+            }
+        });
+    }
+
     /// A request into a box (the user's own, or a sandbox): woken unless passive, counted as use until answered.
     pub(super) async fn proxy(&self, req: http::Request<Incoming>, bu: &BoxUser, handle: &str) -> Result<Resp> {
         let path = req.uri().path().to_owned();
         if path == "/_grid/state" {
             // what its waiting page shows: its place in line, or why its last start didn't work
+            // a page still asking: whoever waits in line for it is still there
+            self.boxes.still_waiting(&bu.id);
             let mut s = json!({ "state": self.boxes.state(&bu.id).as_str() });
             if let Some(at) = self.boxes.queued_at(&bu.id) {
                 s["position"] = json!(at);
@@ -210,6 +225,12 @@ impl Grid {
                 s["error"] = json!(e);
             }
             return Ok(json_with(200, &s, &[("cache-control", "no-store".into())]));
+        }
+        if path == "/_grid/start" && req.method() == Method::POST {
+            // its waiting page's Try again: the old failure forgotten now, the start behind it
+            self.boxes.forget_failure(&bu.id);
+            self.start_behind(bu);
+            return Ok(json_with(202, &json!({ "state": self.boxes.state(&bu.id).as_str() }), &[("cache-control", "no-store".into())]));
         }
         if path == "/_grid/stop" && req.method() == Method::POST {
             let was = self.boxes.stop(&bu.id, "stopped").await?;
@@ -224,14 +245,12 @@ impl Grid {
         // a browser opening a box that isn't up: its waiting page at once, the start in the background (not a blank
         // tab for up to `startMs`); the page follows `/_grid/state` and opens what was asked for once it's running
         if self.boxes.state(&bu.id) != BoxState::Running && crate::http::wants_html(req.method(), h) {
-            if self.boxes.state(&bu.id) != BoxState::Starting {
-                let (boxes, who) = (self.boxes.clone(), bu.clone());
-                tokio::spawn(async move {
-                    if let Err(e) = boxes.ensure(&who, false).await {
-                        tracing::info!("grid: opening {}: {e}", who.handle);
-                    }
-                });
+            // a start that just failed: the page says why, with Try again (`/_grid/start`), not another start
+            if let Some(why) = self.boxes.failed_lately(&bu.id) {
+                return Ok(self.waking_failed(why));
             }
+            self.boxes.forget_failure(&bu.id);
+            self.start_behind(bu);
             return Ok(self.waking(&bu.id));
         }
         let running = match self.boxes.ensure(bu, false).await {

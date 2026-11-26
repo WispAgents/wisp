@@ -128,6 +128,7 @@ async fn rig_with(name: &str, next_wake: Option<i64>, tune: impl FnOnce(&mut wis
         max_running: 2,
         max_running_per_user: 4,
         wake_retry_ms: 30_000,
+        queue_ms: 120_000,
         env,
         url_of: Arc::new(move |h| url_cfg.instance_url(h)),
         boxd: None,
@@ -487,6 +488,36 @@ async fn a_start_that_fails_says_why_on_the_waiting_page_with_try_again() {
     }
     assert_eq!(s["state"], "stopped", "{s}");
     assert!(s["error"].as_str().unwrap().contains("wisp didn't start in the box"), "{s}");
+    // opened again: the served page itself says why, with Try again showing, and doesn't start it again by itself
+    let r = g.at_box("/", &cookie, "text/html").await;
+    assert_eq!((r.status().as_u16(), r.headers()["cache-control"].to_str().unwrap()), (200, "no-store"));
+    let page = r.text().await.unwrap();
+    assert!(page.contains("Your wisp didn’t start") && page.contains("wisp didn&#39;t start in the box"), "{page}");
+    assert!(page.contains(r#"id="acts" style="justify-content:center"><button class="primary tall" id="again""#), "{page}");
+    assert_eq!(g.grid.boxes.state(&g.uid()), BoxState::Stopped, "no start of its own");
+    // Try again: the old failure is gone at once (a poll never reads it back while the new start waits for its
+    // gate), and a new start runs
+    let mut changes = g.grid.boxes.changes();
+    let r =
+        g.c.post(format!("http://ada.wisp.localhost:{}/_grid/start", g.port))
+            .header("cookie", &cookie)
+            .header("origin", g.grid.cfg.instance_url("ada"))
+            .send()
+            .await
+            .unwrap();
+    assert_eq!(r.status(), 202);
+    let started = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Ok(c) = changes.recv().await {
+            if c.user.id == g.uid() && c.state == BoxState::Starting {
+                return true;
+            }
+        }
+        false
+    });
+    assert!(started.await.unwrap_or(false), "Try again started it again");
+    until("the new start failed again", || g.grid.boxes.last_error(&g.uid()).is_some()).await;
+    g.grid.boxes.forget_failure(&g.uid());
+    assert!(g.state(&cookie).await["error"].is_null(), "a forgotten failure isn't read back");
     g.done().await;
 }
 
@@ -591,6 +622,7 @@ mod races {
             max_running: 4,
             max_running_per_user: 4,
             wake_retry_ms: 30_000,
+            queue_ms: 120_000,
             env: Vec::new(),
             url_of: Arc::new(|h| format!("https://{h}.grid.test")),
             boxd: Some(wisp_grid::boxd::Driver { socket: sock, limits: Value::Null, dns: None }),
@@ -718,6 +750,53 @@ mod races {
         x.h.stop("o1-sb-1", "idle").await.unwrap();
         x.h.stop("o1", "idle").await.unwrap();
         until("the sandbox starts once its owner has room", || x.h.state("o1-sb-3") == BoxState::Running).await;
+        x.done().await;
+    }
+
+    /// grid-r2-1/-6: two slots freeing at once start the ones in line that may start, never two sandboxes of an owner
+    /// with room for one: the person behind them starts too. Before, drain picked sb-2 and sb-3 (counting the owner
+    /// against the map only), sb-3 went back in line, and bob waited by an empty slot until some other box stopped.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn two_slots_freeing_at_once_skip_an_owner_at_its_limit_and_start_the_person_behind() {
+        let x = host("drain-owner", Fake::default(), |o| {
+            o.max_running = 3;
+            o.max_running_per_user = 2;
+        });
+        x.h.ensure(&sandbox("o1", 1), false).await.unwrap();
+        x.h.ensure(&user("z1"), false).await.unwrap();
+        x.h.ensure(&user("z2"), false).await.unwrap();
+        for u in [sandbox("o1", 2), sandbox("o1", 3), user("bob")] {
+            assert_eq!(x.h.ensure(&u, false).await.unwrap_err().status(), 503);
+        }
+        assert_eq!(x.h.queued_at("bob"), Some(3));
+        let (a, b) = tokio::join!(x.h.stop("z1", "idle"), x.h.stop("z2", "idle"));
+        assert!(a.unwrap() && b.unwrap(), "both were up");
+        until("sb-2 and bob both start", || x.h.state("o1-sb-2") == BoxState::Running && x.h.state("bob") == BoxState::Running).await;
+        assert_eq!((x.h.state("o1-sb-3"), x.h.queued_at("o1-sb-3")), (BoxState::Queued, Some(1)), "its owner is at 2");
+        x.done().await;
+    }
+
+    /// The line forgets a start no one waits for any more (`queueMs` with no poll, no retry: a closed tab), so it never
+    /// takes a slot later; one whose page still polls keeps its place.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_start_no_one_waits_for_leaves_the_line_and_one_still_polled_keeps_its_place() {
+        let x = host("line-expiry", Fake::default(), |o| {
+            o.max_running = 1;
+            o.queue_ms = 400;
+            o.check_ms = 200;
+        });
+        x.h.ensure(&user("a"), false).await.unwrap();
+        x.h.ensure(&user("gone"), false).await.unwrap_err();
+        x.h.ensure(&user("here"), false).await.unwrap_err();
+        for _ in 0..12 {
+            x.h.still_waiting("here");
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!((x.h.state("gone"), x.h.queued_at("gone")), (BoxState::Stopped, None), "a closed tab left the line");
+        assert_eq!(x.h.queued_at("here"), Some(1), "a page still polling moved up");
+        x.h.stop("a", "idle").await.unwrap();
+        until("the one still waited for starts", || x.h.state("here") == BoxState::Running).await;
+        assert_eq!(x.h.state("gone"), BoxState::Stopped);
         x.done().await;
     }
 

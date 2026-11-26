@@ -111,6 +111,12 @@ impl Grid {
         html(200, pages::waking_page(&self.page, &p), &[("cache-control", "no-store".to_owned())])
     }
 
+    /// The waiting page of a box whose start just failed: why, with Try again (which starts it again and waits).
+    pub(super) fn waking_failed(&self, error: String) -> Resp {
+        let p = pages::WakingPage { state: "failed".into(), position: None, error, home: self.cfg.public_url.clone() };
+        html(200, pages::waking_page(&self.page, &p), &[("cache-control", "no-store".to_owned())])
+    }
+
     /// A computer that isn't connected (v1 grid/server.js `computerEdge`). `path`: what was asked for. A browser
     /// navigating goes to its waiting page (under `/_grid/`, which the phone's service worker never answers), which
     /// opens `path` once it's back; anything else hears 503 naming that page (`x-wisp-offline`, for the worker).

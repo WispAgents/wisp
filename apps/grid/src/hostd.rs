@@ -50,6 +50,9 @@ pub struct ProcessOptions {
     pub max_running_per_user: usize,
     /// a scheduled wake that didn't start tries again after this, doubling (to 10 min) while the wake is recent
     pub wake_retry_ms: i64,
+    /// a person's start in line that no one asks after for this long (config `hostd.queueMs`; a waiting page polls,
+    /// a caller retries) leaves the line: a closed tab never takes a slot later
+    pub queue_ms: i64,
     /// more environment for every box (the operator's choice: a harness's path, a test's fakes)
     pub env: Vec<(String, String)>,
     /// `<handle>` → the box's public URL (`WISP_PUBLIC_URL`)
@@ -96,6 +99,8 @@ struct Inst {
     run_id: u64,
     /// why its last start didn't work (cleared when the next one begins): what its waiting page says
     error: String,
+    /// when that start failed: a page opened soon after says why (with Try again) rather than starting it again
+    failed_at: Option<i64>,
 }
 
 #[derive(Debug)]
@@ -277,6 +282,7 @@ impl ProcessHost {
             let i = m.entry(user.id.clone()).or_default();
             i.state = BoxState::Stopped;
             i.error = start_error(e);
+            i.failed_at = Some(self.clock.now_ms());
         }
         self.change(user, BoxState::Stopped, event);
         if !wake {

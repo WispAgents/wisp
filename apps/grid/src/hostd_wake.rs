@@ -92,6 +92,8 @@ impl ProcessHost {
                 let _ = self.stop(&id, "idle").await;
             }
         }
+        // the line moves on every tick too: who left it goes, and a start that missed its turn gets it
+        self.drain();
     }
 
     /// Wakes the box for its next scheduled task, if it has one and sleeps (replacing an earlier timer).

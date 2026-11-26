@@ -62,6 +62,7 @@ async fn rig(name: &str, extra: serde_json::Value) -> Rig {
             max_running: 1,
             max_running_per_user: 4,
             wake_retry_ms: 30_000,
+            queue_ms: 120_000,
             env: Vec::new(),
             url_of: Arc::new(move |h| url_cfg.instance_url(h)),
             boxd: None,
