@@ -21,8 +21,6 @@ export default definePluginUi({
     ...(['changes', 'pr', 'shell', 'preview'] as const).map((p) => defineExtension({ id: `shell-task.side.${p}`, attachTo: { id: `shell.side:${p}` }, component: TaskSide })),
     // under each turn: why it stopped, what holds it, what moved in the CLI, its receipt
     defineExtension({ id: 'shell-task.turn', attachTo: { id: 'shell.turn:foot' }, component: lazy(() => import('./cards/TurnFoot.tsx')) }),
-    // over a turn that switched harness: the Timeline's divider (ADR-0125)
-    defineExtension({ id: 'shell-task.switch', attachTo: { id: 'shell.turn:head' }, component: lazy(() => import('./continue/SwitchDivider.tsx')) }),
     // in each turn's trail, after its token count: the receipt's cache and plan share (ADR-0095)
     defineExtension({ id: 'shell-task.receipt', attachTo: { id: 'shell.turn:trail' }, component: lazy(() => import('./cards/TrailReceipt.tsx')) }),
     // over the reply box: the agent's question (or a tool's approval) and the queued follow-ups

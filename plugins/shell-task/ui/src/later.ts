@@ -1,4 +1,5 @@
 // wisp.shell-task's UI, the part only a press reaches (ADR-0067: PluginUiDef.later): loaded as the first screen draws.
+import { lazy } from 'solid-js';
 import { defineCommand, uuidv7 } from '@wisp/client';
 import type { PluginUiLater } from '@wisp/shell';
 import { defineExtension } from './define.ts';
@@ -8,6 +9,7 @@ import { CATALOGUE } from './i18n/index.ts';
 import { appRunning, runRequest } from './side/run-request.ts';
 import { filesSource } from './side/open-file.ts';
 import { openContinue } from './continue/open.ts';
+import './i18n/lazy.ts';
 
 /** The task a palette row or a key is about: the focused one, as its entity key. */
 const taskKeyOf = (focused: string | undefined): string | undefined => (focused && focused.includes(':') ? focused : undefined);
@@ -23,6 +25,8 @@ const stopRun = defineCommand<{ key: string; id: string }, { ok: boolean }>({
 
 const later: PluginUiLater = {
   extensions: [
+    // over a turn that switched harness: the Timeline's divider (ADR-0125), drawn once this part is in (ADR-0011)
+    defineExtension({ id: 'shell-task.switch', attachTo: { id: 'shell.turn:head' }, component: lazy(() => import('./continue/SwitchDivider.tsx')) }),
     // Continue on… in a task's menu (its More and the row's right-click, ADR-0125): the runner picker, then what
     // carries over, then one follow-up on that harness
     defineExtension({

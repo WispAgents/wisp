@@ -1,7 +1,3 @@
 {
-  "shell-task.continue.menu": "Continue on…",
-  "shell-task.continue.title": "Continue on another harness",
-  "shell-task.continue.group": "This task",
-  "shell-task.continue.slash": "/continue",
-  "shell-task.continue.slashHint": "Continue this task on another harness"
+  "shell-task.continue.title": "Continue on another harness"
 }
