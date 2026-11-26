@@ -194,7 +194,20 @@ async fn reveal_overlay(ctx: &Ctx, call: &Call, revealed: &Revealed, session: &s
     revealed.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(session.to_owned(), list);
 }
 
-pub fn register(s: &mut Setup) -> (Arc<StoredKind>, Arc<dyn ResourceKind>) {
+/// The connectors as runs get them, read again: after a token was refreshed, so a new run gets the new bearer.
+#[derive(Clone)]
+pub(crate) struct RunCache {
+    inner: Arc<StoredKind>,
+    cache: Cache,
+}
+
+impl RunCache {
+    pub(crate) async fn rebuild(&self) {
+        refresh(&self.inner, &self.cache).await;
+    }
+}
+
+pub(crate) fn register(s: &mut Setup) -> (Arc<StoredKind>, Arc<dyn ResourceKind>, RunCache) {
     let inner = Arc::new(StoredKind::new(
         KindInfo::new("connector", "connectors", "wisp.connectors", schema_of::<ConnectorSpec>())
             .order(18)
@@ -204,7 +217,7 @@ pub fn register(s: &mut Setup) -> (Arc<StoredKind>, Arc<dyn ResourceKind>) {
     let cache: Cache = Arc::default();
     let k: Arc<dyn ResourceKind> = Arc::new(ConnectorKind { inner: inner.clone(), cache: cache.clone() });
     s.contribute(&RESOURCE_KIND, k.clone());
-    let out = (inner.clone(), k);
+    let out = (inner.clone(), k, RunCache { inner: inner.clone(), cache: cache.clone() });
     let revealed: Revealed = Arc::default();
     let runs: Arc<dyn RunPart> = Arc::new(Runs(cache.clone(), revealed.clone()));
     s.contribute(&RUN, runs);
