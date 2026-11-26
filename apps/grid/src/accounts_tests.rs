@@ -121,3 +121,45 @@ fn computers_get_labels_that_never_read_as_another_address() {
     // the same device again: renamed, same label
     assert_eq!(a.add_computer(&ada, &d1, "Studio 2").unwrap().label, "studio--ada");
 }
+
+/// One address could hold any number of waiting codes (nothing counted them): it's 20 at once now, and the codes keep
+/// where they were asked from, and by what, for the approve page.
+#[test]
+fn live_device_codes_are_capped_per_ip() {
+    let (a, clock) = accounts();
+    let agent = "x".repeat(300);
+    for _ in 0..LIVE_CODES_PER_IP {
+        a.device_code_from("laptop", "203.0.113.9", &agent).unwrap();
+    }
+    let e = a.device_code_from("laptop", "203.0.113.9", "").unwrap_err();
+    assert_eq!(
+        (e.status(), e.public_message().as_str()),
+        (429, "Too many sign-ins waiting from here. Finish or let one expire, then try again.")
+    );
+    // another address still signs in
+    let c = a.device_code_from("phone", "198.51.100.7", "wisp-android/1").unwrap();
+    let uc = c["user_code"].as_str().unwrap();
+    let p = a.pending_ask(uc).unwrap().unwrap();
+    assert_eq!((p.name.as_str(), p.ip.as_str()), ("phone", "198.51.100.7"));
+    let kept: i64 = a
+        .db
+        .with(|c| c.query_row("SELECT max(length(requester_agent)) FROM device_codes WHERE requester_ip = '203.0.113.9'", [], |r| r.get(0)))
+        .unwrap();
+    assert_eq!(kept, 200);
+    // once they expire, there's room again
+    clock.advance(CODE_TTL_MS + 1);
+    a.device_code_from("laptop", "203.0.113.9", "").unwrap();
+}
+
+/// Rows stayed a day past their expiry, so a flood of codes stayed in the table: an expired code goes at the next insert.
+#[test]
+fn expired_device_codes_are_swept() {
+    let (a, clock) = accounts();
+    let old = a.device_code("old").unwrap();
+    let rows = || -> i64 { a.db.with(|c| c.query_row("SELECT count(*) FROM device_codes", [], |r| r.get(0))).unwrap() };
+    clock.advance(CODE_TTL_MS + 1);
+    a.device_code("new").unwrap();
+    assert_eq!(rows(), 1);
+    // the device polling the swept code is told to start again
+    assert_eq!(a.poll(old["device_code"].as_str().unwrap()).unwrap().error(), Some("invalid_grant"));
+}

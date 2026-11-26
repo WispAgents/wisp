@@ -11,8 +11,15 @@ pub const APP_URL: &str = "dev.trywisp.mobile://signed-in";
 /// The device asking to be let in.
 #[derive(Debug, Clone, Default)]
 pub struct DeviceAsk {
+    /// what the device calls itself: anyone can send any name, so it's shown quoted, never as the grid's word
     pub name: String,
     pub user_code: String,
+    /// where the code was asked from ("" when the grid didn't keep it)
+    pub ip: String,
+    pub asked_at: i64,
+    pub now_ms: i64,
+    /// the person approving is on another address than the one that asked: someone else may have started it
+    pub other_network: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -41,9 +48,22 @@ pub fn activate_page(cfg: &PageCfg, user: &PageUser, p: &ActivatePage) -> String
         }
         Some(d) => {
             let back = format!("/activate?code={}{}", d.user_code, if p.app { "&app=android" } else { "" });
+            let mins = (d.now_ms - d.asked_at).max(0) / 60_000;
+            let ago = match mins {
+                0 => "just now".to_owned(),
+                1 => "1 minute ago".to_owned(),
+                n => format!("{n} minutes ago"),
+            };
+            let from = if d.ip.is_empty() { format!("Asked {ago}") } else { format!("Asked from {} · {ago}", esc(&d.ip)) };
+            let warn = if d.other_network {
+                r#"<div class="flash warn">This request came from a different network than you. If you didn’t just start it yourself, don’t allow it.</div>"#
+            } else {
+                ""
+            };
             format!(
                 r#"<h1 class="h1">Let this device in?</h1>
-      <p class="sub"><b>{name}</b> asks to use your wisp as <b>{handle}</b>. Allow it only if you just started this on your own computer or phone, and the code matches.</p>
+      <p class="sub">A device calling itself “{name}” asks to use your wisp as <b>{handle}</b>. Allow it only if you just started this on your own computer or phone, and the code matches.</p>
+      <p class="sub">{from}</p>{warn}
       <div class="code">{code}</div>
       <form method="post" action="/activate" style="display:flex;gap:10px">
         <input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="code" value="{code}">{app}
@@ -165,14 +185,36 @@ mod tests {
             &cfg(),
             &u,
             &ActivatePage {
-                device: Some(DeviceAsk { name: "Pixel".into(), user_code: "ABCD-EFGH".into() }),
+                device: Some(DeviceAsk { name: "Pixel".into(), user_code: "ABCD-EFGH".into(), ..DeviceAsk::default() }),
                 app: true,
                 csrf: "t".into(),
                 ..ActivatePage::default()
             },
         );
-        assert!(allow.contains("<b>Pixel</b> asks to use your wisp as <b>ada</b>"));
+        assert!(allow.contains("A device calling itself “Pixel” asks to use your wisp as <b>ada</b>"));
         assert!(allow.contains("/signout?return=%2Factivate%3Fcode%3DABCD-EFGH%26app%3Dandroid"));
+        assert!(allow.contains("Asked just now") && !allow.contains("different network"));
+    }
+
+    /// The approve page said "<b>{name}</b> asks to use your wisp": a name the device chose, in the grid's own bold, with
+    /// nothing about where it came from. Now it's quoted as the device's claim, with the address and when, and a warning
+    /// when the approver is on another network.
+    #[test]
+    fn the_approve_page_quotes_the_name_and_says_where_it_came_from() {
+        let u = PageUser { handle: "ada".into(), ..PageUser::default() };
+        let d = DeviceAsk {
+            name: "<script>alert(1)</script>".into(),
+            user_code: "ABCD-EFGH".into(),
+            ip: "203.0.113.9".into(),
+            asked_at: 1_000,
+            now_ms: 1_000 + 3 * 60_000,
+            other_network: true,
+        };
+        let page = activate_page(&cfg(), &u, &ActivatePage { device: Some(d), csrf: "t".into(), ..ActivatePage::default() });
+        assert!(page.contains("A device calling itself “&#60;script&#62;alert(1)&#60;/script&#62;” asks"), "{page}");
+        assert!(!page.contains("<script>alert"));
+        assert!(page.contains("Asked from 203.0.113.9 · 3 minutes ago"));
+        assert!(page.contains(r#"<div class="flash warn">This request came from a different network than you. If you didn’t just start it yourself, don’t allow it.</div>"#));
     }
 
     #[test]

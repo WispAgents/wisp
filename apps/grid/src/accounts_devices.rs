@@ -3,7 +3,7 @@
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
-use super::{Accounts, DAY, hex_id, sha256_hex, sha256_v1, token, upgrade};
+use super::{Accounts, hex_id, sha256_hex, sha256_v1, token, upgrade};
 use crate::error::{Result, bad};
 use crate::rows::{ComputerRow, DeviceRow, UserRow};
 
@@ -11,6 +11,18 @@ use crate::rows::{ComputerRow, DeviceRow, UserRow};
 pub const CODE_TTL_MS: i64 = 10 * 60_000;
 /// How often a device may poll (RFC 8628 `interval`), in seconds.
 pub const INTERVAL_S: i64 = 5;
+/// Codes waiting at once from one address (a person signs in one or two devices), and on the whole grid (ADR-0129).
+pub const LIVE_CODES_PER_IP: i64 = 20;
+pub const LIVE_CODES: i64 = 10_000;
+
+/// A code still waiting, as the approve page shows it: the name is the device's own word for itself, untrusted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pending {
+    pub name: String,
+    /// where it was asked from ("" on a row from before ADR-0129)
+    pub ip: String,
+    pub asked_at: i64,
+}
 
 /// Letters that can't be misread for each other (no vowels: no words), as v1.
 const USER_CODE: &[u8] = b"BCDFGHJKLMNPQRSTVWXZ";
@@ -102,21 +114,42 @@ impl Accounts {
 
     /// A new code for a device called `name`: what the device shows and polls with.
     pub fn device_code(&self, name: &str) -> Result<Value> {
+        self.device_code_from(name, "", "")
+    }
+
+    /// A new code for `name`, asked from `ip` by `agent` (its user-agent): kept for the approve page. Refused past
+    /// `LIVE_CODES_PER_IP` codes waiting from that address (429) or `LIVE_CODES` on the grid (503). Expired rows go
+    /// first: a device polling one past its expiry hears `invalid_grant`, which every client takes as "start again".
+    pub fn device_code_from(&self, name: &str, ip: &str, agent: &str) -> Result<Value> {
         let n: String = name.trim().chars().take(60).collect();
         let n = if n.is_empty() { "A device".to_owned() } else { n };
+        let agent: String = agent.chars().take(200).collect();
         let code = token("");
         let pick = || (0..4).map(|_| char::from(USER_CODE[usize::from(rand::random::<u8>()) % USER_CODE.len()])).collect::<String>();
         let now = self.now();
+        let (here, all): (i64, i64) = self.db.with(|c| {
+            c.execute("DELETE FROM device_codes WHERE expires_at < ?1", [now])?;
+            c.query_row(
+                "SELECT count(*) FILTER (WHERE requester_ip = ?1), count(*) FROM device_codes WHERE consumed_at IS NULL AND denied_at IS NULL",
+                [ip],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+        })?;
+        if all >= LIVE_CODES {
+            return Err(bad("The grid has too many sign-ins waiting. Try again in a few minutes.", 503));
+        }
+        if here >= LIVE_CODES_PER_IP {
+            return Err(bad("Too many sign-ins waiting from here. Finish or let one expire, then try again.", 429));
+        }
         let user_code = self.db.with(|c| {
             let mut uc = format!("{}-{}", pick(), pick());
             while c.query_row("SELECT 1 FROM device_codes WHERE user_code = ?1", [&uc], |_| Ok(())).optional()?.is_some() {
                 uc = format!("{}-{}", pick(), pick());
             }
             c.execute(
-                "INSERT INTO device_codes (code_hash, user_code, name, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![sha256_hex(&code), uc, n, now, now + CODE_TTL_MS],
+                "INSERT INTO device_codes (code_hash, user_code, name, created_at, expires_at, requester_ip, requester_agent) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![sha256_hex(&code), uc, n, now, now + CODE_TTL_MS, ip, agent],
             )?;
-            c.execute("DELETE FROM device_codes WHERE expires_at < ?1", [now - DAY])?;
             Ok(uc)
         })?;
         Ok(json!({ "device_code": code, "user_code": user_code, "expires_in": CODE_TTL_MS / 1000, "interval": INTERVAL_S }))
@@ -124,12 +157,17 @@ impl Accounts {
 
     /// The device's name for a code still waiting, for the approval page; None when it isn't one.
     pub fn pending(&self, user_code: &str) -> Result<Option<String>> {
+        Ok(self.pending_ask(user_code)?.map(|p| p.name))
+    }
+
+    /// A code still waiting, with where and when it was asked: what the approve page shows.
+    pub fn pending_ask(&self, user_code: &str) -> Result<Option<Pending>> {
         let now = self.now();
         self.db.with(|c| {
             c.query_row(
-                "SELECT name FROM device_codes WHERE user_code = ?1 AND expires_at >= ?2 AND consumed_at IS NULL AND approved_at IS NULL AND denied_at IS NULL",
+                "SELECT name, coalesce(requester_ip, ''), created_at FROM device_codes WHERE user_code = ?1 AND expires_at >= ?2 AND consumed_at IS NULL AND approved_at IS NULL AND denied_at IS NULL",
                 params![normal_code(user_code), now],
-                |r| r.get(0),
+                |r| Ok(Pending { name: r.get(0)?, ip: r.get(1)?, asked_at: r.get(2)? }),
             )
             .optional()
         })

@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use super::{COOKIE, Grid, Who, no, query};
 use crate::accounts::Poll;
 use crate::error::{Result, bad};
-use crate::http::{Resp, cookies, header_str, html, json, parse_body, redirect, safe_path};
+use crate::http::{Resp, client_ip, cookies, header_str, html, json, parse_body, redirect, safe_path};
 use crate::pages::{self, ActivatePage, DeviceAsk, MessagePage, PageUser, Tone};
 use crate::rows::ComputerRow;
 use crate::trust::{Credential, Reach, may};
@@ -15,12 +15,14 @@ use crate::trust::{Credential, Reach, may};
 impl Grid {
     /// Signing in, on the grid's own address: the device API (RFC 8628 and its computers), `/activate`, `/events`, the
     /// sign-in page, the providers' flows and the dev sign-in. None for any other path.
+    #[allow(clippy::too_many_arguments)] // the request's parts
     pub(super) async fn account_routes(
         &self,
         method: &Method,
         parts: &[&str],
         q: &str,
         h: &HeaderMap,
+        peer: Option<std::net::IpAddr>,
         bytes: &[u8],
         who: &Who,
     ) -> Option<Result<Resp>> {
@@ -34,15 +36,28 @@ impl Grid {
         if !ours {
             return None;
         }
-        Some(self.account_route(method, parts, q, h, bytes, who).await)
+        Some(self.account_route(method, parts, q, h, peer, bytes, who).await)
     }
 
-    async fn account_route(&self, method: &Method, parts: &[&str], q: &str, h: &HeaderMap, bytes: &[u8], who: &Who) -> Result<Resp> {
+    #[allow(clippy::too_many_arguments)] // the request's parts
+    async fn account_route(
+        &self,
+        method: &Method,
+        parts: &[&str],
+        q: &str,
+        h: &HeaderMap,
+        peer: Option<std::net::IpAddr>,
+        bytes: &[u8],
+        who: &Who,
+    ) -> Result<Resp> {
         match (method.as_str(), parts) {
             ("POST", ["api", "device", "code"]) => {
+                // public, so counted per address: a script can't fill the table with codes (ADR-0129)
+                let ip = client_ip(peer, h);
+                self.limits.hit(&format!("devcode|{ip}"), 10, self.clock.now_ms())?;
                 let b = parse_body(h, bytes)?;
                 let name = b.get("name").and_then(Value::as_str).unwrap_or_default();
-                let mut v = self.accounts.device_code(name)?;
+                let mut v = self.accounts.device_code_from(name, &ip, header_str(h, "user-agent"))?;
                 let code = v["user_code"].as_str().unwrap_or_default().to_owned();
                 v["verification_uri"] = json!(format!("{}/activate", self.cfg.public_url));
                 v["verification_uri_complete"] = json!(format!("{}/activate?code={code}", self.cfg.public_url));
@@ -50,7 +65,7 @@ impl Grid {
             }
             ("POST", ["api", "device", "token"]) => self.device_token(h, bytes),
             ("POST", ["api", "device", "revoke"]) => self.device_revoke(h),
-            ("GET" | "POST", ["activate"]) => self.activate(method, h, bytes, q),
+            ("GET" | "POST", ["activate"]) => self.activate(method, h, peer, bytes, q),
             ("GET", ["auth", "dev"]) => self.dev_sign_in(q),
             ("GET", ["events"]) => Ok(self.events(match who {
                 Who::Session(u) => Some(u),
@@ -123,9 +138,14 @@ impl Grid {
     }
 
     /// `/activate`: a signed-in person allows (or declines) a device's code.
-    pub(super) fn activate(&self, method: &Method, h: &HeaderMap, bytes: &[u8], q: &str) -> Result<Resp> {
+    pub(super) fn activate(&self, method: &Method, h: &HeaderMap, peer: Option<std::net::IpAddr>, bytes: &[u8], q: &str) -> Result<Resp> {
         let cookie = cookies(h).get(COOKIE).cloned().unwrap_or_default();
-        let Some(user) = self.accounts.session(&cookie)? else {
+        let session = self.accounts.session(&cookie)?;
+        // each look-up tries a code: per person, or per address signed out, so codes can't be walked (ADR-0129)
+        let ip = client_ip(peer, h);
+        let asker = session.as_ref().map_or_else(|| format!("ip:{ip}"), |u| format!("user:{}", u.id));
+        self.limits.hit(&format!("activate|{asker}"), 30, self.clock.now_ms())?;
+        let Some(user) = session else {
             let back = format!("/activate?{q}");
             let link = if self.cfg.auth.dev && self.signin.providers.is_empty() {
                 format!("/auth/dev?next={}", crate::http::encode_component(&back))
@@ -156,7 +176,14 @@ impl Grid {
         let device = if code.is_empty() {
             None
         } else {
-            self.accounts.pending(&code)?.map(|name| DeviceAsk { name, user_code: crate::accounts::normal_code(&code) })
+            self.accounts.pending_ask(&code)?.map(|p| DeviceAsk {
+                other_network: !p.ip.is_empty() && p.ip != ip,
+                name: p.name,
+                user_code: crate::accounts::normal_code(&code),
+                ip: p.ip,
+                asked_at: p.asked_at,
+                now_ms: self.clock.now_ms(),
+            })
         };
         let error = if !code.is_empty() && device.is_none() {
             "That code expired or was already used. Start again on the device.".to_owned()

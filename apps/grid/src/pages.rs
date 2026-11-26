@@ -33,7 +33,7 @@ pub use device::{
     APP_URL, ActivatePage, DeviceAsk, MessagePage, OfflinePage, activate_page, message_page, offline_page, site_not_found, waking_page,
 };
 pub use home::{ComputerView, HomePage, InstanceView, Offers, ShareView, SiteView, Start, home_page, wisp_at, wisp_settings};
-pub use hub::{ShareCard, gallery_page, gone_page, locked_page, share_page};
+pub use hub::{ShareCard, Tried, gallery_page, gone_page, locked_page, share_page};
 pub use in_app::{InApp, Os, browser_name, in_app_browser, open_outside};
 pub use machines::{MachineView, Wish};
 pub use share::{SharePassPage, ShareViewPage, WebLook, share_pass_page, share_view_page};
