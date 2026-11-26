@@ -39,6 +39,9 @@ fn grid(name: &str) -> (Arc<Grid>, Arc<ManualClock>) {
             url_of: Arc::new(move |h| url_cfg.instance_url(h)),
             boxd: None,
             previews: false,
+            max_running_per_user: 4,
+            wake_retry_ms: 30_000,
+            queue_ms: 120_000,
         },
         shared.clone(),
     );
