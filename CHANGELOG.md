@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`wisp tui` never stops a task by accident.** Esc only goes back now (to the list, out of the composer); it used to stop a running task. `s` and `/stop` ask "Stop <task>?" first (y or Enter stops it, n or Esc doesn't), and do nothing on a task that isn't running.
+- **y, a and n in `wisp tui` answer only tool approvals**, with the approval's own Allow, Always or Deny. On a question ("Postgres or SQLite?") they used to send "allow" or "deny" as the answer.
+- **Answers from `wisp tui` and `wisp attach` name the question they answer.** Setup cards can now be answered from the terminal, and an answer to a question that was already answered or replaced is refused with that reason instead of landing on the next one.
+- **`/btw` works in `wisp tui`.** It was refused every time; now it asks the open task on the side and shows the answer in the transcript, and says so when there's no question or no task open.
+- **The `?` keys in `wisp tui` match what the keys do.** It shows the rows that were missing (`s`, `p`, `h`/←, `/`, Ctrl-A), and the goto row lists every view's letter, a plugin's included (Blame's `b`).
+
 ## [1.0.0-alpha.17] - 2026-11-26
 
 ### Changed
