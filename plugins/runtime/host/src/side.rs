@@ -54,10 +54,14 @@ impl Drop for KillOnDrop {
 }
 
 /// The prompt on the CLI's stdin, when its launch asks for it there. One it can't take (it went before reading it) is
-/// killed now, never left running with nobody reading it.
+/// killed now, never left running with nobody reading it. One that already went (it answered without reading it, as
+/// `side_runs`' `noeol` can on a busy runner) is no refusal: what it printed is its answer.
 async fn send_prompt(handle: &wisp_proc::ChildHandle, stdin: &Stdin) -> Result<()> {
     let Stdin::Bytes(b) = stdin else { return Ok(()) };
     if let Err(e) = handle.write(b.clone()) {
+        if matches!(e, wisp_proc::ProcError::Exited) {
+            return Ok(());
+        }
         let _ = handle.kill().await;
         return Err(e.into());
     }
