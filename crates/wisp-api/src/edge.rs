@@ -46,6 +46,8 @@ pub struct Edge {
     pub(crate) statics: Option<Arc<StaticFiles>>,
     preview: preview::PreviewClient,
     pub(crate) stop: CancellationToken,
+    /// who this server is (`serve::Ident`), set once it listens on a home; None: not advertised (tests)
+    pub(crate) ident: std::sync::OnceLock<crate::serve::Ident>,
 }
 
 impl std::fmt::Debug for Edge {
@@ -94,6 +96,7 @@ impl Edge {
             statics,
             preview: preview::client(),
             stop,
+            ident: std::sync::OnceLock::new(),
         });
         edge.reload_routes();
         edge

@@ -184,21 +184,8 @@ pub fn help(cat: &Catalogue, words: &[String]) -> i32 {
     let words: Vec<String> = words.iter().flat_map(|w| w.split_whitespace()).map(str::to_owned).collect();
     match words.get(1..).unwrap_or_default() {
         [] => say(&verbs::help_all(cat, crate::args::HELP)),
-        // a built-in group (`wisp help computer`, QA round 11 #2): its usage, and its plugin's verbs when it has one
-        [p] if crate::words::is_group(p) => {
-            let usage = crate::words::usage(p);
-            match verbs::help_plugin(cat, p) {
-                // a group the usage doesn't document (`settings`): its verbs, not "needs more" (audit G GS10)
-                Some(h) if usage.contains(" needs more: ") => say(&h),
-                Some(h) => say(&format!("{usage}\n\n{h}")),
-                None => say(&usage),
-            }
-        }
         [p] => {
-            // a built-in command HELP documents (`wisp help reply`, `wisp help import`): its lines, as its `--help`
-            // prints them (audit I IS10: 30 commands `wisp help` lists were "no command or plugin named …")
-            let documented = crate::words::documented(p);
-            let Some(h) = verbs::help_plugin(cat, p).or(documented) else {
+            let Some(h) = help_one(cat, p) else {
                 // `wisp help me` (QA round 15 #6): how to get help, and the way to a task
                 eprintln!(
                     "  ✗ wisp help {p}: no command or plugin named {p}\n  wisp help lists every command and plugin; wisp help <plugin> its verbs; wisp --help the usage\n  a task that says this: wisp -- help {p}"
@@ -226,6 +213,27 @@ pub fn help(cat: &Catalogue, words: &[String]) -> i32 {
         }
     }
     0
+}
+
+/// `wisp help <word>`, and `wisp <word> --help` alike: a built-in group's usage (QA round 11 #2) or the lines HELP
+/// documents a command with (audit I IS10: 30 commands `wisp help` lists were "no command or plugin named …"), then
+/// its plugin's verbs (audit M5: `wisp ship --help` listed the ship plugin's and lost `wisp ship <id>`); a plugin's
+/// verbs alone. None: no command or plugin of that name.
+pub fn help_one(cat: &Catalogue, p: &str) -> Option<String> {
+    let verbs = verbs::help_plugin(cat, p);
+    let usage = if crate::words::is_group(p) { Some(crate::words::usage(p)) } else { crate::words::documented(p) };
+    // a group the usage doesn't document (`settings`): its verbs, not "needs more" (audit G GS10)
+    match (usage.filter(|u| !u.contains(" needs more: ") || verbs.is_none()), verbs) {
+        (Some(u), Some(v)) => Some(crate::words::with_verbs(&u, &v)),
+        (u, v) => v.or(u),
+    }
+}
+
+/// The catalogue the last [`catalogue`] read left in `home`, for help and refusals when nothing answers: they never
+/// start wisp (audit M3). Auto's verbs are left out, as [`offered`] does with its switch off.
+pub fn cached(home: &Path) -> Option<Catalogue> {
+    let list: Vec<wisp_kernel::CommandInfo> = serde_json::from_slice(&std::fs::read(home.join("cli-catalogue.json")).ok()?).ok()?;
+    Some(offered(Catalogue::new(list), false))
 }
 
 /// `wisp sdk types ts|py [FILE]`: the SDKs' typed commands, printed or written to FILE.
@@ -314,6 +322,32 @@ mod tests {
             assert_eq!(a["text"], text, "{rest}");
         }
         assert!(!goal_by_name("crew.update", &w("t1 x"), &mut json!({ "id": "t1", "text": "x" })), "only goal.set");
+    }
+
+    /// Audit M5: `wisp ship --help` (and `wisp help ship`) listed only the ship plugin's verbs: `wisp ship <id>` and its
+    /// `--draft` were nowhere. A built-in command that's also a plugin's name says its own form first, then the verbs.
+    #[test]
+    fn a_built_in_that_is_a_plugin_too_says_its_own_form_then_the_verbs_audit_m5() {
+        let cmd = |id: &str, title: &str| wisp_kernel::CommandInfo {
+            id: id.into(),
+            plugin: "wisp.x".into(),
+            title: Some(title.into()),
+            read_only: false,
+            permission: id.replace('.', ":"),
+            args: Some("{ id: string, }".into()),
+            ui_only: None,
+        };
+        let cat =
+            Catalogue::new(vec![cmd("ship.merge", "Merge its PR"), cmd("settings.get", "Read a setting"), cmd("review.maybe", "Maybe")]);
+        let ship = help_one(&cat, "ship").unwrap();
+        assert!(ship.contains("wisp ship <id>") && ship.contains("--draft") && ship.contains("\nmore:\n"), "{ship}");
+        assert!(ship.find("wisp ship <id>") < ship.find("merge"), "its own form first: {ship}");
+        // nothing of the plugin's: the usage alone; a group HELP doesn't document: the verbs alone; a plugin's: its verbs
+        assert!(help_one(&Catalogue::new(Vec::new()), "ship").is_some_and(|h| h.contains("--draft") && !h.contains("more:")));
+        let settings = help_one(&cat, "settings").unwrap();
+        assert!(settings.contains("get") && !settings.contains("needs more"), "{settings}");
+        assert!(help_one(&cat, "review").is_some_and(|h| h.contains("maybe")));
+        assert_eq!(help_one(&cat, "frobnicate"), None);
     }
 
     fn root() -> PathBuf {

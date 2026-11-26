@@ -270,11 +270,20 @@ const SWITCHES: &[&str] = &[
     "-upgrade",
     "--refresh-only",
     "-refresh-only",
+    // the scripted commands' switches (`commands::own_flags`): `ls --all --bogus` must not read --bogus as a value
+    "--all",
+    "--watch",
+    "--draft",
+    "--queue",
+    "--detach",
 ];
 
 fn takes_value(cmd: &str, flag: &str) -> bool {
     let follow = cmd == "events" && flag == "-f";
-    !follow && !SWITCHES.contains(&flag)
+    // `wisp ls --repo` (the repo's tracked tasks) and `wisp ls -a` (--all) are switches; `wisp mcp --repo <dir>` takes a
+    // folder, and `-a` elsewhere is --agent
+    let ls_repo = matches!(cmd, "ls" | "list") && (flag == "--repo" || flag == "-a");
+    !follow && !ls_repo && !SWITCHES.contains(&flag)
 }
 
 const TRIGGER: &[&str] = &[
@@ -902,9 +911,11 @@ pub fn usage(word: &str) -> String {
     format!("{out}  a task that starts with {word}: wisp -- {word} …")
 }
 
-/// The built-in commands that take arguments of their own, whose `--help` right after them is their usage (audit I IS10:
-/// `wisp import --help` looked for a folder named `--help`). A group's and a plugin's `--help` is `wisp help <it>`
-/// (audit G GS10), from the catalogue.
+/// The built-in commands no plugin adds verbs to: their `--help` is their usage, read without the catalogue, so it never
+/// starts wisp nor runs the command, whatever words follow (audit I IS10: `wisp import --help` looked for a folder named
+/// `--help`; audit H1: `wisp destroy --help` planned a destroy, `wisp workspace new --help` made a workspace `--help`).
+/// The other built-ins' `--help` is `wisp help <it>` with their plugin's verbs (audit G GS10), or their verb's own
+/// (`wisp crew create --help`). `words_tests` holds every one to a usage of its own and to no plugin of its name.
 pub const OWN_HELP: &[&str] = &[
     "add",
     "adopt",
@@ -912,16 +923,21 @@ pub const OWN_HELP: &[&str] = &[
     "attach",
     "blame",
     "btw",
+    "desktop",
+    "destroy",
     "diff",
     "export",
     "fmt",
     "fresh",
+    "graph",
     "held",
     "import",
     "init",
+    "list",
     "log",
     "ls",
     "merge",
+    "mv",
     "notes",
     "open",
     "output",
@@ -930,15 +946,55 @@ pub const OWN_HELP: &[&str] = &[
     "rerun",
     "resume",
     "run",
+    "schema",
     "secret",
+    "serve",
+    "shell-init",
     "show",
     "stop",
     "tasks",
     "track",
+    "tui",
     "untrack",
+    "validate",
+    "version",
     "wait",
     "workspace",
 ];
+
+/// What `wisp <built-in> … --help` is, decided before any command runs (audit H1: `wisp destroy --help` planned a
+/// destroy, `wisp graph --help` printed the digraph, `wisp workspace new --help` made a workspace named `--help`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AskedHelp {
+    /// the command's usage, whatever words follow: print it, exit 0
+    Usage(String),
+    /// one word, or a next word that may be its plugin's verb (`wisp ship merge --help`): the catalogue decides
+    /// ([`crate::cli::help_one`], or that verb's own help), the usage when nothing answers
+    Catalogue,
+}
+
+/// None: no `--help`, after `--` (a task: `wisp -- "explain --help"`), a word that's no built-in (a plugin's: `wisp
+/// review --help` is `wisp help review`), `wisp help …` (help already) or `wisp grid …` (wisp Grid's own help).
+pub fn asked_help(words: &[String], literal: Literal, help: bool) -> Option<AskedHelp> {
+    let first = words.first()?;
+    if literal == Literal::Task || !help || !known(first) || matches!(first.as_str(), "help" | "grid") {
+        return None;
+    }
+    // `wisp computer on --help`: the group's usage, as its refusals print it
+    if let Some((cmd, _)) = verb_path(words) {
+        return Some(AskedHelp::Usage(usage(cmd)));
+    }
+    if !OWN_HELP.contains(&first.as_str()) && words.get(1).is_none_or(|w| crate::plugin_word(w)) {
+        return Some(AskedHelp::Catalogue);
+    }
+    Some(AskedHelp::Usage(documented(first).unwrap_or_else(|| usage(first))))
+}
+
+/// A command's usage, then its plugin's verbs under `more:` (audit M5: `wisp ship --help` listed only the ship plugin's
+/// verbs, never `wisp ship <id>` and its `--draft`).
+pub fn with_verbs(usage: &str, verbs: &str) -> String {
+    format!("{usage}\n\nmore:\n{verbs}")
+}
 
 /// `wisp <word>`'s usage when HELP documents it as a command of its own (its lines, never "needs more"), else None.
 pub fn documented(word: &str) -> Option<String> {

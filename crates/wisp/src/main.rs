@@ -20,6 +20,7 @@ mod fresh_cli;
 mod groups;
 mod history_cli;
 mod hook_cli;
+mod mcp_stdio;
 mod mcp_tasks;
 mod notes_cli;
 mod offload_cli;
@@ -67,7 +68,11 @@ fn main() {
     let cwd = services::plain(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let parsed = match args::parse(&argv, std::env::var("WISP_PORT").ok().as_deref(), &user_home, &cwd) {
         Ok(p) => p,
-        Err(e) => die(&e.to_string()),
+        // a usage error (`--limit abc`, `--port` with no value): said, exit 2 as every usage error
+        Err(e) => {
+            eprintln!("  ✗ {e}");
+            std::process::exit(cli::USAGE_EXIT)
+        }
     };
     match parsed.action {
         Action::Version => return say(serve::VERSION),
@@ -104,7 +109,7 @@ async fn run(p: Parsed, user_home: &Path, cwd: &Path) -> i32 {
         Ok(code) => code,
         Err(e) => {
             eprintln!("  ✗ {e}");
-            1
+            e.exit_code()
         }
     }
 }
@@ -121,11 +126,12 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
     }
     let rest = p.words.get(1..).unwrap_or_default();
     // a task this terminal left running that finished, asks or failed: one line before anything else
-    if !matches!(p.command, Some("serve" | "mcp" | "grid" | "desktop" | "completions" | "sdk")) && Client::new(port).ping().await {
+    if !matches!(p.command, Some("serve" | "mcp" | "grid" | "desktop" | "completions" | "sdk")) && Client::new(port).serves(&home).await {
         attach::notices(&Client::new(port), &home).await;
     }
-    // `wisp import --help` (audit I IS10), then a built-in verb path its arm didn't take
-    if let Some(code) = own_help(p).or_else(|| misused_verb_path(p, true)) {
+    // `wisp import --help` (audit I IS10), `wisp destroy --help` (audit H1): the usage before any command runs; then a
+    // built-in verb path its arm didn't take
+    if let Some(code) = asked_help(p, &home, port).await.or_else(|| misused_verb_path(p, true)) {
         return Ok(code);
     }
     if let Some(code) = as_code(p, port, f.cwd.as_deref().unwrap_or(cwd), &home).await? {
@@ -189,7 +195,7 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         }
         Some("serve") => serve_here(&home, f.port, f.host.as_deref(), false, None).await?,
         Some("desktop") => {
-            desktop::desktop(&home, user_home, port, desktop::reach(port).await?, true).await?;
+            desktop::desktop(&home, user_home, port, desktop::reach(port, &home).await?, true).await?;
         }
         Some("plugin" | "plugins") if rest.first().map(String::as_str) == Some("new") => {
             let name = scripted::need(rest.get(1), "a plugin name")?;
@@ -229,21 +235,49 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
 /// QA round 9 #1 (`wisp computer on --grid …` started a task): words that start with a built-in verb path are that
 /// command. `flags`: refuse a flag it doesn't take, before anything runs; else (past every arm, on the launch path)
 /// refuse whatever it was given. Either way its usage, exit 2. None: not a verb path, or after `--` (a task on purpose).
-/// `wisp import --help`, `wisp run --help`: the command's usage, never `--help` read as its argument (audit I IS10:
-/// "No folder at …/--help", "no task --help"). Only right after the command: a verb's own `--help` (`wisp crew create
-/// --help`) is its own, and a group's or a plugin's is `wisp help <it>` (audit G GS10). (`wisp run` takes what follows as
-/// its words: there `--help` is the word after the command.)
-fn own_help(p: &Parsed) -> Option<i32> {
-    let asked = (p.flags.help && p.words.len() == 1) || p.words.get(1).is_some_and(|w| w == "--help" || w == "-h");
-    if p.literal != args::Literal::No || !asked {
-        return None;
-    }
-    let cmd = p.command.or_else(|| p.words.first().map(String::as_str))?;
-    if !words::OWN_HELP.contains(&cmd) {
-        return None;
-    }
-    say(&words::documented(cmd)?);
+/// `wisp <built-in> … --help` ([`words::asked_help`]): its usage, exit 0, before any command runs, whatever words
+/// follow (audit I IS10, H1). A group's or a command's that's also a plugin's is `wisp help <it>` (audit G GS10, M5);
+/// a plugin verb's (`wisp crew create --help`) is that verb's own, in `live`. The catalogue is read without starting
+/// wisp (audit M3): the running one's, else the one it last left here, else the usage alone. None: not asked.
+async fn asked_help(p: &Parsed, home: &Path, port: u16) -> Option<i32> {
+    let usage = match words::asked_help(&p.words, p.literal, p.flags.help)? {
+        words::AskedHelp::Usage(u) => u,
+        words::AskedHelp::Catalogue => {
+            let first = &p.words[0];
+            let found = quiet_catalogue(home, port, None).await;
+            if p.words.len() >= 2
+                && let Some((cat, running)) = &found
+                && let Some((v, _)) = cat.resolve(&p.words)
+            {
+                // a verb of its plugin: its flags; one listed before its plugin woke has none yet, and `live` wakes it
+                if *running && v.info.args.is_none() && p.command.is_none() {
+                    return None;
+                }
+                say(&wisp_cli_core::verbs::help_verb(v));
+                return Some(0);
+            }
+            let one = found.as_ref().filter(|_| p.words.len() == 1).and_then(|(cat, _)| cli::help_one(cat, first));
+            one.or_else(|| words::documented(first)).unwrap_or_else(|| words::usage(first))
+        }
+    };
+    say(&usage);
     Some(0)
+}
+
+/// The catalogue for help and refusals, never starting wisp (audit M3: `wisp serve --bogus` started a background
+/// daemon to say serve's usage): the running wisp's (`first`: only what [`cli::shown_for`] reads for it; None: all
+/// [`cli::shown`] offers), else the one the last read left in `home`. `true`: from the running wisp.
+async fn quiet_catalogue(home: &Path, port: u16, first: Option<&String>) -> Option<(wisp_cli_core::verbs::Catalogue, bool)> {
+    if let Ok(c) = Client::connect(port, false).await
+        && let Ok(full) = cli::catalogue(&c, home).await
+    {
+        let cat = match first {
+            Some(_) => cli::shown_for(&c, full, first).await,
+            None => cli::shown(&c, full).await,
+        };
+        return Some((cat, true));
+    }
+    cli::cached(home).map(|cat| (cat, false))
 }
 
 fn misused_verb_path(p: &Parsed, flags: bool) -> Option<i32> {
@@ -293,14 +327,13 @@ async fn not_a_task(p: &Parsed, home: &Path, port: u16, mut cat: Option<wisp_cli
     }
     // a built-in group and another word (`wisp crew start`): its plugin verbs too, to name them
     let maybe_group = p.words.len() >= 2 && p.literal != args::Literal::Task && words::is_group(first);
+    // read without starting wisp (audit M3: `wisp serve --bogus` started a background daemon to refuse it), and never
+    // for a built-in no plugin adds verbs to: nothing answering, the built-in usage says it
     if cat.is_none()
+        && !words::OWN_HELP.contains(&first.as_str())
         && ((words::command_shaped(&p.words, p.literal) && (!words::known(first) || words::is_group(first))) || maybe_group)
-        && let Ok(c) = Client::connect(port, true).await
     {
-        cat = match cli::catalogue(&c, home).await {
-            Ok(full) => Some(cli::shown_for(&c, full, Some(first)).await),
-            Err(_) => None,
-        };
+        cat = quiet_catalogue(home, port, Some(first)).await.map(|(c, _)| c);
     }
     let paths: Vec<Vec<String>> = cat
         .as_ref()
@@ -593,7 +626,11 @@ async fn areas(first: &str, p: &Parsed, o: &code::Opts, port: u16, cwd: &Path) -
         {
             hook_cli::run(&o.words, cwd)?
         }
-        "tui" if o.words.is_empty() => tui::run(&connect().await?, &cwd.display().to_string()).await?,
+        // no terminal (a pipe, CI): said before a wisp is reached or started
+        "tui" if o.words.is_empty() => {
+            tui::needs_terminal()?;
+            tui::run(&connect().await?, &cwd.display().to_string()).await?
+        }
         // QA round 11 #1: what people type for these (`wisp version`, v1's `wisp usage`)
         "version" if o.words.is_empty() => {
             say(serve::VERSION);
@@ -667,10 +704,10 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
     let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
     // `wisp <group> --help` is `wisp help <group>`: its usage and its verbs, whether the group routes as a command
     // (`plugin`, `mcp`) or not (audit G GS10: some printed the whole usage, `settings` "needs more", others one line);
-    // a word that's no group or plugin goes on to the usage
+    // a word that's no group or plugin goes on to the usage. Read without starting wisp (audit M3): nothing answering
+    // and no list left here, the usage
     if f.help && p.literal != args::Literal::Task && words.len() == 1 && plugin_word(&words[0]) {
-        let c = Client::connect(port, true).await?;
-        let cat = cli::shown(&c, cli::catalogue(&c, home).await?).await;
+        let Some((cat, _)) = quiet_catalogue(home, port, None).await else { return Ok(None) };
         if words::is_group(&words[0]) || cat.has_plugin(&words[0]) {
             return Ok(Some(cli::help(&cat, &["help".to_owned(), words[0].clone()])));
         }
@@ -702,8 +739,12 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
             let c = Client::connect(port, true).await?;
             cli::sdk_types(&cli::catalogue(&c, home).await?, words.get(2), words.get(3))
         }
-        // `wisp <plugin> <verb> …`: a command of the catalogue, else (it names none) a task
-        None if p.literal != args::Literal::Task && words.first().is_some_and(|w| plugin_word(w)) && words.len() >= 2 => {
+        // `wisp <plugin> <verb> …`: a command of the catalogue, else (it names none) a task. A built-in no plugin adds
+        // verbs to (`wisp serve --bogus`) has none to look for: its refusal never starts wisp (audit M3)
+        None if p.literal != args::Literal::Task
+            && words.first().is_some_and(|w| plugin_word(w) && !words::OWN_HELP.contains(&w.as_str()))
+            && words.len() >= 2 =>
+        {
             let c = Client::connect(port, true).await?;
             // Auto put away (runtime.auto off): `wisp router …` is no command (audit C6)
             let cat = cli::shown_for(&c, cli::catalogue(&c, home).await?, words.first()).await;

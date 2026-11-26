@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 use wisp_history_core::repo;
@@ -751,8 +752,9 @@ fn mcp_tools() -> Value {
 pub fn mcp_reply(root: &Path, msg: &Value) -> Option<Value> {
     let id = msg.get("id")?.clone();
     let result = match msg.get("method").and_then(Value::as_str).unwrap_or_default() {
+        // listChanged: a wisp reached after the first list says so (`notifications/tools/list_changed`)
         "initialize" => {
-            json!({ "protocolVersion": msg.pointer("/params/protocolVersion").cloned().unwrap_or(json!("2025-06-18")), "capabilities": { "tools": {} }, "serverInfo": { "name": "wisp", "version": env!("CARGO_PKG_VERSION") } })
+            json!({ "protocolVersion": msg.pointer("/params/protocolVersion").cloned().unwrap_or(json!("2025-06-18")), "capabilities": { "tools": { "listChanged": true } }, "serverInfo": { "name": "wisp", "version": env!("CARGO_PKG_VERSION") } })
         }
         // the history tools, and v1's task tools (setup audit F28; they need a wisp, started on the first call)
         "tools/list" => {
@@ -814,70 +816,111 @@ async fn resume_request(c: &Client, root: &Path, args: &Value) -> Value {
     }
 }
 
+/// What a request needs of the running wisp.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Need {
+    No,
+    /// the one connected, if any (`wisp_resume` only asks when a wisp is there)
+    Running,
+    /// the running wisp, a headless one started when none answers
+    Start,
+}
+
+/// The list and every tool that isn't a history tool need a wisp, started if none answers: `tools/list` too, so an
+/// editor that started before wisp still gets the full catalogue, not this server's 11 tools.
+pub(crate) fn needs_wisp(method: &str, tool: &str) -> Need {
+    match method {
+        "tools/list" => Need::Start,
+        "tools/call" if !is_own_tool(tool) || crate::mcp_tasks::is_task_tool(tool) => Need::Start,
+        "tools/call" if tool == "wisp_resume" => Need::Running,
+        _ => Need::No,
+    }
+}
+
+/// `wisp mcp`'s state, shared by the requests running at once.
+struct Mcp {
+    root: PathBuf,
+    at: PathBuf,
+    port: u16,
+    /// the running wisp, connected once: requests racing for it wait on the lock, so only one server is ever started
+    client: tokio::sync::Mutex<Option<Client>>,
+    out: tokio::sync::mpsc::UnboundedSender<Value>,
+}
+
+impl Mcp {
+    async fn client(&self, need: Need) -> Option<Client> {
+        let mut held = self.client.lock().await;
+        if held.is_none() && need == Need::Start {
+            *held = Client::connect(self.port, true).await.ok();
+            // a wisp reached after the first list: the editor asks again for the full one
+            if held.is_some() {
+                let _ = self.out.send(json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" }));
+            }
+        }
+        held.clone()
+    }
+
+    async fn answer(self: Arc<Self>, msg: Value) -> Option<Value> {
+        let tool = msg.pointer("/params/name").and_then(Value::as_str).unwrap_or_default().to_owned();
+        let method = msg.get("method").and_then(Value::as_str).unwrap_or_default().to_owned();
+        let need = needs_wisp(&method, &tool);
+        let client = if need == Need::No { None } else { self.client(need).await };
+        let id = msg.get("id").cloned().unwrap_or(Value::Null);
+        let args = msg.pointer("/params/arguments").cloned().unwrap_or_else(|| json!({}));
+        match (method.as_str(), &client) {
+            // the catalogue, as `/api/mcp` offers it to the user (audit B #4: 11 tools here, 240 there), after this
+            // server's own; the local list alone when no wisp answers or starts
+            ("tools/list", Some(c)) => {
+                let mut reply = self.local(msg.clone()).await?;
+                merge_catalogue(&mut reply, c.mcp(&msg, &self.at).await.ok().as_ref());
+                // Auto off (the default): no list offers `auto` as a harness, this server's own tools included (audit I IS8)
+                let auto = c.cmd("settings.get", json!({ "key": "runtime.auto" })).await.ok();
+                if !auto.is_some_and(|v| v == json!(true) || v.get("value") == Some(&json!(true))) {
+                    crate::mcp_tasks::without_auto(&mut reply);
+                }
+                Some(reply)
+            }
+            // any other tool runs through it (a wisp started headless if none answers)
+            ("tools/call", _) if !is_own_tool(&tool) => Some(through(client.as_ref(), &msg, &self.at).await),
+            // a task tool: the running wisp, started headless when none answers (as v1's server did)
+            ("tools/call", _) if crate::mcp_tasks::is_task_tool(&tool) => {
+                let result = match &client {
+                    Some(c) => crate::mcp_tasks::call(c, &tool, &args, &self.at).await,
+                    None => {
+                        json!({ "content": [{ "type": "text", "text": "wisp isn't running and didn't start: run wisp serve" }], "isError": true })
+                    }
+                };
+                Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
+            }
+            ("tools/call", Some(c)) if tool == "wisp_resume" => {
+                Some(json!({ "jsonrpc": "2.0", "id": id, "result": resume_request(c, &self.root, &args).await }))
+            }
+            _ => self.local(msg).await,
+        }
+    }
+
+    /// This server's own answer: the history tools read git and the files, off the runtime's workers.
+    async fn local(&self, msg: Value) -> Option<Value> {
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || mcp_reply(&root, &msg)).await.ok().flatten()
+    }
+}
+
 /// `wisp mcp [--repo <path>]`: the history tools over stdio, from the files and git (no wisp needed;
-/// `wisp_resume` asks the running wisp, when there is one).
+/// `wisp_resume` asks the running wisp, when there is one), and the task tools and the catalogue on the running wisp.
+/// Requests run at once (`mcp_stdio`).
 #[allow(clippy::unnecessary_wraps)] // every command answers a Result
 pub async fn mcp(argv: &[String], cwd: &Path, port: u16) -> Result<i32> {
     let at = argv.iter().position(|a| a == "--repo").and_then(|i| argv.get(i + 1)).map_or_else(|| cwd.to_owned(), PathBuf::from);
     let root = root(&at);
-    let stdin = std::io::stdin();
-    let mut out = std::io::stdout().lock();
-    let mut client = Client::connect(port, false).await.ok();
-    for line in stdin.lock().lines().map_while(std::result::Result::ok) {
-        let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
-        let tool = msg.pointer("/params/name").and_then(Value::as_str).unwrap_or_default().to_owned();
-        let method = msg.get("method").and_then(Value::as_str).unwrap_or_default().to_owned();
-        // the catalogue, as `/api/mcp` offers it to the user (audit B #4: 11 tools here, 240 there): listed with a wisp
-        // running, after this server's own; any other tool runs through it (a wisp started headless if none answers)
-        if method == "tools/list"
-            && let (Some(c), Some(mut reply)) = (&client, mcp_reply(&root, &msg))
-        {
-            merge_catalogue(&mut reply, c.mcp(&msg, &at).await.ok().as_ref());
-            // Auto off (the default): no list offers `auto` as a harness, this server's own tools included (audit I IS8)
-            let auto = c.cmd("settings.get", json!({ "key": "runtime.auto" })).await.ok();
-            if !auto.is_some_and(|v| v == json!(true) || v.get("value") == Some(&json!(true))) {
-                crate::mcp_tasks::without_auto(&mut reply);
-            }
-            let _ = writeln!(out, "{reply}");
-            let _ = out.flush();
-            continue;
-        }
-        if method == "tools/call" && !is_own_tool(&tool) {
-            if client.is_none() {
-                client = Client::connect(port, true).await.ok();
-            }
-            let reply = through(client.as_ref(), &msg, &at).await;
-            let _ = writeln!(out, "{reply}");
-            let _ = out.flush();
-            continue;
-        }
-        if msg.get("method").and_then(Value::as_str) == Some("tools/call") && crate::mcp_tasks::is_task_tool(&tool) {
-            // a task tool: the running wisp, started headless when none answers (as v1's server did)
-            if client.is_none() {
-                client = Client::connect(port, true).await.ok();
-            }
-            let id = msg.get("id").cloned().unwrap_or(Value::Null);
-            let result = match &client {
-                Some(c) => crate::mcp_tasks::call(c, &tool, msg.pointer("/params/arguments").unwrap_or(&json!({})), &at).await,
-                None => {
-                    json!({ "content": [{ "type": "text", "text": "wisp isn't running and didn't start: run wisp serve" }], "isError": true })
-                }
-            };
-            let _ = writeln!(out, "{}", json!({ "jsonrpc": "2.0", "id": id, "result": result }));
-            let _ = out.flush();
-            continue;
-        }
-        let reply = match (&client, msg.pointer("/params/name").and_then(Value::as_str)) {
-            (Some(c), Some("wisp_resume")) if msg.get("method").and_then(Value::as_str) == Some("tools/call") => Some(
-                json!({ "jsonrpc": "2.0", "id": msg.get("id").cloned().unwrap_or(Value::Null), "result": resume_request(c, &root, msg.pointer("/params/arguments").unwrap_or(&json!({}))).await }),
-            ),
-            _ => mcp_reply(&root, &msg),
-        };
-        if let Some(r) = reply {
-            let _ = writeln!(out, "{r}");
-            let _ = out.flush();
-        }
-    }
+    let lines = crate::mcp_stdio::stdin_lines();
+    let (out, writer) = crate::mcp_stdio::stdout_writer();
+    let client = Client::connect(port, false).await.ok();
+    let st = Arc::new(Mcp { root, at, port, client: tokio::sync::Mutex::new(client), out: out.clone() });
+    let handle: crate::mcp_stdio::Handler = Arc::new(move |msg| Box::pin(st.clone().answer(msg)));
+    crate::mcp_stdio::serve(lines, out, handle).await;
+    // every sender gone with the loop: the writer drains what's left and ends
+    let _ = writer.await;
     Ok(0)
 }
 
