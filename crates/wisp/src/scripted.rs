@@ -526,8 +526,13 @@ pub async fn reply(c: &Client, f: &Flags, args: &[String], limit: Duration) -> R
             .filter(|a| a.get("setup").is_some_and(Value::is_object) || a.get("guard") == Some(&json!(true)))
     {
         let r = c.cmd("runtime.answer", json!({ "id": id, "text": text, "askId": s(ask, "id") })).await?;
-        out(f, &r, &format!("  ✓ {}", Some(s(&r, "said")).filter(|t| !t.is_empty()).unwrap_or("answered")));
-        return Ok(0);
+        if !f.wait {
+            out(f, &r, &format!("  ✓ {}", Some(s(&r, "said")).filter(|t| !t.is_empty()).unwrap_or("answered")));
+            return Ok(0);
+        }
+        // --wait waits on what the answer let run, as a follow-up's does: it exits as `wisp wait` would
+        let w = wait(c, id, limit).await?;
+        return shown(c, f, id, Some(w)).await;
     }
     let mut a = json!({ "id": id, "text": text });
     if f.yes {
