@@ -13,6 +13,8 @@ wisp-envmask.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 regex.workspace = true
+# a clipped output's whole text is named by the hash the store's blobs use (`FullOutput.blob`)
+blake3.workspace = true
 
 [lints]
 workspace = true

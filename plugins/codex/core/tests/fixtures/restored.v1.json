@@ -12,6 +12,7 @@
  },
  {
   "type": "tool_error",
+  "id": "i0",
   "name": "npm test",
   "text": "1 failing"
  },

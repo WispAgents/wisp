@@ -42,6 +42,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Task chat: a long tool output you open has **Show all N lines** under it. The step shows the start and end of a long output, and the server keeps the whole text, so you can still read the part in the middle. wisp loads it only when you click. An output that read a .env file, or that quotes one of its values, is never kept whole.
+- Task chat: a failed tool call keeps the end of its error, where a test run or a build says what went wrong. Before, only its first 400 characters were kept. The error now shows on the call that failed, marked red, with the error as the call's output, instead of as a row of its own under a call that looked fine. This works on Claude Code, Codex and opencode.
 - opencode 2 tasks get wisp's tools again (`ask_user`, delegating, saving, connectors, the browser). When another opencode was already running on the computer (yours, or one wisp started to list models), a task's run joined it and none of the tools wisp gives a run reached the agent. Each run now has its own opencode server.
 - Phone browser and the installed web app: a task's notification shows again (Chrome on Android refused the page's own, so none appeared), and tapping it opens the task, in the open tab or a new window.
 - Android app: a task's newer notification replaces its earlier one instead of piling up beside it, and opening the task clears it. The installed web app clears it too.
