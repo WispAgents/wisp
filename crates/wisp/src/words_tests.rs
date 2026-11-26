@@ -833,3 +833,36 @@ fn every_documented_command_has_its_usage_for_help_audit_i_is10() {
     assert!(crate::words::documented("frobnicate").is_none());
     assert!(crate::words::documented("--help").is_none());
 }
+
+/// `wisp merge last` and `wisp held <bad id> start` launched a paid task with the line as its prompt: `merge`/`ship`
+/// with a task's ref are the command, and a held action or a lone word after them that names no task is refused
+/// (`no task <word>`), never launched. Longer lines stay prompts.
+#[test]
+fn a_tasks_command_naming_no_task_is_refused_never_launched() {
+    for args in
+        [&["merge", "last"][..], &["merge", "0123abcd0123"], &["ship", "last", "--draft"], &["merge", "0123abcd0123abcd"], &["ship", "7"]]
+    {
+        assert_eq!(p(args).command, Some(args[0]), "{args:?}");
+    }
+    for (args, word) in
+        [(&["held", "x", "start"][..], "x"), (&["held", "nope", "skip"], "nope"), (&["merge", "x"], "x"), (&["ship", "foo"], "foo")]
+    {
+        let x = p(args);
+        assert_eq!(x.command, None, "{args:?}");
+        assert_eq!(no_task(&x.words, x.literal).as_deref(), Some(word), "{args:?}");
+    }
+    for args in [
+        &["held", "up", "the", "release"][..],
+        &["ship", "the", "docs", "to", "prod"],
+        &["merge", "the", "docs", "branch", "into", "main"],
+        &["ship", "the docs"],
+        &["held", "x", "strat"],
+        &["--", "merge", "x"],
+    ] {
+        let x = p(args);
+        assert_eq!(no_task(&x.words, x.literal), None, "{args:?} is no refusal here");
+    }
+    assert_eq!(p(&["merge", "the", "docs", "branch", "into", "main"]).command, None);
+    assert_eq!(p(&["held", "01a1fa925a7d732493adf46a31a0b1e5", "start"]).command, Some("held"));
+    assert_eq!(no_task(&p(&["held", "last", "start"]).words, Literal::No), None);
+}

@@ -623,7 +623,8 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
         (&["export", "foo"][..], "no kind foo"),
         (&["run", "foo"], "no declared task, recipe or workflow named foo"),
         // a plugin's group line (B1): its verbs, then `wisp -- "ship foo"`
-        (&["ship", "foo"], "wisp ship has no foo"),
+        // `ship` and one word that names no task: refused as that (cli-r1), with the same way out
+        (&["ship", "foo"], "no task foo"),
         (&["plugin", "foo"], "wisp plugin has no foo"),
         (&["mcp", "foo"], "wisp mcp has no foo"),
         (&["init", "foo"], "auto, ask or manual"),

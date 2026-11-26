@@ -24,10 +24,14 @@ const child = spawn(found.bin, process.argv.slice(2), {
 });
 
 // Handling these keeps the launcher alive until the child exits, so the shell sees the child's
-// status rather than ours. Ctrl-C reaches the child from the terminal too; forwarding covers
-// `kill <launcher pid>` and supervisors that signal only the pid they started.
+// status rather than ours. SIGTERM is always forwarded: it covers `kill <launcher pid>` and
+// supervisors that signal only the pid they started. In a terminal, Ctrl-C and a hangup already
+// reach the child, which shares our process group: sending them again made one Ctrl-C two, and
+// `wisp attach` stops the task on a second Ctrl-C. Without a terminal they are forwarded too.
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+const fromTerminal = Boolean(process.stdin.isTTY);
 const forward = (sig) => {
+  if (sig !== 'SIGTERM' && fromTerminal) return;
   if (child.exitCode === null && child.signalCode === null) child.kill(sig);
 };
 for (const sig of SIGNALS) process.on(sig, forward);

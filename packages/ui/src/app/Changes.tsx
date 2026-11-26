@@ -4,7 +4,7 @@
 // ⋯) opening in place to its diff: one block per hunk with its own head row (Line n, Stage / Unstage, Revert), the
 // unchanged runs between folded to a line. A file or hunk being reverted is hidden until the diff comes back.
 import { Key } from '@zag-js/solid';
-import { For, Show, createMemo, createSelector, createSignal, type Accessor, type JSX } from 'solid-js';
+import { For, Index, Show, createMemo, createSelector, createSignal, type Accessor, type JSX } from 'solid-js';
 import { flag, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import { EnvMask } from '../content/EnvMask.tsx';
@@ -74,8 +74,9 @@ export interface ChangesLabels {
   readonly envShown?: (name: string) => string;
   readonly reveal?: string;
   readonly hide?: string;
-  /** "Show N more lines" under a diff capped at rowLimit */
-  readonly showMore?: (n: number) => string;
+  /** "Show N more lines" under a diff capped at rowLimit: `n` the next click shows, `left` of them still hidden (more
+   *  than `n` on a diff longer than one step) */
+  readonly showMore?: (n: number, left: number) => string;
   /** "Show N more files" under a list capped at fileLimit */
   readonly moreFiles?: (n: number) => string;
 }
@@ -120,7 +121,10 @@ export interface ChangesListProps {
 }
 
 const DEFAULT_ROW_LIMIT = 300;
-const ROW_STEP = 500;
+// rows each "Show more lines" adds: a 10k-line diff mounted whole in one click took ~0.5 s with one <tr> per line. Not a
+// VirtualList (the 200-row rule, ADR-0011): comment cards open under their line, so rows aren't one height; stepped
+// reveal bounds each mount instead, and every line is still a few clicks away
+const ROW_STEP = 1000;
 const DEFAULT_FILE_LIMIT = 200;
 const FILE_STEP = 200;
 
@@ -251,14 +255,15 @@ const isGap = (o: ChangeRow | undefined): boolean => o !== undefined && (o.op ==
 
 function FileDiff(props: { readonly f: ChangeFile; readonly p: ChangesListProps }): JSX.Element {
   const L = live(() => props.p.labels);
-  const [expanded, setExpanded] = createSignal(false);
+  const [extra, setExtra] = createSignal(0);
   const shownRows = createMemo((): readonly ChangeRow[] => {
     const rows = props.f.rows;
     const cap = props.p.rowLimit ?? DEFAULT_ROW_LIMIT;
-    if (expanded() || cap <= 0 || rows.length <= cap) return rows;
-    return rows.slice(0, cap);
+    if (cap <= 0 || rows.length <= cap + extra()) return rows;
+    return rows.slice(0, cap + extra());
   });
   const remaining = (): number => props.f.rows.length - shownRows().length;
+  const nextStep = (): number => Math.min(ROW_STEP, remaining());
   const runs = createMemo(() => hunkRuns(shownRows()));
   // one + per diff, on the line under the pointer; before any, on the last numbered line (as v1's sat where it was left)
   const [hovered, setHovered] = createSignal<ChangeRow | undefined>();
@@ -333,50 +338,52 @@ function FileDiff(props: { readonly f: ChangeFile; readonly p: ChangesListProps 
               </tbody>
             }
           >
-            <For each={runs()}>
+            {/* by place, not by run: a run that grows with Show more keeps its tbody, and its rows (keyed by row) only
+                add the new ones; by run, every click remounted every shown line */}
+            <Index each={runs()}>
               {(h, i) => {
-                const st = (): 'stage' | 'unstage' | undefined => props.f.hunkStage?.[i()];
-                // a hunk cut short by the row cap has no hunk Stage / Revert until expanded (design/side-panel.md)
-                const cut = (): boolean => remaining() > 0 && i() === runs().length - 1 && !isGap(props.f.rows[shownRows().length]);
+                const st = (): 'stage' | 'unstage' | undefined => props.f.hunkStage?.[i];
+                // a hunk cut short by the row cap has no hunk Stage / Revert until all of it shows (design/side-panel.md)
+                const cut = (): boolean => remaining() > 0 && i === runs().length - 1 && !isGap(props.f.rows[shownRows().length]);
                 return (
                   <>
-                    <Show when={h.gap}>{(g) => <tbody data-kit="cx-gapb">{gap(g())}</tbody>}</Show>
-                    <tbody data-kit="cx-hunk" hidden={props.p.going?.has(`${props.f.path}#${i()}`)}>
+                    <Show when={h().gap}>{(g) => <tbody data-kit="cx-gapb">{gap(g())}</tbody>}</Show>
+                    <tbody data-kit="cx-hunk" hidden={props.p.going?.has(`${props.f.path}#${i}`)}>
                       <tr data-kit="cx-hk-head">
                         <td colSpan={3}>
                           <div data-kit="cx-hk-bar">
-                            <span>{L.line(firstLine(h.rows))}</span>
+                            <span>{L.line(firstLine(h().rows))}</span>
                             <Show when={!cut() && st() && props.p.onHunkStage}>
                               <button
                                 type="button"
                                 data-kit="cx-hk-stage"
                                 data-part="panel.changes.stageHunk"
                                 data-un={flag(st() === 'unstage')}
-                                onClick={() => props.p.onHunkStage?.(props.f.path, i(), hunkKey(h.rows), st() === 'unstage')}
+                                onClick={() => props.p.onHunkStage?.(props.f.path, i, hunkKey(h().rows), st() === 'unstage')}
                               >
                                 {st() === 'unstage' ? L.unstageHunk : L.stageHunk}
                               </button>
                             </Show>
                             <Show when={!cut() && props.p.onRevertHunk}>
-                              <button type="button" data-kit="cx-hk-rev" data-part="panel.changes.revertHunk" title={L.revertTitle} onClick={() => props.p.onRevertHunk?.(props.f.path, i(), hunkKey(h.rows))}>
+                              <button type="button" data-kit="cx-hk-rev" data-part="panel.changes.revertHunk" title={L.revertTitle} onClick={() => props.p.onRevertHunk?.(props.f.path, i, hunkKey(h().rows))}>
                                 {L.revert}
                               </button>
                             </Show>
                           </div>
                         </td>
                       </tr>
-                      <For each={h.rows}>{(o) => <Line o={o} c={ctx} />}</For>
+                      <For each={h().rows}>{(o) => <Line o={o} c={ctx} />}</For>
                     </tbody>
                   </>
                 );
               }}
-            </For>
+            </Index>
           </Show>
         </table>
       </div>
       <Show when={remaining() > 0}>
-        <button type="button" data-kit="cx-more" data-part="panel.changes.moreRows" onClick={() => setExpanded(true)}>
-          {L.showMore ? L.showMore(remaining()) : `Show ${remaining()} more lines`}
+        <button type="button" data-kit="cx-more" data-part="panel.changes.moreRows" onClick={() => setExtra((n) => n + ROW_STEP)}>
+          {L.showMore ? L.showMore(nextStep(), remaining()) : `Show ${nextStep()} more lines`}
         </button>
       </Show>
     </div>
