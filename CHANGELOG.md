@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.17] - 2026-11-26
+
 ### Changed
 
 - **New headline: "Your coding agents, as code."** It replaces "Manage the code your agents write" on the site, the docs, the README, the npm package, llms.txt and the link preview card, with "Declare them. Run them anywhere. Track every line they write." under it.
@@ -26,10 +28,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Sandboxes keep their work and their quota.** A crew job's sandbox is no longer deleted while it's still being set up (the minute's check asked about a task that didn't exist yet), and one crew never named goes after half an hour instead of staying for good. The minute's check only asks sandboxes that are awake, so an idle one finally gets to sleep, and a slow box no longer holds up the others. A sandbox that never came up, or whose owner couldn't be saved, is deleted at once instead of filling one of your 5. A crew member's own sandbox gives each job its own folder (`~/code/<project>-<id>`), so a job no longer wipes another job's live folder or the last job's unpushed work.
 - **A failing `.wisp/sandbox.sh` is shown, and runs again.** A `/sandbox` launch whose setup script failed now says so before it opens the task, with the end of what the script printed. A failed run no longer marks the setup as done, so the next seed tries it again.
 
-## [1.0.0-alpha.16] - 2026-11-26
-
-### Fixed
-
 - **`wisp tui` polish.** A reply follows the open task's mode (the status bar shows it, and a capped task says so) instead of sending the bar's mode, which lifted a channel task's cap without you choosing it; Shift-Tab picks one and warns when that lifts the cap. `Ctrl-E` gives your editor the whole text (long pastes put back) in a private 0600 file, keeps images whose `[image N]` is still there, and says so when the editor didn't save. ↑ history recalls a long paste whole. A new task that didn't start puts your prompt back in the box with a plain "wisp isn't answering" instead of jumping to another task. `/` search moves between matches with ↑ ↓ (Ctrl-N, Ctrl-P), and Enter with no match does nothing and says "No task matches". `o` opens the task in its harness on the TUI's own wisp (`--port`, `--on`) and says when it couldn't. A palette command goes before your draft instead of replacing it, and `i` with no task starts one.
 
 - **`--help` after any wisp command prints its usage and never runs it.** `wisp destroy --help` planned a destroy, `wisp graph --help` printed the graph, `wisp workspace new --help` made a workspace named `--help`, and `wisp run -f x.task.yml --help`, `wisp apply -f x.yml --help` and `wisp secret set FOO --help` ran the command. Now each prints that command's lines and exits 0, whatever follows; a plugin verb's `--help` (`wisp crew create --help`) still lists its flags, and `wisp -- "explain --help"` is still a task. `wisp ship --help` shows `wisp ship <id>` and its `--draft` first, then the ship plugin's verbs under "more:". `wisp tui` and `wisp schema` have lines of their own in `wisp --help`, `wisp list --help` prints what `wisp ls --help` does, and `wisp output`, `wisp graph` and `wisp mv` each have their own line.
@@ -41,16 +39,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Stop on This Mac never signals the wrong process.** The list can be up to a minute old, and by then a process that ended may have handed its number to another. Stop now checks it's still the same process (by when it started) before it sends anything, and before the kill that follows 5 seconds later. If it isn't, Stop says it already ended.
 - A terminal that failed to start halfway no longer leaves its program running in the background, outside every way wisp ends its processes.
 - wisp's memory no longer grows with every deduplicated event for as long as it runs: keys older than the 24-hour dedupe window are now dropped.
+- An opened step in the transcript stays open when the turn ends, when Show thinking or a hidden tool call moves the rows, and a step opened in a folded group keeps the group open. Before, the open step could jump to its neighbour, or close as the turn finished.
+- **Antigravity's models pick like every other harness's.** The picker used to list one row per model and thinking level (`Gemini 4 Neon (Low)`, `(Medium)`, `(High)`, `(XHigh)`). Now each model is one row ("Gemini 4 Neon"), and its thinking-level selector shows only the levels agy has for that model. A model saved as `…-xhigh` no longer fails with "conflicts with --effort".
+
 ### Added
 
 - **Find in task**: press ⌘F (Ctrl+F) on a task, or pick **Find in task** in its menu on a phone. wisp searches every step of the task: labels, commands, outputs, and the agent's messages, including steps inside folded groups and closed steps. It also searches older turns that haven't loaded yet, which the server searches for you. **Enter** and **Shift+Enter** (or the arrows) go to the next and previous match, which opens its turn, group and step and highlights the words. A hidden .env value is never matched unless you revealed it.
 - **Copy a step's output**: an opened step has a Copy button in its corner. It copies what the step shows: a .env file's masked text, or the value once you revealed it.
 - **Copy turn as Markdown**: a turn's tools (in the answer's menu on a phone) copy the prompt, each step with its output in a code fence, and the answer as the agent wrote it.
-
-### Fixed
-
-- An opened step in the transcript stays open when the turn ends, when Show thinking or a hidden tool call moves the rows, and a step opened in a folded group keeps the group open. Before, the open step could jump to its neighbour, or close as the turn finished.
-- **Antigravity's models pick like every other harness's.** The picker used to list one row per model and thinking level (`Gemini 4 Neon (Low)`, `(Medium)`, `(High)`, `(XHigh)`). Now each model is one row ("Gemini 4 Neon"), and its thinking-level selector shows only the levels agy has for that model. A model saved as `…-xhigh` no longer fails with "conflicts with --effort".
 
 ## [1.0.0-alpha.15] - 2026-11-26
 
