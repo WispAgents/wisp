@@ -58,6 +58,22 @@ test('a_refused_file_list_is_asked_again_only_after_a_pause_not_on_every_read', 
   expect(read()).toEqual(['src/a.ts']);
 });
 
+// new1: a mention is read on the computer the task runs on, so @ offers only the target computer's tasks
+test('the_at_menu_offers_only_the_tasks_of_the_computer_the_box_sends_to_new1', () => {
+  const tasks = [
+    { id: 'a:t1', title: 'Fix login', updated_at: 3 },
+    { id: 'b:t2', title: 'Fix login on b', updated_at: 9 },
+    { id: 'a:t3', title: 'Fix login', updated_at: 1 },
+  ];
+  const items = taskItems(tasks, 'fix', undefined, 'a', 'Laptop');
+  // same-titled tasks on one computer: both
+  expect(items.map((x) => x.value)).toEqual(['task:a:t1', 'task:a:t3']);
+  expect(items[0]).toMatchObject({ detail: 'Laptop', mention: { scheme: 'wisp', id: 't1', title: 'Fix login' } });
+  expect(taskItems(tasks, 'fix', undefined, 'b').map((x) => x.mention?.id)).toEqual(['t2']);
+  // one computer: no name on the rows
+  expect(taskItems(tasks, 'fix', undefined, 'a')[0]?.detail).toBeUndefined();
+});
+
 test('a_task_in_the_at_list_has_the_tasks_icon_not_the_crews_qa_r1_27', () => {
   const tasks = [{ id: 'laptop:a', title: 'Fix the login bug' }];
   // 'agent' is the two-people glyph (crew, delegates): a task is the list's own mark, as the Tasks tab shows it

@@ -685,7 +685,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // on Auto: "auto is working", "Open in auto" before; B34)
   const harnessView = (id: string): { name: string; logo?: string } => (id === 'auto' ? { name: t('shell.home.auto') } : harnessOf(harnesses(), id));
   // the @ and / menus (plugins' prompt sources: shell-composer's tasks, crew, My Stuff and commands)
-  const menu = usePromptMenu({ shell, where: 'reply', task: key, text, setText, input: () => input, id: `reply-suggest-${bare}` });
+  // its mentions kept beside the draft, so a reload or coming back to the task still sends them (doc25a)
+  const menu = usePromptMenu({ shell, where: 'reply', task: key, draft: [rKey, rField], text, setText, input: () => input, id: `reply-suggest-${bare}` });
   // a plugin may fill this reply box (the file view's ✦: "@src/a.ts:12-20 "): set it, the caret at its end
   const replyBox = { text: () => text(), set: (v: string) => (setText(v), menu.typed(v)), focus: () => (input?.focus(), input?.setSelectionRange(input.value.length, input.value.length)) };
   if (shell.prompts) onCleanup(shell.prompts.provide('reply', replyBox));
@@ -720,7 +721,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const replyKeys = promptKeys({
     sent: () => sentList() as readonly string[],
     value: text,
-    set: (v) => (setText(v), menu.typed(v)),
+    // what was sent is stored (`@[Title](wisp:id)`): back as the box shows it, its mentions kept (doc25a)
+    set: (v) => menu.typed(menu.restore(v)),
     mode: { get: replyMode, set: (m) => void run(setMode, { id: key, mode: m }).catch(() => undefined) },
   });
   // while it works, a follow-up waits behind the run when Settings → Follow-ups says Queue (v1 queued.js; else it steers)
@@ -794,11 +796,14 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const sq = sideAsk(text());
     if (sq !== undefined && !row()?.summary['sideOf']) {
       if (!sq) return void shell.toast.show(t('shell.side.empty'));
+      // taken: its mentions go with it, the next prompt starts with none (doc25a); refused, they come back with it
+      const stored = menu.encode(sq);
       setText('');
+      menu.reset();
       const sideId = entityKey(peer, newRowId());
       const at = Date.now();
       const open = (attachments: readonly Attachment[]): void => {
-        run(sideStart, { id: sideId, main: key, text: menu.encode(sq), at, ...(attachments.length > 0 && { attachments }) }).catch(() => text() === '' && setText(`/side ${sq}`));
+        run(sideStart, { id: sideId, main: key, text: stored, at, ...(attachments.length > 0 && { attachments }) }).catch(() => text() === '' && menu.restore(`/side ${stored}`));
         shell.navigate({ t: 'openTask', id: sideId as never });
       };
       if (files().length === 0) open([]);
@@ -860,7 +865,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       files().length === 0 &&
       shell
         .promptSources()()
-        .some((p) => (p.where ?? ['reply']).includes('reply') && p.send?.(v, { client: pc, task: key, ...(sendAt !== undefined && { launch: { at: sendAt } }), restore: (back) => !text().trim() && setText(back) }) === true)
+        .some((p) => (p.where ?? ['reply']).includes('reply') && p.send?.(v, { client: pc, task: key, ...(sendAt !== undefined && { launch: { at: sendAt } }), restore: (back) => !text().trim() && menu.restore(back) }) === true)
     ) {
       setText('');
       setWhen(undefined);
@@ -875,7 +880,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const card = setupCardOf(row());
     if (card && v && !extra && files().length === 0) {
       setText('');
-      run(answerSetup, { id: key, text: v, askId: card }).catch(() => setText(v));
+      run(answerSetup, { id: key, text: v, askId: card }).catch(() => menu.restore(v));
       return;
     }
     setText('');
@@ -907,7 +912,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         ...(sentTeam !== undefined && { team: teamToSend(sentTeam) }),
       }).catch((err: unknown) => {
         extra?.back();
-        setText(v);
+        menu.restore(v);
         if (sentTeam !== undefined && !teamChanged()) setTeamChanged(true);
         // the peer knew better: the row, the words back in the box (v1: the 409 `hold`)
         const reason = (err as { reason?: string } | null)?.reason;

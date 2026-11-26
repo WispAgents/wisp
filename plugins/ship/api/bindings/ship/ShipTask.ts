@@ -3,6 +3,7 @@ import type { AttachedPr } from "./AttachedPr";
 import type { ConflictFix } from "./ConflictFix";
 import type { ShipRepo } from "./ShipRepo";
 import type { Shipping } from "./Shipping";
+import type { Steward } from "./Steward";
 import type { ToShip } from "./ToShip";
 
 /**
@@ -13,6 +14,10 @@ export type ShipTask = { session: string,
  * the folder the task was launched in: where gh runs for an attached PR once the worktree is gone
  */
 cwd: string, repos: Array<ShipRepo>, prs: Array<AttachedPr>, toShip: ToShip | null, shipping: Shipping | null, conflictFix: ConflictFix | null, 
+/**
+ * the Steward, when it's on for this task (ADR-0132). Additive (2026-11-26).
+ */
+steward?: Steward, 
 /**
  * ms: a PR is polled fast for five minutes after a push
  */

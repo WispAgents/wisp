@@ -33,6 +33,8 @@ export interface ShipArgs extends Task {
   readonly draft: boolean;
   /** save the task into `.wisp/` before committing (when ticked in Ship it) */
   readonly saveTask?: boolean;
+  /** Keep it green (ADR-0132): the Steward for the PR, set once it's there */
+  readonly steward?: 'fix' | 'review' | 'off';
   /** the dialog's view: it pushes to open PRs (no new one) */
   readonly update: boolean;
   /** the first stage, so the row's track starts there at once */
@@ -51,6 +53,19 @@ export const write = defineCommand<Task, { readonly title: string; readonly body
 
 /** POST /sessions/:id/pr: check the PR now (wisp also checks every minute). */
 export const refresh = defineCommand<Task, PrSummary>({ id: 'ship.refresh', owner, wire, optimistic: 'none', pending: 'the ship.refresh control' });
+
+/** The Steward on or off (ADR-0132): the PR row's Stop / Keep green. The row's line changes at once. */
+export const setSteward = defineCommand<Task & { readonly mode: 'fix' | 'review' | 'off' }>({
+  id: 'ship.steward',
+  owner, wire,
+  optimistic: (base, a) => {
+    const s = row(base, a.key);
+    if (!s) return [];
+    const was = s.steward;
+    const value = a.mode === 'off' ? null : { ...was, mode: a.mode, step: was && was.step !== 'stopped' ? was.step : 'watching', why: '' };
+    return [set(base, a.key, '/steward', value)];
+  },
+});
 
 /** POST /sessions/:id/fix-conflicts: the row says "Fixing merge conflicts" at once. */
 export const fixConflicts = defineCommand<Task>({
