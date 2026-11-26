@@ -3,7 +3,6 @@
 //! permission (`http::OPEN` routes check their own secret), and a new root call per request.
 use std::collections::BTreeMap;
 
-use crate::call::CallInner;
 use crate::http::{Request, Response};
 use crate::kernel_api::RouteEntry;
 use crate::{BoxFuture, Caller, Code, Kernel, Result, WireError};
@@ -75,10 +74,17 @@ pub(crate) fn serve(k: Kernel, caller: Caller, mut req: Request) -> BoxFuture<'s
             ));
         }
         req.params = params;
+        run(k, caller, e, req).await
+    })
+}
+
+/// A matched route whose permission has been checked (here, or by the edge): the caller's task scope first, then
+/// the handler in a route call ([`Kernel::route_call`]), its 5xx reported once. No handler code runs, not even its
+/// synchronous prelude, for a request the scope refuses.
+pub(crate) fn run(k: Kernel, caller: Caller, e: RouteEntry, req: Request) -> BoxFuture<'static, Result<Response>> {
+    Box::pin(async move {
         k.route_scope(&caller, e.route.pattern, &req.params).await?;
-        let mut inner = CallInner::detached(&k.state, caller, Some(e.ctx.inner.id.clone()), k.state.root.child_token());
-        inner.under_route = true; // its 5xx is reported once, here, not by each command it ran
-        let call = inner.into_call();
+        let call = k.route_call(caller, &e.ctx);
         let r = (e.route.handler)(e.ctx.clone(), call, req).await;
         if let Err(err) = &r
             && err.status() >= 500

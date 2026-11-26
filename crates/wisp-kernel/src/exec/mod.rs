@@ -9,7 +9,10 @@
 //! `log {level, msg}`. Kernel → child: `initialize {id, manifest, settings}` (answered once every
 //! registration was accepted), `command.run {id, args, call, trace}`, `intercept.run {n, ctx, call,
 //! trace}`, `event {n, e}`, `settings.changed {key, value}` (a notification). `call` is a token that
-//! continues the kernel-side call (nested commands keep the trace and caller).
+//! continues the kernel-side call (nested commands keep the trace and caller); it lives as long as that call into
+//! the child does, so a token the kernel doesn't know (made up, or its call ended or timed out) is refused, never
+//! taken as a fresh root. With no token, `run` and `emit` speak as the plugin itself. `emit` names a type under the
+//! plugin's own id (`<id>.…`) or one its manifest declares in `contributes.events`.
 //!
 //! size-ok: the JSON-RPC bridge's registrations and its lifecycle share one child handle
 pub mod rpc;
@@ -198,8 +201,14 @@ async fn start(ctx: Ctx, m: Manifest, root: Option<PathBuf>, opts: ExecOptions) 
         }
         return Err(WireError::internal(format!("{id}: the child has no stdio")));
     };
-    let bridge =
-        Arc::new(Bridge { ctx: ctx.clone(), k: Arc::downgrade(&k), calls: Mutex::default(), n: AtomicU64::new(0), peer: OnceLock::new() });
+    let bridge = Arc::new(Bridge {
+        ctx: ctx.clone(),
+        k: Arc::downgrade(&k),
+        calls: Mutex::default(),
+        n: AtomicU64::new(0),
+        peer: OnceLock::new(),
+        emits: declared_events(&m),
+    });
     let b = bridge.clone();
     let peer = Peer::start(stdout, stdin, Arc::new(move |method: &str, p: Value| b.handle(method, p)), ctx.scope().child_token());
     let _ = bridge.peer.set(peer.clone());
@@ -287,6 +296,29 @@ struct Bridge {
     calls: Mutex<HashMap<String, Call>>,
     n: AtomicU64,
     peer: OnceLock<Arc<Peer>>,
+    /// the types (or `a|b*` patterns) its manifest declares in `contributes.events`
+    emits: Vec<String>,
+}
+
+/// Frees a call's token when the call into the child settles or is dropped (an interceptor's timeout, a client gone):
+/// a token outlives its call never, so the child can't keep acting inside it.
+struct Token {
+    bridge: Arc<Bridge>,
+    t: String,
+}
+
+impl Drop for Token {
+    fn drop(&mut self) {
+        if let Ok(mut c) = self.bridge.calls.lock() {
+            c.remove(&self.t);
+        }
+    }
+}
+
+/// `contributes.events`: each entry is a type or `{type, …}`.
+fn declared_events(m: &Manifest) -> Vec<String> {
+    let list = m.contributes.get("events").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    list.iter().filter_map(|e| e.as_str().or_else(|| e.get("type").and_then(Value::as_str))).map(str::to_owned).collect()
 }
 
 fn s(p: &Value, k: &str) -> String {
@@ -309,21 +341,40 @@ impl Bridge {
         if let Ok(mut c) = self.calls.lock() {
             c.insert(t.clone(), call.clone());
         }
-        params["call"] = Value::from(t.clone());
+        let _token = Token { bridge: self.clone(), t: t.clone() };
+        params["call"] = Value::from(t);
         params["trace"] = trace(&call);
-        let r = match self.peer.get() {
+        match self.peer.get() {
             Some(p) => p.request(method, params).await,
             None => Err(WireError::unavailable("no child")),
-        };
-        if let Ok(mut c) = self.calls.lock() {
-            c.remove(&t);
         }
-        r
     }
 
     fn live(&self, p: &Value) -> Option<Call> {
         let t = p.get("call")?.as_str()?;
         self.calls.lock().ok()?.get(t).cloned()
+    }
+
+    /// The call a `run` or `emit` continues: the live one its token names, or, with no token, the plugin's own root.
+    fn parent(&self, p: &Value) -> Result<Call> {
+        match p.get("call").filter(|c| !c.is_null()) {
+            None => Ok(self.ctx.root_call()),
+            Some(_) => self.live(p).ok_or_else(|| WireError::invalid("unknown or ended call")),
+        }
+    }
+
+    /// A child emits under its own id or what its manifest declares: never another area's event (`session.deleted`)
+    /// that subscribers would take as the kernel's word. Host plugins' typed emits don't come through here.
+    fn may_emit(&self, ty: &str) -> Result<()> {
+        let own = ty.strip_prefix(self.ctx.plugin()).is_some_and(|rest| rest.len() > 1 && rest.starts_with('.'));
+        if own || self.emits.iter().any(|pat| crate::durable::matches(pat, ty)) {
+            return Ok(());
+        }
+        Err(WireError::forbidden(format!(
+            "{} may not emit \"{ty}\": emit under \"{}.\" or declare it in contributes.events",
+            self.ctx.plugin(),
+            self.ctx.plugin()
+        )))
     }
 
     #[allow(clippy::needless_pass_by_value)] // the rpc handler hands over each message's params
@@ -341,11 +392,15 @@ impl Bridge {
                 now(Ok(()))
             }
             "emit" => {
-                let call = self.live(&p).unwrap_or_else(|| self.ctx.root_call());
+                let ty = s(&p, "type");
+                let call = match self.may_emit(&ty).and_then(|()| self.parent(&p)) {
+                    Ok(c) => c,
+                    Err(e) => return Reply::Now(Err(e)),
+                };
                 crate::dispatch::emit(
                     &self.ctx,
                     &call,
-                    &s(&p, "type"),
+                    &ty,
                     Payload::Json(Arc::new(p.get("data").cloned().unwrap_or(Value::Null))),
                     crate::dispatch::Meta::default(),
                 );
@@ -358,7 +413,11 @@ impl Bridge {
                 now(k.write_reg().map(|mut r| r.add_point(&s(&p, "point"), e)))
             }
             "run" => {
-                let (ctx, parent) = (self.ctx.clone(), self.live(&p).unwrap_or_else(|| self.ctx.root_call()));
+                let parent = match self.parent(&p) {
+                    Ok(c) => c,
+                    Err(e) => return Reply::Now(Err(e)),
+                };
+                let ctx = self.ctx.clone();
                 let (cmd, args) = (s(&p, "cmd"), p.get("args").cloned().unwrap_or(Value::Null));
                 Reply::Later(Box::pin(async move { crate::dispatch::json(&k, Some(ctx), &parent, &cmd, args).await }))
             }

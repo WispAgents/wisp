@@ -32,9 +32,14 @@ impl Hook for Go {
     const ID: &'static str = "before:go";
     type Ctx = Value;
 }
+struct Hang;
+impl Hook for Hang {
+    const ID: &'static str = "before:hang";
+    type Ctx = Value;
+}
 
 fn echo(mode: &str) -> Manifest {
-    let cmds: Vec<Value> = ["say", "nested", "deep", "hook", "setting", "crash", "env", "path", "resolve"]
+    let cmds: Vec<Value> = ["say", "nested", "deep", "hook", "setting", "crash", "env", "path", "resolve", "emit", "stale"]
         .iter()
         .map(|c| json!({ "id": format!("echo.{c}"), "title": c }))
         .collect();
@@ -75,14 +80,17 @@ async fn world(mode: &str, opts: ExecOptions) -> World {
                 ctx.emit(&call, &Pinged(v));
                 Ok(())
             });
-            let e = e.clone();
-            s.on_raw("echo.*", move |_, env| {
+            // its declared area, its own namespace, and an area it doesn't own
+            for pattern in ["echo.*", "acme.echo.*", "session.*"] {
                 let e = e.clone();
-                async move {
-                    e.lock().unwrap().push((env.ty.clone(), env.plugin.clone()));
-                    Ok(())
-                }
-            });
+                s.on_raw(pattern, move |_, env| {
+                    let e = e.clone();
+                    async move {
+                        e.lock().unwrap().push((env.ty.clone(), env.plugin.clone()));
+                        Ok(())
+                    }
+                });
+            }
         },
     );
     let k = common::start(PluginGroup::new().add(host).add(ExecPlugin::new(echo(mode), None).with_options(opts))).await;
@@ -234,4 +242,45 @@ async fn an_untrusted_exec_plugin_on_windows_resolves_localhost() {
     let names = k.call(Caller::user(), "echo.env", json!(null)).await.unwrap();
     assert!(names["names"].as_array().unwrap().contains(&json!("SystemRoot")), "{names}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn exec_emit_foreign_type_refused() {
+    let w = world("ok", ExecOptions::default()).await;
+    let e = w.k.call(Caller::user(), "echo.emit", json!({ "type": "session.deleted" })).await.unwrap_err();
+    assert_eq!(e.code, Code::Forbidden, "{}", e.message);
+    assert!(e.message.contains("session.deleted"), "{}", e.message);
+    w.k.idle().await;
+    assert!(w.events.lock().unwrap().is_empty(), "nothing reached session.*: {:?}", w.events.lock().unwrap());
+}
+
+#[tokio::test]
+async fn exec_emit_own_type_ok() {
+    let w = world("ok", ExecOptions::default()).await;
+    w.k.call(Caller::user(), "echo.emit", json!({ "type": "acme.echo.thing" })).await.unwrap();
+    // and a type its manifest declares
+    w.k.call(Caller::user(), "echo.emit", json!({ "type": "echo.said" })).await.unwrap();
+    w.k.idle().await;
+    assert_eq!(
+        *w.events.lock().unwrap(),
+        [("acme.echo.thing".to_owned(), "acme.echo".to_owned()), ("echo.said".to_owned(), "acme.echo".to_owned())]
+    );
+}
+
+#[tokio::test]
+async fn exec_run_stale_token_refused() {
+    let w = world("ok", ExecOptions::default()).await;
+    let e = w.k.call(Caller::user(), "echo.stale", json!({ "call": "c999" })).await.unwrap_err();
+    assert_eq!((e.code, e.message.as_str()), (Code::Invalid, "unknown or ended call"));
+}
+
+#[tokio::test]
+async fn timed_out_exec_call_frees_its_token() {
+    let w = world("ok", ExecOptions::default()).await;
+    let host = w.k.ctx("wisp.host").unwrap();
+    // the child never answers; its interceptor fails open after 100 ms
+    assert_eq!(host.run_hook::<Hang>(&host.root_call(), json!({ "a": 1 })).await.unwrap(), json!({ "a": 1 }));
+    // the call it was inside of has ended: its token is no way back in
+    let e = w.k.call(Caller::user(), "echo.stale", json!(null)).await.unwrap_err();
+    assert_eq!((e.code, e.message.as_str()), (Code::Invalid, "unknown or ended call"));
 }
