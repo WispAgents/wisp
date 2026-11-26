@@ -385,3 +385,68 @@ fn a_trigger_on_a_windows_project_hears_its_tasks_and_their_subfolders() {
     let e = TriggerEvent { payload: json!({ "cwd": r"\\srv\share\proj\x" }), ..ev("6") };
     assert!(matches!(admit("t", &unc, &mut State::default(), e, &w(0)), Decision::Start(_)));
 }
+
+fn starts(d: &[Decision]) -> Vec<String> {
+    d.iter().filter_map(|x| if let Decision::Start(j) = x { Some(j.events[0].key.clone()) } else { None }).collect()
+}
+
+/// Five events queued outside a `queue` trigger's hours: the tick drained them all at once before they opened (drain
+/// read neither `when` nor what it had just started), five runs of a trigger that runs one at a time.
+#[test]
+fn a_drain_waits_for_the_hours_and_starts_one_at_a_time() {
+    let s = TriggerSpec {
+        concurrency: "queue".into(),
+        when: Some(When { hours: "9-17".into(), outside: "queue".into(), ..When::default() }),
+        ..spec()
+    };
+    let mut st = State::default();
+    let night = World { in_window: false, ..w(0) };
+    for k in ["1", "2", "3", "4", "5"] {
+        assert!(matches!(admit("t", &s, &mut st, ev(k), &night), Decision::Queued(_)));
+    }
+    assert!(drain(&s, &mut st, &night).is_empty(), "its hours aren't open");
+    assert_eq!(st.queue.len(), 5);
+    let d = drain(&s, &mut st, &w(10));
+    assert_eq!(starts(&d), ["1"], "one at a time: the next waits for it");
+    assert_eq!(st.queue.iter().map(|j| j.events[0].key.as_str()).collect::<Vec<_>>(), ["2", "3", "4", "5"], "in order");
+    // the default (skip while one runs) also starts one, and keeps the rest
+    let mut st = State::default();
+    for k in ["1", "2", "3"] {
+        admit("t", &TriggerSpec { concurrency: String::new(), ..s.clone() }, &mut st, ev(k), &night);
+    }
+    assert_eq!(starts(&drain(&TriggerSpec { concurrency: String::new(), ..s.clone() }, &mut st, &w(10))), ["1"]);
+    assert!(st.running.is_empty(), "what drain counted isn't left in running");
+}
+
+#[test]
+fn a_parallel_drain_starts_up_to_its_limit() {
+    let s = TriggerSpec { concurrency: "parallel:2".into(), rate: "1/h".into(), ..spec() };
+    let mut st = State::default();
+    assert!(matches!(admit("t", &s, &mut st, ev("0"), &w(0)), Decision::Start(_)));
+    for k in ["1", "2", "3", "4", "5"] {
+        assert!(matches!(admit("t", &s, &mut st, ev(k), &w(1)), Decision::Held(_)), "the rate holds it");
+    }
+    let free = TriggerSpec { rate: String::new(), ..s.clone() };
+    assert_eq!(starts(&drain(&free, &mut st, &w(2))), ["1", "2"], "two, none running");
+    assert_eq!(st.queue.len(), 3);
+    let mut st2 = State { queue: st.queue.clone(), running: vec!["s1".into()], ..State::default() };
+    assert_eq!(starts(&drain(&free, &mut st2, &w(3))), ["3"], "two less the one running");
+}
+
+#[test]
+fn a_paused_or_switched_off_trigger_drains_nothing_and_keeps_its_queue() {
+    let s = TriggerSpec { concurrency: "parallel:9".into(), ..spec() };
+    let mut st = State::default();
+    let paused = World { member_paused: true, ..w(0) };
+    for k in ["1", "2"] {
+        admit("t", &s, &mut st, ev(k), &paused);
+    }
+    st.paused = Some("3 failed runs in a row".into());
+    assert!(drain(&s, &mut st, &w(1)).is_empty(), "paused");
+    assert_eq!(st.queue.len(), 2);
+    st.paused = None;
+    let off = TriggerSpec { enabled: Some(false), ..s.clone() };
+    assert!(drain(&off, &mut st, &w(2)).is_empty(), "switched off");
+    assert_eq!(st.queue.len(), 2);
+    assert_eq!(starts(&drain(&s, &mut st, &w(3))), ["1", "2"]);
+}

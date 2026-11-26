@@ -147,20 +147,33 @@ pub(crate) async fn wake_dropped(ctx: &Ctx, defaults: &kinds::Defaults, live: &I
 }
 
 pub(crate) async fn after(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, e: &TurnEnded) {
-    if e.status != TurnStatus::Done || e.inner {
+    if e.status != TurnStatus::Done {
+        return;
+    }
+    // an inner run (a subagent's, wisp's own round) isn't judged, unless it's a child task with a goal of its own (a
+    // workflow's step): its run waits on that goal before the step counts as done
+    if e.inner
+        && !task_of(ctx, &ctx.root_call(), e.session_id.as_str()).await.is_ok_and(|t| judged(&t, &spec_of(&t)) && t.parent_id.is_some())
+    {
         return;
     }
     judge_turn(ctx, defaults, live, e.session_id.as_str(), e.turn_id.as_str()).await;
+}
+
+/// Whether a task's goal is judged: a task of its own, or a child task whose spec gives it a goal (a workflow's step);
+/// a subagent's task shares its lead's goal and isn't judged on its own.
+pub fn judged(task: &Session, spec: &Value) -> bool {
+    task.parent_id.is_none() || spec.get("goal").is_some_and(|g| !g.is_null())
 }
 
 /// A turn's answer judged against the task's goal: met, another round, or past the limit a question.
 pub(crate) async fn judge_turn(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, id: &str, turn_id: &str) {
     let call = ctx.root_call();
     let Ok(task) = task_of(ctx, &call, id).await else { return };
-    if task.parent_id.is_some() {
+    let spec = spec_of(&task);
+    if !judged(&task, &spec) {
         return;
     }
-    let spec = spec_of(&task);
     let d = defaults.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     // every write below is conditional on the slot as read here (or as this round last wrote it), in the write's
     // own transaction: a goal set, paused or dropped meanwhile always wins over this round
@@ -243,6 +256,25 @@ pub(crate) async fn judge_turn(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inf
     }
 }
 
+/// The tasks whose goal slot says `judging` (`runtime.slots`, only bodies that name it): at start, none is judged.
+async fn judging_slots(ctx: &Ctx, call: &wisp_kernel::Call) -> Vec<String> {
+    let a = rt::SlotsArgs { plugins: vec![wisp_goal_api::PLUGIN.into()], all: false, having: vec!["judging".into()] };
+    let found = ctx.run::<rt::Slots>(call, a).await.unwrap_or_else(|e| {
+        tracing::warn!(error = %e.message, "goal: the goals left judging weren't read");
+        Vec::new()
+    });
+    judging_in(&found)
+}
+
+/// Of these tasks' slots, the ones whose goal says `judging`.
+pub fn judging_in(found: &[rt::TaskSlots]) -> Vec<String> {
+    found
+        .iter()
+        .filter(|t| t.ext.get(wisp_goal_api::PLUGIN).and_then(|v| v.get("state")).and_then(Value::as_str) == Some("judging"))
+        .map(|t| t.id.as_str().to_owned())
+        .collect()
+}
+
 /// The task's goal state as it is now (None: the task is gone).
 async fn fresh_state(ctx: &Ctx, call: &wisp_kernel::Call, id: &str) -> Option<GoalState> {
     task_of(ctx, call, id).await.ok().map(|t| state_of(&t).unwrap_or_default())
@@ -260,10 +292,17 @@ pub fn still_ours(cur: &GoalState, ids: &[String]) -> bool {
 }
 
 /// After a restart (v1 `interrupted`): checks that were under way never vote; their records say so, and their
-/// tasks' goals go back to working and their last answers are judged again.
+/// tasks' goals go back to working and their last answers are judged again. A round cut before its first check's record
+/// was written (`judging` is written first) has no record: its task's slot says `judging`, and is found by it.
 pub(crate) async fn recover(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight) {
     let call = ctx.root_call();
-    for id in runs::interrupted(ctx, now(ctx)).await {
+    let mut ids = runs::interrupted(ctx, now(ctx)).await;
+    for id in judging_slots(ctx, &call).await {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    for id in ids {
         let Ok(task) = task_of(ctx, &call, &id).await else { continue };
         let was = raw_of(&task);
         let Some(mut st) = state_of(&task).filter(|s| s.state == "judging") else { continue };
