@@ -155,6 +155,11 @@ pub const MIGRATIONS: &[&str] = &[
     r"CREATE TABLE app_waitlist (
      email TEXT NOT NULL, kind TEXT NOT NULL, platform TEXT NOT NULL, source TEXT NOT NULL, created_at INTEGER NOT NULL,
      PRIMARY KEY (email, kind));",
+    // ADR-0130: a share's capability, 128 random bits in hex. A share that isn't published opens by name only with it
+    // (`grid://<handle>/<key>#<cap>`), so a guessed handle and key (`crew`, a setup's name) open nothing. Every share
+    // there is gets one now; a new share gets its own when it's made (`shares.rs`).
+    r"ALTER TABLE shares ADD COLUMN cap TEXT;
+   UPDATE shares SET cap = lower(hex(randomblob(16))) WHERE cap IS NULL;",
 ];
 
 /// Every table the migrations make (and `meta`), for tests and `wisp grid backup` checks.

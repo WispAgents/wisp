@@ -38,9 +38,13 @@ pub fn send_args(crew: &[Member], a: &ShareArgs, to: &str) -> R<(SendArgs, Vec<S
         .map(|m| format!("{} · {}", name(m), m.get("role").and_then(Value::as_str).unwrap_or_default()))
         .collect::<Vec<_>>()
         .join("\n");
+    // a password, or Open picked, says who opens it; otherwise none goes, so sharing again keeps what the link has
+    // (`wisp cloud access teams:acme` was reset to anyone each time): a first share is the grid's default, anyone with
+    // its link (unlisted, ADR-0130)
     let access = match a.password.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
-        Some(p) => json!({ "kind": "password", "password": p }),
-        None => json!({ "kind": "anyone" }),
+        Some(p) => Some(json!({ "kind": "password", "password": p })),
+        None if a.open == Some(true) => Some(json!({ "kind": "anyone" })),
+        None => None,
     };
     let args = SendArgs {
         to: to.to_owned(),
@@ -50,7 +54,7 @@ pub fn send_args(crew: &[Member], a: &ShareArgs, to: &str) -> R<(SendArgs, Vec<S
         title: Some(title),
         summary: Some(summary),
         tags: vec![SHARE_KIND.into()],
-        access: Some(access),
+        access,
         expires_at: a.expires_at,
         ..SendArgs::default()
     };
@@ -194,6 +198,22 @@ mod tests {
         }
     }
 
+    /// Sharing the crew again sent `{kind: anyone}` every time, so access set with `wisp cloud access teams:acme` went
+    /// back to anyone. Only a password or Open says who opens it; neither sends no access, and the grid keeps its own.
+    #[test]
+    fn shared_send_args_keep_access_unless_one_is_picked() {
+        let crew = vec![member("Ada")];
+        let access = |a: ShareArgs| send_args(&crew, &a, "wisp-cloud").unwrap().0.access;
+        assert_eq!(access(ShareArgs::default()), None);
+        assert_eq!(access(ShareArgs { password: Some("  ".into()), ..ShareArgs::default() }), None, "a blank password is none");
+        assert_eq!(
+            access(ShareArgs { password: Some("pw".into()), ..ShareArgs::default() }),
+            Some(json!({ "kind": "password", "password": "pw" }))
+        );
+        assert_eq!(access(ShareArgs { open: Some(true), ..ShareArgs::default() }), Some(json!({ "kind": "anyone" })));
+        assert_eq!(access(ShareArgs { open: Some(false), ..ShareArgs::default() }), None);
+    }
+
     /// What a crew share sends is the export's bundle: who they are and their kit, never their project, computer,
     /// log or jobs, their notebook only when ticked, and nothing the secret scan finds (a key refuses the share).
     #[test]
@@ -203,7 +223,7 @@ mod tests {
         assert_eq!(n, 2, "no ids: the whole crew");
         assert_eq!(args.kind.as_deref(), Some("crew"));
         assert_eq!(args.key.as_deref(), Some("crew"));
-        assert_eq!(args.access, Some(json!({ "kind": "anyone" })));
+        assert_eq!(args.access, None, "no password, Open not picked: the grid keeps who opens it");
         let text = serde_json::to_string(&args.content).unwrap();
         for leak in ["/Users/ada", "devbox-7", "10.0.0.4", "\"log\"", "\"queue\""] {
             assert!(!text.contains(leak), "{leak} went in the share: {text}");

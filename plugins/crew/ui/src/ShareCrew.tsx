@@ -10,7 +10,7 @@ import { Button, Checkbox, Face, Icon, Inline, Input, Stack, Text, useSignal } f
 import { crewData, type CrewMember } from './data.ts';
 import { t } from './i18n.ts';
 import { cadenceText } from './model.ts';
-import { bundleText, shareNotes, shareWhat, type ShareOpts } from './share.ts';
+import { bundleText, linkAccess, linkHintKey, shareNotes, shareWhat, type LinkAccess, type ShareOpts } from './share.ts';
 import { VIEW } from './views.ts';
 import './i18n/lazy.ts';
 
@@ -32,10 +32,13 @@ const exportCrew = defineCommand<{ peer: PeerId; ids: string[] } & ShareOpts, Ex
 
 interface SharedLink {
   readonly url: string;
+  /** the destination's view of it: who opens it is `access.kind` */
+  readonly link?: unknown;
 }
 
-// a link on wisp Cloud (crew.share): the pressed button shows its pending ring until the link comes back
-const shareLink = defineCommand<{ peer: PeerId; ids: string[] } & ShareOpts, SharedLink>({
+// a link on wisp Cloud (crew.share): the pressed button shows its pending ring until the link comes back. No `open`:
+// sharing again keeps who opens it (people, teams, a password set with `wisp cloud access`); `open: true` opens it.
+const shareLink = defineCommand<{ peer: PeerId; ids: string[]; open?: boolean } & ShareOpts, SharedLink>({
   id: 'crew.share',
   owner: (a) => a.peer,
   wire: ({ peer: _p, ...rest }) => rest,
@@ -74,6 +77,7 @@ export default function ShareCrew(props: { readonly client: PluginClient; readon
   const [opts, setOpts] = createSignal<ShareOpts>(what().start);
   const [out, setOut] = createSignal<{ r?: Exported; bad?: string } | undefined>(undefined);
   const [link, setLink] = createSignal<string | undefined>(undefined);
+  const [access, setAccess] = createSignal<LinkAccess>('anyone');
   const [linking, setLinking] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
   const cloudScope = c.scope.child('share-cloud');
@@ -118,12 +122,16 @@ export default function ShareCrew(props: { readonly client: PluginClient; readon
     // the desktop app saves it to Downloads without a word (no browser download bar): say where it went
     shell.toast.success(say('wisp.crew.share.downloaded', { file: r.file }));
   };
-  const makeLink = (): void => {
+  const makeLink = (open?: boolean): void => {
     if (!out()?.r || linking()) return;
     setLinking(true);
     const n = seq; // options changed while it ran: that link isn't for what's ticked now
-    c.run(shareLink, { peer: c.home, ids: whole() ? [] : members().map((m) => m.id), ...opts() })
-      .then((r) => n === seq && setLink(r.url))
+    c.run(shareLink, { peer: c.home, ids: whole() ? [] : members().map((m) => m.id), ...opts(), ...(open && { open }) })
+      .then((r) => {
+        if (n !== seq) return;
+        setLink(r.url);
+        setAccess(linkAccess(r.link));
+      })
       .catch((e: unknown) => shell.toast.error(e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e)))
       .finally(() => setLinking(false));
   };
@@ -187,9 +195,16 @@ export default function ShareCrew(props: { readonly client: PluginClient; readon
                 {t(copied() ? 'wisp.crew.share.linkCopied' : 'wisp.crew.share.copyLink')}
               </Button>
             </Inline>
-            <Text size="sm" tone="muted">
-              {t('wisp.crew.share.linkHint')}
+            <Text size="sm" tone="muted" part="crew.share.access">
+              {t(linkHintKey(access()))}
             </Text>
+            <Show when={access() !== 'anyone'}>
+              <Inline gap="2" justify="end">
+                <Button variant="ghost" size="sm" icon="web" loading={linking()} onClick={() => makeLink(true)} part="crew.share.open">
+                  {t('wisp.crew.share.openToAnyone')}
+                </Button>
+              </Inline>
+            </Show>
           </Stack>
         )}
       </Show>
@@ -214,7 +229,7 @@ export default function ShareCrew(props: { readonly client: PluginClient; readon
           </Button>
         </Show>
         <Show when={!link() && !signedOut()}>
-          <Button variant="primary" size="sm" icon="share" disabled={!out()?.r} loading={linking()} onClick={makeLink}>
+          <Button variant="primary" size="sm" icon="share" disabled={!out()?.r} loading={linking()} onClick={() => makeLink()}>
             {t('wisp.crew.share.makeLink')}
           </Button>
         </Show>

@@ -68,6 +68,24 @@ pub fn access_of(passkey: Option<&str>) -> Value {
     }
 }
 
+/// What `share.send` is asked for access, from the dialog's passkey and the link kept before: a passkey typed locks it
+/// with that one; `""` (Open picked) opens it to anyone; nothing typed on a locked link sends no access, so the grid
+/// keeps its password (it sent `anyone`, and updating a locked share made it public); nothing on a new or open link
+/// is anyone.
+pub fn access_for(passkey: Option<&str>, before_locked: bool) -> Option<Value> {
+    match passkey {
+        None if before_locked => None,
+        p => Some(access_of(p)),
+    }
+}
+
+/// Whether the link is locked now, from the grid's answer (its `access.kind`), else what was sent, else (no access
+/// sent, and an answer without it) the link kept before.
+pub fn locked_after(sent: &Value, access: Option<&Value>, before_locked: bool) -> bool {
+    let kind = |v: &Value| v.pointer("/access/kind").or_else(|| v.get("kind")).and_then(Value::as_str).map(|k| k == "password");
+    kind(sent).or_else(|| access.and_then(kind)).unwrap_or(before_locked)
+}
+
 /// The New task card for a fetched share (`content` a `.wisp-task` bundle), as v1's peek answered.
 pub fn card_of(content: &Value, card: &Value, verified: bool) -> Value {
     let b: Bundle = serde_json::from_value(content.clone()).unwrap_or_default();
@@ -111,18 +129,20 @@ async fn create(ctx: &Ctx, call: &Call, a: CreateArgs) -> Result<Value> {
             .to_owned();
         return Err(WireError::invalid(why));
     };
-    let locked = a.passkey.as_deref().is_some_and(|p| !p.trim().is_empty());
+    // the link kept before this one: taken back once the new one is made (unless the grid answered the same link)
+    let before = calls::task(ctx, call, &a.session).await.map_or(Value::Null, |s| s.ext_of(PLUGIN_ID).clone());
+    let again = before.get("url").is_some();
+    let before_locked = before.get("locked").and_then(Value::as_bool).unwrap_or(false);
+    let access = access_for(a.passkey.as_deref(), before_locked);
     let args = SendArgs {
         to,
         id: Some(a.session.clone()),
         level: if a.work { Level::Report } else { Level::Spec },
-        access: Some(access_of(a.passkey.as_deref())),
+        access: access.clone(),
         ..SendArgs::default()
     };
-    // the link kept before this one: taken back once the new one is made (unless the grid answered the same link)
-    let before = calls::task(ctx, call, &a.session).await.map_or(Value::Null, |s| s.ext_of(PLUGIN_ID).clone());
-    let again = before.get("url").is_some();
     let sent = ctx.run::<SendCmd>(call, args).await?;
+    let locked = locked_after(&sent, access.as_ref(), before_locked);
     let at = ctx.clock().map_or(0, |c| c.now_ms());
     let keep = kept(&sent, locked, at);
     replace(ctx, call, &a.session, &before, &keep).await?;
@@ -271,6 +291,31 @@ pub(crate) fn register(s: &mut Setup) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Share again on a locked task with no passkey typed sent `{kind: anyone}`, and the grid made the link public. With
+    /// nothing typed on a locked link no access goes (the grid keeps its password); a passkey locks it; Open (`""`)
+    /// opens it; a new link with nothing typed is open.
+    #[test]
+    fn access_for_keeps_a_locked_link_locked_unless_told() {
+        assert_eq!(access_for(None, true), None);
+        assert_eq!(access_for(Some("pw"), true), Some(json!({ "kind": "password", "password": "pw" })));
+        assert_eq!(access_for(Some("pw"), false), Some(json!({ "kind": "password", "password": "pw" })));
+        assert_eq!(access_for(Some(""), true), Some(json!({ "kind": "anyone" })));
+        assert_eq!(access_for(None, false), Some(json!({ "kind": "anyone" })));
+    }
+
+    /// The dialog's "copied, with its passkey" toast reads `locked`: it comes from the grid's answer, not from whether a
+    /// passkey was typed.
+    #[test]
+    fn locked_after_is_what_the_grid_answered() {
+        let pw = json!({ "access": { "kind": "password" } });
+        assert!(locked_after(&pw, None, false), "kept on the grid though nothing was typed");
+        assert!(!locked_after(&json!({ "access": { "kind": "anyone" } }), None, true));
+        // an answer without access: what was sent, else the link before
+        assert!(locked_after(&json!({}), Some(&json!({ "kind": "password", "password": "p" })), false));
+        assert!(!locked_after(&json!({}), Some(&json!({ "kind": "anyone" })), true));
+        assert!(locked_after(&json!({}), None, true));
+    }
 
     /// A passkey makes a password share; the task keeps the grid's id (to take it back) and the url; a
     /// fetched bundle reads as the card, and a locked link as locked (wrong when a passkey was tried).

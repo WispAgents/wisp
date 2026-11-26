@@ -67,7 +67,13 @@ impl Grid {
             }
             ("DELETE", ["api", "shares", id]) => Ok(json(200, &self.shares.revoke(publisher()?, id)?)),
             ("GET", ["api", "shares", "by", handle, key]) => {
-                let s = self.shares.by_name(handle, key)?.ok_or_else(|| bad(format!("There's no grid://{handle}/{key}."), 404))?;
+                // an unlisted share opens by name only with its cap (ADR-0130), `?cap=` or `x-wisp-cap`; refused, it
+                // answers exactly as a name nobody has, so a guess learns nothing
+                let cap = query(q, "cap").or_else(|| h.get("x-wisp-cap").and_then(|v| v.to_str().ok()).map(str::to_owned));
+                let s = self
+                    .shares
+                    .named(handle, key, who.user(), cap.as_deref())?
+                    .ok_or_else(|| bad(format!("There's no grid://{handle}/{key}."), 404))?;
                 match self.read_share(&s.id, q, h, who, None, true)? {
                     Ok((s, c)) => Ok(json(200, &self.content_json(&s, &c)?)),
                     Err(r) => Ok(Self::refused(&r)),
@@ -126,7 +132,7 @@ impl Grid {
                     summary: s.summary.clone(),
                     from: s.handle.clone(),
                     version: c.version,
-                    source: format!("grid://{}/{}", s.handle, s.key),
+                    source: crate::shares::Shares::source(&s),
                     access: s.access.clone(),
                     signed_in: matches!(who, Who::Session(_)),
                 };
