@@ -105,8 +105,10 @@ fn the_codex_mcp_table_keeps_a_windows_path() {
     {
         let text = format!("model = \"o3\"\n{}", codex_mcp_table(exe));
         let doc = documents(&text, Format::Toml).unwrap_or_else(|e| panic!("{exe}: {e}\n{text}"));
-        assert_eq!(doc[0]["mcp_servers"]["wisp"]["command"], exe, "{text}");
-        assert_eq!(doc[0]["mcp_servers"]["wisp"]["args"], serde_json::json!(["mcp"]));
+        assert_eq!(doc[0]["mcp_servers"]["wisp-history"]["command"], exe, "{text}");
+        assert_eq!(doc[0]["mcp_servers"]["wisp-history"]["args"], serde_json::json!(["mcp"]));
+        // never `wisp`: that name is each run's own server, and Codex refused a stdio `wisp` with the run's url
+        assert!(doc[0]["mcp_servers"].get("wisp").is_none(), "{text}");
     }
 }
 

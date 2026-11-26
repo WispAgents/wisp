@@ -17,14 +17,14 @@ One command, in your repo, does it for Claude Code and Codex:
 
 ```sh
 wisp skill install --agent claude      # .mcp.json, a SessionEnd hook, .claude/skills/wisp
-wisp skill install --agent codex       # [mcp_servers.wisp] in ~/.codex/config.toml
+wisp skill install --agent codex       # [mcp_servers.wisp-history] in ~/.codex/config.toml
 wisp skill install --agent all         # Claude Code, Codex and opencode
 ```
 
 - **Claude Code:** `.mcp.json` gets wisp's MCP server (`wisp mcp`), `.claude/settings.json` a `SessionEnd` hook
   (each session you end is brought into wisp with `wisp adopt --hook`), and `.claude/skills/wisp/SKILL.md` tells
   it when to use wisp. Commit them and your team has it too.
-- **Codex:** `~/.codex/config.toml` gets `[mcp_servers.wisp]`. Codex has no end-of-session hook: bring its
+- **Codex:** `~/.codex/config.toml` gets `[mcp_servers.wisp-history]`. Codex has no end-of-session hook: bring its
   sessions in with `wisp adopt --all --since 1d`.
 - **opencode:** the skill goes in place; add the server by hand in `opencode.json`:
 

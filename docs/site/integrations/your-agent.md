@@ -23,7 +23,7 @@ For Claude Code this writes:
 - `.claude/settings.json`: a `SessionEnd` hook, so each session you end is handed to wisp
   ([kept in the repo](../../guides/track/track-agent-work/) if you track history).
 
-For Codex it adds `[mcp_servers.wisp]` to `~/.codex/config.toml`. Codex has no end-of-session hook; bring sessions
+For Codex it adds `[mcp_servers.wisp-history]` to `~/.codex/config.toml`. Codex has no end-of-session hook; bring sessions
 in with `wisp adopt --all --since 1d`.
 
 `wisp skill` prints the skill without installing it, to read first or use with another agent.
