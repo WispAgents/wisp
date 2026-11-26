@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="desktop/icon.png" alt="wisp" width="120" />
+<img src="desktop/icon.png" alt="Wisp Agents" width="120" />
 
-# wisp
+# Wisp Agents
 
 **Manage the code your agents write.**
 
@@ -14,9 +14,9 @@ code. From the desktop app, the terminal UI, the command line or your phone.
 [![Desktop](https://img.shields.io/badge/desktop-macOS%20·%20Windows%20·%20Linux-24c8db)](https://trywisp.dev/app.html)
 [![Harnesses](https://img.shields.io/badge/agents-Claude%20Code%20·%20Codex%20·%20Cursor%20·%20opencode%20·%20Copilot%20·%20Grok%20·%20Antigravity-d97757)](https://trywisp.dev/agents/)
 
-[Website](https://trywisp.dev/) · [Docs](https://trywisp.dev/docs/) · [Guides](https://trywisp.dev/docs/guides/) · [Get the app](https://trywisp.dev/app.html) · [wisp Cloud](https://trywisp.dev/cloud.html) · [Changelog](https://trywisp.dev/changelog.html)
+[Website](https://trywisp.dev/) · [Docs](https://trywisp.dev/docs/) · [Guides](https://trywisp.dev/docs/guides/) · [Get the app](https://trywisp.dev/app.html) · [Wisp Agents Cloud](https://trywisp.dev/cloud.html) · [Changelog](https://trywisp.dev/changelog.html)
 
-<img src="docs/assets/app/desktop-task-dark-1440.webp" alt="The wisp desktop app: the task list, and a finished task's report with the steps, the diff and the tests" width="880" />
+<img src="docs/assets/app/desktop-task-dark-1440.webp" alt="The Wisp Agents desktop app: the task list, and a finished task's report with the steps, the diff and the tests" width="880" />
 
 </div>
 
@@ -24,7 +24,7 @@ code. From the desktop app, the terminal UI, the command line or your phone.
 
 ## What it is
 
-wisp runs the coding agents you already use, **Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok
+Wisp Agents ([trywisp.dev](https://trywisp.dev/)) runs the coding agents you already use, **Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok
 Build and Antigravity**, signed in with your own plans and keys. It adds what you need once agents write much of the
 code:
 

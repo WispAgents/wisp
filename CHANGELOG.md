@@ -18,6 +18,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Mark done → *Remove its worktree?*: a folder holding uncommitted work lists its files. Click **3 uncommitted files** on the row to see each file with its change (A, M, D, R, or U for untracked) and its path. When only one folder holds work, its files show when the dialog opens. Past 100 files, the last line says how many more.
 - Task details: click the branch chip to copy the task's worktree path. A tooltip says **Worktree path copied**. Hover the chip to see the branch and the path.
 
+### Changed
+
+- The npm package, the README and the site's structured data now say **Wisp Agents** and point to trywisp.dev, so searches for "Wisp Agents" find the project.
+
 ### Fixed
 
 - Your harness can no longer answer its own **Your harness wants to…** card by naming the card's task inside `args` (`{"args": {"id": …}}`), nor by `sessionId` or `session`: wisp refuses it as it does a top-level `id`.

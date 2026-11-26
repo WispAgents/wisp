@@ -1,14 +1,28 @@
 {
   "name": "wisp-agents",
   "version": "1.0.0-alpha.14",
-  "description": "wisp: run and watch coding agents (Claude Code, Codex, and more) from one place, in the browser or the terminal.",
+  "description": "Wisp Agents: manage the code your agents write. Run Claude Code, Codex, Cursor and more in parallel from a desktop app, TUI and CLI, declare them as code, and track every line they write.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/WispAgents/wisp.git",
     "directory": "npm/wisp-agents"
   },
-  "homepage": "https://github.com/WispAgents/wisp#readme",
+  "homepage": "https://trywisp.dev/",
+  "keywords": [
+    "wisp-agents",
+    "wisp",
+    "coding-agents",
+    "claude-code",
+    "codex",
+    "cursor",
+    "opencode",
+    "agent-orchestration",
+    "git-worktree",
+    "mcp",
+    "cli",
+    "tui"
+  ],
   "bugs": "https://github.com/WispAgents/wisp/issues",
   "type": "module",
   "bin": {
