@@ -32,6 +32,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Secrets are never lost to a bad `secrets.json`**: a file wisp can't read for a moment (permissions, a disk error) or that isn't valid JSON is no longer taken as empty and then written over on the next sign-in or token, which cost every saved key. Reading it fails with the file's name instead, and wisp leaves the file alone until it's fixed. A namespace or value that isn't the right shape is skipped with a warning, and the rest is kept.
+- Plugins: a plugin's HTTP route now runs within that plugin's permissions, and an agent's token is checked against its task before any of the route's code runs, however the request reaches it. An exec plugin (a child process) can only emit events under its own id or the types its manifest declares, and a call token that ended, timed out or was never issued is refused instead of running as a new call.
+- Switching a plugin off while events were on their way to it no longer leaves `wisp` waiting forever for them to be handled. `wisp events retry` on an event parked for a plugin that's off now says to switch it on first, and keeps the event parked, instead of dropping it.
 - Usage page: 7 days is now exactly 7 bars, and the last bar is your today. Days follow your time zone, not UTC. Before, the window started at this hour 7 days ago, so it had an extra part-day bar and a late-evening turn could land on the next day.
 - Settings → Usage: a harness whose CLI reports no plan limits (Cursor, Copilot, Grok, opencode) now says so (**limits not reported by Cursor**), and its stop line can't be set, since there's no window to stop at. Each harness's stop line is now on its page in Settings → Agents; Usage links to it. Cursor, Copilot and Grok accounts now also show in the plan list: wisp misread their account ids before.
 - Usage page: when no turn in the range has a price, the first tile is labelled **Tokens**, not Spend.

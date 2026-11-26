@@ -125,6 +125,14 @@ impl Kernel {
     pub fn root_call(&self, caller: Caller) -> Call {
         CallInner::detached(&self.state, caller, None, self.state.root.child_token()).into_call()
     }
+    /// The call a route's handler runs in: a new root for `caller`, bounded by the serving plugin's own permission
+    /// set (as `via`), its 5xx reported once by the route rather than by each command it ran. Every way a route is
+    /// served (the kernel's [`Self::serve`], the edge's table) builds it here.
+    pub fn route_call(&self, caller: Caller, ctx: &Ctx) -> Call {
+        let mut inner = CallInner::detached(&self.state, caller, Some(ctx.inner.id.clone()), self.state.root.child_token());
+        inner.under_route = true;
+        inner.into_call()
+    }
     pub fn commit_hook(&self) -> CommitHook {
         CommitHook { k: Arc::downgrade(&self.state) }
     }
@@ -208,10 +216,11 @@ impl Kernel {
         self.state.bus.caught_up(plugin);
     }
     /// What a plugin has registered right now: commands, interceptors, contributions, services,
-    /// subscriptions, setting watchers. Zero once it is off (the testkit's leak check).
+    /// subscriptions (durable ones included), setting watchers. Zero once it is off (the testkit's leak check).
     pub fn registrations(&self, plugin: &str) -> usize {
         self.state.reg.read().map_or(0, |r| r.count_owner(plugin))
             + self.state.bus.subscriptions(plugin)
+            + self.state.bus.durables.lock().map_or(0, |d| d.keys().filter(|(p, _)| p == plugin).count())
             + self.state.settings.watchers_of(plugin)
     }
     /// The context of a plugin that is on (tests, the exec bridge).
@@ -242,6 +251,16 @@ impl Kernel {
     /// checks the caller's permission, runs the handler in a new root call.
     pub fn serve(&self, caller: Caller, req: crate::http::Request) -> BoxFuture<'static, Result<crate::http::Response>> {
         crate::routes::serve(self.clone(), caller, req)
+    }
+    /// Runs `route` for a request the edge matched and permission-checked itself: the task scope, then the handler
+    /// in [`Self::route_call`].
+    pub fn run_route(
+        &self,
+        caller: Caller,
+        route: RouteEntry,
+        req: crate::http::Request,
+    ) -> BoxFuture<'static, Result<crate::http::Response>> {
+        crate::routes::run(self.clone(), caller, route, req)
     }
 }
 

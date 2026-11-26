@@ -39,10 +39,25 @@ type Waiter = oneshot::Sender<Result<Value>>;
 #[derive(Debug)]
 pub struct Peer {
     out: mpsc::UnboundedSender<String>,
-    pending: Mutex<HashMap<u64, Waiter>>,
+    pending: Arc<Mutex<HashMap<u64, Waiter>>>,
     next: AtomicU64,
     closed: Mutex<Option<String>>,
     stop: CancellationToken,
+}
+
+/// Takes a request's waiter out of `pending` when its future is dropped before the answer came (a timeout, a caller
+/// gone), so a child that never answers doesn't grow the map for the life of the process.
+struct Waiting {
+    pending: Arc<Mutex<HashMap<u64, Waiter>>>,
+    id: u64,
+}
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        if let Ok(mut p) = self.pending.lock() {
+            p.remove(&self.id);
+        }
+    }
 }
 
 fn wire(e: &WireError) -> Value {
@@ -58,7 +73,7 @@ impl Peer {
     {
         let (tx, rx) = mpsc::unbounded_channel::<String>();
         let peer =
-            Arc::new(Self { out: tx, pending: Mutex::default(), next: AtomicU64::new(1), closed: Mutex::default(), stop: stop.clone() });
+            Arc::new(Self { out: tx, pending: Arc::default(), next: AtomicU64::new(1), closed: Mutex::default(), stop: stop.clone() });
         tokio::spawn(write_loop(rx, output, stop.clone()));
         tokio::spawn(read_loop(peer.clone(), input, handler, stop));
         peer
@@ -84,8 +99,16 @@ impl Peer {
             p.insert(id, tx);
         }
         self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
-        let m = method.to_owned();
-        Box::pin(async move { rx.await.unwrap_or_else(|_| Err(WireError::unavailable(format!("{m}: the connection closed")))) })
+        let (m, waiting) = (method.to_owned(), Waiting { pending: self.pending.clone(), id });
+        Box::pin(async move {
+            let _waiting = waiting;
+            rx.await.unwrap_or_else(|_| Err(WireError::unavailable(format!("{m}: the connection closed"))))
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_len(&self) -> usize {
+        self.pending.lock().map(|p| p.len()).unwrap_or_default()
     }
 
     #[allow(clippy::needless_pass_by_value)]
@@ -184,4 +207,47 @@ async fn read_loop<R: AsyncRead + Unpin>(peer: Arc<Peer>, input: R, handler: Han
         }
     }
     peer.close("the other side closed the stream");
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    /// A peer whose other side is the test: it reads what the peer sent and writes answers back.
+    fn pair() -> (Arc<Peer>, BufReader<tokio::io::DuplexStream>, tokio::io::DuplexStream) {
+        let (ours, theirs) = tokio::io::duplex(4096);
+        let (to_peer, from_test) = tokio::io::duplex(4096);
+        let handler: Handler = Arc::new(|_, _| Reply::Now(Ok(Value::Null)));
+        let peer = Peer::start(from_test, ours, handler, CancellationToken::new());
+        (peer, BufReader::new(theirs), to_peer)
+    }
+
+    #[tokio::test]
+    async fn a_dropped_request_frees_its_waiter() {
+        let (peer, _sent, _answers) = pair();
+        let r = peer.request("intercept.run", json!({}));
+        assert_eq!(peer.pending_len(), 1);
+        // the hook's timeout: the future goes before any answer came
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(20), r).await.is_err());
+        assert_eq!(peer.pending_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn an_answered_request_is_removed_once() {
+        let (peer, mut sent, mut answers) = pair();
+        let r = peer.request("command.run", json!({}));
+        let mut line = String::new();
+        sent.read_line(&mut line).await.unwrap();
+        let id = serde_json::from_str::<Value>(&line).unwrap()["id"].clone();
+        let reply = json!({ "jsonrpc": "2.0", "id": id, "result": 7 }).to_string();
+        answers.write_all(format!("{reply}\n{reply}\n").as_bytes()).await.unwrap();
+        assert_eq!(r.await.unwrap(), json!(7));
+        assert_eq!(peer.pending_len(), 0);
+        // the duplicate answer finds nothing, and a later request is still tracked until it settles
+        let r2 = peer.request("command.run", json!({}));
+        assert_eq!(peer.pending_len(), 1);
+        drop(r2);
+        assert_eq!(peer.pending_len(), 0);
+    }
 }

@@ -4225,6 +4225,7 @@ dependencies = [
  "wisp-protocol",
  "wisp-store",
  "wisp-sync",
+ "wisp-testkit",
 ]
 
 [[package]]
