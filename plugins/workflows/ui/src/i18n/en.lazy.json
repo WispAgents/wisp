@@ -19,6 +19,7 @@
   "wisp.workflows.working": "Working…",
   "wisp.workflows.tryN": "Working, try {n}…",
   "wisp.workflows.queued": "Queued",
+  "wisp.workflows.held": "Waiting: {why}",
   "wisp.workflows.after": "After {needs}",
   "wisp.workflows.fansOut": "Fans out once {needs} ends",
   "wisp.workflows.fan.count": "{done}/{total}",

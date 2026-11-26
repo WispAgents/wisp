@@ -19,6 +19,7 @@
     "runtime:get",
     "runtime:spec",
     "runtime:stop",
+    "runtime:turns",
     "store:write{owner:automations}",
     "workflows:run"
   ],

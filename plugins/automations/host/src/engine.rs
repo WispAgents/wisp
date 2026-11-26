@@ -186,7 +186,7 @@ impl Engine {
             if d == Decision::Nothing {
                 continue;
             }
-            let o = self.act(ctx, call, &t, &mut st, d, now).await;
+            let o = self.act(ctx, call, &t, &mut st, d, ev.depth, now).await;
             if let Err(e) = self.save(&t.name, &st).await {
                 tracing::warn!(trigger = %t.name, "state not saved: {}", e.message);
             }
@@ -195,13 +195,21 @@ impl Engine {
         out
     }
 
-    /// Runs a decision: starts, replaces, or says why not (`trigger.fired`).
-    async fn act(&self, ctx: &Ctx, call: &Call, t: &Live, st: &mut State, d: Decision, now: i64) -> FireOut {
+    /// Runs a decision: starts, replaces, or says why not (`trigger.fired`, one cause deeper than what it decided on:
+    /// its job's events, else `depth`, the event's).
+    #[allow(clippy::too_many_arguments)] // the trigger, its state, the decision, and how deep what it decided on is
+    async fn act(&self, ctx: &Ctx, call: &Call, t: &Live, st: &mut State, d: Decision, depth: u32, now: i64) -> FireOut {
         let key = match &d {
             Decision::Start(j) | Decision::Awaiting(j) | Decision::Replace { job: j, .. } => {
                 j.events.first().map(|e| e.key.clone()).unwrap_or_default()
             }
             _ => st.deliveries.back().map(|l| l.key.clone()).unwrap_or_default(),
+        };
+        let cause = match &d {
+            Decision::Start(j) | Decision::Awaiting(j) | Decision::Replace { job: j, .. } => {
+                j.events.iter().map(|e| e.depth).max().unwrap_or(0)
+            }
+            _ => depth,
         };
         let (word, why) = core::word(&d);
         let mut out = FireOut { result: word.into(), why, session: None };
@@ -235,22 +243,27 @@ impl Engine {
                 }
             }
         }
-        ctx.emit(
-            call,
-            &TriggerFired {
-                trigger: t.name.clone(),
-                on: t.spec.on.clone(),
-                key,
-                result: out.result.clone(),
-                why: out.why.clone(),
-                session: out.session.clone(),
-            },
-        );
+        // a loop cut here (its event as deep as a chain goes) says so in its log only: a `trigger.fired` for the cut would
+        // be one more event for the other trigger of the loop to decide on, and so on without end
+        if out.result == "started" || cause < core::MAX_DEPTH {
+            ctx.emit(
+                call,
+                &TriggerFired {
+                    trigger: t.name.clone(),
+                    on: t.spec.on.clone(),
+                    key,
+                    result: out.result.clone(),
+                    why: out.why.clone(),
+                    session: out.session.clone(),
+                    depth: cause + 1,
+                },
+            );
+        }
         out
     }
 
     /// A run a trigger started ended: its outcome counts (a quiet member's answer is a skip, not a failure).
-    pub async fn ended(&self, ctx: &Ctx, session: &str, o: Outcome, from_crew: bool, now: i64) {
+    pub async fn ended(&self, ctx: &Ctx, session: &str, o: Outcome, via: Via, now: i64) {
         let all = self.all(ctx);
         // its row stops saying held below (`core::ended`); its start can't come any more
         self.plan_runs().remove(session);
@@ -259,8 +272,9 @@ impl Engine {
                 continue;
             }
             let Some(t) = all.iter().find(|t| t.name == name) else { continue };
-            // a member's run ends with its report (which says whether it was quiet), not with its turn
-            if matches!(t.spec.target(), Target::Crew(_)) != from_crew {
+            // a member's run ends with its report (which says whether it was quiet), not with its turn; stopped or
+            // deleted, any run ends
+            if via != Via::Any && matches!(t.spec.target(), Target::Crew(_)) != (via == Via::Crew) {
                 continue;
             }
             let _one = self.gate.lock().await;
@@ -275,11 +289,24 @@ impl Engine {
             }
             let call = ctx.root_call();
             for d in core::drain(&t.spec, &mut st, &Self::world(t, now)) {
-                self.act(ctx, &call, t, &mut st, d, now).await;
+                self.act(ctx, &call, t, &mut st, d, 0, now).await;
             }
             if let Err(e) = self.save(&name, &st).await {
                 tracing::warn!(automation = %name, "couldn't save the automation's state: {}", e.message);
             }
+        }
+    }
+
+    /// Whether a task still has a turn running, waiting or queued (unheld): a stopped turn then isn't its run's end.
+    /// A read error other than not found counts as going (the tick heals it if it ended).
+    pub async fn still_going(&self, ctx: &Ctx, id: &str) -> bool {
+        let got = ctx.run::<rt::Get>(&ctx.root_call(), rt::IdArgs { id: id.into() }).await;
+        match got {
+            Ok(t) => {
+                use wisp_runtime_api::model::SessionState;
+                matches!(t.state, SessionState::Running | SessionState::Waiting) || (!t.queue.is_empty() && !t.queue_held)
+            }
+            Err(e) => e.code != wisp_kernel::Code::NotFound,
         }
     }
 
@@ -297,6 +324,7 @@ impl Engine {
                 .map(|(_, p, up)| (p.clone(), *up))
                 .collect();
             st.unavailable = core::availability(&t.spec.on, &list);
+            self.heal(ctx, &call, &t, &mut st, now).await;
             let w = Self::world(&t, now);
             let mut decisions = Vec::new();
             if let Some(ev) = due_event(&t, &st, now) {
@@ -310,7 +338,7 @@ impl Engine {
                 decisions.extend(core::drain(&t.spec, &mut st, &w));
             }
             for d in decisions.into_iter().filter(|d| *d != Decision::Nothing) {
-                self.act(ctx, &call, &t, &mut st, d, now).await;
+                self.act(ctx, &call, &t, &mut st, d, 0, now).await;
             }
             if st.unavailable.is_none() && st.next_poll_at.is_none_or(|at| at <= now) {
                 self.poll(ctx, &call, &t, &mut st, now).await;
@@ -321,6 +349,28 @@ impl Engine {
                 tracing::warn!(automation = %t.name, "couldn't save the automation's state: {}", e.message);
             }
         }
+    }
+
+    /// The runs it thinks are going that aren't: a task that's gone, or one idle on two ticks in a row (an end it never
+    /// heard: wisp restarted between the turn's end and its fact, a target whose end says nothing). Each ends as
+    /// stopped, so `concurrency` stops counting it ("skipped: already running" forever after).
+    async fn heal(&self, ctx: &Ctx, call: &Call, t: &Live, st: &mut State, now: i64) {
+        let mut idle = Vec::new();
+        for id in st.running.clone() {
+            match run_look(ctx, call, &id).await {
+                RunLook::Going => {}
+                RunLook::Gone => {
+                    core::ended(&t.spec, st, &id, Outcome { stopped: true, ..Outcome::default() }, now);
+                }
+                // a crew member's run ends with its report, which may come a little after its turn
+                RunLook::Idle if matches!(t.spec.target(), Target::Crew(_)) => {}
+                RunLook::Idle if st.idle.contains(&id) => {
+                    core::ended(&t.spec, st, &id, Outcome { stopped: true, ..Outcome::default() }, now);
+                }
+                RunLook::Idle => idle.push(id),
+            }
+        }
+        st.idle = idle;
     }
 
     async fn poll(&self, ctx: &Ctx, call: &Call, t: &Live, st: &mut State, now: i64) {
@@ -347,9 +397,10 @@ impl Engine {
         st.poll_failures = f;
         let w = Self::world(t, now);
         for ev in events {
+            let depth = ev.depth;
             let d = core::admit(&t.name, &t.spec, st, ev, &w);
             if d != Decision::Nothing {
-                self.act(ctx, call, t, st, d, now).await;
+                self.act(ctx, call, t, st, d, depth, now).await;
             }
         }
     }
@@ -431,7 +482,7 @@ impl Engine {
         let mut st = self.load(name).await;
         let d = core::admit(name, &t.spec, &mut st, ev, &Self::world(&t, now));
         t.spec.project = folder;
-        let out = self.act(ctx, call, &t, &mut st, d, now).await;
+        let out = self.act(ctx, call, &t, &mut st, d, 0, now).await;
         self.save(name, &st).await?;
         Ok(out)
     }
@@ -450,7 +501,7 @@ impl Engine {
             st.runs.push_back(now);
             st.last_run_at = Some(now);
             st.runs_total += 1;
-            self.act(ctx, call, &t, &mut st, Decision::Start(j), now).await
+            self.act(ctx, call, &t, &mut st, Decision::Start(j), 0, now).await
         } else {
             st.log(now, "declined", "you said no", &key, None);
             FireOut { result: "declined".into(), why: "you said no".into(), session: None }
@@ -469,7 +520,7 @@ impl Engine {
         st.cooldown_until = None;
         let call = ctx.root_call();
         for d in core::drain(&t.spec, &mut st, &Self::world(&t, now)) {
-            self.act(ctx, &call, &t, &mut st, d, now).await;
+            self.act(ctx, &call, &t, &mut st, d, 0, now).await;
         }
         self.save(name, &st).await
     }
@@ -729,7 +780,7 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
             serde_json::to_value(made).map_err(|e| WireError::internal(e.to_string()))?
         }
         Target::Crew(member) => wake(ctx, call, member, text("{event.summary}"), &by).await?,
-        Target::Workflow(w) => run_workflow(ctx, call, w, &first, &cwd).await?,
+        Target::Workflow(w) => run_workflow(ctx, call, w, &first, &cwd, &by).await?,
         Target::FollowUp => {
             let Some(id) = first.subject.clone() else {
                 return Err(WireError::invalid(format!("{} follows up the event's task, and {} names none", t.name, first.on)));
@@ -758,12 +809,14 @@ async fn wake(ctx: &Ctx, call: &Call, member: &str, why: String, by: &str) -> Re
 }
 
 /// `workflows.run`: the event as its `event` input, in the trigger's folder when it has one (`id` names its task).
-async fn run_workflow(ctx: &Ctx, call: &Call, name: &str, first: &TriggerEvent, cwd: &str) -> Result<Value> {
+async fn run_workflow(ctx: &Ctx, call: &Call, name: &str, first: &TriggerEvent, cwd: &str, by: &str) -> Result<Value> {
     let inputs = [("event".to_owned(), core::event_scope(first)["event"].clone())].into_iter().collect();
     let a = wisp_workflows_api::RunArgs {
         name: name.to_owned(),
         inputs,
         project: (!cwd.is_empty()).then(|| cwd.to_owned()),
+        // its run's task and steps carry the trigger: their own events never fire it again
+        triggered_by: Some(by.to_owned()),
         ..Default::default()
     };
     let started = ctx.run::<wisp_workflows_api::Run>(call, a).await?;
@@ -778,11 +831,63 @@ fn notify(ctx: &Ctx, name: &str, why: &str) {
     }
 }
 
+/// What says a run a trigger started ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Via {
+    /// its task's fact (`task.finished`, a stopped turn) or its workflow's (`workflow.ended`)
+    Turn,
+    /// a crew member's report
+    Crew,
+    /// it's gone, whatever its target: its task was deleted
+    Any,
+}
+
+/// How a run a trigger started looks at a tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RunLook {
+    Going,
+    /// its task is gone
+    Gone,
+    /// nothing runs, waits or is held on it
+    Idle,
+}
+
+/// A task as a run: gone when there's no such task (any other read error: going, looked at again next tick), idle when
+/// nothing runs, waits or is queued on it and its last turn isn't held (a turn waiting for the plan, a limit, trust).
+pub(crate) fn look_of(
+    t: std::result::Result<&wisp_runtime_api::model::Session, &WireError>,
+    last: Option<&wisp_runtime_api::model::Turn>,
+) -> RunLook {
+    use wisp_runtime_api::model::SessionState;
+    let t = match t {
+        Ok(t) => t,
+        Err(e) if e.code == wisp_kernel::Code::NotFound => return RunLook::Gone,
+        Err(_) => return RunLook::Going,
+    };
+    let busy = matches!(t.state, SessionState::Running | SessionState::Waiting) || !t.queue.is_empty();
+    if busy || last.is_some_and(|l| l.status.is_live()) { RunLook::Going } else { RunLook::Idle }
+}
+
+async fn run_look(ctx: &Ctx, call: &Call, id: &str) -> RunLook {
+    let got = ctx.run::<rt::Get>(call, rt::IdArgs { id: id.into() }).await;
+    let first = look_of(got.as_ref(), None);
+    if first != RunLook::Idle {
+        return first;
+    }
+    // idle by its state: its last turn says whether it's held
+    match ctx.run::<rt::Turns>(call, rt::TurnsArgs { id: id.into(), before: None, limit: Some(1), masked: None }).await {
+        Ok(turns) => look_of(got.as_ref(), turns.last()),
+        Err(_) => RunLook::Going,
+    }
+}
+
 /// The run's outcome from a `task.finished` / `task.failed` payload.
 pub fn outcome_of(ty: &str, data: &Value) -> Outcome {
     Outcome {
         failed: ty == "task.failed" || data.get("status").and_then(Value::as_str) == Some("error"),
         quiet: data.get("quiet").and_then(Value::as_bool).unwrap_or(false),
+        // a turn stopped (`turn.ended`, status stopped) ends its run, and isn't a failure
+        stopped: ty == "turn.ended" && data.get("status").and_then(Value::as_str) == Some("stopped"),
         cost: data.get("costUsd").and_then(Value::as_f64).unwrap_or(0.0),
     }
 }

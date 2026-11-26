@@ -121,3 +121,30 @@ fn a_follow_up_or_a_stop_with_nothing_there_says_why_audit_i5_i12() {
     assert!(drive::stop_refusal(false, "").starts_with("That task isn't a factory run"));
     assert_eq!(drive::stop_refusal(true, "stopped"), "This factory run is stopped already: nothing to stop.");
 }
+
+fn station_turn(status: wisp_runtime_api::TurnStatus) -> wisp_runtime_api::model::Turn {
+    wisp_runtime_api::model::Turn { id: "u1".into(), session_id: "s1".into(), status, text: Some("built".into()), ..Default::default() }
+}
+
+/// A station whose turn waits for a limit's reset (or trust, or the plan) failed the run as "it ended held": it's
+/// still going.
+#[test]
+fn a_held_station_turn_is_still_going() {
+    let t = wisp_runtime_api::model::Session { state: wisp_runtime_api::SessionState::Review, ..Default::default() };
+    assert_eq!(drive::end_of("s1", &t, &[station_turn(wisp_runtime_api::TurnStatus::Held)], None), None);
+    let done = drive::end_of("s1", &t, &[station_turn(wisp_runtime_api::TurnStatus::Done)], None).unwrap();
+    assert!(done.ok && done.text == "built");
+    let mut queued = t.clone();
+    queued.queue.push(wisp_runtime_api::QueueItem::default());
+    queued.queue_held = true;
+    assert_eq!(drive::end_of("s1", &queued, &[station_turn(wisp_runtime_api::TurnStatus::Done)], None), None, "a held queue waits");
+}
+
+/// A station's task deleted while the run waited on it was "can't be read" on every look: the run never ended.
+#[test]
+fn a_deleted_station_task_fails_and_a_passing_error_looks_again() {
+    let gone = drive::unread("s1", &WireError::not_found("no task s1")).unwrap();
+    assert!(!gone.ok);
+    assert_eq!(gone.text, "its task was deleted");
+    assert_eq!(drive::unread("s1", &WireError::unavailable("busy")), None);
+}
