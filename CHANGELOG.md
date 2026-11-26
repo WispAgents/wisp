@@ -36,6 +36,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Phone browser and the installed web app: a task's notification shows again (Chrome on Android refused the page's own, so none appeared), and tapping it opens the task, in the open tab or a new window.
 - Android app: a task's newer notification replaces its earlier one instead of piling up beside it, and opening the task clears it. The installed web app clears it too.
 - The installed web app is in the phone's share sheet again: what you share opens New task with it in the box and its files attached, ready to send.
+- **Task chat: the agent's thoughts show as messages.** A thought no longer folds into the commands pill or shows as a one-line step to expand; it reads in full on the rail like the agent's other messages, in Chat and Transcript, running or finished.
 - Crew: two jobs given to a member at once both wait in their queue (one was lost), an edit saved while a waiting job started or a new one was queued (from wisp or from an agent's `wisp_crew_edit`) no longer puts that job back in the queue or drops the new one, and a member removed while a job for them was being placed or a check-in ran stays removed.
 - Crew: a wake-up a member asked for is kept until its check-in starts. Before, a wake-up that came while they were still checking in, or with their queue full, was dropped.
 - Crew: a message that tags several members (`@ada @bob`) wakes every one who can take the job. Before, one with a full queue stopped the rest from waking.
