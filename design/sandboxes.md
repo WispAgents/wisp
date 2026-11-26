@@ -81,6 +81,10 @@ without touching the user's computer or their cloud computer. Three ways in:
   The sandbox's wisp adds a `browser` connector (`wisp-browser-mcp`: Playwright MCP on that Chromium)
   that every task's agent gets. The task's **Browser** tab in the side panel shows it live
   (`POST /api/sandbox/browser` → a one-time link to `p6080--sb-…`), and you can use it too.
+- **Computer use** (ADR-0127): the image has Cua Driver (pinned, checksummed), a window manager (matchbox) and the
+  accessibility bus, and sets `WISP_COMPUTER=on`, so every run gets wisp's `computer` MCP server (the box's screen:
+  screenshots, clicks, typing, Chromium's page by its accessibility tree), the same Chromium ADR-0128's `browser`
+  server drives. `wisp-computer` brings the screen up on the first call.
 - **Previews in frames of other sites:** a preview's cookie is `SameSite=None; Secure; Partitioned` on
   https grids and `*.localhost`, so wisp on a computer can frame a box's page (it failed before).
 - **Room:** a sandbox gets 2.5 GB (`hostd.container.sandbox` overrides) and is admitted for that much.

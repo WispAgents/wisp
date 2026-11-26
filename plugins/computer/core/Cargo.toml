@@ -1,0 +1,15 @@
+[package]
+name = "wisp-computer-core"
+description = "wisp.computer's pure, sans-IO logic: the MCP gateway's answers, the tool policy, the driver's line framing and lookup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+wisp-computer-api.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

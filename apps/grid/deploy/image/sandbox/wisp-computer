@@ -1,0 +1,12 @@
+#!/bin/sh
+# Cua Driver as wisp.computer starts it in a box (WISP_COMPUTER_DRIVER, ADR-0127): the screen, its window
+# manager, the accessibility bus and Chromium up first (wisp-desktop), then the driver on that screen.
+# Anything but `mcp` (`--version`) goes straight to the driver, with no screen started for it.
+if [ "$1" = "mcp" ]; then
+  wisp-desktop >&2 || exit 1
+  D="${WISP_DESKTOP_DIR:-/tmp/wisp-desktop}"
+  set -a
+  . "$D/env"
+  set +a
+fi
+exec cua-driver "$@"

@@ -251,7 +251,8 @@ token) when wisp deletes the task. Subagents and crew members can have sandboxes
   (`claude setup-token`) and can add env vars. The grid seals both per user, and every sandbox starts
   with them (`CLAUDE_CODE_OAUTH_TOKEN`, …). They never go into the user's own box.
 - **Browser.** The image has Chromium, Xvfb and noVNC (`wisp-desktop`). wisp shows the live view
-  through the box's `p6080` preview, and agents drive the browser through Playwright MCP.
+  through the box's `p6080` preview, and agents drive the browser through Playwright MCP. Agents also get computer use on that
+  screen (ADR-0127): Cua Driver behind wisp's `computer` MCP server, with a window manager and the accessibility bus.
 
 ```json
 "sandboxes": { "enabled": true, "perUser": 10 }

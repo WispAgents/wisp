@@ -3,6 +3,10 @@
 # Chromium with its DevTools port on 127.0.0.1:9222 (what agents drive), and noVNC on port 6080
 # (what you watch, through the grid's p6080--<box> preview). Starts what isn't running yet, so it's
 # safe to call any number of times; prints nothing when all is up.
+# For computer use (wisp.computer, ADR-0127) the screen also has a window manager (Cua Driver types into
+# the active window, and only a window manager says which one that is) and an accessibility bus, which
+# Chromium reports its page to: an agent clicks a button by name, not by guessing pixels. `$D/env`
+# holds the screen's and the bus's addresses for whatever drives it (wisp-computer).
 set -e
 # Its pids and logs live in the box's /tmp: a box starts fresh each time, and pids from the last one
 # would point at nothing (or at something else).
@@ -21,6 +25,16 @@ SIZE="${WISP_DESKTOP_SIZE:-1280x800}"
 W="${SIZE%x*}"
 H="${SIZE#*x}"
 start xvfb Xvfb :99 -screen 0 1920x1200x24 -nolisten tcp -noreset
+# One session bus for the box (a box starts fresh: an address from the last one points at nothing), with
+# the accessibility bus on it.
+if ! up dbus; then
+  dbus-launch --sh-syntax >"$D/dbus.sh"
+  sed -n 's/^DBUS_SESSION_BUS_PID=\([0-9]*\);$/\1/p' "$D/dbus.sh" >"$D/dbus.pid"
+fi
+. "$D/dbus.sh"
+export DBUS_SESSION_BUS_ADDRESS
+start atspi /usr/libexec/at-spi-bus-launcher --launch-immediately
+printf 'DISPLAY=:99\nDBUS_SESSION_BUS_ADDRESS=%s\n' "$DBUS_SESSION_BUS_ADDRESS" >"$D/env"
 i=0
 while [ ! -e /tmp/.X11-unix/X99 ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
 # Right after it starts, Xvfb may not take RandR yet: a few tries.
@@ -31,7 +45,10 @@ until xrandr --fb "$SIZE" >/dev/null 2>&1 || [ $i -ge 30 ]; do sleep 0.1; i=$((i
 up chromium || rm -f "$HOME/.sandbox/chromium/SingletonLock" "$HOME/.sandbox/chromium/SingletonSocket" "$HOME/.sandbox/chromium/SingletonCookie"
 # --no-sandbox: Chromium's own sandbox needs kernel features gVisor doesn't give; gVisor is the sandbox.
 # --test-type: no bar about that flag; no "Restore pages?" after a box that stopped mid-session.
-start chromium chromium --no-sandbox --disable-dev-shm-usage --no-first-run --no-default-browser-check \
+# No title bars: the screen is the browser's, and what you watch stays 1:1.
+start wm matchbox-window-manager -use_titlebar no -use_cursor yes
+# --force-renderer-accessibility: the page's buttons, links and fields on the accessibility bus.
+start chromium chromium --force-renderer-accessibility --no-sandbox --disable-dev-shm-usage --no-first-run --no-default-browser-check \
   --test-type --hide-crash-restore-bubble --disable-session-crashed-bubble --noerrdialogs \
   --disable-features=Translate --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 \
   --user-data-dir="$HOME/.sandbox/chromium" --window-position=0,0 --window-size="$W,$H" about:blank
