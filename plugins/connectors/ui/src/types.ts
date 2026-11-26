@@ -37,6 +37,8 @@ export interface ProbeResult {
   error?: string;
   /** refused for want of a sign-in: the row offers Sign in */
   auth?: boolean;
+  /** its sign-in couldn't be refreshed just now (no network, the server's 5xx): tried again, no sign-in asked for */
+  retrying?: boolean;
 }
 
 export interface KeyState {
@@ -64,6 +66,8 @@ export interface ConnectorView {
   added_at: number;
   /** harnesses that keep their own server by this name (it is skipped for them) */
   own: string[];
+  /** harnesses that can't speak its transport (an SSE server, on Codex): it is skipped for them */
+  cant_reach?: string[] | null;
   /** a test is running: the row says Checking… */
   testing: boolean;
   /** only on an optimistic row: the command line as typed */
@@ -79,6 +83,8 @@ export interface FoundServer {
   url?: string;
   env?: string[];
   headers?: string[];
+  /** "Not now" hid it: the card leaves it out, the review lists it under Show hidden */
+  hidden?: boolean | null;
 }
 
 export interface Reach {
@@ -95,7 +101,8 @@ export interface SecretField {
 
 export interface ConnectorBody {
   name?: string;
-  transport?: Transport;
+  /** 'sse': remote over the 2024 SSE transport (a pasted config's `"type": "sse"`); 'remote' keeps what an edit was */
+  transport?: Transport | 'sse';
   command?: string;
   url?: string;
   env?: SecretField[];

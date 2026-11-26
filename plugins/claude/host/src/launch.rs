@@ -3,6 +3,7 @@
 
 use std::collections::BTreeSet;
 
+use wisp_harness_kit::protocol::OWN_MCP_SERVERS;
 use wisp_runtime_api::harness::browser::Browser;
 use wisp_runtime_api::harness::{HarnessRun, Launch, LaunchFile, MCP_CONFIG_FILE, Stdin};
 use wisp_runtime_api::model::{Attachment, Mode};
@@ -192,9 +193,12 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         args.push(APPROVE_TOOL.into());
     }
     let free = SIDE_FREE.iter().filter(|_| run.gate && run.side).map(|t| (*t).to_owned());
+    // wisp's own servers run without a card; a connector's tools ask through the approval tool in Edits (allowed, every
+    // one of a user's servers ran unasked there), and Full auto asks nothing anyway
     let allowed: Vec<String> = run
         .mcp_servers
         .keys()
+        .filter(|n| OWN_MCP_SERVERS.contains(&n.as_str()))
         .map(|n| format!("mcp__{n}"))
         .chain(chrome.then(|| CHROME_TOOLS.to_owned()))
         .chain(run.grants.iter().cloned())
@@ -489,6 +493,25 @@ mod tests {
         assert!(!l.args.iter().any(|x| x == "--chrome"), "{:?}", l.args);
         assert_eq!(mcp_config(&l)["mcpServers"]["browser"]["command"], "/usr/local/bin/wisp-browser-mcp");
         assert!(!after(&l.args, "--allowedTools").iter().any(|x| x == CHROME_TOOLS));
+    }
+
+    /// A connector's tools ran unasked in Edits: every `mcp_servers` key went into `--allowedTools`. Only wisp's own
+    /// servers do; a connector's calls go through wisp's approval card.
+    #[test]
+    fn in_edits_a_connectors_tools_ask_and_wisps_own_run_unasked() {
+        let mut r = HarnessRun { mode: Mode::Edits, ..run() };
+        r.mcp_servers.insert("wisp".into(), serde_json::json!({ "type": "http", "url": "http://x/api/mcp" }));
+        r.mcp_servers.insert("linear".into(), serde_json::json!({ "type": "http", "url": "https://mcp.linear.app/mcp" }));
+        let a = launch(&r, "claude").args;
+        let allowed = after(&a, "--allowedTools");
+        assert!(allowed.iter().any(|x| x == "mcp__wisp"), "{allowed:?}");
+        assert!(!allowed.iter().any(|x| x == "mcp__linear"), "{allowed:?}");
+        assert_eq!(flag(&a, "--permission-prompt-tool"), APPROVE_TOOL);
+        assert_eq!(
+            mcp_config(&launch(&r, "claude"))["mcpServers"]["linear"]["url"],
+            "https://mcp.linear.app/mcp",
+            "it still gets the server"
+        );
     }
 
     /// v1 lean.js `LEAN_ENV`: a quiet run goes without Claude Code's nonessential traffic.

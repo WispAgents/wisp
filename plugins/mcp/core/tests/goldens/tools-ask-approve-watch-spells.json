@@ -610,7 +610,7 @@
  },
  {
   "name": "wisp_connectors",
-  "description": "List the user's connectors in wisp: MCP servers that every task's agent gets (in Edits and Full auto), whatever the harness. Each with its URL or command and whether it works, how many tools it has, or what it needs (a sign-in, a key). Read-only.",
+  "description": "List the user's connectors in wisp: MCP servers that every task's agent gets (in Edits, where their tools ask the user first, and in Full auto; in Plan mode only one set for it), whatever the harness. Each with its URL or command and whether it works, how many tools it has, or what it needs (a sign-in, a key). Read-only.",
   "inputSchema": {
    "type": "object",
    "properties": {}

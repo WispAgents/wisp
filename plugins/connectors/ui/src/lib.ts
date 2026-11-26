@@ -45,6 +45,8 @@ export interface Draft {
   url: string;
   env: Pair[];
   headers: Pair[];
+  /** remote over the 2024 SSE transport (a pasted `"type": "sse"`): kept, or the server would speak streamable HTTP to it */
+  sse?: boolean;
 }
 
 /** A secret field as the form holds it; `set`: a saved value the server keeps (never shown). */
@@ -73,7 +75,9 @@ const fields = (ps: readonly Pair[]): SecretField[] => ps.filter((p) => p.key.tr
 /** The body the server takes: '' keeps a saved secret; only the open transport's fields go. */
 export function bodyOf(d: Draft): ConnectorBody {
   const name = d.name.trim();
-  return d.transport === 'local' ? { name, transport: 'local', command: d.command.trim(), env: fields(d.env) } : { name, transport: 'remote', url: d.url.trim(), headers: fields(d.headers) };
+  return d.transport === 'local'
+    ? { name, transport: 'local', command: d.command.trim(), env: fields(d.env) }
+    : { name, transport: d.sse === true ? 'sse' : 'remote', url: d.url.trim(), headers: fields(d.headers) };
 }
 
 /** The first field a save can't go without, or null. */
@@ -90,7 +94,9 @@ const pairs = (o: unknown): Pair[] => (isObj(o) ? Object.entries(o).map(([key, v
 function one(name: string, s: unknown): Draft | null {
   if (!isObj(s)) return null;
   const url = typeof s['url'] === 'string' ? s['url'] : typeof s['serverUrl'] === 'string' ? s['serverUrl'] : '';
-  if (url) return { name, transport: 'remote', command: '', url, env: [], headers: pairs(s['headers']) };
+  // `"type": "sse"` (Claude's, Cursor's) or `"transport": "sse"`: the older transport, kept (it was read as streamable HTTP)
+  const sse = [s['type'], s['transport']].some((v) => typeof v === 'string' && v.toLowerCase() === 'sse');
+  if (url) return { name, transport: 'remote', command: '', url, env: [], headers: pairs(s['headers']), ...(sse ? { sse } : {}) };
   if (typeof s['command'] !== 'string' || s['command'] === '') return null;
   const args = Array.isArray(s['args']) ? s['args'].map(String) : [];
   return { name, transport: 'local', command: commandLine({ command: s['command'], args }), url: '', env: pairs(s['env']), headers: [] };
@@ -147,11 +153,13 @@ export const EXAMPLES: readonly Example[] = [
 ];
 
 /** What the row's status column says. */
-export type Status = { kind: 'signing' } | { kind: 'signin' } | { kind: 'checking' } | { kind: 'unchecked' } | { kind: 'ok'; count: number } | { kind: 'failed'; error: string };
+export type Status = { kind: 'signing' } | { kind: 'retrying' } | { kind: 'signin' } | { kind: 'checking' } | { kind: 'unchecked' } | { kind: 'ok'; count: number } | { kind: 'failed'; error: string };
 
-/** Signing in wins (the browser is open), then a sign-in the last check asked for, then the check. */
+/** Signing in wins (the browser is open), then a refresh being tried again, then a sign-in the last check asked for,
+ *  then the check. */
 export function statusOf(c: ConnectorView, signing: boolean): Status {
   if (signing) return { kind: 'signing' };
+  if (c.test?.retrying === true && !c.testing) return { kind: 'retrying' };
   if (c.test?.auth === true && !c.testing) return { kind: 'signin' };
   if (c.testing) return { kind: 'checking' };
   if (!c.test) return { kind: 'unchecked' };
@@ -178,6 +186,14 @@ export function stillSigning(c: ConnectorView, since: number, now: number): bool
   if (now - since > SIGNING_MS) return false;
   return !(c.signed_in?.at !== null && c.signed_in?.at !== undefined && c.signed_in.at >= since - 5000);
 }
+
+/** Why a harness goes without a connector, one line each on its row: its own config has a server by that name
+ *  (`own`), or it can't speak the connector's transport (`sse`). */
+export type RowNote = { kind: 'own' | 'sse'; harness: string };
+export const rowNotes = (c: Pick<ConnectorView, 'own' | 'cant_reach'>): RowNote[] => [
+  ...(c.own ?? []).map((harness) => ({ kind: 'own' as const, harness })),
+  ...(c.cant_reach ?? []).map((harness) => ({ kind: 'sse' as const, harness })),
+];
 
 /** The found card's sources: every harness a found server is in, once. */
 export const sourcesOf = (found: readonly FoundServer[]): string[] => [...new Set(found.flatMap((f) => f.from))];

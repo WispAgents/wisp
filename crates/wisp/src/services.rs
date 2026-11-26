@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 use tokio::sync::Mutex;
-use wisp_kernel::services::{Net, NetRequest, NetResponse, NetService, NotifyService, Paths, Secrets, SecretsService};
+use wisp_kernel::services::{Net, NetRequest, NetResponse, NetService, NetStream, NotifyService, Paths, Secrets, SecretsService};
 use wisp_kernel::{App, BoxFuture, Clock, Result, WireError};
 
 /// `WISP_HOME`, else `~/.wisp`; spelled once, here, as every path in wisp is ([`plain`]).
@@ -255,6 +255,25 @@ impl Net for ReqwestNet {
             let headers = r.headers().iter().filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str().to_owned(), v.to_owned()))).collect();
             let body = r.bytes().await.map_err(|e| WireError::unavailable(e.to_string()))?.to_vec();
             Ok(NetResponse { status, headers, body })
+        })
+    }
+
+    fn stream(&self, req: NetRequest) -> BoxFuture<'static, Result<NetStream>> {
+        use futures::StreamExt as _;
+        let client = self.client.clone();
+        Box::pin(async move {
+            let method =
+                reqwest::Method::from_bytes(req.method.to_ascii_uppercase().as_bytes()).map_err(|e| WireError::invalid(e.to_string()))?;
+            let timeout = Duration::from_millis(if req.timeout_ms == 0 { 30_000 } else { req.timeout_ms });
+            let mut b = client.request(method, &req.url).timeout(timeout).body(req.body);
+            for (k, v) in &req.headers {
+                b = b.header(k, v);
+            }
+            let r = b.send().await.map_err(|e| WireError::unavailable(format!("{}: {e}", req.url)))?;
+            let status = r.status().as_u16();
+            let headers = r.headers().iter().filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str().to_owned(), v.to_owned()))).collect();
+            let body = r.bytes_stream().map(|c| c.map(|b| b.to_vec()).map_err(|e| WireError::unavailable(e.to_string()))).boxed();
+            Ok(NetStream { status, headers, body })
         })
     }
 }

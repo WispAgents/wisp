@@ -15,7 +15,7 @@ function change(base: EntityReader, peer: PeerId, id: string, fn: (c: ConnectorV
 
 /** What a saved form looks like on its row before the server answers: being checked. */
 export function draftRow(id: string, body: ConnectorBody, was?: ConnectorView): ConnectorView {
-  const transport: Transport = body.transport ?? was?.transport ?? 'local';
+  const transport: Transport = body.transport === 'sse' ? 'remote' : (body.transport ?? was?.transport ?? 'local');
   return {
     id,
     name: body.name ?? was?.name ?? '',
@@ -31,6 +31,7 @@ export function draftRow(id: string, body: ConnectorBody, was?: ConnectorView): 
     signed_in: was?.signed_in ?? null,
     added_at: was?.added_at ?? 0,
     own: was?.own ?? [],
+    cant_reach: was?.cant_reach ?? [],
     testing: true,
   };
 }
