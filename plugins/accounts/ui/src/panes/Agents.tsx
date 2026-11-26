@@ -6,7 +6,7 @@
 // harnesses that take one (opencode), Install and Update, the notice when its program changed, then its program and
 // version, its switch (its plugin), its default model, thinking level and mode for a new task (`runtime.launch`, what
 // New task reads), and what other plugins add (wisp.budget's stop line). Every write shows at once.
-import { createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch as Pick, type JSX } from 'solid-js';
+import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch as Pick, type JSX } from 'solid-js';
 import { entityKey, type PluginClient } from '@wisp/client';
 import { LAUNCH_SETTING, MODES_FOR_HARNESS, Slot, defaultModels, harnessDefaults, useShell, withHarnessDefaults, type HarnessDefaults } from '@wisp/shell';
 import {
@@ -211,6 +211,8 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
   const [query, setQuery] = createSignal('');
   // the pick survives a re-render and a search that hides it; a link from Usage (or the settings search) opens on it
   const [picked, setPicked] = createSignal<string>(props.filter && props.filter !== '' ? props.filter : GENERAL);
+  // and a new one while it's open (the frame keeps the pane, only its filter changes); an empty filter keeps the pick
+  createEffect(on(() => props.filter, (f) => void (f && setPicked(f)), { defer: true }));
   // each harness's plan, for its dot at its limit (quiet: without wisp.budget, no dot)
   const [limits] = createResource(ids, async (list) => {
     const full = await Promise.all(

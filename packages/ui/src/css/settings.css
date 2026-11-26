@@ -340,4 +340,10 @@
     [data-kit='page-shell-sub'] { display: none; }
     [data-kit='page-shell-inner'] { padding: var(--space-4) var(--space-4) calc(var(--space-9) + env(safe-area-inset-bottom, 0px)); gap: var(--space-4); }
   }
+  /* Settings' search found this row (revealSetting): lit for a moment, then it fades back; static without motion */
+  [data-kit='settings-row'][data-setting-key] { transition: background-color var(--dur-slow) var(--ease); }
+  [data-kit='settings-row'][data-found] { background-color: color-mix(in srgb, var(--accent) 14%, transparent); transition: none; }
+  @media (prefers-reduced-motion: reduce) {
+    [data-kit='settings-row'][data-setting-key] { transition: none; }
+  }
 }

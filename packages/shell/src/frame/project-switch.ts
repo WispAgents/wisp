@@ -6,6 +6,7 @@
 //   - ⌘K lists them too, under Projects, so one palette finds everything.
 // Each row says how many of its tasks need you, so the switcher doubles as "where am I needed".
 
+import { homeSetting } from '@wisp/client';
 import type { PaletteItem, ShellContext, ShortcutDef } from '../contract.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { displayCombo } from '../keys.ts';
@@ -36,10 +37,8 @@ export function projectTail(ctx: ShellContext, pc: { readonly narrowed?: boolean
 /** The projects in your order, from the store as it is now. */
 export function projectsNow(ctx: ShellContext): readonly ProjectView[] {
   const rows = ctx.client.entities.list<unknown>('project')();
-  const order = ctx.client.entities
-    .list<{ key: string; value: unknown }>('setting')()
-    .find((s) => s.key === PROJECT_ORDER)?.value;
-  return projectList(rows, order);
+  // this wisp's order, not whichever computer's setting row came first (doc25c)
+  return projectList(rows, homeSetting(ctx.client, PROJECT_ORDER)());
 }
 
 /** How many tasks in each project need you, and in all of them. */

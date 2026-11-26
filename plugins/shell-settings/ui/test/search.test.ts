@@ -2,7 +2,7 @@
 // old pane showing). It finds a pane by its rows' words too, and every declared setting by its label, description or
 // key, each opening the pane that has it (else All settings, on that setting).
 import { expect, test } from 'vitest';
-import { foundSettings, harnessOfKey, harnessRows, settingTarget, type FoundSetting } from '../src/search.ts';
+import { foundSettings, harnessOfKey, harnessRows, PANE_OF_KEY, settingTarget, type FoundSetting } from '../src/search.ts';
 import { filterSections } from '../src/phone-nav.ts';
 
 const groups = [
@@ -31,7 +31,7 @@ test('declared_settings_are_found_by_label_description_or_key_and_open_their_pan
   expect(foundSettings(all, '')).toEqual([]);
   // a plugin with one pane opens it; else All settings, filtered to the setting
   const panes = [{ id: 'phone', plugin: 'wisp.channels' }, { id: 'all', plugin: 'wisp.settings' }];
-  expect(settingTarget({ key: 'channels.project', owner: 'wisp.channels' }, panes)).toEqual({ pane: 'phone' });
+  expect(settingTarget({ key: 'channels.relay', owner: 'wisp.channels' }, panes)).toEqual({ pane: 'phone' });
   expect(settingTarget({ key: 'git.cloneDir', owner: 'wisp.git' }, panes)).toEqual({ pane: 'all', filter: 'git.cloneDir' });
 });
 
@@ -58,4 +58,32 @@ test('a_harness_row_is_found_and_opens_agents_on_that_harness', () => {
   expect(settingTarget({ key: 'budget.autoStopCursor', owner: 'wisp.budget' }, panes, ['claude', 'cursor'])).toEqual({ pane: 'agents', filter: 'cursor' });
   expect(settingTarget({ key: 'budget.autoStop', owner: 'wisp.budget' }, panes, ['claude', 'cursor'])).toEqual({ pane: 'usage' });
   expect(harnessOfKey('runtime.cursor', ['cursor']), 'a key that is only the name is no row of it').toBeUndefined();
+});
+
+// doc924a: channels.acceptChannels and channels.project are wisp.channels' (whose one pane is Phone), but Notifications
+// draws them; General's and Chat's rows are other plugins' too and went to All settings. Each opens the pane that has it.
+test('a_setting_opens_the_pane_that_draws_its_row_whoever_declares_it', () => {
+  const panes = [
+    { id: 'general', plugin: 'wisp.shell-settings' },
+    { id: 'chat', plugin: 'wisp.shell-settings' },
+    { id: 'notifications', plugin: 'wisp.shell-settings' },
+    { id: 'keys', plugin: 'wisp.shell-settings' },
+    { id: 'phone', plugin: 'wisp.channels' },
+    { id: 'agents', plugin: 'wisp.accounts' },
+    { id: 'usage', plugin: 'wisp.budget' },
+    { id: 'all', plugin: 'wisp.settings' },
+  ];
+  expect(settingTarget({ key: 'channels.acceptChannels', owner: 'wisp.channels' }, panes)).toEqual({ pane: 'notifications' });
+  expect(settingTarget({ key: 'channels.project', owner: 'wisp.channels' }, panes)).toEqual({ pane: 'notifications' });
+  expect(settingTarget({ key: 'settings.editor', owner: 'wisp.settings' }, panes)).toEqual({ pane: 'general' });
+  expect(settingTarget({ key: 'crew.tint', owner: 'wisp.crew' }, panes)).toEqual({ pane: 'general' });
+  expect(settingTarget({ key: 'settings.chatWidth', owner: 'wisp.settings' }, panes)).toEqual({ pane: 'chat' });
+  // a key no pane of this plugin draws: its owner's one pane, else All settings
+  expect(settingTarget({ key: 'channels.relay', owner: 'wisp.channels' }, panes)).toEqual({ pane: 'phone' });
+  expect(settingTarget({ key: 'git.cloneDir', owner: 'wisp.git' }, panes)).toEqual({ pane: 'all', filter: 'git.cloneDir' });
+  // the Agents rules come first, as before
+  expect(settingTarget({ key: 'budget.autoStopCursor', owner: 'wisp.budget' }, panes, ['cursor'])).toEqual({ pane: 'agents', filter: 'cursor' });
+  // the drawing pane missing (a phone without it): owner routing as before
+  expect(settingTarget({ key: 'channels.acceptChannels', owner: 'wisp.channels' }, panes.filter((p) => p.id !== 'notifications'))).toEqual({ pane: 'phone' });
+  expect(PANE_OF_KEY.size).toBe(22);
 });

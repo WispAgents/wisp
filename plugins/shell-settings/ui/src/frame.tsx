@@ -4,11 +4,11 @@
 // explicit pane opens straight to it, as in v1. Each pane renders with its own plugin's client and
 // inside an ErrorBoundary, so one broken pane never takes Settings down.
 
-import { ErrorBoundary, Show, createMemo, createResource, createSignal, type JSX } from 'solid-js';
+import { ErrorBoundary, Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { defineCommand, type PeerId, type PluginClient, type Vars } from '@wisp/client';
 import { titleParts, usePluginClient, useShell, type SettingsPaneDef } from '@wisp/shell';
-import { Callout, EmptyState, Input, SettingsFrame, Skeleton, Stack, useAfterPaint, useDerived, useSignal } from '@wisp/ui';
+import { Callout, EmptyState, Input, SettingsFrame, Skeleton, Stack, useAfterPaint, useDerived, useRevealSetting, useSignal } from '@wisp/ui';
 import { t as own } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
 import { pickPane, samePane, settingsIntent, type PaneEntry } from './nav.ts';
@@ -102,7 +102,9 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
     const f = searchable().find((x) => `setting:${x.key}` === id);
     if (!f) return;
     const to = settingTarget(f, paneOwners(), (deps.harnesses?.() ?? []).map((h) => h.id));
-    props.client.navigate(settingsIntent(to.pane, to.filter, deps.sideBySide?.() === true));
+    // and on its row (doc924a), not only its pane; a harness detail's rows have no key of their own
+    const focus = f.key.startsWith('agents:') ? undefined : f.key;
+    props.client.navigate(settingsIntent(to.pane, to.filter, deps.sideBySide?.() === true, focus));
   };
   const nothing = (): boolean => query().trim() !== '' && !declared.loading && groups().length === 0;
   const onSearchKey = (e: KeyboardEvent): void => {
@@ -135,6 +137,16 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
   // (perf r2 #9: a pane opened again built in the click, All settings 160 ms and Usage 120 ms at 4×)
   const body = useAfterPaint(current, samePane);
   const building = (): boolean => !samePane(body(), current());
+  // a search hit's row (doc924a): once the pane's body is built (in the frame after the click, above), it's scrolled
+  // to, lit and focused; again for the next hit in the same pane (its filter or focus changes, the pane is kept)
+  const found = useRevealSetting();
+  createEffect(
+    on([body, building, () => props.params.focus, () => props.params.filter] as const, ([entry, wait, key]) => {
+      if (!entry || wait || !key || typeof document === 'undefined') return;
+      found.reveal(document, key);
+      onCleanup(found.stop);
+    }),
+  );
   // the phone apps' list: Back is titled with the screen under Settings (iOS), Tasks, whose me menu opens it
   const backLabel = (): string | undefined => {
     if (!deps.phone) return undefined;

@@ -42,6 +42,7 @@ function Desktop(props: { readonly client: PluginClient }): JSX.Element {
   return (
     <SettingsRow
       part="settings.notify"
+      settingKey={KEYS.notify}
       title={t('shell-settings.notify')}
       description={notifyHint(perm(), on() && perm() === 'granted')}
       control={<Switch checked={on() && perm() === 'granted'} disabled={perm() === 'denied' || perm() === 'unsupported'} onChange={(v) => void toggle(v)} aria-label={t('shell-settings.notify')} />}
