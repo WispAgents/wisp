@@ -65,6 +65,7 @@
         { "permission": "sandbox:claude.code", "why": "sign a sandbox in: the user does" },
         { "permission": "sandbox:logout", "why": "sign a sandbox out: the user does" },
         { "permission": "sandbox:env", "why": "set a sandbox’s environment: the user does" },
+        { "permission": "sandbox:rebase", "why": "move what a sandbox counts its changes from: wisp does, once they came back" },
         { "permission": "stuff:publish", "why": "publish an app: the user does" },
         { "permission": "stuff:allow", "why": "widen what an app may do: the user does" },
         { "permission": "later:zone", "why": "change the time zone: the user does" },
