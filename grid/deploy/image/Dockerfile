@@ -36,7 +36,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium xvfb x11vnc x11-xserver-utils xdotool novnc websockify fonts-liberation fonts-noto-core fonts-wqy-microhei fonts-noto-color-emoji python3-pip python3-venv \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
-RUN npm install -g @playwright/mcp && npm cache clean --force && command -v playwright-mcp
+# Pinned: the same version wisp's runtime runs with npx elsewhere (PLAYWRIGHT_MCP in
+# plugins/runtime/api/src/harness/browser.rs; a runtime test compares the two, ADR-0128).
+RUN npm install -g @playwright/mcp@0.0.86 && npm cache clean --force && command -v playwright-mcp
 # apt and apt-get remember what a sandbox installs (secure_path puts /usr/local/sbin first under sudo).
 COPY grid/deploy/image/sandbox/apt grid/deploy/image/sandbox/apt-get /usr/local/sbin/
 COPY grid/deploy/image/sandbox/wisp-desktop grid/deploy/image/sandbox/wisp-browser-mcp grid/deploy/image/sandbox/sudo /usr/local/bin/

@@ -418,6 +418,10 @@ pub struct AgentStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub bin: Option<String>,
+    /// what it can do with a browser here (`runtime.browser`, ADR-0128): the picker's Browser row greys out what it
+    /// can't. Additive (2026-11-26).
+    #[serde(default)]
+    pub browser: crate::harness::browser::BrowserSupport,
 }
 
 /// Where a harness's detection stands on the `harnesses` topic (ADR-0066).

@@ -44,3 +44,17 @@ fn edge_6_write_reads_the_file_before_the_cli_does() {
     let step = capture_change("Write", &json!({"file_path": "a.txt", "content": "new"}), &p());
     assert_eq!(step, Some(Out::Io(IoStep::WriteBefore { abs: "/w/a.txt".into(), file: "a.txt".into(), after: "new".into() })));
 }
+
+/// Audit browser-chrome-tools-each-need-approval: an approval for a browser tool says the page or the step, never the
+/// generic "use claude-in-chrome · computer".
+#[test]
+fn a_browser_tools_approval_names_the_url_or_the_step() {
+    let a = |name: &str, input: Value| action_of(name, &input, &p());
+    assert_eq!(a("mcp__claude-in-chrome__navigate", json!({"url": "https://example.com", "tabId": 1})), "open https://example.com");
+    assert_eq!(a("mcp__browser__browser_navigate", json!({"url": "https://example.com"})), "open https://example.com");
+    assert_eq!(a("mcp__claude-in-chrome__computer", json!({"action": "screenshot"})), "take a screenshot of the page");
+    assert_eq!(a("mcp__claude-in-chrome__computer", json!({"action": "left_click", "coordinate": [1, 2]})), "click on the page");
+    assert_eq!(a("mcp__browser__browser_click", json!({"element": "Sign in button", "ref": "e3"})), "click Sign in button in the browser");
+    assert_eq!(a("mcp__claude-in-chrome__javascript_tool", json!({"text": "1"})), "run JavaScript in the page");
+    assert_eq!(a("mcp__github__get_issue", json!({})), "use github · get_issue", "other MCP tools as before");
+}

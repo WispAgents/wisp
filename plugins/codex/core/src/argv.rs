@@ -244,6 +244,18 @@ mod tests {
         );
     }
 
+    /// ADR-0128: the run's browser (runtime.browser on) is the runtime's `browser` stdio server, which reaches Codex as `-c mcp_servers.browser.*`.
+    #[test]
+    fn the_browser_server_goes_through_config() {
+        let m = BTreeMap::from([(
+            "browser".to_owned(),
+            json!({ "type": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp@0.0.86", "--headless", "--isolated"] }),
+        )]);
+        let a = args(&CodexArgs { mode: "edits", mcp_servers: Some(&m), ..CodexArgs::default() }).join(" ");
+        assert!(a.contains(r#"-c mcp_servers.browser.command="npx" -c mcp_servers.browser.args=["-y","@playwright/mcp@0.0.86","--headless","--isolated"]"#), "{a}");
+        assert!(a.contains(r#"mcp_servers.browser.default_tools_approval_mode="approve""#), "{a}");
+    }
+
     #[test]
     fn developer_instructions_and_images() {
         let imgs = vec!["/up/a.png".to_owned()];
