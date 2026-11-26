@@ -1,7 +1,7 @@
 {
   "name": "wisp-agents",
   "version": "1.0.0-alpha.16",
-  "description": "Wisp Agents: manage the code your agents write. Run Claude Code, Codex, Cursor and more in parallel from a desktop app, TUI and CLI, declare them as code, and track every line they write.",
+  "description": "Wisp Agents: your coding agents, as code. Runs Claude Code, Codex, Cursor and every other coding agent from one file in your repo, and keeps every task next to the code it wrote.",
   "license": "MIT",
   "repository": {
     "type": "git",

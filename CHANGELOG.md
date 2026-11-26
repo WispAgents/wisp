@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **New headline: "Your coding agents, as code."** It replaces "Manage the code your agents write" on the site, the docs, the README, the npm package, llms.txt and the link preview card, with "Declare them. Run them anywhere. Track every line they write." under it.
+
 ### Fixed
 
 - **The CLI no longer runs your commands on another home's wisp.** With two homes (say `WISP_HOME=~/.wisp-work` beside `~/.wisp`), `wisp ls` and every other command used whichever wisp held the default port, so they listed and changed the other home's tasks. Each wisp now says which home it serves (a hash, never the path), and the CLI and `wisp desktop` refuse one that isn't theirs in one line: "port 4477 is the wisp for another home, not …: pass --port or run wisp serve". An older wisp that doesn't say is still used.
