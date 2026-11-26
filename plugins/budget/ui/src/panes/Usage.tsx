@@ -25,10 +25,11 @@ import {
 } from '@wisp/ui';
 import { accountNames, compare, dismissDrain, dismissNotice, META, plans, setStop, TOPIC, usage, type AccountPlan, type UsageRow } from '../commands.ts';
 import { AccountPlanView, HarnessCompare } from '../PlanRows.tsx';
-import { dayWhen, HARNESSES, harnessesOf, harnessUsageDescription, plannedHarnesses, stopKeyOf, stopLine } from '../plan.ts';
+import { dayWhen, HARNESSES, harnessesOf, harnessUsageDescription, limitsReported, plannedHarnesses, stopKeyOf, stopLine } from '../plan.ts';
 import type { Compare } from '../plan.ts';
 import { drainLines, drainReport, noticeWords } from '../drain.ts';
 import { VIEW_USAGE } from '../views.ts';
+import { spendTile } from '../usage-model.ts';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
 import '../i18n/lazy.ts';
@@ -51,8 +52,6 @@ function subagentSource(c: PluginClient): SettingSource<string> {
 
 const STOPS = ['off', '50', '75', '90'] as const;
 type Stop = 'same' | (typeof STOPS)[number];
-
-const money = (n: number): string => `$${n.toFixed(2)}`;
 
 export default function Usage(props: { readonly client: PluginClient }): JSX.Element {
   const c = props.client;
@@ -123,6 +122,14 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
     const body = meta()?.body ?? {};
     return stopLine(body[stopKeyOf(agent)], body['autoStop']);
   };
+  // a harness's own line in words, and the way to it: its detail in Settings → Agents
+  const stopWords = (key: string, agent: string): string => {
+    const own = meta()?.body?.[key] ?? 'same';
+    if (!limitsReported(HARNESSES.find((h) => h.agent === agent) ?? HARNESSES[0]!, accountsOf(agent)) && windows.latest !== undefined) return t('budget.usage.stop.unset');
+    return t(`budget.usage.stop.${(['same', ...STOPS] as readonly string[]).includes(own) ? (own as Stop) : 'same'}`);
+  };
+  const openAgents = (agent: string): void =>
+    c.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'agents', filter: agent } } });
   const nameOf = (h: { names: Map<string, string> }, account: string): string => h.names.get(account) ?? (account && account !== 'default' ? account : '');
   const worked = (): string => {
     const w = line()?.worked;
@@ -145,7 +152,8 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
         compact
         part="budget.usage.stats"
         items={[
-          { label: t('budget.usage.spend'), value: line() ? money(line()?.spend ?? 0) : '—' },
+          // `~` an estimate, `+` some turns unpriced, Tokens when nothing is priced (usage-model.ts spendTile, ADR-0124)
+          spendTile(line()),
           { label: t('budget.usage.turns'), value: line()?.turns ?? '—' },
           { label: t('budget.usage.worked'), value: worked() },
           { label: t('budget.usage.questions'), value: line()?.questions ?? '—' },
@@ -243,16 +251,20 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
         />
       </SettingsGroup>
       <SettingsGroup part="budget.usage.harnesses" title={t('budget.usage.harnesses.title')} description={t('budget.usage.harnesses.description')}>
+        {/* each harness's own stop line is in its Settings → Agents detail now (harness audit r2): here its week and
+            where its line is, one press away */}
         <For each={HARNESSES}>
           {(p) => (
-            <ChoiceSetting
+            <SettingsRow
               part="settings.autoStopBy"
-              fieldset
               title={p.name}
-              logo={logoOf(p.agent)}
-              description={harnessUsageDescription(p, harnessRows().get(p.agent), accountsOf(p.agent))}
-              source={stop(p.key, 'same')}
-              items={(['same', ...STOPS] as Stop[]).map((v) => ({ value: v, label: t(`budget.usage.stop.${v}`) }))}
+              {...(logoOf(p.agent) && { logo: logoOf(p.agent) as string })}
+              description={`${harnessUsageDescription(p, harnessRows().get(p.agent), accountsOf(p.agent))} · ${t('budget.usage.stopIs', { stop: stopWords(p.key, p.agent) })}`}
+              control={
+                <Button size="sm" variant="ghost" part="budget.usage.stopIn" onClick={() => openAgents(p.agent)}>
+                  {t('budget.usage.stopInAgents')}
+                </Button>
+              }
             />
           )}
         </For>

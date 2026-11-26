@@ -19,6 +19,7 @@ pub mod limit;
 pub mod media;
 pub mod owed;
 pub mod plan;
+pub mod prices;
 pub mod prompt;
 pub mod queue;
 pub mod refused;

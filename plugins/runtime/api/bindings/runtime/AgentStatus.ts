@@ -6,4 +6,8 @@ export type AgentStatus = { id: string, name: string, available: boolean, versio
 /**
  * can lead a team of subagents (takes wisp's MCP server)
  */
-delegates: boolean, signedIn?: boolean, setup?: SetupTip, };
+delegates: boolean, signedIn?: boolean, setup?: SetupTip, 
+/**
+ * the program wisp found and runs (Settings → Agents shows it under the harness). Additive (2026-11-25).
+ */
+bin?: string, };

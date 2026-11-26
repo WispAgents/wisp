@@ -153,5 +153,12 @@
   "shell-settings.diag.cursor": "At {seq}",
   "shell-settings.search": "Search settings",
   "shell-settings.search.settings": "Settings",
-  "shell-settings.search.none": "No settings match “{q}”"
+  "shell-settings.search.none": "No settings match “{q}”",
+  "shell-settings.harness.signIn": "Sign in and accounts",
+  "shell-settings.harness.program": "Program and version",
+  "shell-settings.harness.enabled": "Use this harness",
+  "shell-settings.harness.model": "Default model",
+  "shell-settings.harness.effort": "Thinking level",
+  "shell-settings.harness.mode": "Mode",
+  "shell-settings.harness.stop": "Where automations stop"
 }

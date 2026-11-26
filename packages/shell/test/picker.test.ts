@@ -1,7 +1,8 @@
 // The harness picker's model (src/frame/picker.ts, v1 runner-picker.js): the left pane's rows and sub-lines, the pane
 // that shows on open, the right pane's model groups, and what each pick changes.
 import { expect, test } from 'vitest';
-import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, useHarness, varyRows, withModel, withSetting, withVary } from '../src/frame/picker.ts';
+import { findAll, firstFocus, goalOf, matchScore, modelGroups, pickerMemory, pickerRows, refOf, optionId, searchShown, stepRow, subLine, toggleFavourite, useHarness, varyRows, withModel, withRecent, withSetting, withVary } from '../src/frame/picker.ts';
+import { untilLabel } from '@wisp/ui/pure';
 import { modelWord, type AgentOffer } from '../src/frame/runner.ts';
 import { compareWords, newRun, runWords, sameSetup } from '../src/frame/trial.ts';
 import { autoPick, runnerParts, runnerPick, type AutoPreview } from '../src/frame/auto.ts';
@@ -55,6 +56,25 @@ test('the_left_pane_lists_auto_first_then_each_harness_that_can_run_with_its_usa
   expect(pickerRows([{ ...CURSOR, checking: true }], { auto: false, autoName: 'Auto' })[0]?.off).toBe(true);
   // the one in use stays even when it's gone, so the pill's harness is in the list with why it can't run
   expect(pickerRows(ALL, { auto: false, autoName: 'Auto', inUse: 'cursor' }).map((r) => [r.id, r.sub.k])).toContainEqual(['cursor', 'missing']);
+});
+
+test('a_harness_row_says_when_its_window_resets_and_one_at_its_limit_is_greyed_but_listed', () => {
+  const H = 3_600_000;
+  const rows = pickerRows(ALL, {
+    auto: false,
+    autoName: 'Auto',
+    used: (id) => (id === 'codex' ? { label: 'Weekly', pct: 100, resetsIn: 2 * H + 10 * 60_000 } : id === 'claude' ? { label: '5h', pct: 42, resetsIn: 45 * 60_000 } : undefined),
+  });
+  expect(rows.map((r) => [r.id, r.sub, r.off])).toContainEqual(['claude', { k: 'used', label: '5h', pct: 42, resetsIn: 45 * 60_000 }, false]);
+  // at its limit: still in the list, dimmed, with its reset
+  expect(rows.map((r) => [r.id, r.sub, r.off])).toContainEqual(['codex', { k: 'used', label: 'Weekly', pct: 100, resetsIn: 2 * H + 10 * 60_000, full: true }, true]);
+  // a reset already past says nothing about it
+  expect(subLine(CODEX, { label: '5h', pct: 10, resetsIn: -5 })).toEqual({ k: 'used', label: '5h', pct: 10 });
+  // the reset reads as the kit's one duration (Usage says it the same way)
+  expect([untilLabel(45 * 60_000), untilLabel(2 * H + 10 * 60_000), untilLabel(76 * H)]).toEqual(['45m', '2h 10m', '3d 4h']);
+  // read, no window: limits not reported; not read yet: nothing
+  expect(pickerRows([CODEX], { auto: false, autoName: 'Auto', used: () => null })[0]?.sub).toEqual({ k: 'unreported' });
+  expect(subLine(CODEX, undefined)).toEqual({ k: 'none' });
 });
 
 test('the_right_pane_opens_on_the_harness_in_use_else_the_first_usable_one', () => {
@@ -200,4 +220,49 @@ test('a_copy_of_the_lead_says_its_model_until_a_change_is_picked_then_only_the_c
   expect(runWords({ ...copy, model: 'opus', modelLabel: 'Opus 4.7' }, [], 'Default')).toEqual({ model: 'Opus 4.7' });
   // a change picked: the copy says only that (v1 .runners.trial .same)
   expect(runWords(copy, ['Subagents on Haiku'], 'Default')).toEqual({ variant: ['Subagents on Haiku'] });
+});
+
+test('find_ranks_an_exact_prefix_over_a_fuzzy_match_and_a_model_over_a_harness_name', () => {
+  expect(matchScore('Sonnet 5.5', 'son')).toBeGreaterThan(matchScore('Opus Sonic', 'snc'));
+  expect(matchScore('opus', 'opus')).toBe(100);
+  expect(matchScore('gpt-5', 'g5')).toBe(20);
+  expect(matchScore('Haiku', 'xyz')).toBe(0);
+  // "co" is inside Codex's name and the start of a model's: the model that starts with it comes first
+  const both: AgentOffer = { ...CODEX, models: [{ id: 'gpt-co', label: 'Copilot GPT' }] };
+  const groups = findAll([CLAUDE, both], 'co', 'Default');
+  expect(groups[0]?.agent).toBe('codex');
+  expect(groups[0]?.items[0]).toMatchObject({ model: 'gpt-co', label: 'Copilot GPT' });
+  // a harness-name match lifts its models only a little: a fuzzy model match still beats it
+  const name = findAll([CLAUDE, CODEX], 'odex', 'Default');
+  expect(name.map((g) => [g.agent, g.items.map((x) => x.model)])).toEqual([['codex', ['']]]);
+  expect(name[0]?.items[0]?.score).toBeLessThan(matchScore('Haiku 5.5', 'h55'));
+  expect(Math.floor(matchScore('Codex', 'codex') / 6), 'even a whole-name match').toBeLessThan(matchScore('gpt-5', 'g5'));
+});
+
+test('find_filters_across_harnesses_and_groups_by_harness_skipping_ones_that_cant_run', () => {
+  const g = findAll(ALL, 'opus', 'Default');
+  expect(g.map((x) => [x.agent, x.items.map((i) => i.model)])).toEqual([
+    ['claude', ['opus']],
+    ['opencode', ['anthropic/opus']],
+  ]);
+  // Grok is signed out and Cursor isn't installed: never in the results
+  expect(findAll(ALL, 'grok', 'Default')).toEqual([]);
+  expect(findAll(ALL, '   ', 'Default')).toEqual([]);
+  expect(refOf(optionId({ agent: 'opencode', model: 'anthropic/opus' }))).toEqual({ agent: 'opencode', model: 'anthropic/opus' });
+});
+
+test('recent_keeps_the_last_five_picks_latest_first_without_repeats_and_favourites_toggle', () => {
+  let m = pickerMemory(undefined);
+  expect(m).toEqual({ recent: [], favourites: [] });
+  for (const model of ['a', 'b', 'c', 'd', 'e', 'f']) m = withRecent(m, { agent: 'claude', model });
+  expect(m.recent.map((r) => r.model)).toEqual(['f', 'e', 'd', 'c', 'b']);
+  m = withRecent(m, { agent: 'claude', model: 'c' });
+  expect(m.recent.map((r) => r.model), 'picked again: it moves to the front, once').toEqual(['c', 'f', 'e', 'd', 'b']);
+  expect(withRecent(m, { agent: 'auto', model: 'cheap' }), 'Auto is no runner + model').toBe(m);
+  m = toggleFavourite(m, { agent: 'codex', model: '' });
+  expect(m.favourites).toEqual([{ agent: 'codex', model: '' }]);
+  m = toggleFavourite(m, { agent: 'codex', model: '' });
+  expect(m.favourites).toEqual([]);
+  // the setting read leniently: junk dropped
+  expect(pickerMemory({ recent: [{ agent: 'x', model: '' }, 7, { agent: '' }], favourites: 'no' })).toEqual({ recent: [{ agent: 'x', model: '' }], favourites: [] });
 });

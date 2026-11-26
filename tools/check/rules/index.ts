@@ -1,4 +1,5 @@
 import type { Rule } from '../core/types.ts';
+import { adrNumbers } from './adr-numbers.ts';
 import { alienReadInSolid } from './alien-read-in-solid.ts';
 import { commands } from './commands.ts';
 import { css } from './css.ts';
@@ -24,4 +25,4 @@ import { v1Coverage } from './v1-coverage.ts';
 /** In ARCHITECTURE.md order. Turning one off needs an ADR (AGENTS.md). */
 // `openapi` (rules/openapi.ts) is retired: it read v1's apps/server. The Rust edge builds /api/openapi.json
 // from its route table, and crates/wisp/tests/serve_task.rs checks that table (ADR-0019).
-export const RULES: readonly Rule[] = [layers, publicEntry, cycles, css, state, manifests, protocol, sizes, noAny, i18n, platformBranch, uiCommands, v1Coverage, testImports, dynamicImportInTest, timerLoopInTest, alienReadInSolid, commands, fileUrls, storeIds, ...RUST_RULES];
+export const RULES: readonly Rule[] = [layers, publicEntry, cycles, css, state, manifests, protocol, sizes, noAny, i18n, platformBranch, uiCommands, v1Coverage, testImports, dynamicImportInTest, timerLoopInTest, alienReadInSolid, commands, fileUrls, storeIds, adrNumbers, ...RUST_RULES];

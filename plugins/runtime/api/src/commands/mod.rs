@@ -148,6 +148,7 @@ command!(ProjectAdd = "runtime.projectAdd": ProjectAddArgs => ProjectAdded);
 command!(Discover = "runtime.discover": DiscoverArgs => Vec<FoundRepo>, read_only);
 command!(Folders = "runtime.folders": FoldersArgs => Vec<String>, read_only);
 command!(Usage = "runtime.usage": UsageArgs => UsageSummary, read_only);
+command!(HandoffPreview = "runtime.handoffPreview": HandoffPreviewArgs => HandoffPreviewView, read_only);
 command!(Sessions = "runtime.sessions": SessionsArgs => Vec<crate::harness::sessions::OutsideSession>, read_only);
 command!(AdoptSession = "runtime.adoptSession": AdoptSessionArgs => Created);
 command!(RestoreSession = "runtime.restoreSession": RestoreSessionArgs => Value);

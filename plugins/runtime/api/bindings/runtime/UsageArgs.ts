@@ -3,4 +3,9 @@
 /**
  * `runtime.usage`: Settings → Usage's line over the last `days` (7 when unset). Additive (2026-11-10).
  */
-export type UsageArgs = { days?: number, };
+export type UsageArgs = { days?: number, 
+/**
+ * added 2026-11-25 (additive): the viewer's offset from UTC in minutes (`-Date#getTimezoneOffset()`), so
+ * the window starts at local midnight and each bar is a local day; UTC when unset
+ */
+tz_offset_min?: number, };

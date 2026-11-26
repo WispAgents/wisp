@@ -50,6 +50,9 @@ export const INPUTS = {
   // added 2026-11-13 (additive): in the harness · model picker, a signed-out harness's sign-in, right there (wisp.accounts'
   // link-and-code steps, v1 runner-picker.js paintSignIn); its extension gets the harness as `id`
   'shell.runner:signin': 'runner.signin',
+  // added 2026-11-25 (additive): rows other plugins add to a harness's detail in Settings → Agents (wisp.budget's
+  // per-harness stop line); its extension gets the harness as `id`
+  'shell.settings:harness': 'agents.harness',
   // added 2026-11-13 (additive): what other plugins put in Settings → Cloud under the account (wisp.machines' cloud
   // computers, v1 .cg-list: Open, Wake / Put to sleep, its agents)
   'shell.settings:cloud': 'cloud.computers',
@@ -88,6 +91,9 @@ export const INPUTS = {
   'shell.task:screen': 'task.screen',
   // added 2026-11-10 (additive): under each turn (its key as the id), what plugins say of it (why it stopped, held, the receipt)
   'shell.turn:foot': 'turn.foot',
+  // added 2026-11-25 (additive, ADR-0125): over each turn (its key as the id), a line before it (shell-task's harness
+  // switch divider: "Switched from Claude Code (Opus) to Codex · context: summary")
+  'shell.turn:head': 'turn.head',
   // added 2026-11-17 (additive, ADR-0095): in a turn's trail, after its token count, one line with it (its key as the id):
   // the receipt's cache and plan share (v1 receipt.js, receiptHtml inside .trail-bar)
   'shell.turn:trail': 'turn.trail',

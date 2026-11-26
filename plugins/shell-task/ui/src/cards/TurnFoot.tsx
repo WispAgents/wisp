@@ -15,6 +15,7 @@ import { Receipt } from './Receipt.tsx';
 import { TurnDelegations } from './TurnDelegations.tsx';
 import { handoffTargets, limitTarget, type AgentLike, type Target } from './vendors.ts';
 import { WhatChanged } from './WhatChanged.tsx';
+import { openContinue } from '../continue/open.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 
@@ -124,9 +125,10 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
                 targets={targets()}
                 nameOf={nameOf}
                 onHand={(to) => {
-                  // the refused prompt again, or carry on after the limit, on the other harness (v1 POST /reply with a run)
+                  // the refused prompt again, or carry on after the limit, on the other harness: through Continue on…,
+                  // on that harness and model, so you see what carries over first (ADR-0125: one way to hand a task on)
                   const text = h().kind === 'refused' ? ((d() as { prompt?: string }).prompt ?? '') : CARRY_ON;
-                  return c.run(followUp, { key: taskKey(), text, run: { agent: to.agent, ...(to.model && { model: to.model }) } });
+                  openContinue(c, { key: taskKey(), agent: to.agent, ...(to.model && { model: to.model }), ...(text && { text }) });
                 }}
                 onWait={(until) =>
                   // v1 limitCard Wait until: the carry-on follow-up, scheduled for the reset (wisp.later)

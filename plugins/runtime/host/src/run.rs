@@ -158,15 +158,17 @@ impl Runtime {
         // a task that asks (or asked) whether the user's harness may lower a guard runs nothing, ever: its held prompt is
         // the question's own text (audit I IS2: Send now or a reply ran it in Full auto)
         crate::more::no_follow_up_on_guard(&s)?;
+        let was = s.agent.clone();
+        let was_model = s.model.clone();
         let fresh = fresh_start(&mut s, &item);
         apply_opts(&mut s, &item, &|a| self.harness(a).ok());
         // a capped task's turn never runs above its cap, whatever its queued item asked (F-chan-10)
         let capped = crate::capped::cap_of(&s);
         s.mode = wisp_runtime_core::cap::at_cap(s.mode, capped);
         let mut turn = self.next_turn(&s, &item).await?;
-        if let Some(Value::Object(m)) = fresh {
-            turn.ext.insert("wisp.runtime".into(), Value::Object(m));
-        }
+        // another harness taking over: the turn says from what to what, and what it carried (ADR-0125); the Timeline
+        // draws it as a divider
+        crate::handoff::mark_turn(&mut turn, fresh, (&was, &was_model), (&s.agent, &s.model), item.opts.as_ref());
         let ctx = run_ctx(&s, &turn, &item);
         // its folder first (a worktree archiving removed comes back on its branch), before anything reads it
         if let Err(why) = self.folder_ready(&s, Some(&turn.id)).await {

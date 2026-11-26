@@ -792,7 +792,7 @@ impl Runtime {
             _ => None,
         };
         let opts =
-            serde_json::to_value(serde_json::json!({ "mode": a.mode, "run": a.run, "confirmLimit": a.confirm_limit.then_some(true), "fresh": a.fresh.then_some(true), "next": next }))
+            serde_json::to_value(serde_json::json!({ "mode": a.mode, "run": a.run, "confirmLimit": a.confirm_limit.then_some(true), "fresh": a.fresh.then_some(true), "handoff": a.handoff, "next": next }))
                 .ok()
                 .filter(|v| v.as_object().is_some_and(|o| o.values().any(|x| !x.is_null())));
         let has_extras = opts.is_some() || a.by.is_some();

@@ -410,6 +410,12 @@
         "readOnly": true
       },
       {
+        "id": "runtime.handoffPreview",
+        "title": "What continuing a task on another harness would carry over: the latest summary, the files, the turns it missed and each choice's size",
+        "readOnly": true,
+        "uiOnly": "Continue on…'s preview sheet; an agent hands a task on with runtime_followUp's run and handoff"
+      },
+      {
         "id": "runtime.projectTest",
         "title": "Set the command that runs a project's tests"
       },
@@ -445,6 +451,7 @@
       { "key": "runtime.subagents", "type": "json", "default": [], "title": "The team new tasks start with: [{ name, agent, model?, effort?, use? }] (New task pre-fills it; a task's own team wins)" },
       { "key": "runtime.auto", "type": "bool", "default": false, "title": "Auto: wisp picks the harness, model and thinking level for each task. Off until it's reworked (the owner, 2026-11-17): the one switch; the app hides Auto while it's off" },
       { "key": "runtime.launch", "type": "json", "default": {}, "title": "New task's last pick: { agent, models: { <harness>: model }, labels: { <harness>: name }, efforts: { <harness>: level } } (v1 defaults.agent / models / efforts); a task that names no harness runs on its agent" },
+      { "key": "runtime.picker", "type": "json", "default": {}, "title": "The runner picker's Recent (the last 5 harness + model picks, latest first) and Favourites (starred): { recent: [{ agent, model }], favourites: [{ agent, model }] }" },
       { "key": "runtime.teams", "type": "json", "default": [], "title": "Delegate's saved teams (presets): [{ id, name, members: [{ name, agent, model?, effort?, use?, count?, machine? }] }]; Presets picks one, Save as preset keeps one (v1 config.teams)" },
       { "key": "runtime.limitWait", "type": "bool", "default": false, "title": "Wait for the reset: a task at its usage limit carries on by itself after the reset, in the same conversation" },
       { "key": "runtime.followUp", "type": "enum", "values": ["interrupt", "queue"], "default": "interrupt", "title": "A follow-up while a task works: interrupt it, or queue after it" },
