@@ -10,6 +10,30 @@ export interface UsageDay {
   readonly cost: number;
   readonly turns: number;
   readonly tokens?: number;
+  /** its cost holds a list-price estimate (ADR-0124, additive 2026-11-25) */
+  readonly cost_estimated?: boolean;
+}
+
+/** One harness's share of a day (runtime-api UsageHarnessDay, additive 2026-11-25): the stacked chart's parts. */
+export interface UsageHarnessDay {
+  readonly date: string;
+  readonly agent: string;
+  readonly cost: number;
+  readonly tokens: number;
+  readonly cache_read: number;
+  readonly turns: number;
+  readonly cost_estimated?: boolean;
+}
+
+/** An ISO week of the window (runtime-api UsageWeek, additive 2026-11-25). */
+export interface UsageWeek {
+  readonly week: string;
+  readonly start: string;
+  readonly cost: number;
+  readonly turns: number;
+  readonly tokens: number;
+  /** its cost holds a list-price estimate (ADR-0124, additive 2026-11-25) */
+  readonly cost_estimated?: boolean;
 }
 
 export interface Usage {
@@ -21,12 +45,18 @@ export interface Usage {
   /** v1's Charts and breakdowns (runtime-api UsageSummary, additive 2026-11-12) */
   readonly priced?: number;
   readonly sessions?: number;
+  /** of `priced`, the turns estimated at list price, and whether `spend` holds any (ADR-0124, additive 2026-11-25) */
+  readonly estimated?: number;
+  readonly costEstimated?: boolean;
   /** TRY-32: token totals and per-harness rollup across all harnesses */
   readonly tokens?: number;
   readonly inputTokens?: number;
   readonly outputTokens?: number;
   readonly cacheTokens?: number;
   readonly daily?: readonly UsageDay[];
+  /** each local day split by harness, and the ISO weeks (additive 2026-11-25) */
+  readonly dailyByHarness?: readonly UsageHarnessDay[];
+  readonly weekly?: readonly UsageWeek[];
   readonly harnesses?: readonly UsageRow[];
   readonly projects?: readonly UsageRow[];
   readonly runners?: readonly UsageRow[];
@@ -40,6 +70,10 @@ export interface UsageRow {
   readonly priced: number;
   readonly turns: number;
   readonly sessions?: number;
+  readonly estimated?: number;
+  readonly costEstimated?: boolean;
+  /** Copilot's premium requests (gated until a real capture, ADR-0124) */
+  readonly premiumRequests?: number;
   readonly tokens?: number;
   readonly inputTokens?: number;
   readonly outputTokens?: number;
@@ -80,12 +114,25 @@ export interface AccountPlan {
   readonly overage?: Overage | null;
   /** where its longest window went this period */
   readonly where?: Where | null;
+  /** the plan or tier its CLI names (Cursor's `about`; budget-api AccountView, additive 2026-11-25) */
+  readonly plan?: string;
+  /** what its CLI totals as spent lately (opencode `stats`, `grok usage`; additive 2026-11-25) */
+  readonly spent?: CliSpend;
 }
 
-export const usage = defineCommand<{ peer: PeerId; days?: number }, Usage>({
+/** What a CLI itself reports of recent use (budget-api CliSpend): its own sum, not wisp's turns. */
+export interface CliSpend {
+  readonly cost?: number;
+  readonly days?: number;
+  readonly tokens?: number;
+  readonly at?: number;
+}
+
+/** `tzOffsetMin`: minutes east of UTC (`-getTimezoneOffset()`), so the days are the reader's local days. */
+export const usage = defineCommand<{ peer: PeerId; days?: number; tzOffsetMin?: number }, Usage>({
   id: 'runtime.usage',
   owner: (a) => a.peer,
-  wire: (a) => (a.days ? { days: a.days } : {}),
+  wire: (a) => ({ ...(a.days && { days: a.days }), ...(a.tzOffsetMin !== undefined && { tz_offset_min: a.tzOffsetMin }) }),
   optimistic: 'none',
   pending: 'the usage line',
 });

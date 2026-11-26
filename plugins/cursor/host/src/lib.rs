@@ -173,6 +173,27 @@ impl Harness for CursorHarness {
         Some(self.bin())
     }
 
+    /// A read that spends nothing: `cursor-agent about --format json` names the plan tier. Cursor reports no usage
+    /// window, so `windows` is empty and Usage says its limits aren't reported (ADR-0124).
+    fn live_limits<'a>(
+        &'a self,
+        sys: &'a dyn HarnessSys,
+        env: &'a std::collections::BTreeMap<String, String>,
+    ) -> BoxFuture<'a, Option<serde_json::Value>> {
+        Box::pin(async move {
+            let req = ExecReq {
+                program: self.bin(),
+                args: ["about", "--format", "json"].map(str::to_owned).to_vec(),
+                env: env.clone(),
+                timeout_ms: 15_000,
+                ..ExecReq::default()
+            };
+            let out = sys.exec(req).await.ok().filter(|o| o.code == Some(0) && !o.timed_out)?;
+            let a = wisp_cursor_core::about(&out.stdout)?;
+            Some(serde_json::json!({ "windows": [], "plan": a.tier }))
+        })
+    }
+
     fn launch(&self, run: &HarnessRun) -> Result<Launch> {
         Ok(launch(run, &run.bin.clone().unwrap_or_else(|| self.bin())))
     }
@@ -261,5 +282,64 @@ mod tests {
         let h = CursorHarness::default();
         let o = ResumeOptions { resume_id: Some("c1".into()), trusted: true, prompt: Some("go".into()), ..ResumeOptions::default() };
         assert_eq!(h.resume_command(&o).map(|c| c.argv[1..].to_vec()).unwrap_or_default(), ["--resume", "c1", "--trust", "go"]);
+    }
+
+    /// A computer with only the CLI's answers (`exec` by its arguments), its folders and its files: no real process.
+    #[derive(Default)]
+    struct FakeSys {
+        out: std::collections::BTreeMap<String, (i32, String)>,
+        dirs: std::collections::BTreeMap<String, Vec<String>>,
+        files: std::collections::BTreeMap<String, String>,
+        seen: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl HarnessSys for FakeSys {
+        fn exec(&self, req: ExecReq) -> BoxFuture<'_, Result<wisp_runtime_api::harness::ExecOut>> {
+            let got = self.out.get(&req.args.join(" ")).cloned();
+            if let Ok(mut s) = self.seen.lock() {
+                s.push(req.args);
+            }
+            Box::pin(async move {
+                let (code, stdout) = got.unwrap_or((1, String::new()));
+                Ok(wisp_runtime_api::harness::ExecOut { code: Some(code), stdout, ..Default::default() })
+            })
+        }
+        fn which(&self, _: &str) -> BoxFuture<'_, Option<String>> {
+            Box::pin(async { None })
+        }
+        fn read_file(&self, p: &str) -> BoxFuture<'_, Option<String>> {
+            let f = self.files.get(p).cloned();
+            Box::pin(async move { f })
+        }
+        fn write_file(&self, _: &str, _: String) -> BoxFuture<'_, Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn list_dir(&self, p: &str) -> BoxFuture<'_, Vec<String>> {
+            let d = self.dirs.get(p).cloned().unwrap_or_default();
+            Box::pin(async move { d })
+        }
+        fn env(&self, _: &str) -> Option<String> {
+            None
+        }
+        fn home(&self) -> String {
+            "/home/test".into()
+        }
+        fn platform(&self) -> String {
+            "darwin".into()
+        }
+    }
+
+    /// ADR-0124: `cursor-agent about --format json`, as captured (`core/tests/cli/about.json`), gives the tier and no
+    /// windows; budget carries it to the Usage page. A failed `about` is no reading.
+    #[tokio::test]
+    async fn live_limits_reads_the_tier_from_cursor_agent_about() {
+        let mut sys = FakeSys::default();
+        sys.out.insert("about --format json".into(), (0, include_str!("../../core/tests/cli/about.json").into()));
+        let h = CursorHarness::default();
+        let got = h.live_limits(&sys, &std::collections::BTreeMap::new()).await;
+        assert_eq!(got, Some(serde_json::json!({ "windows": [], "plan": "Free" })));
+        assert_eq!(sys.seen.lock().map(|s| s.clone()).unwrap_or_default(), [["about", "--format", "json"]]);
+        let none = FakeSys::default();
+        assert_eq!(h.live_limits(&none, &std::collections::BTreeMap::new()).await, None, "about failed: nothing made up");
     }
 }

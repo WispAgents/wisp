@@ -26,3 +26,5 @@ export * from './app/ledger-model.ts';
 export { foldTail, tailFold, type FoldExtras, type FoldInput, type LauncherTool } from './app/launcher-fold.ts';
 // work that waits for the first screen (ADR-0105): plain plugin modules (a watcher started at setup) queue on it
 export { afterFirstScreen } from './controls/lazy-part.ts';
+// the one reset duration ("2h 10m"): the runner picker and Usage both say it
+export { untilLabel } from './content/until-label.ts';

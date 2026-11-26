@@ -152,6 +152,53 @@ impl GrokHarness {
     }
 }
 
+/// The days `live_limits` totals (as opencode's `stats --days 7`).
+const SPEND_DAYS: i64 = 7;
+/// At most this many sessions are read per pass (one `grok usage` each), newest first.
+const SPEND_SESSIONS: usize = 40;
+
+impl GrokHarness {
+    /// What Grok's own records say was spent since `since` (ms): `grok usage <id>` for each session under
+    /// `<GROK_HOME>/sessions/<project>/<id>/` whose `summary.json` says it was updated since then (at most
+    /// [`SPEND_SESSIONS`], newest first), summed over the turns that ended in the time. Nothing spent, the CLI asked.
+    async fn spent_since(&self, sys: &dyn HarnessSys, env: &BTreeMap<String, String>, since: i64) -> Option<Value> {
+        let home = sys.env("GROK_HOME").filter(|h| !h.is_empty()).unwrap_or_else(|| format!("{}/.grok", sys.home()));
+        let root = format!("{home}/sessions");
+        let mut found: Vec<(i64, String)> = Vec::new();
+        for project in sys.list_dir(&root).await {
+            for id in sys.list_dir(&format!("{root}/{project}")).await {
+                if !wisp_runtime_api::harness::sessions::safe_id(&id) {
+                    continue;
+                }
+                let Some(text) = sys.read_file(&format!("{root}/{project}/{id}/summary.json")).await else { continue };
+                let at = serde_json::from_str::<Value>(&text)
+                    .ok()
+                    .and_then(|v| v.get("updated_at").and_then(Value::as_str).map(wisp_runtime_api::harness::sessions::iso_ms))
+                    .unwrap_or(0);
+                if at >= since {
+                    found.push((at, id));
+                }
+            }
+        }
+        found.sort_unstable_by(|a, b| b.cmp(a));
+        found.truncate(SPEND_SESSIONS);
+        let mut sessions = Vec::new();
+        for (_, id) in found {
+            let req =
+                ExecReq { program: self.bin(), args: vec!["usage".into(), id], env: env.clone(), timeout_ms: 10_000, ..ExecReq::default() };
+            // no usage recorded: a non-zero exit, skipped
+            let Some(out) = sys.exec(req).await.ok().filter(|o| o.code == Some(0) && !o.timed_out) else { continue };
+            sessions.extend(wisp_grok_core::usage(&out.stdout));
+        }
+        let s = wisp_grok_core::spent(&sessions, since, &wisp_runtime_api::harness::sessions::iso_ms);
+        let mut v = serde_json::json!({ "windows": [], "tokens": s.tokens, "costDays": SPEND_DAYS });
+        if let Some(c) = s.cost_usd {
+            v["cost"] = c.into();
+        }
+        Some(v)
+    }
+}
+
 impl Harness for GrokHarness {
     fn info(&self) -> &HarnessInfo {
         &self.info
@@ -218,6 +265,15 @@ impl Harness for GrokHarness {
 
     fn program(&self) -> Option<String> {
         Some(self.bin())
+    }
+
+    /// No windows: what Grok's own `grok usage` records total for the last [`SPEND_DAYS`] days (ADR-0124).
+    fn live_limits<'a>(&'a self, sys: &'a dyn HarnessSys, env: &'a BTreeMap<String, String>) -> BoxFuture<'a, Option<Value>> {
+        Box::pin(async move {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_millis();
+            let now = i64::try_from(now).ok()?;
+            self.spent_since(sys, env, now - SPEND_DAYS * 86_400_000).await
+        })
     }
 
     fn launch(&self, run: &HarnessRun) -> Result<Launch> {
@@ -313,5 +369,80 @@ mod tests {
         assert_eq!(&l.args[..2], ["--prompt-file", "{tmp}/grok-prompt.md"]);
         assert!(l.args.windows(2).any(|w| w == ["--rules", "SYS"]) && l.args.windows(2).any(|w| w == ["--agent", "{tmp}/grok-wisp.md"]));
         assert_eq!((l.files.len(), l.files[0].contents.as_str()), (2, "fix"));
+    }
+
+    /// A computer with only the CLI's answers (`exec` by its arguments), its folders and its files: no real process.
+    #[derive(Default)]
+    struct FakeSys {
+        out: std::collections::BTreeMap<String, (i32, String)>,
+        dirs: std::collections::BTreeMap<String, Vec<String>>,
+        files: std::collections::BTreeMap<String, String>,
+        seen: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl HarnessSys for FakeSys {
+        fn exec(&self, req: ExecReq) -> BoxFuture<'_, Result<wisp_runtime_api::harness::ExecOut>> {
+            let got = self.out.get(&req.args.join(" ")).cloned();
+            if let Ok(mut s) = self.seen.lock() {
+                s.push(req.args);
+            }
+            Box::pin(async move {
+                let (code, stdout) = got.unwrap_or((1, String::new()));
+                Ok(wisp_runtime_api::harness::ExecOut { code: Some(code), stdout, ..Default::default() })
+            })
+        }
+        fn which(&self, _: &str) -> BoxFuture<'_, Option<String>> {
+            Box::pin(async { None })
+        }
+        fn read_file(&self, p: &str) -> BoxFuture<'_, Option<String>> {
+            let f = self.files.get(p).cloned();
+            Box::pin(async move { f })
+        }
+        fn write_file(&self, _: &str, _: String) -> BoxFuture<'_, Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn list_dir(&self, p: &str) -> BoxFuture<'_, Vec<String>> {
+            let d = self.dirs.get(p).cloned().unwrap_or_default();
+            Box::pin(async move { d })
+        }
+        fn env(&self, _: &str) -> Option<String> {
+            None
+        }
+        fn home(&self) -> String {
+            "/home/test".into()
+        }
+        fn platform(&self) -> String {
+            "darwin".into()
+        }
+    }
+
+    /// ADR-0124: Grok reports no windows; `live_limits` runs `grok usage <id>` (captured: `core/tests/cli/usage*.json`)
+    /// for each session updated in the time, skips one older than it and one with no usage recorded (exit 1), and sums
+    /// the turns that ended in it: the cost in ticks as dollars, and the tokens.
+    #[tokio::test]
+    async fn live_limits_sums_grok_usage_over_the_recent_sessions() {
+        let root = "/home/test/.grok/sessions";
+        let mut sys = FakeSys::default();
+        sys.dirs.insert(root.into(), vec!["%2Fw".into(), "session_search.sqlite".into()]);
+        let ids =
+            ["01a154df-836c-7cd3-9f61-192d1864227a", "01a155d3-5b2d-7e93-b242-e60d2d6fe266", "01a154e6-9e97-7570-b897-f36e4040a60d", "old"];
+        sys.dirs.insert(format!("{root}/%2Fw"), ids.iter().map(|s| (*s).to_owned()).collect());
+        let updated = ["2026-10-19T15:56:04.888584Z", "2026-10-19T20:21:21.200000Z", "2026-10-19T16:00:00.000000Z", "2026-10-01T00:00:00Z"];
+        for (id, at) in ids.iter().zip(updated) {
+            sys.files.insert(format!("{root}/%2Fw/{id}/summary.json"), json!({ "info": { "id": id }, "updated_at": at }).to_string());
+        }
+        sys.out.insert(format!("usage {}", ids[0]), (0, include_str!("../../core/tests/cli/usage.json").into()));
+        sys.out.insert(format!("usage {}", ids[1]), (0, include_str!("../../core/tests/cli/usage-empty.json").into()));
+        // ids[2]: "Error: No usage recorded", exit 1 (the fake's default)
+        let since = wisp_runtime_api::harness::sessions::iso_ms("2026-10-19T00:00:00Z");
+        let got = GrokHarness::default().spent_since(&sys, &BTreeMap::new(), since).await.unwrap_or_default();
+        assert_eq!((got["windows"].clone(), got["tokens"].as_u64(), got["costDays"].as_u64()), (json!([]), Some(136_102), Some(7)));
+        assert!((got["cost"].as_f64().unwrap_or_default() - 0.118_592).abs() < 1e-12, "{got}");
+        let seen = sys.seen.lock().map(|s| s.clone()).unwrap_or_default();
+        assert_eq!(seen.len(), 3, "the October 1 session isn't read: {seen:?}");
+        assert!(seen.iter().all(|a| a[0] == "usage"));
+        // nothing recorded at all: tokens 0 and no cost, never "$0.00"
+        let none = GrokHarness::default().spent_since(&FakeSys::default(), &BTreeMap::new(), since).await.unwrap_or_default();
+        assert_eq!((none["tokens"].as_u64(), none.get("cost")), (Some(0), None));
     }
 }

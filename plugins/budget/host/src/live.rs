@@ -3,6 +3,9 @@
 //!   so an early/banked reset frees waiting work through `record` (backing off up to hourly on failure).
 //! - For Antigravity (whose `stream-json` turns don't include quota windows), wisp also reads `accounts.limits`
 //!   asynchronously after each Antigravity turn ends and when `budget.view` sees a missing or stale reading.
+//! - Cursor (its tier, `cursor-agent about`), opencode (`opencode stats --days 7`) and Grok (`grok usage` over its
+//!   sessions of the last 7 days) report no windows, only a tier or what the CLI totals as spent: `budget.view` reads
+//!   them the same way, in the background, at most every [`STALE_MS`] (ADR-0124), and the view carries `plan`/`spent`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -40,6 +43,12 @@ pub struct Due {
 pub struct Refresh {
     inflight: BTreeSet<(String, String)>,
     next_at: BTreeMap<(String, String), i64>,
+}
+
+/// The harnesses `budget.view` reads in the background (their turns carry no quota windows): Antigravity's windows,
+/// Cursor's tier, and what opencode and Grok total as spent.
+pub fn read_on_view(agent: &str) -> bool {
+    matches!(agent, "antigravity" | "cursor" | "opencode" | "grok")
 }
 
 /// Whether `wisp.accounts` is active or resolved so `accounts.limits` can be called.
@@ -94,10 +103,10 @@ impl State {
         }
     }
 
-    /// Spawns a non-blocking `accounts.limits` refresh for Antigravity. `force` refreshes after a turn ends;
+    /// Spawns a non-blocking `accounts.limits` refresh for a [`read_on_view`] harness. `force` refreshes after a turn ends;
     /// `!force` refreshes on view only when missing or older than [`STALE_MS`].
     pub(crate) fn spawn_refresh(self: &Arc<Self>, ctx: &Ctx, agent: &str, account: &str, read: bool, force: bool) {
-        if agent != "antigravity" || !accounts_on(ctx) {
+        if !read_on_view(agent) || !accounts_on(ctx) {
             return;
         }
         let account = account_of(account);

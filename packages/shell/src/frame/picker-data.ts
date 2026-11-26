@@ -10,6 +10,9 @@ import { fullest, type AccountOffer, type AgentOffer, type PlanWindow } from './
 
 /** How long an answer is reused: the picker's sub-lines (`5h 42% used`) and account list move slowly. */
 export const FRESH_MS = 30_000;
+/** An open of the picker asks each harness's usage again unless it was read this recently (a hover on the pill warmed
+ *  it): usage refreshes on each open, not once per 30 s (harness audit r2). */
+export const OPEN_MS = 3_000;
 
 export const agentsOf = defineCommand<{ peer: string }, AgentOffer[]>({ id: 'runtime.agents', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the harness list' });
 
@@ -44,10 +47,11 @@ export interface PickerData {
   agents(): Promise<AgentOffer[]>;
   /** the agents' answer if it is here and fresh (an open draws with it at once) */
   agentsNow(): AgentOffer[] | undefined;
-  /** each listed harness's fullest plan window, asked together and given back as one map */
-  usage(agents: readonly string[]): Promise<ReadonlyMap<string, PlanWindow | undefined>>;
+  /** each listed harness's fullest plan window, asked together and given back as one map; `maxAge` asks again for an
+   *  answer older than it (the picker's open: `OPEN_MS`, so each open shows the plan as it is now) */
+  usage(agents: readonly string[], maxAge?: number): Promise<ReadonlyMap<string, PlanWindow | null | undefined>>;
   /** what `usage` would answer from what's here and fresh, without asking */
-  usageNow(agents: readonly string[]): ReadonlyMap<string, PlanWindow | undefined>;
+  usageNow(agents: readonly string[]): ReadonlyMap<string, PlanWindow | null | undefined>;
   accounts(agent: string): Promise<AccountOffer[]>;
   /** a hover on the pill: the harness list, then every set-up harness's usage, and `agent`'s accounts */
   warm(agent?: string): void;
@@ -55,7 +59,7 @@ export interface PickerData {
 
 export function pickerData(run: Run, peer: string, now: () => number): PickerData {
   let agents: Kept<AgentOffer[]> | undefined;
-  const plans = new Map<string, Kept<PlanWindow | undefined>>();
+  const plans = new Map<string, Kept<PlanWindow | null | undefined>>();
   const accounts = new Map<string, Kept<AccountOffer[]>>();
   const fresh = <T>(k: Kept<T> | undefined): k is Kept<T> => k !== undefined && now() - k.at < FRESH_MS;
   const keep = <T>(p: Promise<T>): Kept<T> => {
@@ -63,11 +67,12 @@ export function pickerData(run: Run, peer: string, now: () => number): PickerDat
     void p.then((v) => (k.value = v));
     return k;
   };
-  const plan = (agent: string): Kept<PlanWindow | undefined> => {
+  const plan = (agent: string, maxAge = FRESH_MS): Kept<PlanWindow | null | undefined> => {
     let k = plans.get(agent);
-    if (!fresh(k)) {
+    if (!fresh(k) || now() - k.at >= maxAge) {
       // a refusal or a dropped link answers "nothing" now, and isn't kept: the next open asks again
-      k = keep(run(plansOf, { peer, agent }).then(fullest, () => (plans.delete(agent), undefined)));
+      // read with no window: null ("limits not reported"), not undefined (not read)
+      k = keep(run(plansOf, { peer, agent }).then((accs) => fullest(accs) ?? null, () => (plans.delete(agent), undefined)));
       plans.set(agent, k);
     }
     return k;
@@ -84,13 +89,13 @@ export function pickerData(run: Run, peer: string, now: () => number): PickerDat
       return agents.p;
     },
     agentsNow: () => (fresh(agents) ? agents.value : undefined),
-    async usage(ids) {
-      const ks = ids.map((a) => [a, plan(a)] as const);
+    async usage(ids, maxAge) {
+      const ks = ids.map((a) => [a, plan(a, maxAge)] as const);
       const vs = await Promise.all(ks.map(([, k]) => k.p));
       return new Map(ks.map(([a], i) => [a, vs[i]]));
     },
     usageNow(ids) {
-      const out = new Map<string, PlanWindow | undefined>();
+      const out = new Map<string, PlanWindow | null | undefined>();
       for (const a of ids) {
         const k = plans.get(a);
         if (fresh(k) && 'value' in k) out.set(a, k.value);

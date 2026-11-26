@@ -17,14 +17,18 @@ pub(super) fn reads(s: &mut Setup, slot: &Slot) {
         r.set_ext(a.id.as_str(), &a.plugin, a.value, a.expect.as_ref().map(|e| &e.value)).await.map(|()| c::Ack {})
     });
     cmd!(s, slot, c::Usage, |r, call, a| {
-        let from = r.now() - i64::from(a.days.unwrap_or(7).clamp(1, 366)) * 86_400_000;
+        // the clamp keeps a peer's odd offset to a real time zone (UTC-14..UTC+14)
+        let tz = a.tz_offset_min.unwrap_or(0).clamp(-840, 840);
+        let from = wisp_runtime_core::usage::window_start(r.now(), a.days.unwrap_or(7).clamp(1, 366), tz);
         let turns = r.repo.turns_since(from).await?;
         // where each task ran, for the per-project breakdown (v1 usage.js By project)
         // from the list in memory (perf audit 2026-11-19 #4: every task was decoded for this)
         let cwd: std::collections::HashMap<String, String> =
             r.lock_list().values().map(|x| (x.id.as_str().to_owned(), x.cwd.clone())).collect();
-        Ok(wisp_runtime_core::usage::breakdown(&turns, from, r.now(), &|id| cwd.get(id).cloned()))
+        Ok(wisp_runtime_core::usage::breakdown(&turns, from, r.now(), tz, &|id| cwd.get(id).cloned()))
     });
+    // Continue on…'s preview: what a hand-off to `agent` would carry, built by the hand-off's own note (ADR-0125)
+    cmd!(s, slot, c::HandoffPreview, |r, call, a| r.handoff_preview(a.id.as_str(), &a.agent).await);
     exec(s, slot);
     cmd!(s, slot, c::AppState, |r, call, a| r.app_state(a.id.as_str(), a.turn_id.as_str(), &a.block, a.state).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::TurnSetExt, |r, call, a| {
