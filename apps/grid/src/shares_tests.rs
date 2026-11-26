@@ -44,7 +44,8 @@ fn a_share_must_be_signed_by_its_sharer() {
     bad_sig.body = B64.encode("files: 2");
     assert_eq!(t.s.put(&ada, &bad_sig).unwrap_err().status(), 400);
     let v = t.s.put(&ada, &put(&k1, "review", "files: 1")).unwrap();
-    assert_eq!((v["version"].clone(), v["source"].clone()), (json!(1), json!("grid://ada/review")));
+    assert_eq!(v["version"], json!(1));
+    assert!(v["source"].as_str().unwrap().starts_with("grid://ada/review#"), "unlisted: its name carries the cap");
     // another key can't update it, even signed properly
     assert_eq!(t.s.put(&ada, &put(&k2, "review", "files: 2")).unwrap_err().status(), 403);
     let s = t.s.get(v["id"].as_str().unwrap()).unwrap().unwrap();
@@ -255,4 +256,69 @@ fn an_impossible_share_password_is_wrong_without_hashing() {
     assert!(long.len() > PASSWORD_MAX);
     assert_eq!(t.s.may_read(&s, None, Some(&long)).unwrap(), Err(Refused::Locked("password".into())));
     assert_eq!(derived(&long), 0);
+}
+
+/// ADR-0130: `grid://ada/crew` opened anyone's whole crew, unlisted or not: `crew` is every crew's key, so a handle was
+/// all it took. A name opens an unlisted share only with its cap, for its sharer, or for the people and teams it's for.
+#[test]
+fn unlisted_shares_open_by_name_only_with_their_cap() {
+    let t = t();
+    let (ada, bo, cy) = (t.a.dev_user("ada").unwrap(), t.a.dev_user("bo").unwrap(), t.a.dev_user("cy").unwrap());
+    let key = SigningKey::from_bytes(&[1; 32]);
+    let made = t.s.put(&ada, &Put { kind: "crew".into(), ..put(&key, "crew", "{}") }).unwrap();
+    let cap = t.s.get(made["id"].as_str().unwrap()).unwrap().unwrap().cap;
+    assert_eq!(cap.len(), 32, "128 bits, hex");
+    assert_eq!(made["source"], json!(format!("grid://ada/crew#{cap}")));
+    let named = |who: Option<&UserRow>, cap: Option<&str>| t.s.named("ada", "crew", who, cap).unwrap().map(|s| s.key);
+    // no cap or a wrong one: as if there were no such name
+    assert_eq!((named(None, None), named(Some(&bo), None), named(None, Some("0".repeat(32).as_str()))), (None, None, None));
+    assert_eq!(t.s.named("ada", "nope", None, None).unwrap(), None);
+    // the right cap, or its sharer
+    assert_eq!((named(None, Some(&cap)), named(Some(&ada), None)), (Some("crew".into()), Some("crew".into())));
+    // for people: one of them opens it by name, no cap
+    let id = made["id"].as_str().unwrap();
+    let people = Access { kind: "people".into(), people: vec!["bo".into()], ..Access::default() };
+    t.s.patch(&ada, id, &Patch { access: Some(people), ..Patch::default() }).unwrap();
+    assert_eq!((named(Some(&bo), None), named(Some(&cy), None)), (Some("crew".into()), None));
+    // a password: the cap first, then the password
+    let pw = Access { kind: "password".into(), password: Some("p".into()), ..Access::default() };
+    t.s.patch(&ada, id, &Patch { access: Some(pw), ..Patch::default() }).unwrap();
+    assert_eq!(named(None, None), None);
+    let opened = t.s.named("ada", "crew", None, Some(&cap)).unwrap().unwrap();
+    assert_eq!(t.s.may_read(&opened, None, None).unwrap(), Err(Refused::Locked("password".into())));
+    // published: its plain name opens it, and its source has no cap
+    let published = t.s.patch(&ada, id, &Patch { access: Some(Access::default()), publish: Some(true), ..Patch::default() }).unwrap();
+    assert_eq!(published["source"], json!("grid://ada/crew"));
+    assert!(!published["source"].as_str().unwrap().contains('#'));
+    assert_eq!(named(None, None), Some("crew".into()));
+}
+
+/// Updating a password-locked task share without retyping its passkey sent `{kind: anyone}`, and the put made it
+/// public. A put with no access keeps the access it has.
+#[test]
+fn shares_put_without_access_keeps_a_password() {
+    let t = t();
+    let ada = t.a.dev_user("ada").unwrap();
+    let k = SigningKey::from_bytes(&[1; 32]);
+    let pw = Access { kind: "password".into(), password: Some("hunter2".into()), ..Access::default() };
+    let id = t.s.put(&ada, &Put { access: Some(pw), ..put(&k, "t1", "one") }).unwrap()["id"].as_str().unwrap().to_owned();
+    let v = t.s.put(&ada, &Put { access: None, ..put(&k, "t1", "two") }).unwrap();
+    assert_eq!((v["version"].clone(), v["access"]["kind"].clone()), (json!(2), json!("password")));
+    let s = t.s.get(&id).unwrap().unwrap();
+    assert!(s.pass.as_deref().is_some_and(|p| check_password(p, "hunter2")));
+}
+
+/// Re-sharing a crew reset access set with `wisp cloud access teams:acme` to anyone. A put with no access keeps it.
+#[test]
+fn shares_put_without_access_keeps_teams_set_by_patch() {
+    let t = t();
+    let ada = t.a.dev_user("ada").unwrap();
+    let k = SigningKey::from_bytes(&[1; 32]);
+    t.s.teams.create(&ada, "acme", "").unwrap();
+    let id = t.s.put(&ada, &put(&k, "crew", "one")).unwrap()["id"].as_str().unwrap().to_owned();
+    let teams = Access { kind: "teams".into(), teams: vec!["acme".into()], ..Access::default() };
+    t.s.patch(&ada, &id, &Patch { access: Some(teams), ..Patch::default() }).unwrap();
+    t.s.put(&ada, &Put { access: None, ..put(&k, "crew", "two") }).unwrap();
+    let s = t.s.get(&id).unwrap().unwrap();
+    assert_eq!((s.access.as_str(), s.teams), ("teams", vec!["acme".to_owned()]));
 }

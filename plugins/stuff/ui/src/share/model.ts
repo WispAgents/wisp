@@ -43,6 +43,16 @@ export function previewNote(t: T, p: SharePreview): { readonly text: string; rea
  *  answer, and threw). */
 export const canShare = (p: SharePreview | undefined): boolean => (p?.targets?.length ?? 0) > 0;
 
+/** What share.create is sent for who may open it: Open sends '' (takes a passkey off); a passkey typed locks it with
+ *  that one; locked with nothing typed on a link that's locked already sends no passkey, so the link keeps its own
+ *  (share.create then sends the grid no access). undefined: nothing to send yet (locked, nothing typed, no passkey). */
+export function passkeyArg(who: 'link' | 'pass', typed: string, keptLocked: boolean): { passkey?: string } | undefined {
+  if (who === 'link') return { passkey: '' };
+  const key = typed.trim();
+  if (key) return { passkey: key };
+  return keptLocked ? {} : undefined;
+}
+
 /** What a share carries, read from the preview's bundle: the ask, its later steps, and with its work the answers and
  *  the files it changed (the report "Its work" sends; QA round 14 #5). */
 export interface WhatGoes {

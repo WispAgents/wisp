@@ -23,7 +23,8 @@ pub struct ShareCard {
     pub summary: String,
     pub from: String,
     pub version: i64,
-    /// `grid://<handle>/<key>`
+    /// `grid://<handle>/<key>` once published, else `grid://<handle>/<key>#<cap>` (`Shares::source`, ADR-0130): the page
+    /// shows the name that opens it, never one that 404s for the reader
     pub source: String,
     /// who may open it: `anyone` | `people` | `teams` | `password`
     pub access: String,
