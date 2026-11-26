@@ -331,6 +331,10 @@ pub struct Conversed {
     pub thread: Option<Thread>,
     /// the files it brought (uploads)
     pub attachments: Vec<Value>,
+    /// the project a message naming none runs in (the conversation's `ctx().default_project`)
+    pub project: Option<String>,
+    /// where it was asked, for the task's prompt (`Conversation::about`)
+    pub about: Option<String>,
 }
 
 /// The hub. `reply`: what the flow says back through the conversation's door (`say`), when set; a session id in
@@ -498,6 +502,8 @@ impl ChannelHub for TestHub {
             session: session_id.map(str::to_owned),
             thread: thread.clone(),
             attachments: c.attachments(),
+            project: c.ctx().default_project.as_ref().map(|p| p.id.clone()),
+            about: c.about().map(str::to_owned),
         });
         let Some(reply) = &self.reply else { return Ok(Value::Null) };
         let sent = c.say(reply.clone()).await?;

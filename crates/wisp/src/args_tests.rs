@@ -224,3 +224,10 @@ fn the_usage_names_the_terminal_context_and_its_flags_parse() {
     assert_eq!((shown.flags.context, shown.flags.show_context, shown.flags.lines), (Some(true), true, Some(50)));
     assert_eq!(p(&["what", "failed", "--no-context"]).flags.context, Some(false));
 }
+
+#[test]
+fn ship_takes_the_steward_mode() {
+    let a = p(&["ship", "0123456789ab", "--steward", "review"]);
+    assert_eq!((a.command, a.flags.steward.as_deref()), (Some("ship"), Some("review")));
+    assert_eq!(p(&["ship", "0123456789ab"]).flags.steward, None);
+}

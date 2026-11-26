@@ -1,5 +1,5 @@
 //! What a removal never takes, whoever asks (audit, git round 1). A recurring run's kept folder is shared by its runs
-//! (ADR-0108): while any task works in it, the sweep, Done, archiving and a run ending all leave it. And a bad record
+//! (ADR-0108): while any task works in it, the sweep, Done, archiving and a run done all leave it. And a bad record
 //! never costs the user a repo: the main checkout, a folder outside wisp's worktrees, a worktree git refuses to remove
 //! (locked), one git can't read, and a full clone left in wisp's worktrees folder all stay. Over real repos in temp
 //! folders and the real git service.
@@ -106,7 +106,7 @@ fn set(port: &MemPort, id: &str, f: impl Fn(&mut TaskInfo)) {
 }
 
 /// Two runs of one recurring job share its kept folder: A is done and idle past `DONE_IDLE`, B works in it. The sweep,
-/// Done on A, archiving A and A's run ending each leave the folder (said in use, never a failure); once B stops, the
+/// Done on A, archiving A and A's run done each leave the folder (said in use, never a failure); once B stops, the
 /// sweep takes it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_shared_kept_folder_stays_while_any_task_works_in_it() {
@@ -134,10 +134,13 @@ async fn a_shared_kept_folder_stays_while_any_task_works_in_it() {
     let r = archived::tidy(&e, &user(), &wt, e.mark()).await.unwrap();
     assert!(!r.removed && r.busy && Path::new(&wt.path).is_dir(), "archiving A: {r:?}");
 
+    // A's run ending alone never tidies (ADR-0131); A's run done tidies, and leaves the folder B works in
     let mut ended = Session { id: "a".to_owned().into(), state: SessionState::Review, ..Session::default() };
     ended.ext.insert(EXT.into(), serde_json::to_value(Worktree { tidy: true, ..wt.clone() }).unwrap());
+    assert!(archived::tidy_ended(&e, &user(), &ended, e.mark(), &[], false).await.is_none() && Path::new(&wt.path).is_dir());
+    ended.state = SessionState::Done;
     let r = archived::tidy_ended(&e, &user(), &ended, e.mark(), &[], false).await.map(|(_, r)| r).unwrap();
-    assert!(!r.removed && Path::new(&wt.path).is_dir(), "A's run ending: {r:?}");
+    assert!(!r.removed && Path::new(&wt.path).is_dir(), "A's run done: {r:?}");
 
     set(&port, "b", |x| x.busy = false);
     c.sweep(limits).await;

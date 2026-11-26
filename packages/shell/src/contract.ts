@@ -520,8 +520,9 @@ export interface PromptSourceDef {
   where?: readonly ('reply' | 'home')[];
   /** among sources for one trigger, lower first */
   order?: number;
-  /** `project`: New task's picked project's folder (additive, 2026-11-11) */
-  items(query: string, ctx: { client: PluginClient; task?: string; project?: string }): readonly PromptItem[];
+  /** `project`: New task's picked project's folder (additive, 2026-11-11). `peer` (added 2026-11-26, additive): the
+   *  computer the box sends to (a reply's task's, New task's Run on), the only one whose tasks its mentions can name */
+  items(query: string, ctx: { client: PluginClient; task?: string; project?: string; peer?: string }): readonly PromptItem[];
   /**
    * A reply this source takes instead of the task's agent (crew: a reply that starts with @a member is for them). Gets
    * the stored text (mentions encoded); true: it was taken (and sent), the box clears and nothing goes to the agent.

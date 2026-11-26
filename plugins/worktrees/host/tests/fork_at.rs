@@ -61,7 +61,8 @@ async fn a_fork_from_an_earlier_turn_gets_the_folder_as_it_was_then_not_as_it_is
     let dir = t.0.join("src/app");
     std::fs::create_dir_all(&dir).unwrap();
     git(&dir, &["init", "-q", "-b", "main"]);
-    for (k, v) in [("user.email", "qa@wisp.test"), ("user.name", "QA"), ("commit.gpgsign", "false")] {
+    // core.autocrlf: Windows' git checks `then\n` out as `then\r\n`, and the test compares the file's bytes
+    for (k, v) in [("user.email", "qa@wisp.test"), ("user.name", "QA"), ("commit.gpgsign", "false"), ("core.autocrlf", "false")] {
         git(&dir, &["config", k, v]);
     }
     let head = commit(&dir, "one\n");

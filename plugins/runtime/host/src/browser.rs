@@ -161,6 +161,8 @@ mod tests {
 
     /// In a sandbox (`WISP_SANDBOX=1`) with its `wisp-browser-mcp` on PATH, every setting but off is the box's browser,
     /// on Claude Code too (Claude in Chrome needs the user's own Chrome); never `--browser chrome` there.
+    /// A sandbox is a Linux box: on Windows the stand-in (no extension, a `:`-joined PATH) is no program to find.
+    #[cfg(unix)]
     #[test]
     fn in_a_sandbox_the_browser_is_the_boxs_wisp_browser_mcp() {
         let dir = std::env::temp_dir().join(format!("wisp-browser-bin-{}", std::process::id()));
