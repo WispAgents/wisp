@@ -725,7 +725,7 @@ ${sh('wisp grid serve', 'run a Grid on your own server')}`,
     main: '',
     schema: [
       { '@type': 'WebSite', '@id': `${SITE}/#website`, url: `${SITE}/`, name: 'Wisp Agents', alternateName: ['wisp', 'wisp-agents'], description: homeDesc, publisher: { '@id': `${SITE}/#org` }, inLanguage: 'en' },
-      { '@type': 'Organization', '@id': `${SITE}/#org`, name: 'Wisp Agents', alternateName: 'wisp', url: `${SITE}/`, email: 'hello@trywisp.dev', logo: { '@type': 'ImageObject', url: `${SITE}/assets/icon.png`, width: 1024, height: 1024 }, sameAs: [REPO, 'https://x.com/trywispagents', 'https://www.npmjs.com/package/wisp-agents'] },
+      { '@type': 'Organization', '@id': `${SITE}/#org`, name: 'Wisp Agents', alternateName: 'wisp', url: `${SITE}/`, email: 'hello@trywisp.dev', logo: { '@type': 'ImageObject', url: `${SITE}/assets/icon.png`, width: 1024, height: 1024 }, sameAs: [REPO, 'https://github.com/WispAgents', 'https://x.com/trywispagents', 'https://www.npmjs.com/package/wisp-agents', 'https://github.com/WispAgents/homebrew-tap'] },
       SOFTWARE,
       { '@type': 'FAQPage', '@id': `${SITE}/#faq`, mainEntity: FAQ.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) },
     ],
