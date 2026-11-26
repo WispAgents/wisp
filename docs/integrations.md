@@ -59,7 +59,7 @@ claude mcp add wisp -- npx -y wisp-agents mcp
 **Codex** (`~/.codex/config.toml`)
 
 ```toml
-[mcp_servers.wisp]
+[mcp_servers.wisp-history]
 command = "npx"
 args = ["-y", "wisp-agents", "mcp"]
 ```
