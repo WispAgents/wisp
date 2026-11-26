@@ -18,6 +18,10 @@ pub struct GhState {
     pub mergeable: Option<String>,
     pub review_comments: Value,
     pub run_log: Option<String>,
+    /// `gh api graphql`'s answer (review threads); null: none
+    pub threads: Value,
+    /// `gh api …/check-runs` on the base (the Steward's "fails on the base too")
+    pub base_runs: Value,
     /// every call's argv and cwd
     pub calls: Vec<(Vec<String>, String)>,
     /// the head each branch has on the remote (pushes move it)
@@ -143,6 +147,8 @@ impl FakeGh {
                 }
                 ok("")
             }
+            ("api", "graphql") => ok(&st.threads.to_string()),
+            ("api", route) if route.contains("/check-runs") => ok(&st.base_runs.to_string()),
             ("api", route) if route.contains("/pulls/") => ok(&st.review_comments.to_string()),
             ("run", "view") => st.run_log.clone().map_or_else(|| fail("no log"), |l| ok(&l)),
             _ => fail(&format!("fake gh: unsupported: {}", args.join(" "))),

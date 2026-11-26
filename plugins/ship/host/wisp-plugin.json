@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.ship",
   "name": "Ship it",
-  "version": "1.0.0-alpha.14",
+  "version": "1.0.0-alpha.15",
   "api": "1",
   "description": "Ship it: commit what a worktree task left, push its branch, open or update its PR; follow its checks and reviews, fix conflicts with a follow-up, squash-merge the reviewed head and fast-forward the user's checkout.",
   "kind": "plugin",
@@ -24,6 +24,7 @@
     "runtime:setExt",
     "runtime:followUp",
     "review:maybe",
+    "review:view",
     "history:track",
     "git:repo",
     "git:status",
@@ -44,7 +45,8 @@
   ],
   "contributes": {
     "settings": [
-      { "key": "ship.fixConflicts", "type": "bool", "default": false, "title": "Fix merge conflicts by itself: when a task's PR has conflicts, its agent is asked to fix them without waiting for you" }
+      { "key": "ship.fixConflicts", "type": "bool", "default": false, "title": "Fix merge conflicts by itself: when a task's PR has conflicts, its agent is asked to fix them without waiting for you" },
+      { "key": "ship.steward", "type": "enum", "values": ["off", "fix", "review"], "default": "off", "title": "Keep PRs green (Steward), ticked in Ship it by default: the task fixes its PR's failing checks and new review comments, wisp pushes; review also has another vendor's model review each push. Never merges" }
     ],
     "events": [
       "pr.changed",
@@ -64,6 +66,10 @@
       {
         "id": "ship.fix_conflicts",
         "title": "Fix a task's PR conflicts: the task merges its base in"
+      },
+      {
+        "id": "ship.steward",
+        "title": "Keep a task's PR green (the Steward, ADR-0132): fix, review (fix + another vendor's review of each push) or off"
       },
       {
         "id": "ship.check_log",

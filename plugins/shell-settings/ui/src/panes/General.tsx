@@ -70,6 +70,7 @@ function TakeOver(props: { readonly client: PluginClient }): JSX.Element {
       />
       <Show when={current() === 'custom'}>
         <SettingsRow
+          settingKey={KEYS.terminalCommand}
           title={t('shell-settings.terminal-command')}
           description={t('shell-settings.terminal-command.hint')}
           wideControl

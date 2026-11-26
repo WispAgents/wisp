@@ -39,7 +39,7 @@ impl Plugin for ReviewPlugin {
             // the run outlives this command: the kernel cancels a command's call once it answers, and a review run on
             // it had its every later step refused, so it never asked the reviewer and stayed "running" (orch #20).
             // It goes on the plugin's own call, as a run started by a turn's end does.
-            async move { start(&ctx, &r, &ctx.root_call(), &args.id, args.force).await }
+            async move { start(&ctx, &r, &ctx.root_call(), &args.id, args.force, args.pick.as_deref()).await }
         });
         let e = env.clone();
         s.command::<View, _, _>(move |_ctx, call, args| {
@@ -54,7 +54,7 @@ impl Plugin for ReviewPlugin {
         s.on::<TurnEnded, _, _>(move |ctx, e| {
             let r = r.clone();
             async move {
-                let _ = start(&ctx, &r, &ctx.root_call(), e.session_id.as_str(), false).await;
+                let _ = start(&ctx, &r, &ctx.root_call(), e.session_id.as_str(), false, None).await;
             }
         });
         // off serve's start (ADR-0011: cold start ≤ 150 ms on 5k tasks): one list read, then only the tasks whose row says
@@ -121,8 +121,8 @@ impl wisp_runtime_api::points::SummaryField for Row {
 }
 
 /// `maybe`, with its run spawned on the plugin's scope (freed when review is switched off).
-async fn start(ctx: &Ctx, r: &Arc<Reviewer>, call: &Call, id: &str, force: bool) -> Result<Maybe> {
-    let started = r.maybe(call, id, force).await?;
+async fn start(ctx: &Ctx, r: &Arc<Reviewer>, call: &Call, id: &str, force: bool, pick: Option<&str>) -> Result<Maybe> {
+    let started = r.maybe_by(call, id, force, pick).await?;
     if let Some(job) = started.job {
         ctx.spawn(job);
     }
@@ -159,7 +159,11 @@ impl Env for KernelEnv {
     fn agents(&self, call: &Call) -> Fut<Vec<Agent>> {
         let f = self.0.run::<rt::Agents>(call, rt::AgentsArgs { fresh: None });
         Box::pin(async move {
-            f.await.unwrap_or_default().into_iter().map(|a| Agent { id: a.id, name: a.name, available: a.available }).collect()
+            f.await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|a| Agent { id: a.id, name: a.name, available: a.available, models: a.models.into_iter().map(|m| m.id).collect() })
+                .collect()
         })
     }
     fn hold(&self, call: &Call, agent: &str) -> Fut<Option<String>> {

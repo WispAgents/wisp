@@ -68,7 +68,11 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
         "ship" => {
             let id = need(args.first(), "session id")?;
             let task = c.cmd("runtime.get", json!({ "id": id })).await?;
-            let pr = c.cmd("ship.ship", json!({ "session": id, "title": s(&task, "title"), "draft": f.draft })).await?;
+            let mut a = json!({ "session": id, "title": s(&task, "title"), "draft": f.draft });
+            if let Some(m) = &f.steward {
+                a["steward"] = json!(m);
+            }
+            let pr = c.cmd("ship.ship", a).await?;
             let draft = if f.draft { " (draft)" } else { "" };
             out(
                 f,

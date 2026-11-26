@@ -7,14 +7,15 @@ import { For, Match, Show, Switch, createEffect, createMemo, createSignal, type 
 import { CommandError, readonly, type EntityKey, type PluginClient } from '@wisp/client';
 import { mergeRequest } from './merge-request.ts';
 import type { ExtensionProps } from '@wisp/shell/contract';
-import { Button, Card, Icon, IconButton, ListRow, Stack, Toolbar, ToneChip, useSignal, Wrap, type ToolbarItem } from '@wisp/ui';
-import { fixConflicts, refresh, review } from './commands.ts';
+import { Button, Card, Icon, IconButton, ListRow, Stack, Text, Toolbar, ToneChip, useSignal, Wrap, type ToolbarItem } from '@wisp/ui';
+import { fixConflicts, refresh, review, setSteward } from './commands.ts';
 import { t } from './i18n.ts';
 import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
 import { fixing, openPrs, prChipTitle, prsOf, prTone, worstTone, type PrTone } from './model/pr.ts';
 import { prStripSub, prStripTitle } from './model/strip.ts';
 import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
 import { stepsOfLive, track } from './model/ship.ts';
+import { stewardAction, stewardLine } from './model/steward.ts';
 import { ShipRun } from './ShipRun.tsx';
 import { TONE, TONE_ICON } from './tones.ts';
 import { useBusy } from './busy.ts';
@@ -162,6 +163,18 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           ),
       });
     }
+    // the Steward (ADR-0132): Stop while it's on, Start again after a stop, Keep green on an open PR without one
+    const keep = stewardAction(props.s);
+    if (keep) {
+      const mode = keep === 'stop' ? 'off' : props.s.steward?.mode === 'review' ? 'review' : 'fix';
+      out.push({
+        id: 'steward',
+        icon: keep === 'stop' ? 'stop' : keep === 'again' ? 'replay' : 'judge',
+        label: t(keep === 'stop' ? 'wisp.ship.steward.action.stop' : keep === 'again' ? 'wisp.ship.steward.action.again' : 'wisp.ship.steward.action.start'),
+        priority: 4,
+        onSelect: () => quiet(props.client.run(setSteward, { key: props.k, mode })),
+      });
+    }
     // Pinned primary action (Fix conflicts or Merge) always sits last so Toolbar pushes it cleanly to the end.
     if (props.s.pr?.state === 'OPEN' && props.s.pr.conflict && !fixing(props.s.conflictFix) && props.s.state !== 'running') {
       out.push({ id: 'fix', icon: 'merge', label: t('wisp.ship.action.fix'), priority: 'pin', onSelect: () => quiet(props.client.run(fixConflicts, { key: props.k })) });
@@ -203,6 +216,13 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           }
           onOpen={() => ship.openPane()}
         />
+        <Show when={stewardLine(t, props.s)}>
+          {(line) => (
+            <Text as="p" size="sm" tone={props.s.steward?.step === 'stopped' ? 'warn' : 'muted'} part="pr.strip.steward">
+              {line()}
+            </Text>
+          )}
+        </Show>
         {/* every attached PR as a wrapping chip row under the summary (never ListRow's nowrap pills column, which
             squeezed the title and spilled chips past the card); bounded with "+N more" past 5 PRs */}
         <Show when={several()}>

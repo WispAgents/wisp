@@ -32,6 +32,18 @@ export interface ConflictFix {
   readonly head?: string;
 }
 
+/** The Steward of a task's PR (ADR-0132; ship-api `Steward`): it sends the task failing checks and new review threads
+ *  (and with `review`, another vendor's high findings), pushes the fix, stops green or with why. Never merges. */
+export interface Steward {
+  readonly mode: 'fix' | 'review' | (string & {});
+  readonly step: 'watching' | 'fixing' | 'pushing' | 'green' | 'stopped' | (string & {});
+  readonly head?: string;
+  readonly passes?: { readonly checks?: number; readonly threads?: number; readonly review?: number };
+  readonly causes?: readonly string[];
+  readonly reviewer?: string;
+  readonly why?: string;
+}
+
 export type ShipStep = 'start' | 'commit' | 'push' | 'pr';
 
 /** The live stage of a ship in flight, sent with each summary (ship.js shipAll). */
@@ -108,6 +120,7 @@ export interface ShipSession {
   readonly toShip?: ToShip;
   readonly shipping?: Shipping | null;
   readonly conflictFix?: ConflictFix;
+  readonly steward?: Steward;
   readonly review?: Review;
   /** a worktree another tool left (Bring in): merge never removes it */
   readonly foreign?: boolean;
@@ -210,6 +223,8 @@ export interface ShipValues {
   readonly body: string;
   readonly draft: boolean;
   readonly saveTask?: boolean;
+  /** Keep it green (the Steward): `fix`, `review`, or `off` to switch off one that's on */
+  readonly steward?: 'fix' | 'review' | 'off';
 }
 
 export interface ShipResult extends Partial<PrSummary> {

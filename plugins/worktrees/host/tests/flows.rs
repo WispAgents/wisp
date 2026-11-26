@@ -257,7 +257,8 @@ async fn an_archived_tasks_clean_worktree_is_removed_and_one_with_work_stays() {
 }
 
 /// ADR-0053: before a follow-up runs, an archived task's removed worktree comes back on its branch (its ignored
-/// files copied again); a brought-in folder that's gone, or a branch that's gone, is a reason, never a new folder.
+/// files copied again); a brought-in folder that's gone is a reason, never a new folder. A branch that's gone is made
+/// again from the base (ADR-0131): the task goes on, and the turn says so.
 #[tokio::test]
 async fn bring_back_restores_a_removed_worktree_on_its_branch_and_refuses_what_cant_come_back() {
     let t = tmp("back");
@@ -275,11 +276,15 @@ async fn bring_back_restores_a_removed_worktree_on_its_branch_and_refuses_what_c
     let gone = add_tree(&root, &t.0.join("h/worktrees/app-gone"), "wisp/gone");
     assert!(archived::tidy(&e, &user(), &gone, e.mark()).await.unwrap().removed);
     git(&root, &["branch", "-D", "wisp/gone"]);
-    let why = archived::bring_back(&e, &user(), Claimant::turn("t2", "turn-1"), &gone).await.unwrap_err();
-    // audit F orchestration F2: a merged task's branch is gone; said in plain words, never git's "invalid reference"
-    assert!(why.contains("branch wisp/gone is gone") && why.contains("merged") && why.contains("on main now"), "{why}");
+    // a plain ensure (worktrees.ensure) says so in plain words, never git's "invalid reference" (audit F orchestration F2)
+    let why = e.ensure(&user(), &gone).await.unwrap_err().to_string();
+    assert!(why.contains("branch wisp/gone is gone") && why.contains("on main now"), "{why}");
     assert!(!why.contains("invalid reference") && !why.contains("fatal"), "{why}");
     assert!(!Path::new(&gone.path).exists());
+    // a follow-up goes on: the branch made again from main
+    assert!(archived::bring_back(&e, &user(), Claimant::turn("t2", "turn-1"), &gone).await.unwrap());
+    assert_eq!(git(Path::new(&gone.path), &["branch", "--show-current"]), "wisp/gone");
+    assert_eq!(git(&root, &["rev-parse", "wisp/gone"]), git(&root, &["rev-parse", "main"]));
 
     let theirs = add_tree(&root, &t.0.join("u/conductor/workspaces/app/oslo"), "oslo");
     std::fs::remove_dir_all(&theirs.path).unwrap();

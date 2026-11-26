@@ -139,10 +139,65 @@ pub fn strip_ansi(text: &str) -> String {
 /// The first local address the app's output says it listens on (v1 urlIn, over its cleaned lines): its port.
 #[must_use]
 pub fn local_port_in(text: &str) -> Option<u16> {
-    local_port_in_clean(&strip_ansi(text))
+    first_local(&strip_ansi(text)).map(|(p, _)| p)
 }
 
-fn local_port_in_clean(text: &str) -> Option<u16> {
+/// How much of the output already seen [`PortScan`] keeps to scan again with the next chunk: enough for an address
+/// line (colours and all) cut anywhere between two chunks.
+const SCAN_TAIL: usize = 256;
+
+/// [`local_port_in`] over output that comes in chunks, each looked at once: the app's address is found as it's
+/// printed and kept, so it isn't looked for again in the kept screen (a megabyte, under the terminals' lock, on every
+/// Preview request), and it's still known once that line has scrolled out of the screen.
+#[derive(Debug, Default, Clone)]
+pub struct PortScan {
+    /// the end of what came so far, raw: an address or a colour split between two chunks is whole again
+    tail: String,
+    found: Option<u16>,
+    /// a port whose digits ran to the end of what came: the next chunk may add digits (`51` + `73`)
+    maybe: Option<u16>,
+}
+
+impl PortScan {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Looks at the next chunk of output; the app's port once it's known for sure (and every time after).
+    pub fn push(&mut self, chunk: &str) -> Option<u16> {
+        if self.found.is_some() {
+            return self.found;
+        }
+        let text = format!("{}{chunk}", self.tail);
+        match first_local(&strip_ansi(&text)) {
+            Some((p, false)) => {
+                self.found = Some(p);
+                self.maybe = None;
+                self.tail = String::new();
+                return self.found;
+            }
+            Some((p, true)) => self.maybe = Some(p),
+            None => self.maybe = None,
+        }
+        let mut cut = text.len().saturating_sub(SCAN_TAIL);
+        while !text.is_char_boundary(cut) {
+            cut += 1;
+        }
+        text[cut..].clone_into(&mut self.tail);
+        None
+    }
+
+    /// The port the output says so far: the sure one, else one that may still grow digits (an app whose last line
+    /// is its address and nothing after it).
+    #[must_use]
+    pub fn port(&self) -> Option<u16> {
+        self.found.or(self.maybe)
+    }
+}
+
+/// The first local address in cleaned text: its port, and whether its digits run to the end of the text.
+fn first_local(text: &str) -> Option<(u16, bool)> {
     for scheme in ["http://", "https://"] {
         let mut from = 0;
         while let Some(i) = text[from..].find(scheme).map(|i| i + from) {
@@ -158,7 +213,7 @@ fn local_port_in_clean(text: &str) -> Option<u16> {
                     && let Ok(p) = digits.parse::<u16>()
                     && p > 0
                 {
-                    return Some(p);
+                    return Some((p, h + 1 + digits.len() == rest.len()));
                 }
             }
             from = i + scheme.len();
@@ -246,5 +301,44 @@ mod tests {
             Some(5173)
         );
         assert_eq!(strip_ansi("\u{1b}]0;title\u{7}ok \u{1b}[1mbold\u{1b}[0m"), "ok bold");
+    }
+
+    /// The address is found as output comes, chunk by chunk: one split between two chunks (in the middle of a colour
+    /// too) is whole, a port whose digits may go on waits for them, and the port is kept after the line has left the
+    /// kept screen (a megabyte later, where reading the screen again found nothing).
+    #[test]
+    fn the_app_s_address_is_found_across_chunks_and_kept() {
+        let line = "  \u{1b}[32m➜\u{1b}[39m  Local:   \u{1b}[36mhttp://localhost:\u{1b}[1m5173\u{1b}[22m/\u{1b}[39m\r\n";
+        for cut in 1..line.len() {
+            if !line.is_char_boundary(cut) {
+                continue;
+            }
+            let mut s = PortScan::new();
+            let first = s.push(&line[..cut]);
+            assert!(first.is_none() || first == Some(5173), "cut at {cut}: {first:?}");
+            assert_eq!(s.push(&line[cut..]), Some(5173), "cut at {cut}");
+        }
+
+        let mut s = PortScan::new();
+        assert_eq!(s.push("listening on http://127.0.0.1:51"), None, "more digits may come");
+        assert_eq!(s.port(), Some(51), "what it says so far");
+        assert_eq!(s.push("73\n"), Some(5173));
+
+        let mut s = PortScan::new();
+        assert_eq!(s.push("see https://example.com:443/docs\n"), None);
+        assert_eq!(s.push("http://0.0.0.0:3000 and http://localhost:4000\n"), Some(3000), "the first local one");
+        let noise = "x".repeat(64 * 1024) + "\n";
+        for _ in 0..20 {
+            assert_eq!(s.push(&noise), Some(3000));
+        }
+        assert_eq!(s.push("now http://localhost:9999/\n"), Some(3000), "the first one stays");
+
+        // the one-shot reading, for comparison: the line has left a megabyte's screen
+        let mut r = crate::replay::Replay::new(crate::replay::KEEP);
+        r.push("http://localhost:5173/\n");
+        for _ in 0..20 {
+            r.push(&noise);
+        }
+        assert_eq!(local_port_in(r.read()), None);
     }
 }

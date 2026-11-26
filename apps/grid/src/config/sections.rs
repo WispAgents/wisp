@@ -107,6 +107,9 @@ pub struct HostdConfig {
     pub check_ms: i64,
     pub start_ms: i64,
     pub max_running: i64,
+    /// A user's own box and their sandboxes running at once (default 4): past it a sandbox waits for room.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_running_per_user: Option<i64>,
     pub env: BTreeMap<String, String>,
     pub path: String,
     /// `false` (as a JSON value) turns admission off; an object sets it; absent: the driver's default.

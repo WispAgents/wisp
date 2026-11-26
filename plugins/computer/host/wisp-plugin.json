@@ -1,0 +1,35 @@
+{
+  "wispPlugin": 1,
+  "id": "wisp.computer",
+  "name": "Computer use",
+  "version": "1.0.0-alpha.15",
+  "api": "^1",
+  "description": "Computer use for every harness through Cua Driver: each task's run gets the computer MCP server (screenshots, clicks, typing, windows, apps), behind wisp's policy; on a grid box or sandbox, the box's screen and browser too.",
+  "server": {
+    "builtin": "wisp-computer"
+  },
+  "permissions": [
+    "proc:spawn{bin:*}",
+    "proc:exec{bin:*}"
+  ],
+  "activation": [
+    "onStartup"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "computer.status",
+        "title": "Whether this wisp's tasks get computer use (Cua Driver), and why not",
+        "readOnly": true
+      }
+    ],
+    "settings": [
+      {
+        "key": "computer.enabled",
+        "type": "bool",
+        "default": false,
+        "title": "Computer use: every task's agent can see and use this computer's screen through Cua Driver (needs cua-driver installed)"
+      }
+    ]
+  }
+}

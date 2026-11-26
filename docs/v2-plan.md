@@ -268,6 +268,9 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - **Developer experience is first-class**: easy to use, debug, test and work on; a dev mode for the desktop app;
   documented commands must work (11-14 23:40, 23:48).
 - **Repo lives at github.com/WispAgents/wisp** (11-09 14:19).
+- **Computer use for every harness: use Cua Driver and build wisp's layer** (11-26): one standard way, wisp's own
+  `computer` MCP server for every harness (ADR-0127); tested on the grid and in a sandbox; grid boxes and sandboxes come
+  with a browser ready for agents to test with.
 
 ## 4. The plan
 
@@ -1156,11 +1159,13 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - 0067: the first page loads only what the first screen draws
 - 0114: a factory runs a task through stations and loops back with a limit
 - 0119: an agent runs a workflow under its own task, on any harness, and is told when it ends
+- 0127: computer use for every harness is Cua Driver behind wisp's own computer MCP server
 
 ## 11. Work log (recent rounds)
 
 | Round | What | State |
 |---|---|---|
+| cu | Computer use for every harness (ADR-0127): plugin wisp.computer (Cua Driver 0.62.1 behind `POST /api/computer/mcp`, policy, off by default), grid image (driver pinned, window manager, AT-SPI; the browser server stays ADR-0128's); tests core/host + serve_computer.rs. Left: per-action approvals locally, recordings into the task, own Settings pane | built, PR |
 | fac | Software factories (row 65, ADR-0114): plugin wisp.factory, CLI/MCP/picker/band/TUI, docs, e2e serve_factory.rs | built, uncommitted |
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |

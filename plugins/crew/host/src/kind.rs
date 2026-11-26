@@ -60,10 +60,33 @@ impl ResourceKind for CrewKind {
     fn apply<'a>(&'a self, call: &'a Call, op: &'a Op) -> BoxFuture<'a, Result<()>> {
         self.0.apply(call, op)
     }
+    /// A schedule or a wake the crew would refuse is said by `wisp validate`, `diff` and `apply --dry-run`, not only
+    /// half-way through an apply.
+    fn check(&self, r: &Resource) -> Vec<String> {
+        member_problems(r)
+    }
     /// A loop of hand-offs (A wakes on B's report, B on A's) is refused at apply, naming it (ADR-0043).
     fn check_all(&self, after: &[Resource]) -> Vec<String> {
         wake_loops(after)
     }
+}
+
+/// What `crew.create`/`.update` would refuse in a member's spec: its `cron` (read as the crew reads a schedule) and
+/// each wake (as a trigger aimed at the member), by their path.
+pub fn member_problems(r: &Resource) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(said) = r.spec.get("cron").and_then(Value::as_str)
+        && let Err(e) = wisp_crew_core::cron::read_schedule(&cron_of(said), &wisp_crew_core::cron::CronOnly)
+    {
+        out.push(format!("cron: {e}"));
+    }
+    for (i, w) in r.spec.get("wakes").and_then(Value::as_array).into_iter().flatten().enumerate() {
+        match serde_json::from_value::<wisp_automations_api::TriggerSpec>(w.clone()) {
+            Ok(t) => out.extend(wisp_crew_core::member::wake_problem(&r.name, &t).map(|p| format!("wakes[{i}]: {p}"))),
+            Err(e) => out.push(format!("wakes[{i}]: not a trigger: {e}")),
+        }
+    }
+    out
 }
 
 /// The crew in a plan, as it would be after it: a loop of hand-offs is a problem naming it.
@@ -88,6 +111,23 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// A cron the crew can't read and a wake it would refuse passed `wisp validate` and `apply --dry-run`, and failed
+    /// only half-way through the apply: each is one problem, by its path; a member that's fine has none.
+    #[test]
+    fn a_bad_cron_or_wake_is_a_problem_before_the_apply() {
+        let bad_cron = member_problems(&Resource::new("crew", "ada", json!({ "cron": "0 99 * * *" })));
+        assert_eq!(bad_cron.len(), 1, "{bad_cron:?}");
+        assert!(bad_cron[0].starts_with("cron: "), "{}", bad_cron[0]);
+        let bad_wake = member_problems(&Resource::new("crew", "ada", json!({ "wakes": [{ "on": "pr.opened" }, { "on": "schedule" }] })));
+        assert_eq!(bad_wake.len(), 1, "{bad_wake:?}");
+        assert!(bad_wake[0].starts_with("wakes[1]: a schedule needs cron"), "{}", bad_wake[0]);
+        let not_one = member_problems(&Resource::new("crew", "ada", json!({ "wakes": [{ "on": "pr.opened", "nope": 1 }] })));
+        assert!(not_one.len() == 1 && not_one[0].starts_with("wakes[0]: not a trigger"), "{not_one:?}");
+        let fine = json!({ "cron": "every weekday at 9", "wakes": [{ "on": "schedule", "cron": "0 9 * * *" }, { "on": "pr.opened" }] });
+        assert!(member_problems(&Resource::new("crew", "ada", fine)).is_empty());
+        assert!(member_problems(&Resource::new("crew", "ada", json!({ "cron": "" }))).is_empty());
+    }
 
     #[test]
     fn crew_wake_cycle_refused_at_apply() {

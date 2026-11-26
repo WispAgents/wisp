@@ -83,12 +83,13 @@ pub fn to_remove(s: &Session, now: i64) -> Option<Worktree> {
     tree_of(s.ext.get(EXT))
 }
 
-/// A run started for you whose turn ended (ADR-0108, v1 done-folders `tidy`: a crew job ending asks nobody): the folder
-/// to remove when its worktree is `tidy`, nothing runs, asks or waits in the task, and it isn't kept, shipping or
-/// answering a /btw. None: it stays.
+/// A run started for you (ADR-0108) once it's done (ADR-0131: marked Done, a quiet turn landing Done, or archived;
+/// never only because a turn ended, so a run that asked something keeps its folder): the folder to remove when its
+/// worktree is `tidy`, nothing runs, asks or waits in the task, and it isn't kept, shipping or answering a /btw. None:
+/// it stays.
 pub fn to_tidy(s: &Session, now: i64) -> Option<Worktree> {
     let wt = tree_of(s.ext.get(EXT)).filter(|w| w.tidy)?;
-    if !due(true, s.state, s.queue.len())
+    if !due(s.archived || s.state == SessionState::Done, s.state, s.queue.len())
         || shipping(s.ext.get("wisp.ship"))
         || side_pending(s.ext.get("wisp.runtime"), now)
         || kept(s.ext.get(EXT))
@@ -123,13 +124,14 @@ pub async fn tidy_ended(e: &Engine, call: &Call, s: &Session, mark: u64, in_use:
     }
 }
 
-/// A task's turn ended: a run started for you leaves no folder when it changed nothing ([`tidy_ended`]). True when one
-/// went.
-pub async fn on_ended(ctx: &Ctx, e: &Engine, port: &dyn Port, id: &str) -> bool {
-    let call = ctx.root_call();
-    let mark = e.mark();
-    let Ok(s) = ctx.run::<Get>(&call, IdArgs { id: id.to_owned().into() }).await else { return false };
-    let Some(wt) = to_tidy(&s, e.clock.now_ms()) else { return false };
+/// A run started for you that's done ([`to_tidy`]): its folder goes when nothing only it holds ([`tidy_ended`]).
+/// Some(went) when it was one to look at (archived or not, it's settled here), None: [`to_remove`]'s turn.
+async fn on_done(ctx: &Ctx, e: &Engine, port: &dyn Port, s: &Session, mark: u64) -> Option<bool> {
+    let wt = to_tidy(s, e.clock.now_ms())?;
+    if e.foreign(&wt) || !fsx::exists(&wt.path).await {
+        return Some(false);
+    }
+    let id = s.id.as_str();
     let in_use: Vec<String> = port
         .tasks()
         .await
@@ -137,14 +139,15 @@ pub async fn on_ended(ctx: &Ctx, e: &Engine, port: &dyn Port, id: &str) -> bool 
         .filter(|t| t.busy && t.id != id)
         .flat_map(|t| t.trees.into_iter().map(|x| x.worktree.path))
         .collect();
-    let used = fsx::exists(&wt.path).await && port.extra_in_use(wt.path.clone()).await;
-    match tidy_ended(e, &call, &s, mark, &in_use, used).await {
+    let used = port.extra_in_use(wt.path.clone()).await;
+    let call = ctx.root_call();
+    Some(match tidy_ended(e, &call, s, mark, &in_use, used).await {
         Some((wt, r)) if r.removed => {
             ctx.emit(&call, &WorktreeRemoved { root: wt.root.clone(), path: wt.path.clone(), branch_deleted: r.branch_deleted });
             true
         }
         _ => false,
-    }
+    })
 }
 
 /// Removes an archived task's folder when it's clean; None when there was nothing on disk to look at.
@@ -169,11 +172,16 @@ pub async fn tidy_unless(e: &Engine, call: &Call, wt: &Worktree, mark: u64, used
     }
 }
 
-/// One session changed: if it's archived and idle, its clean folder goes. True when one went.
+/// One session changed: if it's archived and idle (or a run started for you that's done), its clean folder goes. True
+/// when one went.
 pub async fn on_changed(ctx: &Ctx, e: &Engine, port: &dyn Port, id: &str) -> bool {
     let call = ctx.root_call();
     let mark = e.mark();
     let Ok(s) = ctx.run::<Get>(&call, IdArgs { id: id.to_owned().into() }).await else { return false };
+    // a run started for you, done: tidied (its branch too when nothing is on it); never on a turn ending alone
+    if let Some(went) = on_done(ctx, e, port, &s, mark).await {
+        return went;
+    }
     let Some(wt) = to_remove(&s, e.clock.now_ms()) else { return false };
     // another task working with it as an extra folder: it stays (that task's change, or the sweep, looks again);
     // asked only when there's a folder of wisp's to remove
@@ -188,14 +196,16 @@ pub async fn on_changed(ctx: &Ctx, e: &Engine, port: &dyn Port, id: &str) -> boo
 }
 
 /// Before a turn runs in a task with a worktree: claims the folder (a removal decided earlier stands down) and
-/// brings it back on its branch if archiving removed it. Err: why the turn can't run (a brought-in folder
-/// that's gone, a branch that's gone, git refusing), said on the refused turn.
-pub async fn bring_back(e: &Engine, call: &Call, who: Claimant<'_>, wt: &Worktree) -> Result<(), String> {
+/// brings it back on its branch if archiving or a tidy removed it; its branch gone too (merged then deleted, or
+/// tidied), on that branch made again from the base (ADR-0131), so the talk goes on: `Ok(true)`, and the turn says so
+/// ([`fresh_note`]). Err: why the turn can't run (a brought-in folder that's gone, no base to start from, git
+/// refusing), said on the refused turn.
+pub async fn bring_back(e: &Engine, call: &Call, who: Claimant<'_>, wt: &Worktree) -> Result<bool, String> {
     e.claim(&wt.path, who).await;
-    match e.ensure(call, wt).await {
-        Ok(()) if fsx::exists(&wt.cwd).await || wt.cwd.is_empty() => Ok(()),
-        Ok(()) => Err(format!("This task's worktree came back without its folder {}. Nothing was started.", wt.cwd)),
-        // its branch is gone (merged, then deleted): that, in plain words (audit F orchestration F2)
+    match e.restore(call, wt, true).await {
+        Ok(fresh) if fsx::exists(&wt.cwd).await || wt.cwd.is_empty() => Ok(fresh),
+        Ok(_) => Err(format!("This task's worktree came back without its folder {}. Nothing was started.", wt.cwd)),
+        // its branch is gone and its base too: that, in plain words (audit F orchestration F2)
         Err(crate::error::WtError::NotFound(m)) if m == branch_gone(wt) => Err(m),
         Err(err) => Err(format!(
             "This task's worktree couldn't come back on its branch {} ({err}). It runs only there, so nothing was started.",
@@ -212,6 +222,13 @@ pub fn branch_gone(wt: &Worktree) -> String {
         "This task's branch {} is gone: it was merged (or deleted), so its work is on {base} now. Start a new task (or fork this one) to go on from there; nothing was started.",
         wt.branch
     )
+}
+
+/// The line a turn gets when its worktree was made again from the base ([`bring_back`] `Ok(true)`): what was deleted,
+/// and that the task goes on from there.
+pub fn fresh_note(wt: &Worktree) -> String {
+    let base = [wt.base.as_str(), wt.base_ref.as_str()].into_iter().find(|b| !b.is_empty()).unwrap_or("its base branch");
+    format!("This task's worktree was deleted, so it goes on in a fresh one from {base} (branch {}).", wt.branch)
 }
 
 /// The worktree (of any task) that holds `dir`, an extra folder of another task: the folder itself or one of

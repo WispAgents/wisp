@@ -72,8 +72,15 @@ impl wisp_runtime_api::points::RunPart for Ready {
             let call = ctx.root_call();
             // claimed for this turn: only its own `turn.started` / `turn.held` lets go (a side run's lapses)
             let who = Claimant { task: &task, turn: turn.as_deref() };
-            if let Some(wt) = own {
-                archived::bring_back(&e, &call, who, &wt).await?;
+            if let Some(wt) = own
+                && archived::bring_back(&e, &call, who, &wt).await?
+                && let Some(turn) = &turn
+            {
+                // its worktree was deleted and made again from the base: the turn says so once it's saved (`release`)
+                st.fresh
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .insert((task.clone(), turn.clone()), archived::fresh_note(&wt));
             }
             archived::extras_ready(&e, port.as_ref(), &call, who, &dirs).await
         })
@@ -106,6 +113,8 @@ pub struct State {
     pub offers: tokio::sync::Mutex<Vec<api::Offer>>,
     /// Bring in's looks under way (the pane says it's looking meanwhile)
     pub offering: std::sync::atomic::AtomicU32,
+    /// turns about to start in a worktree made again from the base (task, turn) → the line they get (ADR-0131)
+    fresh: std::sync::Mutex<std::collections::HashMap<(String, String), String>>,
 }
 
 impl std::fmt::Debug for State {
@@ -130,6 +139,7 @@ impl State {
             cap_pending: false.into(),
             offers: tokio::sync::Mutex::new(Vec::new()),
             offering: 0.into(),
+            fresh: std::sync::Mutex::default(),
         })
     }
 
@@ -142,13 +152,28 @@ impl State {
             cap_pending: false.into(),
             offers: tokio::sync::Mutex::new(Vec::new()),
             offering: 0.into(),
+            fresh: std::sync::Mutex::default(),
         })
     }
 
-    /// A task's turn was saved: that turn's claims on its folders let go (`Engine::release`).
+    /// A task's turn was saved: that turn's claims on its folders let go (`Engine::release`), and when its worktree was
+    /// made again from the base, a line in the turn says so (the talk goes on; the user knows the folder is new).
     pub async fn release(&self, ctx: &Ctx, task: &str, turn: &str) {
         if let Ok((e, _, _)) = self.parts(ctx).await {
             e.release(task, turn);
+        }
+        let note = self.fresh.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&(task.to_owned(), turn.to_owned()));
+        if let Some(label) = note {
+            use wisp_runtime_api::commands::{Note, NoteArgs};
+            let args = NoteArgs {
+                id: task.to_owned().into(),
+                turn_id: Some(turn.to_owned().into()),
+                tone: Some(wisp_runtime_api::model::Tone::Info),
+                label,
+            };
+            if let Err(err) = ctx.run::<Note>(&ctx.root_call(), args).await {
+                tracing::warn!(error = %err.message, task, "worktrees: saying the worktree was made again");
+            }
         }
     }
 
@@ -205,22 +230,6 @@ impl State {
     }
 }
 
-/// A run started for you (a crew job, a check-in, a trigger's run) whose turn ended with nothing changed: its worktree
-/// goes (ADR-0108).
-fn on_turn_ended(s: &mut Setup, st: &Arc<State>) {
-    let end_st = st.clone();
-    s.on::<wisp_runtime_api::events::TurnEnded, _, _>(move |ctx, e| {
-        let st = end_st.clone();
-        async move {
-            if let Ok((engine, _, port)) = st.parts(&ctx).await
-                && archived::on_ended(&ctx, &engine, port.as_ref(), e.session_id.as_str()).await
-            {
-                st.refresh(&ctx).await;
-            }
-        }
-    });
-}
-
 impl Plugin for WorktreesPlugin {
     fn manifest(&self) -> Manifest {
         Manifest::embedded(include_str!("../wisp-plugin.json"))
@@ -247,8 +256,8 @@ impl Plugin for WorktreesPlugin {
             let st = rel.clone();
             async move { st.release(&ctx, e.session_id.as_str(), e.turn_id.as_str()).await }
         });
-        on_turn_ended(s, &st);
-        // archived and idle: a clean worktree goes (its branch stays). Changes come in bursts while a task
+        // archived and idle: a clean worktree goes (its branch stays); a run started for you, once it's done, too (its
+        // branch when nothing is on it, ADR-0131: never on a turn ending alone). Changes come in bursts while a task
         // streams, so they're coalesced: one look per session per burst.
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         s.on::<wisp_runtime_api::events::SessionChanged, _, _>(move |_ctx, e| {

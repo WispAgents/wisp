@@ -15,7 +15,7 @@ function shellWith(start = 'all'): { ctx: ShellContext; value: () => string } {
   let value = start;
   const rows = projects.map((p) => ({ id: p.id, name: p.name, path: p.path, color: p.color }));
   const ctx = {
-    client: { entities: { list: (kind: string) => () => (kind === 'project' ? rows : []) } },
+    client: { entities: { list: (kind: string) => () => (kind === 'project' ? rows : []), row: () => () => undefined }, home: () => 'laptop' },
     projectFilter: { value: () => value, set: (v: string) => (value = v || 'all') },
     navigate: () => undefined,
     t,

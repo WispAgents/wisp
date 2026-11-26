@@ -89,9 +89,9 @@ fn trees(root: &Path) -> Vec<String> {
         .collect()
 }
 
-/// A task whose turn ended, in `wt`.
+/// A task marked Done, in `wt`.
 fn ended(id: &str, wt: &Worktree) -> Session {
-    let mut s = Session { id: id.to_owned().into(), state: SessionState::Review, ..Session::default() };
+    let mut s = Session { id: id.to_owned().into(), state: SessionState::Done, ..Session::default() };
     s.ext.insert(EXT.into(), serde_json::to_value(wt).unwrap());
     s
 }
@@ -149,9 +149,43 @@ async fn a_run_started_for_you_that_changed_nothing_leaves_no_worktree_and_one_w
     let mut running = ended("t3", &wt);
     running.state = SessionState::Running;
     assert!(archived::to_tidy(&running, 0).is_none());
+    // a turn that ended (Review) isn't done: it may have asked you something (ADR-0131); archived, it is
+    let mut asked = ended("t3", &wt);
+    asked.state = SessionState::Review;
+    assert!(archived::to_tidy(&asked, 0).is_none(), "a turn ending alone never tidies");
+    asked.archived = true;
+    assert!(archived::to_tidy(&asked, 0).is_some());
     let yours = Worktree { tidy: false, ..job.clone() };
     assert!(archived::to_tidy(&ended("t4", &yours), 0).is_none());
     let shared = e.create(&user(), &args(&root, &format!("{:032x}", 3), Some("trigger-uitrig")), None, &[]).await.unwrap().unwrap();
     assert!(archived::tidy_ended(&e, &user(), &ended("t5", &shared), e.mark(), std::slice::from_ref(&shared.path), false).await.is_none());
     assert!(Path::new(&shared.path).exists());
+}
+
+/// The check-in that asked a question (2026-11-26): its folder and empty branch went, and the follow-up was refused with
+/// "its branch is gone". Now the follow-up goes on in the worktree made again from the base, and says so once.
+#[tokio::test]
+async fn a_follow_up_after_its_branch_went_goes_on_in_a_fresh_worktree_from_the_base() {
+    let t = tmp("fresh");
+    let root = repo(&t);
+    let e = engine(&t);
+    let wt = e.create(&user(), &args(&root, &format!("{:032x}", 7), Some("Ada check-in")), None, &[]).await.unwrap().unwrap();
+    let (_, r) = archived::tidy_ended(&e, &user(), &ended("t7", &wt), e.mark(), &[], false).await.unwrap();
+    assert!(r.removed && r.branch_deleted, "{r:?}");
+    assert_eq!(git(&root, &["branch", "--list", &wt.branch]), "");
+    // main moved on meanwhile: the fresh branch starts where main is now
+    std::fs::write(root.join("c.txt"), "later\n").unwrap();
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-q", "-m", "later"]);
+    // a plain ensure (worktrees.ensure) still says the branch is gone, in plain words
+    let err = e.ensure(&user(), &wt).await.unwrap_err().to_string();
+    assert!(err.contains("is gone"), "{err}");
+    let who = wisp_worktrees::Claimant { task: "t7", turn: Some("turn-2") };
+    assert!(archived::bring_back(&e, &user(), who, &wt).await.unwrap(), "made again from the base");
+    assert!(Path::new(&wt.path).join("c.txt").exists());
+    assert_eq!(git(&root, &["rev-parse", &wt.branch]), git(&root, &["rev-parse", "main"]));
+    // the next turn finds it there: nothing to say again
+    assert!(!archived::bring_back(&e, &user(), who, &wt).await.unwrap());
+    let note = archived::fresh_note(&wt);
+    assert!(note.contains("was deleted") && note.contains(&wt.branch), "{note}");
 }

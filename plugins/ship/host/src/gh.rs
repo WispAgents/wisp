@@ -103,6 +103,39 @@ impl Gh {
     }
 }
 
+/// The Steward's reads (ADR-0132): a PR's checks, its review threads, a check's latest run on the base.
+impl Gh {
+    /// The PR's checks, failing first (`statusCheckRollup` only: no comments call).
+    pub async fn checks(&self, cwd: &str, pr_ref: &str) -> Result<Vec<wisp_ship_api::CheckItem>> {
+        let j = self.json(cwd, &strings(&["pr", "view", pr_ref, "--json", "statusCheckRollup"])).await?;
+        Ok(wisp_ship_core::check_list(j.get("statusCheckRollup")))
+    }
+
+    /// The PR's review threads as GraphQL has them (resolved and outdated ones too: the core picks).
+    pub async fn review_threads(&self, cwd: &str, owner: &str, repo: &str, number: u64) -> Result<Value> {
+        let args = [
+            String::from("api"),
+            "graphql".into(),
+            "-f".into(),
+            format!("query={}", wisp_ship_core::steward::THREADS_QUERY),
+            "-F".into(),
+            format!("o={owner}"),
+            "-F".into(),
+            format!("r={repo}"),
+            "-F".into(),
+            format!("n={number}"),
+        ];
+        self.json(cwd, &args).await
+    }
+
+    /// Whether `check`'s latest run on `base` failed too (false when gh can't tell).
+    pub async fn fails_on_base(&self, cwd: &str, owner: &str, repo: &str, base: &str, check: &str) -> bool {
+        use wisp_ship_core::steward::{base_failed, encode};
+        let path = format!("repos/{owner}/{repo}/commits/{}/check-runs?check_name={}&per_page=1", encode(base), encode(check));
+        self.json(cwd, &[String::from("api"), path]).await.is_ok_and(|j| base_failed(&j))
+    }
+}
+
 pub fn strings(a: &[&str]) -> Vec<String> {
     a.iter().map(|s| (*s).to_owned()).collect()
 }

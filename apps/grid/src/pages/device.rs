@@ -157,14 +157,72 @@ pub fn offline_page(cfg: &PageCfg, p: &OfflinePage) -> String {
     app_page(&AppPage { narrow: true, home: &p.home, ..AppPage::new(cfg, &title, &body) }.signed(p.user.as_ref()))
 }
 
-/// Shown at `<handle>.<domain>` while its wisp starts; reloads itself once it answers.
-pub fn waking_page(cfg: &PageCfg, user: &PageUser) -> String {
+/// What the page at a box's address says while its wisp isn't up.
+#[derive(Debug, Clone, Default)]
+pub struct WakingPage {
+    /// `starting`, `queued` or `failed`
+    pub state: String,
+    /// its place in line while queued (1: next)
+    pub position: Option<usize>,
+    /// why its start didn't work (`failed`)
+    pub error: String,
+    /// the grid's home
+    pub home: String,
+}
+
+const WAKING: (&str, &str) = ("Waking your wisp", "It was asleep. A few seconds: this page opens it as soon as it’s up.");
+const QUEUED: &str = "Waiting for room";
+const FAILED: (&str, &str) = ("Your wisp didn’t start", "It stopped before it opened.");
+
+/// "You’re next in line" / "You’re number 3 in line", and what happens then.
+fn in_line(at: usize) -> String {
+    let place = if at <= 1 { "You’re next in line".to_owned() } else { format!("You’re number {at} in line") };
+    format!("The grid is busy right now. {place}: this page opens your wisp as soon as there’s room.")
+}
+
+/// Shown at a box's address the moment a browser opens it asleep, while it starts in the background: never a blank
+/// tab. It follows `/_grid/state` (starting, its place in line, or why it didn't start) and reloads to what was asked
+/// for once it's running. A failed start says why with Try again (`POST /_grid/start`: the old failure forgotten at
+/// once, a new start, and the page waits again), and Home; never a dead end. Served `failed` (a start that just
+/// failed, opened again) it says why straight away and waits for Try again.
+pub fn waking_page(cfg: &PageCfg, p: &WakingPage) -> String {
+    let failed = p.state == "failed";
+    let (title, text) = match p.state.as_str() {
+        "queued" => (QUEUED.to_owned(), in_line(p.position.unwrap_or(1))),
+        "failed" => (FAILED.0.to_owned(), if p.error.is_empty() { FAILED.1.to_owned() } else { p.error.clone() }),
+        _ => (WAKING.0.to_owned(), WAKING.1.to_owned()),
+    };
+    let js = |s: &str| serde_json::to_string(s).unwrap_or_default();
+    let line = in_line(2);
+    let (before, after) = line.split_once("number 2").unwrap_or((&line, ""));
+    let next = in_line(1);
     let body = format!(
-        r#"<div class="center" style="padding-top:48px"><div class="orb"></div><h1 class="h1">Waking your wisp</h1><p class="sub" id="msg">{}’s computer was asleep. A few seconds.</p></div>
-      <script>(async function poll(n){{try{{const r=await fetch('/_grid/state',{{cache:'no-store'}});const j=await r.json();if(j.state==='running')return location.reload();const m=document.getElementById('msg');if(j.error)m.textContent=j.error;else if(j.state==='queued')m.textContent='The grid is busy right now. You’re next in line: it opens as soon as there’s room.';}}catch{{}}setTimeout(()=>poll(n+1),n<20?700:2000)}})(0)</script>"#,
-        esc(&user.handle)
+        r#"<div class="center" style="padding-top:48px"><div class="orb"></div><h1 class="h1" id="t">{title}</h1><p class="sub" id="msg" role="status">{text}</p>
+      <p class="acts" id="acts" style="justify-content:center"{hidden}><button class="primary tall" id="again" type="button">Try again</button><a class="ghost line tall" href="{home}">Home</a></p></div>
+      <script>(function(){{const t=document.getElementById('t'),m=document.getElementById('msg'),a=document.getElementById('acts');const say=(h,s,f)=>{{t.textContent=h;m.textContent=s;a.hidden=!f}};
+document.getElementById('again').onclick=async()=>{{say({wt},{wb},false);try{{await fetch('/_grid/start',{{method:'POST',cache:'no-store'}})}}catch{{}}poll(0)}};
+async function poll(n){{let j={{}};try{{const r=await fetch('/_grid/state',{{cache:'no-store'}});j=await r.json()}}catch{{}}
+if(j.state==='running')return location.reload();
+if(j.state==='queued')say({qt},j.position>1?{qb}+'number '+j.position+{qa}:{qn},false);
+else if(j.state==='stopped'&&(j.error||n>8))return say({ft},j.error||{fb},true);
+else if(j.state==='starting')say({wt},{wb},false);
+setTimeout(()=>poll(n+1),n<20?700:2000)}}{kick}}})()</script>"#,
+        title = esc(&title),
+        text = esc(&text),
+        hidden = if failed { "" } else { " hidden" },
+        home = esc(&p.home),
+        qt = js(QUEUED),
+        qb = js(before),
+        qa = js(after),
+        qn = js(&next),
+        ft = js(FAILED.0),
+        fb = js(FAILED.1),
+        wt = js(WAKING.0),
+        wb = js(WAKING.1),
+        // a page that says it failed waits for Try again
+        kick = if failed { "" } else { "poll(0)" },
     );
-    app_page(&AppPage { narrow: true, ..AppPage::new(cfg, "Waking up", &body) })
+    app_page(&AppPage { narrow: true, ..AppPage::new(cfg, &title, &body) })
 }
 
 #[cfg(test)]
@@ -268,6 +326,35 @@ mod tests {
         assert!(p.contains(r#"<div class="flash bad">Too many</div>"#));
         assert!(p.contains(r#"<a class="primary tall" href="/">Back</a>"#));
         assert!(site_not_found(&cfg()).contains("This app was unpublished"));
-        assert!(waking_page(&cfg(), &PageUser { handle: "ada".into(), ..PageUser::default() }).contains("ada’s computer was asleep"));
+        assert!(waking_page(&cfg(), &WakingPage::default()).contains("It was asleep. A few seconds"));
+    }
+
+    /// The waiting page says where it stands now: starting, its place in line (grid-r2-1: `Queued` is real now), or
+    /// why it didn't start with Try again, never a dead end.
+    #[test]
+    fn the_waiting_page_says_starting_its_place_in_line_or_why_with_try_again() {
+        let home = "https://grid.test".to_owned();
+        let starting = waking_page(&cfg(), &WakingPage { state: "starting".into(), home: home.clone(), ..WakingPage::default() });
+        assert!(starting.contains(r#"<h1 class="h1" id="t">Waking your wisp</h1>"#), "{starting}");
+        assert!(starting.contains(r#"id="acts" style="justify-content:center" hidden>"#), "no Try again while it starts");
+        assert!(starting.contains("poll(0)") && starting.contains("fetch('/_grid/state'"));
+        let queued =
+            waking_page(&cfg(), &WakingPage { state: "queued".into(), position: Some(3), home: home.clone(), ..WakingPage::default() });
+        assert!(queued.contains("Waiting for room") && queued.contains("You’re number 3 in line: this page opens your wisp"), "{queued}");
+        let next =
+            waking_page(&cfg(), &WakingPage { state: "queued".into(), position: Some(1), home: home.clone(), ..WakingPage::default() });
+        assert!(next.contains("You’re next in line"));
+        let failed = waking_page(
+            &cfg(),
+            &WakingPage { state: "failed".into(), error: "wisp didn't start in the box: <gone>".into(), home, ..WakingPage::default() },
+        );
+        assert!(
+            failed.contains("Your wisp didn’t start") && failed.contains("wisp didn&#39;t start in the box: &#60;gone&#62;"),
+            "{failed}"
+        );
+        assert!(failed.contains(r#"id="acts" style="justify-content:center"><button class="primary tall" id="again" type="button">Try again</button><a class="ghost line tall" href="https://grid.test">Home</a>"#), "{failed}");
+        assert!(!failed.contains("}poll(0)})()"), "a failed page waits for Try again");
+        assert!(failed.contains("fetch('/_grid/start',{method:'POST'"), "Try again starts it again and waits: {failed}");
+        assert!(!failed.contains(">Back<"), "no dead end");
     }
 }

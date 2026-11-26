@@ -199,11 +199,11 @@ export function TurnTranscript(props: {
               const idx = (): number => (entry() as { kind: 'step'; step: TranscriptStepRow; index: number }).index;
               return (
                 <Show
-                  when={s().kind === 'text'}
+                  when={s().kind === 'text' || s().kind === 'thinking'}
                   fallback={<Step a={s()} index={idx()} figures={figuresByFile()} here={props.here} env={props.env} t={t} />}
                 >
                   <TimelineMessage>
-                    <MessageBody text={s().label ?? ''} here={props.here} chat={props.chat === true} answerCtx={props.answerCtx} />
+                    <MessageBody text={(s().kind === 'thinking' ? s().out : undefined) ?? s().label ?? ''} here={props.here} chat={props.chat === true} answerCtx={props.answerCtx} />
                   </TimelineMessage>
                 </Show>
               );

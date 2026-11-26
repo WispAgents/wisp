@@ -42,6 +42,8 @@ export default function HarnessStop(props: ExtensionProps): JSX.Element {
               title={t('budget.harness.stop')}
               description={harnessUsageDescription(meta0(), row(), windows.latest ?? [])}
               source={{
+                // its declared key (budget.autoStopCursor): Settings' search lands on this row (doc924a)
+                key: `budget.${meta0().key}`,
                 value: () => meta()?.body?.[meta0().key] ?? 'same',
                 set: (v: string) => void c.run(setStop, { peer, key: meta0().key, value: v }).catch(() => {}),
               }}

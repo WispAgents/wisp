@@ -535,7 +535,8 @@ export function ChangesPane(): JSX.Element {
           envShown: (name) => t('shell-task.changes.envShown', { name }),
           reveal: t('shell-task.changes.reveal'),
           hide: t('shell-task.changes.hide'),
-          showMore: (n) => t(n === 1 ? 'shell-task.changes.showMoreOne' : 'shell-task.changes.showMore', { n }),
+          showMore: (n, left) =>
+            left > n ? t('shell-task.changes.showMoreOf', { n, left }) : t(n === 1 ? 'shell-task.changes.showMoreOne' : 'shell-task.changes.showMore', { n }),
           moreFiles: (n) => t(n === 1 ? 'shell-task.changes.moreFilesOne' : 'shell-task.changes.moreFiles', { n }),
         }}
       />

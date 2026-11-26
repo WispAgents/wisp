@@ -2,12 +2,16 @@
 
 use wisp_review_api::{HARNESSES, Pick};
 
+use crate::vendor::vendor_of;
+
 /// A harness as the runtime reports it (runtime.agents).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Agent {
     pub id: String,
     pub name: String,
     pub available: bool,
+    /// the models it lists (runtime.agents), first is its default: review by another vendor pins one
+    pub models: Vec<String>,
 }
 
 /// The first `n` characters, the last one an ellipsis when it was longer (v1 clip, trimmed first).
@@ -40,6 +44,9 @@ pub fn pick_reviewer(setting: &str, authors: &[String], agents: &[Agent]) -> Res
     if setting.is_empty() || setting == "off" {
         return Err("Review by another harness is off.".into());
     }
+    if setting == OTHER_VENDOR {
+        return other_vendor(authors, agents);
+    }
     if setting == "other" {
         return HARNESSES
             .iter()
@@ -52,6 +59,29 @@ pub fn pick_reviewer(setting: &str, authors: &[String], agents: &[Agent]) -> Res
     }
     let name = agents.iter().find(|a| a.id == setting).map_or(setting, |a| if a.name.is_empty() { setting } else { a.name.as_str() });
     Err(format!("{name} isn't installed here."))
+}
+
+/// Review by another vendor (ADR-0132): the author's vendor is its harness's (a single-vendor harness), else unknown.
+pub const OTHER_VENDOR: &str = "other-vendor";
+
+/// A ready harness that isn't an author, on a model whose vendor is known and none of the authors': its own when it
+/// runs one vendor, else the first model it lists from another, pinned. Never the same vendor as a fallback.
+fn other_vendor(authors: &[String], agents: &[Agent]) -> Result<Pick, String> {
+    let theirs: Vec<&str> = authors.iter().map(|a| vendor_of("", a)).collect();
+    let ok = |v: &str| !v.is_empty() && !theirs.contains(&v);
+    for id in HARNESSES {
+        let Some(a) = agents.iter().find(|a| a.id == *id && a.available) else { continue };
+        if authors.iter().any(|x| x == id) {
+            continue;
+        }
+        if ok(vendor_of("", id)) {
+            return Ok(Pick { agent: (*id).to_owned(), model: String::new() });
+        }
+        if let Some(m) = a.models.iter().find(|m| ok(vendor_of(m, id))) {
+            return Ok(Pick { agent: (*id).to_owned(), model: m.clone() });
+        }
+    }
+    Err("No harness on another vendor's model is set up here.".into())
 }
 
 /// The user's constraints (runtime's handoff extracts them), plus the task's Done when.

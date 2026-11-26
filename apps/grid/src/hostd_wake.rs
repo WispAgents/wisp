@@ -4,7 +4,9 @@
 //!   last activity are kept, and a box with nothing going on for `idleMs` is put to sleep.
 //! - **wake:** a box asleep with a task scheduled is started a little before it (`WAKE_EARLY_MS`), as a scheduled
 //!   wake (`ensure(…, wake: true)`: it doesn't count as use). After a restart the grid hands the times it kept back
-//!   (`restore`).
+//!   (`restore`). With no room it waits in line behind people (`wake queued`); a start that fails keeps the schedule
+//!   (`wake failed`) and is tried again, 30 s, 1 min, 2 min… up to 10 min apart, until an hour past the task
+//!   (`wake missed`).
 //! - **close:** the grid is stopping: nothing more starts, wake timers end, a start under way gives up and kills its
 //!   process, and every running box is stopped, so no box outlives the grid.
 use std::sync::atomic::Ordering;
@@ -38,9 +40,20 @@ impl Status {
     }
 }
 
+/// A wake that keeps failing is tried until this long past its task, then given up (and said).
+pub const WAKE_GIVE_UP_MS: i64 = 3_600_000;
+/// The longest wait between a failed wake's tries.
+pub const WAKE_RETRY_CAP_MS: i64 = 600_000;
+
 /// How long to wait before waking for a task due `at` (now `now`): a little early, never negative.
 pub fn wake_in(at: i64, now: i64) -> Duration {
     Duration::from_millis(u64::try_from(at - now - WAKE_EARLY_MS).unwrap_or(0))
+}
+
+/// The wait before a failed wake's next try (`attempt` 0 first): `base`, doubling, capped at 10 min.
+pub fn retry_in(base: i64, attempt: u32) -> Duration {
+    let ms = base.max(1).saturating_mul(1_i64 << attempt.min(20)).min(WAKE_RETRY_CAP_MS);
+    Duration::from_millis(u64::try_from(ms).unwrap_or(0))
 }
 
 impl ProcessHost {
@@ -79,22 +92,29 @@ impl ProcessHost {
                 let _ = self.stop(&id, "idle").await;
             }
         }
+        // the line moves on every tick too: who left it goes, and a start that missed its turn gets it
+        self.drain();
     }
 
     /// Wakes the box for its next scheduled task, if it has one and sleeps (replacing an earlier timer).
     pub(super) fn schedule_wake(&self, id: &str) {
+        let now = self.clock.now_ms();
+        let at = lock(&self.inst).get(id).and_then(|i| i.next_wake_at);
+        self.arm_wake(id, at.map_or(Duration::ZERO, |at| wake_in(at, now)), 0);
+    }
+
+    /// The wake timer: after `wait`, a scheduled wake (its `attempt`th try), replacing any earlier timer.
+    fn arm_wake(&self, id: &str, wait: Duration, attempt: u32) {
         if self.is_closed() {
             return;
         }
-        let now = self.clock.now_ms();
         let mut m = lock(&self.inst);
         let Some(i) = m.get_mut(id) else { return };
         if let Some(w) = i.wake.take() {
             w.abort();
         }
-        let (Some(at), Some(user), BoxState::Stopped) = (i.next_wake_at, i.user.clone(), i.state) else { return };
+        let (Some(_), Some(user), BoxState::Stopped) = (i.next_wake_at, i.user.clone(), i.state) else { return };
         let me = self.me.clone();
-        let wait = wake_in(at, now);
         let task = tokio::spawn(async move {
             tokio::time::sleep(wait).await;
             let Some(h) = me.upgrade() else { return };
@@ -106,12 +126,32 @@ impl ProcessHost {
             });
             if asleep && !h.is_closed() {
                 tracing::info!("hostd: {} wakes for its schedule", user.handle);
-                if let Err(e) = h.ensure(&user, true).await {
-                    tracing::warn!("hostd: wake {}: {e}", user.handle);
+                match h.ensure(&user, true).await {
+                    Ok(_) => {}
+                    // no room: it waits in line behind people, and starts once there's room
+                    Err(_) if h.state(&user.id) == BoxState::Queued => {}
+                    Err(e) => {
+                        tracing::warn!("hostd: wake {}: {e}", user.handle);
+                        h.wake_failed(&user, attempt);
+                    }
                 }
             }
         });
         i.wake = Some(task.abort_handle());
+    }
+
+    /// A scheduled wake that didn't start (it said `wake failed`, its schedule kept): tried again, later each time,
+    /// while its task is recent; past that the miss is said (`wake missed`) and it waits for the next open.
+    pub(super) fn wake_failed(&self, user: &BoxUser, attempt: u32) {
+        let now = self.clock.now_ms();
+        let at = lock(&self.inst).get(&user.id).and_then(|i| i.next_wake_at);
+        match at {
+            Some(at) if now <= at + WAKE_GIVE_UP_MS => self.arm_wake(&user.id, retry_in(self.o.wake_retry_ms, attempt), attempt + 1),
+            _ => {
+                tracing::warn!("hostd: {} missed its scheduled wake", user.handle);
+                self.change(user, BoxState::Stopped, "wake missed");
+            }
+        }
     }
 
     /// After a restart: the box's next scheduled task, as the grid kept it, wakes it.
@@ -128,6 +168,7 @@ impl ProcessHost {
     /// The grid is stopping: no box outlives it.
     pub(super) async fn close_boxes(&self) {
         self.closed.store(true, Ordering::SeqCst);
+        lock(&self.queue).clear();
         for i in lock(&self.inst).values_mut() {
             if let Some(w) = i.wake.take() {
                 w.abort();
@@ -163,5 +204,12 @@ mod tests {
         assert_eq!(wake_in(100_000, 0), Duration::from_secs(70));
         assert_eq!(wake_in(10_000, 0), Duration::ZERO, "due within the early margin: now");
         assert_eq!(wake_in(0, 50_000), Duration::ZERO, "already past");
+    }
+
+    #[test]
+    fn a_failed_wake_tries_again_later_each_time_up_to_ten_minutes() {
+        let s: Vec<u64> = (0..7).map(|n| retry_in(30_000, n).as_secs()).collect();
+        assert_eq!(s, [30, 60, 120, 240, 480, 600, 600]);
+        assert_eq!(retry_in(30_000, 99), Duration::from_secs(600));
     }
 }

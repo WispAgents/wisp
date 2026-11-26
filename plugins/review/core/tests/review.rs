@@ -27,7 +27,12 @@ use wisp_review_core::*;
 
 fn agents(ids: &[&str]) -> Vec<Agent> {
     ids.iter()
-        .map(|id| Agent { id: (*id).into(), name: if *id == "codex" { "Codex".into() } else { (*id).into() }, available: true })
+        .map(|id| Agent {
+            id: (*id).into(),
+            name: if *id == "codex" { "Codex".into() } else { (*id).into() },
+            available: true,
+            models: Vec::new(),
+        })
         .collect()
 }
 fn s(v: &[&str]) -> Vec<String> {
@@ -44,8 +49,8 @@ fn another_harness_than_the_author_in_a_fixed_order() {
     assert_eq!(pick_reviewer("other", &s(&["claude", "codex"]), &agents(&["claude", "codex", "copilot"])), Ok(pick("copilot")));
     assert!(pick_reviewer("other", &s(&["claude"]), &agents(&["claude"])).unwrap_err().contains("No other harness"));
     let off = vec![
-        Agent { id: "claude".into(), name: String::new(), available: true },
-        Agent { id: "codex".into(), name: String::new(), available: false },
+        Agent { id: "claude".into(), name: String::new(), available: true, models: Vec::new() },
+        Agent { id: "codex".into(), name: String::new(), available: false, models: Vec::new() },
     ];
     assert!(pick_reviewer("other", &s(&["claude"]), &off).unwrap_err().contains("No other harness"));
 }
@@ -53,7 +58,7 @@ fn another_harness_than_the_author_in_a_fixed_order() {
 #[test]
 fn a_picked_harness_reviews_even_its_own_work_off_and_missing_say_why() {
     assert_eq!(pick_reviewer("claude", &s(&["claude"]), &agents(&["claude", "codex"])), Ok(pick("claude")));
-    let missing = vec![Agent { id: "codex".into(), name: "Codex".into(), available: false }];
+    let missing = vec![Agent { id: "codex".into(), name: "Codex".into(), available: false, models: Vec::new() }];
     assert_eq!(pick_reviewer("codex", &s(&["claude"]), &missing).unwrap_err(), "Codex isn't installed here.");
     assert!(pick_reviewer("off", &[], &agents(&["claude"])).unwrap_err().contains("off"));
 }
@@ -487,4 +492,31 @@ fn property_read_review_never_keeps_more_than_20_and_sorts_by_severity() {
         assert!(f.iter().all(|x| x.line.is_none_or(|l| l > 0)));
         assert!(f.iter().all(|x| x.rule.is_none() || x.severity == Severity::High));
     }
+}
+
+fn agent(id: &str, models: &[&str]) -> Agent {
+    Agent { id: id.into(), name: id.into(), available: true, models: models.iter().map(|m| (*m).to_owned()).collect() }
+}
+
+#[test]
+fn other_vendor_never_picks_the_authors_vendor() {
+    // Claude Code wrote it: Copilot on its Claude default is the same vendor, so Codex reviews
+    let agents = vec![agent("claude", &[]), agent("copilot", &["claude-sonnet-4.5"]), agent("codex", &[])];
+    let p = pick_reviewer(OTHER_VENDOR, &["claude".into()], &agents).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((p.agent.as_str(), p.model.as_str()), ("codex", ""));
+}
+
+#[test]
+fn other_vendor_pins_a_listed_model_from_another_vendor() {
+    // only Copilot besides the author: its GPT model, pinned
+    let agents = vec![agent("claude", &[]), agent("copilot", &["claude-sonnet-4.5", "gpt-6.2"])];
+    let p = pick_reviewer(OTHER_VENDOR, &["claude".into()], &agents).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((p.agent.as_str(), p.model.as_str()), ("copilot", "gpt-6.2"));
+}
+
+#[test]
+fn other_vendor_with_none_says_why_and_never_falls_back() {
+    let agents = vec![agent("claude", &[]), agent("opencode", &["anthropic/claude-opus"]), agent("cursor", &[])];
+    let e = pick_reviewer(OTHER_VENDOR, &["claude".into()], &agents).err().unwrap_or_default();
+    assert!(e.contains("another vendor"), "{e}");
 }
