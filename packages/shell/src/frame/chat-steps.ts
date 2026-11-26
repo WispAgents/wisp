@@ -118,7 +118,7 @@ export function buildChatSteps(
       ...(e.body?.title && { title: e.body.title }),
       ...(e.body?.detail && { detail: e.body.detail }),
       ...(e.body?.file && { file: e.body.file }),
-      ...(e.body?.output ? { out: e.body.output, seq: e.seq } : o?.text ? { out: o.text, seq: o.seq } : {}),
+      ...(e.body?.output ? { out: e.body.output, seq: e.seq } : o?.text ? { out: o.text, seq: o.seq, at: e.seq } : { at: e.seq }),
     });
   }
 

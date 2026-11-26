@@ -34,6 +34,8 @@ export interface TranscriptStepRow {
   readonly file?: string;
   /** the event (its per-session seq) that carried `out`: what Reveal asks the server for */
   readonly seq?: number;
+  /** a tool's own event, when `seq` is its separate output's or it has none: what Find's server hit may name */
+  readonly at?: number;
 }
 
 type Change = Parameters<typeof changeFigures>[0][number];

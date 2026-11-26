@@ -25,6 +25,15 @@ export function fenceFor(text: string): string {
   return '`'.repeat(Math.max(3, longest + 1));
 }
 
+/** An inline code span `text` can't close: a backtick run longer than any inside it (Markdown honours no backslash
+ *  escape in a code span), padded with a space when the text starts or ends with a backtick. */
+export function codeSpan(text: string): string {
+  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
+  const tick = '`'.repeat(longest + 1);
+  const pad = text.startsWith('`') || text.endsWith('`') ? ' ' : '';
+  return `${tick}${pad}${text}${pad}${tick}`;
+}
+
 const fenced = (text: string): string => {
   const f = fenceFor(text);
   return `${f}\n${text.replace(/\n$/, '')}\n${f}`;
@@ -34,7 +43,7 @@ function stepMarkdown(a: TranscriptStepRow, index: number, env: FindEnv | undefi
   if (a.kind === 'text') return here(a.label ?? '');
   const id = stepIdOf(a, index);
   const head = `- **${here(a.title ?? a.label ?? a.kind).replace(/\s+/g, ' ').trim()}**`;
-  const cmd = a.kind === 'run' && a.detail && !(a.label ?? '').includes(a.detail.slice(0, 24)) ? `\n\n  \`${here(a.detail).replace(/`/g, '\\`')}\`` : '';
+  const cmd = a.kind === 'run' && a.detail && !(a.label ?? '').includes(a.detail.slice(0, 24)) ? `\n\n  ${codeSpan(here(a.detail).replace(/\s*\n\s*/g, ' '))}` : '';
   const shown = a.kind === 'thinking' ? a.out : stepOutput(a, env?.on() ?? true, env?.shown(id) ?? false, env?.raw(id))?.text;
   const out = shown && shown !== a.label ? `\n\n${fenced(here(shown))}` : '';
   return head + cmd + out;

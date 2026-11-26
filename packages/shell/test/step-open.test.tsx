@@ -90,3 +90,22 @@ test('reveal_opens_the_step_and_the_folded_cluster_that_holds_it', () => {
   expect(isOpen(host, 'step:2')).toBe(true);
   expect(open.wanted()).toBeUndefined();
 });
+
+test('an_opened_step_in_a_cluster_stays_open_when_coalescing_merges_the_rows_before_it', () => {
+  // a finished turn's routine steps fold; inside the cluster, identical plain steps coalesce into one "×n" row
+  const plain = (seq: number, label: string): TranscriptStepRow => ({ kind: 'tool', label, seq });
+  const open = createRoot(() => stepOpen());
+  const [steps, setSteps] = createSignal<TranscriptStepRow[]>([plain(1, 'Using x'), plain(2, 'Using y'), run(3, 'a'), run(4, 'b')]);
+  const host = mount(() => <TurnTranscript steps={steps()} changes={[]} open={open} here={(s) => s} status="done" t={(k) => k} />);
+  open.reveal('step:3');
+  expect(isOpen(host, 'step:3')).toBe(true);
+  const rowsIn = (): (string | null)[] => [...host.querySelectorAll('[data-kit="timeline-sublist"] [data-kit="timeline-step"]')].map((e) => e.getAttribute('data-anchor'));
+  expect(rowsIn()).toEqual(['step:1', 'step:2', 'step:3', 'step:4']);
+  // the second plain step now says the same as the first: the two merge into one row, every row after moves up one
+  setSteps([plain(1, 'Using x'), plain(2, 'Using x'), run(3, 'a'), run(4, 'b')]);
+  expect(rowsIn()).toEqual(['step:1', 'step:3', 'step:4']);
+  expect(step(host, 'step:1')?.textContent).toContain('×2');
+  expect(isOpen(host, 'step:3')).toBe(true);
+  // the step now in 3's old place (4) stays closed
+  expect(isOpen(host, 'step:4')).toBe(false);
+});

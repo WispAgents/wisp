@@ -3,6 +3,8 @@
 //! value Find was never shown is never found either: what matches is what the transcript would read.
 //! Pure: steps in, hits out.
 
+use std::collections::{HashMap, HashSet};
+
 use serde_json::Value;
 
 use crate::env_mask::{self, Known};
@@ -30,10 +32,25 @@ pub fn find_steps(mut steps: Vec<Value>, query: &str, mask: bool, known: Known<'
     if mask {
         env_mask::mask_steps_known(steps.iter_mut(), known);
     }
+    // A tool and its separate output are one step in the transcript, which keys it by the output's event (chat-steps.ts):
+    // searched together, one hit, with the output's seq.
+    let call = |st: &Value| st.get("callId").and_then(Value::as_str).map(str::to_owned);
+    let is = |st: &Value, k: &str| st.get("kind").and_then(Value::as_str) == Some(k);
+    let tools: HashSet<String> = steps.iter().filter(|st| is(st, "tool")).filter_map(call).collect();
+    let outputs: HashMap<String, &Value> =
+        steps.iter().filter(|st| is(st, "tool_output")).filter_map(|st| call(st).map(|c| (c, st))).collect();
     let mut out = Vec::new();
     for st in &steps {
-        let Some(seq) = st.get("seq").and_then(Value::as_u64) else { continue };
-        let hit = FIELDS.iter().filter_map(|k| st.get(*k).and_then(Value::as_str)).find_map(|text| snippet(text, &q));
+        let id = call(st);
+        if is(st, "tool_output") && id.as_ref().is_some_and(|c| tools.contains(c)) {
+            continue; // read with its tool
+        }
+        let joined = if is(st, "tool") { id.as_ref().and_then(|c| outputs.get(c)).copied() } else { None };
+        let Some(seq) = joined.unwrap_or(st).get("seq").and_then(Value::as_u64) else { continue };
+        let hit = std::iter::once(st)
+            .chain(joined)
+            .flat_map(|s| FIELDS.iter().filter_map(move |k| s.get(*k).and_then(Value::as_str)))
+            .find_map(|text| snippet(text, &q));
         if let Some(snippet) = hit {
             out.push(Found { seq, snippet });
             if out.len() >= cap {
@@ -78,6 +95,19 @@ mod tests {
         assert!(hits[0].snippet.contains("FAILED"), "{:?}", hits[0]);
         let steps = vec![json!({ "seq": 1, "t": 0, "kind": "tool", "tool": "run", "label": "Running CARGO test" })];
         assert_eq!(find_steps(steps, "cargo", true, Some(&[]), 10)[0].seq, 1);
+    }
+
+    #[test]
+    fn a_tool_and_its_separate_output_are_one_step_keyed_by_the_outputs_event() {
+        // the transcript draws one row for the call, keyed by the output's seq: a hit on the label is that row
+        let steps = vec![
+            json!({ "seq": 4, "t": 0, "kind": "tool", "tool": "run", "label": "Running cargo test", "callId": "c1" }),
+            json!({ "seq": 5, "t": 0, "kind": "tool_output", "callId": "c1", "text": "cargo says ok", "env": false }),
+        ];
+        let hits = find_steps(steps, "cargo", true, Some(&[]), 10);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert_eq!(hits[0].seq, 5);
+        assert!(hits[0].snippet.contains("Running"), "{:?}", hits[0]);
     }
 
     #[test]

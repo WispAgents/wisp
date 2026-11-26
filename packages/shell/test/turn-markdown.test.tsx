@@ -3,7 +3,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { EnvReveal } from '@wisp/ui';
-import { fenceFor, turnMarkdown } from '../src/frame/turn-markdown.ts';
+import { codeSpan, fenceFor, turnMarkdown } from '../src/frame/turn-markdown.ts';
 import { TurnTranscript, type TranscriptStepRow } from '../src/frame/TurnTranscript.tsx';
 import type { FindEnv } from '../src/frame/task-find.ts';
 
@@ -47,6 +47,17 @@ test('the_fence_is_three_backticks_at_least_and_one_more_than_the_longest_run', 
   expect(fenceFor('plain')).toBe('```');
   expect(fenceFor('a ``` b')).toBe('````');
   expect(fenceFor('``````')).toBe('```````');
+});
+
+test('a_command_holding_backticks_is_a_code_span_its_backticks_cannot_close', () => {
+  // Markdown takes no backslash escape inside a code span: a longer run of backticks around it is what keeps it whole
+  expect(codeSpan('npm test')).toBe('`npm test`');
+  // ends in a backtick: a space each side, so the closing run stays two long
+  expect(codeSpan('echo `date`')).toBe('`` echo `date` ``');
+  expect(codeSpan('a `` b')).toBe('```a `` b```');
+  const md = turnMarkdown({ prompt: 'p', steps: [{ kind: 'run', label: 'Printing the date', detail: 'echo `date`', out: 'Tue', seq: 1 }], words });
+  expect(md).toContain('\n\n  `` echo `date` ``');
+  expect(md).not.toContain('\\`');
 });
 
 test('a_steps_copy_copies_the_masked_text_while_hidden_and_the_value_after_reveal', async () => {

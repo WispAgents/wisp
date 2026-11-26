@@ -40,6 +40,8 @@ export interface FindHit {
   /** the step's id in its turn (step-open.ts); a server hit has its event's seq only */
   readonly stepId?: string;
   readonly seq?: number;
+  /** a loaded tool row's own event when `seq` is its output's or it has none (TranscriptStepRow.at) */
+  readonly at?: number;
   readonly snippet?: string;
 }
 
@@ -60,7 +62,7 @@ export function findInTurns(turns: readonly FindTurn[], query: string): FindHit[
     if (t.stub) continue;
     t.steps.forEach((a, i) => {
       const id = stepIdOf(a, i);
-      if (stepTexts(a, id, t.env).some((s) => s.toLowerCase().includes(q))) out.push({ turnId: t.turnId, stepId: id, ...(a.seq !== undefined && { seq: a.seq }) });
+      if (stepTexts(a, id, t.env).some((s) => s.toLowerCase().includes(q))) out.push({ turnId: t.turnId, stepId: id, ...(a.seq !== undefined && { seq: a.seq }), ...(a.at !== undefined && { at: a.at }) });
     });
   }
   return out;
@@ -74,8 +76,10 @@ export function mergeHits(turns: readonly FindTurn[], local: readonly FindHit[],
   return turns.flatMap((t) => of.get(t.turnId) ?? []);
 }
 
-/** Where to go once a stubbed turn's hit landed whole: its step by the same event, else the turn's first hit. */
+/** Where to go once a stubbed turn's hit landed whole: its step by the same event, else the turn's first hit. The
+ *  server keys a tool with a separate output by the output's event, as the row does (step_find.rs); a tool's own event
+ *  (`at`) is matched too, so a tool row with no output (its id `index:<n>`) is still found. */
 export function landed(hits: readonly FindHit[], was: FindHit): number {
-  const i = hits.findIndex((h) => h.turnId === was.turnId && h.stepId !== undefined && was.seq !== undefined && h.seq === was.seq);
+  const i = was.seq === undefined ? -1 : hits.findIndex((h) => h.turnId === was.turnId && h.stepId !== undefined && (h.seq === was.seq || h.at === was.seq));
   return i >= 0 ? i : hits.findIndex((h) => h.turnId === was.turnId && h.stepId !== undefined);
 }

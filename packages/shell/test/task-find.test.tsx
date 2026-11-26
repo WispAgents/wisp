@@ -5,6 +5,7 @@ import { createRoot } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { ShellContext } from '../src/contract.ts';
 import { allowed } from '../src/keys.ts';
+import { buildChatSteps, type RawTurnEvent } from '../src/frame/chat-steps.ts';
 import { stepOpen } from '../src/frame/step-open.ts';
 import TaskFind from '../src/frame/TaskFind.tsx';
 import { findInTurns, landed, mergeHits, type FindEnv, type FindHit, type FindTurn } from '../src/frame/task-find.ts';
@@ -52,6 +53,26 @@ test('a_stubs_hits_are_the_servers_in_turn_order_and_its_own_take_over_once_it_l
   expect(all.map((h) => h.turnId)).toEqual(['old', 'new', 'new', 'new', 'new']);
   const now = mergeHits([{ turnId: 'old', stub: false, steps: rows }], findInTurns([{ turnId: 'old', stub: false, steps: rows }], 'zebra'), remote);
   expect(now[landed(now, remote[0]!)]?.stepId).toBe('step:3');
+});
+
+test('a_servers_hit_on_a_tools_label_lands_on_that_step_when_its_output_is_a_separate_event_or_it_has_none', () => {
+  // three matching tool calls: two with a separate tool_output (the row is keyed by the output's seq), one with none
+  const events: RawTurnEvent[] = [
+    { seq: 10, kind: 'tool', body: { tool: 'run', label: 'Running zebra one', callId: 'c1' } },
+    { seq: 11, kind: 'tool_output', body: { callId: 'c1', text: 'ok' } },
+    { seq: 12, kind: 'tool', body: { tool: 'run', label: 'Running zebra two', callId: 'c2' } },
+    { seq: 13, kind: 'tool_output', body: { callId: 'c2', text: 'ok' } },
+    { seq: 14, kind: 'tool', body: { tool: 'run', label: 'Running zebra three', callId: 'c3' } },
+  ];
+  const steps = buildChatSteps(events, [], { chatMode: false, toolCalls: 'showAll', showThinking: true, running: false });
+  const turns: FindTurn[] = [{ turnId: 'old', stub: false, steps }];
+  const now = mergeHits(turns, findInTurns(turns, 'zebra'), []);
+  expect(now.map((h) => h.stepId)).toEqual(['step:11', 'step:13', 'index:2']);
+  // the server names a tool with a separate output by the output's event (step_find.rs)
+  expect(now[landed(now, { turnId: 'old', seq: 13, snippet: 'zebra two' })]?.stepId).toBe('step:13');
+  // and by the tool's own event: an older server, or a tool with no output at all
+  expect(now[landed(now, { turnId: 'old', seq: 12 })]?.stepId).toBe('step:13');
+  expect(now[landed(now, { turnId: 'old', seq: 14 })]?.stepId).toBe('index:2');
 });
 
 test('mod_f_is_wisps_own_a_user_plugin_cannot_take_it', () => {
