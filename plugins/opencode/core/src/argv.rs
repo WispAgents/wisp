@@ -38,8 +38,16 @@ pub struct OpencodeArgs<'a> {
 }
 
 pub fn args(a: &OpencodeArgs<'_>) -> Vec<String> {
-    let mut out: Vec<String> =
-        ["run", "--format", "json", "--print-logs", "--log-level", if a.v2 { "error" } else { "ERROR" }].map(str::to_owned).to_vec();
+    let mut out: Vec<String> = vec!["run".to_owned()];
+    // opencode 2's `run` attaches to the one background service on the machine (127.0.0.1:49374) when one is up (the
+    // user's own opencode, or `opencode models` from wisp's harness detection), and that service keeps the config it
+    // started with: the run's OPENCODE_CONFIG_CONTENT, so wisp's MCP servers (wisp, computer, a connector, the browser),
+    // its grants and its permission rules, never reached the agent. `--standalone` gives the run a private server with
+    // its own config (sessions stay in the same store, so `--session` resumes), and its server logs on stderr.
+    if a.v2 {
+        out.push("--standalone".to_owned());
+    }
+    out.extend(["--format", "json", "--print-logs", "--log-level", if a.v2 { "error" } else { "ERROR" }].map(str::to_owned));
     let mut push = |x: &[&str]| out.extend(x.iter().map(|s| (*s).to_owned()));
     if a.mode == "plan" {
         push(&["--agent", "plan"]);
@@ -162,7 +170,20 @@ mod tests {
     #[test]
     fn v2_puts_the_effort_on_the_model() {
         let a = args(&OpencodeArgs { mode: "edits", model: "fake/m", effort: "high", v2: true, ..OpencodeArgs::default() });
-        assert_eq!(a, ["run", "--format", "json", "--print-logs", "--log-level", "error", "--model", "fake/m#high"]);
+        assert_eq!(a, ["run", "--standalone", "--format", "json", "--print-logs", "--log-level", "error", "--model", "fake/m#high"]);
+    }
+
+    /// opencode 2.4.1: with a background service already up (the user's own opencode, or `opencode models`), `run`
+    /// attached to it and its MCP servers came from that service's config, never the run's: wisp's tools went missing
+    /// (no request reached `/api/mcp`). A private server per run reads the run's own config. opencode 1 has no flag.
+    #[test]
+    fn v2_runs_on_a_private_server_so_its_own_config_and_mcp_servers_apply() {
+        let v2 = args(&OpencodeArgs { mode: "auto", v2: true, ..OpencodeArgs::default() });
+        assert_eq!(v2.get(1).map(String::as_str), Some("--standalone"), "{v2:?}");
+        let resumed = args(&OpencodeArgs { mode: "edits", resume_id: Some("ses_1"), v2: true, ..OpencodeArgs::default() });
+        assert!(resumed.contains(&"--standalone".to_owned()) && resumed.contains(&"ses_1".to_owned()), "a follow-up too: {resumed:?}");
+        let v1 = args(&OpencodeArgs { mode: "auto", ..OpencodeArgs::default() });
+        assert!(!v1.contains(&"--standalone".to_owned()), "opencode 1 has no such flag: {v1:?}");
     }
 
     #[test]
