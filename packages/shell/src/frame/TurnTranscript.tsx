@@ -3,8 +3,8 @@
 // already its label, what it printed or the error in full behind a chevron), the agent's messages as prose, and
 // where the turn ended. The answer follows it (TaskView). What a step printed of a .env file (`cat .env`) reads
 // KEY=•••• under v1's Reveal line (env-reveal.ts keeps what's shown, per task).
-import { Index, Show, createEffect, createMemo, type JSX } from 'solid-js';
-import { Answer, EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineGroup, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type BlockContext, type EnvReveal, type IconName } from '@wisp/ui';
+import { Index, Show, createEffect, createMemo, createSignal, type JSX } from 'solid-js';
+import { Answer, Button, EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineGroup, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type BlockContext, type EnvReveal, type IconName } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { parseInlineChatBlocks } from './chat-blocks.ts';
 import { changeFigures } from './rows-view.ts';
@@ -36,6 +36,8 @@ export interface TranscriptStepRow {
   readonly seq?: number;
   /** a tool's own event, when `seq` is its separate output's or it has none: what Find's server hit may name */
   readonly at?: number;
+  /** `out` is the start and end of a longer output the server keeps whole: Show all asks for it (`runtime.fullOutput`) */
+  readonly full?: { readonly lines: number };
 }
 
 type Change = Parameters<typeof changeFigures>[0][number];
@@ -52,6 +54,10 @@ export function stepOutput(a: TranscriptStepRow, maskOn: boolean, shown: boolean
   return { text: shown ? (raw ?? (a.out.includes(DOTS) ? masked : a.out)) : masked, env };
 }
 
+/** Asks the server for a step's whole output by the event that carried it (`runtime.fullOutput`); rejects with nothing
+ *  more to show (the caller says why). */
+export type WholeOutput = (seq: number) => Promise<string>;
+
 type FileFigures = ReadonlyMap<string, { readonly plus: number; readonly minus: number }>;
 
 /** An agent's message mid-turn: Markdown, or (chat mode) an Answer once it holds a ```wisp fence. The Answer draws
@@ -66,6 +72,27 @@ export function MessageBody(props: { readonly text: string; readonly here: (s: s
   );
 }
 
+/** An opened step's "Show all N lines": asks for the whole output only when pressed, busy until it comes. */
+function ShowAll(props: { readonly lines: number; readonly seq: number; readonly whole: WholeOutput; readonly got: (seq: number, text: string) => void; readonly t: ShellContext['t'] }): JSX.Element {
+  const [fetching, setFetching] = createSignal(false);
+  const ask = (): void => {
+    const seq = props.seq;
+    setFetching(true);
+    props.whole(seq).then(
+      (text) => {
+        setFetching(false);
+        props.got(seq, text);
+      },
+      () => setFetching(false),
+    );
+  };
+  return (
+    <Button part="turn.transcript.showAll" variant="link" size="xs" loading={fetching()} onClick={ask}>
+      {props.t('shell.task.showAllLines', { n: props.lines })}
+    </Button>
+  );
+}
+
 function Step(props: {
   readonly a: TranscriptStepRow;
   readonly index: number;
@@ -73,8 +100,12 @@ function Step(props: {
   readonly here: (s: string) => string;
   readonly env: EnvReveal | undefined;
   readonly open: StepOpen;
+  readonly whole: WholeOutput | undefined;
   readonly t: ShellContext['t'];
 }): JSX.Element {
+  // a clipped output's whole text, fetched only when Show all is pressed (audit F8), kept by the turn for the step it
+  // was asked of (step-open.ts): the finished transcript keeps what the live one fetched, Find and Copy read it
+  const wholeText = (): string | undefined => (props.a.seq !== undefined && !out()?.env ? props.open.whole(props.a.seq) : undefined);
   // Read props.a and props.figures reactively: <Index> keeps this Step mounted while live tool_output/changes arrive.
   // Open is the turn's (step-open.ts), by this id: a Step under <Index> is a place, and the step in it can change.
   const id = (): string => stepIdOf(props.a, props.index);
@@ -106,7 +137,8 @@ function Step(props: {
         expanded: open(),
         onToggle: () => props.open.toggle(id()),
         // Copy takes what the step shows: masked until Reveal, Reveal's copy after (stepOutput)
-        ...(more() !== undefined && { copy: () => props.here(out()?.text ?? more() ?? '') }),
+        // and the whole output once Show all fetched it
+        ...(more() !== undefined && { copy: () => props.here(wholeText() ?? out()?.text ?? more() ?? '') }),
         detail: () => {
           const m = more();
           return m === undefined ? null : (
@@ -120,7 +152,10 @@ function Step(props: {
                   onToggle={(on) => props.env?.set(id(), on)}
                 />
               </Show>
-              <pre>{props.here(out()?.text ?? m)}</pre>
+              <pre>{props.here(wholeText() ?? out()?.text ?? m)}</pre>
+              <Show when={props.a.seq !== undefined && props.whole && !out()?.env && wholeText() === undefined ? props.a.full : undefined}>
+                {(full) => <ShowAll lines={full().lines} seq={props.a.seq ?? 0} whole={props.whole!} got={(seq, text) => props.open.setWhole(seq, text)} t={t} />}
+              </Show>
             </>
           );
         },
@@ -133,6 +168,8 @@ export function TurnTranscript(props: {
   readonly steps: readonly TranscriptStepRow[];
   /** masked .env output shown (Reveal), per task; without it the output stays masked */
   readonly env?: EnvReveal;
+  /** a clipped step's whole output, on Show all; without it the step shows what it kept */
+  readonly whole?: WholeOutput;
   readonly changes: readonly Change[];
   readonly here: (s: string) => string;
   readonly status: string;
@@ -214,7 +251,7 @@ export function TurnTranscript(props: {
               return (
                 <Show
                   when={s().kind === 'text' || s().kind === 'thinking'}
-                  fallback={<Step a={s()} index={idx()} figures={figuresByFile()} here={props.here} env={props.env} open={open} t={t} />}
+                  fallback={<Step a={s()} index={idx()} figures={figuresByFile()} here={props.here} env={props.env} open={open} whole={props.whole} t={t} />}
                 >
                   <TimelineMessage anchor={stepIdOf(s(), idx())}>
                     <MessageBody text={(s().kind === 'thinking' ? s().out : undefined) ?? s().label ?? ''} here={props.here} chat={props.chat === true} answerCtx={props.answerCtx} />
@@ -237,7 +274,7 @@ export function TurnTranscript(props: {
                 >
                   {g().rest.length > 0 ? (
                     <Index each={g().rest}>
-                      {(it) => <Step a={it().step} index={it().index} figures={figuresByFile()} here={props.here} env={props.env} open={open} t={t} />}
+                      {(it) => <Step a={it().step} index={it().index} figures={figuresByFile()} here={props.here} env={props.env} open={open} whole={props.whole} t={t} />}
                     </Index>
                   ) : undefined}
                 </TimelineGroup>

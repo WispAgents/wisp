@@ -21,7 +21,7 @@ use crate::rows::UserRow;
 
 #[path = "accounts_devices.rs"]
 mod devices;
-pub use devices::{CODE_TTL_MS, INTERVAL_S, Poll, Revoked, computer_slug, normal_code};
+pub use devices::{CODE_TTL_MS, INTERVAL_S, LIVE_CODES, LIVE_CODES_PER_IP, Pending, Poll, Revoked, computer_slug, normal_code};
 
 const DAY: i64 = 24 * 3_600_000;
 const SESSION_MS: i64 = 30 * DAY;

@@ -66,6 +66,8 @@ impl CodexParser {
     fn item(&mut self, item: &Value, phase: &str, out: &mut Vec<Out>) {
         let ty = js::str_ref(js::or(&item["type"], &item["item_type"]));
         let id = || js::str(&item["id"]);
+        // a failed call's error names the call it ends (the app shows it as that call's output), when the item has an id
+        let item_id = || Some(id()).filter(|i| !i.is_empty());
         let mut ev = |e: HarnessEvent| out.push(e.into());
         match (phase, ty) {
             ("started", "command_execution") => {
@@ -105,8 +107,9 @@ impl CodexParser {
                 let failed = item["status"] == "failed" || (!code.is_null() && code.as_f64() != Some(0.0));
                 let output = js::str(&item["aggregated_output"]);
                 if failed {
+                    // whole: the runtime keeps its start and end (`clip_output`), and the end is what says why it failed
                     let text = if output.is_empty() { format!("exit {}", js::string(code)) } else { output };
-                    ev(HarnessEvent::ToolError { name: Some(clip(&unwrap_shell(&item["command"]), 40)), text: clip(&text, 400), id: None });
+                    ev(HarnessEvent::ToolError { name: Some(clip(&unwrap_shell(&item["command"]), 40)), text, id: item_id() });
                 } else if !output.is_empty() {
                     ev(HarnessEvent::ToolOutput { id: id(), text: output });
                 }
@@ -124,8 +127,12 @@ impl CodexParser {
                 }
                 if item["status"] == "failed" {
                     out.push(
-                        HarnessEvent::ToolError { name: Some("apply_patch".into()), text: "The patch did not apply.".into(), id: None }
-                            .into(),
+                        HarnessEvent::ToolError {
+                            name: Some("apply_patch".into()),
+                            text: "The patch did not apply.".into(),
+                            id: item_id(),
+                        }
+                        .into(),
                     );
                 }
             }
@@ -135,8 +142,8 @@ impl CodexParser {
                     let name = format!("{}.{}", js::str(&item["server"]), js::str(&item["tool"]));
                     ev(HarnessEvent::ToolError {
                         name: Some(name),
-                        text: clip(if msg.is_empty() { "failed" } else { &msg }, 400),
-                        id: None,
+                        text: if msg.is_empty() { "failed".into() } else { msg },
+                        id: item_id(),
                     });
                 } else if js::truthy(&item["result"]["content"]) {
                     ev(HarnessEvent::ToolOutput { id: id(), text: flatten(&item["result"]["content"]) });
@@ -277,5 +284,30 @@ mod tests {
         let Some(Out::Event(HarnessEvent::Result(r))) = out.last() else { panic!("result") };
         assert!(r.is_error);
         assert_eq!(r.text, "quota");
+    }
+
+    #[test]
+    fn a_failed_command_keeps_its_tail_and_names_its_call() {
+        // audit F2/F3: the error was cut to 400 characters and named no call
+        let mut p = CodexParser::new(CodexOptions::default());
+        let mut out = Vec::new();
+        let output = format!("{}assertion failed: TAIL_MARKER", "running test …\n".repeat(350));
+        let line = json!({"type":"item.completed","item":{"id":"item_7","type":"command_execution","command":"cargo test","aggregated_output":output,"exit_code":1,"status":"failed"}});
+        p.line(&line.to_string(), 0, &mut out);
+        let Some(Out::Event(HarnessEvent::ToolError { text, id, .. })) = out.last() else { panic!("an error") };
+        assert!(text.len() > 4000 && text.ends_with("TAIL_MARKER"));
+        assert_eq!(id.as_deref(), Some("item_7"));
+    }
+
+    #[test]
+    fn a_failed_mcp_call_names_its_call() {
+        let mut p = CodexParser::new(CodexOptions::default());
+        let mut out = Vec::new();
+        let msg = format!("{}TAIL_MARKER", "x".repeat(900));
+        let line = json!({"type":"item.completed","item":{"id":"item_8","type":"mcp_tool_call","server":"gh","tool":"search","status":"failed","error":{"message":msg}}});
+        p.line(&line.to_string(), 0, &mut out);
+        let Some(Out::Event(HarnessEvent::ToolError { text, id, .. })) = out.last() else { panic!("an error") };
+        assert!(text.ends_with("TAIL_MARKER"));
+        assert_eq!(id.as_deref(), Some("item_8"));
     }
 }

@@ -105,7 +105,8 @@ impl Runtime {
             sid,
             tid,
             prose,
-            head: Head::seeded(known),
+            // a turn's steps name their clipped outputs' whole text, kept in the store's blobs (`keep_full`)
+            head: Head { keep_full: true, ..Head::seeded(known) },
             seq,
             coal: self.coalescer(),
             finished: false,
@@ -260,6 +261,7 @@ impl Runtime {
                 Effect::Append(a) => {
                     // a tool's result is something to read now (and the next step waits on it): no window
                     now |= matches!(a, Activity::ToolOutput { .. } | Activity::ToolError { .. } | Activity::Tool { output: Some(_), .. });
+                    self.keep_full(&d.sid, d.head.take_full());
                     let step = self.append(d, a);
                     d.pending.push(step);
                 }
@@ -295,6 +297,19 @@ impl Runtime {
                 Coalescer::new(&self.repo.store, CoalescerOptions { interval_ms: ACTIVITY_WINDOW_MS, ..CoalescerOptions::default() })
             })
             .clone()
+    }
+
+    /// A clipped output's whole text into the store's blobs (once per content), held by its task (`runtime.session`, let
+    /// go when the task is deleted): off the event loop, as a screenshot is. `runtime.fullOutput` reads it back.
+    fn keep_full(&self, sid: &str, texts: Vec<String>) {
+        for text in texts {
+            let (store, owner) = (self.repo.store.clone(), (crate::full_output::FULL_OWNER.to_owned(), sid.to_owned()));
+            self.host.spawn(Box::pin(async move {
+                if let Err(e) = store.put_blob(text.into_bytes(), Some(owner)).await {
+                    tracing::warn!(error = %e, "keeping a step's whole output");
+                }
+            }));
+        }
     }
 
     fn append(&self, d: &mut Drive, a: Activity) -> Step {

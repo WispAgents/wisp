@@ -5,7 +5,8 @@ import { render } from 'solid-js/web';
 import type { EnvReveal } from '@wisp/ui';
 import { codeSpan, fenceFor, turnMarkdown } from '../src/frame/turn-markdown.ts';
 import { TurnTranscript, type TranscriptStepRow } from '../src/frame/TurnTranscript.tsx';
-import type { FindEnv } from '../src/frame/task-find.ts';
+import { stepOpen } from '../src/frame/step-open.ts';
+import { findInTurns, type FindEnv } from '../src/frame/task-find.ts';
 
 let dispose: (() => void) | undefined;
 afterEach(() => {
@@ -81,4 +82,40 @@ test('a_steps_copy_copies_the_masked_text_while_hidden_and_the_value_after_revea
   host.querySelector<HTMLButtonElement>('button[data-kit="timeline-row"]')?.click();
   host.querySelector<HTMLButtonElement>('[data-kit="timeline-copy"] button')?.click();
   expect(writeText).toHaveBeenLastCalledWith('API_KEY=sk-live-1');
+});
+
+// #961 x #959: a clipped step's whole output, once Show all fetched it, is what its Copy, Copy turn and Find read
+test('a_clipped_steps_whole_output_once_fetched_is_what_copy_copy_turn_and_find_read_and_its_finished_transcript_keeps', async () => {
+  const writeText = vi.fn(() => Promise.resolve());
+  vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+  const clipped: TranscriptStepRow = { kind: 'run', label: 'npm test', out: 'HEAD\n… 1 lines cut …\nTAIL', seq: 7, full: { lines: 3 } };
+  const open = stepOpen();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const draw = (): void => {
+    dispose = render(
+      () => <TurnTranscript steps={[clipped]} changes={[]} here={(s) => s} status="done" open={open} whole={() => Promise.resolve('HEAD\nthe needle\nTAIL')} t={(k) => k} />,
+      host,
+    );
+  };
+  draw();
+  host.querySelector<HTMLButtonElement>('button[data-kit="timeline-row"]')?.click();
+  const fenv: FindEnv = { on: () => true, shown: () => false, raw: () => undefined, whole: open.whole };
+  expect(findInTurns([{ turnId: 't', stub: false, steps: [clipped], env: fenv }], 'needle'), 'the clipped text is all Find sees').toEqual([]);
+  host.querySelector<HTMLButtonElement>('[data-kit="timeline-copy"] button')?.click();
+  expect(writeText).toHaveBeenLastCalledWith('HEAD\n… 1 lines cut …\nTAIL');
+  host.querySelector<HTMLButtonElement>('[data-part="turn.transcript.showAll"]')?.click();
+  await Promise.resolve();
+  await Promise.resolve();
+  host.querySelector<HTMLButtonElement>('[data-kit="timeline-copy"] button')?.click();
+  expect(writeText).toHaveBeenLastCalledWith('HEAD\nthe needle\nTAIL');
+  expect(findInTurns([{ turnId: 't', stub: false, steps: [clipped], env: fenv }], 'needle').map((h) => h.stepId)).toEqual(['step:7']);
+  expect(turnMarkdown({ prompt: 'p', steps: [clipped], env: fenv, words })).toContain('the needle');
+  // the turn's other transcript (live, then finished) draws it whole too, with no Show all again
+  dispose?.();
+  host.innerHTML = '';
+  draw();
+  // still open: the turn's store keeps it (step-open.ts)
+  expect(host.textContent).toContain('the needle');
+  expect(host.querySelector('[data-part="turn.transcript.showAll"]')).toBeNull();
 });

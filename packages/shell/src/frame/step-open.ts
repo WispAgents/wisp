@@ -18,11 +18,16 @@ export interface StepOpen {
   /** the step a transcript is asked to bring into sight, once: it opens the cluster holding it and takes it */
   wanted(): string | undefined;
   took(id: string): void;
+  /** a clipped step's whole output, once its Show all fetched it (`runtime.fullOutput`), by the event that carried it:
+   *  the turn's, so its finished transcript keeps what its live one fetched, and Find and Copy read what is shown */
+  whole(seq: number): string | undefined;
+  setWhole(seq: number, text: string): void;
 }
 
 export function stepOpen(): StepOpen {
   const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());
   const [want, setWant] = createSignal<string | undefined>(undefined);
+  const [wholes, setWholes] = createSignal<ReadonlyMap<number, string>>(new Map());
   const openAll = (ids: readonly string[]): void => {
     if (ids.every((id) => open().has(id))) return;
     setOpen((prev) => new Set([...prev, ...ids]));
@@ -45,5 +50,7 @@ export function stepOpen(): StepOpen {
     took: (id) => {
       if (want() === id) setWant(undefined);
     },
+    whole: (seq) => wholes().get(seq),
+    setWhole: (seq, text) => setWholes((prev) => new Map(prev).set(seq, text)),
   };
 }

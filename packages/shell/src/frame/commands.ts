@@ -515,6 +515,15 @@ export const searchTask = defineCommand<
   optimistic: 'none',
   pending: "Find's count, which says it is still looking",
 });
+/** A clipped step's whole output (audit F8): the step keeps its start and end, and the server keeps the rest once,
+ *  asked for only when the opened step's Show all is pressed. Masked as the step is (ADR-0050). */
+export const fullOutput = defineCommand<{ id: string; turnId: string; step: number }, { text: string }>({
+  id: 'runtime.fullOutput',
+  owner: (a) => a.id,
+  wire: (a) => ({ id: bare(a.id), turnId: bare(a.turnId), step: a.step }),
+  optimistic: 'none',
+  pending: 'the Show all button, busy at once; the clipped output stays until the whole one arrives',
+});
 /** A `blocked` block's Allow & retry / Deny. */
 export const approveBlocked = defineCommand<{ id: string; turnId: string; allow: boolean }, unknown>({
   id: 'runtime.approveBlocked',

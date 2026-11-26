@@ -267,6 +267,12 @@
         "uiOnly": "Find in task (mod+f) over the turns the window sends as stubs; an agent reads a task's turns with wisp_session"
       },
       {
+        "id": "runtime.fullOutput",
+        "title": "A step's whole output, when the transcript kept only its start and end",
+        "readOnly": true,
+        "uiOnly": "the Show all button on an opened step; an agent reads its own commands' output"
+      },
+      {
         "id": "runtime.compact",
         "title": "Compact the conversation"
       },

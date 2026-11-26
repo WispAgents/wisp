@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { applyPlatformLook, platformLook } from '../src/platform/look.ts';
 import { detectPlatform, nativeSeams, nullPlatform } from '../src/platform/index.ts';
 import { loadPlatform } from '../src/platform/load.ts';
+import type { SessionId, Target } from '@wisp/client';
 import type { BackEvent, CapacitorGlobal, PlatformWindow, Rect } from '../src/platform/types.ts';
 
 interface Fake extends PlatformWindow {
@@ -260,5 +261,96 @@ describe('share in the Android app', () => {
     const old = fakeWindow({ cap: native('android', { WispSsh: { share: () => Promise.reject(new Error('not implemented')) } }) });
     expect(await detectPlatform(old).share({ text: 'x' })).toBe('unsupported');
     expect(await detectPlatform(fakeWindow({ cap: native('android') })).share({ text: 'x' })).toBe('unsupported');
+  });
+});
+
+// A phone's browser and the installed web app: Chrome on Android has no `new Notification` (it throws 'Illegal
+// constructor'), so no task's note ever showed there, and notify rejected. A page the worker controls shows it through
+// the worker's registration, with the task's link for the tap (sw.ts notificationclick); the worker's `{t:'open'}`
+// back is the onOpen listeners'.
+describe('notifications in the browser', () => {
+  type Shown = { title: string; o: NotificationOptions & { data?: unknown } };
+  function swWindow(o: { controller: boolean; constructs?: () => void }) {
+    const shown: Shown[] = [];
+    const closed: string[] = [];
+    const msg = new Set<(e: MessageEvent<unknown>) => void>();
+    const built: string[] = [];
+    class FakeNote {
+      static permission = 'granted';
+      static requestPermission = async () => 'granted';
+      onclick: (() => void) | null = null;
+      constructor(title: string) {
+        o.constructs?.();
+        built.push(title);
+      }
+      close(): void {}
+    }
+    const registration = {
+      showNotification: async (title: string, opts: Shown['o']) => void shown.push({ title, o: opts }),
+      getNotifications: async (q?: { tag?: string }) => [{ close: () => void closed.push(q?.tag ?? '') }],
+    };
+    const serviceWorker = { controller: o.controller ? {} : null, ready: Promise.resolve(registration), addEventListener: (_t: string, fn: (e: MessageEvent<unknown>) => void) => void msg.add(fn) };
+    const base = fakeWindow({ width: 390, coarse: true });
+    const w: PlatformWindow = { ...base, navigator: { ...base.navigator, serviceWorker } as unknown as Navigator, Notification: FakeNote as unknown as typeof Notification };
+    return { w, shown, built, closed, post: (data: unknown) => msg.forEach((fn) => fn({ data } as MessageEvent<unknown>)) };
+  }
+
+  it('a_page_the_worker_controls_shows_the_note_through_its_registration_with_the_tasks_link', async () => {
+    const f = swWindow({ controller: true });
+    const p = detectPlatform(f.w);
+    expect(await p.notify({ title: 'Fix login', body: 'Done', tag: 'p:s1', target: { to: 'main', main: { kind: 'task', id: 'p:s1' as SessionId } } })).toBe('shown');
+    expect(f.shown).toEqual([{ title: 'Fix login', o: { body: 'Done', tag: 'p:s1', data: { url: '/task/p%3As1' } } }]);
+    expect(f.built, 'never the constructor').toEqual([]);
+    // opening the task takes it away again
+    await p.clearNote?.('p:s1');
+    expect(f.closed).toEqual(['p:s1']);
+  });
+
+  it('a_constructor_that_throws_answers_unsupported_and_never_rejects', async () => {
+    const f = swWindow({
+      controller: false,
+      constructs: () => {
+        throw new TypeError("Failed to construct 'Notification': Illegal constructor.");
+      },
+    });
+    await expect(detectPlatform(f.w).notify({ title: 'x', tag: 't' })).resolves.toBe('unsupported');
+  });
+
+  it('the_workers_open_message_reaches_the_onOpen_listeners_as_a_target', () => {
+    const f = swWindow({ controller: true });
+    const seen: Target[] = [];
+    detectPlatform(f.w).onOpen((t) => seen.push(t));
+    f.post({ t: 'open', url: '/task/p%3As1' });
+    f.post({ t: 'update' });
+    f.post({ t: 'open', url: '/task/p%3As2?side=changes%3Ap%3As2' });
+    expect(seen).toEqual([
+      { to: 'main', main: { kind: 'task', id: 'p:s1' } },
+      { to: 'side', main: { kind: 'task', id: 'p:s2' }, side: { kind: 'changes', id: 'p:s2' } },
+    ]);
+  });
+});
+
+// The Android app posted every note under a random id, so a task's later note sat beside its earlier one, and none
+// went when you opened the task: the tag is the id now, and the app's plugin takes a note away by it
+describe('notifications in the Android app', () => {
+  it('a_notes_tag_is_its_id_and_a_note_without_one_gets_a_string_id', async () => {
+    const scheduled: { id: unknown }[] = [];
+    const removed: unknown[] = [];
+    const w = fakeWindow({
+      cap: native('android', {
+        LocalNotifications: {
+          schedule: async (a) => void scheduled.push(...(a as { notifications: { id: unknown }[] }).notifications),
+          removeDelivered: async (a) => void removed.push(a),
+        },
+      }),
+    });
+    const p = detectPlatform(w);
+    expect(await p.notify({ title: 'a', tag: 'task-1' })).toBe('shown');
+    expect(await p.notify({ title: 'b', tag: 'task-1' })).toBe('shown');
+    expect(await p.notify({ title: 'c' })).toBe('shown');
+    expect(scheduled.map((n) => n.id).slice(0, 2)).toEqual(['task-1', 'task-1']);
+    expect(typeof scheduled[2]?.id).toBe('string');
+    await p.clearNote?.('task-1');
+    expect(removed).toEqual([{ notifications: [{ id: 'task-1' }] }]);
   });
 });

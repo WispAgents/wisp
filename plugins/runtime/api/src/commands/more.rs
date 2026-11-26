@@ -137,6 +137,24 @@ pub struct RevealArgs {
     pub path: String,
 }
 
+/// A step's whole output, when the step kept only its start and end (`Activity` `full`): the step by its event `step`
+/// (seq) of the task's turn. Masked as the step is (ADR-0050): an output that read a .env file never has one, and a
+/// quote of a value the task read leaves as `••••` unless Hide .env values is off. Additive (2026-11-26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct FullOutputArgs {
+    pub id: SessionId,
+    pub turn_id: TurnId,
+    pub step: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct FullOutputText {
+    pub text: String,
+}
+
 /// Reveal one masked .env item of a turn as it is (ADR-0050, v1 GET /sessions/:id/unmasked): a step's output by its
 /// event `step` (seq), an answer `block` by its index, or the captured change to `file`. Exactly one. Refused to a
 /// capped agent and to a share page's caller; answers `not_found` for an item that isn't masked. Additive (2026-11-13).

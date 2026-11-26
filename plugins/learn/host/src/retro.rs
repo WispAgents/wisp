@@ -76,7 +76,7 @@ fn turn_read(t: &Turn, steps: &[Step]) -> TurnRead {
             })),
             Activity::Tool { tool: ToolKind::Ask, label, hide, .. } => Some(Trail::Ask(masked(label, hide.get("label")))),
             Activity::Tool { tool: ToolKind::Answer, label, hide, .. } => Some(Trail::Answer(masked(label, hide.get("label")))),
-            Activity::ToolError { name, text, hide } => Some(Trail::Failed(format!("{name}: {}", masked(text, Some(hide))))),
+            Activity::ToolError { name, text, hide, .. } => Some(Trail::Failed(format!("{name}: {}", masked(text, Some(hide))))),
             _ => None,
         })
         .collect();
@@ -256,10 +256,11 @@ mod tests {
             output: None,
             title: None,
             hide: std::collections::BTreeMap::new(),
+            full: None,
         };
         let steps = [
             step(tool(ToolKind::Run, "Run", Some("npm test"))),
-            step(Activity::ToolError { name: "bash".into(), text: "3 failed".into(), hide: Vec::new() }),
+            step(Activity::ToolError { name: "bash".into(), text: "3 failed".into(), call_id: None, hide: Vec::new(), full: None }),
             step(Activity::Text { text: "thinking aloud".into(), hide: Vec::new() }),
             step(tool(ToolKind::Ask, "Which branch?", None)),
             step(tool(ToolKind::Read, "src/a.rs", None)),
@@ -282,7 +283,17 @@ mod tests {
         let cmd = "curl -H 'Bearer sk-live-123' x";
         let c = u32::try_from(cmd.find("sk-").unwrap()).unwrap();
         let steps = [
-            Step { seq: 0, t: 0, activity: Activity::ToolError { name: "bash".into(), text: text.into(), hide: vec![[at, at + 11]] } },
+            Step {
+                seq: 0,
+                t: 0,
+                activity: Activity::ToolError {
+                    name: "bash".into(),
+                    text: text.into(),
+                    call_id: None,
+                    hide: vec![[at, at + 11]],
+                    full: None,
+                },
+            },
             Step {
                 seq: 1,
                 t: 0,
@@ -296,6 +307,7 @@ mod tests {
                     output: None,
                     title: None,
                     hide: [("detail".to_owned(), vec![[c, c + 11]])].into_iter().collect(),
+                    full: None,
                 },
             },
         ];
@@ -303,7 +315,11 @@ mod tests {
         assert!(!format!("{:?}", r.trail).contains("sk-live-123"), "{:?}", r.trail);
         assert_eq!(r.trail[0], Trail::Failed("bash: auth failed for ••••".into()));
         // ranges that don't fit the text hide all of it (fail closed)
-        let bad = [Step { seq: 0, t: 0, activity: Activity::ToolError { name: "bash".into(), text: "short".into(), hide: vec![[2, 99]] } }];
+        let bad = [Step {
+            seq: 0,
+            t: 0,
+            activity: Activity::ToolError { name: "bash".into(), text: "short".into(), call_id: None, hide: vec![[2, 99]], full: None },
+        }];
         assert_eq!(turn_read(&t, &bad).trail, vec![Trail::Failed("bash: ••••".into())]);
     }
 }

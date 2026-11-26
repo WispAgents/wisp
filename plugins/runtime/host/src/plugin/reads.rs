@@ -11,6 +11,7 @@ pub(super) fn reads(s: &mut Setup, slot: &Slot) {
     // runtime.get, runtime.list, runtime.search, runtime.turns, runtime.activity and runtime.presentation answer with .env values
     // masked (ADR-0050)
     crate::env_view::register(s, slot);
+    crate::full_output::register(s, slot);
     cmd!(s, slot, c::Cold, |r, call, a| r.cold(a.id.as_str()).await);
     cmd!(s, slot, c::SetExt, |r, call, a| {
         own_slot(&call, &a.plugin)?;

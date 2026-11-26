@@ -67,7 +67,7 @@ import { readComments } from './comment-text.ts';
 import { useNow } from '../clock.ts';
 import { turnClock, turnLongTime } from './turn-clock.ts';
 import { useChatSettings } from './chat-settings.ts';
-import { buildChatSteps } from './chat-steps.ts';
+import { buildChatSteps, turnSteps } from './chat-steps.ts';
 import { factoryStopQuestion, stopQuestion, type StopQuestion } from './stop-question.ts';
 import { noOutputLine } from './no-output.ts';
 import { completionOf, suggestedFollowUps } from './follow-ghost.ts';
@@ -83,6 +83,7 @@ import {
   btwDrop,
   btwOf,
   btwQuestion,
+  fullOutput,
   proposalApply,
   proposalDiscard,
   proposalsOf,
@@ -177,8 +178,6 @@ interface TurnBody {
 // the phone apps' task head (ADR-0065 step 13): the platform's app bar with the task's menu, in the phone heads' chunk
 // (the list's head loaded it already)
 const PhoneTaskBar = lazy(() => import('./PhoneHead.tsx').then((m) => ({ default: m.PhoneTaskBar })));
-
-const outputOf = (o: { readonly text: string; readonly seq: number } | undefined): { out?: string; seq?: number } => (o?.text ? { out: o.text, seq: o.seq } : {});
 
 interface EventRow {
   readonly seq: number;
@@ -664,7 +663,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     void import('./turn-markdown.ts')
       .then((m) =>
         shell.platform.copy(
-          m.turnMarkdown({ prompt, steps, answer, env: findEnvOf(env), here, words: { prompt: t('shell.md.prompt'), steps: t('shell.md.steps'), answer: t('shell.md.answer') } }),
+          m.turnMarkdown({ prompt, steps, answer, env: findEnvOf(env, openOf(turn.id).whole), here, words: { prompt: t('shell.md.prompt'), steps: t('shell.md.steps'), answer: t('shell.md.answer') } }),
         ),
       )
       .then((ok) => shell.toast.show(t(ok ? 'shell.task.copiedMarkdown' : 'shell.task.copyFailedMarkdown'), ok ? {} : { tone: 'error' }));
@@ -674,7 +673,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     turns().map((x) => {
       const stub = isStub(x.body);
       const env = findEnvs.get(x.id);
-      return { turnId: x.id, stub, steps: stub ? [] : (drawnRows.get(x.id)?.() ?? chatStepsOf(x, x.body, stepsOf(x.id))), ...(env && { env: findEnvOf(env) }) };
+      return { turnId: x.id, stub, steps: stub ? [] : (drawnRows.get(x.id)?.() ?? chatStepsOf(x, x.body, stepsOf(x.id))), ...(env && { env: findEnvOf(env, openOf(x.id).whole) }) };
     });
   let findFrom: Element | null = null;
   const openFind = (): void => {
@@ -1602,27 +1601,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           // the turn's events, once per change of them: its steps, the working panel's count, ticker and quiet note all read
           // these (the note read them again, filtered and sorted from every event, on each streamed token: perf r1 #15)
           const turnEvents = createMemo(() => stepsOf(turn.id));
-          const steps = createMemo((): { kind: string; label?: string; title?: string; detail?: string; out?: string; bad?: boolean; seq?: number }[] => {
-            const all = turnEvents();
-            const kindOf = (e: EventRow): string => e.kind ?? e.body?.kind ?? '';
-            // a tool's output: on the step itself, or the tool_output that names its call
-            const outputs = new Map(all.filter((e) => kindOf(e) === 'tool_output' && e.body?.callId).map((e) => [e.body?.callId ?? '', { text: e.body?.text ?? '', seq: e.seq }]));
-            const ev = all.filter((e) => kindOf(e) === 'tool' || kindOf(e) === 'tool_error');
-            if (!ev.length) return [...(b.activity ?? [])];
-            return ev.map((e) =>
-              kindOf(e) === 'tool_error'
-                ? { kind: 'error', label: e.body?.text ?? e.body?.name ?? '', bad: true }
-                : {
-                    kind: e.body?.tool ?? 'tool',
-                    label: e.body?.label ?? '',
-                    ...(e.body?.title && { title: e.body.title }),
-                    ...(e.body?.detail && { detail: e.body.detail }),
-                    ...(e.body?.file && { file: e.body.file }),
-                    // the event that carried the output names it to Reveal (ADR-0050)
-                    ...(e.body?.output ? { out: e.body.output, seq: e.seq } : outputOf(outputs.get(e.body?.callId ?? ''))),
-                  },
-            );
-          });
+          // its tool calls, each failed one carrying its error (audit F3)
+          const steps = createMemo(() => turnSteps(turnEvents(), b.activity ?? []));
           const cwd = String((s() as { body?: { cwd?: string } }).body?.cwd ?? s().summary['cwd'] ?? '');
           // the task's folder out of a step's words: one expression for the turn, not one per line per token
           const inFolder = cwd ? new RegExp(`(/private)?${cwd.replace(/^\/private/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`, 'g') : undefined;
@@ -1647,6 +1627,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           findEnvs.set(turn.id, env);
           // what of it is open: one store for its live and its finished transcripts (step-open.ts)
           const open = openOf(turn.id);
+          // a clipped step's whole output, asked for on Show all (audit F8)
+          const whole = (step: number): Promise<string> =>
+            shell.client.commands.run(fullOutput, { id: key, turnId: turn.id, step }).then(
+              (r) => r.text,
+              (e: unknown) => {
+                shell.toast.error(e instanceof Error ? e.message : String(e));
+                throw e;
+              },
+            );
           // the working panel, made once for this turn and only while it runs, under the turn's own owner: made inside
           // the props' spread it was made again on every change of the task's row (its live line, ~3 a second while it
           // streams), so the panel and its Stop were taken down and put back each time (B31). Its words update in place.
@@ -1683,7 +1672,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const liveTx = (): JSX.Element =>
             (madeTx ??= runWithOwner(owner, () => (
               <Show when={showStream() && (!chat.chatMode() || streamSteps().length > 0)}>
-                <TurnTranscript steps={streamSteps()} changes={changes()} env={env} open={open} here={here} status={turn.status ?? ''} chat={chat.chatMode()} quiet={chat.chatMode() && !stepsShown()} answerCtx={turnAnswerCtx} t={t} />
+                <TurnTranscript steps={streamSteps()} changes={changes()} env={env} open={open} whole={whole} here={here} status={turn.status ?? ''} chat={chat.chatMode()} quiet={chat.chatMode() && !stepsShown()} answerCtx={turnAnswerCtx} t={t} />
               </Show>
             )));
           const working = (): JSX.Element =>
@@ -1743,6 +1732,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                           changes={changes()}
                           env={env}
                           open={open}
+                          whole={whole}
                           here={here}
                           status={turn.status ?? ''}
                           chat={chat.chatMode()}

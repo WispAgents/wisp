@@ -33,19 +33,22 @@ pub fn find_steps(mut steps: Vec<Value>, query: &str, mask: bool, known: Known<'
         env_mask::mask_steps_known(steps.iter_mut(), known);
     }
     // A tool and its separate output are one step in the transcript, which keys it by the output's event (chat-steps.ts):
-    // searched together, one hit, with the output's seq.
+    // searched together, one hit, with the output's seq. A tool whose error names it (audit F3) is that error's row
+    // instead: the error is what it shows, keyed by the error's event.
     let call = |st: &Value| st.get("callId").and_then(Value::as_str).map(str::to_owned);
     let is = |st: &Value, k: &str| st.get("kind").and_then(Value::as_str) == Some(k);
     let tools: HashSet<String> = steps.iter().filter(|st| is(st, "tool")).filter_map(call).collect();
-    let outputs: HashMap<String, &Value> =
-        steps.iter().filter(|st| is(st, "tool_output")).filter_map(|st| call(st).map(|c| (c, st))).collect();
+    let of_kind =
+        |k: &str| -> HashMap<String, &Value> { steps.iter().filter(|st| is(st, k)).filter_map(|st| call(st).map(|c| (c, st))).collect() };
+    let outputs = of_kind("tool_output");
+    let errors = of_kind("tool_error");
     let mut out = Vec::new();
     for st in &steps {
         let id = call(st);
-        if is(st, "tool_output") && id.as_ref().is_some_and(|c| tools.contains(c)) {
+        if (is(st, "tool_output") || is(st, "tool_error")) && id.as_ref().is_some_and(|c| tools.contains(c)) {
             continue; // read with its tool
         }
-        let joined = if is(st, "tool") { id.as_ref().and_then(|c| outputs.get(c)).copied() } else { None };
+        let joined = if is(st, "tool") { id.as_ref().and_then(|c| errors.get(c).or_else(|| outputs.get(c))).copied() } else { None };
         let Some(seq) = joined.unwrap_or(st).get("seq").and_then(Value::as_u64) else { continue };
         let hit = std::iter::once(st)
             .chain(joined)
@@ -108,6 +111,22 @@ mod tests {
         assert_eq!(hits.len(), 1, "{hits:?}");
         assert_eq!(hits[0].seq, 5);
         assert!(hits[0].snippet.contains("Running"), "{:?}", hits[0]);
+    }
+
+    #[test]
+    fn a_failed_call_and_the_error_that_names_it_are_one_step_keyed_by_the_errors_event() {
+        // chat-steps.ts draws a call its error names as one bad row carrying the error, keyed by the error's seq
+        let steps = vec![
+            json!({ "seq": 6, "t": 0, "kind": "tool", "tool": "run", "label": "Running make", "callId": "c1" }),
+            json!({ "seq": 7, "t": 0, "kind": "tool_output", "callId": "c1", "text": "partial", "env": false }),
+            json!({ "seq": 8, "t": 0, "kind": "tool_error", "callId": "c1", "text": "make: no rule" }),
+        ];
+        let hits = find_steps(steps.clone(), "make", true, Some(&[]), 10);
+        assert_eq!(hits.iter().map(|h| h.seq).collect::<Vec<_>>(), vec![8], "{hits:?}");
+        assert_eq!(find_steps(steps, "no rule", true, Some(&[]), 10)[0].seq, 8);
+        // one that names no call of the turn stays a step of its own
+        let steps = vec![json!({ "seq": 9, "t": 0, "kind": "tool_error", "callId": "gone", "text": "boom" })];
+        assert_eq!(find_steps(steps, "boom", true, Some(&[]), 10)[0].seq, 9);
     }
 
     #[test]

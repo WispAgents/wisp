@@ -12,11 +12,15 @@ export interface FindEnv {
   on(): boolean;
   shown(id: string): boolean;
   raw(id: string): string | undefined;
+  /** a clipped step's whole output once Show all fetched it (step-open.ts), by the event that carried it */
+  whole?(seq: number): string | undefined;
 }
 
-/** A turn's Reveal (env-reveal.ts) as Find and Copy read it: the revealed output's text. */
-export function findEnvOf(env: EnvReveal): FindEnv {
+/** A turn's Reveal (env-reveal.ts) as Find and Copy read it: the revealed output's text, and the whole output its
+ *  Show all fetched (`whole`), when it did. */
+export function findEnvOf(env: EnvReveal, whole?: (seq: number) => string | undefined): FindEnv {
   return {
+    ...(whole && { whole }),
     on: env.on,
     shown: env.shown,
     raw: (id) => {
@@ -49,8 +53,15 @@ export interface FindHit {
 export function stepTexts(a: TranscriptStepRow, id: string, env?: FindEnv): string[] {
   if (a.kind === 'text') return [a.label ?? ''];
   if (a.kind === 'thinking') return [a.out ?? a.label ?? ''];
+  return [a.label ?? '', a.title ?? '', a.detail ?? '', shownOutput(a, id, env) ?? ''];
+}
+
+/** A step's output as its opened detail shows it: masked unless revealed (stepOutput), or the whole of a clipped one
+ *  once its Show all fetched it (a masked step offers no Show all). */
+export function shownOutput(a: TranscriptStepRow, id: string, env?: FindEnv): string | undefined {
   const out = stepOutput(a, env?.on() ?? true, env?.shown(id) ?? false, env?.raw(id));
-  return [a.label ?? '', a.title ?? '', a.detail ?? '', out?.text ?? ''];
+  const whole = out && !out.env && a.seq !== undefined ? env?.whole?.(a.seq) : undefined;
+  return whole ?? out?.text;
 }
 
 /** The steps of the loaded turns that hold `query` (case-insensitive), in order: one hit per step. */

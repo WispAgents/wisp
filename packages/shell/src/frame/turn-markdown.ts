@@ -2,11 +2,11 @@
 // label, the command it ran, what it printed in a fence) and the answer as the agent wrote it (its markdown source,
 // not the page's words). Its own module, loaded on the click (ADR-0011). It copies what this client holds: a step's
 // output as the transcript shows it, a .env file's masked text unless that step was revealed (stepOutput).
-// Where the server cut a long output, the cut text is what's copied; runtime.fullOutput is where the whole of it
-// would come from once the server has it (asked per step here, before serializing).
+// Where the server cut a long output, the cut text is what's copied, or the whole of it once that step's Show all
+// fetched it (runtime.fullOutput, kept by the turn's step-open store).
 import { stepIdOf } from './step-open.ts';
-import { stepOutput, type TranscriptStepRow } from './TurnTranscript.tsx';
-import type { FindEnv } from './task-find.ts';
+import type { TranscriptStepRow } from './TurnTranscript.tsx';
+import { shownOutput, type FindEnv } from './task-find.ts';
 
 export interface TurnMarkdownIn {
   readonly prompt: string;
@@ -44,7 +44,7 @@ function stepMarkdown(a: TranscriptStepRow, index: number, env: FindEnv | undefi
   const id = stepIdOf(a, index);
   const head = `- **${here(a.title ?? a.label ?? a.kind).replace(/\s+/g, ' ').trim()}**`;
   const cmd = a.kind === 'run' && a.detail && !(a.label ?? '').includes(a.detail.slice(0, 24)) ? `\n\n  ${codeSpan(here(a.detail).replace(/\s*\n\s*/g, ' '))}` : '';
-  const shown = a.kind === 'thinking' ? a.out : stepOutput(a, env?.on() ?? true, env?.shown(id) ?? false, env?.raw(id))?.text;
+  const shown = a.kind === 'thinking' ? a.out : shownOutput(a, id, env);
   const out = shown && shown !== a.label ? `\n\n${fenced(here(shown))}` : '';
   return head + cmd + out;
 }

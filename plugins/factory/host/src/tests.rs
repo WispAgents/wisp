@@ -126,18 +126,41 @@ fn station_turn(status: wisp_runtime_api::TurnStatus) -> wisp_runtime_api::model
     wisp_runtime_api::model::Turn { id: "u1".into(), session_id: "s1".into(), status, text: Some("built".into()), ..Default::default() }
 }
 
+/// A new station task's wait: its first turn.
+fn first() -> wisp_factory_core::Pending {
+    wisp_factory_core::Pending { task: "s1".into(), ..Default::default() }
+}
+
+/// doc23a: a follow-up's wait read the task's last turn, so after a restart (no turn id kept) round 1's review was
+/// taken as round 2's. Only a turn after `since` (the last one when it was sent) ends it.
+#[test]
+fn a_follow_ups_wait_never_takes_a_turn_from_before_it() {
+    let t = wisp_runtime_api::model::Session { state: wisp_runtime_api::SessionState::Review, ..Default::default() };
+    let turn = |idx: u32, text: &str| wisp_runtime_api::model::Turn {
+        idx,
+        text: Some(text.into()),
+        ..station_turn(wisp_runtime_api::TurnStatus::Done)
+    };
+    let sent = wisp_factory_core::Pending { task: "s1".into(), turn: None, since: Some(1) };
+    let round1 = [turn(0, "x"), turn(1, "CHANGES: add a test")];
+    assert_eq!(drive::end_of(&t, &round1, &sent), None, "round 1's turn isn't this round's: still to run");
+    let round2 = [turn(1, "CHANGES: add a test"), turn(2, "APPROVE")];
+    assert_eq!(drive::end_of(&t, &round2, &sent).map(|e| e.text), Some("APPROVE".into()));
+    assert_eq!(drive::end_of(&t, &round1, &first()).map(|e| e.text), Some("CHANGES: add a test".into()), "no since: its last turn");
+}
+
 /// A station whose turn waits for a limit's reset (or trust, or the plan) failed the run as "it ended held": it's
 /// still going.
 #[test]
 fn a_held_station_turn_is_still_going() {
     let t = wisp_runtime_api::model::Session { state: wisp_runtime_api::SessionState::Review, ..Default::default() };
-    assert_eq!(drive::end_of("s1", &t, &[station_turn(wisp_runtime_api::TurnStatus::Held)], None), None);
-    let done = drive::end_of("s1", &t, &[station_turn(wisp_runtime_api::TurnStatus::Done)], None).unwrap();
+    assert_eq!(drive::end_of(&t, &[station_turn(wisp_runtime_api::TurnStatus::Held)], &first()), None);
+    let done = drive::end_of(&t, &[station_turn(wisp_runtime_api::TurnStatus::Done)], &first()).unwrap();
     assert!(done.ok && done.text == "built");
     let mut queued = t.clone();
     queued.queue.push(wisp_runtime_api::QueueItem::default());
     queued.queue_held = true;
-    assert_eq!(drive::end_of("s1", &queued, &[station_turn(wisp_runtime_api::TurnStatus::Done)], None), None, "a held queue waits");
+    assert_eq!(drive::end_of(&queued, &[station_turn(wisp_runtime_api::TurnStatus::Done)], &first()), None, "a held queue waits");
 }
 
 /// A station's task deleted while the run waited on it was "can't be read" on every look: the run never ended.

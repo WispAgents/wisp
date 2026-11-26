@@ -10,7 +10,19 @@ pub fn hash_password(pass: &str) -> String {
     format!("{}:{}", hex(&salt), hex(&derive(pass, &salt)))
 }
 
+/// Every password `derive` hashed, in tests: a refused guess must cost no scrypt, and only a count can show that.
+#[cfg(test)]
+pub(crate) static DERIVED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// How many times `derive` hashed `pass` (tests).
+#[cfg(test)]
+pub(crate) fn derived(pass: &str) -> usize {
+    DERIVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|p| *p == pass).count()
+}
+
 fn derive(pass: &str, salt: &[u8]) -> Vec<u8> {
+    #[cfg(test)]
+    DERIVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(pass.to_owned());
     let mut out = vec![0u8; 32];
     if let Ok(p) = scrypt::Params::new(14, 8, 1, 32) {
         let _ = scrypt::scrypt(pass.as_bytes(), salt, &p, &mut out);
@@ -32,12 +44,19 @@ fn unhex(s: &str) -> Option<Vec<u8>> {
         .flatten()
 }
 
+/// Whether `pass` could be a share's password at all: 1 to `PASSWORD_MAX` bytes, as `put` takes one. Anything else
+/// is wrong without hashing it, so a megabyte "guess" costs the grid nothing.
+pub fn could_be_password(pass: &str) -> bool {
+    !pass.is_empty() && pass.len() <= super::PASSWORD_MAX
+}
+
+/// Whether `pass` is the password `kept`. scrypt: ~50 ms of CPU, so the edge runs it on the blocking pool.
 pub fn check_password(kept: &str, pass: &str) -> bool {
-    let Some((salt, hash)) = kept.split_once(':') else { return false };
-    let (Some(salt), Some(want)) = (unhex(salt), unhex(hash)) else { return false };
-    if pass.is_empty() {
+    if !could_be_password(pass) {
         return false;
     }
+    let Some((salt, hash)) = kept.split_once(':') else { return false };
+    let (Some(salt), Some(want)) = (unhex(salt), unhex(hash)) else { return false };
     let got = derive(pass, &salt);
     got.len() == want.len() && bool::from(got.ct_eq(&want))
 }

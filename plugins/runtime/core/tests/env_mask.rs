@@ -102,7 +102,8 @@ fn the_turn_machine_flags_the_output_of_a_call_that_read_a_env_file() {
     let out = |id: &str| HarnessEvent::ToolOutput { id: id.into(), text: "K=v".into() };
     assert!(matches!(apply(&mut h, &out("c1"), false, &no), Effect::Append(Activity::ToolOutput { env: true, .. })));
     assert!(matches!(apply(&mut h, &out("c2"), false, &no), Effect::Append(Activity::ToolOutput { env: false, .. })));
-    let v = serde_json::to_value(Activity::ToolOutput { call_id: "c2".into(), text: "x".into(), env: false, hide: Vec::new() }).unwrap();
+    let v = serde_json::to_value(Activity::ToolOutput { call_id: "c2".into(), text: "x".into(), env: false, hide: Vec::new(), full: None })
+        .unwrap();
     assert_eq!(v["env"], false, "always written: a row without it is one from before the flag");
 }
 
@@ -579,6 +580,7 @@ fn a_hand_off_note_and_a_btw_digest_never_quote_a_value_the_task_read() {
             output: None,
             title: None,
             hide: [("label".to_owned(), vec![[16, 27]])].into_iter().collect(),
+            full: None,
         },
         Activity::Tool {
             parent: None,
@@ -590,6 +592,7 @@ fn a_hand_off_note_and_a_btw_digest_never_quote_a_value_the_task_read() {
             output: None,
             title: None,
             hide: std::collections::BTreeMap::new(),
+            full: None,
         },
         Activity::Notice { text: "retrying with sk-live-one".into(), tone: None },
         Activity::Text { text: "the key sk-live-one is fine".into(), hide: Vec::new() },

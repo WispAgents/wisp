@@ -292,7 +292,18 @@ impl Runtime {
         let key = id.to_owned();
         let was = self.repo.session(id).await.ok();
         // turns, events and queue items go with the row (ON DELETE CASCADE): one change row for the task
-        let gone = self.repo.store.write(move |w| w.del("session", key.as_str())).await?;
+        // and its steps' whole outputs are let go (the next blob gc frees what no other task holds)
+        let gone = self
+            .repo
+            .store
+            .write(move |w| {
+                let gone = w.del("session", key.as_str())?;
+                if gone {
+                    w.blob_unref_owner(crate::full_output::FULL_OWNER, key.as_str())?;
+                }
+                Ok(gone)
+            })
+            .await?;
         if !gone {
             return Err(RuntimeError::NoTask(id.to_owned()));
         }

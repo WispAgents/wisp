@@ -17,6 +17,7 @@ pub mod error;
 mod files;
 mod finish;
 mod found;
+mod full_output;
 mod group;
 mod handoff;
 pub mod host;

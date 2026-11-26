@@ -78,6 +78,7 @@
   "shell.env.shown": "Showing {name}’s values",
   "shell.env.reveal": "Reveal",
   "shell.env.hide": "Hide",
+  "shell.task.showAllLines": "Show all {n} lines",
   "shell.more.rename": "Rename",
   "shell.rename.label": "Title",
   "shell.more.pin": "Pin",

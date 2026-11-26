@@ -609,12 +609,13 @@ mod tests {
             title: None,
             hide: std::collections::BTreeMap::new(),
             parent: None,
+            full: None,
         };
         r.add_row(&sid, tid.as_str(), tool(ToolKind::Read, "Reading .env", Some(".env"), "c1")).await.unwrap();
         r.add_row(
             &sid,
             tid.as_str(),
-            Activity::ToolOutput { call_id: "c1".into(), text: "API_KEY=sk-live-zebra".into(), env: true, hide: Vec::new() },
+            Activity::ToolOutput { call_id: "c1".into(), text: "API_KEY=sk-live-zebra".into(), env: true, hide: Vec::new(), full: None },
         )
         .await
         .unwrap();

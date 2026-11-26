@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { buildChatSteps, type RawTurnEvent } from '../src/frame/chat-steps.ts';
+import { buildChatSteps, turnSteps, type RawTurnEvent } from '../src/frame/chat-steps.ts';
 import { parseInlineChatBlocks } from '../src/frame/chat-blocks.ts';
 import { asChatMode } from '../src/frame/chat-parse.ts';
 import { turnClock } from '../src/frame/turn-clock.ts';
@@ -90,4 +90,47 @@ test('chat mode drops the last message when it is the answer, even when the answ
   expect(
     buildChatSteps([], [{ kind: 'read', label: 'Read nav.ts' }, { kind: 'text', label: blockOnly }], { ...opts, finalText: blockOnly }).map((s) => s.kind),
   ).toEqual(['read']);
+});
+
+// audit F3: a failed call's error named its call, but showed as a row of its own after a call that looked fine
+test('a tool error that names its call marks that call failed, with the error as its output', () => {
+  const events: RawTurnEvent[] = [
+    { seq: 1, kind: 'tool', body: { tool: 'run', label: 'Running tests', callId: 'a' } },
+    { seq: 2, kind: 'tool_error', body: { name: 'Bash', text: 'assertion failed', callId: 'a' } },
+  ];
+  for (const toolCalls of ['showAll', 'hideSuccessful', 'hideAll', 'zen'] as const) {
+    const rows = buildChatSteps(events, [], { chatMode: true, toolCalls, showThinking: true, running: false });
+    expect(rows, toolCalls).toEqual([{ kind: 'run', label: 'Running tests', out: 'assertion failed', seq: 2, at: 1, bad: true }]);
+  }
+  expect(turnSteps(events, [])).toEqual([{ kind: 'run', label: 'Running tests', out: 'assertion failed', seq: 2, at: 1, bad: true }]);
+  // while it runs, the failed call is done: not the active one
+  expect(buildChatSteps(events, [], { chatMode: true, toolCalls: 'hideSuccessful', showThinking: true, running: true }).length).toBe(1);
+});
+
+// audit F8: the row names the event whose whole output the server keeps
+test('a clipped output carries its whole text count on the row it shows on', () => {
+  const events: RawTurnEvent[] = [
+    { seq: 1, kind: 'tool', body: { tool: 'run', label: 'npm test', callId: 'a' } },
+    { seq: 2, kind: 'tool_output', body: { callId: 'a', text: 'head … cut … tail', full: { lines: 900 } } },
+    { seq: 3, kind: 'tool', body: { tool: 'run', label: 'make', callId: 'b' } },
+    { seq: 4, kind: 'tool_error', body: { name: 'Bash', text: 'head … cut … error', callId: 'b', full: { lines: 40 } } },
+  ];
+  const rows = buildChatSteps(events, [], { chatMode: true, toolCalls: 'showAll', showThinking: true, running: false });
+  expect(rows.map((r) => [r.seq, r.full?.lines])).toEqual([[2, 900], [4, 40]]);
+  expect(turnSteps(events, []).map((r) => [r.seq, r.full?.lines])).toEqual([[2, 900], [4, 40]]);
+});
+
+test('a tool error naming no call it follows stays a row of its own', () => {
+  const events: RawTurnEvent[] = [
+    { seq: 1, kind: 'tool', body: { tool: 'run', label: 'Running tests', callId: 'a', output: 'ok' } },
+    { seq: 2, kind: 'tool_error', body: { name: 'apply_patch', text: 'The patch did not apply.', callId: 'zz' } },
+    { seq: 3, kind: 'tool_error', body: { name: 'Bash', text: 'exit 1' } },
+  ];
+  const rows = buildChatSteps(events, [], { chatMode: true, toolCalls: 'showAll', showThinking: true, running: false });
+  expect(rows.map((r) => [r.kind, r.bad ?? false])).toEqual([['run', false], ['error', true], ['error', true]]);
+  expect(turnSteps(events, []).map((r) => [r.kind, r.label, r.bad ?? false])).toEqual([
+    ['run', 'Running tests', false],
+    ['error', 'The patch did not apply.', true],
+    ['error', 'exit 1', true],
+  ]);
 });

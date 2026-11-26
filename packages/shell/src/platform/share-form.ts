@@ -1,6 +1,7 @@
 // What's shared to wisp from a phone's share sheet, DOM-free (v1 web/js/share-form.js): the caps, the
 // prompt it makes, and how the service worker keeps it until the page reads it once. The worker
-// (apps/web's) and the page import the same functions; the Android app applies the same caps itself.
+// (sw.ts) and the page (apps/web's shared.ts, wisp.stuff's share-in) import the same functions, so it lives
+// here, under both (packages never import plugins); the Android app applies the same caps itself.
 // Any site can post the Home Screen app's form too, and neither side can tell, so nothing kept here
 // acts on its own: the page shows it as from outside and sends nothing until Send.
 
@@ -46,8 +47,9 @@ export const accepted = (f: { readonly type: string }): boolean => FILE_TYPES.so
 export interface CacheLike {
   put(key: string, res: Response): Promise<void>;
   match(key: string): Promise<Response | undefined>;
-  delete(key: string | { readonly url: string }): Promise<boolean>;
-  keys(): Promise<readonly { readonly url: string }[]>;
+  // a Request, as the real Cache's keys() gives (its delete takes no other object)
+  delete(key: string | Request): Promise<boolean>;
+  keys(): Promise<readonly Request[]>;
 }
 export interface CacheStore {
   open(name: string): Promise<CacheLike>;
