@@ -169,26 +169,8 @@ impl State {
     }
 }
 
-/// `*` matches any run of characters; everything else itself.
-pub fn glob(p: &str, v: &str) -> bool {
-    let parts: Vec<&str> = p.split('*').collect();
-    if parts.len() == 1 {
-        return p == v;
-    }
-    let (first, last) = (parts[0], parts[parts.len() - 1]);
-    if !v.starts_with(first) || v.len() < first.len() + last.len() || !v.ends_with(last) {
-        return false;
-    }
-    let mut at = first.len();
-    let end = v.len() - last.len();
-    for mid in &parts[1..parts.len() - 1] {
-        match v[at..end].find(mid) {
-            Some(i) => at += i + mid.len(),
-            None => return false,
-        }
-    }
-    true
-}
+/// `*` matches any run of characters; everything else itself (the contract's, so a plugin checking an `on` reads it alike).
+pub use wisp_automations_api::spec::glob;
 
 /// Whether a filter's wanted value takes the payload's.
 /// A full folder: POSIX `/…`, a Windows drive `C:\…` (or `C:/…`) or a UNC share `\\srv\share`.

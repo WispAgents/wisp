@@ -13,18 +13,23 @@ pub struct Fire {
     pub wake: bool,
 }
 
-/// If a check-in is due now, mark the minute as run (`lastMinute`), clear a wake-up that came, and
-/// say what to fire. The check-in is unattended: the budget may hold it.
+/// If a check-in is due now, mark the minute as run (`lastMinute`) and say what to fire. The check-in is unattended:
+/// the budget may hold it. A wake-up that came is kept: the host clears it ([`clear_wake`]) once its check-in started
+/// or queued, and one refused (already checking in, a full queue) is asked again the next minute instead of lost.
 pub fn tick(m: &mut Member, now: i64, zone: &dyn Zone) -> Option<Fire> {
     if !due_now(m, now, zone) {
         return None;
     }
     let wake = m.wake_at.is_some_and(|w| w <= now);
     m.last_minute = Some(minute_of(now));
-    if wake {
+    Some(Fire { wake })
+}
+
+/// The wake-up that came by `now` is used up (its check-in started or queued); one set for later stays.
+pub fn clear_wake(m: &mut Member, now: i64) {
+    if m.wake_at.is_some_and(|w| w <= now) {
         m.wake_at = None;
     }
-    Some(Fire { wake })
 }
 
 /// The soonest check-in across the crew (v1 `nextWake`, for a host that wakes this wisp for it).
@@ -67,14 +72,23 @@ mod tests {
         assert!(tick(&mut m, now + 60_000, &Utc).is_some());
     }
 
+    /// A wake-up fires once a minute until its check-in starts: the tick keeps it (the check-in may be refused) and
+    /// the host clears it once it started; one set later than now stays.
     #[test]
-    fn a_wake_up_fires_and_clears() {
+    fn a_wake_up_fires_once_a_minute_until_its_check_in_clears_it() {
         let mut m = member("");
         let now = 1_700_000_000_000;
         m.wake_at = Some(now - 1);
         assert_eq!(tick(&mut m, now, &Utc), Some(Fire { wake: true }));
+        assert_eq!(m.wake_at, Some(now - 1), "kept until its check-in starts");
+        assert_eq!(tick(&mut m, now + 20_000, &Utc), None, "once a minute");
+        assert_eq!(tick(&mut m, now + 60_000, &Utc), Some(Fire { wake: true }), "refused: asked again the next minute");
+        clear_wake(&mut m, now + 60_000);
         assert_eq!(m.wake_at, None);
-        assert_eq!(tick(&mut m, now + 1, &Utc), None);
+        assert_eq!(tick(&mut m, now + 120_000, &Utc), None);
+        m.wake_at = Some(now + 600_000);
+        clear_wake(&mut m, now + 120_000);
+        assert_eq!(m.wake_at, Some(now + 600_000), "a wake-up still to come stays");
     }
 
     #[test]

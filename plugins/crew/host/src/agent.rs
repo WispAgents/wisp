@@ -43,7 +43,7 @@ pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {
                 Ok(m) => m,
                 Err(e) => return refuse(e),
             };
-            st.put(m.clone());
+            st.insert(m.clone());
             st.save().await;
             ctx.emit(&call, &wisp_crew_api::events::Joined { crew_id: m.id.clone(), name: m.name.clone(), how: "create".into() });
             if a.checkin == Some(true) {

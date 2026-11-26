@@ -215,13 +215,36 @@ impl State {
             .ok_or_else(|| WireError::not_found("No such crew member."))
     }
 
+    /// A member written back whole. Only one still in the crew: a member removed while its copy was read and awaited on
+    /// stays removed (a write after `remove` brought them back). A new member goes in with [`State::insert`].
     pub fn put(&self, m: Member) {
+        let mut s = lock(&self.saved);
+        let Some(x) = s.crew.iter_mut().find(|x| x.id == m.id) else { return };
+        let id = m.id.clone();
+        *x = m;
+        drop(s);
+        lock(&self.dirty).insert(id);
+    }
+
+    /// A member who joins (create, adopt, import), or an edit of one still here.
+    pub fn insert(&self, m: Member) {
         lock(&self.dirty).insert(m.id.clone());
         let mut s = lock(&self.saved);
         match s.crew.iter_mut().find(|x| x.id == m.id) {
             Some(x) => *x = m,
             None => s.crew.push(m),
         }
+    }
+
+    /// Changes member `id`'s row as it is now, under the lock: what another command wrote while this one awaited (a job
+    /// queued, a queue drained, an edit) stays, where writing back a copy read before the await undid it. `None`: they
+    /// are gone (removed meanwhile), and nothing is written.
+    pub fn update<T>(&self, id: &str, f: impl FnOnce(&mut Member) -> T) -> Option<T> {
+        let mut s = lock(&self.saved);
+        let out = f(s.crew.iter_mut().find(|x| x.id == id)?);
+        drop(s);
+        lock(&self.dirty).insert(id.to_owned());
+        Some(out)
     }
 
     pub fn view(&self, m: &Member, running: u32, now: i64) -> MemberView {
@@ -407,7 +430,7 @@ mod tests {
         };
         let m = st.normalize(&body, None, 1_000, &[], &[], "auto").unwrap();
         assert_eq!((m.name.as_str(), m.cron.as_str(), m.agent.as_str()), ("Ada Lovelace", "*/30 * * * *", "auto"));
-        st.put(m.clone());
+        st.insert(m.clone());
         assert_eq!(st.member("@ada-lovelace").unwrap().id, m.id);
         let dup =
             st.normalize(&c::MemberBody { name: Some("ada lovelace".into()), ..c::MemberBody::default() }, None, 2_000, &[], &[], "auto");
@@ -463,7 +486,7 @@ mod tests {
         // a member here: the note is written here, as always
         let m =
             st.normalize(&c::MemberBody { name: Some("Ada".into()), ..c::MemberBody::default() }, None, 1_000, &[], &[], "auto").unwrap();
-        st.put(m.clone());
+        st.insert(m.clone());
         let mine = CrewExt { id: m.id.clone(), note: Some("QQ-carried-QQ".into()), ..CrewExt::default() };
         s.ext.insert(wisp_crew_api::PLUGIN_ID.into(), serde_json::to_value(&mine).unwrap());
         let part = note.part(&s);

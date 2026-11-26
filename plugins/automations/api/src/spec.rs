@@ -313,6 +313,44 @@ pub fn wake_cycle(edges: &[(String, String)]) -> Option<Vec<String>> {
     None
 }
 
+/// `*` matches any run of characters; everything else itself.
+pub fn glob(p: &str, v: &str) -> bool {
+    let parts: Vec<&str> = p.split('*').collect();
+    if parts.len() == 1 {
+        return p == v;
+    }
+    let (first, last) = (parts[0], parts[parts.len() - 1]);
+    if !v.starts_with(first) || v.len() < first.len() + last.len() || !v.ends_with(last) {
+        return false;
+    }
+    let mut at = first.len();
+    let end = v.len() - last.len();
+    for mid in &parts[1..parts.len() - 1] {
+        match v[at..end].find(mid) {
+            Some(i) => at += i + mid.len(),
+            None => return false,
+        }
+    }
+    true
+}
+
+/// An `on` no source offers (no plugin's, on or off): refused, naming the sources (audit G11: `on: "every minute"` was
+/// stored "unavailable" and never fired). A glob (`pr.*`) is fine when it takes one of them. The triggers kind and a
+/// crew member's wakes say it alike.
+pub fn no_source(on: &str, sources: &[crate::commands::SourceRow]) -> Option<String> {
+    let on = on.trim();
+    if on.is_empty() || sources.iter().any(|r| glob(on, &r.on.on) || glob(&r.on.on, on)) {
+        return None;
+    }
+    let mut names: Vec<&str> = sources.iter().map(|r| r.on.on.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    let more = names.len().saturating_sub(12);
+    let list = names.into_iter().take(12).collect::<Vec<_>>().join(", ");
+    let list = if more > 0 { format!("{list} and {more} more (wisp trigger sources)") } else { list };
+    Some(format!("on: {on} is no source (a schedule is on: schedule with cron: \"every minute\"); sources: {list}"))
+}
+
 #[cfg(test)]
 #[allow(clippy::assert_is_empty, clippy::unwrap_used)]
 mod tests {

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use wisp_automations_api::commands as c;
+use wisp_automations_api::spec::no_source;
 use wisp_automations_api::{Target, TriggerEvent, TriggerSpec};
 use wisp_kernel::{BoxFuture, Call, Ctx, Result, Setup, WireError};
 use wisp_resources_api::{KindInfo, Op, RESOURCE_KIND, Resource, ResourceKind, StoredKind, schema_of};
@@ -48,22 +49,6 @@ async fn refresh(ctx: &Ctx, inner: &StoredKind, engine: &Engine) {
     let list = specs.into_iter().filter_map(|(n, v)| Some((n, serde_json::from_value::<TriggerSpec>(v).ok()?))).collect();
     *engine.declared.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = list;
     engine.unread.store(!read, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// An `on` no source offers (no plugin's, on or off): refused, naming the sources (audit G11: `on: "every minute"` was
-/// stored "unavailable" and never fired). A glob (`pr.*`) is fine when it takes one of them.
-pub(crate) fn no_source(on: &str, sources: &[wisp_automations_api::commands::SourceRow]) -> Option<String> {
-    let on = on.trim();
-    if on.is_empty() || sources.iter().any(|r| crate::engine::takes(on, &r.on.on) || crate::engine::takes(&r.on.on, on)) {
-        return None;
-    }
-    let mut names: Vec<&str> = sources.iter().map(|r| r.on.on.as_str()).collect();
-    names.sort_unstable();
-    names.dedup();
-    let more = names.len().saturating_sub(12);
-    let list = names.into_iter().take(12).collect::<Vec<_>>().join(", ");
-    let list = if more > 0 { format!("{list} and {more} more (wisp trigger sources)") } else { list };
-    Some(format!("on: {on} is no source (a schedule is on: schedule with cron: \"every minute\"); sources: {list}"))
 }
 
 impl ResourceKind for TriggerKind {
@@ -456,7 +441,8 @@ async fn mentions(ctx: &Ctx, call: &Call, ev: &TriggerEvent) {
         )
         .await
     {
-        tracing::debug!("mentions not sent: {}", e.message);
+        // a member who can't take it is said by the crew; this is the whole call refused (the crew off, say)
+        tracing::warn!(on = %ev.on, error = %e.message, "mentions not sent");
     }
 }
 

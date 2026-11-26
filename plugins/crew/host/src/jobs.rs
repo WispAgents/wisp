@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use serde_json::{Value, json};
+use wisp_automations_api::TriggerSpec;
 use wisp_crew_api::commands as c;
 use wisp_crew_api::{CrewExt, JobKind, JobSummary, Member, MemberView, PLUGIN_ID, RunPick, TICK_MS, WaitingJob};
 use wisp_crew_core::cron::Utc;
@@ -12,7 +13,8 @@ use wisp_crew_core::layout::{layout_of, normalize_layout};
 use wisp_crew_core::note::checkin_prompt;
 use wisp_crew_core::queue::{Placement, checkin_already, count_checkin, drain_count, place, place_delegated};
 use wisp_crew_core::run::{at_cap, job_body, job_run};
-use wisp_crew_core::tick::tick;
+use wisp_crew_core::schedule::due_now;
+use wisp_crew_core::tick::{clear_wake, tick};
 use wisp_kernel::{Call, Command as _, Ctx, Setup, WireError};
 use wisp_runtime_api::commands as rt;
 
@@ -220,27 +222,42 @@ fn work(prompt: String, job: JobKind, attachments: Vec<Value>, run: Option<RunPi
 
 /// Records a link to the task that tagged, delegated to or watched the member, so it may follow up there later
 /// (v1 crew.js:630 `#link`).
-async fn record_link(ctx: &Ctx, st: &State, m: &mut Member, w: &WaitingJob) {
+async fn record_link(ctx: &Ctx, st: &State, id: &str, w: &WaitingJob) {
     let Some(from) = w.from.as_ref().filter(|f| !f.id.is_empty()) else { return };
     if matches!(w.job, JobKind::Mention | JobKind::Delegated | JobKind::Event) || w.reply.is_some() {
-        wisp_crew_core::queue::link(m, from, now(ctx));
-        st.put(m.clone());
+        let at = now(ctx);
+        st.update(id, |m| wisp_crew_core::queue::link(m, from, at));
         st.save().await;
     }
 }
 
+fn gone() -> WireError {
+    WireError::not_found("No such crew member.")
+}
+
 /// A job for `m`: now when a slot is free, else in its queue (v1 `assign`).
+/// Placed against the member as they are after the awaits, not the copy `m`: two jobs given at once both wait (each
+/// wrote back its own copy's queue, and one was lost), and a member removed meanwhile isn't brought back.
 pub(crate) async fn assign(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: WaitingJob) -> Result<c::Started, WireError> {
-    let mut m = m.clone();
-    record_link(ctx, st, &mut m, &w).await;
-    let busy = u32::try_from(jobs_of(ctx, call, st, &m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
-    match place(&m, busy, w.job).map_err(wire)? {
-        Placement::Start => Ok(c::Started { session: Some(start(ctx, call, st, &m, &w, None).await?), ..c::Started::default() }),
-        Placement::Queue => {
-            let id = wisp_kernel::ids::uuid7();
-            m.queue.push(WaitingJob { id: id.clone(), at: now(ctx), ..w });
-            let position = u32::try_from(m.queue.len()).unwrap_or(u32::MAX);
-            st.put(m);
+    record_link(ctx, st, &m.id, &w).await;
+    let busy = u32::try_from(jobs_of(ctx, call, st, m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
+    let (id, at) = (wisp_kernel::ids::uuid7(), now(ctx));
+    let placed = st
+        .update(&m.id, |live| -> wisp_crew_core::Result<(Placement, u32)> {
+            let p = place(live, busy, w.job)?;
+            if p == Placement::Queue {
+                live.queue.push(WaitingJob { id: id.clone(), at, ..w.clone() });
+            }
+            Ok((p, u32::try_from(live.queue.len()).unwrap_or(u32::MAX)))
+        })
+        .ok_or_else(gone)?
+        .map_err(wire)?;
+    match placed {
+        (Placement::Start, _) => {
+            let m = st.member(&m.id)?;
+            Ok(c::Started { session: Some(start(ctx, call, st, &m, &w, None).await?), ..c::Started::default() })
+        }
+        (Placement::Queue, position) => {
             st.save().await;
             Ok(c::Started { queued: Some(id), position: Some(position), session: None })
         }
@@ -255,14 +272,14 @@ async fn delegated(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: WaitingJob
     }
     let busy = u32::try_from(jobs_of(ctx, call, st, m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
     place_delegated(m, busy).map_err(wire)?;
-    let mut m = m.clone();
-    record_link(ctx, st, &mut m, &w).await;
+    record_link(ctx, st, &m.id, &w).await;
+    let m = st.member(&m.id)?;
     Ok(c::Started { session: Some(start(ctx, call, st, &m, &w, capped).await?), ..c::Started::default() })
 }
 
 /// `crew.checkin`: one check-in at a time per member (v1 `checkin`).
 pub(crate) async fn checkin(ctx: &Ctx, call: &Call, st: &State, id: &str, wake: bool) -> Result<c::Started, WireError> {
-    let mut m = st.member(id)?;
+    let m = st.member(id)?;
     // paused members skip check-ins (v1): Check in now said nothing, queued one, then "already checking in" (audit E7)
     if m.paused {
         return Err(WireError::conflict(format!("{} is paused. Resume them to check in.", m.name)));
@@ -272,9 +289,10 @@ pub(crate) async fn checkin(ctx: &Ctx, call: &Call, st: &State, id: &str, wake: 
         return Err(WireError::conflict(format!("{} is already checking in.", m.name)));
     }
     let prompt = checkin_prompt(&m, wake);
-    count_checkin(&mut m, now(ctx));
-    st.put(m.clone());
+    let at = now(ctx);
+    st.update(&m.id, |live| count_checkin(live, at)).ok_or_else(gone)?;
     st.save().await;
+    let m = st.member(&m.id)?;
     assign(ctx, call, st, &m, work(prompt, JobKind::Checkin, Vec::new(), None)).await
 }
 
@@ -309,7 +327,7 @@ fn adopt(s: &mut Setup, st: &Arc<State>) {
         if !calls::claim(&ctx, &call, &a.session_id, &calls::to_json(&ext)?).await? {
             return Err(WireError::invalid("That task is already a crew member's job."));
         }
-        st.put(m.clone());
+        st.insert(m.clone());
         st.save().await;
         ctx.emit(&call, &wisp_crew_api::events::Joined { crew_id: m.id.clone(), name: m.name.clone(), how: "task".into() });
         Ok(view(&ctx, &call, &st, &m).await)
@@ -328,21 +346,27 @@ fn wakes(s: &mut Setup, st: &Arc<State>) {
         let w = WaitingJob { origin: woken_by(a.source.as_ref()), ..work(prompt, JobKind::Task, Vec::new(), None) };
         assign(&ctx, &call, &st, &m, w).await
     });
-    on!(s, st, c::WakeMentions, |st, ctx, call, a| {
-        let crew = lock(&st.saved).crew.clone();
-        let found = wisp_crew_core::mentions::crew_mentions(&a.text, &crew);
-        let mut out = Vec::new();
-        for m in found.all {
-            let m = m.clone();
-            let prompt = match &a.source {
-                Some(src) => format!("You were mentioned ({src}):\n\n{}", a.text.trim()),
-                None => format!("You were mentioned:\n\n{}", a.text.trim()),
-            };
-            let w = WaitingJob { origin: woken_by(a.source.as_ref()), ..work(prompt, JobKind::Task, Vec::new(), None) };
-            out.push(assign(&ctx, &call, &st, &m, w).await?);
+    on!(s, st, c::WakeMentions, |st, ctx, call, a| Ok(wake_mentions(&ctx, &call, &st, &a).await));
+}
+
+/// `crew.wakeMentions`: every member the text tags gets a job. One who can't take it (their queue full, a start that
+/// failed) is said in the log and the rest still wake: `@ada @bob` with Ada's queue full woke no one.
+async fn wake_mentions(ctx: &Ctx, call: &Call, st: &State, a: &c::MentionArgs) -> Vec<c::Started> {
+    let crew = lock(&st.saved).crew.clone();
+    let found = wisp_crew_core::mentions::crew_mentions(&a.text, &crew);
+    let mut out = Vec::new();
+    for m in found.all {
+        let prompt = match &a.source {
+            Some(src) => format!("You were mentioned ({src}):\n\n{}", a.text.trim()),
+            None => format!("You were mentioned:\n\n{}", a.text.trim()),
+        };
+        let w = WaitingJob { origin: woken_by(a.source.as_ref()), ..work(prompt, JobKind::Task, Vec::new(), None) };
+        match assign(ctx, call, st, m, w).await {
+            Ok(s) => out.push(s),
+            Err(e) => tracing::warn!(member = %m.name, error = %e.message, "crew: a mention didn't wake them"),
         }
-        Ok(out)
-    });
+    }
+    out
 }
 
 pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {
@@ -373,45 +397,8 @@ pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {
         st.save().await;
         Ok(out)
     });
-    on!(s, st, c::Create, |st, ctx, call, a| {
-        let mut m = st.normalize(
-            &a.member,
-            None,
-            now(&ctx),
-            &profile_names(&ctx, &call).await,
-            &crate::calls::machine_ids(&ctx, &call).await,
-            &crate::calls::default_agent(&ctx),
-        )?;
-        // the id the client drew it under (B27: the rail showed the member twice for a frame)
-        if let Some(id) = a.id.filter(|id| wisp_crew_core::kit::is_id(id) && st.member(id).is_err()) {
-            m.id = id;
-        }
-        st.put(m.clone());
-        st.save().await;
-        ctx.emit(&call, &wisp_crew_api::events::Joined { crew_id: m.id.clone(), name: m.name.clone(), how: "create".into() });
-        let session =
-            if a.checkin == Some(true) { checkin(&ctx, &call, &st, &m.id, false).await.ok().and_then(|s| s.session) } else { None };
-        Ok(c::Created { member: view(&ctx, &call, &st, &m).await, session })
-    });
-    on!(s, st, c::Update, |st, ctx, call, a| {
-        let mut prev = st.member(&a.id)?;
-        if let Some(keep) = &a.queue {
-            prev.queue.retain(|w| keep.contains(&w.id)); // drop waiting jobs
-        }
-        let mut m = st.normalize(
-            &a.member,
-            Some(&prev),
-            now(&ctx),
-            &profile_names(&ctx, &call).await,
-            &crate::calls::machine_ids(&ctx, &call).await,
-            &crate::calls::default_agent(&ctx),
-        )?;
-        crate::offers::settle_all(&mut m, a.offers.as_ref(), now(&ctx));
-        st.put(m.clone());
-        st.save().await;
-        ctx.emit(&call, &wisp_crew_api::events::MemberChanged { crew_id: m.id.clone() });
-        Ok(view(&ctx, &call, &st, &m).await)
-    });
+    on!(s, st, c::Create, |st, ctx, call, a| create(&ctx, &call, &st, a).await);
+    on!(s, st, c::Update, |st, ctx, call, a| update(&ctx, &call, &st, &a).await);
     on!(s, st, c::Remove, |st, ctx, call, a| {
         let m = st.member(&a.id)?;
         st.remove(&m.id);
@@ -431,6 +418,74 @@ pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {
         Ok(view(&ctx, &call, &st, &m).await)
     });
     work_commands(s, st);
+}
+
+/// `crew.create`: a new member, and their first check-in if asked.
+async fn create(ctx: &Ctx, call: &Call, st: &State, a: c::CreateArgs) -> Result<c::Created, WireError> {
+    if let Some(w) = &a.member.wakes {
+        unknown_sources(ctx, call, w, &[]).await?;
+    }
+    let mut m = st.normalize(
+        &a.member,
+        None,
+        now(ctx),
+        &profile_names(ctx, call).await,
+        &crate::calls::machine_ids(ctx, call).await,
+        &crate::calls::default_agent(ctx),
+    )?;
+    // the id the client drew it under (B27: the rail showed the member twice for a frame)
+    if let Some(id) = a.id.filter(|id| wisp_crew_core::kit::is_id(id) && st.member(id).is_err()) {
+        m.id = id;
+    }
+    st.insert(m.clone());
+    st.save().await;
+    ctx.emit(call, &wisp_crew_api::events::Joined { crew_id: m.id.clone(), name: m.name.clone(), how: "create".into() });
+    let session = if a.checkin == Some(true) { checkin(ctx, call, st, &m.id, false).await.ok().and_then(|s| s.session) } else { None };
+    Ok(c::Created { member: view(ctx, call, st, &m).await, session })
+}
+
+/// `crew.update`: the edit is applied to the member as they are after the awaits (the harnesses, the machines), not to
+/// a copy read before them: a job that started from the queue meanwhile isn't put back, nor one queued lost.
+async fn update(ctx: &Ctx, call: &Call, st: &State, a: &c::UpdateArgs) -> Result<MemberView, WireError> {
+    let before = st.member(&a.id)?;
+    if let Some(w) = &a.member.wakes {
+        unknown_sources(ctx, call, w, &before.wakes).await?;
+    }
+    let (profiles, machines) = (profile_names(ctx, call).await, crate::calls::machine_ids(ctx, call).await);
+    // read again, and written with no await between
+    let mut prev = st.member(&before.id)?;
+    if let Some(keep) = &a.queue {
+        prev.queue.retain(|w| keep.contains(&w.id)); // drop waiting jobs
+    }
+    let mut m = st.normalize(&a.member, Some(&prev), now(ctx), &profiles, &machines, &crate::calls::default_agent(ctx))?;
+    crate::offers::settle_all(&mut m, a.offers.as_ref(), now(ctx));
+    st.update(&m.id, |live| *live = m.clone()).ok_or_else(gone)?;
+    st.save().await;
+    ctx.emit(call, &wisp_crew_api::events::MemberChanged { crew_id: m.id.clone() });
+    Ok(view(ctx, call, st, &m).await)
+}
+
+/// A wake whose `on` no trigger source offers never fires: refused in the words the triggers kind uses
+/// (`wakes[i].on: …`), so the app, the CLI and `wisp apply` agree. Only a wake added or changed (`had`: the member's
+/// own): one whose source has gone since (its plugin removed) doesn't lock every other edit. With automations off,
+/// there is nothing to check against.
+async fn unknown_sources(ctx: &Ctx, call: &Call, wakes: &[TriggerSpec], had: &[TriggerSpec]) -> Result<(), WireError> {
+    if wakes.iter().all(|w| had.contains(w)) {
+        return Ok(());
+    }
+    let sources = match ctx.run::<wisp_automations_api::commands::Sources>(call, wisp_automations_api::commands::Empty {}).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::debug!(error = %e.message, "crew: no trigger sources to check wakes against");
+            return Ok(());
+        }
+    };
+    for (i, w) in wakes.iter().enumerate().filter(|(_, w)| !had.contains(w)) {
+        if let Some(p) = wisp_automations_api::spec::no_source(&w.on, &sources) {
+            return Err(WireError::invalid(format!("wakes[{i}].{p}")));
+        }
+    }
+    Ok(())
 }
 
 /// Giving a member work: assign, check in, wake, and the per-member stats.
@@ -489,16 +544,25 @@ pub(crate) fn start_ticks(ctx: &Ctx, st: Arc<State>) {
 
 async fn run_tick(ctx: &Ctx, st: &State) {
     let call = ctx.root_call();
-    let crew = lock(&st.saved).crew.clone();
+    let ids: Vec<String> = lock(&st.saved).crew.iter().map(|m| m.id.clone()).collect();
     let t = now(ctx);
-    for mut m in crew {
-        if let Some(fire) = tick(&mut m, t, &Utc) {
-            st.put(m.clone());
-            if let Err(e) = checkin(ctx, &call, st, &m.id, fire.wake).await {
-                tracing::warn!(member = %m.name, error = %e.message, "crew check-in");
+    for id in ids {
+        // each member as they are now (the one before awaited), the minute marked on their live row
+        let Ok(m) = st.member(&id) else { continue };
+        if due_now(&m, t, &Utc)
+            && let Some(fire) = st.update(&id, |live| tick(live, t, &Utc)).flatten()
+        {
+            match checkin(ctx, &call, st, &id, fire.wake).await {
+                // a wake-up is used up only once its check-in started or queued
+                Ok(_) if fire.wake => {
+                    st.update(&id, |live| clear_wake(live, t));
+                }
+                Ok(_) => {}
+                // a wake-up stays: the next minute's tick asks again (already checking in, a full queue)
+                Err(e) => tracing::warn!(member = %m.name, error = %e.message, "crew check-in"),
             }
         }
-        drain(ctx, &call, st, &m.id).await;
+        drain(ctx, &call, st, &id).await;
     }
     st.save().await;
 }
@@ -511,23 +575,25 @@ pub(crate) async fn drain_and_save(ctx: &Ctx, call: &Call, st: &State, id: &str)
 
 /// The member's waiting jobs that may start now (room, and not paused) start (v1 `drain`); the caller saves.
 async fn drain(ctx: &Ctx, call: &Call, st: &State, id: &str) {
-    let Ok(mut m) = st.member(id) else { return };
+    let Ok(m) = st.member(id) else { return };
     let busy = u32::try_from(jobs_of(ctx, call, st, &m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
-    let n = drain_count(&m, busy);
-    if n == 0 {
+    if drain_count(&m, busy) == 0 {
         return;
     }
-    let due: Vec<WaitingJob> = m.queue.drain(..n).collect();
-    st.put(m.clone());
+    // the head of the queue as it is now: a job queued or dropped while the jobs were read is neither lost nor run
+    let Some(due) = st.update(id, |live| {
+        let n = drain_count(live, busy);
+        live.queue.drain(..n).collect::<Vec<WaitingJob>>()
+    }) else {
+        return;
+    };
     for w in due {
+        let Ok(m) = st.member(id) else { return };
         if let Err(e) = start(ctx, call, st, &m, &w, None).await {
             tracing::warn!(member = %m.name, error = %e.message, "crew job");
             // a full grid (its sandboxes): the job waits its turn again instead of being lost (ADR-0047)
-            if grid_full(&e.message)
-                && let Ok(mut again) = st.member(&m.id)
-            {
-                again.queue.insert(0, w);
-                st.put(again);
+            if grid_full(&e.message) {
+                st.update(id, |again| again.queue.insert(0, w));
             }
         }
     }
@@ -537,6 +603,11 @@ async fn drain(ctx: &Ctx, call: &Call, st: &State, id: &str) {
 async fn profile_names(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call) -> Vec<String> {
     calls::profile_names(ctx, call).await
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::assert_is_empty)]
+#[path = "jobs_tests.rs"]
+mod races;
 
 #[cfg(test)]
 mod tests {

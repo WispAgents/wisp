@@ -10,6 +10,7 @@
     "builtin": "wisp_crew"
   },
   "permissions": [
+    "automations:read",
     "budget:read",
     "runtime:create",
     "runtime:get",
