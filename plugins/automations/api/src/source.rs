@@ -99,6 +99,16 @@ pub struct TriggerFired {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub session: Option<String>,
+    /// how many causes deep it is: the event that made the trigger decide, plus one (a trigger on `trigger.fired`
+    /// reads it, so two triggers on each other's runs stop at `MAX_DEPTH`). Additive (2026-11-25).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    #[ts(as = "Option<u32>", optional)]
+    pub depth: u32,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip_serializing_if takes a reference
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 impl Event for TriggerFired {
