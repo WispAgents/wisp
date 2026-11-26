@@ -22,7 +22,9 @@ use wisp_harness_kit::{
 pub const PRINT_TIMEOUT: &str = "24h";
 static EDIT_TOOL: Re = Re::new(r"(?i)write|replace|edit|delete");
 static PERMISSION: Re = Re::new(r"(?i)PERMISSION");
-static EFFORT_SUFFIX: Re = Re::new(r"-(low|medium|high)$");
+static EFFORT_SUFFIX: Re = Re::new(r"^(.+)-(low|medium|high|xhigh|max)$");
+/// agy's levels, lowest first: a folded model lists its own in this order.
+const LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 static MODEL_LINE: Re = Re::new(r"^([\w.\-]+)(?:\t|\s{2,})\s*(.+)$");
 
 pub fn args(mode: &str, model: &str, effort: &str, resume_id: Option<&str>, attachment_dirs: &[String]) -> Vec<String> {
@@ -58,22 +60,58 @@ pub fn stdin_event(content: &str) -> String {
     format!("{}\n", json!({ "event": "user", "message": { "content": content } }))
 }
 
-/// Whether `model`'s slug holds its thinking level (`gemini-3-flash-high`): it gets no selector and no `--effort`.
+/// Whether `model`'s slug holds its thinking level (`gemini-3-flash-high`, a pick saved before models were folded):
+/// it takes no `--effort`.
 #[must_use]
 pub fn effort_in_id(model: &str) -> bool {
     EFFORT_SUFFIX.is_match(model)
 }
 
-/// `agy models`: "slug<TAB>Label" (or space-padded) lines; slugs with the effort baked in get no selector.
-pub fn list_models(out: &str) -> Vec<(String, String, bool)> {
-    out.lines()
-        .filter_map(|l| {
-            let c = MODEL_LINE.captures(js::trim(l))?;
-            let id = c.get(1)?.as_str().to_owned();
-            let baked = effort_in_id(&id);
-            Some((id, js::trim(c.get(2).map_or("", |m| m.as_str())).to_owned(), baked))
-        })
-        .collect()
+/// One model of `agy models`, its levels folded in: `efforts` is the levels agy lists for it, lowest first (empty: none).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgyModel {
+    pub id: String,
+    pub label: String,
+    pub efforts: Vec<String>,
+}
+
+/// `agy models`: "slug<TAB>Label" (or space-padded) lines, one per model and level (`gemini-4-neon-high`, "Gemini 4
+/// Neon (High)"). The levels of one model fold into one row (`gemini-4-neon`, "Gemini 4 Neon", low…xhigh) so the
+/// picker reads model + level like every other harness; the launch passes them as `--model` + `--effort` and agy joins
+/// them (it refuses a level that model lacks). A slug without a level (`gemini-pro-orchestrator`) takes none.
+pub fn list_models(out: &str) -> Vec<AgyModel> {
+    let mut models: Vec<AgyModel> = Vec::new();
+    for l in out.lines() {
+        let Some(c) = MODEL_LINE.captures(js::trim(l)) else { continue };
+        let (Some(slug), label) = (c.get(1).map(|m| m.as_str()), js::trim(c.get(2).map_or("", |m| m.as_str()))) else { continue };
+        let level = EFFORT_SUFFIX.captures(slug).and_then(|e| Some((e.get(1)?.as_str(), e.get(2)?.as_str())));
+        let (id, label, level) = match level {
+            Some((base, lv)) => (base, strip_level(label, lv), Some(lv)),
+            None => (slug, label.to_owned(), None),
+        };
+        let at = models.iter().position(|m| m.id == id).unwrap_or_else(|| {
+            models.push(AgyModel { id: id.to_owned(), label, efforts: Vec::new() });
+            models.len() - 1
+        });
+        if let (Some(lv), Some(m)) = (level, models.get_mut(at))
+            && !m.efforts.iter().any(|e| e == lv)
+        {
+            m.efforts.push(lv.to_owned());
+        }
+    }
+    for m in &mut models {
+        m.efforts.sort_by_key(|e| LEVELS.iter().position(|l| l == e));
+    }
+    models
+}
+
+/// "Gemini 4 Neon (High)" → "Gemini 4 Neon": the level's own parenthesis only.
+fn strip_level(label: &str, level: &str) -> String {
+    label
+        .strip_suffix(')')
+        .and_then(|l| l.rsplit_once(" ("))
+        .filter(|(_, lv)| lv.eq_ignore_ascii_case(level))
+        .map_or_else(|| label.to_owned(), |(base, _)| base.to_owned())
 }
 
 /// Tool parameters are PascalCase (TargetFile, AbsolutePath, CommandLine, …).
@@ -292,11 +330,12 @@ mod tests {
         assert_eq!(describe_tool("read_url_content", &json!({ "Url": "https://x.dev" }), &p).label, "Reading https://x.dev");
         // v1 adapters.test.js "antigravity: detect lists agy models"
         let m = list_models("Fetching models…\ngemini-3-pro-high\tGemini 3 Pro (High)\nclaude-sonnet-4-5   Claude Sonnet 4.5\n");
+        let lv = |l: &[&str]| l.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         assert_eq!(
             m,
             [
-                ("gemini-3-pro-high".to_owned(), "Gemini 3 Pro (High)".to_owned(), true),
-                ("claude-sonnet-4-5".to_owned(), "Claude Sonnet 4.5".to_owned(), false)
+                AgyModel { id: "gemini-3-pro".into(), label: "Gemini 3 Pro".into(), efforts: lv(&["high"]) },
+                AgyModel { id: "claude-sonnet-4-5".into(), label: "Claude Sonnet 4.5".into(), efforts: vec![] }
             ]
         );
         assert_eq!(stdin_event("hi"), "{\"event\":\"user\",\"message\":{\"content\":\"hi\"}}\n");
@@ -312,8 +351,45 @@ mod tests {
         assert!(plain.windows(2).any(|w| w[0] == "--effort" && w[1] == "high"), "{plain:?}");
         // the Default (no model) keeps the picked level
         assert!(args("auto", "", "low", None, &[]).windows(2).any(|w| w[0] == "--effort" && w[1] == "low"));
-        assert!(effort_in_id("gemini-3-pro-low") && effort_in_id("gemini-3-flash-medium"));
+        assert!(effort_in_id("gemini-3-pro-low") && effort_in_id("gemini-3-flash-medium") && effort_in_id("gemini-4-neon-xhigh"));
+        // a saved xhigh slug took --effort too and agy refused it
+        assert!(!has(&args("auto", "gemini-4-neon-xhigh", "high", None, &[]), "--effort"));
+        // a folded model: agy joins --model and --effort itself
+        let folded = args("auto", "gemini-4-neon", "xhigh", None, &[]);
+        assert!(folded.windows(4).any(|w| w == ["--model", "gemini-4-neon", "--effort", "xhigh"]), "{folded:?}");
         assert!(!effort_in_id("gemini-3-pro") && !effort_in_id("gemini-3-pro-xhighway") && !effort_in_id(""));
+    }
+
+    #[test]
+    fn agy_models_fold_one_row_per_model_with_its_own_levels() {
+        // `agy models` 2026-11-26: one slug per model and level, in no order; the orchestrators have no level
+        let out = "Fetching available models...\n\
+            gemini-4-neon-high\tGemini 4 Neon (High)\n\
+            gemini-4-neon-xhigh\tGemini 4 Neon (XHigh)\n\
+            gemini-4-neon-medium\tGemini 4 Neon (Medium)\n\
+            gemini-4-neon-low\tGemini 4 Neon (Low)\n\
+            gemini-4-carbon-medium\tGemini 4 Carbon (Medium)\n\
+            gemini-4-carbon-high\tGemini 4 Carbon (High)\n\
+            gemini-4-carbon-low\tGemini 4 Carbon (Low)\n\
+            gemini-pro-orchestrator-neon\tOrchestrator (Neon)\n\
+            gemini-pro-orchestrator\tOrchestrator (Carbon)\n\
+            claude-opus-5-5-low\tClaude Opus 5.5 (Low)\n\
+            claude-opus-5-5-high\tClaude Opus 5.5 (High)\n\
+            gpt-oss-120b-medium\tGPT-OSS 120B (Medium)\n";
+        let got: Vec<(String, String, String)> = list_models(out).into_iter().map(|m| (m.id, m.label, m.efforts.join(","))).collect();
+        let want = [
+            ("gemini-4-neon", "Gemini 4 Neon", "low,medium,high,xhigh"),
+            ("gemini-4-carbon", "Gemini 4 Carbon", "low,medium,high"),
+            ("gemini-pro-orchestrator-neon", "Orchestrator (Neon)", ""),
+            ("gemini-pro-orchestrator", "Orchestrator (Carbon)", ""),
+            ("claude-opus-5-5", "Claude Opus 5.5", "low,high"),
+            ("gpt-oss-120b", "GPT-OSS 120B", "medium"),
+        ]
+        .map(|(a, b, c)| (a.to_owned(), b.to_owned(), c.to_owned()));
+        assert_eq!(got, want);
+        // a label without the level's parenthesis stays whole
+        assert_eq!(list_models("x-high\tX")[0].label, "X");
+        assert_eq!(strip_level("Orchestrator (Neon)", "high"), "Orchestrator (Neon)");
     }
 
     #[test]

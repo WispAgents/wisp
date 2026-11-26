@@ -3,7 +3,7 @@
 export type HarnessModel = { id: string, label: string, hint?: string, 
 /**
  * this model's own reasoning levels, winning over the harness's: `None` takes the harness's, `Some([])` has none
- * (the level is in the model's id, as Antigravity's `gemini-…-high`: no selector, no `--effort`; v1 `efforts: []`)
+ * (no selector, no `--effort`; v1 `efforts: []`)
  */
 efforts?: Array<string>, 
 /**
