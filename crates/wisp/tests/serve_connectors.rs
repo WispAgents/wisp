@@ -221,6 +221,111 @@ async fn a_remote_connector_signs_in_with_oauth_and_runs_get_its_token() {
     assert!(cfg["mcpServers"]["linear"]["headers"].get("Authorization").is_none(), "signed out: no token: {cfg}");
 }
 
+/// A stand-in server that keeps each request's `Authorization` header (empty: none) and answers 401.
+fn auth_recorder() -> (u16, Arc<Mutex<Vec<String>>>) {
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let s2 = seen.clone();
+    std::thread::spawn(move || {
+        for mut s in l.incoming().flatten() {
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let (mut len, mut auth) = (0, String::new());
+            let mut line = String::new();
+            r.read_line(&mut line).unwrap_or(0);
+            loop {
+                let mut h = String::new();
+                if r.read_line(&mut h).unwrap_or(0) == 0 || h == "\r\n" {
+                    break;
+                }
+                let lower = h.to_ascii_lowercase();
+                if let Some(v) = lower.strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap_or(0);
+                }
+                if lower.starts_with("authorization:") {
+                    h["authorization:".len()..].trim().clone_into(&mut auth);
+                }
+            }
+            let mut body = vec![0; len];
+            r.read_exact(&mut body).unwrap_or(());
+            s2.lock().unwrap().push(auth);
+            let _ = write!(s, "HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+        }
+    });
+    (port, seen)
+}
+
+/// A connector's stored spec, as `resources.export` has it.
+async fn spec_of(api: &Api, name: &str) -> Value {
+    let all = api.cmd("resources.export", json!({ "kinds": ["connector"] })).await;
+    let found = all.as_array().into_iter().flatten().find(|r| r["name"] == name).cloned();
+    found.map_or_else(|| panic!("no connector {name}: {all}"), |r| r["spec"].clone())
+}
+
+/// A signed-in connector moved to another server kept its sign-in, so its next test (and every run) sent the first
+/// server's token to the new one; and a token went as a bearer header over plain http to any host. Another origin signs
+/// it out (its tokens gone, the new server sees no Authorization); another path on the same server keeps it; plain
+/// http to another computer gets no bearer; a stored token is sent as it is, never read as a `${secret:…}`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_signed_in_connector_moved_to_another_origin_is_signed_out_and_no_token_goes_in_the_clear() {
+    let (mcp, _seen) = fake_oauth_server();
+    let (other, heard) = auth_recorder();
+    let dir = temp("serve-connectors-origin");
+    let rec = dir.join("rec");
+    std::fs::create_dir_all(&rec).unwrap();
+    std::fs::create_dir_all(dir.join("home")).unwrap();
+    std::fs::write(
+        dir.join("home/secrets.json"),
+        r#"{"wisp":{"connector:plain:token":"tok-plain","connector:loop:token":"${secret:LINEAR_KEY}","LINEAR_KEY":"lin-1"}}"#,
+    )
+    .unwrap();
+    let (_serve, port) = start_with(&dir, &[("FAKE_RECORD", rec.to_str().unwrap())]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    api.cmd("connectors.add", json!({ "name": "linear", "url": format!("http://127.0.0.1:{mcp}/mcp") })).await;
+    let origin = format!("http://127.0.0.1:{port}");
+    let out = api.cmd("connectors.signin", json!({ "id": "linear", "origin": origin })).await;
+    let state = query_of(out["url"].as_str().unwrap()).get("state").cloned().unwrap();
+    api.http.get(format!("{origin}/api/connectors/oauth/callback?state={state}&code=code-1")).send().await.unwrap();
+    assert_eq!(spec_of(&api, "linear").await["oauth"], true, "signed in");
+    let secrets = || std::fs::read_to_string(dir.join("home/secrets.json")).unwrap();
+    assert!(secrets().contains("tok-abc"));
+
+    // another path on the same server: still signed in
+    api.cmd("connectors.update", json!({ "id": "linear", "url": format!("http://127.0.0.1:{mcp}/v2/mcp") })).await;
+    assert_eq!(spec_of(&api, "linear").await["oauth"], true);
+    assert!(secrets().contains("tok-abc"));
+
+    // another origin: signed out, and its test reaches the new server without the token
+    api.cmd("connectors.update", json!({ "id": "linear", "url": format!("http://localhost:{other}/mcp") })).await;
+    assert!(spec_of(&api, "linear").await["oauth"].is_null(), "{}", spec_of(&api, "linear").await);
+    let kept = secrets();
+    assert!(!kept.contains("tok-abc") && !kept.contains("ref-1") && !kept.contains("connector:linear:oauth"), "{kept}");
+    let at = std::time::Instant::now();
+    while heard.lock().unwrap().is_empty() {
+        assert!(at.elapsed() < std::time::Duration::from_secs(15), "the test probe never reached the new server");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(heard.lock().unwrap().iter().all(String::is_empty), "a token went to the new server: {:?}", heard.lock().unwrap());
+    let listed = api.cmd("connectors.list", json!({})).await;
+    let row = listed["connectors"].as_array().unwrap().iter().find(|c| c["id"] == "linear").cloned().unwrap();
+    assert!(row["signedIn"].is_null(), "the row shows Sign in: {row}");
+
+    // plain http to another computer gets no bearer; a stored token is sent as it is
+    api.cmd(
+        "resources.apply",
+        json!({ "resources": [
+            { "kind": "connector", "name": "plain", "spec": { "url": "http://example.invalid/mcp", "oauth": true } },
+            { "kind": "connector", "name": "loop", "spec": { "url": "http://127.0.0.1:9/mcp", "oauth": true } }
+        ] }),
+    )
+    .await;
+    run(&api, &dir, "claude", "edits").await;
+    let cfg = mcp_config(&rec);
+    assert_eq!(cfg["mcpServers"]["plain"]["url"], "http://example.invalid/mcp", "{cfg}");
+    assert!(cfg["mcpServers"]["plain"]["headers"].get("Authorization").is_none(), "a token in the clear: {cfg}");
+    assert_eq!(cfg["mcpServers"]["loop"]["headers"]["Authorization"], "Bearer ${secret:LINEAR_KEY}", "{cfg}");
+}
+
 /// v1 #634 and #340: Claude Code's Plan mode refuses an MCP tool without `readOnlyHint` whatever
 /// `--allowedTools` says, so wisp's read/ask/show tools carry it and still answer; Codex in Edits and Plan gets
 /// wisp's server (and a connector) with `default_tools_approval_mode="approve"`, without which `codex exec`'s

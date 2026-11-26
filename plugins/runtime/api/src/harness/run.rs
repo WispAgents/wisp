@@ -78,6 +78,10 @@ pub struct HarnessRun {
     pub probe: bool,
     /// the program detect found (`HarnessFound::bin`), if any
     pub bin: Option<String>,
+    /// the browser its agent drives (`runtime.browser`, resolved for this harness: `browser::resolve`); a headless or a
+    /// sandbox's comes as the `browser` MCP server, Claude in Chrome by flag (ADR-0128). Additive (2026-11-26).
+    #[serde(default)]
+    pub browser: super::browser::Browser,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

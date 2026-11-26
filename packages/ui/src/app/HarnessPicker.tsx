@@ -69,6 +69,17 @@ export interface HarnessPickerPane {
         readonly note?: string | undefined;
       }
     | undefined;
+  /** the browser its agent drives (ADR-0128): segments like the accounts', one it can't take greyed out with why (its
+   *  title), and a line under them; a pick commits in place. Additive (2026-11-26). */
+  readonly browser?:
+    | {
+        readonly label: string;
+        readonly options: readonly { readonly id: string; readonly label: string; readonly off?: boolean; readonly title?: string }[];
+        readonly value: string;
+        readonly onPick: (id: string) => void;
+        readonly note?: string | undefined;
+      }
+    | undefined;
   /** Try it two ways' What's different (v1 .pk-vary): a row of segments per setting under the rest; a pick commits in place */
   readonly vary?:
     | {
@@ -480,6 +491,33 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
                 </span>
                 <Show when={acc().note}>
                   <p data-kit="pk-anote">{acc().note}</p>
+                </Show>
+              </div>
+            )}
+          </Show>
+          <Show when={p().body === undefined && p().browser}>
+            {(br) => (
+              <div data-kit="pk-effort" data-acct="" data-part="runner.browser" role="radiogroup" aria-label={br().label}>
+                <span data-kit="pk-ehead">{br().label}</span>
+                <span data-kit="pk-seg" data-layout="wrap" data-part="runner.browser-wrap">
+                  <Index each={br().options}>
+                    {(o) => (
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={o().id === br().value ? 'true' : 'false'}
+                        aria-disabled={o().off ? 'true' : undefined}
+                        data-off={flag(o().off)}
+                        title={o().title}
+                        onClick={() => !o().off && br().onPick(o().id)}
+                      >
+                        <span data-text="control">{o().label}</span>
+                      </button>
+                    )}
+                  </Index>
+                </span>
+                <Show when={br().note}>
+                  <p data-kit="pk-anote">{br().note}</p>
                 </Show>
               </div>
             )}

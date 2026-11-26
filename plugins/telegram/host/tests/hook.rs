@@ -87,3 +87,33 @@ async fn when_the_grid_holds_the_webhook_the_box_never_touches_it_and_takes_what
     let unverified = t.inbound(&update(10, 42, "status"), &Vec::new(), InboundOpts { at_ms: 0, verified: false }).await;
     assert_eq!(unverified.status, 403, "no secret here to check it with");
 }
+
+/// Before a chat was linked, any number of codes could be tried, as fast as Telegram delivers, and wrong ones never
+/// changed the code. Three a minute from one sender (then silence, the right code too), and five wrong from anyone
+/// change it: the old code links nobody, the new one does.
+#[tokio::test]
+async fn before_linking_codes_are_rate_limited_and_five_wrong_change_the_code() {
+    let h = hub(true);
+    h.set_cfg("telegram", json!({ "chatId": Value::Null, "linkCode": "424242" }));
+    let dyn_hub: Arc<dyn ChannelHub> = h.clone();
+    let t = wisp_telegram::transport(dyn_hub);
+    t.start(h.stop.clone()).await;
+    let opts = InboundOpts { at_ms: 0, verified: true };
+    let send = async |id: i64, chat: i64, text: &str| t.inbound(&update(id, chat, text), &Vec::new(), opts).await.status;
+    for chat in 1..=5 {
+        assert_eq!(send(chat, chat, "/start 000000").await, 403);
+    }
+    let code = h.cfg("telegram")["linkCode"].as_str().unwrap_or_default().to_owned();
+    assert!(!code.is_empty() && code != "424242", "five wrong from anyone: a new code: {code}");
+    send(20, 9, "/start 424242").await;
+    assert!(h.cfg("telegram")["chatId"].is_null(), "the old code links nobody: {}", h.cfg("telegram"));
+    // one sender's fourth try in a minute is dropped, the right code too
+    for (i, tried) in ["111111", "222222", "333333", code.as_str()].iter().enumerate() {
+        send(30 + i64::try_from(i).unwrap(), 8, &format!("/start {tried}")).await;
+    }
+    assert!(h.cfg("telegram")["chatId"].is_null(), "{}", h.cfg("telegram"));
+    assert_eq!(h.cfg("telegram")["linkGuess"]["wrong"], 4, "the old code and three: the dropped one isn't counted: {}", h.cfg("telegram"));
+    assert_eq!(send(40, 10, &format!("/start {code}")).await, 200);
+    assert_eq!(h.cfg("telegram")["chatId"], "10", "the new code links");
+    assert_eq!(h.cfg("telegram")["linkCode"], "");
+}

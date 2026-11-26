@@ -426,6 +426,28 @@ mod tests {
         assert!(a.iter().any(|x| x == "--allow-tool=wisp") && a.iter().any(|x| x == "--allow-all"));
     }
 
+    /// ADR-0128: the run's browser (runtime.browser on) is the runtime's `browser` stdio server, which reaches Copilot in `--additional-mcp-config`, its tools allowed.
+    #[test]
+    fn the_browser_server_goes_in_the_mcp_config() {
+        let m = BTreeMap::from([(
+            "browser".to_owned(),
+            json!({ "type": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp@0.0.86", "--headless", "--isolated"] }),
+        )]);
+        let a = args(&CopilotArgs {
+            mode: "edits",
+            session: "s",
+            usage_file: "u",
+            mcp_servers: Some(&m),
+            mcp_config_file: "/t/m.json",
+            ..CopilotArgs::default()
+        });
+        assert!(a.iter().any(|x| x == "--allow-tool=browser"), "{a:?}");
+        let cfg: Value = serde_json::from_str(&mcp_config(&m)).unwrap_or_default();
+        assert_eq!(cfg["mcpServers"]["browser"]["type"], "local");
+        assert_eq!(cfg["mcpServers"]["browser"]["command"], "npx");
+        assert_eq!(cfg["mcpServers"]["browser"]["args"][1], "@playwright/mcp@0.0.86");
+    }
+
     #[test]
     fn apply_usage_reads_direct_tokens_and_model_metrics() {
         let mut s = Map::new();
