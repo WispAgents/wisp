@@ -866,3 +866,78 @@ fn a_tasks_command_naming_no_task_is_refused_never_launched() {
     assert_eq!(p(&["held", "01a1fa925a7d732493adf46a31a0b1e5", "start"]).command, Some("held"));
     assert_eq!(no_task(&p(&["held", "last", "start"]).words, Literal::No), None);
 }
+
+/// Audit H1: `wisp destroy --help` planned a destroy, `wisp graph --help` printed the digraph, `wisp workspace new
+/// --help` made `.wisp/workspaces/--help.vars.yml`, and `wisp run -f x.task.yml --help` ran it. `--help` after any
+/// built-in command and whatever words follow is its usage (exit 0), decided before any command runs; a group's or
+/// a plugin's verb keeps its own (`wisp crew create --help`), and after `--` it's the task's words.
+#[test]
+fn help_after_any_built_in_and_its_words_is_its_usage_audit_h1() {
+    let asked = |args: &[&str]| {
+        let x = p(args);
+        asked_help(&x.words, x.literal, x.flags.help)
+    };
+    for (args, line) in [
+        (&["destroy", "--help"][..], "wisp plan|destroy"),
+        (&["validate", "--help"], "wisp diff|validate"),
+        (&["validate", "-f", "x.yml", "--help"], "wisp diff|validate"),
+        (&["graph", "--help"], "wisp graph"),
+        (&["mv", "--help"], "wisp mv FROM TO"),
+        (&["mv", "a.b", "a.c", "--help"], "wisp mv FROM TO"),
+        (&["workspace", "new", "--help"], "wisp workspace"),
+        (&["run", "-f", "x.task.yml", "--help"], "wisp run -f x.task.yml"),
+        (&["apply", "-f", "x.yml", "--help"], "wisp apply -f wisp.yml"),
+        (&["adopt", "--all", "--help"], "wisp adopt"),
+        (&["secret", "set", "FOO", "--help"], "wisp secret set|rm NAME"),
+        (&["schema", "--help"], "wisp schema"),
+        (&["tui", "--help"], "wisp tui"),
+        (&["list", "--help"], "wisp ls"),
+        (&["attach", "0123abcd0123", "-h"], "wisp attach <id>"),
+        (&["computer", "on", "--help"], "wisp computer on|off|status"),
+    ] {
+        match asked(args) {
+            Some(AskedHelp::Usage(u)) => assert!(u.contains(line) && !u.contains(" needs more: "), "{args:?}: {u}"),
+            other => panic!("{args:?}: {other:?}"),
+        }
+    }
+    // every word a prompt may start with, every command and every routed word, given an argument: its usage, never run
+    for word in PROMPT_WORDS.iter().chain(ROUTED.iter()).chain(COMMANDS.iter()).filter(|w| !matches!(**w, "help" | "grid")) {
+        let x = asked(&[word, "x.yml", "--help"]);
+        assert!(x.is_some(), "{word} x.yml --help: {x:?}");
+        if let Some(AskedHelp::Usage(u)) = x {
+            assert!(!u.contains(" needs more: "), "{word}: {u}");
+        }
+    }
+    // a word that may be its plugin's verb, or a group or plugin-backed command alone: the catalogue's to say
+    for args in [&["ship", "--help"][..], &["ship", "merge", "--help"], &["crew", "create", "--help"], &["settings", "--help"]] {
+        assert_eq!(asked(args), Some(AskedHelp::Catalogue), "{args:?}");
+    }
+    // a task, help itself, wisp Grid's own help, a plugin that's no built-in, and no --help
+    for args in
+        [&["--", "explain", "--help"][..], &["help", "crew", "--help"], &["grid", "dev", "--help"], &["review", "--help"], &["destroy"]]
+    {
+        assert_eq!(asked(args), None, "{args:?}");
+    }
+    // the parser's flag is never a word a command reads (`--help.vars.yml`)
+    let o = crate::code::opts(&w(&["new", "--help", "-h"]));
+    assert_eq!(o.words, w(&["new"]));
+}
+
+/// Audit M1: `wisp tui` was in no line of `wisp --help`, `wisp tui --help` and `wisp schema --help` said "needs more",
+/// and `wisp list --help` printed the whole usage. Every word the CLI routes on has lines of its own.
+#[test]
+fn every_routed_word_has_usage_lines_of_its_own_audit_m1() {
+    for word in ROUTED.iter().chain(COMMANDS.iter()).chain(OWN_HELP.iter()) {
+        assert!(!usage(word).contains(" needs more: "), "{word}: {}", usage(word));
+    }
+    assert!(HELP.contains("\n  wisp tui ") && HELP.contains("\n  wisp schema "), "wisp --help names tui and schema");
+    assert!(usage("tui").contains("the terminal app") && usage("schema").contains("wisp schema "), "{}{}", usage("tui"), usage("schema"));
+    let lines = |w: &str| usage(w).lines().filter(|l| !l.contains("a task that starts with")).map(str::to_owned).collect::<Vec<_>>();
+    assert_eq!(lines("list"), lines("ls"));
+    // OWN_HELP's words have no plugin of their name: their `--help` reads no catalogue
+    let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    for word in OWN_HELP {
+        assert!(!plugins.join(word).join("host").exists(), "{word} is a plugin's name too: take it out of OWN_HELP");
+        assert!(documented(word).is_some(), "{word}");
+    }
+}

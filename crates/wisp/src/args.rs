@@ -37,7 +37,9 @@ pub const HELP: &str = "usage:
   wisp plan|destroy             what applying .wisp/ would change; take out everything it declares   (--yes)
   wisp fmt                      format the .wisp/ folder   (--check)
   wisp workspace [list|show|select|new NAME]   the folder's workspaces: one set of variables each
-  wisp output [name]|graph|mv FROM TO   the folder's outputs, its references as Graphviz, rename an address
+  wisp output [name]            the folder's outputs
+  wisp graph                    the folder's references, as Graphviz
+  wisp mv FROM TO               rename an address in the folder (and in wisp)
   wisp track <id>               keep a task in this repo's .wisp/tasks, for you to commit   (--level spec|report|full)
   wisp untrack <id>             take a tracked task out again
   wisp log [path]               the tracked tasks, newest first; with a path, the ones that touched it
@@ -50,7 +52,8 @@ pub const HELP: &str = "usage:
   wisp secret set|rm NAME       a secret your formulas reference as ${secret:NAME}: piped in or typed hidden, never an argument
   wisp import [home]            bring another wisp home (~/.wisp) in: its plan first, then on yes   (--dry-run  --yes)
   wisp apply -f wisp.yml        your setup as code: plan, diff, confirm   (--dry-run  --yes  --prune  --trust  --profile P)
-  wisp diff|validate -f F       what apply would change; schema and checks   (wisp schema: the editor schema)
+  wisp diff|validate -f F       what apply would change; schema and checks
+  wisp schema                   the JSON schema of a formula, for your editor
   wisp export [kinds…]          what's set up here, as a formula   (--include ui,account  --format yaml|json|toml)
   wisp task spec|export|formula|history <id>   what was asked, to share, the setup it ran with, its family
   wisp run -f x.task.yml        a shared task spec, on your code; its formula: ./wisp.yml, module.x or inline
@@ -75,6 +78,7 @@ pub const HELP: &str = "usage:
   wisp computer on|off|status   this computer on the grid, reachable from your other wisps   (on --grid <url>: signs in there first)
   wisp --on <machine> …         run any command on that machine (wisp ls --on studio, wisp \"task\" --on cloud)
   wisp desktop                  open the wisp app window
+  wisp tui                      the terminal app: your tasks, a run live, the composer   (? lists its keys)
   wisp mcp                      run the MCP server (stdio) for other agents and editors
   wisp skill [install]          print / install the wisp agent skill   (--agent claude|codex|opencode|all  --project)
   wisp grid dev|init|serve|doctor  wisp Grid: wisp for many people on your server   (wisp grid help)
