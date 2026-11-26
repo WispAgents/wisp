@@ -21,7 +21,7 @@ use wisp_tui_api::{InputCx, Slot, Theme, cell};
 
 use super::app::{App, Hit, Mode, Overlay, Side, Zone};
 use super::keys::{KEYS, Where};
-use super::model::{Section, Transcript, s};
+use super::model::{OUTPUT_LINES, Section, Transcript, s};
 
 /// Narrower than this, one zone shows at a time.
 pub const ONE_ZONE: u16 = 100;
@@ -247,7 +247,13 @@ pub fn draw(f: &mut Frame<'_>, app: &App) -> Hit {
     }
     let main = rows[1];
     let one = main.width < ONE_ZONE;
-    let side_w = if one || app.side.is_none() { 0 } else { app.widths.1.min(main.width / 2) };
+    hit.narrow = one;
+    // one zone at a time, a focused side pane takes the whole width, as the focused list does
+    let side_w = match app.side {
+        Some(_) if one && app.focus == Zone::Side => main.width,
+        Some(_) if !one => app.widths.1.min(main.width / 2),
+        _ => 0,
+    };
     let list_w = if one { if app.focus == Zone::List { main.width } else { 0 } } else { app.widths.0.min(main.width / 3) };
     let rule = |w: u16| u16::from(!(one || w == 0));
     let cols = Layout::default()
@@ -278,12 +284,14 @@ pub fn draw(f: &mut Frame<'_>, app: &App) -> Hit {
         hit.composer = comp;
         match &app.screen {
             Some(v) => view(f, app, v, body),
-            None => hit.tools = task(f, app, body),
+            None => hit.tools = task(f, app, body, &mut hit),
         }
     }
     if side_w > 0 {
         hit.side = cols[4];
-        side(f, app, cols[4]);
+        let (max, page) = side(f, app, cols[4]);
+        hit.side_max = Some(max);
+        hit.side_page = page;
     }
     status(f, app, rows[2]);
     toasts(f, app, main);
@@ -610,7 +618,21 @@ pub fn transcript(app: &App, t: &Transcript, w: u16) -> (Vec<Line<'static>>, Vec
                         } else {
                             s(b, "output")
                         };
-                        body.extend(output.lines().take(40).map(|l| Line::from(Span::styled(l.to_owned(), Style::default().fg(th.ink2)))));
+                        // a long output is cut, and says so: 40 lines with nothing after them read as all of it
+                        let all = t.full.contains(seq);
+                        let n = output.lines().count();
+                        body.extend(
+                            output
+                                .lines()
+                                .take(if all { n } else { OUTPUT_LINES })
+                                .map(|l| Line::from(Span::styled(l.to_owned(), Style::default().fg(th.ink2)))),
+                        );
+                        if !all && n > OUTPUT_LINES {
+                            body.push(Line::from(Span::styled(
+                                format!("{} {} more lines · Enter shows all", gl.pick("…", "..."), n - OUTPUT_LINES),
+                                th.dim(),
+                            )));
+                        }
                         let lead =
                             |i: usize| Span::styled(if i == 0 { format!("    {} ", gl.sub()) } else { "      ".to_owned() }, th.dim());
                         let body = body
@@ -827,7 +849,7 @@ fn new_task(f: &mut Frame<'_>, app: &App, r: Rect) {
     f.render_widget(Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false }), padded(r));
 }
 
-fn task(f: &mut Frame<'_>, app: &App, r: Rect) -> BTreeMap<u16, i64> {
+fn task(f: &mut Frame<'_>, app: &App, r: Rect, hit: &mut Hit) -> BTreeMap<u16, i64> {
     let th = &app.th;
     let inner = Rect { x: r.x + 1, y: r.y, width: r.width.saturating_sub(2), height: r.height };
     if app.new_task {
@@ -857,6 +879,20 @@ fn task(f: &mut Frame<'_>, app: &App, r: Rect) -> BTreeMap<u16, i64> {
     let body = Rect { y: inner.y + 4, height: inner.height.saturating_sub(4), ..inner };
     let (lines, seqs) = transcript(app, t, body.width);
     let h = usize::from(body.height);
+    // the lines the search matches, for its jumps (the same lines `transcript` marks)
+    let q = app.search.as_ref().filter(|q| !q.is_empty() && app.focus == Zone::Task).map(|q| q.to_lowercase());
+    hit.matches = q.map_or_else(Vec::new, |q| {
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>().to_lowercase().contains(&q))
+            .map(|(i, _)| i)
+            .collect()
+    });
+    (hit.lines, hit.body_h) = (lines.len(), h);
+    if let Some(q) = app.search.as_ref().filter(|_| app.focus == Zone::Task && inner.height > 4) {
+        search_line(f, app, q, hit.matches.len(), Rect { y: inner.y + 3, height: 1, ..inner });
+    }
     let end = lines.len().saturating_sub(usize::from(app.scroll)).max(h.min(lines.len()));
     let start = end.saturating_sub(h);
     let mut tools = BTreeMap::new();
@@ -876,6 +912,21 @@ fn task(f: &mut Frame<'_>, app: &App, r: Rect) -> BTreeMap<u16, i64> {
         );
     }
     tools
+}
+
+/// The transcript search, on the line under the header: the query, which match is in sight of how many, the keys.
+fn search_line(f: &mut Frame<'_>, app: &App, q: &str, n: usize, r: Rect) {
+    let th = &app.th;
+    let left = vec![Span::styled("/", th.accent()), Span::styled(q.to_owned(), th.text()), Span::styled("▏", th.accent())];
+    let count = match app.search_at.filter(|i| *i < n) {
+        _ if q.is_empty() => String::new(),
+        _ if n == 0 => "no match".to_owned(),
+        Some(i) => format!("{}/{n}", i + 1),
+        None => format!("{n} match{}", if n == 1 { "" } else { "es" }),
+    };
+    let mut right = vec![Span::styled(format!("{count}   "), th.dim())];
+    right.extend(hints(th, &[("↓ Enter", "next"), ("↑", "previous"), ("Esc", "close")]));
+    f.render_widget(Paragraph::new(Line::from(split(left, right, usize::from(r.width)))), r);
 }
 
 /// The changes the open task made, from its edit steps' diffs: (file, rows).
@@ -918,7 +969,8 @@ fn hints(th: &Theme, keys: &[(&str, &str)]) -> Vec<Span<'static>> {
     out
 }
 
-fn side(f: &mut Frame<'_>, app: &App, r: Rect) {
+/// The side pane, scrolled as `side_scroll` says (kept inside what there is). → (how far it scrolls, its height)
+fn side(f: &mut Frame<'_>, app: &App, r: Rect) -> (usize, usize) {
     let th = &app.th;
     let which = app.side.unwrap_or(Side::Changes);
     let inner = padded(r);
@@ -957,20 +1009,23 @@ fn side(f: &mut Frame<'_>, app: &App, r: Rect) {
             }
             Side::Terminal => {
                 for turn in t.turns() {
-                    for (_, b) in t.events(s(&turn, "id")) {
-                        if s(&b, "kind") == "tool" && matches!(s(&b, "tool"), "bash" | "shell" | "run") {
-                            body.push(Line::from(vec![
-                                Span::styled("$ ", Style::default().fg(th.accent_ink).add_modifier(Modifier::BOLD)),
-                                Span::styled(s(&b, "label").to_owned(), th.strong()),
-                            ]));
-                            body.extend(
-                                s(&b, "output").lines().map(|l| Line::from(Span::styled(l.to_owned(), Style::default().fg(th.ink2)))),
-                            );
-                        } else if s(&b, "kind") == "tool_output" {
-                            body.extend(
-                                s(&b, "text").lines().map(|l| Line::from(Span::styled(l.to_owned(), Style::default().fg(th.ink2)))),
-                            );
+                    let events = t.events(s(&turn, "id"));
+                    // the shell's own output only, under its command whichever came first: every call's tool_output
+                    // went in, so a file a Read returned or a page a fetch got showed as if a command had printed it
+                    let outputs: BTreeMap<&str, &str> =
+                        events.iter().filter(|(_, b)| s(b, "kind") == "tool_output").map(|(_, b)| (s(b, "callId"), s(b, "text"))).collect();
+                    for (_, b) in &events {
+                        if s(b, "kind") != "tool" || !matches!(s(b, "tool"), "bash" | "shell" | "run") {
+                            continue;
                         }
+                        body.push(Line::from(vec![
+                            Span::styled("$ ", Style::default().fg(th.accent_ink).add_modifier(Modifier::BOLD)),
+                            Span::styled(s(b, "label").to_owned(), th.strong()),
+                        ]));
+                        let call = s(b, "callId");
+                        let own = s(b, "output");
+                        let output = if own.is_empty() && !call.is_empty() { outputs.get(call).copied().unwrap_or_default() } else { own };
+                        body.extend(output.lines().map(|l| Line::from(Span::styled(l.to_owned(), Style::default().fg(th.ink2)))));
                     }
                 }
             }
@@ -997,8 +1052,25 @@ fn side(f: &mut Frame<'_>, app: &App, r: Rect) {
     if body.is_empty() {
         body.push(Line::from(Span::styled("Nothing here yet.", th.dim())));
     }
-    lines.extend(wrap_all(body, w));
+    let body = wrap_all(body, w);
+    let page = usize::from(inner.height).saturating_sub(lines.len());
+    let max = body.len().saturating_sub(page);
+    let off = app.side_scroll.min(max);
+    // the Terminal counts from its end, so 0 shows the newest output and follows it; the others count from the top
+    let terminal = which == Side::Terminal;
+    let start = if terminal { max - off } else { off };
+    let below = body.len().saturating_sub(start + page);
+    lines.extend(body.into_iter().skip(start).take(page));
     f.render_widget(Paragraph::new(lines), inner);
+    if below > 0 && inner.height > 0 {
+        let text = format!(" ↓ {below} more · G {} ", if terminal { "follows" } else { "ends" });
+        let tw = u16::try_from(text.chars().count()).unwrap_or(20);
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(text, Style::default().fg(th.on_accent).bg(th.accent)))),
+            Rect { x: inner.x + inner.width.saturating_sub(tw), y: inner.y + inner.height - 1, width: tw.min(inner.width), height: 1 },
+        );
+    }
+    (max, page)
 }
 
 fn view(f: &mut Frame<'_>, app: &App, id: &str, r: Rect) {
