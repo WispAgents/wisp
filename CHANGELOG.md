@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- wisp Cloud computers' usage stats (app started, task turns) now carry the address you reach your computer from, so they're placed where you are instead of all showing the grid's server in Germany.
 - **`/wisp` comments on GitHub work again.** A task started from a comment on an issue or PR is now told which one it's on (repo, number, link and the `gh` command to read it), runs in that repo's project instead of your default one, and posts its report back on the issue or PR. A later `/wisp` there follows up the same task. Slack, Discord, Telegram and email lost the same link: a task started from a message there is tied to its thread or chat again, so replying to it follows that task up.
 ### Added
 

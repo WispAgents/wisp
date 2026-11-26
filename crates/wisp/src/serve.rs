@@ -360,7 +360,10 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     let settings =
         crate::settings_store::StoreSettings::open(&store).map_err(|e| CliError::said(format!("wisp could not read its settings: {e}")))?;
     let log = wisp_kernel::durable::EventLogService(std::sync::Arc::new(store.clone()));
+    // a grid box's user, as its edge says (x-wisp-proxy-client-ip): usage stats are placed where they are
+    let client_addr: wisp_kernel::services::ClientAddrService = Arc::default();
     let app = crate::services::provide(App::new(), home, VERSION, notify)
+        .service(client_addr.clone())
         .service(store.clone())
         .service(log)
         .service(access)
@@ -374,6 +377,7 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     let mut cfg = EdgeConfig::new(master, VERSION);
     cfg.previews = proxy.on() && env("WISP_PREVIEW_URL").is_some();
     cfg.proxy = proxy;
+    cfg.client_addr = Some(client_addr);
     cfg.web_dir = web_dir();
     cfg.home = Some(home.to_owned());
     if box_mode {

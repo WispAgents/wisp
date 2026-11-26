@@ -52,6 +52,16 @@ pub fn event(name: &str, now_ms: i64, common: &Props, props: Props, distinct_id:
     json!({ "event": name, "timestamp": iso(now_ms), "properties": p })
 }
 
+/// Places a batch where its user is: `$ip` (`PostHog` geolocates by it) on each event that has none. A grid box
+/// sends from the grid's address, so without this every box user looked like they were where the grid runs.
+pub fn with_client_ip(batch: &mut [Value], ip: &str) {
+    for ev in batch {
+        if let Some(p) = ev.get_mut("properties").and_then(Value::as_object_mut) {
+            p.entry("$ip").or_insert_with(|| json!(ip));
+        }
+    }
+}
+
 /// An error as plain data: a panic or an `Err` crosses a service boundary as its parts.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ErrorInfo {

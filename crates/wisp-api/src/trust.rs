@@ -56,6 +56,13 @@ impl TrustedProxy {
         self.origin.as_deref()
     }
 
+    /// Who is asking, as the proxy says it (`x-wisp-proxy-client-ip`), on a request that came through it only:
+    /// an IP address and nothing else, never loopback.
+    pub fn client_ip(&self, h: &HeaderMap) -> Option<String> {
+        let ip: std::net::IpAddr = header(h, "x-wisp-proxy-client-ip")?.trim().parse().ok()?;
+        (self.via(h) && !ip.is_loopback()).then(|| ip.to_string())
+    }
+
     /// Whether this request came through the proxy (the secret compared in constant time).
     pub fn via(&self, h: &HeaderMap) -> bool {
         let (Some(want), Some(got)) = (&self.secret, h.get("x-wisp-proxy-secret")) else {
@@ -110,6 +117,19 @@ mod tests {
         assert!(!p.via(&hm(&[("x-wisp-proxy-secret", "0123456789abcdef0123456789abcdeX")])));
         assert!(!p.via(&hm(&[("x-wisp-proxy-secret", &S[..31])])));
         assert!(!p.via(&hm(&[])));
+    }
+
+    #[test]
+    fn client_ip_only_through_the_proxy_and_only_an_address() {
+        let p = TrustedProxy::new(Some(S), None);
+        let ip = |v: &str, secret: &str| p.client_ip(&hm(&[("x-wisp-proxy-secret", secret), ("x-wisp-proxy-client-ip", v)]));
+        assert_eq!(ip("203.0.113.7", S).as_deref(), Some("203.0.113.7"));
+        assert_eq!(ip(" 2001:db8::1 ", S).as_deref(), Some("2001:db8::1"));
+        assert_eq!(ip("203.0.113.7", "wrong-secret-wrong-secret-wrong-s"), None, "a client's own claim, not the proxy's");
+        assert_eq!(ip("127.0.0.1", S), None, "loopback says nothing about the user");
+        assert_eq!(ip("evil.example", S), None);
+        assert_eq!(ip("1.2.3.4, 5.6.7.8", S), None);
+        assert_eq!(TrustedProxy::off().client_ip(&hm(&[("x-wisp-proxy-client-ip", "203.0.113.7")])), None);
     }
 
     #[test]

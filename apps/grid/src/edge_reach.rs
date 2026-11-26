@@ -266,6 +266,9 @@ impl Grid {
         let secret = self.boxes.secret(&bu.id).unwrap_or_default();
         let (mut head, body) = req.into_parts();
         let via = head.extensions.remove::<Via>();
+        // who is asking (Caddy's X-Forwarded-For), read before the marks go: the box's usage stats are counted
+        // from the grid's address otherwise, so every user looked like they were in Falkenstein
+        let client = crate::http::client_ip(head.extensions.get::<super::common::Peer>().map(|p| p.0), &head.headers);
         let pq = head.uri.path_and_query().map_or("/", |p| p.as_str()).to_owned();
         head.uri = format!("http://127.0.0.1:{}{pq}", running.port).parse().map_err(|_| bad("Bad path.", 400))?;
         let public = self.cfg.instance_url(handle);
@@ -287,6 +290,9 @@ impl Grid {
         set(&mut head.headers, "x-wisp-proxy-secret", &secret);
         set(&mut head.headers, "x-forwarded-host", &fwd_host);
         set(&mut head.headers, "x-forwarded-proto", &self.cfg.scheme);
+        if client.parse::<std::net::IpAddr>().is_ok_and(|ip| !ip.is_loopback()) {
+            set(&mut head.headers, "x-wisp-proxy-client-ip", &client);
+        }
         if let Some(Via(v)) = via {
             set(&mut head.headers, "x-wisp-proxy-via", v);
         }
