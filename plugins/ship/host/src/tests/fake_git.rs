@@ -21,6 +21,8 @@ pub struct GitState {
     pub base_merged: Option<BaseMerged>,
     pub log: Vec<String>,
     pub push_fails: Option<String>,
+    /// `git status` fails with this
+    pub status_fails: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -80,6 +82,9 @@ impl Repo for FakeRepo {
         &self.info
     }
     fn status(&self, _call: &Call) -> F<Status> {
+        if let Some(why) = self.git.lock().status_fails.clone() {
+            return Box::pin(async move { Err(WireError::invalid(why)) });
+        }
         let n = self.git.lock().dirty.get(&self.p()).copied().unwrap_or(0);
         let entries = (0..n).map(|i| StatusEntry { path: format!("f{i}"), xy: ".M".into(), from: None }).collect();
         done(Status { entries, ..Status::default() })

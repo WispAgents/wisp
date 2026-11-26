@@ -61,10 +61,23 @@ pub(crate) fn hunk_starts(line: &str) -> Option<(u32, u32)> {
     Some((old.parse().ok()?, new.parse().ok()?))
 }
 
+/// `@@ -a[,n] +b[,m] @@`: how many old and new lines the hunk holds (a missing count means 1).
+pub(crate) fn hunk_counts(line: &str) -> Option<(u32, u32)> {
+    let rest = line.strip_prefix("@@ -")?;
+    let (old, rest) = rest.split_once(' ')?;
+    let new = rest.strip_prefix('+')?.split(' ').next()?;
+    let count = |s: &str| s.split_once(',').map_or(Some(1), |(_, n)| n.parse().ok());
+    Some((count(old)?, count(new)?))
+}
+
 struct Parser {
     files: Vec<FileDiff>,
     a: u32,
     b: u32,
+    /// Old and new lines the open hunk still holds. While either is above 0 a line starting with
+    /// '---' or '+++' is a row (a removed "-- note", an added "++x"), not the next file's header.
+    old_left: u32,
+    new_left: u32,
 }
 
 impl Parser {
@@ -83,6 +96,12 @@ impl Parser {
             self.files.push(FileDiff::new(path, 'M'));
             self.a = 1;
             self.b = 1;
+            self.old_left = 0;
+            self.new_left = 0;
+            return;
+        }
+        if self.old_left > 0 || self.new_left > 0 {
+            self.hunk_line(line);
             return;
         }
         let Some(f) = self.files.last_mut() else {
@@ -107,6 +126,7 @@ impl Parser {
             }
             self.a = a;
             self.b = b;
+            (self.old_left, self.new_left) = hunk_counts(line).unwrap_or((0, 0));
         } else if line.starts_with("+++") || line.starts_with("---") || line.starts_with("index ") || line.starts_with("similarity ") {
         } else if let Some(text) = line.strip_prefix('+') {
             f.add += 1;
@@ -125,11 +145,43 @@ impl Parser {
             self.push(Row::context(text, a, b));
         }
     }
+
+    /// A line inside a hunk, counted against what its header said is left.
+    fn hunk_line(&mut self, line: &str) {
+        let Some(f) = self.files.last_mut() else {
+            return;
+        };
+        if let Some(text) = line.strip_prefix('+') {
+            f.add += 1;
+            self.new_left = self.new_left.saturating_sub(1);
+            let b = self.b;
+            self.b += 1;
+            self.push(Row::added(text, b));
+        } else if let Some(text) = line.strip_prefix('-') {
+            f.del += 1;
+            self.old_left = self.old_left.saturating_sub(1);
+            let a = self.a;
+            self.a += 1;
+            self.push(Row::removed(text, a));
+        } else if let Some(text) = line.strip_prefix(' ') {
+            self.old_left = self.old_left.saturating_sub(1);
+            self.new_left = self.new_left.saturating_sub(1);
+            let (a, b) = (self.a, self.b);
+            self.a += 1;
+            self.b += 1;
+            self.push(Row::context(text, a, b));
+        } else if !line.starts_with('\\') {
+            // A header that over-counted: the hunk ended early, so this line is read outside it.
+            self.old_left = 0;
+            self.new_left = 0;
+            self.line(line);
+        }
+    }
 }
 
 /// Parses `git diff --no-color --no-ext-diff -M -U3` output.
 pub fn parse_diff(out: &str) -> Vec<FileDiff> {
-    let mut p = Parser { files: Vec::new(), a: 1, b: 1 };
+    let mut p = Parser { files: Vec::new(), a: 1, b: 1, old_left: 0, new_left: 0 };
     for line in out.split('\n') {
         p.line(line);
     }
@@ -241,6 +293,35 @@ mod tests {
         });
         let g = untracked_file("g", big.as_bytes());
         assert_eq!((g.rows.len(), g.more, g.add), (DIFF_LINES, 100, 2100));
+    }
+
+    #[test]
+    fn dashes_and_pluses_inside_a_hunk_are_rows() {
+        let out = "diff --git a/n.md b/n.md\nindex 1..2 100644\n--- a/n.md\n+++ b/n.md\n@@ -1,4 +1,4 @@\n top\n----\n--- note\n+++x\n++++y\n end\n";
+        let f = &parse_diff(out)[0];
+        assert_eq!((f.add, f.del), (2, 2));
+        assert_eq!(
+            f.rows,
+            vec![
+                Row::context("top", 1, 1),
+                Row::removed("---", 2),
+                Row::removed("-- note", 3),
+                Row::added("++x", 2),
+                Row::added("+++y", 3),
+                Row::context("end", 4, 4),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_second_file_right_after_a_hunk() {
+        let out = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\n+y\ndiff --git a/b b/b\nindex 1..2 100644\n--- a/b\n+++ b/b\n@@ -1,2 +1 @@\n---\n keep\n\\ No newline at end of file\n";
+        let f = parse_diff(out);
+        assert_eq!(f.len(), 2);
+        assert_eq!((f[0].path.as_str(), f[0].add, f[0].del), ("a", 1, 1));
+        assert_eq!(f[0].rows, vec![Row::removed("x", 1), Row::added("y", 1)]);
+        assert_eq!((f[1].path.as_str(), f[1].add, f[1].del), ("b", 0, 1));
+        assert_eq!(f[1].rows, vec![Row::removed("--", 1), Row::context("keep", 2, 1)]);
     }
 
     #[test]

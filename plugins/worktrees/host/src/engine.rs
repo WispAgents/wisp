@@ -1,6 +1,8 @@
 //! A session's worktree: made (v1 createWorktree), brought back (ensureWorktree), read (worktreeStatus,
 //! folderOnly) and removed (removeWorktree). Every git call goes through git.service@1 with the caller's
 //! `Call`, so its permissions are checked there; the decisions are wisp-worktrees-core's.
+//!
+//! size-ok: every operation on a folder shares its lock, the turns' claims and the removal's guard and in-use check
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,6 +16,7 @@ use wisp_worktrees_core::{naming, removal};
 
 use crate::error::{Result, WtError};
 use crate::fsx;
+use crate::ports::Port;
 
 /// The longest a turn's claim on its folder holds when runtime never says the turn started (a turn refused after
 /// its `ready`): its `ready` (at most `READY_MS`) and the save that marks it running, with room to spare.
@@ -68,6 +71,8 @@ pub struct Engine {
     locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     /// each turn's claim on each folder (`claim`), by (folder, task, turn), on one counter
     claims: std::sync::Mutex<(u64, Claims)>,
+    /// the tasks and what they work in (`watch`): `remove` asks it under the folder's lock, so no caller can skip it
+    port: std::sync::OnceLock<Arc<dyn Port>>,
 }
 
 impl std::fmt::Debug for Engine {
@@ -99,7 +104,60 @@ impl Engine {
             owner,
             locks: Mutex::new(HashMap::new()),
             claims: std::sync::Mutex::new((0, HashMap::new())),
+            port: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Who works where, read by every removal (`path_in_use`). Set once, when the plugin's parts are built.
+    pub fn watch(&self, port: Arc<dyn Port>) {
+        let _ = self.port.set(port);
+    }
+
+    /// Whether `path` must stay: a working task other than `except` is in it (a recurring run's kept folder is shared
+    /// by its runs, ADR-0108), a working task has it as an extra folder, or a turn's claim on it still holds.
+    /// By path as the disk sees it.
+    pub async fn path_in_use(&self, path: &str, except: Option<&str>) -> bool {
+        let real = fsx::norm(path).await;
+        if self.claimed_since(&real, u64::MAX) {
+            return true;
+        }
+        let Some(port) = self.port.get() else {
+            return false;
+        };
+        for t in port.tasks().await.into_iter().filter(|t| t.busy && except != Some(t.id.as_str())) {
+            for x in t.trees.iter().filter(|x| !x.worktree.path.is_empty()) {
+                if fsx::norm(&x.worktree.path).await == real {
+                    return true;
+                }
+            }
+        }
+        port.extra_in_use(path.to_owned()).await
+    }
+
+    /// Why `wt.path` is never a folder for a removal to delete, or None. The repo itself (its main checkout or a full
+    /// clone: `.git` a folder, not a linked worktree's file; a folder holding the repo; its `.git`), and a folder outside
+    /// `<home>/worktrees` that no task of wisp's made (no `created_at`): a bad record must not cost the user a repo.
+    async fn guard(&self, wt: &Worktree) -> Option<String> {
+        let path = fsx::norm(&wt.path).await;
+        if tokio::fs::metadata(fsx::join(&path, ".git")).await.is_ok_and(|m| m.is_dir()) {
+            return Some(format!("{} is a repository's own checkout, not a worktree: it is never removed.", wt.path));
+        }
+        let ours = format!("{}/worktrees", self.home.trim_end_matches(['/', '\\']));
+        if !wt.root.is_empty() {
+            let root = fsx::norm(&wt.root).await;
+            // the record names the repo as its own folder: refused, but for a leftover no repo knows, which is recorded
+            // with itself as its root and only ever lives in wisp's worktrees folder
+            if root == path && !fsx::within_real(&wt.path, &ours).await {
+                return Some(format!("{} is the repository itself, not a worktree: it is never removed.", wt.path));
+            }
+            if (root != path && fsx::within(&root, &path)) || fsx::within(&path, &fsx::join(&root, ".git")) {
+                return Some(format!("{} holds the repository itself: it is never removed.", wt.path));
+            }
+        }
+        if wt.created_at == 0 && !fsx::within_real(&wt.path, &ours).await {
+            return Some(format!("{} isn't in wisp's worktrees folder: it is never removed.", wt.path));
+        }
+        None
     }
 
     pub async fn repo(&self, call: &Call, path: &str) -> Result<Arc<dyn Repo>> {
@@ -306,7 +364,9 @@ impl Engine {
                     return Err(WtError::NotFound(crate::archived::branch_gone(wt)));
                 }
                 root.worktree_add(call, WorktreeAdd { path: wt.path.clone(), branch: wt.branch.clone(), start: None }).await?;
-                let _ = crate::prepare::copy_included(self, &wt.root, &wt.path).await;
+                // its setup still held (not trusted yet): only the root's `.env` files, as when it was made
+                let all = wt.prepared.as_ref().is_none_or(|p| p.held.is_none());
+                let _ = crate::prepare::copy_some(self, &wt.root, &wt.path, all).await;
                 Ok(())
             }
         }
@@ -359,7 +419,8 @@ impl Engine {
     }
 
     /// Removes the folder only when nothing would be lost (or forced); the branch per `opts.branch`.
-    /// `still`: asked last thing before the folder goes.
+    /// `still`: asked last thing before the folder goes. Under the folder's lock, whatever the caller: a folder a working
+    /// task is in (`path_in_use`) stays and is said `busy`, and one that isn't a worktree of wisp's (`guard`) is refused.
     pub async fn remove(
         &self,
         call: &Call,
@@ -371,11 +432,23 @@ impl Engine {
         let _held = lock.lock().await;
         let foreign = self.foreign(wt);
         let exists = !foreign && fsx::exists(&wt.path).await;
+        if exists {
+            if let Some(why) = self.guard(wt).await {
+                return Err(WtError::Conflict(why));
+            }
+            if self.path_in_use(&wt.path, None).await {
+                return Ok(Removed { busy: true, ..Removed::default() });
+            }
+        }
         let dirt = if exists {
             if opts.strict {
                 removal::removal_dirt(true, self.folder_only(call, wt).await.ok(), 0)
             } else {
-                self.status(call, wt, None).await.map_or(0, |s| s.dirty)
+                // git can't tell (a status that failed): dirty, as strict counts it
+                match self.repo(call, &wt.path).await {
+                    Ok(r) => r.status(call).await.map_or(1, |s| u32::try_from(s.dirty()).unwrap_or(u32::MAX)),
+                    Err(_) => 1,
+                }
             }
         } else {
             0
@@ -387,15 +460,14 @@ impl Engine {
             removal::RemoveStep::KeepDirty(n) => {
                 return Ok(Removed { dirty: Some(n), ..Removed::default() });
             }
-            removal::RemoveStep::Overtaken => return Ok(Removed::default()),
+            // in use again by the time the lock was held: kept as busy, never told as a failure
+            removal::RemoveStep::Overtaken => return Ok(Removed { busy: true, ..Removed::default() }),
+            // git's refusal stands (a locked worktree, a main checkout): the folder stays and the caller hears why. A
+            // folder git lost track of, `worktree_remove` removes itself.
             removal::RemoveStep::Remove => match self.repo(call, &wt.root).await {
-                Ok(root) => {
-                    if root.worktree_remove(call, &wt.path).await.is_err() {
-                        fsx::rm_rf(&wt.path).await; // git lost track of it: the folder goes anyway
-                        let _ = root.worktree_prune(call).await;
-                    }
-                }
-                Err(_) => fsx::rm_rf(&wt.path).await, // a leftover no repo knows: only the folder goes
+                Ok(root) => root.worktree_remove(call, &wt.path).await?,
+                // a leftover no repo knows: only the folder goes (`guard` said it is one of wisp's)
+                Err(_) => fsx::rm_rf(&wt.path).await,
             },
             removal::RemoveStep::Gone => {}
         }

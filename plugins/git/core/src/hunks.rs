@@ -169,6 +169,15 @@ mod tests {
     }
 
     #[test]
+    fn revert_keeps_dash_and_plus_lines_inside_the_hunk() {
+        let before = "top\n---\n-- note\nend\n";
+        let after = "top\n++x\n+++y\nend\n";
+        let diff = "diff --git a/n.md b/n.md\nindex 1..2 100644\n--- a/n.md\n+++ b/n.md\n@@ -1,4 +1,4 @@\n top\n----\n--- note\n+++x\n++++y\n end\n";
+        let rows = parse_diff(diff).remove(0).rows;
+        assert_eq!(revert_hunk(after, &rows, 0).as_deref(), Some(before));
+    }
+
+    #[test]
     fn revert_refuses_a_changed_file_or_missing_hunk() {
         let text = now();
         assert_eq!(revert_hunk(&text.replace("L18", "L18!"), &rows(), 1), None);
