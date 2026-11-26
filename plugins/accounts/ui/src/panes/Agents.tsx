@@ -8,7 +8,26 @@
 // New task reads), and what other plugins add (wisp.budget's stop line). Every write shows at once.
 import { createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch as Pick, type JSX } from 'solid-js';
 import { entityKey, type PluginClient } from '@wisp/client';
-import { LAUNCH_SETTING, MODES_FOR_HARNESS, Slot, defaultModels, harnessDefaults, useShell, withHarnessDefaults, type HarnessDefaults } from '@wisp/shell';
+import {
+  BROWSER_CAN_UNKNOWN,
+  BROWSER_SETTING,
+  BROWSERS_SETTING,
+  BROWSER_VALUES,
+  LAUNCH_SETTING,
+  MODES_FOR_HARNESS,
+  Slot,
+  browserGlobal,
+  browserOwn,
+  browserRow,
+  defaultModels,
+  harnessDefaults,
+  useShell,
+  withBrowser,
+  withHarnessDefaults,
+  type BrowserCan,
+  type BrowserValue,
+  type HarnessDefaults,
+} from '@wisp/shell';
 import {
   Button,
   CopyCommand,
@@ -63,6 +82,7 @@ export const DETAIL_ROWS = [
   'accounts.detail.model',
   'accounts.detail.effort',
   'accounts.detail.mode',
+  'accounts.detail.browser',
   'accounts.detail.budget',
 ] as const;
 
@@ -226,7 +246,7 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
   const navRows = (): NavRows => ({
     general: {
       label: t('accounts.general'),
-      rows: [t('accounts.tool.github'), 'git', t('accounts.lean.title'), t('accounts.ask.title'), t('accounts.updateAll.title'), t('accounts.recheck.title')],
+      rows: [t('accounts.tool.github'), 'git', t('accounts.lean.title'), t('accounts.browser.title'), t('accounts.ask.title'), t('accounts.updateAll.title'), t('accounts.recheck.title')],
     },
     harness: DETAIL_ROWS.map((k) => t(k)),
     atLimit: t('accounts.state.atLimit'),
@@ -251,6 +271,9 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
   const setDefaults = (id: string, change: Parameters<typeof withHarnessDefaults>[2]): void =>
     quiet(c.run(settingSet, { peer, key: LAUNCH_SETTING, value: withHarnessDefaults(launch()?.value, id, change) }));
   const defaults = defaultModels(shell.client);
+  // the browser (ADR-0128): General's is every harness's, a harness's detail sets its own over it
+  const browserAll = fromRow(c, BROWSER_SETTING, 'default');
+  const browserEach = fromRow(c, BROWSERS_SETTING, {});
 
   /** One harness's detail: what its row had (state, sign-in, keys, install and update, a changed program, its accounts),
    *  then its program, its switch, its defaults for a new task, and what other plugins add (wisp.budget's stop line). */
@@ -448,10 +471,41 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
             source={{ value: () => defaultsOf(id).mode, set: (v) => setDefaults(id, { mode: v }) }}
             items={[{ value: '', label: t('accounts.detail.modeAsPicked') }, ...MODES_FOR_HARNESS.map((m) => ({ value: m, label: t(`accounts.detail.mode.${m}`) }))]}
           />
+          <BrowserDetail id={id} name={h().name} can={det()?.agent.browser ?? BROWSER_CAN_UNKNOWN} />
         </SettingsGroup>
         {/* what other plugins add to a harness (wisp.budget: where automations stop on it) */}
         <Slot input="shell.settings:harness" id={id} layout="contents" />
       </>
+    );
+  };
+
+  /** A harness's own browser over General's: what it can't take is greyed out, with why; a harness without per-run MCP
+   *  (Cursor, Antigravity) has none, said so, never shown as on. */
+  const BrowserDetail = (p: { readonly id: string; readonly name: string; readonly can: BrowserCan }): JSX.Element => {
+    const own = useSignal(browserEach.value);
+    const all = useSignal(browserAll.value);
+    const row = () => browserRow(p.can, browserOwn(own(), p.id) || browserGlobal(all()));
+    const said = (): string => {
+      const n = row().note;
+      return n ? t(`accounts.browser.why.${n}`, { name: p.name }) : t('accounts.detail.browserHint', { name: p.name });
+    };
+    return (
+      <SelectSetting
+        part="accounts.detail.browser"
+        title={t('accounts.detail.browser')}
+        description={said()}
+        disabled={row().note === 'noMcp'}
+        source={{
+          value: () => (row().note === 'noMcp' ? 'off' : browserOwn(own(), p.id)),
+          set: (v) => browserEach.set(withBrowser(own(), p.id, v as BrowserValue | '')),
+        }}
+        items={[
+          { value: '', label: t('accounts.browser.asGeneral', { value: t(`accounts.browser.${browserGlobal(all())}`) }) },
+          ...row()
+            .choices.filter((x) => x.id !== 'default')
+            .map((x) => ({ value: x.id, label: t(`accounts.browser.${x.id}`), ...(x.why && { disabled: true }) })),
+        ]}
+      />
     );
   };
 
@@ -490,6 +544,14 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
         </Show>
       </SettingsGroup>
       <SettingsGroup part="accounts.watch">
+        {/* the browser agents drive (`runtime.browser`, ADR-0128); a harness's detail sets its own */}
+        <SelectSetting
+          part="settings.browser"
+          title={t('accounts.browser.title')}
+          description={t('accounts.browser.description')}
+          source={text(browserAll, 'default')}
+          items={BROWSER_VALUES.map((v) => ({ value: v, label: t(`accounts.browser.${v}`) }))}
+        />
         {/* v1 Lean Claude Code runs (`runtime.leanRuns`): off, wisp's side runs, every run */}
         <SelectSetting
           part="settings.leanRuns"
