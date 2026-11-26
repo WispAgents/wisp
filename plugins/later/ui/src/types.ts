@@ -115,7 +115,7 @@ export interface Plan {
   at?: number;
   draft?: true;
   after?: { id: string; title: string };
-  lost?: { id: string; title: string; why: 'deleted' | 'archived' };
+  lost?: { id: string; title: string; why: 'deleted' | 'archived' | 'failed' };
   body?: PlanBody;
   title?: string;
   text?: string;

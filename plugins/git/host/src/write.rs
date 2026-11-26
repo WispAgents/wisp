@@ -98,13 +98,14 @@ impl Inner {
         Ok(())
     }
 
-    /// Only the paths git has something for move (v1 stageFile).
+    /// Only the paths git has something for move (v1 stageFile). Paths are Changes' frame: relative to
+    /// `dir`, the subfolder a monorepo checkout was opened at (git's pathspecs are relative to it too).
     pub async fn stage(&self, req: StageRequest) -> Result<bool> {
         let list: Vec<&str> = req.paths.iter().map(String::as_str).filter(|p| !p.is_empty()).collect();
         let has = if req.unstage {
-            porcelain::paths(&self.git.quiet(&self.dir, &["diff", "--cached", "--name-only", "--no-renames", "-z"]).await)
+            porcelain::paths(&self.git.quiet(&self.dir, &["diff", "--relative", "--cached", "--name-only", "--no-renames", "-z"]).await)
         } else {
-            let mut v = porcelain::paths(&self.git.quiet(&self.dir, &["diff", "--name-only", "--no-renames", "-z"]).await);
+            let mut v = porcelain::paths(&self.git.quiet(&self.dir, &["diff", "--relative", "--name-only", "--no-renames", "-z"]).await);
             v.extend(porcelain::paths(&self.git.quiet(&self.dir, &["ls-files", "--others", "--exclude-standard", "-z"]).await));
             v
         };
@@ -152,7 +153,8 @@ impl Inner {
         let out = match run(true).await {
             Ok(_) => Applied { applied: true, merged: true, ..Applied::default() },
             Err(e) => {
-                let conflicts = porcelain::paths(&self.git.quiet(&self.dir, &["diff", "--name-only", "--diff-filter=U"]).await);
+                let conflicts =
+                    porcelain::paths(&self.git.quiet(&self.dir, &["diff", "--relative", "--name-only", "--diff-filter=U"]).await);
                 if conflicts.is_empty() {
                     Applied { error: Some(e.to_string()), ..Applied::default() }
                 } else {

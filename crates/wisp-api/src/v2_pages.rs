@@ -325,7 +325,10 @@ fn read_short(
                 rows.extend(d.rows);
                 return Ok((Read { seq: d.seq, rows, full: true, deleted: d.deleted }, false));
             }
-            Ok((Read { seq: end_head.max(head), rows, full: true, deleted: Vec::new() }, false))
+            // no delta: nothing changed since, or retention pruned part of it from the feed. At the first read's seq,
+            // never the head: the client keeps the patches after it and applies them, where closing at a head whose
+            // changes these pages don't carry dropped them (audit doc28)
+            Ok((Read { seq: head, rows, full: true, deleted: Vec::new() }, false))
         }) {
             Ok((next_read, more)) => {
                 read = next_read;
