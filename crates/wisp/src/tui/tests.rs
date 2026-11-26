@@ -348,7 +348,7 @@ fn every_handled_key_has_a_row_in_the_keymap() {
             Where::Task,
             &[
                 "1-9", "y", "a", "n", "i", "Enter", "j", "k", "o", "Space", "d", "t", "p", "s", "Esc", "h", "←", "PgUp", "PgDn", "G",
-                "End", "/",
+                "Home", "End", "/",
             ],
         ),
         (Where::Composer, &["Enter", "Alt-Enter", "Ctrl-J", "Ctrl-A", "Ctrl-E", "Ctrl-S", "Alt-↑", "Alt-↓", "Esc", "@", "/", "↑"]),
@@ -1189,4 +1189,240 @@ fn a_palette_command_keeps_the_draft_and_i_with_no_task_starts_one() {
     b.key(ch('h'));
     b.key(ch('i'));
     assert_eq!((b.focus, b.new_task, b.composer.text().as_str()), (Zone::Composer, true, "hi"));
+}
+
+/// The screen, drawn the way the run loop draws it: what went where (`hit`) kept for the keys and the mouse after it.
+fn drawn(a: &mut App, w: u16, h: u16) -> String {
+    let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+    t.draw(|f| a.hit = draw::draw(f, a)).unwrap();
+    let buf = t.backend().buffer().clone();
+    (0..buf.area.height)
+        .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_owned()).collect::<String>().trim_end().to_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Steps landing on the open task (seq, turn, step), as its topic sends them.
+fn add_steps(a: &mut App, steps: &[(i64, &str, Value)]) {
+    use wisp_protocol::{Change, EntityOp, Topic};
+    let ops = steps
+        .iter()
+        .map(|(seq, turn, body)| EntityOp {
+            topic: Topic::parse("session:t2").unwrap(),
+            e: "event".into(),
+            id: seq.to_string(),
+            change: Change::Upsert { v: json!({ "seq": seq, "turn_id": turn, "body": body }) },
+        })
+        .collect();
+    a.open.as_mut().unwrap().ops(ops);
+}
+
+/// `opened()` with these steps added to its finished turn (T1).
+fn with_steps(steps: &[(i64, Value)]) -> App {
+    let mut a = opened();
+    let steps: Vec<(i64, &str, Value)> = steps.iter().map(|(seq, b)| (*seq, "T1", b.clone())).collect();
+    add_steps(&mut a, &steps);
+    a
+}
+
+fn big_diff() -> String {
+    let rows: String = (1..=200).fold(String::new(), |mut s, i| {
+        let _ = writeln!(s, "+row-{i:04}");
+        s
+    });
+    format!("--- a/src/big.rs\n+++ b/src/big.rs\n@@ -0,0 +1,200 @@\n{rows}")
+}
+
+fn shell_out(n: usize) -> String {
+    (1..=n).map(|i| format!("out-{i:03}")).collect::<Vec<_>>().join("\n")
+}
+
+/// The side pane had no scroll: j k `PgUp` `PgDn` moved the transcript beside it, so a long diff showed its first screen
+/// only. With the pane focused they scroll the pane, and the transcript stays where it is.
+#[test]
+fn a_focused_side_pane_scrolls_and_the_transcript_stays() {
+    let mut a =
+        with_steps(&[(10, json!({ "kind": "tool", "tool": "edit", "label": "Edit", "file": "/w/api/src/big.rs", "detail": big_diff() }))]);
+    a.side = Some(super::app::Side::Changes);
+    a.focus = Zone::Side;
+    let first = drawn(&mut a, 160, 48);
+    assert!(first.contains("row-0001") && !first.contains("row-0090"), "{first}");
+    assert!(first.contains("more · G ends"), "a pane with more below says so:\n{first}");
+    a.key(key(KeyCode::PageDown));
+    drawn(&mut a, 160, 48);
+    a.key(key(KeyCode::PageDown));
+    let s = drawn(&mut a, 160, 48);
+    assert!(s.contains("row-0090") && !s.contains("row-0001"), "two pages down:\n{s}");
+    assert_eq!((a.scroll, a.cursor), (0, None), "the transcript and its cursor didn't move");
+}
+
+/// The Terminal counts from its end: 0 shows the newest output and follows it; k and `PgUp` go back, with the pill.
+#[test]
+fn the_terminal_follows_its_tail_and_scrolls_back() {
+    let mut a =
+        with_steps(&[(10, json!({ "kind": "tool", "tool": "bash", "label": "npm test", "callId": "c1", "output": shell_out(300) }))]);
+    a.side = Some(super::app::Side::Terminal);
+    a.focus = Zone::Side;
+    let s = drawn(&mut a, 160, 48);
+    assert!(s.contains("out-300") && !s.contains("G follows"), "the newest line, following:\n{s}");
+    a.key(ch('k'));
+    let s = drawn(&mut a, 160, 48);
+    assert!(!s.contains("out-300") && s.contains("out-299") && s.contains("↓ 1 more · G follows"), "{s}");
+    a.key(key(KeyCode::PageUp));
+    let s = drawn(&mut a, 160, 48);
+    assert!(!s.contains("out-299") && s.contains("out-250") && s.contains("G follows"), "{s}");
+    a.key(ch('G'));
+    assert!(drawn(&mut a, 160, 48).contains("out-300"), "G follows again");
+}
+
+/// The wheel over the side pane scrolled the transcript (or nothing): now it scrolls the pane.
+#[test]
+fn the_wheel_over_the_side_pane_scrolls_it() {
+    let mut a =
+        with_steps(&[(10, json!({ "kind": "tool", "tool": "edit", "label": "Edit", "file": "/w/api/src/big.rs", "detail": big_diff() }))]);
+    a.side = Some(super::app::Side::Changes);
+    drawn(&mut a, 160, 48);
+    let r = a.hit.side;
+    a.mouse(MouseEvent { kind: MouseEventKind::ScrollDown, column: r.x + 4, row: r.y + 10, modifiers: KeyModifiers::NONE });
+    assert_eq!((a.side_scroll, a.scroll), (3, 0));
+    a.mouse(MouseEvent { kind: MouseEventKind::ScrollUp, column: r.x + 4, row: r.y + 10, modifiers: KeyModifiers::NONE });
+    assert_eq!((a.side_scroll, a.scroll), (0, 0));
+}
+
+/// `PgUp` past the top kept counting, so as many `PgDn`s went by before the pane moved: it stops at the top.
+#[test]
+fn page_up_past_the_top_leaves_no_dead_zone() {
+    let mut a = with_steps(&[(10, json!({ "kind": "tool", "tool": "bash", "label": "npm test", "output": shell_out(300) }))]);
+    a.side = Some(super::app::Side::Terminal);
+    a.focus = Zone::Side;
+    drawn(&mut a, 160, 48);
+    for _ in 0..50 {
+        a.key(key(KeyCode::PageUp));
+    }
+    let top = drawn(&mut a, 160, 48);
+    assert!(top.contains("out-001"), "{top}");
+    a.key(key(KeyCode::PageDown));
+    let s = drawn(&mut a, 160, 48);
+    assert!(!s.contains("out-001") && s != top, "one PgDn moves it at once:\n{s}");
+}
+
+/// Under 100 columns the side pane never showed: d opened it where nothing drew it, and Tab put the focus there.
+#[test]
+fn under_a_hundred_columns_a_side_pane_takes_the_tasks_place() {
+    let mut a = opened();
+    a.side = Some(super::app::Side::Changes);
+    a.focus = Zone::Side;
+    let s = drawn(&mut a, 80, 24);
+    assert!(s.contains("Changes") && s.contains("ttl = 3600"), "the pane at the full width:\n{s}");
+    let mut a = opened();
+    a.focus = Zone::Task;
+    drawn(&mut a, 80, 24);
+    a.key(ch('d'));
+    assert_eq!((a.side, a.focus), (Some(super::app::Side::Changes), Zone::Side), "d opens it and goes there");
+    assert!(drawn(&mut a, 80, 24).contains("ttl = 3600"));
+    let w = a.widths;
+    a.key(ch(']'));
+    assert_eq!(a.widths, w, "no width to change one zone at a time");
+    a.key(key(KeyCode::Esc));
+    assert_eq!(a.focus, Zone::Task);
+    let s = drawn(&mut a, 80, 24);
+    assert!(s.contains("Reading the theme tokens first."), "back to the transcript:\n{s}");
+    a.key(key(KeyCode::Tab));
+    assert_eq!(a.focus, Zone::Side, "Tab goes to the open pane");
+    a.key(key(KeyCode::Tab));
+    assert_eq!(a.focus, Zone::Task, "and back to the task it stands in for");
+}
+
+/// d (or t) closing the pane left the focus on it, where no key did what it said.
+#[test]
+fn closing_the_side_pane_gives_the_focus_to_the_task_and_tab_skips_it() {
+    let mut a = opened();
+    a.side = Some(super::app::Side::Changes);
+    a.focus = Zone::Side;
+    a.key(ch('d'));
+    assert_eq!((a.side, a.focus), (None, Zone::Task));
+    a.key(key(KeyCode::Tab));
+    assert_eq!(a.focus, Zone::List, "no pane open: Tab skips it");
+}
+
+/// The Terminal showed every call's `tool_output`: a file a Read returned read as if a command had printed it.
+#[test]
+fn the_terminal_shows_shell_commands_and_their_own_output_only() {
+    let mut a = with_steps(&[
+        (10, json!({ "kind": "tool", "tool": "read", "label": "Read src/secret.ts", "callId": "c1" })),
+        (11, json!({ "kind": "tool_output", "callId": "c1", "text": "SECRET-FILE-LINE" })),
+        // the output before its command: it still goes under it
+        (12, json!({ "kind": "tool_output", "callId": "c2", "text": "npm ok" })),
+        (13, json!({ "kind": "tool", "tool": "bash", "label": "npm test", "callId": "c2" })),
+    ]);
+    a.side = Some(super::app::Side::Terminal);
+    a.focus = Zone::Side;
+    let s = drawn(&mut a, 160, 48);
+    let (cmd, out) = (s.find("$ npm test").unwrap(), s.find("npm ok").unwrap());
+    assert!(cmd < out, "the output under its command:\n{s}");
+    assert!(!s.contains("SECRET-FILE-LINE"), "a Read's output isn't the terminal's:\n{s}");
+}
+
+/// `/` in the side pane opened a search nothing typed into: d closed the pane, s asked to stop the task.
+#[test]
+fn slash_in_the_side_pane_searches_and_typing_runs_no_command() {
+    let mut a = opened();
+    a.side = Some(super::app::Side::Changes);
+    a.focus = Zone::Side;
+    a.key(ch('/'));
+    a.key(ch('d'));
+    a.key(ch('s'));
+    assert_eq!(a.side, Some(super::app::Side::Changes), "the pane is still open");
+    assert!(a.overlay.is_none(), "no stop asked");
+    assert_eq!((a.search.as_deref(), a.focus), (Some("ds"), Zone::Task));
+}
+
+/// The transcript search only marked what matched: following the end, a match near the top stayed off screen. Ctrl-N
+/// (↓, Enter) scrolls to it and the line says which of how many.
+#[test]
+fn transcript_search_jumps_to_a_match_off_screen() {
+    let items: String = (1..=300).fold(String::new(), |mut s, i| {
+        let _ = writeln!(s, "- filler {i}");
+        s
+    });
+    let mut a = opened();
+    add_steps(
+        &mut a,
+        &[(10, "T1", json!({ "kind": "text", "text": "NEEDLE here" })), (11, "T2", json!({ "kind": "text", "text": items }))],
+    );
+    a.focus = Zone::Task;
+    assert!(!drawn(&mut a, 160, 48).contains("NEEDLE"), "following the end");
+    a.key(ch('/'));
+    for c in "needle".chars() {
+        a.key(ch(c));
+    }
+    let s = drawn(&mut a, 160, 48);
+    assert!(s.contains("/needle") && s.contains("1 match") && !s.contains("NEEDLE"), "{s}");
+    a.key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL));
+    let s = drawn(&mut a, 160, 48);
+    assert!(s.contains("NEEDLE here") && s.contains("1/1"), "scrolled to it:\n{s}");
+    a.key(key(KeyCode::Esc));
+    assert_eq!(a.search, None);
+}
+
+/// An open step showed 40 lines of its output and nothing after: it now says how much more and Enter shows it all.
+#[test]
+fn a_long_output_says_it_is_cut_and_enter_shows_all_of_it() {
+    let out: String = (1..=300).map(|i| format!("o-{i:03}")).collect::<Vec<_>>().join("\n");
+    let mut a = with_steps(&[(10, json!({ "kind": "tool", "tool": "bash", "label": "npm test", "output": out }))]);
+    a.focus = Zone::Task;
+    a.cursor = Some(10);
+    a.key(ch(' '));
+    let text = |a: &App| -> String {
+        let (lines, _) = draw::transcript(a, a.open.as_ref().unwrap(), 140);
+        lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()).collect::<Vec<_>>().join("\n")
+    };
+    let t = text(&a);
+    assert!(t.contains("o-040") && !t.contains("o-041") && t.contains("… 260 more lines · Enter shows all"), "{t}");
+    assert!(a.key(key(KeyCode::Enter)).is_empty() && a.focus == Zone::Task, "Enter shows all, it doesn't write");
+    let t = text(&a);
+    assert!(t.contains("o-300") && !t.contains("more lines"), "{t}");
+    a.key(ch(' '));
+    a.key(ch(' '));
+    assert!(!text(&a).contains("o-041"), "closed and opened again, it's cut again");
 }

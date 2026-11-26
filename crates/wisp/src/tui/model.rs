@@ -152,6 +152,9 @@ fn is_stub(v: &Value) -> bool {
     v.get("body").and_then(|b| b.get("stub")).and_then(Value::as_bool) == Some(true)
 }
 
+/// How much of a tool step's output an open step shows before it says how much more there is.
+pub const OUTPUT_LINES: usize = 40;
+
 /// The open task, from its topic.
 #[derive(Debug, Default)]
 pub struct Transcript {
@@ -159,6 +162,8 @@ pub struct Transcript {
     rows: BTreeMap<(String, String), Value>,
     /// tool rows opened by the user, by their seq
     pub expanded: BTreeSet<i64>,
+    /// open tool rows whose whole output shows, past the first [`OUTPUT_LINES`] (Enter, or Space again, on the step)
+    pub full: BTreeSet<i64>,
     /// /btw entries `runtime.btw` answered with, until the session's own copy of them comes
     pub asked: Vec<Value>,
 }
@@ -310,11 +315,40 @@ impl Transcript {
             .collect()
     }
 
-    /// Toggles a tool row open or closed.
+    /// Toggles a tool row open or closed; closed, it opens cut at [`OUTPUT_LINES`] again next time.
     pub fn toggle(&mut self, seq: i64) {
-        if !self.expanded.remove(&seq) {
+        if self.expanded.remove(&seq) {
+            self.full.remove(&seq);
+        } else {
             self.expanded.insert(seq);
         }
+    }
+
+    /// A tool step's output: its own `output`, else the `tool_output` its call got (the two arrive either way).
+    pub fn output(&self, seq: i64) -> String {
+        for turn in self.turns() {
+            let events = self.events(s(&turn, "id"));
+            let Some((_, b)) = events.iter().find(|(x, _)| *x == seq) else { continue };
+            if !s(b, "output").is_empty() {
+                return s(b, "output").to_owned();
+            }
+            let call = s(b, "callId");
+            return events
+                .iter()
+                .find(|(_, o)| s(o, "kind") == "tool_output" && !call.is_empty() && s(o, "callId") == call)
+                .map(|(_, o)| s(o, "text").to_owned())
+                .unwrap_or_default();
+        }
+        String::new()
+    }
+
+    /// An open step cut at [`OUTPUT_LINES`] shows all of its output; false: it wasn't cut (or isn't open).
+    pub fn show_all(&mut self, seq: i64) -> bool {
+        let cut = self.expanded.contains(&seq) && !self.full.contains(&seq) && self.output(seq).lines().count() > OUTPUT_LINES;
+        if cut {
+            self.full.insert(seq);
+        }
+        cut
     }
 }
 
