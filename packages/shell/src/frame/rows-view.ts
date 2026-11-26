@@ -250,14 +250,49 @@ export function projectList(rows: readonly unknown[], order: unknown, keys?: rea
   return all.filter((p) => p.id).sort((a, b) => at(a.id) - at(b.id) || a.name.localeCompare(b.name));
 }
 
+/** One projects list's folder lookups: each root normalized once (trailing slashes off, an empty one dropped), keyed
+ *  by folder, and each folder's answer kept. ⌘K's task rows, the Projects counts and the need-you counts ask once per
+ *  task on every rebuild; a regex, a filter and a sort over every project per task took ~141 ms at 5k tasks × 200
+ *  projects (perf-r1 #2). */
+interface ProjectIndex {
+  /** a normalized root → its project: the deepest-first winner when several share it */
+  readonly byRoot: Map<string, ProjectView>;
+  readonly seen: Map<string, ProjectView | undefined>;
+  /** an id or a name → the first project in the list that has it (a task's `project` fallback) */
+  readonly byName: Map<string, ProjectView>;
+}
+
+// by the list's identity: a new list (a project added, renamed or moved) is a new index, never a stale answer
+const indexes = new WeakMap<readonly ProjectView[], ProjectIndex>();
+
+function projectIndex(projects: readonly ProjectView[]): ProjectIndex {
+  let ix = indexes.get(projects);
+  if (ix) return ix;
+  const roots = projects
+    .map((p, i) => ({ p, i, r: p.path.replace(/\/+$/, '') }))
+    .filter((x) => x.r)
+    // the deepest first; on one folder, the longer path as written (as the sort over every project did), then list order
+    .sort((a, b) => b.r.length - a.r.length || b.p.path.length - a.p.path.length || a.i - b.i);
+  const byRoot = new Map<string, ProjectView>();
+  for (const x of roots) if (!byRoot.has(x.r)) byRoot.set(x.r, x.p);
+  const byName = new Map<string, ProjectView>();
+  for (const p of projects) for (const n of [p.id, p.name]) if (!byName.has(n)) byName.set(n, p);
+  ix = { byRoot, seen: new Map(), byName };
+  indexes.set(projects, ix);
+  return ix;
+}
+
 /** The project a folder is in (v1 `projectFor`): the one whose path holds it, the deepest when they nest. */
 export function projectOf(cwd: string | undefined, projects: readonly ProjectView[]): ProjectView | undefined {
   if (!cwd) return undefined;
-  const inside = (root: string): boolean => {
-    const r = root.replace(/\/+$/, '');
-    return !!r && (cwd === r || cwd.startsWith(`${r}/`));
-  };
-  return projects.filter((p) => inside(p.path)).sort((a, b) => b.path.length - a.path.length)[0];
+  const ix = projectIndex(projects);
+  if (ix.seen.has(cwd)) return ix.seen.get(cwd);
+  // the folder itself, then each parent up (a root holds it when it's the folder or ends at one of its slashes):
+  // the first found is the deepest
+  let found = ix.byRoot.get(cwd);
+  for (let i = cwd.lastIndexOf('/'); !found && i > 0; i = cwd.lastIndexOf('/', i - 1)) found = ix.byRoot.get(cwd.slice(0, i));
+  ix.seen.set(cwd, found);
+  return found;
 }
 
 /** The project a task belongs to: a worktree run's is the repo its worktree was made from (wisp.worktrees' `root`;
@@ -271,7 +306,7 @@ export function projectOfRow(s: { readonly summary?: unknown; readonly body?: un
   const fromCwd = projectOf(typeof sum['cwd'] === 'string' ? sum['cwd'] : undefined, projects);
   if (fromCwd) return fromCwd;
   const named = sum['project'];
-  return typeof named === 'string' && named ? projects.find((p) => p.id === named || p.name === named) : undefined;
+  return typeof named === 'string' && named ? projectIndex(projects).byName.get(named) : undefined;
 }
 
 /** How many tasks each project has (Manage projects' "N tasks"): each task counted for the project it belongs to

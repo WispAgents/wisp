@@ -13,7 +13,8 @@ pub const HELP: &str = "usage:
   wisp ls                       list sessions        (the newest 50; --state running,waiting,review,done|needs  --limit N  --all, -a: all, archived too
                                 --watch: follow the list)
   wisp show <id>                state + latest presentation as markdown   (--watch: follow its turn live)
-  wisp wait <id>                block until it finishes or asks you something
+  wisp wait <id>                block until it finishes or asks you something   (--timeout 30s|10m|2h, default 30m)
+                                exit 0 done or review, 1 failed/stopped/blocked, 2 asks you something, 124 timed out
   wisp reply <id> \"text\"        follow up (answers a pending question)   (--queue  --mode plan|edits|auto
                                 --agent ID  --model ID  --effort LEVEL: switch harness / model from here on)
   wisp btw <id> \"question\"      ask on the side without interrupting the run; prints the answer
@@ -91,6 +92,7 @@ pub const HELP: &str = "usage:
 
 launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|antigravity|grok|copilot  --model ID  --effort LEVEL
                 --cwd DIR  --also DIR (repeatable)  --wait  --json  --no-worktree  --compare agent[:model],…: one task per harness
+                --wait exits as wisp wait does (0, 1, 2, 124)   --timeout 30s|10m|2h  how long it waits (30m)
                 --try subagents=haiku|sonnet|task  --try skills=off  run it twice on --agent, the second with
                 that changed (repeatable or comma separated); Compare says what differed
                 --goal NAME  keep going until a goal declared by name (goals: in a formula) is met
@@ -160,6 +162,8 @@ pub struct Flags {
     pub also: Vec<PathBuf>,
     pub json: bool,
     pub wait: bool,
+    /// `--timeout <duration>`: how long `wait` and `--wait` wait, as typed (`scripted::wait_timeout` reads it)
+    pub timeout: Option<String>,
     pub yes: bool,
     pub queue: Option<bool>,
     pub state: Option<String>,
@@ -216,6 +220,7 @@ impl Flags {
             also: Vec::new(),
             json: false,
             wait: false,
+            timeout: None,
             yes: false,
             queue: None,
             state: None,
@@ -349,7 +354,9 @@ fn fits(cmd: &str, w: &[String], home: &Path, cwd: &Path) -> bool {
     let w1 = w.get(1).map_or("", String::as_str);
     match cmd {
         "grid" => n == 1 || GRID_SUB.contains(&w1),
-        "ship" | "merge" => session_id(w1),
+        // a full id with anything after it, as before; `last`, a number or a short id only alone (`wisp merge last`
+        // squash-merged nothing: it launched a task), so `wisp merge 2 branches into main` stays a prompt
+        "ship" | "merge" => session_id(w1) || (n == 2 && task_ref(w1)),
         "attach" => n == 2 && task_ref(w1),
         "show" | "stop" | "wait" | "reply" | "btw" => task_ref(w1),
         // `wisp held <id> start` (audit D4): only with a task and one of its three words; `wisp held up the release` is a task
@@ -399,7 +406,7 @@ pub fn short_flag_shaped(a: &str) -> bool {
 }
 
 /// The flags a launch (`wisp "…"`) takes, for "did you mean" (`set` below, and `--factory`).
-pub const LAUNCH_FLAGS: [&str; 30] = [
+pub const LAUNCH_FLAGS: [&str; 31] = [
     "--mode",
     "--agent",
     "--model",
@@ -408,6 +415,7 @@ pub const LAUNCH_FLAGS: [&str; 30] = [
     "--also",
     "--json",
     "--wait",
+    "--timeout",
     "--yes",
     "--queue",
     "--project",
@@ -458,6 +466,7 @@ fn set(f: &mut Flags, a: &str, value: &mut dyn FnMut() -> Result<String, UsageEr
         "--limit" => f.limit = value()?.parse().ok(),
         "--json" => f.json = true,
         "--wait" | "-w" => f.wait = true,
+        "--timeout" => f.timeout = Some(value()?),
         "--yes" | "-y" => f.yes = true,
         "--queue" => f.queue = Some(true),
         "--project" => f.project = true,

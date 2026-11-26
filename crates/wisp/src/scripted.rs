@@ -92,8 +92,16 @@ pub fn launch_args(f: &Flags, prompt: &str, cwd: &str) -> Value {
 /// and it gets its own worktree ([`own_worktree`]) unless `--worktree` or `--no-worktree` said. Outside every project the
 /// arguments stay as they are, except in a git repo, which gets its own worktree all the same (audit E1).
 pub async fn in_project(c: &Client, a: &mut Value) {
-    let Some(cwd) = a.get("cwd").and_then(Value::as_str).map(str::to_owned) else { return };
+    if a.get("cwd").and_then(Value::as_str).is_none() {
+        return;
+    }
     let Ok(projects) = c.cmd("resources.export", json!({ "kinds": ["project"] })).await else { return };
+    file_in(a, &projects);
+}
+
+/// [`in_project`] given the projects (`resources.export`'s list): the cwd spelled as its project's, and the worktree.
+pub fn file_in(a: &mut Value, projects: &Value) {
+    let Some(cwd) = a.get("cwd").and_then(Value::as_str).map(str::to_owned) else { return };
     let mut best: Option<(usize, String)> = None;
     for p in projects.as_array().into_iter().flatten() {
         let Some(path) = p.pointer("/spec/path").and_then(Value::as_str) else { continue };
@@ -191,24 +199,80 @@ async fn newest(c: &Client) -> Result<Option<String>> {
 /// `wisp show <id>`: its state and its last answer, drawn for the terminal (`--json`: the task and the
 /// presentation).
 pub async fn show(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Result<()> {
+    shown(c, f, id, summary).await.map(|_| ())
+}
+
+/// What `wisp wait` and `--wait` exit with, from where the task stopped ([`settled`]): 0 it finished (done, or its turn
+/// ended for review), 1 it failed, was stopped or blocked (its usage limit too), 2 it waits on you (a question, a
+/// permission, a turn held before it started), 124 the wait timed out (as `timeout(1)` says it). Each exited 0: a
+/// script couldn't tell a failed task from a finished one.
+pub fn wait_exit(task: &Value, last: Option<&Value>, timed_out: bool) -> i32 {
+    let turn = |k: &str| last.and_then(|t| t.get(k)).filter(|v| !v.is_null());
+    let status = turn("status").and_then(Value::as_str).unwrap_or_default();
+    match state_of(task).as_str() {
+        _ if timed_out => 124,
+        _ if status == "held" => 2,
+        "waiting" => 2,
+        "error" | "failed" | "blocked" | "stopped" => 1,
+        _ if matches!(status, "error" | "stopped") || turn("limit").is_some() => 1,
+        _ => 0,
+    }
+}
+
+/// `--json` for `wisp show` and a wait: the task with its presentation, and `timedOut` when the wait ran out (the task
+/// still running: its state alone read as one that had settled).
+pub fn shown_json(task: &Value, presentation: Value, summary: Option<&Value>) -> Value {
+    let mut all = task.clone();
+    if let Some(o) = all.as_object_mut() {
+        o.insert("presentation".into(), presentation);
+        if timed_out(summary) {
+            o.insert("timedOut".into(), Value::Bool(true));
+        }
+    }
+    all
+}
+
+fn timed_out(summary: Option<&Value>) -> bool {
+    summary.and_then(|x| x.get("timedOut")).and_then(Value::as_bool) == Some(true)
+}
+
+/// How long `wisp wait` and `--wait` wait: `--timeout` in seconds, or with a unit (`30s`, `10m`, `2h`); 30 minutes when
+/// not given. Err: the words for a value that's none of those (a usage error).
+pub fn wait_timeout(v: Option<&str>) -> std::result::Result<Duration, String> {
+    let Some(v) = v.map(str::trim) else { return Ok(Duration::from_secs(30 * 60)) };
+    let (n, unit) = match v.find(|c: char| !c.is_ascii_digit()) {
+        Some(i) => v.split_at(i),
+        None => (v, "s"),
+    };
+    let per = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        _ => 0,
+    };
+    match n.parse::<u64>() {
+        Ok(n) if n > 0 && per > 0 => Ok(Duration::from_secs(n.saturating_mul(per))),
+        _ => Err(format!("--timeout {v}: seconds, or 30s, 10m, 2h — see wisp --help")),
+    }
+}
+
+/// [`show`], and the code a wait exits with ([`wait_exit`]).
+pub async fn shown(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Result<i32> {
     let task = c.cmd("runtime.get", json!({ "id": id })).await?;
     let p = c.cmd("runtime.presentation", json!({ "id": id })).await.unwrap_or(Value::Null);
-    let still =
-        if summary.as_ref().and_then(|x| x.get("timedOut")).and_then(Value::as_bool) == Some(true) { ", still running" } else { "" };
+    let late = timed_out(summary.as_ref());
+    let still = if late { ", still running" } else { "" };
+    let last = c.cmd("runtime.turns", json!({ "id": id, "limit": 1 })).await.ok();
+    let code = wait_exit(&task, last.as_ref().and_then(Value::as_array).and_then(|t| t.last()), late);
     if f.json {
-        let mut all = task.clone();
-        if let Some(o) = all.as_object_mut() {
-            o.insert("presentation".into(), p);
-        }
-        say(&serde_json::to_string_pretty(&all).unwrap_or_default());
-        return Ok(());
+        say(&serde_json::to_string_pretty(&shown_json(&task, p, summary.as_ref())).unwrap_or_default());
+        return Ok(code);
     }
     let st = crate::cli::style();
     let family = crate::history_cli::lineage_line(c, id).await.map_or_else(String::new, |l| format!("\n{l}"));
     let mut blocks = p.get("blocks").and_then(Value::as_array).cloned().unwrap_or_default();
     // a run at its usage limit: the hero says so in words; the CLI's raw stderr under it (`…limit reached|1767225600`,
     // an epoch) is for the page's card, never the terminal (audit C #13)
-    let last = c.cmd("runtime.turns", json!({ "id": id, "limit": 1 })).await.ok();
     if last.as_ref().and_then(Value::as_array).and_then(|t| t.last()).is_some_and(|t| t.get("limit").is_some_and(|l| !l.is_null())) {
         blocks.retain(|b| b.get("type").and_then(Value::as_str) != Some("terminal"));
     }
@@ -220,7 +284,7 @@ pub async fn show(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Re
     let factory = crate::show_words::factory_line(&task);
     let head = format!("◌ {}  [{}{still}]  {id}{family}{goal}{factory}", s(&task, "title"), s(&task, "state"));
     say(&show_text(&head, &[&body, &asks, &held]));
-    Ok(())
+    Ok(code)
 }
 
 /// The question the task waits on (an `ask_user`, a live approval), its context and options, and how to answer it from
@@ -503,6 +567,45 @@ mod tests {
         }
         assert!(super::settled(&goal("waiting", "judging")), "it asks you: stop");
         assert!(super::settled(&goal("done", "")));
+    }
+
+    /// `wisp wait` and `--wait` exited 0 whatever became of the task (failed, stopped, timed out): a script couldn't
+    /// tell. Each end has its own code, and `--json` says a wait timed out.
+    #[test]
+    fn wait_exits_with_how_the_task_ended() {
+        let t = |state: &str| json!({ "id": "t", "state": state });
+        let turn = |status: &str| json!({ "status": status });
+        assert_eq!(wait_exit(&t("done"), Some(&turn("done")), false), 0);
+        assert_eq!(wait_exit(&t("review"), Some(&turn("done")), false), 0);
+        assert_eq!(wait_exit(&t("review"), None, false), 0);
+        assert_eq!(wait_exit(&t("error"), Some(&turn("error")), false), 1, "failed");
+        assert_eq!(wait_exit(&t("review"), Some(&turn("error")), false), 1, "its turn failed");
+        assert_eq!(wait_exit(&t("review"), Some(&turn("stopped")), false), 1, "stopped");
+        assert_eq!(wait_exit(&t("review"), Some(&json!({ "status": "done", "limit": { "at": 1 } })), false), 1, "at its usage limit");
+        let factory = json!({ "id": "t", "state": "review", "factory": { "name": "gated", "state": "stopped" } });
+        assert_eq!(wait_exit(&factory, None, false), 1, "a stopped factory run");
+        assert_eq!(wait_exit(&t("waiting"), Some(&turn("running")), false), 2, "a question or a permission");
+        assert_eq!(wait_exit(&t("review"), Some(&turn("held")), false), 2, "held before it started");
+        assert_eq!(wait_exit(&t("running"), Some(&turn("running")), true), 124, "timed out");
+        let timed = shown_json(&t("running"), json!(null), Some(&json!({ "id": "t", "timedOut": true })));
+        assert_eq!((timed["timedOut"].as_bool(), timed["state"].as_str()), (Some(true), Some("running")));
+        assert!(shown_json(&t("done"), json!(null), Some(&t("done"))).get("timedOut").is_none());
+        assert!(shown_json(&t("done"), json!(null), None).get("presentation").is_some());
+    }
+
+    #[test]
+    fn wait_timeout_takes_seconds_or_a_unit_and_defaults_to_thirty_minutes() {
+        assert_eq!(wait_timeout(None), Ok(Duration::from_secs(1800)));
+        assert_eq!(wait_timeout(Some("45")), Ok(Duration::from_secs(45)));
+        assert_eq!(wait_timeout(Some("30s")), Ok(Duration::from_secs(30)));
+        assert_eq!(wait_timeout(Some("10m")), Ok(Duration::from_secs(600)));
+        assert_eq!(wait_timeout(Some("2h")), Ok(Duration::from_secs(7200)));
+        for bad in ["", "0", "-5", "10x", "m", "1.5h", "ten"] {
+            assert!(wait_timeout(Some(bad)).is_err(), "{bad}");
+        }
+        let v: Vec<String> = ["wait", "abc123abc123", "--timeout", "10m"].iter().map(|s| (*s).to_owned()).collect();
+        let p = crate::args::parse(&v, None, std::path::Path::new("/h"), std::path::Path::new("/w")).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!((p.command, p.flags.timeout.as_deref()), (Some("wait"), Some("10m")));
     }
 
     /// Audit G15: `wisp ls` printed `review` for a factory run you stopped (`01a1faa27cca…  review  Factory · gated`),
