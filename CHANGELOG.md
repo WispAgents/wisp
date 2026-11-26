@@ -11,6 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Plan mode can't change your files, on every agent.** A Claude Code task in Plan still runs commands, tests and builds, but its shell now runs in a read-only sandbox: a write into the project, an added folder or your home fails, and /tmp stays writable. Where your computer has no sandbox for it (Linux without `bwrap` and `socat`, Windows, wisp Cloud), Plan is Claude Code's own read-only plan mode instead. An opencode task in Plan can't edit even when your opencode config allows it, and its shell only runs reads (`git status`, `git diff`, `ls`, `cat`, `rg` and the like); a Plan task a trigger or a channel started has no shell.
 - **A sandbox subagent's changes are never lost on the way back.** When they clash with yours, the patch is kept in a file and the lead's report says where (`git apply <path>` puts it in). A sandbox that's asleep or unreachable no longer counts its changes as brought: they're tried again on the next look. A deleted lead's sandbox that still holds work it never got stays until you delete it in Settings → Computers → Sandboxes.
 - **Every job of a sandbox subagent brings its own changes back.** The second and later jobs you gave the same subagent used to come back with nothing (or with the first job's changes again, which then clashed). Each job now brings only what it changed.
 - **A subagent whose sandbox is gone gets a new one** on its next task, instead of failing until you remove it from the team.

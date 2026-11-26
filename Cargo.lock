@@ -4403,6 +4403,7 @@ dependencies = [
  "wisp-claude-core",
  "wisp-harness-kit",
  "wisp-kernel",
+ "wisp-proc",
  "wisp-runtime-api",
 ]
 

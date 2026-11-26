@@ -2,6 +2,9 @@
 # Build from the repo root:  docker build -f grid/deploy/image/Dockerfile -t wisp-grid-user .
 FROM node:22-bookworm-slim
 
+# No bubblewrap or socat on purpose (ADR-0135): bubblewrap needs user namespaces a box's container isn't given, so a
+# Plan task here runs in Claude Code's own plan mode (wisp.claude finds no sandbox on PATH) rather than with a shell
+# whose every command fails.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates curl ripgrep python3 openssh-client procps less \
  && rm -rf /var/lib/apt/lists/*

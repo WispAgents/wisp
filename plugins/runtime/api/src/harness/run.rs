@@ -72,6 +72,12 @@ pub struct HarnessRun {
     /// A harness that can run Plan so does; one that can't stays read-only. Additive (2026-11-15).
     #[serde(default)]
     pub plan_commands: bool,
+    /// with `plan_commands`: the harness can hold the run's shell to read-only in the OS (Claude Code's sandbox:
+    /// Seatbelt on macOS, bubblewrap and socat on Linux). Its host sets it from the platform it runs on, so the launch
+    /// stays plain data; without it a Plan run stays in the harness's own read-only plan mode (ADR-0135). Additive
+    /// (2026-11-26).
+    #[serde(default)]
+    pub plan_sandbox: bool,
     /// started from a channel with a mode cap: the sandbox keeps the shell off wisp's API
     pub capped: bool,
     /// a task's turn: check what the CLI is and what the sign-in bills to (side runs skip it)
