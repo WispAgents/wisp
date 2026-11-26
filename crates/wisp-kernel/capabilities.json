@@ -27,6 +27,7 @@
         { "permission": "connectors:signin", "why": "sign a connector in: the user does" },
         { "permission": "connectors:signout", "why": "sign a connector out: the user does" },
         { "permission": "connectors:oauthFinish", "why": "sign a connector in: the user does" },
+        { "permission": "connectors:token", "why": "read a connector's live token: only the connector proxy does (a token in a transcript is a leak)" },
         { "permission": "crew:write", "why": "change the crew itself: ask with wisp_crew_add, wisp_crew_edit, wisp_crew_remove or runtime.setup.ask, and the user allows it on a card" },
         { "permission": "crew:share", "why": "share the crew: the user does" },
         { "permission": "runtime:profile.set", "why": "change the user’s agents: the user does" },
