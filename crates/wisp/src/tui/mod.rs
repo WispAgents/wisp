@@ -83,6 +83,12 @@ fn attachment(path: &str) -> Value {
 }
 
 /// The command a send makes, and what its answer does.
+/// A command's refusal in words: an answer refused because its ask changed says so plainly (the status is gone once
+/// it's a string).
+fn refused(then: &Then, e: &CliError) -> String {
+    if *then == Then::Answered { crate::attach::answer_refused(e) } else { e.to_string() }
+}
+
 fn send_cmd(
     task: Option<String>,
     text: &str,
@@ -240,7 +246,7 @@ pub async fn run(c: &Client, cwd: &str) -> Result<i32> {
                         if launches(&id) {
                             crate::scripted::in_project(&c, &mut args).await;
                         }
-                        let r = c.cmd(&id, args).await.map_err(|e| e.to_string());
+                        let r = c.cmd(&id, args).await.map_err(|e| refused(&then, &e));
                         let _ = tx.send((then, r)).await;
                     });
                 }

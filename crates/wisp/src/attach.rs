@@ -41,8 +41,20 @@ enum Ev {
 #[derive(Debug, Clone, PartialEq)]
 enum Prompt {
     None,
-    Ask(Vec<String>),
+    /// the ask shown (its id, which the answer names) and its choices
+    Ask(String, Vec<String>),
     Reply,
+}
+
+/// `runtime.answer`'s arguments: the answer names the ask it was picked for (`askId`), so a setup card can be
+/// answered (it's refused without one) and a pick for a question since answered or replaced never lands on the next.
+pub(crate) fn answer_args(id: &str, ask: &str, text: &str) -> Value {
+    json!({ "id": id, "text": text, "askId": ask })
+}
+
+/// What an answer's refusal says: the ask changed under it (`conflict`), in plain words, and nothing is retried.
+pub(crate) fn answer_refused(e: &CliError) -> String {
+    if e.status() == 409 { "That question was already answered or replaced: nothing was sent.".to_owned() } else { e.to_string() }
 }
 
 fn out_line(text: &str) {
@@ -372,16 +384,16 @@ pub async fn attach(c: &Client, home: &Path, id: &str, mode: Mode) -> Result<i32
                         out_line("");
                         print_lines(&lines, &st);
                     }
-                    Out::Ask { question, options, .. } if mode.interactive => {
+                    Out::Ask { id: ask, question, options } if mode.interactive => {
                         let q = json!({ "type": "question", "question": question, "options": options.iter().map(|o| json!({ "label": o })).collect::<Vec<_>>() });
                         out_line("");
                         print_lines(&r.block(&q, &st), &st);
                         prompt(&term::dim(&st, if options.is_empty() { "answer › " } else { "pick a number or type › " }));
-                        asking = Prompt::Ask(options);
+                        asking = Prompt::Ask(ask, options);
                     }
                     Out::Ask { question, .. } => out_line(&format!("  ? {question}  (wisp attach {id} to answer)")),
                     Out::Answered => {
-                        if matches!(asking, Prompt::Ask(_)) {
+                        if matches!(asking, Prompt::Ask(..)) {
                             out_line("");
                             asking = Prompt::None;
                         }
@@ -390,7 +402,7 @@ pub async fn attach(c: &Client, home: &Path, id: &str, mode: Mode) -> Result<i32
                         if mode.until_idle {
                             return Ok(i32::from(state == "error"));
                         }
-                        if mode.interactive && !matches!(asking, Prompt::Ask(_)) {
+                        if mode.interactive && !matches!(asking, Prompt::Ask(..)) {
                             out_line(&format!(
                                 "\n{}",
                                 term::dim(&st, &format!("{}  · Enter to leave, or reply ›", state_line(&st, &state)))
@@ -412,15 +424,15 @@ pub async fn attach(c: &Client, home: &Path, id: &str, mode: Mode) -> Result<i32
                 };
                 let text = line.trim().to_owned();
                 match std::mem::replace(&mut asking, Prompt::None) {
-                    Prompt::Ask(options) => {
+                    Prompt::Ask(ask, options) => {
                         let pick = text.parse::<usize>().ok().and_then(|n| options.get(n.wrapping_sub(1))).cloned().unwrap_or_else(|| text.clone());
                         if pick.is_empty() {
                             prompt("› ");
-                            asking = Prompt::Ask(options);
+                            asking = Prompt::Ask(ask, options);
                             continue;
                         }
-                        if let Err(e) = c.cmd("runtime.answer", json!({ "id": id, "text": pick })).await {
-                            out_line(&format!("  ✗ {e}"));
+                        if let Err(e) = c.cmd("runtime.answer", answer_args(id, &ask, &pick)).await {
+                            out_line(&format!("  ✗ {}", answer_refused(&e)));
                         }
                     }
                     Prompt::Reply if text.is_empty() => return Ok(0),
@@ -604,6 +616,15 @@ mod tests {
         assert_eq!(notice_words("review", Some(&json!({ "status": "error" }))), ("error", "failed"));
         assert_eq!(notice_words("review", Some(&json!({ "status": "done", "limit": null }))), ("done", "finished"));
         assert_eq!(notice_words("waiting", None), ("waiting", "asks you something"));
+    }
+
+    #[test]
+    fn an_answer_names_its_ask_and_a_conflict_says_so_plainly() {
+        assert_eq!(answer_args("t1", "a7", "main"), json!({ "id": "t1", "text": "main", "askId": "a7" }));
+        let gone = CliError::Http { status: 409, message: "conflict".into(), body: Value::Null };
+        assert!(answer_refused(&gone).contains("already answered or replaced"), "{}", answer_refused(&gone));
+        let other = CliError::Http { status: 500, message: "boom".into(), body: Value::Null };
+        assert_eq!(answer_refused(&other), "boom");
     }
 
     #[test]

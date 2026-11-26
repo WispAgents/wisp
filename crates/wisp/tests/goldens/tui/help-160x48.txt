@@ -1,48 +1,48 @@
- wisp                     3 tasks │ Add dark mode   running
-                              ╭ Keys · any key closes ───────────────────────────────────────────────────────────────────────────╮
- RUNNING  1                   │ EVERYWHERE                                                                                       │─────────────────────────────
-▌Add dark mode                │   Ctrl-K  :               command palette: tasks, views, commands, settings                      │
-▌⠋ codex · web                │   ?                       this help (j k scroll it on a small screen)                            │
-                              │   Tab  Shift-Tab          next zone · in the composer: cycle mode plan → edits → auto            │
- DONE  2                      │   g then c a m s , h t    go to crew, automations, machines, My Stuff, settings, history, tasks  │
- Fix the login                │   [  ]                    narrow or widen the focused zone (or drag its border)                  │
- ● claude · api               │   Ctrl-C  q               quit (q outside the composer)                                          │
- Old one                      │                                                                                                  │
- ✓ claude · api               │ TASKS                                                                                            │
-                              │   j k  ↑ ↓                move                                                                   │
-                              │   Enter  l                open the task                                                          │
-                              │   n                       new task                                                               │ame constant, so the two
-                              │   i                       reply to the selected task (none: start one)                           │
-                              │   /                       search: ↑ ↓ between the matches, Enter opens one                       │
-                              │                                                                                                  │
-                              │ THE TASK                                                                                         │
-                              │   i  Enter                write (the composer)                                                   │
-                              │   j k                     move between steps                                                     │
-                              │   Space                   open or close the step (a tool call, a diff)                           │
-                              │   o                       open in its harness (Claude Code, Codex…), back here after             │
-                              │   1-9                     answer the question with that choice                                   │
-                              │   y  a  n                 allow · always allow · deny a tool                                     │
-                              │   Esc                     interrupt the running turn                                             │
-                              │   d                       the changes pane (diffs) · again: close it                             │
-                              │   t                       the Thread pane: the task's Notes and how worn it is · again: close it │
-                              │   s                       stop                                                                   │
-                              │   PgUp PgDn  G            scroll · to the end (and follow)                                       │
-                              │                                                                                                  │
-                              │ COMPOSER                                                                                         │
-                              │   Enter                   send (queued while a turn runs)                                        │
-                              │   Alt-Enter  Ctrl-J       new line                                                               │
-                              │   @                       mention a task, crew member, machine, My Stuff item or file            │
-                              │   /                       a command (/btw, /fork, /ship, /goal, any catalogue command)           │
-                              │   ↑                       history, in an empty box                                               │
-                              │   Ctrl-E                  edit in $EDITOR                                                        │
-                              │   Alt-↑  Alt-↓  Ctrl-S    reorder the queued follow-up · send it now                             │
-                              │   Esc                     leave the composer (interrupts when it's empty and a turn runs)        │
-                              │                                                                                                  │
-                              │ VIEWS                                                                                            │
-                              │   j k                     move                                                                   │
-                              │   a letter                the row's action (shown in the view's footer)                          │
-                              │   r                       reload                                                                 │
-                              ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯────────────────────────────╮
-                                  │ │ i write  ? keys                                                                                                         │
+ wisp                     ╭ Keys · any key closes ───────────────────────────────────────────────────────────────────────────────────╮
+                          │ EVERYWHERE                                                                                               │
+ RUNNING  1               │   Ctrl-K  :               command palette: tasks, views, commands, settings                              │─────────────────────────
+▌Add dark mode            │   ?                       this help (j k scroll it on a small screen)                                    │
+▌⠋ codex · web            │   Tab  Shift-Tab          next zone · in the composer: cycle mode plan → edits → auto                    │
+                          │   g then c a m s , b h t  Crew, Automations, Machines, My Stuff, Settings, Blame, Repo history, tasks    │
+ DONE  2                  │   [  ]                    narrow or widen the focused zone (or drag its border)                          │
+ Fix the login            │   Ctrl-C  q               quit (q outside the composer)                                                  │
+ ● claude · api           │                                                                                                          │
+ Old one                  │ TASKS                                                                                                    │
+ ✓ claude · api           │   j k  ↑ ↓                move                                                                           │
+                          │   Enter  l  →             open the task                                                                  │
+                          │   n                       new task                                                                       │
+                          │   i                       reply to the selected task (none: start one)                                   │constant, so the two
+                          │   /                       search: ↑ ↓ between the matches, Enter opens one                               │
+                          │   s                       stop the running task (asks first)                                             │
+                          │                                                                                                          │
+                          │ THE TASK                                                                                                 │
+                          │   i  Enter                write (the composer)                                                           │
+                          │   j k  Space              move between steps · open or close one (a tool call, a diff)                   │
+                          │   o                       open in its harness (Claude Code, Codex…), back here after                     │
+                          │   1-9                     answer the question with that choice                                           │
+                          │   y  a  n                 allow · always allow · deny a tool (approvals only, never a question)          │
+                          │   Esc  h  ←               back to the list                                                               │
+                          │   d                       the changes pane (diffs) · again: close it                                     │
+                          │   t                       the Thread pane: the task's Notes and how worn it is · again: close it         │
+                          │   p                       the side pane's next tab (changes, files, terminal, setup, thread)             │
+                          │   s                       stop the running task (asks first)                                             │
+                          │   /                       search the transcript: what matches is marked                                  │
+                          │   PgUp PgDn  G  End       scroll · to the end (and follow)                                               │
+                          │                                                                                                          │
+                          │ COMPOSER                                                                                                 │
+                          │   Enter                   send (queued while a turn runs)                                                │
+                          │   Alt-Enter  Ctrl-J       new line                                                                       │
+                          │   @                       mention a task, crew member, machine, My Stuff item or file                    │
+                          │   /                       a command (/btw a side question, /fork, /stop, /goal, any catalogue command)   │
+                          │   ↑                       history, in an empty box                                                       │
+                          │   Ctrl-E  Ctrl-A          edit in $EDITOR · New task: the next agent (Auto, each harness)                │
+                          │   Alt-↑  Alt-↓  Ctrl-S    reorder the queued follow-up · send it now                                     │
+                          │   Esc                     leave the composer (never stops the task: s does, and asks first)              │
+                          │                                                                                                          │
+                          │ VIEWS                                                                                                    │
+                          │   j k                     move                                                                           │
+                          │   a letter                the row's action (shown in the view's footer)                                  │
+                          │   r                       reload                                                                         │────────────────────────╮
+                          ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯                        │
                                   │ ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   auto   codex · gpt-5                                                                                                           ● live   ? keys  ^K go  q quit

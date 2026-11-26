@@ -147,8 +147,12 @@ pub enum Then {
     Agents,
     /// a follow-up shown at once under the composer: dropped when it lands, back in the box when refused
     Sent(String),
-    /// a stop (or an interrupt) shown as pending on the task
+    /// a stop shown as pending on the task
     Stopped(String),
+    /// an answer to the open ask: refused because the ask changed, it says so and isn't sent again
+    Answered,
+    /// a /btw on this task: its entry (the question, the answer when it lands) goes in the transcript
+    Btw(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -706,13 +710,33 @@ impl App {
                 self.search = Some(String::new());
                 Vec::new()
             }
-            KeyCode::Char('s') => self.stop(),
+            KeyCode::Char('s') => self.ask_stop(),
             _ => Vec::new(),
         }
     }
 
-    fn stop(&mut self) -> Vec<Effect> {
-        let Some(id) = self.sel.clone() else { return Vec::new() };
+    /// The selected task has a turn running: its transcript says so, or (not loaded yet) its row.
+    fn sel_running(&self) -> bool {
+        let Some(id) = &self.sel else { return false };
+        let open = self.open.as_ref().filter(|t| t.task == *id);
+        open.is_some_and(|t| t.running().is_some()) || self.tasks.rows.get(id).is_some_and(|t| s(t, "state") == "running")
+    }
+
+    /// `s` or `/stop`: a stop ends the whole run, so it asks first, and only a running task has one to end. Esc
+    /// stopped it too, and Esc is how you go back: one key pressed to leave a pane killed the task.
+    fn ask_stop(&mut self) -> Vec<Effect> {
+        let Some(id) = self.sel.clone().filter(|id| !self.stopping.contains(id)) else { return Vec::new() };
+        if !self.sel_running() {
+            return Vec::new();
+        }
+        let title =
+            self.tasks.rows.get(&id).map(|t| s(t, "title").to_owned()).filter(|t| !t.is_empty()).unwrap_or_else(|| "this task".into());
+        self.overlay = Some(Overlay::Confirm(format!("Stop {title}?"), "runtime.stop".into(), json!({ "id": id })));
+        Vec::new()
+    }
+
+    /// The stop, confirmed: one on its way per task.
+    fn stop(&mut self, id: String) -> Vec<Effect> {
         if self.stopping.contains(&id) {
             return Vec::new();
         }
@@ -720,25 +744,37 @@ impl App {
         vec![Effect::Cmd { id: "runtime.stop".into(), args: json!({ "id": id }), then: Then::Stopped(id) }]
     }
 
+    /// The answer to the open ask, naming it (`askId`): a setup card is answered only that way, and an answer to a
+    /// question since answered or replaced is refused instead of landing on the next one.
     fn answer(&mut self, text: &str) -> Vec<Effect> {
-        if self.open.as_ref().and_then(Transcript::ask).is_none() {
-            return Vec::new();
-        }
+        let Some(ask) = self.open.as_ref().and_then(Transcript::ask) else { return Vec::new() };
         let id = self.sel.clone().unwrap_or_default();
-        vec![Effect::Cmd { id: "runtime.answer".into(), args: json!({ "id": id, "text": text }), then: Then::Nothing }]
+        vec![Effect::Cmd { id: "runtime.answer".into(), args: json!({ "id": id, "text": text, "askId": ask.id }), then: Then::Answered }]
+    }
+
+    /// y a n on an approval: its own Allow / Always / Deny. On a question they're no answer (they fall through).
+    fn approve(&mut self, word: &str) -> Vec<Effect> {
+        let pick = self
+            .open
+            .as_ref()
+            .and_then(Transcript::ask)
+            .filter(super::model::Ask::is_approval)
+            .and_then(|a| a.option(word).map(str::to_owned));
+        pick.map_or_else(Vec::new, |o| self.answer(&o))
     }
 
     fn task_key(&mut self, k: KeyEvent) -> Vec<Effect> {
         let ask = self.open.as_ref().and_then(Transcript::ask);
+        let approval = ask.as_ref().is_some_and(super::model::Ask::is_approval);
         match k.code {
             KeyCode::Char(c @ '1'..='9') if ask.is_some() => {
                 let opts = ask.map(|a| a.options).unwrap_or_default();
                 let i = usize::from(u8::try_from(c).unwrap_or(b'1') - b'1');
                 opts.get(i).cloned().map_or_else(Vec::new, |o| self.answer(&o))
             }
-            KeyCode::Char('y') if ask.is_some() => self.answer("allow"),
-            KeyCode::Char('a') if ask.is_some() => self.answer("always"),
-            KeyCode::Char('n') if ask.is_some() => self.answer("deny"),
+            KeyCode::Char('y') if approval => self.approve("allow"),
+            KeyCode::Char('a') if approval => self.approve("always"),
+            KeyCode::Char('n') if approval => self.approve("deny"),
             KeyCode::Char('i') | KeyCode::Enter => {
                 if self.sel.is_some() {
                     self.new_task = false;
@@ -783,8 +819,8 @@ impl App {
                 self.side = self.side.map(Side::next);
                 Vec::new()
             }
-            KeyCode::Char('s') => self.stop(),
-            KeyCode::Esc if self.running() => self.stop(),
+            KeyCode::Char('s') => self.ask_stop(),
+            // Esc only ever goes back: stopping is `s`, and it asks
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => {
                 self.focus = Zone::List;
                 Vec::new()
@@ -831,10 +867,8 @@ impl App {
         }
         match k.code {
             KeyCode::Enter => return self.send(),
+            // Esc leaves the composer, a turn running or not: stopping is `s` (or /stop), and it asks
             KeyCode::Esc => {
-                if self.composer.is_empty() && self.running() && !self.new_task {
-                    return self.stop();
-                }
                 self.focus = if self.new_task { Zone::List } else { Zone::Task };
                 self.new_task = false;
             }
@@ -917,9 +951,20 @@ impl App {
         let (word, args) = rest.split_once(char::is_whitespace).map_or((rest, ""), |(w, a)| (w, a.trim()));
         let id = task.unwrap_or_default();
         let fx = match word {
-            "btw" => Effect::Cmd { id: "runtime.btw".into(), args: json!({ "id": id, "text": args }), then: Then::Nothing },
+            // runtime.btw reads `question` (BtwArgs): `text` was refused every time. It needs a task to ask on
+            "btw" => {
+                if task.is_none() {
+                    self.toast("Open a task to ask it on the side", true);
+                    return Some(Vec::new());
+                }
+                if args.is_empty() {
+                    self.toast("/btw needs a question", true);
+                    return Some(Vec::new());
+                }
+                Effect::Cmd { id: "runtime.btw".into(), args: json!({ "id": id, "question": args }), then: Then::Btw(id.to_owned()) }
+            }
             "fork" => Effect::Cmd { id: "runtime.fork".into(), args: json!({ "id": id }), then: Then::Nothing },
-            "stop" => return Some(self.stop()),
+            "stop" => return Some(self.ask_stop()),
             "help" => {
                 self.overlay = Some(Overlay::Help);
                 return Some(Vec::new());
@@ -1061,6 +1106,10 @@ impl App {
             Overlay::AskAct(label, cmd, args, text) => self.ask_act_key(label, cmd, args, text, k),
             Overlay::Confirm(_, cmd, args) => {
                 if matches!(k.code, KeyCode::Char('y') | KeyCode::Enter) {
+                    // a stop asked for with `s` or /stop: one on its way per task, shown pending on its row
+                    if cmd == "runtime.stop" {
+                        return self.stop(s(&args, "id").to_owned());
+                    }
                     let then = self.screen.clone().map_or(Then::Nothing, Then::View);
                     return vec![Effect::Cmd { id: cmd, args, then }];
                 }
@@ -1278,11 +1327,35 @@ impl App {
         if here { vec![Effect::Watch(None)] } else { Vec::new() }
     }
 
+    /// `runtime.btw` answered with its entry (pending: the answer lands on the session later): into the transcript,
+    /// as a side entry. No entry in the answer: what it said, as a toast.
+    fn btw_came(&mut self, task: &str, got: std::result::Result<Value, String>) {
+        match got {
+            Ok(v) if v.get("question").is_some() => match self.open.as_mut().filter(|t| t.task == task) {
+                Some(t) => {
+                    t.asked.retain(|x| s(x, "id") != s(&v, "id"));
+                    t.asked.push(v);
+                    self.scroll = 0;
+                }
+                None => self.toast(format!("Asked on the side: {}", s(&v, "question")), false),
+            },
+            Ok(v) => {
+                let said = v.as_str().map_or_else(|| s(&v, "answer").to_owned(), str::to_owned);
+                if !said.is_empty() {
+                    self.toast(said, false);
+                }
+            }
+            Err(e) => self.toast(format!("/btw: {e}"), true),
+        }
+    }
+
     pub fn done(&mut self, then: Then, got: std::result::Result<Value, String>) -> Vec<Effect> {
         match (then, got) {
             // no agents list: New task offers Auto only
-            (Then::Nothing, Ok(_)) | (Then::Agents, Err(_)) => {}
-            (Then::Nothing | Then::Catalogue | Then::Mentions(_), Err(e)) => self.toast(e, true),
+            (Then::Nothing | Then::Answered, Ok(_)) | (Then::Agents, Err(_)) => {}
+            // an answer refused (the ask changed: the run loop put it in plain words) is said, never sent again
+            (Then::Nothing | Then::Catalogue | Then::Mentions(_) | Then::Answered, Err(e)) => self.toast(e, true),
+            (Then::Btw(task), got) => self.btw_came(&task, got),
             (Then::View(v), got) => {
                 let rows = self.views.entry(v.clone()).or_default();
                 rows.loading = false;

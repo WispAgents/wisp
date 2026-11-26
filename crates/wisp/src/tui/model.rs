@@ -134,6 +134,19 @@ pub struct Ask {
     pub options: Vec<String>,
 }
 
+impl Ask {
+    /// A tool approval (its options Allow / Always / Deny), not a question: only an approval is answered by y a n,
+    /// which on a question ("Postgres or SQLite?") sent a word that was none of its choices.
+    pub fn is_approval(&self) -> bool {
+        self.options.iter().any(|o| o.eq_ignore_ascii_case("allow"))
+    }
+
+    /// The option that is `word` (allow, always, deny), as the ask itself writes it.
+    pub fn option(&self, word: &str) -> Option<&str> {
+        self.options.iter().find(|o| o.eq_ignore_ascii_case(word)).map(String::as_str)
+    }
+}
+
 /// A turn row the task's window sent as a stub (`body.stub`).
 fn is_stub(v: &Value) -> bool {
     v.get("body").and_then(|b| b.get("stub")).and_then(Value::as_bool) == Some(true)
@@ -146,6 +159,8 @@ pub struct Transcript {
     rows: BTreeMap<(String, String), Value>,
     /// tool rows opened by the user, by their seq
     pub expanded: BTreeSet<i64>,
+    /// /btw entries `runtime.btw` answered with, until the session's own copy of them comes
+    pub asked: Vec<Value>,
 }
 
 impl Transcript {
@@ -271,6 +286,19 @@ impl Transcript {
         })
     }
 
+    /// The task's /btw side questions (`BtwEntry`s), oldest first: the session's (`ext.wisp.runtime.btw`, where the
+    /// answer lands), then those `runtime.btw` answered with that the session doesn't have yet.
+    pub fn btw(&self) -> Vec<Value> {
+        let session = self.session();
+        let mut out: Vec<Value> = session.pointer("/ext/wisp.runtime/btw").and_then(Value::as_array).cloned().unwrap_or_default();
+        for e in &self.asked {
+            if !out.iter().any(|x| s(x, "id") == s(e, "id")) {
+                out.push(e.clone());
+            }
+        }
+        out
+    }
+
     /// Follow-ups waiting while a turn runs: `(item id, text)`.
     pub fn queue(&self) -> Vec<(String, String)> {
         self.session()
@@ -319,5 +347,17 @@ mod tests {
         let del = EntityOp { topic: Topic::parse("list").unwrap(), e: "session".into(), id: "s1".into(), change: Change::Del };
         t.fold(None, vec![del]);
         assert!(t.rows.is_empty());
+    }
+
+    /// y a n answered every ask: a question's options aren't allow / always / deny, so only an approval takes them.
+    #[test]
+    fn only_an_ask_with_allow_is_an_approval() {
+        let ask = |o: &[&str]| Ask { id: "q".into(), question: "?".into(), options: o.iter().map(|x| (*x).to_owned()).collect() };
+        assert!(ask(&["Allow", "Always", "Deny"]).is_approval());
+        assert!(ask(&["allow", "deny"]).is_approval(), "any case");
+        assert!(!ask(&["Postgres", "SQLite"]).is_approval());
+        assert!(!ask(&[]).is_approval(), "a free-text question");
+        assert_eq!(ask(&["Allow", "Always", "Deny"]).option("deny"), Some("Deny"), "its own words");
+        assert_eq!(ask(&["Allow", "Deny"]).option("always"), None);
     }
 }

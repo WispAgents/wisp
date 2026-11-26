@@ -154,15 +154,50 @@ fn a_tool_step_shows_its_counts_and_opens_to_its_diff() {
     assert!(!screen(&a, 160, 48).contains("ttl = 3600"));
 }
 
+/// `opened()` with its open ask replaced by `ask`.
+fn asking(ask: &Value) -> App {
+    let mut a = opened();
+    a.focus = Zone::Task;
+    a.open.as_mut().unwrap().snapshot(vec![row(
+        "session",
+        "t2",
+        json!({ "id": "t2", "title": "Add dark mode", "state": "running", "body": { "ext": { "wisp.runtime": { "ask": ask.clone() } } } }),
+    )]);
+    a
+}
+
+fn answer(text: &str, ask: &str) -> Effect {
+    Effect::Cmd { id: "runtime.answer".into(), args: json!({ "id": "t2", "text": text, "askId": ask }), then: Then::Answered }
+}
+
+/// An answer named no ask (`{id, text}`): a setup card can't be answered without one, and one for a question since
+/// answered or replaced landed on the next. It names the open ask now, and a refusal says so without a retry.
 #[test]
-fn an_ask_is_answered_by_number_and_an_approval_by_y_a_n() {
+fn an_ask_is_answered_by_number_naming_the_ask() {
     let mut a = opened();
     a.focus = Zone::Task;
     assert!(screen(&a, 160, 48).contains("Use the system theme by default?"));
-    let fx = a.key(ch('2'));
-    assert_eq!(fx, vec![Effect::Cmd { id: "runtime.answer".into(), args: json!({ "id": "t2", "text": "No, dark" }), then: Then::Nothing }]);
-    let fx = a.key(ch('a'));
-    assert_eq!(fx, vec![Effect::Cmd { id: "runtime.answer".into(), args: json!({ "id": "t2", "text": "always" }), then: Then::Nothing }]);
+    assert_eq!(a.key(ch('2')), vec![answer("No, dark", "q1")]);
+    let fx = a.done(Then::Answered, Err("That question was already answered or replaced: nothing was sent.".into()));
+    assert!(fx.is_empty(), "never sent again");
+    assert!(a.toasts.iter().any(|t| t.bad && t.text.contains("already answered or replaced")), "{:?}", a.toasts);
+}
+
+/// y a n answered any ask with allow / always / deny, a question's too ("Postgres or SQLite?" got "deny").
+#[test]
+fn y_a_n_answer_an_approval_with_its_own_words_and_never_a_question() {
+    let mut a = asking(&json!({ "id": "q2", "question": "Which database?", "options": ["Postgres", "SQLite"] }));
+    for c in ['y', 'a', 'n'] {
+        let fx = a.key(ch(c));
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Cmd { id, .. } if id == "runtime.answer")), "{c} on a question: {fx:?}");
+    }
+    let s = screen(&a, 160, 48);
+    assert!(s.contains("1-9 choose") && !s.contains("y allow"), "{s}");
+    let mut a = asking(&json!({ "id": "p1", "question": "Run npm test?", "options": ["Allow", "Always", "Deny"] }));
+    assert!(screen(&a, 160, 48).contains("y allow"));
+    assert_eq!(a.key(ch('y')), vec![answer("Allow", "p1")]);
+    assert_eq!(a.key(ch('a')), vec![answer("Always", "p1")]);
+    assert_eq!(a.key(ch('n')), vec![answer("Deny", "p1")]);
 }
 
 #[test]
@@ -203,16 +238,127 @@ fn a_new_task_appears_at_once_and_the_real_one_replaces_it() {
     assert!(!a.tasks.rows.contains_key(&local));
 }
 
+fn stop(id: &str) -> Effect {
+    Effect::Cmd { id: "runtime.stop".into(), args: json!({ "id": id }), then: Then::Stopped(id.into()) }
+}
+
+/// Esc stopped a running task (in the task, and in an empty composer), as `s` did, at once: the key that goes back
+/// ended the run. Esc only goes back now.
 #[test]
-fn shift_tab_cycles_the_mode_and_esc_interrupts_a_running_turn() {
+fn shift_tab_cycles_the_mode_and_esc_only_goes_back() {
     let mut a = opened();
     a.key(key(KeyCode::BackTab));
     assert_eq!(a.mode, super::app::Mode::Plan);
     a.focus = Zone::Task;
-    let fx = a.key(key(KeyCode::Esc));
-    assert_eq!(fx, vec![Effect::Cmd { id: "runtime.stop".into(), args: json!({ "id": "t2" }), then: Then::Stopped("t2".into()) }]);
-    assert!(a.key(key(KeyCode::Esc)).is_empty(), "one stop on its way at a time");
+    assert!(a.running());
+    assert_eq!(a.key(key(KeyCode::Esc)), vec![], "a running task: no stop");
+    assert_eq!((a.focus, &a.overlay), (Zone::List, &None), "back to the list");
+    a.key(ch('i'));
+    assert_eq!(a.focus, Zone::Composer);
+    assert!(a.composer.is_empty());
+    assert_eq!(a.key(key(KeyCode::Esc)), vec![], "an empty composer, a turn running: no stop");
+    assert_eq!((a.focus, &a.overlay), (Zone::Task, &None), "it leaves the composer");
+    assert_eq!(a.stopping, Vec::<String>::new());
+}
+
+/// `s` sent runtime.stop at once, a running task or not. It asks now, only a running task, and y sends one stop.
+#[test]
+fn s_asks_before_it_stops_a_running_task_and_only_a_running_one() {
+    let mut a = opened();
+    for zone in [Zone::List, Zone::Task] {
+        a.focus = zone;
+        assert_eq!(a.key(ch('s')), vec![]);
+        let Some(Overlay::Confirm(q, cmd, args)) = a.overlay.clone() else { panic!("{:?}", a.overlay) };
+        assert_eq!((q.as_str(), cmd.as_str(), args), ("Stop Add dark mode?", "runtime.stop", json!({ "id": "t2" })));
+        assert!(screen(&a, 160, 48).contains("Stop Add dark mode?"));
+        assert_eq!(a.key(key(KeyCode::Esc)), vec![], "Esc: no");
+        assert_eq!(a.overlay, None);
+        a.key(ch('s'));
+        assert_eq!(a.key(ch('n')), vec![], "n: no");
+    }
+    a.key(ch('s'));
+    assert_eq!(a.key(ch('y')), vec![stop("t2")], "y: one stop");
     assert!(screen(&a, 160, 48).contains("(stopping)"), "pending, on the row");
+    assert_eq!(a.key(ch('s')), vec![]);
+    assert_eq!(a.overlay, None, "one stop on its way at a time: nothing to ask");
+    a.done(Then::Stopped("t2".into()), Ok(json!({})));
+    a.key(ch('s'));
+    assert_eq!(a.key(key(KeyCode::Enter)), vec![stop("t2")], "Enter: yes");
+    // an idle task (review) and a finished one (done): nothing to stop, nothing asked
+    a.focus = Zone::List;
+    for id in ["t1", "t0"] {
+        a.key(ch('j'));
+        assert_eq!(a.sel.as_deref(), Some(id));
+        assert_eq!(a.key(ch('s')), vec![]);
+        assert_eq!(a.overlay, None, "{id}: no stop to ask about");
+    }
+}
+
+/// `text` in the composer (a `/` line, past the picker that typing it opens), then Enter.
+fn said(a: &mut App, text: &str) -> Vec<Effect> {
+    a.composer.set(text);
+    a.key(key(KeyCode::Enter))
+}
+
+/// /stop stopped at once too: it goes through the same question.
+#[test]
+fn slash_stop_asks_first() {
+    let mut a = opened();
+    a.key(ch('i'));
+    assert_eq!(said(&mut a, "/stop"), vec![]);
+    assert!(matches!(&a.overlay, Some(Overlay::Confirm(q, c, _)) if q == "Stop Add dark mode?" && c == "runtime.stop"), "{:?}", a.overlay);
+    assert_eq!(a.key(ch('y')), vec![stop("t2")]);
+}
+
+/// /btw sent `{id, text}`, which runtime.btw (`BtwArgs`: `question`) refused every time, and its answer went nowhere.
+#[test]
+fn btw_asks_with_question_on_the_open_task_and_shows_the_answer() {
+    let mut a = opened();
+    a.key(ch('i'));
+    let fx = said(&mut a, "/btw what is X");
+    let [Effect::Cmd { id, args, then }] = fx.as_slice() else { panic!("{fx:?}") };
+    assert_eq!((id.as_str(), args, then), ("runtime.btw", &json!({ "id": "t2", "question": "what is X" }), &Then::Btw("t2".into())));
+    assert!(args.get("text").is_none());
+    // the entry it answers with is pending; the session's copy brings the answer
+    a.done(Then::Btw("t2".into()), Ok(json!({ "id": "b1", "question": "what is X", "answer": "", "at": 1, "pending": true })));
+    let s = screen(&a, 160, 48);
+    assert!(s.contains("btw what is X") && s.contains("answering on the side"), "{s}");
+    a.done(Then::Btw("t2".into()), Ok(json!({ "id": "b1", "question": "what is X", "answer": "X is the theme token.", "at": 1 })));
+    let s = screen(&a, 160, 48);
+    assert!(s.contains("X is the theme token.") && !s.contains("answering on the side"), "{s}");
+    // empty, or no task to ask on: nothing sent, a toast says why
+    a.key(ch('i'));
+    assert_eq!(said(&mut a, "/btw"), vec![]);
+    assert!(a.toasts.iter().any(|t| t.text == "/btw needs a question"));
+    a.key(key(KeyCode::Esc));
+    a.focus = Zone::List;
+    a.key(ch('n'));
+    assert_eq!(said(&mut a, "/btw what is X"), vec![], "the New task page has no task to ask");
+    assert!(a.toasts.iter().any(|t| t.text == "Open a task to ask it on the side"));
+}
+
+/// The keys every handler matches, by where (kept by hand next to `list_key`, `task_key` and `composer_key`): each
+/// has a row in KEYS, so `?` never leaves one out again (s, p, h, /, Ctrl-A were missing).
+#[test]
+fn every_handled_key_has_a_row_in_the_keymap() {
+    use super::keys::{KEYS, Where};
+    let handled: &[(Where, &[&str])] = &[
+        (Where::List, &["j", "k", "↑", "↓", "Enter", "l", "→", "i", "n", "/", "s"]),
+        (
+            Where::Task,
+            &[
+                "1-9", "y", "a", "n", "i", "Enter", "j", "k", "o", "Space", "d", "t", "p", "s", "Esc", "h", "←", "PgUp", "PgDn", "G",
+                "End", "/",
+            ],
+        ),
+        (Where::Composer, &["Enter", "Alt-Enter", "Ctrl-J", "Ctrl-A", "Ctrl-E", "Ctrl-S", "Alt-↑", "Alt-↓", "Esc", "@", "/", "↑"]),
+    ];
+    for (w, keys) in handled {
+        for k in *keys {
+            let row = KEYS.iter().any(|(at, ks, _)| (at == w || *at == Where::Everywhere) && ks.split_whitespace().any(|x| x == *k));
+            assert!(row, "{k} ({}) has no row in KEYS", w.title());
+        }
+    }
 }
 
 #[test]
@@ -296,6 +442,15 @@ fn the_help_is_the_keymap() {
     for (_, k, _) in super::keys::KEYS.iter().take(10) {
         assert!(s.contains(k), "{k} in the help:\n{s}");
     }
+    // the goto row is the registered views' letters, a plugin's (history's Blame, b) too
+    let letters: Vec<String> = a.reg.views.iter().filter_map(|v| v.goto()).map(String::from).collect();
+    assert!(letters.contains(&"b".to_owned()), "{letters:?}");
+    let goto = s.lines().find(|l| l.contains("g then")).unwrap_or_default().to_owned();
+    for c in &letters {
+        assert!(goto.split_whitespace().any(|x| x == c), "{c} in the goto row: {goto}");
+    }
+    assert!(s.contains("back to the list") && s.contains("leave the composer") && s.contains("stop the running task (asks first)"), "{s}");
+    assert!(!s.contains("interrupt"), "Esc doesn't interrupt any more:\n{s}");
     a.key(ch('x'));
     assert_eq!(a.overlay, None, "any key closes it");
     // at 100×30 it's taller than the screen: j scrolls to what's below, and it says how much is left

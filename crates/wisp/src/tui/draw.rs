@@ -288,7 +288,7 @@ pub fn draw(f: &mut Frame<'_>, app: &App) -> Hit {
     status(f, app, rows[2]);
     toasts(f, app, main);
     match &app.overlay {
-        Some(Overlay::Help) => help(f, th, area, app.help_scroll),
+        Some(Overlay::Help) => help(f, th, &app.reg, area, app.help_scroll),
         Some(Overlay::Palette(p, _)) => palette(f, app, p, area),
         Some(Overlay::AskAct(label, _, _, text)) => ask_box(f, app, area, label, text, "go"),
         Some(Overlay::Ask(_, label, text)) => ask_box(f, app, area, label, text, "show"),
@@ -689,6 +689,36 @@ pub fn transcript(app: &App, t: &Transcript, w: u16) -> (Vec<Line<'static>>, Vec
             }
         }
     }
+    // the /btw side questions: kept on the task, never in its conversation, so after the turns, set apart
+    for e in t.btw() {
+        out.push((Line::from(""), None));
+        add(
+            vec![Line::from(vec![
+                Span::styled("  btw ", Style::default().fg(th.accent_ink).add_modifier(Modifier::BOLD)),
+                Span::styled(s(&e, "question").to_owned(), th.strong()),
+            ])],
+            None,
+            &mut out,
+        );
+        let error = s(&e, "error");
+        let lines = if !error.is_empty() {
+            vec![Line::from(vec![
+                Span::styled(format!("    {} ", gl.no()), Style::default().fg(th.bad).add_modifier(Modifier::BOLD)),
+                Span::styled(error.to_owned(), th.text()),
+            ])]
+        } else if s(&e, "answer").is_empty() {
+            vec![Line::from(vec![
+                Span::styled(format!("    {} ", gl.spin(app.tick)), Style::default().fg(th.accent)),
+                Span::styled("answering on the side", th.dim()),
+            ])]
+        } else {
+            wisp_tui_api::blocks::markdown(s(&e, "answer"), th)
+                .into_iter()
+                .map(|l| Line::from([vec![Span::raw("    ")], l.spans].concat()).style(l.style))
+                .collect()
+        };
+        add(lines, None, &mut out);
+    }
     if let Some(ask) = t.ask() {
         out.push((Line::from(""), None));
         let mut lines = vec![Line::from(vec![
@@ -701,9 +731,11 @@ pub fn transcript(app: &App, t: &Transcript, w: u16) -> (Vec<Line<'static>>, Vec
                 Span::styled(o.clone(), th.text()),
             ])
         }));
-        let approval = ask.options.iter().any(|o| o.eq_ignore_ascii_case("allow"));
-        let keys: &[(&str, &str)] =
-            if approval { &[("y", "allow"), ("a", "always"), ("n", "deny")] } else { &[("1-9", "choose"), ("i", "write an answer")] };
+        let keys: &[(&str, &str)] = if ask.is_approval() {
+            &[("y", "allow"), ("a", "always"), ("n", "deny")]
+        } else {
+            &[("1-9", "choose"), ("i", "write an answer")]
+        };
         let mut hint = vec![Span::raw("  ")];
         for (k, word) in keys {
             hint.push(Span::styled((*k).to_owned(), th.text().add_modifier(Modifier::BOLD)));
@@ -1226,10 +1258,13 @@ fn centered(r: Rect, w: u16, h: u16) -> Rect {
 }
 
 /// The `?` overlay, from the keymap: one column, or two when it's taller than the screen and the screen is wide.
-fn help(f: &mut Frame<'_>, th: &Theme, area: Rect, scroll: u16) {
+fn help(f: &mut Frame<'_>, th: &Theme, reg: &wisp_tui_api::Registry, area: Rect, scroll: u16) {
     let mut sections: Vec<Vec<Line<'static>>> = Vec::new();
     let mut last: Option<Where> = None;
+    let goto = super::keys::goto(reg);
     for (w, k, what) in KEYS {
+        // the goto row's letters are the registered views', so it's built here, not kept in the table
+        let (k, what) = if *k == super::keys::GOTO { (goto.0.as_str(), goto.1.as_str()) } else { (*k, *what) };
         if last != Some(*w) {
             sections.push(vec![Line::from(Span::styled(
                 w.title().to_uppercase(),
@@ -1240,7 +1275,7 @@ fn help(f: &mut Frame<'_>, th: &Theme, area: Rect, scroll: u16) {
         if let Some(sec) = sections.last_mut() {
             sec.push(Line::from(vec![
                 Span::styled(format!("  {k:<24}"), th.text().add_modifier(Modifier::BOLD)),
-                Span::styled((*what).to_owned(), Style::default().fg(th.ink2)),
+                Span::styled(what.to_owned(), Style::default().fg(th.ink2)),
             ]));
         }
     }
@@ -1249,7 +1284,8 @@ fn help(f: &mut Frame<'_>, th: &Theme, area: Rect, scroll: u16) {
     };
     let all = join(&sections);
     let tall = u16::try_from(all.len()).unwrap_or(u16::MAX) + 2 > area.height.saturating_sub(2);
-    let col_w: u16 = 96;
+    // wide enough for the goto row, which names every registered view
+    let col_w: u16 = 104;
     if tall && area.width >= col_w * 2 + 4 {
         let half = all.len() / 2;
         let mut n = 0;
