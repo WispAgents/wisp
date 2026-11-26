@@ -503,6 +503,16 @@ impl Runtime {
         wisp_runtime_core::prompt::subagents::team_note(&team, &name, tool.as_deref())
     }
 
+    /// How the task's runs are told to answer: `(plain, chat_mode)`, wisp blocks off and Chat mode (never for a crew
+    /// job or a subagent, whose reader expects reports). The system prompt and the drive read the same pair, so a turn
+    /// is judged done by the answer it was asked for.
+    fn answer_style(&self, s: &Session) -> (bool, bool) {
+        let user_task = s.parent_id.is_none() && !s.ext.contains_key("wisp.crew");
+        let plain = !self.on_unless_off("runtime.blocks") && user_task;
+        let chat_mode = self.on_unless_switched_off("settings.transcript") && user_task;
+        (plain, chat_mode)
+    }
+
     fn harness_run(&self, s: &Session, t: &Turn, ctx: &BeforeRunCtx, h: &dyn Harness) -> HarnessRun {
         let info = h.info();
         let parts: Vec<String> = self.host.prompt_parts().iter().map(|p| p.part(s)).filter(|p| !p.is_empty()).collect();
@@ -510,9 +520,7 @@ impl Runtime {
         // (`settings.transcript`) are independent: Chat mode drops the end-of-turn report while still allowing inline
         // blocks when `runtime.blocks` is enabled (never for a crew job or a subagent, whose reader expects reports)
         let (apps, watch) = (self.on_unless_off("runtime.apps"), self.on_unless_off("runtime.watch"));
-        let user_task = s.parent_id.is_none() && !s.ext.contains_key("wisp.crew");
-        let plain = !self.on_unless_off("runtime.blocks") && user_task;
-        let chat_mode = self.on_unless_switched_off("settings.transcript") && user_task;
+        let (plain, chat_mode) = self.answer_style(s);
         // a subagent asks its lead; a side discussion (a task under its main one) is the user's, as its main task is
         let sub = s.parent_id.is_some() && !is_side(s);
         let ask = sub.then(|| wisp_runtime_core::prompt::subagents::SUBAGENT_ASK.to_owned());
@@ -722,9 +730,12 @@ impl Runtime {
         let rt = self.clone();
         let driver = h.driver(run);
         let (sid, tid) = (s.id.0.clone(), t.id.0.clone());
+        // a turn asked for prose (blocks off, or Chat mode): its prose answer ends it, a dev server left up or not
+        let (plain, chat_mode) = self.answer_style(s);
+        let prose = plain || chat_mode;
         // on the plugin's scope: switching wisp.runtime off ends the drive (and its CLI, through the spawn's scope)
         self.host.spawn(Box::pin(async move {
-            rt.drive(sid, tid, driver, handle, rx, ctl_rx).await;
+            rt.drive(crate::drive::Driven { sid, tid, prose }, driver, handle, rx, ctl_rx).await;
             drop(files);
             drop(ended_tx);
         }));

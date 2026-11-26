@@ -53,6 +53,8 @@ async function start() {
   await until(() => rows().some((r) => r.title.startsWith('Add rate limiting')));
   // the list has drawn its rows: the keys act on the picked one
   await until(() => document.querySelector('[data-part="card"][data-id]') !== null);
+  // the keys are the shell's later part (builtins-later.ts), in once the first screen is drawn
+  await shell.context.laterReady?.();
   return { client, shell, root, sent, rows, keyOf, toasts };
 }
 

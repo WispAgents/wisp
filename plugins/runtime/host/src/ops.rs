@@ -445,7 +445,12 @@ impl Runtime {
             // follow-up until the start (its folder, `before:run`) is done
             self.release_held(&mut s, yes, action == A::Without).await?;
             drop(guard);
-            return self.kick(s).await.map(drop);
+            // nothing started (a setup card is open, a run came up meanwhile): say so, so the page's optimistic start
+            // rolls back instead of showing a turn that never runs
+            return match self.kick(s).await? {
+                Some(_) => Ok(()),
+                None => Err(RuntimeError::Conflict("The held turn can't start now: the task is busy or waits on your answer.".into())),
+            };
         }
         let held = t.held.clone();
         let harness = self.harness(&t.agent).map(|h| h.info().name.clone()).unwrap_or_default();

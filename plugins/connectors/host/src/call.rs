@@ -12,10 +12,11 @@ use serde_json::{Value, json};
 use wisp_connectors_api::{CallArgs, CallOut, secrets_ns};
 use wisp_connectors_core::rpc::{Sse, initialize};
 use wisp_kernel::services::{NetRequest, NetResponse, net, secrets};
-use wisp_kernel::{BoxFuture, Call, Ctx, Result, Setup, WireError};
+use wisp_kernel::{BoxFuture, Call, Code, Ctx, Result, Setup, WireError};
 use wisp_resources_api::StoredKind;
 
 use crate::kinds::ConnectorSpec;
+use crate::pane::Pane;
 
 async fn specs(kind: &StoredKind) -> Vec<(String, ConnectorSpec)> {
     kind.specs().await.unwrap_or_default().into_iter().filter_map(|(n, v)| Some((n, serde_json::from_value(v).ok()?))).collect()
@@ -78,8 +79,8 @@ async fn post(ctx: &Ctx, url: &str, headers: &[(String, String)], session: Optio
     }
 }
 
-pub async fn call(ctx: &Ctx, kind: &StoredKind, a: &CallArgs) -> Result<CallOut> {
-    let Some((_, mut c)) = specs(kind).await.into_iter().find(|(n, _)| *n == a.id) else {
+pub async fn call(ctx: &Ctx, pane: &Pane, a: &CallArgs) -> Result<CallOut> {
+    let Some((_, mut c)) = pane.specs().await.into_iter().find(|(n, _)| *n == a.id) else {
         return Err(WireError::not_found(format!("No connector called {}", a.id)));
     };
     if c.url.is_empty() {
@@ -89,26 +90,46 @@ pub async fn call(ctx: &Ctx, kind: &StoredKind, a: &CallArgs) -> Result<CallOut>
         *v = crate::kinds::reveal(ctx, v).await;
     }
     let mut headers: Vec<(String, String)> = c.headers.into_iter().collect();
-    if c.oauth == Some(true)
-        && let Some(t) = token(ctx, &a.id).await
-    {
-        headers.retain(|(k, _)| !k.eq_ignore_ascii_case("authorization"));
-        headers.push(("Authorization".into(), format!("Bearer {t}")));
-    }
     headers.push(("content-type".into(), "application/json".into()));
     headers.push(("accept".into(), "application/json, text/event-stream".into()));
+    if c.oauth != Some(true) {
+        return exchange(ctx, &c.url, &headers, a).await;
+    }
+    // signed in: a token that ran out is refreshed first; a refused one is refreshed and tried once more, and a
+    // second refusal (or a refresh that fails) leaves the row asking for a sign-in
+    let t = pane.fresh_token(ctx, &a.id, None).await?;
+    match exchange(ctx, &c.url, &bearer(&headers, &t), a).await {
+        Err(e) if e.code == Code::Forbidden => {}
+        done => return done,
+    }
+    let t = pane.fresh_token(ctx, &a.id, Some(&t)).await?;
+    match exchange(ctx, &c.url, &bearer(&headers, &t), a).await {
+        Err(e) if e.code == Code::Forbidden => Err(pane.needs_signin(ctx, &a.id, &e.message).await),
+        done => done,
+    }
+}
+
+/// The headers with the sign-in's bearer in place of any `Authorization` the connector had.
+fn bearer(headers: &[(String, String)], token: &str) -> Vec<(String, String)> {
+    let mut h: Vec<(String, String)> = headers.iter().filter(|(k, _)| !k.eq_ignore_ascii_case("authorization")).cloned().collect();
+    h.push(("Authorization".into(), format!("Bearer {token}")));
+    h
+}
+
+/// One tool call over streamable HTTP: `initialize`, `notifications/initialized`, `tools/call`.
+async fn exchange(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &CallArgs) -> Result<CallOut> {
     let init: Value = serde_json::from_str(&initialize(env!("CARGO_PKG_VERSION"))).unwrap_or_default();
-    let r = post(ctx, &c.url, &headers, None, &init).await?;
+    let r = post(ctx, url, headers, None, &init).await?;
     let session = r.header("mcp-session-id").map(str::to_owned);
     if let Some(why) = answer(&r).as_ref().and_then(refusal_of) {
         return Err(WireError::unavailable(why));
     }
-    let _ = post(ctx, &c.url, &headers, session.as_deref(), &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).await;
+    let _ = post(ctx, url, headers, session.as_deref(), &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).await;
     let args = if a.args.is_null() { json!({}) } else { a.args.clone() };
     let r = post(
         ctx,
-        &c.url,
-        &headers,
+        url,
+        headers,
         session.as_deref(),
         &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": a.tool, "arguments": args } }),
     )
@@ -158,11 +179,10 @@ impl wisp_issues_api::Connectors for ForIssues {
     }
 }
 
-pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>) {
-    let k = kind.clone();
+pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, pane: Arc<Pane>) {
     s.command::<wisp_connectors_api::Call, _, _>(move |ctx, _call, a| {
-        let kind = k.clone();
-        async move { call(&ctx, &kind, &a).await }
+        let pane = pane.clone();
+        async move { call(&ctx, &pane, &a).await }
     });
     let issues: Arc<dyn wisp_issues_api::Connectors> = Arc::new(ForIssues { kind, ctx: s.ctx() });
     s.contribute(&wisp_issues_api::CONNECTORS, issues);

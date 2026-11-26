@@ -146,6 +146,7 @@ import { promptHarness } from './prompt-harness.ts';
 import '../i18n/lazy.ts';
 import { openedByStep } from './stepped.ts';
 import { mayTakeCaret } from './reply-focus.ts';
+import '../i18n/home.ts';
 
 
 interface TurnBody {

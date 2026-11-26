@@ -50,6 +50,10 @@ pub struct Runtime {
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// open questions: ask id → its task (rebuilt at start from the tasks that wait on one)
     asks: Arc<Mutex<HashMap<String, String>>>,
+    /// each task's asks waiting behind its open one (`ext.ask`, the card), oldest first: a second live approval waits
+    /// its turn instead of taking the first one's place (more/ask.rs). In memory only: the agent calls that wait on
+    /// them live in this process, and end with it.
+    behind: Mutex<HashMap<String, std::collections::VecDeque<serde_json::Value>>>,
     /// questions answered or taken back: ask id → when (review r194 of GS5: a write from an older copy never brings one
     /// back, and a second Allow on one is refused); pruned after `CLOSED_KEEP_MS` (more/ask.rs)
     closed: Arc<Mutex<HashMap<String, i64>>>,
@@ -106,6 +110,7 @@ impl Runtime {
             from_queue: Arc::default(),
             locks: Mutex::default(),
             asks: Arc::default(),
+            behind: Mutex::default(),
             closed: Arc::default(),
             answers: Mutex::default(),
             seqs: Mutex::default(),
@@ -210,6 +215,10 @@ impl Runtime {
 
     pub(crate) fn asks(&self) -> std::sync::MutexGuard<'_, HashMap<String, String>> {
         lock(&self.asks)
+    }
+
+    pub(crate) fn behind(&self) -> std::sync::MutexGuard<'_, HashMap<String, std::collections::VecDeque<serde_json::Value>>> {
+        lock(&self.behind)
     }
 
     pub(crate) fn answers(&self) -> std::sync::MutexGuard<'_, HashMap<String, (String, i64)>> {
@@ -690,6 +699,10 @@ impl Runtime {
         if let Some(p) = &pick {
             s.ext.insert(wisp_router_api::PLUGIN_ID.into(), serde_json::json!({ "route": p.route }));
         }
+        // its first turn is starting from the moment the task can be seen (as `kick`'s and a follow-up's are): its folder
+        // and `before:run` take a while, and a Stop then reached nothing while a follow-up started a second turn 0
+        // beside it. Held until the start returns (the run is in `live` by then, or the start gave up).
+        let _starting = (!a.terminal && !a.hold).then(|| self.mark_starting_by_hand(s.id.as_str()));
         let summary = self.persist(&mut s, Vec::new()).await?;
         self.host.emit(Emitted::Created(SessionCreated { session: (*summary).clone() }));
         self.auto_learn(&s, &a, pick.as_ref());
@@ -937,17 +950,21 @@ impl Runtime {
         let id = s.id.0.clone();
         let guard = self.task_lock(&id).await;
         let mut now = self.repo.session(&id).await?;
+        let mut released = None;
         if let Some(front) =
             s.queue.first().filter(|q| q.opts.as_ref().is_some_and(|o| o.get("turn").is_some()) && !now.queue.iter().any(|x| x.id == q.id))
         {
             now.queue.insert(0, front.clone());
+            released = Some(front.id.clone());
         }
         // nothing starts past an open setup card: the queue goes on once the user has answered it (ADR-0113)
         if self.run_state(&id) != Run::Idle || crate::more::open_setup(&now).is_some() {
             return Ok(None);
         }
         let mut held = now.queue_held;
-        let Some(next) = queue::next_after_release(&mut Queue { items: &mut now.queue, held: &mut held }) else {
+        // a held turn released by hand goes even past a Stop's hold (Start now was a silent no-op then); what's queued
+        // behind it stays held
+        let Some(next) = queue::next_after_release_of(&mut Queue { items: &mut now.queue, held: &mut held }, released.as_deref()) else {
             return Ok(None);
         };
         self.persist(&mut now, Vec::new()).await?;
