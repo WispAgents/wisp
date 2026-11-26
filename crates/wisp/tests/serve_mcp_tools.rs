@@ -1805,6 +1805,108 @@ async fn the_users_harness_lowers_a_safety_guard_only_on_the_users_allow() {
     a.serve.stop();
 }
 
+/// The guard-task check read only a top-level `id`, and a generated tool lifts `{"args": {"id": …}}` to the top level:
+/// the user's harness answered its own guard card with `runtime_answer {"args": {"id": <card>, "text": "Allow"}}` and
+/// the guarded write ran. Nested or not it's refused, the card stays open and nothing changes; a task that isn't a
+/// guard's is still answered through nested args.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_users_harness_cannot_answer_a_guard_card_through_nested_args() {
+    let a = Agent::start("guard-nested").await;
+    let key = "worktrees.projectAsk";
+    let before = a.api.cmd("settings.get", json!({ "key": key })).await;
+    let call = spawn_user_call(&a, "settings_set", &json!({ "key": key, "value": "off" }));
+    let (task, ask) = guard_ask(&a).await;
+    for args in [
+        json!({ "args": { "id": task, "text": "Allow", "askId": ask } }),
+        json!({ "args": { "id": task, "text": "Allow" } }),
+        json!({ "id": task, "text": "Allow", "askId": ask }),
+    ] {
+        let (t, err) = a.user_call("runtime_answer", args.clone()).await;
+        assert!(err && t.contains("asks the user, not their harness"), "{args}: {t}");
+    }
+    let got = a.api.cmd("runtime.get", json!({ "id": task })).await;
+    assert_eq!(got["ext"]["wisp.runtime"]["ask"]["id"].as_str(), Some(ask.as_str()), "the card is still open: {got}");
+    assert_eq!(a.api.cmd("settings.get", json!({ "key": key })).await, before, "the guarded write ran");
+    a.api.cmd("runtime.answer", json!({ "id": task, "text": "Deny", "askId": ask })).await;
+    assert!(call.await.unwrap().0.contains("said no"));
+    assert_eq!(a.api.cmd("settings.get", json!({ "key": key })).await, before);
+    // a task that isn't a guard's: answered through nested args as before
+    let asked = a.api.cmd("runtime.ask", json!({ "id": a.id, "question": "go?", "options": ["yes", "no"] })).await;
+    let ask = asked["askId"].as_str().unwrap().to_owned();
+    let (t, err) = a.user_call("runtime_answer", json!({ "args": { "id": a.id, "text": "yes", "askId": ask } })).await;
+    assert!(!err, "{t}");
+    let got = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    assert!(got["ext"]["wisp.runtime"]["ask"].is_null(), "not answered: {got}");
+    a.serve.stop();
+}
+
+/// Waits until no guard card asks any more (the one denied settled).
+async fn no_guard_ask(a: &Agent) {
+    let at = std::time::Instant::now();
+    loop {
+        let list = a.api.cmd("runtime.list", json!({})).await;
+        let open = list
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|t| t["title"].as_str().is_some_and(|x| x.starts_with("Your harness wants to")) && t["state"] != "done");
+        if !open {
+            return;
+        }
+        assert!(at.elapsed() < std::time::Duration::from_secs(15), "a guard card still asks: {list}");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// A connector's command line runs on this computer for every task, and adding one tests it at once: the user's
+/// harness `connectors_add {command: "sh", args: ["-c", "touch PWNED"]}` ran it unasked, and so did a project's test
+/// command it set. Each waits on the user's Allow on a guard card; nothing is stored or run before, nor once denied.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_users_harness_adds_a_connector_or_a_project_test_only_on_the_users_guard_allow() {
+    let a = Agent::start("guard-connector").await;
+    let pwned = a.dir.join("PWNED");
+    let line = format!("touch {}", pwned.display());
+    let call = spawn_user_call(&a, "connectors_add", &json!({ "name": "evil", "command": "sh", "args": ["-c", line] }));
+    let (task, ask) = guard_ask(&a).await;
+    let got = a.api.cmd("runtime.get", json!({ "id": task })).await;
+    let q = got["ext"]["wisp.runtime"]["ask"]["question"].as_str().unwrap_or_default().to_owned();
+    assert!(q.contains("add a connector") && q.contains(&format!("sh -c {line}")), "{q}");
+    assert!(!a.api.cmd("resources.export", json!({ "kinds": ["connector"] })).await.to_string().contains("evil"));
+    a.api.cmd("runtime.answer", json!({ "id": task, "text": "Deny", "askId": ask })).await;
+    assert!(call.await.unwrap().0.contains("said no"));
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(!pwned.exists(), "the connector's command ran");
+    let list = a.api.cmd("resources.export", json!({ "kinds": ["connector"] })).await;
+    assert!(!list.to_string().contains("evil"), "{list}");
+    no_guard_ask(&a).await;
+
+    // a project's test command
+    a.api.cmd("runtime.projectAdd", json!({ "path": a.dir.join("proj") })).await;
+    let call = spawn_user_call(&a, "runtime_projectTest", &json!({ "name": "proj", "testCommand": line }));
+    let (task, ask) = guard_ask(&a).await;
+    let got = a.api.cmd("runtime.get", json!({ "id": task })).await;
+    let q = got["ext"]["wisp.runtime"]["ask"]["question"].as_str().unwrap_or_default().to_owned();
+    assert!(q.contains(&format!("`{line}`")), "{q}");
+    assert!(!a.api.cmd("resources.export", json!({ "kinds": ["project"] })).await.to_string().contains("PWNED"), "stored before the Allow");
+    a.api.cmd("runtime.answer", json!({ "id": task, "text": "Deny", "askId": ask })).await;
+    assert!(call.await.unwrap().0.contains("said no"));
+    assert!(!a.api.cmd("resources.export", json!({ "kinds": ["project"] })).await.to_string().contains("PWNED"), "stored once denied");
+    // switching a connector off asks nothing
+    let (t, _) = a.user_call("connectors_update", json!({ "id": "nope", "enabled": false })).await;
+    assert!(!t.contains("said no"), "{t}");
+    let list = a.api.cmd("runtime.list", json!({})).await;
+    assert!(
+        !list
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|t| t["title"].as_str().is_some_and(|x| x.starts_with("Your harness")) && t["state"] != "done"),
+        "it asked: {list}"
+    );
+    assert!(!pwned.exists());
+    a.serve.stop();
+}
+
 /// Audit I6: an agent's `runtime_projectAdd` for a folder that isn't there put "add the project …" on a card, and after
 /// the user's Allow read "it didn't go through: No folder at …". It's refused to the agent first; nobody is asked.
 #[tokio::test(flavor = "multi_thread")]

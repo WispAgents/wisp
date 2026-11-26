@@ -106,10 +106,12 @@ impl Discord {
         self.cfg().get("senders").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect()
     }
 
-    /// The line a `link <code>` gets; a match links them (by their stable id).
+    /// The line a `link <code>` gets; a match links them (by their stable id) and uses the code up, a miss counts
+    /// toward a new code (`wisp_channels_api::link`). The caller rate-limited the sender first.
     pub(crate) fn try_link(&self, user: &str, code: Option<&str>) -> &'static str {
         let mut c = self.cfg();
         if !code_matches(code, s(&c, "linkCode")) {
+            wisp_channels_api::link::miss(self.hub.as_ref(), NAME);
             return WRONG_CODE;
         }
         let mut senders: Vec<Value> = c.get("senders").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -117,6 +119,7 @@ impl Discord {
             senders.push(json!(user));
         }
         c["senders"] = Value::Array(senders);
+        wisp_channels_api::link::use_up(&mut c);
         self.hub.set_cfg(NAME, c);
         LINKED
     }
@@ -224,6 +227,14 @@ impl Discord {
             && let Some(code) = link_code(&text)
         {
             if !lock(&self.seen).first(&format!("link:{}", i.id)) {
+                return Ok(());
+            }
+            // as a DM's `link <code>` is: three a minute from one person, past that silence (the right code too), so
+            // `/wisp link` isn't a faster way to guess (a held one comes this way too)
+            if !matches!(lock(&self.strangers).hit(&i.user, self.hub.now_ms()), RateHit::Ok) {
+                if held {
+                    let _ = self.rest("DELETE", &self.original(i), None).await;
+                }
                 return Ok(());
             }
             if !held {

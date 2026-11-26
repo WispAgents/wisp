@@ -43,7 +43,7 @@ pub async fn rpc(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: O
             // or acts on it (ADR-0115)
             Step::Call(c)
                 if matches!(w, Who::User { .. })
-                    && c.args.get("id").and_then(Value::as_str).is_some_and(crate::guard_task)
+                    && crate::names_guard_task(&c.args)
                     && !(matches!(c.name.as_str(), "wisp_get" | "wisp_list" | "wisp_wait")
                         || c.extra.and_then(|i| contributed.get(i)).is_some_and(|t| t.read_only)) =>
             {

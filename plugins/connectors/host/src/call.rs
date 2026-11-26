@@ -86,11 +86,11 @@ pub async fn call(ctx: &Ctx, kind: &StoredKind, a: &CallArgs) -> Result<CallOut>
         return Err(WireError::invalid(format!("{} runs on this computer: wisp calls only remote connectors' tools", a.id)));
     }
     for v in c.headers.values_mut() {
-        *v = crate::kinds::reveal(ctx, v).await;
+        *v = crate::kinds::reveal(ctx, &a.id, v).await;
     }
     let mut headers: Vec<(String, String)> = c.headers.into_iter().collect();
     if c.oauth == Some(true)
-        && let Some(t) = token(ctx, &a.id).await
+        && let Some(t) = crate::kinds::bearer(ctx, &a.id, &c.url).await
     {
         headers.retain(|(k, _)| !k.eq_ignore_ascii_case("authorization"));
         headers.push(("Authorization".into(), format!("Bearer {t}")));
@@ -134,11 +134,11 @@ impl wisp_issues_api::Connectors for ForIssues {
             for (id, c) in specs(&kind).await {
                 let mut env = Vec::new();
                 for (k, v) in &c.env {
-                    env.push((k.clone(), crate::kinds::reveal(&ctx, v).await));
+                    env.push((k.clone(), crate::kinds::reveal(&ctx, &id, v).await));
                 }
                 let mut headers = Vec::new();
                 for (k, v) in &c.headers {
-                    headers.push((k.clone(), crate::kinds::reveal(&ctx, v).await));
+                    headers.push((k.clone(), crate::kinds::reveal(&ctx, &id, v).await));
                 }
                 let signed_in = c.oauth == Some(true) && token(&ctx, &id).await.is_some();
                 out.push(wisp_issues_api::Connector {

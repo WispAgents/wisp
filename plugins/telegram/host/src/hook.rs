@@ -152,8 +152,16 @@ impl Telegram {
         hook["seen"] = json!(seen.into_iter().skip(skip).collect::<Vec<_>>());
         self.hub.set_cfg("telegram", json!({ "hook": hook }));
         match stranger {
+            // a wrong code before linking is still read (`on_message` limits and counts it), so guessing through the
+            // grid changes the code too
+            Some(r) if self.offers_code(&u) => (r, Some(u)),
             Some(r) => (r, None),
             None => (InboundResult::ok(), Some(u)),
         }
+    }
+
+    /// Before a chat is linked: whether the update offers a code at all (right or wrong).
+    fn offers_code(&self, u: &Update) -> bool {
+        id_text(&self.cfg()["chatId"]).is_empty() && u.message.as_ref().and_then(|m| m.text.as_deref()).and_then(core::links_it).is_some()
     }
 }

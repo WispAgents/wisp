@@ -344,18 +344,8 @@ impl Discord {
             {
                 return Ok(());
             }
-            if !code_matches(code, s(&cfg, "linkCode")) {
-                self.say(&m.channel, Some(&m.id), WRONG_CODE).await?;
-                return Ok(());
-            }
-            let mut c = cfg.clone();
-            let mut senders: Vec<Value> = c.get("senders").and_then(Value::as_array).cloned().unwrap_or_default();
-            if !senders.iter().any(|x| x.as_str() == Some(m.author.as_str())) {
-                senders.push(json!(m.author));
-            }
-            c["senders"] = Value::Array(senders);
-            self.hub.set_cfg(NAME, c);
-            self.say(&m.channel, Some(&m.id), LINKED).await?;
+            let line = self.try_link(&m.author, code);
+            self.say(&m.channel, Some(&m.id), line).await?;
             return Ok(());
         }
         let senders: Vec<String> =
