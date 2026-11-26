@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { applyPick, encodeMentions, itemsFor, menuAt, usePromptMenu, insertedTasks, putMentions, pastedTasks } from '../src/frame/prompt-menu.ts';
+import { applyPick, decodeMentions, encodeMentions, itemsFor, menuAt, usePromptMenu, insertedTasks, putMentions, pastedTasks, titleOn, type Mentioned } from '../src/frame/prompt-menu.ts';
 import type { PromptSourceDef } from '../src/contract.ts';
 import { createRoot, createSignal } from 'solid-js';
 import { signal } from '@wisp/client';
@@ -127,6 +127,110 @@ test('the_prompt_menu_follows_rows_that_land_or_change_and_sources_registered_af
     // deleted: it goes
     tasks([]);
     expect(labels(), 'the deleted task').toEqual(['Ada fixes']);
+    dispose();
+  });
+  el.remove();
+});
+
+// doc25a: a sent prompt is stored with its mentions encoded; put back in the box it shows `@Title` again and sends them
+test('decoding_a_sent_prompt_gives_back_the_box_text_and_its_mentions_doc25a', () => {
+  const ms: Mentioned[] = [
+    { scheme: 'wisp', id: '0192f3a4-aaaa-7bbb', title: 'Fix: login (v2)!' },
+    { scheme: 'crew', id: 'ada', title: 'Ada Lovelace' },
+    { scheme: 'stuff', id: 's1', title: 'Release "checklist"' },
+  ];
+  const text = 'see @Fix: login (v2)! then @Ada Lovelace, and @Release "checklist".';
+  const sent = encodeMentions(text, ms);
+  expect(sent).toBe('see @[Fix: login (v2)!](wisp:0192f3a4-aaaa-7bbb) then @[Ada Lovelace](crew:ada), and @[Release "checklist"](stuff:s1).');
+  expect(decodeMentions(sent)).toEqual({ text, mentions: ms });
+  // plain text and half-written or foreign markup stay as they are
+  for (const plain of ['nothing here', 'mail a@b.c', '@[open', '@[x](ftp:1)', '@[x](wisp:)', '@[](wisp:a)', '[x](wisp:a)']) expect(decodeMentions(plain)).toEqual({ text: plain, mentions: [] });
+});
+
+// doc25b: the longest title first, whole words only, every time, never inside what's already stored
+test('encoding_matches_whole_words_longest_title_first_doc25b', () => {
+  const a: Mentioned = { scheme: 'wisp', id: 'a', title: 'Auth' };
+  const b: Mentioned = { scheme: 'wisp', id: 'b', title: 'Auth bug' };
+  const want = '@[Auth bug](wisp:b) fix and @[Auth](wisp:a) ';
+  expect(encodeMentions('@Auth bug fix and @Auth ', [a, b])).toBe(want);
+  expect(encodeMentions('@Auth bug fix and @Auth ', [b, a])).toBe(want);
+  expect(decodeMentions(want)).toEqual({ text: '@Auth bug fix and @Auth ', mentions: [b, a] });
+  // another word, or not where @ opens the menu
+  expect(encodeMentions('@Authentic and x@Auth and @Auth-flow', [a])).toBe('@Authentic and x@Auth and @Auth-flow');
+  // every time it's there; at the end and before punctuation
+  expect(encodeMentions('@Auth, then @Auth', [a])).toBe('@[Auth](wisp:a), then @[Auth](wisp:a)');
+  // already stored (a title with an @ word in it): left alone
+  expect(encodeMentions('@[Ask @Auth](wisp:z) ', [a])).toBe('@[Ask @Auth](wisp:z) ');
+});
+
+// doc25a: ↑'s history, a refused send and a reload give the box `@Title` and keep what it sends
+test('a_recalled_or_restored_prompt_shows_titles_and_sends_the_same_mentions_doc25a', () => {
+  const store = new Map<string, unknown>();
+  const cell = (e: string, f: string): string => `${e}|${f}`;
+  const drafts = {
+    get: (e: string, f: string) => () => store.get(cell(e, f)),
+    set: (e: string, f: string, v: unknown) => void (v === undefined ? store.delete(cell(e, f)) : store.set(cell(e, f), v)),
+  };
+  const shell = { promptSources: () => [], t: (k: string) => k, client: { plugin: () => ({ home: 'local' }), drafts, entities: { peek: () => undefined } } };
+  const el = document.createElement('textarea');
+  document.body.append(el);
+  const sent = 'ask @[Fix login](wisp:a1) and @[Ada](crew:ada) ';
+  createRoot((dispose) => {
+    const [text, setText] = createSignal('');
+    const menu = usePromptMenu({ shell: shell as never, where: 'reply', task: 'local:t1', draft: ['local:t1', 'reply'], text, setText, input: () => el, id: 'x' });
+    // ↑ (or a refusal) puts the stored prompt back
+    expect(menu.restore(sent)).toBe('ask @Fix login and @Ada ');
+    expect(text()).not.toContain('](wisp:');
+    expect(menu.encode(text())).toBe(sent);
+    dispose();
+  });
+  // a reload, or coming back to the task: a new box on the same draft still sends them
+  createRoot((dispose) => {
+    const [text, setText] = createSignal('ask @Fix login and @Ada ');
+    const menu = usePromptMenu({ shell: shell as never, where: 'reply', task: 'local:t1', draft: ['local:t1', 'reply'], text, setText, input: () => el, id: 'x' });
+    expect(menu.encode(text())).toBe(sent);
+    // sent: none are kept for the next prompt
+    menu.reset();
+    expect(menu.encode(text())).toBe(text());
+    dispose();
+  });
+  el.remove();
+});
+
+// new1: a pasted id names a task on the computer the box sends to, never another's (its mention would be dropped there)
+test('a_pasted_id_is_read_on_the_computer_the_box_sends_to_new1', () => {
+  const rows: Record<string, string> = { 'a:t1': 'Fix login', 'b:t2': 'Ship it' };
+  const peek = (k: string): string | undefined => rows[k];
+  expect(titleOn('a', 't1', peek)).toBe('Fix login');
+  expect(titleOn('a', 't2', peek), 'only on b').toBeUndefined();
+  expect(titleOn('a', 'b:t2', peek), "b's key").toBeUndefined();
+  expect(titleOn('b', 'b:t2', peek)).toBe('Ship it');
+  expect(pastedTasks('t2', (id) => titleOn('a', id, peek))).toBeNull();
+});
+
+// new1: the menu asks its sources for the computer the box sends to: New task's Run on, else a reply's task's
+test('the_prompt_menu_tells_its_sources_the_computer_it_sends_to_new1', () => {
+  const seen: (string | undefined)[] = [];
+  const src: PromptSourceDef = { id: 'p', trigger: '@', items: (_q, ctx) => (seen.push(ctx.peer), []) };
+  const shell = { promptSources: () => () => [src], t: (k: string) => k, client: { plugin: () => ({ home: 'local' }), entities: { peek: () => undefined } } };
+  const el = document.createElement('textarea');
+  document.body.append(el);
+  createRoot((dispose) => {
+    const [text, setText] = createSignal('');
+    const [runOn, setRunOn] = createSignal('box');
+    const home = usePromptMenu({ shell: shell as never, where: 'home', peer: runOn, text, setText, input: () => el, id: 'h' });
+    const reply = usePromptMenu({ shell: shell as never, where: 'reply', task: 'laptop:t1', text, setText, input: () => el, id: 'r' });
+    el.value = '@';
+    el.setSelectionRange(1, 1);
+    home.typed('@');
+    home.suggest();
+    setRunOn('local');
+    home.typed('@x');
+    home.suggest();
+    reply.typed('@');
+    reply.suggest();
+    // (each change reads the sources again: the computers asked for, in order)
+    expect(seen.filter((p, i) => p !== seen[i - 1])).toEqual(['box', 'local', 'laptop']);
     dispose();
   });
   el.remove();
