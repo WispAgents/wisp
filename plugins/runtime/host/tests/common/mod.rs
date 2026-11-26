@@ -307,6 +307,24 @@ pub fn open(name: &str) {
     gate(name).notify_one();
 }
 
+/// The `devserver…` CLI (see `fake_cli`).
+async fn dev_server(io: &SimIo, prompt: &str) -> Exit {
+    for l in [json!({"type":"session","id":"conv-1"}), json!({"type":"background","tasks":["npm run dev"]})] {
+        io.print(format!("{l}\n").as_bytes()).await;
+    }
+    if let Some(name) = prompt.strip_prefix("devserver hold ").and_then(|r| r.split_whitespace().next()) {
+        let g = gate(name);
+        tokio::select! {
+            () = g.notified() => {}
+            () = io.killed.cancelled() => return Exit { code: None, signal: Some("SIGTERM".into()) },
+        }
+    }
+    let answer = json!({"type":"result","text":"The dev server is up on http://localhost:3000.","isError":false,"background":1});
+    io.print(format!("{answer}\n").as_bytes()).await;
+    io.killed.cancelled().await;
+    Exit { code: None, signal: Some("SIGTERM".into()) }
+}
+
 async fn fake_cli(mut io: SimIo) -> Exit {
     let prompt = io.args.first().cloned().unwrap_or_default();
     // `gate <name> …` as the prompt, or its paragraph after a note wisp put ahead of it: it waits to be let go, then
@@ -353,17 +371,10 @@ async fn fake_cli(mut io: SimIo) -> Exit {
         return Exit { code: Some(0), signal: None };
     }
     // `devserver…`: it starts a dev server in the background, answers in prose with it still up, and stays (the CLI
-    // keeps running while its background task does) until it is killed
+    // keeps running while its background task does) until it is killed; `devserver hold <name>` waits at gate <name>
+    // before its answer (the turn still running with the dev server starting)
     if prompt.starts_with("devserver") {
-        for l in [
-            json!({"type":"session","id":"conv-1"}),
-            json!({"type":"background","tasks":["npm run dev"]}),
-            json!({"type":"result","text":"The dev server is up on http://localhost:3000.","isError":false,"background":1}),
-        ] {
-            io.print(format!("{l}\n").as_bytes()).await;
-        }
-        io.killed.cancelled().await;
-        return Exit { code: None, signal: Some("SIGTERM".into()) };
+        return dev_server(&io, &prompt).await;
     }
     // a /btw's prompt is its rules and the task so far, then its question (v1 btwPrompt): the question is what it asks
     let asked = prompt.rsplit_once("## Side question\n\n").map_or(prompt.as_str(), |(_, q)| q);

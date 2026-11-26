@@ -104,7 +104,7 @@ async fn an_approval_nobody_answers_is_denied_and_taken_off_the_task() {
     open("approvals-late");
 }
 
-/// A newer plain question replaces the one still waiting, and the turn says so (its agent reads it was cancelled);
+/// A newer plain question replaces the one still waiting, and the turn says so (its agent reads it was replaced);
 /// an approval open on the card is never replaced by one.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_newer_question_replaces_the_waiting_one_and_says_so_but_never_an_approval() {
@@ -119,7 +119,13 @@ async fn a_newer_question_replaces_the_waiting_one_and_says_so_but_never_an_appr
     let first = r.rt.ask(ask("Which port?")).await.unwrap();
     let second = r.rt.ask(ask("Which port, 3000 or 8080?")).await.unwrap();
     assert_eq!(open_ask(&r, id.as_str()).await.as_deref(), Some(approval_id.as_str()), "the approval stays on the card");
-    assert_eq!(r.rt.poll_answer(&first), wisp_runtime_api::commands::PollAnswer::Cancelled);
+    // the replaced question's agent reads that it was replaced, never the false "the user did not answer (cancelled)"
+    match r.rt.poll_answer(&first) {
+        wisp_runtime_api::commands::PollAnswer::Answered { answer } => {
+            assert!(answer.starts_with("Replaced by a newer question: “Which port, 3000 or 8080?”"), "{answer}");
+        }
+        other => panic!("the replaced question reads {other:?}, not that it was replaced"),
+    }
     assert_eq!(r.rt.poll_answer(&second), wisp_runtime_api::commands::PollAnswer::Pending);
     assert!(rows(&r, id.as_str()).await.iter().any(|x| x.contains("Replaced by a newer question: Which port?")));
     r.rt.answer(&id, "Allow", Some(&approval_id)).await.unwrap();

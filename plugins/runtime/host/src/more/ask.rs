@@ -28,6 +28,12 @@ pub(crate) const ALREADY: &str = "That card was already answered: nothing ran ag
 pub(crate) const ANSWER_KEEP_MS: i64 = ASK_TIMEOUT_MS;
 /// How long an answered or taken-back question's id is remembered: far longer than any write in flight.
 pub(crate) const CLOSED_KEEP_MS: i64 = 6 * 60 * 60_000;
+/// What a plain question's agent reads (after "The user answered: ") once a newer question replaced it: the user
+/// never got to answer it, so this says so instead of a false "the user did not answer (cancelled)".
+pub(crate) fn replaced_reply(newer: &str) -> String {
+    format!("Replaced by a newer question: “{newer}”. The user did not answer this one; their answer comes on the newer question.")
+}
+
 /// An answer to a question that's no longer the open one.
 pub(crate) const NOT_OPEN: &str = "That question was already answered, or a newer one replaced it: nothing was sent.";
 /// An answer to a question when none is open now: answered already, or taken back as the task or its factory run
@@ -187,10 +193,10 @@ impl Runtime {
             if open_setup(&s).is_some() {
                 return Err(RuntimeError::Conflict(SETUP_OPEN.into()));
             }
-            let replaced = if permission.is_none() { self.drop_questions(&mut s) } else { Vec::new() };
+            let question = if question.trim().is_empty() { "The agent has a question.".to_owned() } else { question.trim().to_owned() };
+            let replaced = if permission.is_none() { self.drop_questions(&mut s, &question) } else { Vec::new() };
             let open = ask_id(&s).is_some();
             let ask_id = wisp_kernel::ids::uuid7();
-            let question = if question.trim().is_empty() { "The agent has a question.".to_owned() } else { question.trim().to_owned() };
             let options: Vec<String> = options.iter().take(6).cloned().collect();
             // `permission` (a live approval) or `setup` (ADR-0113), each with the `action` its row names
             let label = match permission.as_ref().and_then(|(_, p)| p.get("action")).and_then(Value::as_str) {
@@ -231,8 +237,9 @@ impl Runtime {
     }
 
     /// The plain questions open on `s` (on its card, or waiting behind it), taken off as a newer one replaces them:
-    /// their agent's `pollAnswer` reads cancelled ("the user did not answer"). What they asked, for the turn's rows.
-    fn drop_questions(&self, s: &mut Session) -> Vec<String> {
+    /// their agent's `pollAnswer` reads that it was replaced (by `newer`), never a false "the user did not answer".
+    /// What they asked, for the turn's rows.
+    fn drop_questions(&self, s: &mut Session, newer: &str) -> Vec<String> {
         let mut gone = Vec::new();
         if slot(s).and_then(|m| m.get("ask")).is_some_and(is_question)
             && let Some(a) = with_slot(&mut s.ext, |m| m.remove("ask"))
@@ -248,6 +255,7 @@ impl Runtime {
             let id = str_at(a, "id");
             self.asks().remove(&id);
             self.close_ask(&id);
+            self.keep_answer(&id, &replaced_reply(newer));
         }
         self.bring_forward(s);
         gone.iter().map(|a| str_at(a, "question")).collect()

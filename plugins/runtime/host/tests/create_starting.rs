@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use common::{rig_with, tmp, until};
 use tokio::sync::oneshot;
 use wisp_kernel::BoxFuture;
+use wisp_proc::ProcService as _;
 use wisp_runtime::Recorder;
 use wisp_runtime_api::TurnId;
 use wisp_runtime_api::commands::{FollowUpArgs, StartArgs};
@@ -67,6 +68,10 @@ async fn a_stop_while_a_new_tasks_first_turn_starts_stops_it() {
     let t = r.rt.turns(&id, None, None).await.unwrap();
     assert_eq!((t.len(), t[0].status), (1, TurnStatus::Stopped), "the Stop reached the starting turn: {t:?}");
     until("the task lands", || async { r.rt.get(&id).await.unwrap().state == SessionState::Review }).await;
+    // the CLI never ran on: never spawned, or (spawned as the folder came back) killed at once. A `slow…` CLI only
+    // ends when it is killed, so one the Stop missed would still be live here
+    assert!(r.sim.spawned().len() <= 1, "at most the one CLI: {:?}", r.sim.spawned());
+    until("no CLI is left running", || async { r.sim.live() == 0 }).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
