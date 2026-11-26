@@ -98,9 +98,24 @@ fn server(srv: &Value) -> Value {
 const PLAN_READS: [&str; 13] =
     ["git status", "git log", "git diff", "git show", "ls", "cat", "rg", "grep", "find", "pwd", "head", "tail", "wc"];
 /// What turns a read into a write: shell metacharacters after any read, and the flags that write or run a program.
-const PLAN_WRITES: [&str; 6] = [">", "|", ";", "&", "`", "$("];
-const PLAN_WRITE_FLAGS: [&str; 7] =
-    ["find *-delete*", "find *-exec*", "find *-ok*", "find *-fprint*", "find *-fls*", "git diff *--output*", "rg *--pre*"];
+/// `>` also covers `>(`; `<(` is a process substitution, a command of its own.
+const PLAN_WRITES: [&str; 7] = [">", "|", ";", "&", "`", "$(", "<("];
+/// `--output` writes a file and `--ext-diff` runs a configured program, on each git read that takes them. Per command,
+/// not one `git *--output*`: that key would sort before `git log *` and lose to it.
+const PLAN_WRITE_FLAGS: [&str; 12] = [
+    "find *-delete*",
+    "find *-exec*",
+    "find *-ok*",
+    "find *-fprint*",
+    "find *-fls*",
+    "git diff *--output*",
+    "git log *--output*",
+    "git show *--output*",
+    "git diff *--ext-diff*",
+    "git log *--ext-diff*",
+    "git show *--ext-diff*",
+    "rg *--pre*",
+];
 
 /// Plan's `bash` rules: everything denied but the reads. opencode matches the last rule that fits, and the keys go out
 /// sorted, so a deny for `cat *>*` comes after the allow for `cat *` it narrows.
@@ -281,6 +296,18 @@ mod tests {
         let keys: Vec<&String> = bash.as_object().map(|o| o.keys().collect()).unwrap_or_default();
         let at = |k: &str| keys.iter().position(|x| *x == k);
         assert!(at("cat *") < at("cat *>*") && at("find *") < at("find *-exec*"), "a deny comes after the allow it narrows: {keys:?}");
+        for (allow, deny) in [
+            ("git log *", "git log *--output*"),
+            ("git show *", "git show *--output*"),
+            ("git diff *", "git diff *--output*"),
+            ("git log *", "git log *--ext-diff*"),
+            ("git show *", "git show *--ext-diff*"),
+            ("git diff *", "git diff *--ext-diff*"),
+            ("cat *", "cat *<(*"),
+        ] {
+            assert_eq!(bash[deny], "deny", "{deny}");
+            assert!(at(allow).is_some() && at(allow) < at(deny), "{deny} sorts after {allow}: {keys:?}");
+        }
 
         let g = vec![
             json!({ "permission": "bash", "patterns": ["npm install"] }).to_string(),

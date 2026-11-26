@@ -34,8 +34,8 @@
 4. **opencode: permission rules that win over the user's.** Plan always has an inline config. After the user's rules
    and the grants, `edit` is `deny`, and `bash` is `"*": "deny"` with allow rules for reads only (`git status/log/
    diff/show`, `ls`, `cat`, `rg`, `grep`, `find`, `pwd`, `head`, `tail`, `wc`), each narrowed again by deny rules for
-   a redirect, a pipe, a chain or a substitution and for the flags that write or run a program (`find -delete/-exec`,
-   `git diff --output`, `rg --pre`). opencode takes the last rule that fits and the keys go out sorted, so each deny
+   a redirect, a pipe, a chain, a command or process substitution (`$(`, a backtick, `<(`, `>(`) and for the flags
+   that write or run a program (`find -delete/-exec`, `--output` and `--ext-diff` on `git diff/log/show`, `rg --pre`). opencode takes the last rule that fits and the keys go out sorted, so each deny
    comes after the allow it narrows. Without `plan_commands` (a trigger's, a channel's or a capped task), `bash` is
    `deny`. Edits and Full auto are unchanged.
 5. **Wording.** Where ADR-0113 and ADR-0115 say a Plan task runs no command, read "Plan cannot write": its commands
@@ -48,4 +48,8 @@
 - On Linux without bubblewrap and socat, and on Windows, Plan can't run commands with side effects (Claude Code's own
   plan mode). Installing them turns Plan-that-runs-commands on.
 - opencode's Plan shell is narrower than Claude's: no pipes, no chains, only the listed reads.
+- The rules ride on `OPENCODE_CONFIG_CONTENT`, which opencode deep-merges over the global and the project
+  `opencode.json`. Neither the order nor the keys a project file's own `permission.bash` or `agent.plan.permission`
+  keeps after that merge is checked here: under last-match, a project rule placed after wisp's could still let a
+  write through. Follow-up: verify the merge order on opencode, or hand Plan a wisp-owned agent instead of `plan`.
 - Reaches: every Plan task, in wisp and from where it was started (MCP, CLI, channels, triggers), on each harness.
