@@ -735,8 +735,16 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
             // the terminal's lines under the watch's header (two lines) and the cursor's
             let room = cli::lines().saturating_sub(3).max(1);
-            let keep = scripted::RowFilter::watching(f, &code::opts(&rest), room, i64::try_from(now).unwrap_or(0))?;
-            attach::ls_watch(&Client::connect(port, true).await?, f, &keep).await?
+            let o = code::opts(&rest);
+            let c = Client::connect(port, true).await?;
+            // `--crew` names a member by id, name or handle, found as plain `wisp ls --crew` finds it
+            let members = if o.crew.is_some() {
+                c.cmd("crew.list", serde_json::json!({})).await.unwrap_or_default()
+            } else {
+                serde_json::Value::Null
+            };
+            let keep = scripted::RowFilter::watching(f, &o, &members, room, i64::try_from(now).unwrap_or(0))?;
+            attach::ls_watch(&c, f, &keep).await?
         }
         // never a background wisp to say the usage (audit cli-r6): the running one's catalogue, else the one it left here,
         // else the built-in usage alone

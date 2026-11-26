@@ -16,7 +16,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`wisp serve --host localhost` works**, and a bad `--host` or `WISP_HOST` is said (naming which) before anything in your wisp home is touched. A wisp bound to `::1` or another address now advertises the URL it answers on, so `wisp ls` and the agents reach it.
 - **`--host` is refused outside `wisp serve`** (`wisp --host 0.0.0.0`, `wisp ls --host …`) with "--host is wisp serve's alone"; it was silently ignored.
 - **`wisp help` and `wisp completions` never start a background wisp.** With none running they use the commands the last one listed, or the built-in ones.
-
 - **`wisp tui` never stops a task by accident.** Esc only goes back now (to the list, out of the composer); it used to stop a running task. `s` and `/stop` ask "Stop <task>?" first (y or Enter stops it, n or Esc doesn't), and do nothing on a task that isn't running.
 - **y, a and n in `wisp tui` answer only tool approvals**, with the approval's own Allow, Always or Deny. On a question ("Postgres or SQLite?") they used to send "allow" or "deny" as the answer.
 - **Answers from `wisp tui` and `wisp attach` name the question they answer.** Setup cards can now be answered from the terminal, and an answer to a question that was already answered or replaced is refused with that reason instead of landing on the next one.

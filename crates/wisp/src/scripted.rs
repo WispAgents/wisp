@@ -353,7 +353,9 @@ pub struct RowFilter {
     /// archived ones too
     pub all: bool,
     pub agent: Option<String>,
-    pub crew: Option<String>,
+    /// `--crew`: the words a row's member id or name may match, any case; [`crate::history_cli::crew_words`] turns
+    /// what was asked into them (id, name or handle through `crew.list`), as plain `wisp ls --crew` asks for them
+    pub crew: Vec<String>,
     pub project: Option<String>,
     /// made at or after (ms)
     pub since: Option<i64>,
@@ -371,24 +373,26 @@ impl RowFilter {
             && self.cwd.as_ref().is_none_or(|c| cwd == c.as_str())
             && (self.all || get("archived") != Some(&json!(true)))
             && self.agent.as_ref().is_none_or(|a| text("agent") == a.as_str())
-            && self
-                .crew
-                .as_ref()
-                .is_none_or(|c| ext("wisp.crew/id") == Some(c.as_str()) || ext("wisp.crew/name").is_some_and(|n| n.eq_ignore_ascii_case(c)))
+            && (self.crew.is_empty()
+                || self.crew.iter().any(|c| {
+                    ext("wisp.crew/id").is_some_and(|i| i.eq_ignore_ascii_case(c))
+                        || ext("wisp.crew/name").is_some_and(|n| n.eq_ignore_ascii_case(c))
+                }))
             && self.project.as_ref().is_none_or(|p| cwd == p.as_str() || cwd.ends_with(&format!("/{p}")) || project_of(x) == *p)
             && self.since.is_none_or(|t| made >= t)
     }
 
     /// `wisp ls --watch`'s: the flags plain `wisp ls` takes (`o`: the ones only its history list reads), and as many
-    /// rows as `room` (the terminal's lines under its header) unless `--limit` says.
-    pub fn watching(f: &Flags, o: &crate::code::Opts, room: usize, now: i64) -> Result<Self> {
+    /// rows as `room` (the terminal's lines under its header) unless `--limit` says. `members` is `crew.list`'s answer,
+    /// read only when `--crew` was given, so `--crew <handle>` narrows to the member plain `wisp ls --crew` finds.
+    pub fn watching(f: &Flags, o: &crate::code::Opts, members: &Value, room: usize, now: i64) -> Result<Self> {
         let since = o.since.as_deref().map(|t| crate::history_cli::since_ms(t, now)).transpose()?;
         Ok(Self {
             states: ls_states(f.state.as_deref())?,
             cwd: None,
             all: f.all,
             agent: f.agent.clone().or_else(|| o.over.get("agent").and_then(Value::as_str).map(str::to_owned)),
-            crew: o.crew.clone(),
+            crew: o.crew.as_deref().map(|c| crate::history_cli::crew_words(members, c)).unwrap_or_default(),
             project: o.project.clone(),
             since,
             limit: Some(f.limit.map_or(room, |l| l as usize)),
@@ -672,7 +676,15 @@ mod tests {
         assert_eq!(ids(&RowFilter { states: needs, all: true, ..RowFilter::default() }), ["b", "c"]);
         assert_eq!(ids(&RowFilter { states: vec!["running".into()], ..RowFilter::default() }), ["a"]);
         assert_eq!(ids(&RowFilter { agent: Some("codex".into()), ..RowFilter::default() }), ["b"]);
-        assert_eq!(ids(&RowFilter { crew: Some("ada".into()), ..RowFilter::default() }), ["b"], "a member by name, any case");
+        assert_eq!(ids(&RowFilter { crew: vec!["ada".into()], ..RowFilter::default() }), ["b"], "a member by name, any case");
+        // `--crew ADA`, `m1` (a name in any case, an id): resolved through crew.list to the member's id and name, as plain `wisp ls --crew`
+        let members = json!([{ "id": "m1", "name": "Ada" }, { "id": "m2", "name": "Bob" }]);
+        let crew = crate::history_cli::crew_words(&members, "ADA");
+        assert_eq!(ids(&RowFilter { crew, ..RowFilter::default() }), ["b"], "by the member crew.list names");
+        let crew = crate::history_cli::crew_words(&members, "m1");
+        assert_eq!(ids(&RowFilter { crew, ..RowFilter::default() }), ["b"], "by its id");
+        let crew = crate::history_cli::crew_words(&members, "bob");
+        assert!(ids(&RowFilter { crew, ..RowFilter::default() }).is_empty(), "another member's tasks only");
         assert_eq!(ids(&RowFilter { project: Some("web".into()), ..RowFilter::default() }), ["b", "d"]);
         assert_eq!(ids(&RowFilter { since: Some(20), ..RowFilter::default() }), ["a", "b"]);
         assert_eq!(ids(&RowFilter { limit: Some(2), ..RowFilter::default() }), ["a", "b"]);
