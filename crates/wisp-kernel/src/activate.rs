@@ -170,6 +170,10 @@ pub(crate) fn deactivate(k: &KernelState, id: &str, why: String, to: Phase) {
     }
     k.bus.drop_owner(id);
     k.bus.ring.stop_owner(id);
+    // its durable subscriptions too: `retry` must find it off, not deliver into its ended scope (and the stale Ctx goes)
+    if let Ok(mut d) = k.bus.durables.lock() {
+        d.retain(|(plugin, _), _| plugin != id);
+    }
     k.settings.release(id);
     tracing::info!(plugin = id, "off");
 }

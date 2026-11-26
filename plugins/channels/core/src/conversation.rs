@@ -156,7 +156,7 @@ async fn in_thread(c: &dyn Conversation, session_id: &str, p: &Parsed) -> Result
                 approvals: c.approvals(),
                 person: false,
             };
-            return c.say(phone.act(&a).await?).await;
+            return c.say(phone.act(&a).await?.words).await;
         }
         _ => {}
     }

@@ -4225,6 +4225,7 @@ dependencies = [
  "wisp-protocol",
  "wisp-store",
  "wisp-sync",
+ "wisp-testkit",
 ]
 
 [[package]]
@@ -6050,6 +6051,7 @@ dependencies = [
  "wisp-telemetry-api",
  "wisp-terminal-api",
  "wisp-terminal-core",
+ "wisp-testkit",
 ]
 
 [[package]]

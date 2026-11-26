@@ -18,7 +18,8 @@ use crate::hub::{
 };
 use crate::transport::Status;
 use crate::views::{
-    ActArgs, ActionKind, ChannelCtx, Parsed, ProjectView, Remote, RunOpts, SessionView, Signed, StartOpts, Started, Thread, ThreadCtx,
+    ActArgs, Acted, ActionKind, ChannelCtx, Parsed, ProjectView, Remote, RunOpts, SessionView, Signed, StartOpts, Started, Thread,
+    ThreadCtx,
 };
 
 /// Past this many sleeps the hub stops (a loop that would otherwise dial forever).
@@ -251,6 +252,9 @@ pub struct TestPhone {
     /// the open question is one only the linked person answers (a setup card, a guard question): an act the transport
     /// can't vouch for is refused with [`crate::SETUP_ELSEWHERE`], as the hub refuses it
     pub in_person: Mutex<bool>,
+    /// what an act answers otherwise (None: done, `✓ Done.`): the hub's own words (`Answered.`), or a refusal.
+    /// Additive (2026-11-26).
+    pub acted: Mutex<Option<Acted>>,
 }
 
 #[async_trait]
@@ -298,12 +302,12 @@ impl Phone for TestPhone {
         u.push((name.to_owned(), mime.to_owned(), bytes));
         Ok(serde_json::json!({ "id": format!("u{}", u.len()), "name": name, "mime": mime, "size": size }))
     }
-    async fn act(&self, a: &ActArgs) -> Result<String> {
+    async fn act(&self, a: &ActArgs) -> Result<Acted> {
         lock(&self.acts).push(a.clone());
         if *lock(&self.in_person) && !a.person {
-            return Ok(crate::SETUP_ELSEWHERE.into());
+            return Ok(Acted::refused(crate::SETUP_ELSEWHERE));
         }
-        Ok("✓ Done.".into())
+        Ok(lock(&self.acted).clone().unwrap_or_else(|| Acted::done("✓ Done.")))
     }
     async fn projects(&self) -> Result<Vec<ProjectView>> {
         Ok(self.ctx.projects.clone())
@@ -482,7 +486,7 @@ impl ChannelHub for TestHub {
     async fn default_project(&self) -> Option<ProjectView> {
         self.phone.ctx.projects.first().cloned()
     }
-    async fn act(&self, a: &ActArgs) -> Result<String> {
+    async fn act(&self, a: &ActArgs) -> Result<Acted> {
         self.phone.act(a).await
     }
     async fn converse(&self, c: &dyn Conversation, text: &str, session_id: Option<&str>, _thread_text: Option<&str>) -> Result<Value> {
