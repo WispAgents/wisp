@@ -177,7 +177,7 @@ mod tests {
     fn keys() -> (ApiKeys, Accounts, Arc<ManualClock>) {
         let clock = ManualClock::new(1_000_000);
         let db = Arc::new(Db::memory().unwrap());
-        (ApiKeys { db: db.clone(), clock: clock.clone() }, Accounts { db, clock: clock.clone() }, clock)
+        (ApiKeys { db: db.clone(), clock: clock.clone() }, Accounts { db, clock: clock.clone(), telemetry: None }, clock)
     }
 
     #[test]

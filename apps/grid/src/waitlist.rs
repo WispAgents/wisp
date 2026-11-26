@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn once_on_the_list_with_its_place() {
         let clock = ManualClock::new(1_000);
-        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: clock.clone() };
+        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: clock.clone(), telemetry: None };
         assert_eq!(a.wait_for(" Ada@X.dev ", "site").unwrap(), Waiting { joined: false, invited: false, position: 1 });
         clock.advance(10);
         assert_eq!(a.wait_for("bob@x.dev", "in-app").unwrap().position, 2);
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn the_phone_app_list_is_its_own_once_per_address_and_takes_the_latest_platform() {
         let clock = ManualClock::new(1_000);
-        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: clock.clone() };
+        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: clock.clone(), telemetry: None };
         let w = a.wait_for_app(" Ada@X.dev ", "phone-app", "ios", "site").unwrap();
         assert_eq!(w, AppWait { kind: "phone-app".into(), platform: "ios".into(), again: false });
         clock.advance(10);
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn nobody_is_invited_and_signing_up_needs_no_seat() {
-        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: ManualClock::new(1_000) };
+        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: ManualClock::new(1_000), telemetry: None };
         for h in ["ada", "bob", "cyd", "dan", "eve", "fay"] {
             a.dev_user(h).unwrap();
         }

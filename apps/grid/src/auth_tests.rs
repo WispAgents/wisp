@@ -236,7 +236,7 @@ fn idn(provider: &str, subject: &str, email: &str, login: &str) -> Identity {
 }
 
 fn accounts() -> Accounts {
-    Accounts { db: Arc::new(Db::memory().unwrap()), clock: ManualClock::new(NOW) }
+    Accounts { db: Arc::new(Db::memory().unwrap()), clock: ManualClock::new(NOW), telemetry: None }
 }
 
 #[test]

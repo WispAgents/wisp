@@ -186,7 +186,7 @@ mod tests {
     fn team_roles_decide_who_shares_and_manages() {
         let db = Arc::new(Db::memory().unwrap());
         let clock = ManualClock::new(1);
-        let a = Accounts { db: db.clone(), clock: clock.clone() };
+        let a = Accounts { db: db.clone(), clock: clock.clone(), telemetry: None };
         let t = Teams { db, clock };
         let (ada, bo, cy, di) =
             (a.dev_user("ada").unwrap(), a.dev_user("bo").unwrap(), a.dev_user("cy").unwrap(), a.dev_user("di").unwrap());

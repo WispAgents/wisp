@@ -110,6 +110,8 @@ pub struct Grid {
     client: Client<HttpConnector, Body>,
     /// sign-in with GitHub, Google or an OIDC issuer
     pub signin: SignIn,
+    /// usage stats and the hosted grid's sign-in funnel (`telemetry.rs`)
+    pub telemetry: Arc<crate::telemetry::GridTelemetry>,
     pub sandboxes: crate::sandboxes::Sandboxes,
     /// apps published from My Stuff (`sites.rs`)
     pub sites: crate::sites::Sites,

@@ -199,7 +199,7 @@ impl MailService {
             .optional()
         })?;
         let Some(id) = id else { return Ok(None) };
-        crate::accounts::Accounts { db: self.db.clone(), clock: self.clock.clone() }.user_by_id(&id)
+        crate::accounts::Accounts { db: self.db.clone(), clock: self.clock.clone(), telemetry: None }.user_by_id(&id)
     }
 
     /// This user's address (made the first time; asking again gives the same one).
