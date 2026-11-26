@@ -1,11 +1,15 @@
 // The toast stack's clearance (v1 web/js/ui/toast.js clearDock), a scope helper: while toasts show, the stack sits 10px
 // over a box at the bottom that crosses the middle (a reply box, New task's box, the crew editor's foot), so a toast
-// never covers Send (B18). It also centres the stack on the main pane, not the window, so the sidebar (open, dragged
-// wider or collapsed) never pulls it off the middle of the page the user reads. It measures every 200 ms, as v1 did,
+// never covers Send (B18). It centres the stack on the prompt box when one is drawn (a task's reply box, New task's
+// box), else on the main pane, not the window, so neither the sidebar (open, dragged wider or collapsed) nor a side
+// pane beside the box pulls it off the input the user types in. It measures every 200 ms, as v1 did,
 // and stops on dispose (tools/check `state`).
 
 /** What a toast stack keeps clear of. */
 export const DOCKS = "[data-kit='reply-box'], [data-kit='launcher'], [data-kit='ce-foot']";
+
+/** The prompt boxes the stack centres on when one is drawn: a task's reply box, New task's box. */
+export const PROMPTS = "[data-kit='reply-box'], [data-kit='launcher']";
 
 /** The pane the stack centres on: the app's main pane (Stage.tsx's split-main, Frame.tsx's main pane). */
 export const MAIN = "[data-kit='split-main'], [data-kit='frame-pane'][data-pane='main']";
@@ -20,6 +24,18 @@ function onScreen(w: number, main: Pick<DOMRect, 'left' | 'right' | 'width'> | n
 /** The x (px) the stack centres on: the middle of the main pane when it is drawn, else the window's middle. */
 export function centreX(w: number, main: Pick<DOMRect, 'left' | 'right' | 'width'> | null | undefined): number {
   return onScreen(w, main) ? main.left + main.width / 2 : w / 2;
+}
+
+/** The x (px) the stack centres on: the middle of the lowest prompt box drawn inside the main pane (or the window,
+ *  with no main pane), else centreX's. */
+export function promptX(w: number, main: Pick<DOMRect, 'left' | 'right' | 'width'> | null | undefined, prompts: readonly Rect[]): number {
+  const [lo, hi] = onScreen(w, main) ? [main.left, main.right] : [0, w];
+  let best: Rect | undefined;
+  for (const r of prompts) {
+    const mid = r.left + r.width / 2;
+    if (r.width && mid > lo && mid < hi && (!best || r.bottom > best.bottom)) best = r;
+  }
+  return best ? best.left + best.width / 2 : centreX(w, main);
 }
 
 /** The width the stack may take (CSS): the main pane's, else the window's. */
@@ -40,7 +56,7 @@ export function dockToasts(group: HTMLElement): () => void {
   const dock = (): void => {
     const w = window.innerWidth;
     const main = document.querySelector<HTMLElement>(MAIN)?.getBoundingClientRect();
-    const cx = centreX(w, main);
+    const cx = promptX(w, main, [...document.querySelectorAll<HTMLElement>(PROMPTS)].map((c) => c.getBoundingClientRect()));
     const boxes = [...document.querySelectorAll<HTMLElement>(DOCKS)].map((c) => c.getBoundingClientRect());
     group.style.setProperty('--toast-bottom', dockBottom(window.innerHeight, w, boxes, cx));
     group.style.setProperty('--toast-x', `${Math.round(cx)}px`);
