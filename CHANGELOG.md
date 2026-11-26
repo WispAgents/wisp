@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - An opened step in the transcript stays open when the turn ends, when Show thinking or a hidden tool call moves the rows, and a step opened in a folded group keeps the group open. Before, the open step could jump to its neighbour, or close as the turn finished.
+- **Antigravity's models pick like every other harness's.** The picker used to list one row per model and thinking level (`Gemini 4 Neon (Low)`, `(Medium)`, `(High)`, `(XHigh)`). Now each model is one row ("Gemini 4 Neon"), and its thinking-level selector shows only the levels agy has for that model. A model saved as `…-xhigh` no longer fails with "conflicts with --effort".
 
 ## [1.0.0-alpha.15] - 2026-11-26
 

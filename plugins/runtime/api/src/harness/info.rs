@@ -18,7 +18,7 @@ pub struct HarnessModel {
     #[ts(optional)]
     pub hint: Option<String>,
     /// this model's own reasoning levels, winning over the harness's: `None` takes the harness's, `Some([])` has none
-    /// (the level is in the model's id, as Antigravity's `gemini-…-high`: no selector, no `--effort`; v1 `efforts: []`)
+    /// (no selector, no `--effort`; v1 `efforts: []`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub efforts: Option<Vec<String>>,
