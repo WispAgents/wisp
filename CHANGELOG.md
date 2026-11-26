@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`wisp tui`'s side panes scroll, show under 100 columns, and the Terminal shows only the terminal.** With a pane focused (Tab), j k, PgUp PgDn, g g / Home and G / End scroll it and the wheel over it scrolls it, instead of moving the transcript beside it; the Terminal follows its newest output and says how much is below when you scroll back. Under 100 columns `d`, `t` and `p` open the pane in the task's place (Esc or Tab goes back), and closing a pane gives the focus back to the task. The Terminal lists shell commands with their own output under each, and no longer shows what a Read or a fetch returned. `/` from a pane searches the transcript (typing there used to close the pane or ask to stop the task), ↓ ↑ Ctrl-N Ctrl-P and Enter jump to the next or previous match with a "2/5" count, and an open step with a long output says how many lines are cut, with Enter (or Space again) showing all of it.
+
 ## [1.0.0-alpha.17] - 2026-11-26
 
 ### Changed

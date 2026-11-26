@@ -205,6 +205,15 @@ pub struct Hit {
     pub rows: BTreeMap<u16, String>,
     /// a screen row of the transcript → the tool step drawn there (a click opens or closes it)
     pub tools: BTreeMap<u16, i64>,
+    /// how far the side pane scrolls (its lines less its height), and its height: None when it wasn't drawn
+    pub side_max: Option<usize>,
+    pub side_page: usize,
+    /// one zone at a time (under [`super::draw::ONE_ZONE`] columns): a side pane opened shows in the task's place
+    pub narrow: bool,
+    /// the transcript's line count and height, and its lines that match the search (top first), for its jumps
+    pub lines: usize,
+    pub body_h: usize,
+    pub matches: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -222,6 +231,8 @@ pub struct App {
     pub new_task: bool,
     pub focus: Zone,
     pub side: Option<Side>,
+    /// the side pane's scroll: lines from its top, or for the Terminal from its end (0: following its output)
+    pub side_scroll: usize,
     /// the open task's mode, as its row says, until the user picks another (Shift-Tab)
     pub mode: Mode,
     /// the user pressed Shift-Tab since this task was opened: only then does a follow-up carry `mode`
@@ -239,6 +250,8 @@ pub struct App {
     /// the tool step the cursor is on (its seq)
     pub cursor: Option<i64>,
     pub search: Option<String>,
+    /// the transcript search's match last jumped to (an index into `hit.matches`); None: none since the query changed
+    pub search_at: Option<usize>,
     pub toasts: Vec<Toast>,
     pub online: bool,
     /// the wall clock in ms, set by the run loop each frame (the rows' "5m"); 0: no times shown
@@ -314,6 +327,7 @@ impl App {
             new_task: false,
             focus: Zone::List,
             side: None,
+            side_scroll: 0,
             mode: Mode::Auto,
             mode_touched: false,
             launch_mode: Mode::Auto,
@@ -324,6 +338,7 @@ impl App {
             scroll: 0,
             cursor: None,
             search: None,
+            search_at: None,
             toasts: Vec::new(),
             online: true,
             now: 0,
@@ -398,6 +413,8 @@ impl App {
         self.sel.clone_from(&id);
         self.open = id.as_deref().map(Transcript::new);
         self.scroll = 0;
+        self.side_scroll = 0;
+        self.search_at = None;
         self.cursor = None;
         // the bar shows this task's mode, and a reply leaves it as it is until the user picks one
         self.mode_touched = false;
@@ -493,7 +510,12 @@ impl App {
                 return self.go(c);
             }
         }
-        if self.search.is_some() && matches!(self.focus, Zone::List | Zone::Task) {
+        // an open search takes every key outside the composer: in the side pane `d` closed it and `s` asked to stop
+        // the task while the user thought they were typing; the transcript is what it searches, so the focus goes there
+        if self.search.is_some() && self.focus != Zone::Composer {
+            if self.focus == Zone::Side {
+                self.focus = Zone::Task;
+            }
             return self.search_key(k);
         }
         if k.code == KeyCode::BackTab {
@@ -507,6 +529,8 @@ impl App {
             self.focus = match self.focus {
                 Zone::List => Zone::Task,
                 Zone::Task if self.side.is_some() => Zone::Side,
+                // one zone at a time, the side pane stands in for the task: Tab goes back to it
+                Zone::Side if self.hit.narrow => Zone::Task,
                 _ => Zone::List,
             };
             return Vec::new();
@@ -536,14 +560,95 @@ impl App {
         }
         match self.focus {
             Zone::List => self.list_key(k),
-            Zone::Task | Zone::Side => self.task_key(k),
+            Zone::Task => self.task_key(k),
+            Zone::Side => self.side_key(k),
             Zone::Composer => Vec::new(),
+        }
+    }
+
+    /// The side pane focused: j k ↑ ↓, `PgUp` `PgDn`, g g `Home` and G `End` scroll it (the transcript and its step cursor stay
+    /// where they are), Esc h ← go back to the task, `/` searches the transcript; any other key is the task's.
+    fn side_key(&mut self, k: KeyEvent) -> Vec<Effect> {
+        let page = isize::try_from(self.hit.side_page.max(1)).unwrap_or(10);
+        match k.code {
+            KeyCode::Char('j') | KeyCode::Down => self.side_by(1),
+            KeyCode::Char('k') | KeyCode::Up => self.side_by(-1),
+            KeyCode::PageDown => self.side_by(page),
+            KeyCode::PageUp => self.side_by(-page),
+            KeyCode::Home => self.side_top(),
+            KeyCode::Char('G') | KeyCode::End => self.side_end(),
+            KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.focus = Zone::Task,
+            KeyCode::Char('/') => {
+                self.focus = Zone::Task;
+                return self.task_key(k);
+            }
+            _ => return self.task_key(k),
+        }
+        Vec::new()
+    }
+
+    /// The side pane `down` lines further down (up when negative), kept inside what the last frame drew: a `PgUp`
+    /// past the top counted on, and as many `PgDn`s went by before the pane moved again.
+    fn side_by(&mut self, down: isize) {
+        let max = self.hit.side_max.unwrap_or(usize::MAX);
+        // the Terminal counts from its end (0 follows its output), the others from their top
+        let by = if self.side == Some(Side::Terminal) { -down } else { down };
+        self.side_scroll = self.side_scroll.min(max).saturating_add_signed(by).min(max);
+    }
+
+    fn side_top(&mut self) {
+        self.side_scroll = if self.side == Some(Side::Terminal) { self.hit.side_max.unwrap_or(usize::MAX) } else { 0 };
+    }
+
+    fn side_end(&mut self) {
+        self.side_scroll = if self.side == Some(Side::Terminal) { 0 } else { self.hit.side_max.unwrap_or(usize::MAX) };
+    }
+
+    /// The side pane shows `side` (None: closed), from its top (the Terminal: its end). Closed, the focus it had goes
+    /// to the task; opened one zone at a time, it takes the focus, or it would open where nothing shows it.
+    fn set_side(&mut self, side: Option<Side>) {
+        if side != self.side {
+            self.side_scroll = 0;
+        }
+        self.side = side;
+        if side.is_none() && self.focus == Zone::Side {
+            self.focus = Zone::Task;
+        }
+        if side.is_some() && self.hit.narrow {
+            self.focus = Zone::Side;
+        }
+    }
+
+    /// The transcript search's next match (`by` 1) or previous one (-1), wrapping, scrolled into sight a third of the
+    /// way down: marking the matches alone left them off screen while the view followed the end.
+    fn jump(&mut self, by: isize) {
+        let n = self.hit.matches.len();
+        if n == 0 {
+            return;
+        }
+        let ni = isize::try_from(n).unwrap_or(isize::MAX);
+        let i = match self.search_at {
+            None if by > 0 => 0,
+            None => n - 1,
+            Some(i) => usize::try_from((isize::try_from(i).unwrap_or(0) + by).rem_euclid(ni)).unwrap_or(0),
+        };
+        self.search_at = Some(i);
+        let (line, lines, h) = (self.hit.matches[i], self.hit.lines, self.hit.body_h.max(1));
+        let end = (line + h - h / 3).min(lines).max(h.min(lines));
+        self.scroll = u16::try_from(lines - end).unwrap_or(u16::MAX);
+    }
+
+    /// Enter (or Space again) on an open step cut at its first lines: all of its output. False: there was no cut.
+    fn show_all(&mut self) -> bool {
+        match (self.cursor, self.open.as_mut()) {
+            (Some(c), Some(t)) => t.show_all(c),
+            _ => false,
         }
     }
 
     /// `/` search: the list filters as you type, ↑ ↓ (Ctrl-P Ctrl-N) move between the matches and Enter opens the
     /// highlighted one (the first, when the highlighted row is filtered out); with no match, Enter does nothing. In a
-    /// task it marks what matches.
+    /// task it marks what matches, and ↓ Ctrl-N Enter (↑ Ctrl-P) scroll to the next (previous) one; Esc closes it.
     fn search_key(&mut self, k: KeyEvent) -> Vec<Effect> {
         let by = match k.code {
             KeyCode::Down => 1,
@@ -561,6 +666,10 @@ impl App {
             let i = self.index().unwrap_or(0).saturating_add_signed(by).min(o.len() - 1);
             return self.select(o.get(i).cloned());
         }
+        if by != 0 && self.focus == Zone::Task {
+            self.jump(by);
+            return Vec::new();
+        }
         match k.code {
             KeyCode::Enter if self.focus == Zone::List => {
                 let o = self.order();
@@ -569,16 +678,22 @@ impl App {
                 self.focus = Zone::Task;
                 return self.select(Some(pick));
             }
-            KeyCode::Esc | KeyCode::Enter => self.search = None,
+            KeyCode::Enter if self.focus == Zone::Task => self.jump(1),
+            KeyCode::Esc | KeyCode::Enter => {
+                self.search = None;
+                self.search_at = None;
+            }
             KeyCode::Backspace => {
                 if let Some(q) = self.search.as_mut() {
                     q.pop();
                 }
+                self.search_at = None;
             }
             KeyCode::Char(c) => {
                 if let Some(q) = self.search.as_mut() {
                     q.push(c);
                 }
+                self.search_at = None;
             }
             _ => {}
         }
@@ -586,11 +701,19 @@ impl App {
     }
 
     fn resize(&mut self, by: i16) {
+        // one zone at a time the side pane is the whole width: there is no width to change
+        if self.focus == Zone::Side && self.hit.narrow {
+            return;
+        }
         let w = if self.focus == Zone::Side { &mut self.widths.1 } else { &mut self.widths.0 };
         *w = w.saturating_add_signed(by).clamp(20, 90);
     }
 
     fn go(&mut self, c: char) -> Vec<Effect> {
+        if c == 'g' && self.focus == Zone::Side {
+            self.side_top();
+            return Vec::new();
+        }
         if c == 't' {
             self.screen = None;
             self.focus = Zone::List;
@@ -776,6 +899,10 @@ impl App {
             KeyCode::Char('a') if approval => self.approve("always"),
             KeyCode::Char('n') if approval => self.approve("deny"),
             KeyCode::Char('i') | KeyCode::Enter => {
+                // Enter on an open step cut at its first lines shows the rest; anywhere else it writes
+                if k.code == KeyCode::Enter && self.show_all() {
+                    return Vec::new();
+                }
                 if self.sel.is_some() {
                     self.new_task = false;
                     self.focus = Zone::Composer;
@@ -795,28 +922,25 @@ impl App {
                 self.sel.clone().filter(|id| !id.starts_with("local-")).map_or_else(Vec::new, |id| vec![Effect::OpenIn(id)])
             }
             KeyCode::Char(' ') => {
-                if let (Some(c), Some(t)) = (self.cursor, self.open.as_mut()) {
+                // Space opens a step, again shows all of an output it cut, and then closes it
+                if let (Some(c), Some(t)) = (self.cursor, self.open.as_mut())
+                    && !t.show_all(c)
+                {
                     t.toggle(c);
                 }
                 Vec::new()
             }
             KeyCode::Char('d') => {
-                self.side = match self.side {
-                    Some(Side::Changes) => None,
-                    _ => Some(Side::Changes),
-                };
+                self.set_side(if self.side == Some(Side::Changes) { None } else { Some(Side::Changes) });
                 Vec::new()
             }
             // t: the Thread pane (its Notes and health), as the GUI's Thread tab; again: close it
             KeyCode::Char('t') => {
-                self.side = match self.side {
-                    Some(Side::Thread) => None,
-                    _ => Some(Side::Thread),
-                };
+                self.set_side(if self.side == Some(Side::Thread) { None } else { Some(Side::Thread) });
                 Vec::new()
             }
             KeyCode::Char('p') if self.side.is_some() => {
-                self.side = self.side.map(Side::next);
+                self.set_side(self.side.map(Side::next));
                 Vec::new()
             }
             KeyCode::Char('s') => self.ask_stop(),
@@ -1238,6 +1362,15 @@ impl App {
             }
             MouseEventKind::Down(MouseButton::Left) if h.side.width > 0 && m.column.abs_diff(h.side.x.saturating_sub(1)) <= 1 => {
                 self.dragging = Some(Zone::Side);
+                Vec::new()
+            }
+            // the wheel over the side pane scrolls it, not the transcript beside it
+            MouseEventKind::ScrollUp if inside(h.side) => {
+                self.side_by(-3);
+                Vec::new()
+            }
+            MouseEventKind::ScrollDown if inside(h.side) => {
+                self.side_by(3);
                 Vec::new()
             }
             MouseEventKind::ScrollUp if inside(h.task) => {
