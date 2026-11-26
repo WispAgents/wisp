@@ -334,6 +334,7 @@ mod tests {
                 output: None,
                 title: None,
                 hide: std::collections::BTreeMap::new(),
+                full: None,
             },
         }
     }

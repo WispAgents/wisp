@@ -36,15 +36,22 @@ fn fail(cmd: &str, tail: &str) -> CheckRun {
     CheckRun { command: cmd.into(), code: 1, tail: tail.into(), timed_out: false }
 }
 
-/// Makes each started task as `<station><index>` (spec0, build0, review1), and says what it started.
+/// Makes each started task as `<station><index>` (spec0, build0, review1) and sends each follow-up, as the host does,
+/// and says what it started.
 fn made(r: &mut Run, n: &Next) -> Vec<TaskStep> {
     let Next::Tasks(steps) = n else { panic!("expected tasks, got {n:?}") };
-    for s in steps {
-        if let TaskStep::Start { station, index, .. } = s {
-            r.made(station, *index, &format!("{station}{index}"));
+    for (i, s) in steps.iter().enumerate() {
+        match s {
+            TaskStep::Start { station, index, .. } => r.made(station, *index, &format!("{station}{index}")),
+            TaskStep::FollowUp { task, .. } => r.sent(i, waiting(task)),
         }
     }
     steps.clone()
+}
+
+/// What a station waits on for `task`, with no turn known.
+fn waiting(task: &str) -> Pending {
+    Pending { task: task.into(), ..Pending::default() }
 }
 
 fn st(r: &Run, id: &str) -> StationState {
@@ -606,9 +613,11 @@ fn a_run_picks_up_where_it_was_after_a_restart() {
     // building, round 2: wait on the same builder again
     made(&mut b, &n);
     b.on(Event::Ended(vec![ok("build0", "b")]));
-    b.on(Event::Checked(vec![fail("npm test", "boom")]));
+    // (the follow-up sent: before, it's sent again; resume_after_partial_make_review_round2)
+    let n = b.on(Event::Checked(vec![fail("npm test", "boom")]));
+    made(&mut b, &n);
     let mut c = back(&b);
-    assert_eq!(c.resume(), Resume::Tasks { tasks: vec!["build0".into()] });
+    assert_eq!(c.resume(), Resume::Tasks { pending: vec![waiting("build0")] });
     assert_eq!(c.view().round, 2);
     // at the checks: run them again
     let n = c.on(Event::Ended(vec![ok("build0", "fixed")]));
@@ -619,7 +628,7 @@ fn a_run_picks_up_where_it_was_after_a_restart() {
     // reviewing: the same reviewer
     let n = d.on(Event::Checked(vec![pass("npm test")]));
     made(&mut d, &n);
-    assert_eq!(back(&d).resume(), Resume::Tasks { tasks: vec!["review0".into()] });
+    assert_eq!(back(&d).resume(), Resume::Tasks { pending: vec![waiting("review0")] });
     // shipping: ship again (it opens or updates the PR); over: nothing
     d.on(Event::Ended(vec![ok("review0", "APPROVE")]));
     assert!(matches!(back(&d).resume(), Resume::Redo(Next::Ship { .. })));
@@ -677,4 +686,134 @@ fn the_runs_words_say_rounds_prs_and_a_silent_check_plainly_audit_g15() {
     assert_eq!((rounds(1), rounds(3)), ("1 round".to_owned(), "3 rounds".to_owned()));
     assert_eq!(pr_words("https://github.com/acme/repo/pull/2"), "PR #2");
     assert_eq!(pr_words("https://gitlab.example/x/-/merge_requests/9"), "https://gitlab.example/x/-/merge_requests/9");
+}
+
+/// The run as a restart reads it back.
+fn kept(r: &Run) -> Run {
+    serde_json::from_value(serde_json::to_value(r).unwrap()).unwrap()
+}
+
+/// doc23a: wisp stopped in the middle of the spec station's make. Before its Create, the run came back waiting on no
+/// task and ended "the spec station made no task"; it makes the spec's task again, once. After its Create (its turn
+/// not kept yet), it waits on the task it made, never a second one.
+#[test]
+#[allow(clippy::many_single_char_names)] // r, b, c: the run read back at each step
+fn resume_after_partial_make_spec_round1() {
+    let mut r = Run::new(input(builtin_default()));
+    let n = r.start();
+    // before the Create
+    let mut b = kept(&r);
+    let again = b.resume();
+    assert_eq!(again, Resume::Redo(n.clone()), "the spec's Start again");
+    let Resume::Redo(again) = again else { unreachable!() };
+    assert_eq!(made(&mut b, &again).len(), 1);
+    assert_eq!(b.to_make(), Vec::new(), "made once: nothing left to make");
+    assert_eq!(kept(&b).resume(), Resume::Tasks { pending: vec![waiting("spec0")] });
+    // after the Create, before its turn was kept
+    r.made("spec", 0, "spec0");
+    let mut c = kept(&r);
+    assert_eq!(c.resume(), Resume::Tasks { pending: vec![waiting("spec0")] });
+    assert!(asks(&c.on(Event::Ended(vec![ok("spec0", "the spec")]))).starts_with("Approve the spec?"), "not failed: it had a task");
+    // its turn kept: that turn
+    let turn = Pending { task: "spec0".into(), turn: Some("u1".into()), since: None };
+    r.sent(0, turn.clone());
+    assert_eq!(kept(&r).resume(), Resume::Tasks { pending: vec![turn] });
+    // a run kept before its make was (no `making`), cut short before the Create: its Start again, not "made no task"
+    let mut old = Run::new(input(builtin_default()));
+    old.start();
+    let mut v = serde_json::to_value(&old).unwrap();
+    v.as_object_mut().unwrap().remove("making");
+    let mut old: Run = serde_json::from_value(v).unwrap();
+    assert!(matches!(old.resume(), Resume::Redo(Next::Tasks(s)) if matches!(&s[..], [TaskStep::Start { station: "spec", .. }])));
+}
+
+/// doc23a: round 2's review is a follow-up to round 1's reviewer. A restart before it was sent sends it (it came back
+/// on round 1's turn and took round 1's CHANGES as round 2's verdict); after, it waits on a turn after `since`.
+#[test]
+#[allow(clippy::many_single_char_names)] // r, b: the run and the run read back
+fn resume_after_partial_make_review_round2() {
+    let mut r = Run::new(input(spec(json!({ "stations": { "build": {}, "review": {} } }))));
+    let n = r.start();
+    made(&mut r, &n);
+    let n = r.on(Event::Ended(vec![ok("build0", "b")]));
+    made(&mut r, &n);
+    let n = r.on(Event::Ended(vec![ok("review0", "CHANGES: add a test")]));
+    made(&mut r, &n);
+    let n = r.on(Event::Ended(vec![ok("build0", "added it")]));
+    assert_eq!(r.view().round, 2);
+    let Next::Tasks(steps) = &n else { panic!("{n:?}") };
+    assert!(matches!(&steps[..], [TaskStep::FollowUp { task, .. }] if task == "review0"), "{steps:?}");
+    // before the follow-up was sent: it's sent again (only it)
+    assert_eq!(kept(&r).resume(), Resume::Redo(n.clone()));
+    // sent, round 1's turn (idx 1) before it: waits on what comes after, never on round 1's
+    let sent = Pending { task: "review0".into(), turn: Some("q2".into()), since: Some(1) };
+    r.sent(0, sent.clone());
+    let mut b = kept(&r);
+    let Resume::Tasks { pending } = b.resume() else { panic!() };
+    assert_eq!(pending, [sent]);
+    assert!(!pending[0].counts(1) && pending[0].counts(2), "round 1's review is never round 2's");
+    assert!(matches!(b.on(Event::Ended(vec![ok("review0", "APPROVE")])), Next::End { state: RunState::Done, .. }));
+}
+
+/// doc23a: the turn a station waits on comes after `since`: one at or before it is an earlier round's.
+#[test]
+fn resume_since_ignores_a_turn_at_or_before_it() {
+    let p = Pending { task: "t".into(), turn: None, since: Some(4) };
+    assert!(!p.counts(3) && !p.counts(4) && p.counts(5));
+    assert!(waiting("t").counts(0), "a new task: any turn");
+    // a pending kept before `since` was reads back without it
+    let old: Pending = serde_json::from_value(json!({ "task": "t", "turn": "u1" })).unwrap();
+    assert_eq!(old, Pending { task: "t".into(), turn: Some("u1".into()), since: None });
+}
+
+/// doc23b: a run that fails stops its station tasks (only a Stop did): the builder that started when the second
+/// couldn't, the station a budget cut, the spec that made no task. A done run stops none (its build is yours).
+#[test]
+fn a_failed_run_stops_its_station_tasks_and_a_done_one_none_doc23b() {
+    let mut r = Run::new(input(spec(json!({ "stations": { "build": { "agents": ["claude", "codex"] } } }))));
+    let n = r.start();
+    assert!(matches!(&n, Next::Tasks(s) if s.len() == 2));
+    r.made("build", 0, "build0");
+    assert!(r.to_stop().is_empty(), "it goes");
+    let n = r.on(Event::Failed("the build station's task couldn't start: boom".into()));
+    assert!(matches!(n, Next::End { state: RunState::Failed, .. }));
+    assert_eq!(r.to_stop(), ["build0"]);
+    // over its budget
+    let mut r = Run::new(input(spec(json!({ "stations": { "build": {}, "review": {} }, "budget": { "usd": 1 } }))));
+    let n = r.start();
+    made(&mut r, &n);
+    let n = r.on(Event::Ended(vec![TaskEnd { cost: 2.0, ..ok("build0", "b") }]));
+    assert!(matches!(&n, Next::End { state: RunState::Failed, why } if why.contains("budget")), "{n:?}");
+    assert_eq!(r.to_stop(), ["build0"]);
+    // the spec station made no task
+    let mut r = Run::new(input(builtin_default()));
+    let n = r.start();
+    made(&mut r, &n);
+    assert!(matches!(r.on(Event::Ended(Vec::new())), Next::End { state: RunState::Failed, .. }));
+    assert_eq!(r.to_stop(), ["spec0"]);
+    // done: the build stays
+    let mut r = Run::new(input(spec(json!({ "stations": { "build": {} } }))));
+    let n = r.start();
+    made(&mut r, &n);
+    assert!(matches!(r.on(Event::Ended(vec![ok("build0", "b")])), Next::End { state: RunState::Done, .. }));
+    assert_eq!(r.to_stop(), Vec::<String>::new());
+}
+
+/// new2: the row's line kept the question but not what it asks about, so the band never showed the spec beside
+/// "Approve the spec?". It goes, short; none when there's nothing to say.
+#[test]
+fn the_rows_waiting_keeps_what_it_asks_about() {
+    let mut r = Run::new(input(builtin_default()));
+    let n = r.start();
+    made(&mut r, &n);
+    let spec_text = format!("SPEC: add adds\n{}", "- a check\n".repeat(200));
+    r.on(Event::Ended(vec![ok("spec0", &spec_text)]));
+    let s = summary_of(r.view());
+    let about = s["waiting"]["context"].as_str().unwrap();
+    assert!(about.starts_with("SPEC: add adds") && about.chars().count() == CONTEXT_SHOWN && about.ends_with('…'), "{about}");
+    let mut v = r.view().clone();
+    v.waiting.as_mut().unwrap().context.clear();
+    let s = summary_of(&v);
+    assert_eq!(s["waiting"]["question"].as_str().map(|q| q.starts_with("Approve the spec?")), Some(true), "{s}");
+    assert!(s["waiting"].get("context").is_none(), "nothing asked about: no key");
 }

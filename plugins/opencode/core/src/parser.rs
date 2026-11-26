@@ -7,9 +7,7 @@
 use serde_json::{Map, Value, json};
 use wisp_harness_kit::js::{self, truthy};
 use wisp_harness_kit::protocol::exit_text;
-use wisp_harness_kit::{
-    Change, Edit, Exit, HarnessEvent, IoStep, LineParser, Out, Re, RunPaths, Stats, TurnResult, clip_value, json_line, rel_value,
-};
+use wisp_harness_kit::{Change, Edit, Exit, HarnessEvent, IoStep, LineParser, Out, Re, RunPaths, Stats, TurnResult, json_line, rel_value};
 
 use crate::describe::describe_tool;
 
@@ -99,8 +97,9 @@ impl OpencodeParser {
         }
         out.push(HarnessEvent::Tool(t).into());
         if failed {
+            // whole: the runtime keeps its start and end (`clip_output`), and the end is what says why it failed
             let why = js::or(&state["error"], &state["output"]);
-            out.push(HarnessEvent::ToolError { id: Some(id), name: Some(tool), text: clip_value(why, 400) }.into());
+            out.push(HarnessEvent::ToolError { id: Some(id), name: Some(tool), text: js::str(why) }.into());
             return;
         }
         let meta = if truthy(&state["metadata"]) { &state["metadata"] } else { &empty };
@@ -337,5 +336,18 @@ mod tests {
         let [Out::Event(HarnessEvent::Blocked { tool, detail, rule })] = out.as_slice() else { panic!("{out:?}") };
         assert_eq!((tool.as_str(), detail.as_str()), ("bash", "npm publish, npm test"));
         assert_eq!(rule.as_ref().map(|r| r["patterns"][1].clone()), Some(json!("npm test")));
+    }
+
+    #[test]
+    fn a_failed_call_keeps_its_tail() {
+        // audit F2: the error was cut to its first 400 characters
+        let mut p = OpencodeParser::new(OpencodeOptions::default());
+        let mut out = Vec::new();
+        let why = format!("{}assertion failed: TAIL_MARKER", "running test …\n".repeat(350));
+        let line = json!({"sessionID":"s","type":"tool_use","part":{"tool":"bash","callID":"c1","state":{"status":"error","input":{"command":"npm test"},"error":why}}});
+        p.line(&line.to_string(), 0, &mut out);
+        let text =
+            out.iter().find_map(|o| if let Out::Event(HarnessEvent::ToolError { text, .. }) = o { Some(text.clone()) } else { None });
+        assert!(text.is_some_and(|t| t.len() > 4000 && t.ends_with("TAIL_MARKER")));
     }
 }

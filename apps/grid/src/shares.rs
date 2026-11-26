@@ -35,7 +35,9 @@ use crate::teams::Teams;
 mod pass;
 #[path = "shares_read.rs"]
 mod read;
-pub use pass::{check_password, hash_password};
+#[cfg(test)]
+pub(crate) use pass::derived;
+pub use pass::{check_password, could_be_password, hash_password};
 
 /// What a share may be.
 pub const KINDS: &[&str] = &["task", "setup", "module", "crew", "workflow", "agent", "app", "plugin", "doc", "report", "stuff"];
@@ -56,6 +58,10 @@ pub struct Access {
     pub teams: Vec<String>,
     #[serde(default)]
     pub password: Option<String>,
+    /// `password` already hashed, by the edge on the blocking pool (scrypt never runs on an async worker); without
+    /// it `check_access` hashes inline, as the CLI and tests do
+    #[serde(skip)]
+    pub hashed: Option<String>,
 }
 
 /// What a sharer's wisp sends.
@@ -143,6 +149,10 @@ pub enum Refused {
     Locked(String),
     /// 404
     NoVersion,
+    /// 429: too many password guesses at this share in the last minute, from this address or from everywhere
+    TooMany,
+    /// 503: every scrypt permit is taken; try again in a second (`Retry-After: 1`)
+    Busy,
 }
 
 const SELECT: &str = "SELECT s.id, s.user_id, u.handle, s.key, s.kind, s.title, s.summary, s.tags, s.version, s.access, s.people, s.teams, s.pass, s.expires_at, s.revoked_at, s.views, s.imports, s.signer, s.published, s.size, s.created_at, s.updated_at, s.cap FROM shares s JOIN users u ON u.id = s.user_id";
@@ -276,7 +286,7 @@ impl Shares {
                 if p.is_empty() || p.len() > PASSWORD_MAX {
                     return Err(bad(format!("A password is 1 to {PASSWORD_MAX} characters."), 400));
                 }
-                Ok(("password".into(), "[]".into(), "[]".into(), Some(hash_password(p))))
+                Ok(("password".into(), "[]".into(), "[]".into(), Some(a.hashed.clone().unwrap_or_else(|| hash_password(p)))))
             }
             _ => Err(bad("Access is anyone, people, teams or password.", 400)),
         }
@@ -347,13 +357,40 @@ impl Shares {
         {
             return Err(bad("This share was signed by another key: only the wisp that shared it can update it.", 403));
         }
-        if have.is_none() {
-            let n: i64 = self.db.with(|c| c.query_row("SELECT count(*) FROM shares WHERE user_id = ?1", [&user.id], |r| r.get(0)))?;
-            if n >= PER_USER {
-                return Err(bad(format!("You have {PER_USER} shares, as many as this grid keeps. Revoke one first."), 409));
-            }
+        // a new key, or a revoked (or expired) one this brings back, takes a slot; one already live has its own
+        let expires = match p.expires_at {
+            Some(e) => (e > 0).then_some(e),
+            None => have.as_ref().and_then(|h| h.expires_at),
+        };
+        if have.as_ref().is_none_or(|h| !self.live(h.revoked_at, h.expires_at)) && self.live(None, expires) {
+            self.room_for_one(&user.id)?;
         }
         Ok((body, have))
+    }
+
+    /// Whether a share with these is live: not revoked, not expired. Only live shares count toward `PER_USER`.
+    fn live(&self, revoked_at: Option<i64>, expires_at: Option<i64>) -> bool {
+        revoked_at.is_none() && expires_at.is_none_or(|e| e > self.clock.now_ms())
+    }
+
+    /// Refuses one more live share past `PER_USER`. Revoked and expired rows are never deleted (sharing the key again
+    /// brings the link back), so they mustn't count, or a user at the cap stays stuck however many they revoke.
+    fn room_for_one(&self, user_id: &str) -> Result<()> {
+        let now = self.clock.now_ms();
+        let n: i64 = self.db.with(|c| {
+            c.query_row(
+                "SELECT count(*) FROM shares WHERE user_id = ?1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?2)",
+                params![user_id, now],
+                |r| r.get(0),
+            )
+        })?;
+        if n >= PER_USER {
+            return Err(bad(
+                format!("You have {PER_USER} live shares, as many as this grid keeps. Revoke or let one expire to make room."),
+                409,
+            ));
+        }
+        Ok(())
     }
 
     fn own(&self, user: &UserRow, id: &str) -> Result<Rec> {
@@ -363,6 +400,13 @@ impl Shares {
     /// Change who may read it, its expiry, whether it's in the gallery.
     pub fn patch(&self, user: &UserRow, id: &str, p: &Patch) -> Result<Value> {
         let s = self.own(user, id)?;
+        // clearing or moving an expired share's expiry brings it back: that takes a slot too
+        if let Some(e) = p.expires_at
+            && !self.live(s.revoked_at, s.expires_at)
+            && self.live(s.revoked_at, (e > 0).then_some(e))
+        {
+            self.room_for_one(&user.id)?;
+        }
         let access = p.access.as_ref().map(|a| self.check_access(user, a)).transpose()?;
         self.db.tx(|tx| {
             if let Some((kind, people, teams, pass)) = &access {

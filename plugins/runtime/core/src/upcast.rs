@@ -29,7 +29,7 @@ pub fn from_v0(item: &Value) -> Option<Activity> {
             // v1 wrote `<name> failed: <text>`
             let (name, text) =
                 label.split_once(" failed: ").map_or(("Tool".to_owned(), label.clone()), |(n, t)| (n.to_owned(), t.to_owned()));
-            Activity::ToolError { name, text, hide: Vec::new() }
+            Activity::ToolError { name, text, call_id: None, hide: Vec::new(), full: None }
         }
         k => match tool_kind(k) {
             Some(tool) => Activity::Tool {
@@ -42,6 +42,7 @@ pub fn from_v0(item: &Value) -> Option<Activity> {
                 output: s(item, "output"),
                 title: s(item, "title"),
                 hide: std::collections::BTreeMap::new(),
+                full: None,
             },
             // wisp's own lines (Auto's check, a repair, a hand-over, a side's refusal)
             None => Activity::Notice { text: label, tone: (k == "warn").then_some(Tone::Warn) },

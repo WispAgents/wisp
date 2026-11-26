@@ -180,7 +180,8 @@ impl ClaudeParser {
             // a subagent's answer comes framed (newer Claude Code): its report, as the subagent wrote it
             let text = if matches!(self.pending.get(&id).map(String::as_str), Some("Agent" | "Task")) { handback(&text) } else { text };
             out.push(ev(if msg::truthy(part.is_error) {
-                HarnessEvent::ToolError { name: self.pending.get(&id).cloned(), text: js::head16(&text, 400).to_owned(), id: Some(id) }
+                // whole: the runtime keeps its start and end (`clip_output`), and the end is what says why it failed
+                HarnessEvent::ToolError { name: self.pending.get(&id).cloned(), text, id: Some(id) }
             } else {
                 HarnessEvent::ToolOutput { id, text }
             }));

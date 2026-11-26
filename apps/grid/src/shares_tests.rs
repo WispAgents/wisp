@@ -185,6 +185,79 @@ fn the_gallery_lists_only_what_was_published() {
     assert_eq!(t.s.gallery("", None).unwrap().len(), 0);
 }
 
+/// `n` live shares of ada's, keys `k0`…: up to the cap.
+fn fill(t: &T, ada: &UserRow, k: &SigningKey, n: i64) {
+    for i in 0..n {
+        t.s.put(ada, &put(k, &format!("k{i}"), "x")).unwrap();
+    }
+}
+
+const FULL: &str = "You have 200 live shares, as many as this grid keeps. Revoke or let one expire to make room.";
+
+/// The cap counted every row a user ever shared, revoked and expired included, and no row is ever deleted: at 200 the
+/// user was stuck for good, however many they revoked.
+#[test]
+fn revoking_a_share_frees_a_slot() {
+    let t = t();
+    let ada = t.a.dev_user("ada").unwrap();
+    let k = SigningKey::from_bytes(&[1; 32]);
+    fill(&t, &ada, &k, PER_USER);
+    let e = t.s.put(&ada, &put(&k, "one-more", "x")).unwrap_err();
+    assert_eq!((e.status(), e.public_message()), (409, FULL.to_owned()));
+    let id = t.s.by_name("ada", "k0").unwrap().unwrap().id;
+    t.s.revoke(&ada, &id).unwrap();
+    assert_eq!(t.s.put(&ada, &put(&k, "one-more", "x")).unwrap()["version"], json!(1));
+}
+
+#[test]
+fn expired_shares_do_not_count_toward_the_cap() {
+    let t = t();
+    let ada = t.a.dev_user("ada").unwrap();
+    let k = SigningKey::from_bytes(&[1; 32]);
+    fill(&t, &ada, &k, PER_USER - 1);
+    t.s.put(&ada, &Put { expires_at: Some(2_000), ..put(&k, "soon", "x") }).unwrap();
+    assert_eq!(t.s.put(&ada, &put(&k, "one-more", "x")).unwrap_err().status(), 409);
+    t.clock.set(2_000);
+    t.s.put(&ada, &put(&k, "one-more", "x")).unwrap();
+    // and clearing the expired one's expiry would bring a 201st back: refused
+    let soon = t.s.by_name("ada", "soon").unwrap().unwrap().id;
+    assert_eq!(t.s.patch(&ada, &soon, &Patch { expires_at: Some(0), ..Patch::default() }).unwrap_err().status(), 409);
+}
+
+#[test]
+fn reviving_a_revoked_key_respects_the_cap() {
+    let t = t();
+    let ada = t.a.dev_user("ada").unwrap();
+    let k = SigningKey::from_bytes(&[1; 32]);
+    fill(&t, &ada, &k, PER_USER);
+    let id = t.s.by_name("ada", "k0").unwrap().unwrap().id;
+    t.s.revoke(&ada, &id).unwrap();
+    t.s.put(&ada, &put(&k, "new", "x")).unwrap();
+    // k0 wasn't counted while revoked: sharing it again would make 201 live
+    let e = t.s.put(&ada, &put(&k, "k0", "y")).unwrap_err();
+    assert_eq!((e.status(), e.public_message()), (409, FULL.to_owned()));
+    assert!(t.s.get(&id).unwrap().unwrap().revoked_at.is_some());
+    // a live key shares again freely, at the cap
+    assert_eq!(t.s.put(&ada, &put(&k, "k1", "y")).unwrap()["version"], json!(2));
+    // with room, the revoked key comes back in place
+    t.s.revoke(&ada, &t.s.by_name("ada", "new").unwrap().unwrap().id).unwrap();
+    assert_eq!(t.s.put(&ada, &put(&k, "k0", "y")).unwrap()["id"], json!(id));
+}
+
+#[test]
+fn an_impossible_share_password_is_wrong_without_hashing() {
+    let t = t();
+    let ada = t.a.dev_user("ada").unwrap();
+    let k = SigningKey::from_bytes(&[1; 32]);
+    let a = Access { kind: "password".into(), password: Some("hunter2".into()), ..Access::default() };
+    let id = t.s.put(&ada, &Put { access: Some(a), ..put(&k, "x", "x") }).unwrap()["id"].as_str().unwrap().to_owned();
+    let s = t.s.get(&id).unwrap().unwrap();
+    let long = "overlong-in-shares-tests".repeat(8);
+    assert!(long.len() > PASSWORD_MAX);
+    assert_eq!(t.s.may_read(&s, None, Some(&long)).unwrap(), Err(Refused::Locked("password".into())));
+    assert_eq!(derived(&long), 0);
+}
+
 /// ADR-0130: `grid://ada/crew` opened anyone's whole crew, unlisted or not: `crew` is every crew's key, so a handle was
 /// all it took. A name opens an unlisted share only with its cap, for its sharer, or for the people and teams it's for.
 #[test]

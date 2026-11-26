@@ -174,6 +174,9 @@ export interface Navigation {
   takeShare?(): string | undefined;
   /** added 2026-11-18 (additive, #8): whether a share link waits to be taken (a phone opens New task for it) */
   hasShare?(): boolean;
+  /** added 2026-11-26 (additive): the id a share-sheet share was kept under (`?shared=<id>`: the installed web app's
+   *  share target, @wisp/shell sw.ts), once; undefined after, or when there was none. Gone from the URL at start. */
+  takeShared?(): string | undefined;
 }
 
 // A Grid share link and nothing else: `http(s)://<host>/s/<16 characters>`, no user, path, query or fragment.
@@ -188,13 +191,21 @@ export function shareLinkOf(url: string): string | undefined {
   return SHARE_LINK.test(v) ? v : undefined;
 }
 
-/** The URL without its `share` parameter (taken at start, never kept in history). */
+/** The id the service worker kept a share-sheet share under (`?shared=<id>`, @wisp/shell sw.ts), as it came: the
+ *  page's reader (apps/web shared.ts) checks it. Absent: undefined. */
+export function sharedIdOf(url: string): string | undefined {
+  const qi = url.indexOf('?');
+  return qi < 0 ? undefined : (new URLSearchParams(url.slice(qi + 1)).get('shared') ?? undefined);
+}
+
+/** The URL without its `share` and `shared` parameters (taken at start, never kept in history). */
 function withoutShare(url: string): string {
   const qi = url.indexOf('?');
   if (qi < 0) return url;
   const q = new URLSearchParams(url.slice(qi + 1));
-  if (!q.has('share')) return url;
+  if (!q.has('share') && !q.has('shared')) return url;
   q.delete('share');
+  q.delete('shared');
   const rest = q.toString();
   return rest ? `${url.slice(0, qi)}?${rest}` : url.slice(0, qi);
 }
@@ -244,6 +255,7 @@ export function createNavigation(o: NavigationOptions): Navigation {
   const state = signal<Nav>({ ...initialNav(o.width), ...start });
   // a share link to carry into New task: taken once, and gone from the URL (a reload or a Back doesn't bring it again)
   let share = shareLinkOf(url0);
+  let shared = sharedIdOf(url0);
   const clean0 = raw0.main.kind === 'home' && raw0.side.kind !== 'none' ? encodeNav(start) : withoutShare(url0);
   if (o.history && clean0 !== url0) o.history.replace(clean0);
 
@@ -268,6 +280,11 @@ export function createNavigation(o: NavigationOptions): Navigation {
       const link = share;
       share = undefined;
       return link;
+    },
+    takeShared() {
+      const id = shared;
+      shared = undefined;
+      return id;
     },
     navigate(intent) {
       const cur = untracked(state);

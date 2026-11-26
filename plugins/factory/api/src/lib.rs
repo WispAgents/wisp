@@ -134,8 +134,9 @@ pub struct Stations {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Loop {
-    /// build (the default) | spec
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    /// build (the default) | spec. `backTo` is read too: the factory's other fields are camelCase, so a factory written
+    /// that way (as `factory.set` once said it) isn't refused for it
+    #[serde(default, alias = "backTo", skip_serializing_if = "String::is_empty")]
     pub back_to: String,
     /// rounds in all (default 3; 0: a failure goes straight to `then`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -455,7 +456,7 @@ impl Command for Set {
 }
 
 /// [`Set`]'s argument for the generated CLI and the MCP tools.
-pub const SET_TS: &str = "/** Add or change a software factory: its stations, the loop back when a check fails or a review asks for changes, and its budget. */ { /** the factory's name */ name: string, /** what it is for, in a line */ description?: string, /** its stations by name, in order: spec, build, checks, review, ship (each an object; wisp schema lists their fields) */ stations: Record<string, unknown>, /** where a failed check or a review that asks for changes goes back to: { backTo: build, max: 3, then: ask } */ loop?: Record<string, unknown>, /** { usd: 20 }: no new station starts once the run's stations have cost this much */ budget?: Record<string, unknown> }";
+pub const SET_TS: &str = "/** Add or change a software factory: its stations, the loop back when a check fails or a review asks for changes, and its budget. */ { /** the factory's name */ name: string, /** what it is for, in a line */ description?: string, /** its stations by name, in order: spec, build, checks, review, ship (each an object; wisp schema lists their fields) */ stations: Record<string, unknown>, /** where a failed check or a review that asks for changes goes back to: { back_to: build, max: 3, then: ask } */ loop?: Record<string, unknown>, /** { usd: 20 }: no new station starts once the run's stations have cost this much */ budget?: Record<string, unknown> }";
 command!(Remove = "factory.remove" ["factory:write"] : NameArgs; typed yes => Value);
 command!(Stop = "factory.stop" ["factory:run"] : StopArgs; typed yes => Value);
 
@@ -508,6 +509,17 @@ mod tests {
             ok.agents(),
             [("stations.build.agents".to_owned(), "claude".to_owned()), ("stations.build.agents".to_owned(), "codex".to_owned())]
         );
+    }
+
+    /// `factory.set`'s tool said `{ backTo: build, … }` while the loop took only `back_to` (and refused unknown fields):
+    /// a factory written as the tool said was refused. Both read now, and the tool says the field's own name.
+    #[test]
+    fn the_loop_reads_back_to_and_back_to_in_camel_case_as_the_tool_says() {
+        for key in ["back_to", "backTo"] {
+            let f = read(json!({ "stations": { "build": {} }, "loop": { key: "build", "max": 3, "then": "ask" } })).unwrap();
+            assert_eq!(f.loop_back.as_ref().map(|l| l.back_to.as_str()), Some("build"), "{key}");
+        }
+        assert!(SET_TS.contains("back_to") && !SET_TS.contains("backTo"), "{SET_TS}");
     }
 
     #[test]

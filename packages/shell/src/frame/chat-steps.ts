@@ -18,8 +18,17 @@ export interface RawTurnEvent {
     readonly output?: string;
     readonly callId?: string;
     readonly name?: string;
+    /** its whole output when the step kept only its start and end (`runtime.fullOutput` reads it) */
+    readonly full?: StepFull;
   };
 }
+
+/** A clipped output's whole text, kept on the server: how many lines, for "Show all N lines". */
+export interface StepFull {
+  readonly lines: number;
+}
+
+type Said = { readonly text: string; readonly seq: number; readonly full?: StepFull | undefined };
 
 export interface ChatStepOpts {
   readonly chatMode: boolean;
@@ -53,6 +62,64 @@ function dropTrailingFinal(out: TranscriptStepRow[], opts: ChatStepOpts, rawLen?
   if (finals.some((f) => f === label || (clipped && f.startsWith(label)))) out.pop();
 }
 
+/** A failed call's error by the call it ends (audit F3): the call's row shows it as its output, marked failed, instead
+ *  of a row of its own after a call that looked fine. Only errors that name a call of these events; the rest stay rows
+ *  of their own (an older server's, or a harness that names none). */
+export function errorsByCall(events: readonly RawTurnEvent[]): ReadonlyMap<string, Said> {
+  const calls = new Set<string>();
+  const out = new Map<string, Said>();
+  for (const e of events) {
+    const k = kindOf(e);
+    const id = e.body?.callId;
+    if (!id) continue;
+    if (k === 'tool') calls.add(id);
+    else if (k === 'tool_error' && calls.has(id)) out.set(id, { text: e.body?.text ?? e.body?.name ?? '', seq: e.seq, full: e.body?.full });
+  }
+  return out;
+}
+
+/** A turn's tool calls and failures as step rows (the task view's steps: its count, the working panel), each failed
+ *  call one row carrying its error; `activity` when the turn has no events (a turn row that carries its own). */
+export function turnSteps(events: readonly RawTurnEvent[], activity: readonly TranscriptStepRow[]): TranscriptStepRow[] {
+  // a tool's output: on the step itself, or the tool_output that names its call
+  const outputs = new Map<string, Said>();
+  for (const e of events) if (kindOf(e) === 'tool_output' && e.body?.callId) outputs.set(e.body.callId, { text: e.body.text ?? '', seq: e.seq, full: e.body.full });
+  const errors = errorsByCall(events);
+  const ev = events.filter((e) => kindOf(e) === 'tool' || kindOf(e) === 'tool_error');
+  if (!ev.length) return [...activity];
+  const out: TranscriptStepRow[] = [];
+  for (const e of ev) {
+    if (kindOf(e) === 'tool_error') {
+      if (!e.body?.callId || !errors.has(e.body.callId)) out.push(errorRow(e));
+      continue;
+    }
+    out.push(toolRow(e, outputs, errors));
+  }
+  return out;
+}
+
+/** A tool call's row: its output (the event that carried it names it to Reveal, ADR-0050), or its error. */
+function toolRow(e: RawTurnEvent, outputs: ReadonlyMap<string, Said>, errors: ReadonlyMap<string, Said>): TranscriptStepRow {
+  const o = e.body?.callId ? outputs.get(e.body.callId) : undefined;
+  const err = e.body?.callId ? errors.get(e.body.callId) : undefined;
+  const said = err ?? (e.body?.output ? { text: e.body.output, seq: e.seq, full: e.body.full } : o?.text ? o : undefined);
+  return {
+    kind: e.body?.tool ?? 'tool',
+    label: e.body?.label ?? '',
+    ...(e.body?.title && { title: e.body.title }),
+    ...(e.body?.detail && { detail: e.body.detail }),
+    ...(e.body?.file && { file: e.body.file }),
+    ...(said && { out: said.text, seq: said.seq }),
+    ...(said?.full && { full: said.full }),
+    ...(err && { bad: true }),
+  };
+}
+
+/** A failure that names no call of the turn: a row of its own (its seq names its whole text, when it has one). */
+function errorRow(e: RawTurnEvent): TranscriptStepRow {
+  return { kind: 'error', label: e.body?.text ?? e.body?.name ?? '', bad: true, ...(e.body?.full && { full: e.body.full, seq: e.seq }) };
+}
+
 const firstLine = (s: string): string => {
   const line = s.split('\n').find((l) => l.trim().length > 0)?.trim() ?? '';
   return line.length > 90 ? `${line.slice(0, 89)}…` : line;
@@ -64,12 +131,13 @@ export function buildChatSteps(
   fallbackActivity: readonly TranscriptStepRow[],
   opts: ChatStepOpts,
 ): TranscriptStepRow[] {
-  const outputs = new Map<string, { readonly text: string; readonly seq: number }>();
+  const outputs = new Map<string, Said>();
   for (const e of events) {
     if (kindOf(e) === 'tool_output' && e.body?.callId) {
-      outputs.set(e.body.callId, { text: e.body.text ?? '', seq: e.seq });
+      outputs.set(e.body.callId, { text: e.body.text ?? '', seq: e.seq, full: e.body.full });
     }
   }
+  const errors = errorsByCall(events);
   const relevant = events.filter((e) => {
     const k = kindOf(e);
     return k === 'tool' || k === 'tool_error' || k === 'thinking' || k === 'text';
@@ -79,14 +147,15 @@ export function buildChatSteps(
     return filterFallback(fallbackActivity, opts);
   }
 
-  const lastToolSeq = opts.running ? findLastOpenToolSeq(relevant, outputs) : -1;
+  const lastToolSeq = opts.running ? findLastOpenToolSeq(relevant, outputs, errors) : -1;
   const out: TranscriptStepRow[] = [];
   let lastTextRawLen: number | undefined;
   for (const e of relevant) {
     const k = kindOf(e);
     if (k === 'tool_error') {
-      // Errors always show in every visibility mode (matches t3code).
-      out.push({ kind: 'error', label: e.body?.text ?? e.body?.name ?? '', bad: true });
+      // Errors always show in every visibility mode (matches t3code); one that names its call is that call's row.
+      if (e.body?.callId && errors.has(e.body.callId)) continue;
+      out.push(errorRow(e));
       continue;
     }
     if (k === 'thinking') {
@@ -109,17 +178,12 @@ export function buildChatSteps(
     }
     // k === 'tool'
     const o = e.body?.callId ? outputs.get(e.body.callId) : undefined;
+    const failed = !!e.body?.callId && errors.has(e.body.callId);
     const active = opts.running && e.seq === lastToolSeq && !e.body?.output && !o;
     const toolKind = e.body?.tool ?? 'tool';
-    if (opts.chatMode && !(toolKind === 'agent' && opts.toolCalls !== 'zen') && !keepTool(opts.toolCalls, active)) continue;
-    out.push({
-      kind: toolKind,
-      label: e.body?.label ?? '',
-      ...(e.body?.title && { title: e.body.title }),
-      ...(e.body?.detail && { detail: e.body.detail }),
-      ...(e.body?.file && { file: e.body.file }),
-      ...(e.body?.output ? { out: e.body.output, seq: e.seq } : o?.text ? { out: o.text, seq: o.seq } : {}),
-    });
+    // a failed call is its error's row: shown wherever errors are
+    if (opts.chatMode && !failed && !(toolKind === 'agent' && opts.toolCalls !== 'zen') && !keepTool(opts.toolCalls, active)) continue;
+    out.push(toolRow(e, outputs, errors));
   }
 
   dropTrailingFinal(out, opts, lastTextRawLen);
@@ -129,11 +193,11 @@ export function buildChatSteps(
   return out;
 }
 
-function findLastOpenToolSeq(events: readonly RawTurnEvent[], outputs: ReadonlyMap<string, unknown>): number {
+function findLastOpenToolSeq(events: readonly RawTurnEvent[], outputs: ReadonlyMap<string, unknown>, errors: ReadonlyMap<string, unknown>): number {
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
     if (!e || kindOf(e) !== 'tool') continue;
-    const done = Boolean(e.body?.output) || (e.body?.callId ? outputs.has(e.body.callId) : false);
+    const done = Boolean(e.body?.output) || (e.body?.callId ? outputs.has(e.body.callId) || errors.has(e.body.callId) : false);
     if (!done) return e.seq;
   }
   return -1;

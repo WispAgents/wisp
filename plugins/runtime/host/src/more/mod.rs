@@ -72,6 +72,7 @@ fn tool_row(tool: ToolKind, label: String) -> Activity {
         output: None,
         title: None,
         hide: std::collections::BTreeMap::new(),
+        full: None,
     }
 }
 

@@ -68,5 +68,7 @@ test('five_thousand_tasks_across_two_hundred_projects_are_counted_in_a_few_ms', 
   const counts = projectCounts(sessions, projects);
   const ms = performance.now() - at;
   expect([...counts.values()].reduce((a, b) => a + b, 0)).toBe(sessions.filter((s) => projectOfBefore(s.summary.cwd, projects)).length);
-  expect(ms).toBeLessThan(10);
+  // the old task × project walk took ~170 ms here; 50 ms keeps that regression caught while a loaded CI runner
+  // (seen at 12.7 ms) doesn't fail the suite on noise
+  expect(ms).toBeLessThan(50);
 });

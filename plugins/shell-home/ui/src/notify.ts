@@ -121,7 +121,8 @@ export function startNotifier(d: NotifierDeps): () => void {
     if (viewing(key, row)) return;
     d.toast?.show(n.head, { action: { label: t('shell-home.notify.open'), onClick: () => client.navigate({ t: 'openFromToast', target: target(key) }) } });
     const on = notifyOn(client.entities.peek<SettingRow>('setting', entityKey(client.home, NOTIFY_KEY))?.value);
-    if (on && !d.focused()) void d.platform.notify({ title: n.title, body: n.body, tag: n.tag, target: target(key) });
+    // tagged with the task's key (the id the nav opens it by), so opening it takes the note away (below)
+    if (on && !d.focused()) void d.platform.notify({ title: n.title, body: n.body, tag: String(key), target: target(key) });
   };
   // read without tracking: a row's effect must not wake for every other row
   const siblings = (): TaskRow[] => untracked(() => (client.entities.list<unknown>(SESSION)() as unknown[]).map(flatRow).filter((r): r is TaskRow => r !== undefined));
@@ -147,9 +148,27 @@ export function startNotifier(d: NotifierDeps): () => void {
     });
   });
   const offOpen = d.platform.onOpen((to) => client.navigate({ t: 'openFromToast', target: to }));
+  // a task you open (or come back to, open) has been seen: its note in the system tray goes too
+  const nav = d.nav;
+  const clearOpen = (main: Nav['main'] | undefined): void => {
+    if (main?.kind === 'task') void d.platform.clearNote?.(String(main.id))?.catch(() => {});
+  };
+  let shown: string | undefined; // the task open now: a side or an overlay opening over it clears nothing again
+  const stopClear = nav
+    ? effect(() => {
+        const main = nav().main;
+        const id = main.kind === 'task' ? String(main.id) : undefined;
+        if (id === shown) return;
+        shown = id;
+        untracked(() => clearOpen(main));
+      })
+    : () => {};
+  const offResume = nav ? d.platform.onResume(() => clearOpen(untracked(nav).main)) : () => {};
   return () => {
     stopAll();
     offOpen();
+    stopClear();
+    offResume();
     for (const c of rows.values()) c.stop();
     rows.clear();
   };
