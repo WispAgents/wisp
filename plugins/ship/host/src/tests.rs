@@ -168,7 +168,10 @@ fn the_manifest_is_valid_and_names_every_command() {
     assert_eq!(m.id, "wisp.ship");
     assert!(m.requires.contains_key("git.service"));
     let cmds = m.contributes.get("commands").and_then(|v| v.as_array()).map_or(0, Vec::len);
-    assert_eq!(cmds, 12, "ship.agent.pr (wisp_pr) is the 11th, ship.write (TRY-13) the 12th");
+    assert_eq!(cmds, 13, "ship.agent.pr (wisp_pr) is the 11th, ship.write (TRY-13) the 12th, ship.steward (ADR-0132) the 13th");
+    let ids: Vec<&str> =
+        m.contributes["commands"].as_array().into_iter().flatten().filter_map(|c| c.get("id").and_then(|v| v.as_str())).collect();
+    assert!(ids.contains(&"ship.steward"), "{ids:?}");
     for p in [
         "git:repo",
         "git:diff",

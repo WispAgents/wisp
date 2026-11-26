@@ -57,6 +57,11 @@ async fn your_wisp_comment_is_read_once_and_answered_on_its_issue_and_nobody_els
     let c = h.conversed();
     assert_eq!(c.len(), 1, "once, however many looks: {c:?}");
     assert_eq!((c[0].channel.as_str(), c[0].sender.as_str(), c[0].text.as_str()), ("github", "1", "in api fix the login"));
+    // a comment that names no project runs in its repo's, and its task is told which issue or PR it's on
+    assert_eq!(c[0].project.as_deref(), Some("p1"));
+    let about = c[0].about.as_deref().unwrap();
+    assert!(about.starts_with("GitHub issue me/api#12: https://github.com/me/api/issues/12\n"), "{about}");
+    assert!(about.contains("gh issue view 12 --repo me/api"), "{about}");
     let posts = h.exec.ran("-f body=");
     assert!(posts[0].iter().any(|a| a.contains("repos/me/api/issues/12/comments")));
     let body = posts[0].last().unwrap();
