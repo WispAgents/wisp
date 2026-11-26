@@ -11,4 +11,9 @@ key: string,
 /**
  * started | queued | held | skipped | awaiting
  */
-result: string, why: string, session?: string, };
+result: string, why: string, session?: string, 
+/**
+ * how many causes deep it is: the event that made the trigger decide, plus one (a trigger on `trigger.fired`
+ * reads it, so two triggers on each other's runs stop at `MAX_DEPTH`). Additive (2026-11-25).
+ */
+depth?: number, };

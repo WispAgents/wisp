@@ -75,6 +75,7 @@ export function nameOf(s: StepView): string {
 /** Its line under the title: working, what it gave, why it failed or was skipped, or what it waits on. */
 export function detailOf(s: StepView): string {
   if (s.fanout && s.state === 'waiting') return t('wisp.workflows.fansOut', { needs: (s.needs ?? []).join(', ') || '…' });
+  if (s.state === 'running' && s.held) return t('wisp.workflows.held', { why: s.held });
   if (s.state === 'running') return (s.attempts ?? 1) > 1 ? t('wisp.workflows.tryN', { n: s.attempts ?? 2 }) : t('wisp.workflows.working');
   if (s.state === 'done') return s.said ?? '';
   if (s.state === 'failed' || s.state === 'skipped') return s.why ?? '';
@@ -107,7 +108,8 @@ export function card(s: StepView, now: number, h: Hands, withStep = false): RunS
   return {
     id: s.id,
     title,
-    state: s.state,
+    // held before it starts: it waits, it isn't working
+    state: s.state === 'running' && s.held ? 'waiting' : s.state,
     ...(s.agent ? { agent: s.agent } : {}),
     ...(detail ? { detail } : {}),
     ...(m ? { meta: m } : {}),
