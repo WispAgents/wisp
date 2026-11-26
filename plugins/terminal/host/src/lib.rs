@@ -186,7 +186,9 @@ async fn start_run(ctx: &Ctx, call: &wisp_kernel::Call, r: &Arc<Registry>, a: &c
         return Ok(running(r));
     }
     if a.restart {
+        // its proxy too: a proxy kept running would be handed back by `Proxies::start` with the old app's port
         r.close(TermKind::Run, &a.id).await;
+        r.proxies.stop(&a.id);
     }
     let (dir, _) = task_dir(ctx, call, &a.id).await?;
     // its own port when free, else the next free one (ADR-0086); the app gets it as PORT and every caller reads it back
@@ -200,12 +202,43 @@ async fn start_run(ctx: &Ctx, call: &wisp_kernel::Call, r: &Arc<Registry>, a: &c
     // marked before it starts: an app that exits at once clears it after, never before (no stale "running")
     mark_run(ctx, call, &a.id, true, Some(port)).await;
     r.open(ctx, &c::OpenArgs { kind: TermKind::Run, id: a.id.clone(), argv, cwd: dir.clone(), cols: a.cols, rows: a.rows, tui: false });
-    // Preview's proxy (ADR-0049): to the port the app prints, else its PORT; weak, so the registry isn't kept by it
-    let weak = Arc::downgrade(r);
-    let id = a.id.clone();
-    let target: proxy::Target = Arc::new(move || weak.upgrade().and_then(|r| r.local_port(TermKind::Run, &id)).unwrap_or(port));
-    let proxy = r.proxies.start(&a.id, target, &r.scope).await;
+    let proxy = r.proxies.start(&a.id, run_target(r, &a.id, port), &r.scope).await;
     Ok(wisp_terminal_api::RunStarted { ok: true, started: true, port, dir, proxy })
+}
+
+/// Preview's proxy's target (ADR-0049): the port the app prints, else the PORT it was given now (a restart's, never
+/// one captured when the proxy started), else `port`; weak, so the registry isn't kept by it.
+fn run_target(r: &Arc<Registry>, id: &str, port: u16) -> proxy::Target {
+    let (weak, id) = (Arc::downgrade(r), id.to_owned());
+    Arc::new(move || weak.upgrade().and_then(|r| r.local_port(TermKind::Run, &id).or_else(|| r.app_port(&id))).unwrap_or(port))
+}
+
+/// Hangs task `id`'s `kind` terminal up, whoever asks (`terminal.close`, its DELETE route, the task deleted): for a run
+/// its proxy stops too and, with `mark`, its row says Run app again (not for a deleted task: its row is gone); whoever
+/// owns the task hears it's gone.
+async fn hang_up(ctx: &Ctx, call: &wisp_kernel::Call, r: &Registry, kind: TermKind, id: &str, mark: bool) -> bool {
+    let port = r.app_port(id); // what the row keeps saying: close forgets it
+    let ok = r.close(kind, id).await;
+    if kind == TermKind::Run {
+        r.proxies.stop(id); // the app stopped: so does its proxy
+        if mark {
+            mark_run(ctx, call, id, false, port).await;
+        }
+    }
+    if ok {
+        ctx.emit(
+            call,
+            &wisp_terminal_api::Changed { kind, id: id.to_owned(), state: wisp_terminal_api::TermState::Ended, code: None, gone: true },
+        );
+    }
+    ok
+}
+
+/// A task was deleted: its shell, take over and app (with its proxy and port) go with it.
+async fn forget_task(ctx: &Ctx, r: &Registry, id: &str) {
+    for kind in [TermKind::Shell, TermKind::Takeover, TermKind::Run] {
+        hang_up(ctx, &ctx.root_call(), r, kind, id, false).await;
+    }
 }
 
 fn routes(s: &mut Setup, slot: &Slot) {
@@ -239,11 +272,13 @@ fn routes(s: &mut Setup, slot: &Slot) {
             summary: "Hang the task's terminal up",
             raw: false,
             max_body: None,
-            handler: Arc::new(move |_ctx, _call, req| {
+            handler: Arc::new(move |ctx, call, req| {
                 let sl = sl.clone();
-                Box::pin(
-                    async move { Response::ok(json!({ "ok": reg(&sl)?.close(kind_of(&req), req.param("id").unwrap_or_default()).await })) },
-                )
+                Box::pin(async move {
+                    let r = reg(&sl)?;
+                    let ok = hang_up(&ctx, &call, &r, kind_of(&req), req.param("id").unwrap_or_default(), true).await;
+                    Response::ok(json!({ "ok": ok }))
+                })
             }),
         });
     }
@@ -349,28 +384,7 @@ impl Plugin for TerminalPlugin {
             Ok(out)
         });
         on!(s, slot, c::Get, |r, ctx, call, a| Ok(r.info(a.kind, &a.id)));
-        on!(s, slot, c::Close, |r, ctx, call, a| {
-            let port = r.app_port(&a.id); // what the row keeps saying: close forgets it
-            let ok = r.close(a.kind, &a.id).await;
-            if a.kind == TermKind::Run {
-                r.proxies.stop(&a.id); // the app stopped: so does its proxy
-                mark_run(&ctx, &call, &a.id, false, port).await;
-            }
-            if ok {
-                // hung up: forgotten, and whoever owns the task hears it ended
-                ctx.emit(
-                    &call,
-                    &wisp_terminal_api::Changed {
-                        kind: a.kind,
-                        id: a.id.clone(),
-                        state: wisp_terminal_api::TermState::Ended,
-                        code: None,
-                        gone: true,
-                    },
-                );
-            }
-            Ok(c::Done { ok })
-        });
+        on!(s, slot, c::Close, |r, ctx, call, a| Ok(c::Done { ok: hang_up(&ctx, &call, &r, a.kind, &a.id, true).await }));
         on!(s, slot, c::Input, |r, ctx, call, a| {
             let mut ok = true;
             if let Some(d) = a.data.as_deref() {
@@ -393,6 +407,16 @@ impl Plugin for TerminalPlugin {
         on!(s, slot, c::RunInfoOf, |r, ctx, call, a| run_info(&ctx, &call, &r, &a.id).await);
         s.command::<c::Apps, _, _>(|_ctx, _call, _a| async move { Ok(apps_here(std::env::consts::OS, &|k| std::env::var(k).ok())) });
         routes(s, &slot);
+        let gone = slot.clone();
+        s.on::<wisp_runtime_api::events::SessionDeleted, _, _>(move |ctx, e| {
+            let (slot, id, c) = (gone.clone(), e.id.as_str().to_owned(), ctx.clone());
+            ctx.spawn(async move {
+                if let Ok(r) = reg(&slot) {
+                    forget_task(&c, &r, &id).await;
+                }
+            });
+            async {}
+        });
         let start = slot;
         s.on_start(move |ctx| async move {
             let proc = ctx.service::<Proc>()?.as_ref().clone();
@@ -446,6 +470,73 @@ mod tests {
         }
         let empty = plan_here("darwin", &[], &c::OpenAppArgs { argv: vec![], ..a }, "terminal", "").unwrap();
         assert!(empty[0].args[1].contains("'-l'"), "no command: a login shell in the folder");
+    }
+
+    /// A deleted task's shell, take over and app go with it: its app's port and Preview's proxy too. They ran on (and
+    /// held the port) until wisp stopped.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_deleted_tasks_terminals_app_port_and_proxy_go_with_it() {
+        use registry::tests::{args, kernel, until};
+        let clock = wisp_testkit::FakeClock::at(1_000);
+        let (_k, ctx) = kernel(&clock).await;
+        let r = Arc::new(Registry::new(wisp_proc::local(), wisp_kernel::CancellationToken::new()));
+        let id = "deleted";
+        let port = r.claim_app_port(id).await;
+        let mut pids = Vec::new();
+        for kind in [TermKind::Shell, TermKind::Takeover, TermKind::Run] {
+            r.open(&ctx, &args(kind, id, &["sleep", "60"]));
+            pids.push(r.pid(kind, id).expect("it runs"));
+        }
+        assert!(r.proxies.start(id, run_target(&r, id, port), &r.scope).await.is_some());
+        forget_task(&ctx, &r, id).await;
+        for kind in [TermKind::Shell, TermKind::Takeover, TermKind::Run] {
+            assert!(r.info(kind, id).is_none(), "{kind:?}");
+        }
+        assert_eq!((r.app_port(id), r.proxies.port(id)), (None, None));
+        assert!(until(|| pids.iter().all(|&p| !wisp_proc::pid_alive(p))).await, "every program is gone");
+    }
+
+    /// Hanging a run up through its DELETE route (and `terminal.close`) stops Preview's proxy with it: the route only
+    /// closed the terminal, and the proxy went on answering for an app that wasn't there.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn hanging_a_run_up_stops_its_proxy() {
+        use registry::tests::{args, kernel};
+        let clock = wisp_testkit::FakeClock::at(1_000);
+        let (_k, ctx) = kernel(&clock).await;
+        let r = Arc::new(Registry::new(wisp_proc::local(), wisp_kernel::CancellationToken::new()));
+        let port = r.claim_app_port("hung").await;
+        r.open(&ctx, &args(TermKind::Run, "hung", &["sleep", "60"]));
+        assert!(r.proxies.start("hung", run_target(&r, "hung", port), &r.scope).await.is_some());
+        assert!(hang_up(&ctx, &ctx.root_call(), &r, TermKind::Run, "hung", true).await);
+        assert_eq!(r.proxies.port("hung"), None);
+        assert!(r.info(TermKind::Run, "hung").is_none());
+    }
+
+    /// An app that exits by itself takes its proxy with it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_app_that_exits_by_itself_stops_its_proxy() {
+        use registry::tests::{args, kernel, until};
+        let clock = wisp_testkit::FakeClock::at(1_000);
+        let (_k, ctx) = kernel(&clock).await;
+        let r = Arc::new(Registry::new(wisp_proc::local(), wisp_kernel::CancellationToken::new()));
+        let port = r.claim_app_port("quits").await;
+        assert!(r.proxies.start("quits", run_target(&r, "quits", port), &r.scope).await.is_some());
+        r.open(&ctx, &args(TermKind::Run, "quits", &["true"]));
+        assert!(until(|| r.proxies.port("quits").is_none()).await, "the proxy stopped");
+        assert!(r.info(TermKind::Run, "quits").is_some_and(|i| i.state.over()));
+    }
+
+    /// The proxy's target is the app's port now, not the one captured when the proxy started: a restart that was given
+    /// another port is answered on that one.
+    #[tokio::test]
+    async fn the_proxy_follows_the_port_a_restart_was_given() {
+        let r = Arc::new(Registry::new(wisp_proc::local(), wisp_kernel::CancellationToken::new()));
+        let first = r.claim_app_port("moved").await;
+        let target = run_target(&r, "moved", first);
+        assert_eq!(target(), first);
+        let next = if first == u16::MAX { first - 1 } else { first + 1 };
+        r.set_app_port("moved", next);
+        assert_eq!(target(), next);
     }
 
     #[test]

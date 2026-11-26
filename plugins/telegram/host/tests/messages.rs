@@ -193,3 +193,49 @@ async fn a_refused_tap_leaves_the_keyboard_for_the_linked_person_audit_i() {
         }
     }
 }
+
+/// doc26a: a reply button can't say which mode, so on a Full auto task a reply is for words, as on Slack and Discord:
+/// its report has no reply buttons (Mark done stays), and a tap on an old one is refused, the keyboard left.
+#[tokio::test]
+async fn a_full_auto_task_has_no_reply_buttons_and_a_reply_tap_is_refused_doc26a() {
+    use wisp_channels_api::views::{Action, ActionKind, Mode, Msg, SessionView};
+    let msg = Msg {
+        title: "✅ web: Fix login".into(),
+        text: "Ship?".into(),
+        actions: vec![
+            Action { label: "Ship it".into(), kind: ActionKind::Reply, reference: "u2".into(), index: 0 },
+            Action { label: "Mark done".into(), kind: ActionKind::Done, reference: "u2".into(), index: 0 },
+        ],
+    };
+    for (mode, want) in [(Mode::Auto, vec!["Mark done"]), (Mode::Edits, vec!["Ship it", "Mark done"])] {
+        let h = hub(false, &[]);
+        let sv = SessionView { id: "t1".into(), mode: Some(mode), ..SessionView::default() };
+        let dyn_hub: Arc<dyn ChannelHub> = h.clone();
+        wisp_telegram::transport(dyn_hub).publish(&msg, Some(&sv)).await.unwrap();
+        let sent = h.net.sent("sendMessage");
+        let labels: Vec<&str> = sent[0]["reply_markup"]["inline_keyboard"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row[0]["text"].as_str().unwrap_or_default())
+            .collect();
+        assert_eq!(labels, want, "{mode:?}");
+    }
+    let h = TestHub::default().with_cfg("telegram", json!({ "enabled": true, "token": "123:abc", "chatId": CHAT }));
+    h.phone.tasks.lock().unwrap().push(SessionView { id: "t1".into(), mode: Some(Mode::Auto), ..SessionView::default() });
+    let tap = json!({ "update_id": 1, "callback_query": {
+        "id": "q1", "data": "r:0:signed:t1:u2", "from": { "id": CHAT, "first_name": "Ada" },
+        "message": { "message_id": 900, "chat": { "id": CHAT, "type": "private" } },
+    } });
+    h.net.replies.lock().unwrap().extend([
+        Reply::json("getUpdates", json!({ "ok": true, "result": [tap] })),
+        Reply::json("getUpdates", json!({ "ok": false, "description": "done" })).status(500),
+        Reply::json("answerCallbackQuery", json!({ "ok": true, "result": true })),
+        Reply::json("editMessageReplyMarkup", json!({ "ok": true, "result": true })),
+    ]);
+    let h = Arc::new(h);
+    run(&h).await;
+    assert!(h.phone.acts.lock().unwrap().is_empty(), "nothing sent");
+    assert_eq!(h.net.sent("answerCallbackQuery")[0]["text"], wisp_channels_api::IN_WORDS);
+    assert!(h.net.sent("editMessageReplyMarkup").is_empty(), "the keyboard stays");
+}

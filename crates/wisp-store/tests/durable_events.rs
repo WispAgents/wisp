@@ -172,6 +172,8 @@ fn sink(seen: Arc<Seen>, mode: &'static str) -> P {
                                     panic!("after the write");
                                 }
                                 "always-fail" => return Err(WireError::internal("no")),
+                                // its first event's 3 tries fail (parked), then it works
+                                "fail-thrice" if t < 3 => return Err(WireError::internal("not yet")),
                                 "chain" => {
                                     seen.depths.lock().unwrap().push(call.cause_depth());
                                     seen.got.lock().unwrap().push(event.n);
@@ -446,6 +448,39 @@ async fn handler_panic_retried_3_times_then_parked_with_reason() {
     assert_eq!(n, json!(1));
     assert_eq!(seen.tries.load(Ordering::SeqCst), 9);
     assert_eq!(st.parked().await.unwrap().len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn deactivate_drops_durable_subs() {
+    let st = open(&temp("drop-dsubs"));
+    let k = kernel(&st, vec![source(), sink(Arc::new(Seen::default()), "")]).await;
+    assert!(k.registrations("wisp.sink") > 0);
+    k.set_enabled("wisp.sink", false).await.unwrap();
+    assert_eq!(k.registrations("wisp.sink"), 0, "its durable subscription went with it");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn retry_while_plugin_off_keeps_event_parked() {
+    let st = open(&temp("retry-off"));
+    let seen = Arc::new(Seen::default());
+    let k = kernel(&st, vec![source(), sink(seen.clone(), "fail-thrice")]).await;
+    make(&k, json!({ "n": 1, "no_write": true })).await.unwrap();
+    settle(&k).await;
+    assert_eq!(st.parked().await.unwrap().iter().map(|p| p.seq).collect::<Vec<_>>(), [1]);
+    k.set_enabled("wisp.sink", false).await.unwrap();
+    // asked from another plugin (the sink's own command is off with it)
+    let src = k.ctx("wisp.src").unwrap();
+    let e = src.retry_event(1).await.unwrap_err();
+    assert_eq!(e.code, wisp_kernel::Code::Unavailable, "{}", e.message);
+    assert!(e.message.contains("wisp.sink is off"), "{}", e.message);
+    assert_eq!(st.parked().await.unwrap().iter().map(|p| p.seq).collect::<Vec<_>>(), [1], "still parked");
+    // on again, retry delivers it and it's no longer parked
+    k.set_enabled("wisp.sink", true).await.unwrap();
+    settle(&k).await;
+    assert_eq!(src.retry_event(1).await.unwrap(), 1);
+    settle(&k).await;
+    assert_eq!(*seen.got.lock().unwrap(), [1]);
+    assert_eq!(st.parked().await.unwrap(), []);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
