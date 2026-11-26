@@ -14,12 +14,9 @@ export interface ContinueParams {
   readonly text?: string;
 }
 
-export function parseContinueParams(v: unknown): ContinueParams {
-  const o = (v ?? {}) as Record<string, unknown>;
-  if (typeof o['key'] !== 'string' || !o['key'].includes(':')) throw new Error('Continue on… needs the task’s key');
-  const str = (k: string): string | undefined => (typeof o[k] === 'string' && o[k] !== '' ? (o[k] as string) : undefined);
-  const agent = str('agent');
-  const model = str('model');
-  const text = str('text');
-  return { key: o['key'] as EntityKey, ...(agent && { agent }), ...(model && { model }), ...(text && { text }) };
+/** The view's own check, all the first screen carries (ADR-0011): a task's key. The dialog reads the rest
+ *  (`parseContinueParams`, model.ts). */
+export function viewParams(v: unknown): ContinueParams {
+  if (!String((v as { key?: unknown } | null)?.key ?? '').includes(':')) throw new Error('Continue on… needs the task’s key');
+  return v as ContinueParams;
 }

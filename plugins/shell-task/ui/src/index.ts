@@ -6,7 +6,7 @@ const TaskSide = lazy(() => import('./TaskSide.tsx'));
 import { defineExtension, definePluginUi, defineView } from './define.ts';
 import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, isTui } from './open-task.ts';
 import { CATALOGUE } from './i18n/index.ts';
-import { CONTINUE_VIEW, parseContinueParams } from './continue/view.ts';
+import { CONTINUE_VIEW, viewParams } from './continue/view.ts';
 
 export { CATALOGUE };
 export type * from './types.ts';
@@ -37,7 +37,7 @@ export default definePluginUi({
   later: () => import('./later.ts'),
   views: [
     // Continue on…: the runner picker, what carries over, one follow-up on that harness (ADR-0125)
-    defineView({ kind: CONTINUE_VIEW, slot: 'overlay', overlay: 'dialog', parse: parseContinueParams, title: () => CATALOGUE['shell-task.continue.title'] ?? '', component: lazy(() => import('./continue/ContinueOn.tsx')) as never }),
+    defineView({ kind: CONTINUE_VIEW, slot: 'overlay', overlay: 'dialog', parse: viewParams, title: () => CATALOGUE['shell-task.continue.title'] ?? '', component: lazy(() => import('./continue/ContinueOn.tsx')) as never }),
     defineView({ kind: WATCH_VIEW, slot: 'side', parse: () => null, title: () => CATALOGUE['shell-task.side.watch'] ?? '', component: TaskSide as never }),
     defineView({ kind: TERM_VIEW, slot: 'side', parse: () => null, title: () => CATALOGUE['shell-task.side.term'] ?? '', component: TaskSide as never }),
     defineView({ kind: TAB_VIEW, slot: 'side', parse: () => null, title: () => CATALOGUE['shell-task.side.label'] ?? '', component: TaskSide as never }),

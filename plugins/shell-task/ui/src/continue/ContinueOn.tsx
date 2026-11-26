@@ -11,7 +11,7 @@ import { RunnerPicker, type Runner } from '@wisp/shell';
 import { Button, Inline, Stack, Tabs, Text, TextArea, useSignal } from '@wisp/ui';
 import { useShell } from '../shell.ts';
 import '../i18n/lazy.ts';
-import { CARRY_ON, CONTINUE_VIEW, continueArgs, previewModel, type ContinueParams, type HandoffChoiceId, type HandoffPreview } from './model.ts';
+import { CARRY_ON, CONTINUE_VIEW, continueArgs, parseContinueParams, previewModel, type ContinueParams, type HandoffChoiceId, type HandoffPreview } from './model.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 
@@ -35,17 +35,18 @@ export default function ContinueOn(props: { readonly client: PluginClient; reado
   const c = props.client;
   const shell = useShell();
   const t = shell.t;
-  const key = props.params.key;
+  const params = parseContinueParams(props.params);
+  const key = params.key;
   const session = useSignal(c.entities.row<{ agent?: string; body?: { agent?: string } }>('session', key));
   const from = (): string => session()?.agent ?? session()?.body?.agent ?? '';
   const harnesses = useSignal(shell.harnesses());
   const nameOf = (id: string): string => harnesses().find((h) => h.id === id)?.name ?? id;
   const logoOf = (id: string): string | undefined => harnesses().find((h) => h.id === id)?.logo;
-  const [to, setTo] = createSignal<Runner>({ agent: props.params.agent ?? '', model: props.params.model ?? '', effort: '', account: '' });
+  const [to, setTo] = createSignal<Runner>({ agent: params.agent ?? '', model: params.model ?? '', effort: '', account: '' });
   // the picker opens with the dialog unless a harness was offered
-  const [picking, setPicking] = createSignal(!props.params.agent);
+  const [picking, setPicking] = createSignal(!params.agent);
   const [choice, setChoice] = createSignal<HandoffChoiceId>('summary');
-  const [text, setText] = createSignal(props.params.text ?? '');
+  const [text, setText] = createSignal(params.text ?? '');
   let pill: HTMLButtonElement | undefined;
   const [answer] = createResource(
     () => (to().agent && to().agent !== from() ? to().agent : undefined),

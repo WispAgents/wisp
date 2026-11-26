@@ -3,9 +3,20 @@
 // Timeline's divider from a turn's switch mark.
 import type { EntityKey } from '@wisp/client';
 import '../i18n/lazy.ts';
+import { viewParams, type ContinueParams } from './view.ts';
 
-export { CONTINUE_VIEW, parseContinueParams, type ContinueParams } from './view.ts';
+export { CONTINUE_VIEW, type ContinueParams } from './view.ts';
 export { openContinue } from './open.ts';
+
+/** The dialog's params as it reads them: the view's check (a task's key), then each of the rest a word or absent. */
+export function parseContinueParams(v: unknown): ContinueParams {
+  const o = viewParams(v) as unknown as Record<string, unknown>;
+  const str = (k: string): string | undefined => (typeof o[k] === 'string' && o[k] !== '' ? (o[k] as string) : undefined);
+  const agent = str('agent');
+  const model = str('model');
+  const text = str('text');
+  return { key: o['key'] as EntityKey, ...(agent && { agent }), ...(model && { model }), ...(text && { text }) };
+}
 
 /** what a hand-off carries: the latest turn and the rules, or every turn the harness missed */
 export type HandoffChoiceId = 'summary' | 'full';
