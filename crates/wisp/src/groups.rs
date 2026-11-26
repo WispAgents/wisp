@@ -197,7 +197,7 @@ fn add(g: PluginGroup, name: &str, at: &Where) -> PluginGroup {
         #[cfg(feature = "sandbox")]
         "sandbox" => g.add(wisp_sandbox::SandboxPlugin::default()),
         #[cfg(feature = "computer")]
-        "computer" => g.add(wisp_computer::ComputerPlugin::default()),
+        "computer" => g.add(wisp_computer::ComputerPlugin),
         #[cfg(feature = "later")]
         "later" => g.add(wisp_later::LaterPlugin),
         #[cfg(feature = "budget")]
