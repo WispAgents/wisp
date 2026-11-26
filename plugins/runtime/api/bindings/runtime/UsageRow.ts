@@ -21,6 +21,15 @@ agent?: string, cost: number, priced: number, turns: number,
  */
 sessions: number, 
 /**
+ * added 2026-11-25 (additive, ADR-0124): of `priced`, the turns whose cost is a list-price estimate of their tokens
+ * (the harness reported none); `cost_estimated`: `cost` holds at least one, so it shows as `~$x.xx`
+ */
+estimated: number, costEstimated: boolean, 
+/**
+ * added 2026-11-25 (additive): Copilot's premium requests, summed (its result's `usage.premiumRequests`)
+ */
+premiumRequests: number, 
+/**
  * added 2026-11-23 (TRY-32, additive): total tokens (read + output)
  */
 tokens: number, 

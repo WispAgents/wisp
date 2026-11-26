@@ -125,6 +125,9 @@ Checked by `npm run check` (`tools/check`: the TypeScript rules and the Rust one
 14. **A plugin's stores are under its namespace** (`store-ids`): a `defineStore({ id })` in `plugins/<p>/ui/src` starts
     with its client namespace (`wisp.goal` → `goal.`), and in `packages/shell/src` with `shell.`; the client refuses
     any other id, and the component that asked shows nothing.
+15. **One ADR per number** (`adr-numbers`): two files in `docs/adr/` never share a number, a file's heading names
+    its filename's number, and an index row links the file of its own number. A branch that took a number main
+    took since renumbers its ADR and every `ADR-00NN` it cites.
 
 ## How a feature is built
 

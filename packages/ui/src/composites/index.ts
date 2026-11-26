@@ -12,6 +12,6 @@ export { Banner, Callout, type NoticeProps } from './Banner.tsx';
 export { Stats, type Stat, type StatsProps } from './Stats.tsx';
 export { GlowGrid, type GlowGridProps, type GlowGridState } from './GlowGrid.tsx';
 export { Steps, Checklist, type Step, type StepStatus, type StepsProps, type ChecklistItem, type ChecklistProps } from './Steps.tsx';
-export { DayBars, DataTable, DataCellLead, type DayBar, type DayBarsProps, type DataTableProps, type DataCellLeadProps } from './Charts.tsx';
+export { DayBars, DataTable, DataCellLead, type ChartSeries, type DayBar, type DayBarsProps, type DataTableProps, type DataCellLeadProps } from './Charts.tsx';
 export { Section, SettingsRow, type SectionProps, type SettingsRowProps } from './Section.tsx';
 export { RunBoard, RunChip, RunDots, type RunAction, type RunBoardProps, type RunChipProps, type RunDotsProps, type RunEntry, type RunFan, type RunLane, type RunStep, type RunStepState } from './RunBoard.tsx';

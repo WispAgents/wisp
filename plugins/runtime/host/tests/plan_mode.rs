@@ -1,6 +1,7 @@
 //! v1 #794 (test/plan-mode.test.js, test/side.test.js): a task you start in Plan runs commands (`HarnessRun::plan_commands`,
-//! which the harness turns into its own flags); a channel's, a trigger's, a capped task's, their subagents' and a side
-//! discussion's Plan stays read-only. A side discussion's action buttons (`runtime.exec`) run in the main task's folder.
+//! which the harness turns into its own flags); a channel's, a trigger's, a capped task's and their subagents' Plan stays
+//! read-only. A side discussion has its main task's access (audit user-side-full-access): it runs commands, and its action
+//! buttons (`runtime.exec`) run in the main task's folder.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
@@ -62,7 +63,7 @@ async fn a_plan_task_you_start_runs_commands_and_one_from_outside_stays_read_onl
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_side_discussions_plan_only_reads_and_its_action_buttons_run_in_the_main_tasks_folder_v1_794() {
+async fn a_side_discussion_runs_commands_and_its_action_buttons_run_in_the_main_tasks_folder_v1_794() {
     let r = rig().await;
     let main_dir = std::env::temp_dir().join(format!("wisp-794-main-{}", std::process::id()));
     std::fs::create_dir_all(&main_dir).unwrap();
@@ -76,7 +77,7 @@ async fn a_side_discussions_plan_only_reads_and_its_action_buttons_run_in_the_ma
         ..with_slot(plan("plan side"), json!({ "sideOf": { "id": main.as_str(), "title": "The main task" } }))
     };
     let side = r.rt.create(side).await.unwrap().id;
-    assert!(!runs_commands(&ran_with(&r, "plan side").await), "a side discussion's Plan only reads");
+    assert!(runs_commands(&ran_with(&r, "plan side").await), "a side discussion has its main task's access: it runs commands");
 
     // its actions block's buttons run, where the main task works (v1: was refused)
     let (code, out) = r.rt.exec(side.as_str(), "touch from-side").await.unwrap();

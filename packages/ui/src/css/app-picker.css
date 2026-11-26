@@ -20,6 +20,51 @@
     text-align: left;
     animation: kit-pop 0.2s var(--ease);
   }
+  /* the find box over both panes (harness audit r2) */
+  [data-kit='picker'][data-find] {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  [data-kit='pk-search'][data-find] {
+    grid-column: 1 / -1;
+    margin: 8px 8px 6px;
+  }
+  [data-kit='pk-hact'] {
+    align-self: flex-start;
+    margin: -2px 0 4px 41px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  [data-kit='pk-hact']:hover,
+  [data-kit='pk-hact']:focus-visible {
+    background: var(--bg-2);
+    outline: 0;
+  }
+  [data-kit='pk-star'] {
+    flex: none;
+    display: inline-flex;
+    width: 22px;
+    height: 22px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--faint);
+    opacity: 0;
+  }
+  [data-kit='pk-m']:hover > [data-kit='pk-star'],
+  [data-kit='pk-m']:focus-visible > [data-kit='pk-star'],
+  [data-kit='pk-star'][data-on] {
+    opacity: 1;
+  }
+  [data-kit='pk-star'][data-on] {
+    color: var(--warn);
+  }
+  [data-kit='pk-star'] > [data-kit='icon'] {
+    width: 14px;
+    height: 14px;
+  }
   [data-kit='pk-side'] {
     display: flex;
     flex-direction: column;

@@ -1,6 +1,7 @@
 //! A lead told to delegate through wisp (the team note in its system prompt) runs with its harness's own subagent
-//! tool off (`HarnessRun::delegating`): one predicate decides both. A subagent, a side discussion, a host without
-//! wisp's MCP server and a harness that can't take wisp's tools get neither.
+//! tool off (`HarnessRun::delegating`): one predicate decides both. A side discussion has its main task's team
+//! (ADR-0123) and gets both; a subagent, a host without wisp's MCP server and a harness that can't take wisp's tools
+//! get neither.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
@@ -37,7 +38,7 @@ fn start(prompt: &str) -> StartArgs {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_top_level_lead_delegates_through_wisp_and_a_subagent_or_side_discussion_does_not() {
+async fn a_top_level_lead_or_its_side_discussion_delegates_through_wisp_and_a_subagent_does_not() {
     let r = rig_on(Recorder { access: Some(Arc::new(Access)), ..Recorder::default() }, vec![Fake::leads("fake", "Fake CLI")]).await;
     let lead = r.rt.create(start("the lead")).await.unwrap().id;
     assert_eq!(told(&ran_with(&r, "the lead").await), (true, true), "the note and the flag together");
@@ -46,7 +47,7 @@ async fn a_top_level_lead_delegates_through_wisp_and_a_subagent_or_side_discussi
     let mut side = StartArgs { parent_id: Some(lead.clone()), cwd: None, ..start("a side discussion") };
     side.ext.insert("wisp.runtime".into(), json!({ "sideOf": { "id": lead.as_str(), "title": "The lead" } }));
     r.rt.create(side).await.unwrap();
-    assert_eq!(told(&ran_with(&r, "a side discussion").await), (false, false));
+    assert_eq!(told(&ran_with(&r, "a side discussion").await), (true, true), "a side has its main task's team");
 }
 
 #[tokio::test(flavor = "multi_thread")]

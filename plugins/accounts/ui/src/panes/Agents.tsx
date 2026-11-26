@@ -1,11 +1,14 @@
-// Settings → Agents (v1 settings.js paintAgents, agent-login.js; design/v1-reference/settings.agents): the
-// harnesses wisp found, each with its state, version and models; Claude and Codex with their extra accounts
-// ("Add another … account"); a CLI sign-in's steps (the page to open, the code to paste); a key for harnesses
-// that take one (opencode); Install for one wisp can install; the notice when a harness's program changed;
-// git and the GitHub CLI that Ship it needs; Re-check. Every write shows at once.
-import { createMemo, createSignal, For, Match, onCleanup, Show, Switch as Pick, type JSX } from 'solid-js';
+// size-ok: one pane whose list, General and harness detail share the same rows, sign-in controls and dialogs
+// Settings → Agents (v1 settings.js paintAgents, agent-login.js; design/v1-reference/settings.agents), as a list and a
+// detail (harness audit r2): a search over General and each harness (its name and the settings it holds), General's
+// GitHub and git, Lean runs, Ask before a changed harness, updates and Re-check; and each harness's detail: its state,
+// version and sign-in, Claude's and Codex's extra accounts ("Add another … account"), a CLI sign-in's steps, a key for
+// harnesses that take one (opencode), Install and Update, the notice when its program changed, then its program and
+// version, its switch (its plugin), its default model, thinking level and mode for a new task (`runtime.launch`, what
+// New task reads), and what other plugins add (wisp.budget's stop line). Every write shows at once.
+import { createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch as Pick, type JSX } from 'solid-js';
 import { entityKey, type PluginClient } from '@wisp/client';
-import { useShell } from '@wisp/shell';
+import { LAUNCH_SETTING, MODES_FOR_HARNESS, Slot, defaultModels, harnessDefaults, useShell, withHarnessDefaults, type HarnessDefaults } from '@wisp/shell';
 import {
   Button,
   CopyCommand,
@@ -16,10 +19,12 @@ import {
   Menu,
   Pill,
   SelectSetting,
+  SettingsEmpty,
   SettingsGroup,
   SettingsInset,
   SettingsInsetAdd,
   SettingsInsetRow,
+  SettingsMasterDetail,
   SettingsRow,
   Stack,
   Switch,
@@ -30,11 +35,13 @@ import {
 import { useDetected } from '../detected.ts';
 import { fromRow, text } from '../source.ts';
 import { Steps } from './Steps.tsx';
-import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust, updateAccount, upgrade, upgradeQuiet } from '../commands.ts';
+import { Docs, HowTo, Keys } from './AgentParts.tsx';
+import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, pluginList, pluginSet, planView, recheck, removeAccount, setAsk, settingSet, trust, updateAccount, upgrade, upgradeQuiet } from '../commands.ts';
+import { GENERAL, modelProblem, navItems, shownItem, type NavRows } from '../agents-nav.ts';
 import { AddAccount, RemoveAccount, RenameAccount } from './AccountDialogs.tsx';
 import { t } from '../i18n.ts';
-import { ACCOUNT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountKind, type AccountRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
-import { accOf, accountMenu, accountState, withPending, accountLine, changeTip, changeTitle, changeWhat, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, sentence, stillChanged, toolState, updateAllSummary } from '../words.ts';
+import { ACCOUNT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountKind, type AccountRow, type DetectRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
+import { accOf, accountMenu, accountState, withPending, type Tone, accountLine, changeTip, changeTitle, changeWhat, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, sentence, stillChanged, toolState, updateAllSummary } from '../words.ts';
 import '../i18n/lazy.ts';
 
 const quiet = (p: Promise<unknown>): void => {
@@ -48,87 +55,18 @@ function useRows<T>(c: PluginClient, kind: string): Rows<T> {
   return () => list() as readonly T[];
 }
 
-/** The keys a harness signs in with (opencode Zen, Go…): set, test, remove; never the key itself. */
-function Keys(props: { readonly c: PluginClient; readonly h: HarnessRow; readonly keys: readonly KeyRow[]; readonly onClose: () => void }): JSX.Element {
-  const [typed, setTyped] = createSignal<Record<string, string>>({});
-  const peer = props.c.home;
-  return (
-    <Dialog
-      open
-      onOpenChange={(o) => !o && props.onClose()}
-      title={t('accounts.keys.title', { name: props.h.name })}
-      description={t('accounts.keys.where', { site: site(props.keys[0]?.url ?? '') })}
-      part="accounts.keys"
-    >
-      <Stack gap="1">
-        <For each={props.keys}>
-          {(k) => (
-            <SettingsRow
-              part="accounts.key"
-              title={k.name}
-              description={k.set ? t('accounts.keys.saved', { hint: masked(k) }) : t('accounts.keys.none')}
-              wideControl
-              control={
-                <Inline gap="2">
-                  <Input
-                    size="sm"
-                    mono
-                    type="password"
-                    aria-label={t('accounts.keys.input', { name: k.name })}
-                    placeholder={k.set ? t('accounts.keys.replace') : t('accounts.keys.paste')}
-                    value={typed()[k.provider] ?? ''}
-                    onInput={(v) => setTyped({ ...typed(), [k.provider]: v })}
-                  />
-                  <Button
-                    size="sm"
-                    disabled={(typed()[k.provider] ?? '').trim() === ''}
-                    onClick={() => {
-                      quiet(props.c.run(keySet, { peer, agent: k.agent, provider: k.provider, key: (typed()[k.provider] ?? '').trim() }));
-                      setTyped({ ...typed(), [k.provider]: '' });
-                    }}
-                  >
-                    {t('accounts.keys.save')}
-                  </Button>
-                  <Show when={k.set}>
-                    <Button size="sm" variant="ghost" onClick={() => quiet(props.c.run(keyRemove, { peer, agent: k.agent, provider: k.provider }))}>
-                      {t('accounts.keys.remove')}
-                    </Button>
-                  </Show>
-                </Inline>
-              }
-            />
-          )}
-        </For>
-      </Stack>
-    </Dialog>
-  );
-}
+/** The settings a harness's detail holds, by title key: the list's search finds a harness by them. */
+export const DETAIL_ROWS = [
+  'accounts.detail.signIn',
+  'accounts.detail.program',
+  'accounts.detail.enabled',
+  'accounts.detail.model',
+  'accounts.detail.effort',
+  'accounts.detail.mode',
+  'accounts.detail.budget',
+] as const;
 
-/** Not found here: this OS's tip, the command to copy (v1 setup.js setupCommand), and its install guide. */
-function HowTo(props: { readonly tip: string; readonly command?: string | undefined; readonly onCopy: (cmd: string) => void }): JSX.Element {
-  return (
-    <>
-      {props.tip}
-      <Show when={props.command}>{(cmd) => <CopyCommand part="accounts.setup.command" command={cmd()} label={t('accounts.setup.copy')} onCopy={props.onCopy} />}</Show>
-    </>
-  );
-}
-
-/** v1 setupDocs: the install guide, a ghost button that opens it outside wisp. */
-function Docs(props: { readonly name: string; readonly url?: string | undefined }): JSX.Element {
-  const shell = useShell();
-  return (
-    <Show when={props.url}>
-      {(url) => (
-        <Button size="sm" variant="ghost" icon="external" part="accounts.setup.docs" title={t('accounts.setup.guide', { name: props.name })} onClick={() => shell.platform.openExternal(url())}>
-          {t('accounts.setup.docs')}
-        </Button>
-      )}
-    </Show>
-  );
-}
-
-export default function Agents(props: { readonly client: PluginClient }): JSX.Element {
+export default function Agents(props: { readonly client: PluginClient; readonly filter?: string }): JSX.Element {
   const c = props.client;
   const shell = useShell();
   // each harness's mark, as its own plugin registered it (HarnessUiDef.logo: plugins/claude/ui, …)
@@ -197,6 +135,16 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
       shell.toast.show(said.message, { tone: said.failed ? 'error' : 'success', description: said.description });
     });
   };
+  // Re-check: General's row and each harness's Program row (v1 recheckSummary: what it turned up, here and on every
+  // machine, the server asks them too)
+  const recheckNow = (): void => {
+    setRechecking(true);
+    const before = new Map(harnesses().map((h) => [h.id, h]));
+    c.run(recheck, { peer })
+      .then((after) => shell.toast.show(recheckSummary(before, after ?? [])))
+      .catch(() => {})
+      .finally(() => setRechecking(false));
+  };
   // keyed by id: a harness that settles updates its row in place (no remount, nothing moves)
   const byId = createMemo(() => new Map(harnesses().map((h) => [h.id, h])));
   const ids = createMemo(() => harnesses().map((h) => h.id), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
@@ -259,111 +207,258 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
     if (v === 'remove') setRemoving(a);
   };
 
-  return (
-    <>
-      {/* v1 .sx-agents: one row per harness, lines between; its accounts in a box under it; then GitHub (and git while it's missing) */}
-      <SettingsGroup part="accounts.harnesses">
-        <For each={ids()}>
-          {(id) => {
-            // the last row it had: a harness that goes (its plugin switched off) may be read once more before its row unmounts
-            let last = byId().get(id) as HarnessRow;
-            const h = (): HarnessRow => (last = byId().get(id) ?? last);
-            // its own Sign in (one account): the state says what that login says, never Ready beside Sign in
-            const ownLogin = (): boolean => h().signIn === 'cli' && present(h()) && (!h().brand || accs(h().id).length <= 1);
-            const state = () => harnessState(h(), ownLogin() ? (login(h().id, '')?.signedIn ?? undefined) : undefined);
-            return (
-              <>
-                <SettingsRow
-                  part="accounts.harness"
-                  title={h().name}
-                  {...(logoOf(h().id) && { logo: logoOf(h().id) as string })}
-                  description={
-                    <Show when={howToGet(h())} fallback={harnessLine(h(), accs(h().id).length)}>
-                      {(how) => <HowTo tip={how().tip} command={how().command} onCopy={copy} />}
-                    </Show>
-                  }
-                  control={
-                    <Wrap gap="3" align="center">
-                      <Show when={h().signIn === 'key' && present(h())}>
-                        <Button size="sm" variant="primary" icon="lock" part="accounts.keys.open" onClick={() => setKeysOf(h())}>
-                          {keysFor(h().id).some((k) => k.set) ? t('accounts.keys.edit') : t('accounts.keys.add')}
-                        </Button>
-                      </Show>
-                      <Show when={ownLogin()}>{signControl(h, '', false)}</Show>
-                      <Show when={!h().checking && !present(h()) && !h().installable}>
-                        <Docs name={h().name} url={h().setup?.url} />
-                      </Show>
-                      <Show when={!h().checking && !present(h()) && h().installable === true}>
-                        <Button size="sm" disabled={h().installing === true} onClick={() => quiet(c.run(install, { peer, agent: h().id }))}>
-                          {h().installing === true ? t('accounts.installing') : t('accounts.install')}
-                        </Button>
-                      </Show>
-                      <Show when={updating().has(h().id) || (!h().checking && present(h()) && h().latest)}>
-                        <Button size="sm" part="accounts.update" disabled={updating().has(h().id) || h().installing === true} onClick={() => update([h()])}>
-                          {updating().has(h().id) || h().installing === true ? t('accounts.updating') : t('accounts.update', { version: h().latest ?? '' })}
-                        </Button>
-                      </Show>
-                      <Pill tone={state().tone} dot variant="plain">
-                        {state().label}
-                      </Pill>
-                    </Wrap>
-                  }
-                />
-                <Show when={stillChanged(h()) && h().changed}>
-                  {(ch) => (
-                    <SettingsRow
-                      part="accounts.changed"
-                      title={changeTitle(h().name, ch())}
-                      description={<span title={changeTip(ch())}>{t('accounts.change.whatWhy', { what: sentence(changeWhat(ch())) })}</span>}
+  // ── the list and the detail (harness audit r2): General, then one item per harness ──
+  const [query, setQuery] = createSignal('');
+  // the pick survives a re-render and a search that hides it; a link from Usage (or the settings search) opens on it
+  const [picked, setPicked] = createSignal<string>(props.filter && props.filter !== '' ? props.filter : GENERAL);
+  // each harness's plan, for its dot at its limit (quiet: without wisp.budget, no dot)
+  const [limits] = createResource(ids, async (list) => {
+    const full = await Promise.all(
+      list.map((id) =>
+        c.run(planView, { peer, agent: id }).then(
+          (accs) => [id, accs.some((a) => a.windows.some((w) => w.used >= 1))] as const,
+          () => [id, false] as const,
+        ),
+      ),
+    );
+    return new Map(full);
+  });
+  const navRows = (): NavRows => ({
+    general: {
+      label: t('accounts.general'),
+      rows: [t('accounts.tool.github'), 'git', t('accounts.lean.title'), t('accounts.ask.title'), t('accounts.updateAll.title'), t('accounts.recheck.title')],
+    },
+    harness: DETAIL_ROWS.map((k) => t(k)),
+    atLimit: t('accounts.state.atLimit'),
+  });
+  const stateOf = (h: HarnessRow): { tone: Tone; label: string } => {
+    const own = h.signIn === 'cli' && present(h) && (!h.brand || accs(h.id).length <= 1);
+    return harnessState(h, own ? (login(h.id, '')?.signedIn ?? undefined) : undefined);
+  };
+  const items = createMemo(() =>
+    navItems(
+      harnesses().map((h) => ({ id: h.id, name: h.name, state: stateOf(h), atLimit: limits.latest?.get(h.id) === true, logo: logoOf(h.id) })),
+      query(),
+      navRows(),
+    ),
+  );
+  const shown = (): string | undefined => shownItem(items(), picked());
+  // what a harness's detail reads: its detect row (models, levels, program), its plugin's switch, its defaults
+  const detectOf = (id: string): DetectRow | undefined => detected().find((r) => r.id === id);
+  const [plugins, { refetch: plugins_ }] = createResource(() => c.run(pluginList, { peer }).catch(() => []));
+  const launch = useSignal(c.entities.row<{ value?: unknown }>('setting', entityKey(peer, LAUNCH_SETTING)));
+  const defaultsOf = (id: string): HarnessDefaults => harnessDefaults(launch()?.value, id);
+  const setDefaults = (id: string, change: Parameters<typeof withHarnessDefaults>[2]): void =>
+    quiet(c.run(settingSet, { peer, key: LAUNCH_SETTING, value: withHarnessDefaults(launch()?.value, id, change) }));
+  const defaults = defaultModels(shell.client);
+
+  /** One harness's detail: what its row had (state, sign-in, keys, install and update, a changed program, its accounts),
+   *  then its program, its switch, its defaults for a new task, and what other plugins add (wisp.budget's stop line). */
+  const HarnessDetail = (p: { readonly id: string }): JSX.Element => {
+    const id = p.id;
+    // the last row it had: a harness that goes (its plugin switched off) may be read once more before its row unmounts
+    let last = byId().get(id) as HarnessRow;
+    const h = (): HarnessRow => (last = byId().get(id) ?? last);
+    // its own Sign in (one account): the state says what that login says, never Ready beside Sign in
+    const ownLogin = (): boolean => h().signIn === 'cli' && present(h()) && (!h().brand || accs(h().id).length <= 1);
+    const state = () => harnessState(h(), ownLogin() ? (login(h().id, '')?.signedIn ?? undefined) : undefined);
+    const det = (): DetectRow | undefined => detectOf(id);
+    const plugin = (): { id: string; enabled: boolean } | undefined => (plugins.latest ?? []).find((x) => x.id === `wisp.${id}`);
+    const failedKey = (): KeyRow | undefined => keysFor(id).find((k) => k.test && !k.test.ok);
+    const models = (): { id: string; label: string }[] => (det()?.agent.models ?? h().models).filter((m) => m.id !== '');
+    const efforts = (): string[] => det()?.agent.efforts ?? [];
+    const runs = (): string | undefined => defaults.topic(peer, id);
+    const bad = (s: string): JSX.Element => (
+      <Text size="sm" tone="bad" part="accounts.detail.error">
+        {s}
+      </Text>
+    );
+    return (
+      <>
+        <SettingsGroup part="accounts.harnesses">
+          <SettingsRow
+            part="accounts.harness"
+            title={h().name}
+            {...(logoOf(h().id) && { logo: logoOf(h().id) as string })}
+            description={
+              <Show when={howToGet(h())} fallback={harnessLine(h(), accs(h().id).length)}>
+                {(how) => <HowTo tip={how().tip} command={how().command} onCopy={copy} />}
+              </Show>
+            }
+            control={
+              <Wrap gap="3" align="center">
+                <Show when={h().signIn === 'key' && present(h())}>
+                  <Button size="sm" variant="primary" icon="lock" part="accounts.keys.open" onClick={() => setKeysOf(h())}>
+                    {keysFor(h().id).some((k) => k.set) ? t('accounts.keys.edit') : t('accounts.keys.add')}
+                  </Button>
+                </Show>
+                <Show when={ownLogin()}>{signControl(h, '', false)}</Show>
+                <Show when={!h().checking && !present(h()) && !h().installable}>
+                  <Docs name={h().name} url={h().setup?.url} />
+                </Show>
+                <Show when={!h().checking && !present(h()) && h().installable === true}>
+                  <Button size="sm" disabled={h().installing === true} onClick={() => quiet(c.run(install, { peer, agent: h().id }))}>
+                    {h().installing === true ? t('accounts.installing') : t('accounts.install')}
+                  </Button>
+                </Show>
+                <Show when={updating().has(h().id) || (!h().checking && present(h()) && h().latest)}>
+                  <Button size="sm" part="accounts.update" disabled={updating().has(h().id) || h().installing === true} onClick={() => update([h()])}>
+                    {updating().has(h().id) || h().installing === true ? t('accounts.updating') : t('accounts.update', { version: h().latest ?? '' })}
+                  </Button>
+                </Show>
+                <Pill tone={state().tone} dot variant="plain">
+                  {state().label}
+                </Pill>
+              </Wrap>
+            }
+          />
+          <Show when={stillChanged(h()) && h().changed}>
+            {(ch) => (
+              <SettingsRow
+                part="accounts.changed"
+                title={changeTitle(h().name, ch())}
+                description={<span title={changeTip(ch())}>{t('accounts.change.whatWhy', { what: sentence(changeWhat(ch())) })}</span>}
+                control={
+                  <Button size="sm" onClick={() => quiet(c.run(trust, { peer, agent: h().id }))}>
+                    {t('accounts.change.trust')}
+                  </Button>
+                }
+              />
+            )}
+          </Show>
+          {/* the harness's own sign-in, unless its accounts are listed: then it's under its account's row */}
+          <Show when={!(h().brand && present(h()) && accs(h().id).length > 1)}>
+            <Steps c={c} agent={h().id} account="" login={login(h().id)} />
+          </Show>
+          <Show when={h().brand && present(h())}>
+            <SettingsInset part="settings.accounts">
+              <For each={accs(h().id).length > 1 ? accs(h().id) : []}>
+                {(a, i) => (
+                  <>
+                    <SettingsInsetRow
+                      part="accounts.account"
+                      title={a.label}
+                      description={accountLine(a)}
+                      state={accountState(a)}
                       control={
-                        <Button size="sm" onClick={() => quiet(c.run(trust, { peer, agent: h().id }))}>
-                          {t('accounts.change.trust')}
-                        </Button>
+                        <Inline gap="2">
+                          {signControl(() => ({ id: h().id, signedIn: a.state === 'signedOut' ? false : null }), accOf(a), true)}
+                          <Menu
+                            part="accounts.account.menu"
+                            trigger={{ icon: 'dots', 'aria-label': t('accounts.account.more', { name: a.label }), variant: 'ghost', size: 'sm' }}
+                            items={accountMenu(a, i(), accs(h().id).length)}
+                            onSelect={(v) => onAccount(a, v)}
+                          />
+                        </Inline>
                       }
                     />
-                  )}
-                </Show>
-                {/* the harness's own sign-in, unless its accounts are listed: then it's under its account's row (the CLI's own
-                    login is the first account's, and showed twice) */}
-                <Show when={!(h().brand && present(h()) && accs(h().id).length > 1)}>
-                  <Steps c={c} agent={h().id} account="" login={login(h().id)} />
-                </Show>
-                <Show when={h().brand && present(h())}>
-                  <SettingsInset part="settings.accounts">
-                    <For each={accs(h().id).length > 1 ? accs(h().id) : []}>
-                      {(a, i) => (
-                        <>
-                          <SettingsInsetRow
-                            part="accounts.account"
-                            title={a.label}
-                            description={accountLine(a)}
-                            state={accountState(a)}
-                            control={
-                              <Inline gap="2">
-                                {/* signed out or not is the account's own (v1: its state), not its harness's */}
-                                {signControl(() => ({ id: h().id, signedIn: a.state === 'signedOut' ? false : null }), accOf(a), true)}
-                                {/* v1: the same ⋯ on every row, what can't apply disabled (the CLI's own login: Sign out, not Remove) */}
-                                <Menu
-                                  part="accounts.account.menu"
-                                  trigger={{ icon: 'dots', 'aria-label': t('accounts.account.more', { name: a.label }), variant: 'ghost', size: 'sm' }}
-                                  items={accountMenu(a, i(), accs(h().id).length)}
-                                  onSelect={(v) => onAccount(a, v)}
-                                />
-                              </Inline>
-                            }
-                          />
-                          {/* its sign-in under its row (v1 loginPanel): the page to open, the code, the paste box */}
-                          <Steps c={c} agent={h().id} account={accOf(a)} login={login(h().id, accOf(a))} inset />
-                        </>
-                      )}
-                    </For>
-                    <SettingsInsetAdd part="accounts.add" label={t('accounts.account.add', { brand: h().brand ?? h().name })} onClick={() => setAdding(h())} />
-                  </SettingsInset>
-                </Show>
-              </>
-            );
-          }}
-        </For>
+                    <Steps c={c} agent={h().id} account={accOf(a)} login={login(h().id, accOf(a))} inset />
+                  </>
+                )}
+              </For>
+              <SettingsInsetAdd part="accounts.add" label={t('accounts.account.add', { brand: h().brand ?? h().name })} onClick={() => setAdding(h())} />
+            </SettingsInset>
+          </Show>
+          {/* a key that failed its last Test says so here, not only in the keys box */}
+          <Show when={failedKey()}>
+            {(k) => (
+              <SettingsRow
+                part="accounts.detail.key"
+                title={t('accounts.detail.keys')}
+                description={bad(t('accounts.detail.keyFailed', { name: k().name, message: k().test?.message ?? '' }))}
+                control={
+                  <Button size="sm" onClick={() => setKeysOf(h())}>
+                    {t('accounts.keys.edit')}
+                  </Button>
+                }
+              />
+            )}
+          </Show>
+        </SettingsGroup>
+        <SettingsGroup part="accounts.detail" title={t('accounts.detail.title')}>
+          <SettingsRow
+            part="accounts.detail.program"
+            title={t('accounts.detail.program')}
+            description={
+              <Show when={present(h()) || h().checking} fallback={bad(t('accounts.detail.missing', { name: h().name }))}>
+                <Stack gap="1">
+                  <Text size="sm" mono>
+                    {det()?.agent.bin ?? t('accounts.detail.noPath')}
+                  </Text>
+                  <Text size="sm" tone="muted">
+                    {h().version ? t('accounts.detail.version', { version: h().version ?? '' }) : t('accounts.line.checking')}
+                  </Text>
+                </Stack>
+              </Show>
+            }
+            control={
+              <Button size="sm" variant="ghost" icon="replay" part="accounts.detail.recheck" disabled={rechecking()} onClick={recheckNow}>
+                {rechecking() ? t('accounts.recheck.running') : t('accounts.recheck')}
+              </Button>
+            }
+          />
+          <Show when={plugin()}>
+            {(pl) => (
+              <SettingsRow
+                part="accounts.detail.enabled"
+                title={t('accounts.detail.enabled')}
+                description={t('accounts.detail.enabledHint', { name: h().name })}
+                control={
+                  <Switch
+                    aria-label={t('accounts.detail.enabled')}
+                    checked={pl().enabled}
+                    onChange={(on) => quiet(c.run(pluginSet, { peer, id: pl().id, enabled: on }).then(() => plugins_()))}
+                  />
+                }
+              />
+            )}
+          </Show>
+          <SelectSetting
+            part="accounts.detail.model"
+            title={t('accounts.detail.model')}
+            description={
+              <Show
+                when={modelProblem(defaultsOf(id).model, models(), h().checking === true)}
+                fallback={t('accounts.detail.modelHint', { name: h().name })}
+              >
+                {bad(t('accounts.detail.modelUnknown', { model: defaultsOf(id).model, name: h().name }))}
+              </Show>
+            }
+            source={{ value: () => defaultsOf(id).model, set: (v) => setDefaults(id, { model: v, label: models().find((m) => m.id === v)?.label ?? v }) }}
+            items={[
+              { value: '', label: runs() ? t('accounts.detail.defaultIs', { model: runs() ?? '' }) : t('accounts.detail.default') },
+              ...models().map((m) => ({ value: m.id, label: m.label })),
+              // a kept model it no longer lists stays visible, so the error has something to point at
+              ...(modelProblem(defaultsOf(id).model, models(), h().checking === true) ? [{ value: defaultsOf(id).model, label: defaultsOf(id).model }] : []),
+            ]}
+          />
+          <Show when={efforts().length > 0}>
+            <SelectSetting
+              part="accounts.detail.effort"
+              title={t('accounts.detail.effort')}
+              description={t('accounts.detail.effortHint')}
+              source={{ value: () => defaultsOf(id).effort, set: (v) => setDefaults(id, { effort: v }) }}
+              items={[{ value: '', label: t('accounts.detail.default') }, ...efforts().map((e) => ({ value: e, label: e.charAt(0).toUpperCase() + e.slice(1) }))]}
+            />
+          </Show>
+          <SelectSetting
+            part="accounts.detail.mode"
+            title={t('accounts.detail.mode')}
+            description={t('accounts.detail.modeHint')}
+            source={{ value: () => defaultsOf(id).mode, set: (v) => setDefaults(id, { mode: v }) }}
+            items={[{ value: '', label: t('accounts.detail.modeAsPicked') }, ...MODES_FOR_HARNESS.map((m) => ({ value: m, label: t(`accounts.detail.mode.${m}`) }))]}
+          />
+        </SettingsGroup>
+        {/* what other plugins add to a harness (wisp.budget: where automations stop on it) */}
+        <Slot input="shell.settings:harness" id={id} layout="contents" />
+      </>
+    );
+  };
+
+  /** General: what isn't a harness's own (GitHub and git, Lean runs, Ask before a changed harness, updates, Re-check). */
+  const General = (): JSX.Element => (
+    <>
+      <SettingsGroup part="accounts.tools">
         {/* git only while it's missing; GitHub always (v1: "For pushing branches and opening pull requests") */}
         <For each={tools().filter((x) => x.id === 'gh' || !x.installed)}>
           {(x) => (
@@ -377,9 +472,7 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                   <Show when={!x.installed}>
                     <Docs name={x.id === 'gh' ? t('accounts.tool.ghCli') : x.name} url={x.setup?.url} />
                   </Show>
-                  {/* v1: GitHub signs in and out from its row (gh's web login: a code and a link, under it) */}
                   <Show when={x.id === 'gh' && x.installed}>{signControl(() => ({ id: 'gh', signedIn: login('gh')?.signedIn ?? x.signedIn }), '', false)}</Show>
-                  {/* gh signed in or out, as Home's tip asks (QA r1 #23: the row said nothing) */}
                   <Show when={!x.installed && toolState(x)}>
                     {(s) => (
                       <Pill tone={s().tone} dot variant="plain" part="accounts.tool.state">
@@ -434,26 +527,30 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
           title={t('accounts.recheck.title')}
           description={t('accounts.recheck.hint')}
           control={
-            <Button
-              size="sm"
-              variant="ghost"
-              icon="replay"
-              disabled={rechecking()}
-              onClick={() => {
-                setRechecking(true);
-                // v1 recheckSummary: what this Re-check turned up, here and on every machine (the server asks them too)
-                const before = new Map(harnesses().map((h) => [h.id, h]));
-                c.run(recheck, { peer })
-                  .then((after) => shell.toast.show(recheckSummary(before, after ?? [])))
-                  .catch(() => {})
-                  .finally(() => setRechecking(false));
-              }}
-            >
+            <Button size="sm" variant="ghost" icon="replay" disabled={rechecking()} onClick={recheckNow}>
               {rechecking() ? t('accounts.recheck.running') : t('accounts.recheck')}
             </Button>
           }
         />
       </SettingsGroup>
+    </>
+  );
+
+  return (
+    <>
+      <SettingsMasterDetail
+        part="accounts.master"
+        label={t('accounts.pane')}
+        items={items()}
+        selected={shown() ?? ''}
+        onSelect={setPicked}
+        search={{ placeholder: t('accounts.search'), value: query(), onInput: setQuery }}
+        empty={t('accounts.search.none')}
+      >
+        <Show when={shown()} keyed fallback={<SettingsEmpty part="accounts.search.empty" icon="search" title={t('accounts.search.none')} description={t('accounts.search.noneHint')} />}>
+          {(id) => (id === GENERAL ? <General /> : <HarnessDetail id={id} />)}
+        </Show>
+      </SettingsMasterDetail>
       <Show when={keysOf()}>{(h) => <Keys c={c} h={h()} keys={keysFor(h().id)} onClose={() => setKeysOf(undefined)} />}</Show>
       <Show when={adding()}>{(h) => <AddAccount brand={h().brand ?? h().name} onAdd={(label, kind) => addAnother(h(), label, kind)} onClose={() => setAdding(undefined)} />}</Show>
       <Show when={renaming()}>

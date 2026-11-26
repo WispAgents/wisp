@@ -15,6 +15,8 @@ const ui: PluginUiDef = {
   // Settings → Usage show it; HomeUsage stays for a later home input)
   extensions: [
     defineExtension({ id: 'budget.spare', attachTo: { id: 'shell.home:cards' }, component: drawnLater(lazy(() => import('./Spare.tsx'))) }),
+    // a harness's own stop line, in its Settings → Agents detail (harness audit r2: it was in Usage's per-harness group)
+    defineExtension({ id: 'budget.harness-stop', attachTo: { id: 'shell.settings:harness' }, component: lazy(() => import('./HarnessStop.tsx')) }),
   ],
   // Ask near the limit in the prompt boxes (v1 hold.js): asked before New task and a follow-up go
   // (its code and words load on the first send: ADR-0067); `budget_hold` is the server-side guard's refusal reason

@@ -2,6 +2,7 @@
 import type { SessionId } from "../SessionId";
 import type { TurnId } from "../TurnId";
 import type { Attachment } from "./Attachment";
+import type { HandoffContext } from "./HandoffContext";
 import type { Mode } from "./Mode";
 import type { RunPick } from "./RunPick";
 
@@ -31,4 +32,9 @@ team?: unknown,
  * nothing of the turns before it, and is marked as fresh with the conversation it left, so the old
  * conversation stays linked. Additive (2026-11-18).
  */
-fresh?: boolean, };
+fresh?: boolean, 
+/**
+ * Continue on… (ADR-0125): with a switch to another harness, what goes ahead of the prompt: the latest turn only
+ * (`summary`) or every turn it missed (`full`, as a switch without it does). Additive (2026-11-25).
+ */
+handoff?: HandoffContext, };

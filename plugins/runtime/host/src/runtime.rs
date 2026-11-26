@@ -772,8 +772,15 @@ impl Runtime {
 
     /// `runtime.followUp` (v1 `reply`): starts a turn, queues, interrupts, answers an open question, or
     /// holds, as the queue decider says.
-    #[allow(clippy::too_many_lines)] // one pass: lock, decide, then act on the plan
     pub async fn follow_up(self: &Arc<Self>, a: FollowUpArgs) -> Result<FollowedUp> {
+        self.follow_up_with_next(a, None).await
+    }
+
+    /// `follow_up` with one-off run extras (`next`: approveBlocked's `grants` or `once`) on its own queue item, put in
+    /// under the same lock as the item: `start_turn` reads them from the item it starts, so a prompt queued before it
+    /// never runs with them (audit doc19a: a task-level `next` went to whichever item started first).
+    #[allow(clippy::too_many_lines)] // one pass: lock, decide, then act on the plan
+    pub(crate) async fn follow_up_with_next(self: &Arc<Self>, a: FollowUpArgs, next: Option<serde_json::Value>) -> Result<FollowedUp> {
         let guard = self.task_lock(a.id.as_str()).await;
         let mut s = self.repo.session(a.id.as_str()).await?;
         if a.text.trim().is_empty() && a.attachments.is_empty() {
@@ -798,7 +805,7 @@ impl Runtime {
             _ => None,
         };
         let opts =
-            serde_json::to_value(serde_json::json!({ "mode": a.mode, "run": a.run, "confirmLimit": a.confirm_limit.then_some(true), "fresh": a.fresh.then_some(true) }))
+            serde_json::to_value(serde_json::json!({ "mode": a.mode, "run": a.run, "confirmLimit": a.confirm_limit.then_some(true), "fresh": a.fresh.then_some(true), "handoff": a.handoff, "next": next }))
                 .ok()
                 .filter(|v| v.as_object().is_some_and(|o| o.values().any(|x| !x.is_null())));
         let has_extras = opts.is_some() || a.by.is_some();

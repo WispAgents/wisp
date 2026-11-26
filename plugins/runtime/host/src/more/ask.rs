@@ -54,8 +54,6 @@ enum Late {
     Gone,
 }
 
-const SIDE_DENIED: &str = "Refused: a side discussion only reads. Ask the main task to do it.";
-
 /// The open question of `row`, as a write is about to store it, settled against the stored one (`stored`): an ask
 /// answered or taken back (`closed`) is never stored again (a stale copy still had it), and an open one (`open`, not
 /// closed) the copy left out is put back. A task whose turn runs keeps its state (a turn started from an older copy
@@ -559,18 +557,10 @@ impl Runtime {
             why: None,
         });
         let last = self.last_turn(a.id.as_str()).await?;
-        // a side discussion on a harness that can't ask before a write only reads (v1 `sideMode`); on one that can,
-        // its writes and commands are asked about as any task's (v1 #794: side discussions run commands)
-        if slot(&s).and_then(|m| m.get("sideOf")).is_some() && !h.info().side_gate {
-            if let Some(t) = &last {
-                self.add_row(
-                    a.id.as_str(),
-                    t.id.as_str(),
-                    tool_row(ToolKind::Answer, format!("Refused (a side discussion only reads): {}", p.action)),
-                )
-                .await?;
-            }
-            return Ok(json!({ "behavior": "deny", "message": SIDE_DENIED }));
+        // a side discussion has its main task's access: no card for its commands or writes; a write to a file the main
+        // task changed is proposed there instead (audit user-side-full-access, user-side-edits-for-approval)
+        if crate::run::is_side(&s) {
+            return self.side_approval(&s, h.as_ref(), &a.tool, &a.input).await;
         }
         let granted = slot(&s)
             .and_then(|m| m.get("grants"))

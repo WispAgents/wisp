@@ -85,6 +85,10 @@ pub enum HarnessEvent {
     /// the agent-side conversation id (resumes follow-ups)
     Session {
         id: String,
+        /// where the conversation is now (Claude: its last main-thread assistant message's uuid): a fork from this
+        /// turn ends its copy there (`HarnessRun::resume_at`). Additive (2026-11-25).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<String>,
     },
     Tool {
         kind: ToolKind,

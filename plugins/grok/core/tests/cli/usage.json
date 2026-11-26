@@ -1,0 +1,82 @@
+{
+  "sessionId": "01a154df-836c-7cd3-9f61-192d1864227a",
+  "updatedAt": "2026-10-19T15:56:04.861846+00:00",
+  "session": {
+    "inputTokens": 135481,
+    "outputTokens": 621,
+    "cachedReadTokens": 104064,
+    "cacheCreationTokens": 0,
+    "reasoningTokens": 411,
+    "totalTokens": 136102,
+    "modelCalls": 8,
+    "costUsdTicks": 1185920000,
+    "turnCount": 2,
+    "primaryModelId": "grok-4.7-build",
+    "modelUsage": {
+      "grok-4.7-build": {
+        "inputTokens": 135481,
+        "outputTokens": 621,
+        "cachedReadTokens": 104064,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 411,
+        "totalTokens": 136102,
+        "modelCalls": 8,
+        "costUsdTicks": 1185920000
+      }
+    }
+  },
+  "turns": [
+    {
+      "turnNumber": 1,
+      "endedAt": "2026-10-19T15:55:32.108484+00:00",
+      "inputTokens": 117219,
+      "outputTokens": 472,
+      "cachedReadTokens": 101888,
+      "cacheCreationTokens": 0,
+      "reasoningTokens": 264,
+      "totalTokens": 117691,
+      "modelCalls": 7,
+      "costUsdTicks": 844380000,
+      "turnCount": 1,
+      "primaryModelId": "grok-4.7-build",
+      "modelUsage": {
+        "grok-4.7-build": {
+          "inputTokens": 117219,
+          "outputTokens": 472,
+          "cachedReadTokens": 101888,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 264,
+          "totalTokens": 117691,
+          "modelCalls": 7,
+          "costUsdTicks": 844380000
+        }
+      }
+    },
+    {
+      "turnNumber": 2,
+      "endedAt": "2026-10-19T15:56:04.861846+00:00",
+      "inputTokens": 18262,
+      "outputTokens": 149,
+      "cachedReadTokens": 2176,
+      "cacheCreationTokens": 0,
+      "reasoningTokens": 147,
+      "totalTokens": 18411,
+      "modelCalls": 1,
+      "costUsdTicks": 341540000,
+      "turnCount": 1,
+      "primaryModelId": "grok-4.7-build",
+      "modelUsage": {
+        "grok-4.7-build": {
+          "inputTokens": 18262,
+          "outputTokens": 149,
+          "cachedReadTokens": 2176,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 147,
+          "totalTokens": 18411,
+          "modelCalls": 1,
+          "costUsdTicks": 341540000
+        }
+      }
+    }
+  ]
+}

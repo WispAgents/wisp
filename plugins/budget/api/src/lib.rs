@@ -18,8 +18,8 @@ use ts_rs::TS;
 use wisp_kernel::{Call, Event, Point, Result, Service};
 
 pub use model::{
-    AccountView, Banked, BankedCredit, BankedDue, Drain, DrainFailed, LimitWindow, LimitsReport, NoticeKind, OverageKind, OverageView,
-    Past, Period, RunSubject, Share, WindowNotice, WindowNow, WindowView,
+    AccountView, Banked, BankedCredit, BankedDue, CliSpend, Drain, DrainFailed, LimitWindow, LimitsReport, NoticeKind, OverageKind,
+    OverageView, Past, Period, RunSubject, Share, WindowNotice, WindowNow, WindowView,
 };
 pub use usage::{AccountTurns, COMPARE_DAYS, COMPARE_MIN, ModelCompare, PlanWindow, TaskUse, WhereView};
 

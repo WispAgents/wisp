@@ -21,6 +21,9 @@ static MODEL_LINE: Re = Re::new(r"(?m)^\s+[*-]\s+([\w.\-/:]+)");
 static DEFAULT_LINE: Re = Re::new(r"(?m)^\s+\*\s+([\w.\-/:]+)");
 const EFFORT_ORDER: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
+pub mod usage;
+pub use usage::{GrokUsage, Spent, UsageTurn, spent, usage};
+
 #[derive(Debug, Clone, Default)]
 pub struct GrokArgs<'a> {
     pub prompt_file: &'a str,

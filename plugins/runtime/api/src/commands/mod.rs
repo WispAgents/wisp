@@ -116,6 +116,10 @@ command!(Approval = "runtime.approval": ApprovalArgs => Value);
 command!(SetupAsk = "runtime.setup.ask": SetupAskArgs => SetupAsked);
 command!(PollAnswerOf = "runtime.pollAnswer": PollAnswerArgs => PollAnswer, read_only);
 command!(ApproveBlocked = "runtime.approveBlocked": ApproveBlockedArgs => Value);
+// a side discussion's write to a file its main task changed, proposed there: the user applies or discards it on the main
+// task's page. Additive (2026-11-25).
+command!(ProposalApply = "runtime.proposal.apply": ProposalArgs => Value);
+command!(ProposalDiscard = "runtime.proposal.discard": ProposalArgs => Value);
 command!(Btw = "runtime.btw": BtwArgs => BtwEntry);
 command!(BtwDrop = "runtime.btw.drop": BtwDropArgs => Ack);
 command!(Probe = "runtime.probe": ProbeArgs => ProbeAnswer);
@@ -144,6 +148,7 @@ command!(ProjectAdd = "runtime.projectAdd": ProjectAddArgs => ProjectAdded);
 command!(Discover = "runtime.discover": DiscoverArgs => Vec<FoundRepo>, read_only);
 command!(Folders = "runtime.folders": FoldersArgs => Vec<String>, read_only);
 command!(Usage = "runtime.usage": UsageArgs => UsageSummary, read_only);
+command!(HandoffPreview = "runtime.handoffPreview": HandoffPreviewArgs => HandoffPreviewView, read_only);
 command!(Sessions = "runtime.sessions": SessionsArgs => Vec<crate::harness::sessions::OutsideSession>, read_only);
 command!(AdoptSession = "runtime.adoptSession": AdoptSessionArgs => Created);
 command!(RestoreSession = "runtime.restoreSession": RestoreSessionArgs => Value);

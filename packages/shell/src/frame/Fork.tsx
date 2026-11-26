@@ -10,14 +10,17 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { fork, followUp } from './commands.ts';
 import { harnessOf } from './harness.ts';
 import { RunnerPicker } from './RunnerPicker.tsx';
-import { forkSteps, forkTurn, startPick, type ForkPick } from './fork.ts';
+import { forkReach, forkSteps, forkTurn, startPick, type ForkPick } from './fork.ts';
 import { longTime } from './rows-view.ts';
 import type { AgentOffer } from './runner.ts';
 import '../i18n/lazy.ts';
 
 const agentsOf = defineCommand<{ peer: string }, AgentOffer[]>({ id: 'runtime.agents', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the harness list' });
 /** the task's turns, read (the list's Fork… opens with no task page, so the store has none of them: QA round 15 #1) */
-const turnsOf = defineCommand<{ key: string; id: string }, readonly { id: string; idx: number; status?: string; started_at?: number; startedAt?: number }[]>({
+const turnsOf = defineCommand<
+  { key: string; id: string },
+  readonly { id: string; idx: number; status?: string; started_at?: number; startedAt?: number; ext?: Record<string, unknown> }[]
+>({
   id: 'runtime.turns',
   owner: (a) => a.key,
   wire: (a) => ({ id: a.id }),
@@ -31,6 +34,8 @@ interface TurnLike {
   readonly idx: number;
   readonly status?: string;
   readonly started_at?: number;
+  readonly ext?: Record<string, unknown>;
+  readonly body?: { readonly ext?: Record<string, unknown> };
 }
 
 export default function Fork(props: { readonly params: { readonly id: string; readonly turn?: string } }): JSX.Element {
@@ -46,7 +51,7 @@ export default function Fork(props: { readonly params: { readonly id: string; re
   const [read] = createResource(() =>
     shell.client.commands
       .run(turnsOf, { key, id: bare })
-      .then((r) => r.map((x): TurnLike => ({ id: x.id, session_id: bare, idx: x.idx, ...(x.status !== undefined && { status: x.status }), started_at: x.started_at ?? x.startedAt ?? 0 })))
+      .then((r) => r.map((x): TurnLike => ({ id: x.id, session_id: bare, idx: x.idx, ...(x.status !== undefined && { status: x.status }), ...(x.ext && { ext: x.ext }), started_at: x.started_at ?? x.startedAt ?? 0 })))
       .catch(() => [] as TurnLike[]),
   );
   const turns = (): TurnLike[] => {
@@ -54,6 +59,8 @@ export default function Fork(props: { readonly params: { readonly id: string; re
     return (own.length > 0 ? own : (read() ?? [])).toSorted((a, b) => a.idx - b.idx);
   };
   const turn = (): TurnLike | undefined => forkTurn(turns(), props.params.turn);
+  // what the copy carries on from: an earlier turn only where its harness can go back to it (runtime refuses the rest)
+  const reach = (): 'whole' | 'upTo' | 'latestOnly' => forkReach(turns(), turn());
   // the harnesses its machine has (v1 harnessesAt([place]).filter(available))
   const [offers] = createResource(() => shell.client.commands.run(agentsOf, { peer }).catch(() => [] as AgentOffer[]));
   const [edits, setEdits] = createSignal<ForkPick | undefined>();
@@ -73,7 +80,7 @@ export default function Fork(props: { readonly params: { readonly id: string; re
   const go = (): void => {
     const p = pick();
     const at = turn();
-    if (!p?.prompt.trim()) return;
+    if (!p?.prompt.trim() || reach() === 'latestOnly') return;
     const newId = entityKey(peer, newRowId());
     const now = Date.now();
     const steps = forkSteps(p, { of: key, newId, turnId: at?.id, firstTurnId: entityKey(peer, newRowId()), idx: at ? turns().filter((x) => x.idx <= at.idx).length : turns().length, at: now });
@@ -88,7 +95,7 @@ export default function Fork(props: { readonly params: { readonly id: string; re
   // named by the time it was asked, as the turn shows it: wisp never numbers turns
   const upTo = (): string => {
     const at = turn();
-    return !at || at.id === turns().at(-1)?.id ? t('shell.fork.whole') : t('shell.fork.upTo', { when: longTime(at.started_at ?? 0) });
+    return !at || reach() === 'whole' ? t('shell.fork.whole') : t('shell.fork.upTo', { when: longTime(at.started_at ?? 0) });
   };
   return (
     <Show when={pick() && read.state !== 'pending' && read.state !== 'unresolved'} fallback={<Text tone="muted">{t('shell.rerun.loading')}</Text>}>
@@ -125,12 +132,16 @@ export default function Fork(props: { readonly params: { readonly id: string; re
             <Button variant="ghost" size="sm" onClick={close} part="fork.cancel">
               {t('shell.stop.cancel')}
             </Button>
-            <Button variant="primary" size="sm" icon="fork" disabled={!x().prompt.trim() || !turn()} onClick={go} part="fork.go">
+            <Button variant="primary" size="sm" icon="fork" disabled={!x().prompt.trim() || !turn() || reach() === 'latestOnly'} onClick={go} part="fork.go">
               {t('shell.fork.go')}
             </Button>
           </Inline>
           <Text size="sm" tone="muted">
-            {turn() ? t('shell.fork.hint', { upTo: upTo(), title: row()?.title ?? '' }) : t('shell.fork.notYet')}
+            {!turn()
+              ? t('shell.fork.notYet')
+              : reach() === 'latestOnly'
+                ? t('shell.fork.latestOnly', { name: harnessOf(harnesses(), row()?.agent ?? '').name })
+                : t('shell.fork.hint', { upTo: upTo(), title: row()?.title ?? '' })}
           </Text>
           <RunnerPicker
             open={picking()}

@@ -118,6 +118,16 @@ pub struct BtwDropArgs {
     pub btw_id: String,
 }
 
+/// A side discussion's proposed write on its main task, applied or discarded by the
+/// user there. `id`: the main task. Additive (2026-11-25).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct ProposalArgs {
+    pub id: SessionId,
+    pub proposal: String,
+}
+
 /// Show in folder for a picture or video an answer showed (v1 POST /sessions/:id/reveal): `path` as the block named
 /// it. Additive (2026-11-12).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -404,6 +414,10 @@ pub struct AgentStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub setup: Option<crate::harness::SetupTip>,
+    /// the program wisp found and runs (Settings → Agents shows it under the harness). Additive (2026-11-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub bin: Option<String>,
 }
 
 /// Where a harness's detection stands on the `harnesses` topic (ADR-0066).
@@ -711,6 +725,11 @@ pub struct UsageArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub days: Option<u32>,
+    /// added 2026-11-25 (additive): the viewer's offset from UTC in minutes (`-Date#getTimezoneOffset()`), so
+    /// the window starts at local midnight and each bar is a local day; UTC when unset
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub tz_offset_min: Option<i32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
@@ -733,6 +752,12 @@ pub struct UsageSummary {
     /// added 2026-11-12: tasks the turns belong to
     #[serde(default)]
     pub sessions: u32,
+    /// added 2026-11-25 (additive, ADR-0124): of `priced`, the turns whose cost is a list-price estimate of their tokens
+    /// (the harness reported none); `cost_estimated`: `spend` holds at least one, so it shows as `~$x.xx`
+    #[serde(default)]
+    pub estimated: u32,
+    #[serde(default)]
+    pub cost_estimated: bool,
     /// added 2026-11-23 (TRY-32, additive): total tokens (read + output) across all harnesses
     #[serde(default)]
     #[ts(type = "number")]
@@ -752,6 +777,12 @@ pub struct UsageSummary {
     /// added 2026-11-12: one per day of the window, oldest first (v1 usage.js "Spend per day")
     #[serde(default)]
     pub daily: Vec<UsageDay>,
+    /// added 2026-11-25 (additive): each day split by harness, for the stacked chart; only days a harness ran
+    #[serde(default)]
+    pub daily_by_harness: Vec<UsageHarnessDay>,
+    /// added 2026-11-25 (additive): `daily` rolled up by ISO week (Monday first), oldest first
+    #[serde(default)]
+    pub weekly: Vec<UsageWeek>,
     /// added 2026-11-23 (TRY-32, additive): by harness (all models of each harness rolled up)
     #[serde(default)]
     pub harnesses: Vec<UsageRow>,
@@ -763,7 +794,7 @@ pub struct UsageSummary {
     pub runners: Vec<UsageRow>,
 }
 
-/// One day of `runtime.usage`'s window (UTC).
+/// One day of `runtime.usage`'s window (the viewer's local day; UTC without `tz_offset_min`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]
 pub struct UsageDay {
@@ -775,6 +806,45 @@ pub struct UsageDay {
     #[serde(default)]
     #[ts(type = "number")]
     pub tokens: u64,
+    /// added 2026-11-25 (additive, ADR-0124): `cost` holds a list-price estimate
+    #[serde(default)]
+    pub cost_estimated: bool,
+}
+
+/// One harness's share of one day of `runtime.usage`'s window (the viewer's local day).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct UsageHarnessDay {
+    /// `YYYY-MM-DD`
+    pub date: String,
+    pub agent: String,
+    pub cost: f64,
+    #[ts(type = "number")]
+    pub tokens: u64,
+    /// input tokens read from prompt cache
+    #[ts(type = "number")]
+    pub cache_read: u64,
+    pub turns: u32,
+    /// `cost` holds a list-price estimate (ADR-0124)
+    #[serde(default)]
+    pub cost_estimated: bool,
+}
+
+/// One ISO week of `runtime.usage`'s window: its days summed (a week the window cuts holds only its days in it).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct UsageWeek {
+    /// `YYYY-Www`, the ISO week
+    pub week: String,
+    /// its Monday, `YYYY-MM-DD`
+    pub start: String,
+    pub cost: f64,
+    pub turns: u32,
+    #[ts(type = "number")]
+    pub tokens: u64,
+    /// added 2026-11-25 (additive, ADR-0124): `cost` holds a list-price estimate (one of its days does)
+    #[serde(default)]
+    pub cost_estimated: bool,
 }
 
 /// One row of a breakdown: a harness, a project, or a harness · model.
@@ -795,6 +865,15 @@ pub struct UsageRow {
     /// added 2026-11-23 (TRY-32, additive): tasks the turns in this row belong to
     #[serde(default)]
     pub sessions: u32,
+    /// added 2026-11-25 (additive, ADR-0124): of `priced`, the turns whose cost is a list-price estimate of their tokens
+    /// (the harness reported none); `cost_estimated`: `cost` holds at least one, so it shows as `~$x.xx`
+    #[serde(default)]
+    pub estimated: u32,
+    #[serde(default)]
+    pub cost_estimated: bool,
+    /// added 2026-11-25 (additive): Copilot's premium requests, summed (its result's `usage.premiumRequests`)
+    #[serde(default)]
+    pub premium_requests: u32,
     /// added 2026-11-23 (TRY-32, additive): total tokens (read + output)
     #[serde(default)]
     #[ts(type = "number")]
