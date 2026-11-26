@@ -355,8 +355,19 @@ async fn ended_by_itself(
 ) {
     ctx.emit(&ctx.root_call(), &wisp_terminal_api::Changed { kind: key.0, id: key.1.clone(), state, code: Some(code), gone: false });
     if key.0 == TermKind::Run {
-        proxies.stop(&key.1);
-        crate::mark_run(ctx, &ctx.root_call(), &key.1, false, given(apps, &key.1)).await;
+        // a new run that took this one's place meanwhile keeps its proxy and its row (the map lock is held over the
+        // stop, and start_run puts its Term in the map before it starts a proxy)
+        let ours = {
+            let m = lock(map);
+            let ours = m.get(&key).is_some_and(|t| t.nth == nth);
+            if ours {
+                proxies.stop(&key.1);
+            }
+            ours
+        };
+        if ours {
+            crate::mark_run(ctx, &ctx.root_call(), &key.1, false, given(apps, &key.1)).await;
+        }
     }
     forget_later(ctx, map, apps, key, nth);
 }
