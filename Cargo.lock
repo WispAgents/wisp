@@ -6049,6 +6049,7 @@ dependencies = [
  "wisp-telemetry-api",
  "wisp-terminal-api",
  "wisp-terminal-core",
+ "wisp-testkit",
 ]
 
 [[package]]
