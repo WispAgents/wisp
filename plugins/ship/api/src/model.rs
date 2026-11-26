@@ -241,6 +241,57 @@ pub struct ConflictFix {
     pub why: Option<String>,
 }
 
+/// The Steward (ADR-0132): ship's follow loop sends the task its PR's failing checks, new review threads and (with
+/// `review`) another vendor's high findings, pushes what it fixed, and stops green or with a reason. Never merges.
+/// mode: fix | review. step: watching | fixing | pushing | green | stopped. Additive (2026-11-26).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "ship/")]
+pub struct Steward {
+    pub mode: String,
+    pub step: String,
+    /// the PR head the last pass was sent for: one pass per cause per head
+    #[serde(default)]
+    pub head: String,
+    #[serde(default)]
+    pub passes: StewardPasses,
+    /// what the running (or last) pass was about: checks | threads | review
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub causes: Vec<String>,
+    /// the review threads already sent (thread id + its last comment), capped
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub seen: Vec<String>,
+    /// the failures already sent (check name + error lines, hashed): one coming back stops the Steward
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub prints: Vec<String>,
+    /// who reviewed the green head ("Codex · gpt-6.2"), with `review`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reviewer: Option<String>,
+    /// why it stopped, or what it waits on
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub why: Option<String>,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub started_at: i64,
+}
+
+/// How many passes the Steward sent, per cause.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "ship/")]
+pub struct StewardPasses {
+    #[serde(default)]
+    pub checks: u32,
+    #[serde(default)]
+    pub threads: u32,
+    #[serde(default)]
+    pub review: u32,
+}
+
 /// One repo a task ships: its own worktree first, then its other folders' (`also`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "ship/")]
@@ -276,6 +327,10 @@ pub struct ShipTask {
     pub shipping: Option<Shipping>,
     #[serde(default)]
     pub conflict_fix: Option<ConflictFix>,
+    /// the Steward, when it's on for this task (ADR-0132). Additive (2026-11-26).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub steward: Option<Steward>,
     /// ms: a PR is polled fast for five minutes after a push
     #[serde(default)]
     pub pushed_at: i64,

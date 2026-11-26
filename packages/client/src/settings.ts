@@ -49,6 +49,24 @@ export interface SettingRow {
   locked_by?: string | null;
 }
 
+/** Who homeSetting reads for: a Client (its `home` is reactive) or a plugin client (its `homeNow` is). */
+export interface HomeReader {
+  readonly entities: EntityReader;
+  readonly home: PeerId | Readable<PeerId>;
+  readonly homeNow?: Readable<PeerId>;
+}
+
+/**
+ * One server setting as this client's own wisp holds it, read without declaring it (another plugin's key: the
+ * project order, the crew tint). Every peer this client reaches sends its own `setting` rows, so a bare
+ * `list('setting').find(key)` took whichever computer's row came first (the phone's second computer gave the first
+ * one's project order). It reads the home row by its key, and the home inside the value, so it follows setHome.
+ */
+export function homeSetting<T = Json>(c: HomeReader, key: string): Readable<T | undefined> {
+  const home = c.homeNow ?? (typeof c.home === 'function' ? c.home : (): PeerId => c.home as PeerId);
+  return computed(() => c.entities.row<SettingRow>('setting', entityKey(home(), key))()?.value as T | undefined);
+}
+
 export const setSetting = defineCommand<{ peer: PeerId; key: string; value: Json }>({
   id: 'settings.set',
   owner: (a) => a.peer,

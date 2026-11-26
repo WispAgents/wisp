@@ -2,6 +2,7 @@
 // export's args for the options ticked, the notes worth showing, and the text a bundle is copied or saved as.
 
 import type { Member } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface ShareOpts {
   kit: boolean;

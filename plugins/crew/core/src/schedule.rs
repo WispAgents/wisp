@@ -29,7 +29,9 @@ pub fn next_checkin(m: &Member, now: i64, zone: &dyn Zone) -> Option<i64> {
             at = c.next_run(t, zone);
         }
     }
-    let next = match (m.wake_at, at) {
+    // a wake-up that came this minute, its check-in refused: asked again the next minute
+    let wake = m.wake_at.map(|w| if w <= now && m.last_minute == Some(minute_of(now)) { (minute_of(now) + 1) * MIN } else { w });
+    let next = match (wake, at) {
         (Some(w), Some(a)) if w < a => Some(w),
         (Some(w), None) => Some(w),
         _ => at,
@@ -38,15 +40,16 @@ pub fn next_checkin(m: &Member, now: i64, zone: &dyn Zone) -> Option<i64> {
     next.map(|t| t.max(now))
 }
 
-/// Whether a check-in is due now: a wake-up that has come, or a cron minute that hasn't run yet.
+/// Whether a check-in is due now: a wake-up that has come, or a cron minute that hasn't run yet; either at most once a
+/// minute (a wake-up stays until its check-in starts, and the tick runs every 20 s).
 pub fn due_now(m: &Member, now: i64, zone: &dyn Zone) -> bool {
-    if m.paused {
+    if m.paused || m.last_minute == Some(minute_of(now)) {
         return false;
     }
     if m.wake_at.is_some_and(|w| w <= now) {
         return true;
     }
-    if m.cron.is_empty() || m.last_minute == Some(minute_of(now)) {
+    if m.cron.is_empty() {
         return false;
     }
     parse(&m.cron).is_ok_and(|c| c.matches_at(now, zone))

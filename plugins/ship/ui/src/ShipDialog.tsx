@@ -4,13 +4,14 @@
 // words come back here on Retry.
 
 import { createSignal, For, Match, onCleanup, Show, Switch, type JSX } from 'solid-js';
-import type { EntityKey, PluginClient } from '@wisp/client';
+import { entityKey, type EntityKey, type PluginClient } from '@wisp/client';
 import { Button, Checkbox, Field, Icon, Inline, Input, Skeleton, Stack, Text, TextArea, useSignal } from '@wisp/ui';
 import { prepare, write } from './commands.ts';
 import { flowsFor } from './flows.ts';
 import { t } from './i18n.ts';
 import { unsentLine } from './model/merge.ts';
 import { footLine, goLabel, infoGuess, routeFacts, shipBlock, stepsFor, type ShipGuess } from './model/ship.ts';
+import { stewardArg, stewardStart } from './model/steward.ts';
 import { useShell } from './shell.ts';
 import { useUnsent, withUnsent } from './unsent.ts';
 import type { ShipInfo, ShipRepo } from './types.ts';
@@ -64,6 +65,15 @@ export default function ShipDialog(props: { readonly client: PluginClient; reado
   const [body, setBody] = createSignal('');
   const [draft, setDraft] = createSignal(typed?.draft ?? false);
   const [saveTask, setSaveTask] = createSignal(typed?.saveTask ?? false);
+  // Keep it green (ADR-0132): the task's own Steward, else Settings → Ship's default; a failed ship's choice on Retry
+  const stewardSetting = useSignal(props.client.entities.row<{ value?: unknown }>('setting', entityKey(props.client.home, 'ship.steward')));
+  const [picked, setPicked] = createSignal<{ on: boolean; review: boolean } | undefined>(typed?.steward ? { on: typed.steward !== 'off', review: typed.steward === 'review' } : undefined);
+  // until a box is clicked they follow the task and the setting (either may arrive after the dialog opens)
+  const keepGreen = (): { on: boolean; review: boolean } => picked() ?? stewardStart(s()?.steward, stewardSetting()?.value);
+  const steward = (): boolean => keepGreen().on;
+  const stewardReview = (): boolean => keepGreen().review;
+  const setSteward = (on: boolean): void => void setPicked({ on, review: stewardReview() });
+  const setStewardReview = (review: boolean): void => void setPicked({ on: steward(), review });
   const scope = props.client.scope.child('ship-dialog');
   onCleanup(() => scope.dispose());
   const close = (): void => props.client.navigate({ t: 'closeOverlay', id: SHIP_VIEW as never });
@@ -131,7 +141,8 @@ export default function ShipDialog(props: { readonly client: PluginClient; reado
       return;
     }
     const g = infoGuess(i);
-    const values = { title: title() || i.title, body: g.update ? i.body : body(), draft: !g.update && draft(), ...(saveTask() && { saveTask: true }) };
+    const keep = stewardArg(steward(), stewardReview(), s()?.steward);
+    const values = { title: title() || i.title, body: g.update ? i.body : body(), draft: !g.update && draft(), ...(saveTask() && { saveTask: true }), ...(keep && { steward: keep }) };
     close();
     flows.start({ steps: stepsFor(dirty), values, update: g.update });
   };
@@ -165,6 +176,17 @@ export default function ShipDialog(props: { readonly client: PluginClient; reado
           </Show>
         </Inline>
       </Show>
+      {/* Keep it green (the Steward, ADR-0132): the task fixes its PR's failing checks and new review comments, wisp
+          pushes; the second box adds a review of each push by another vendor's model. Never merges */}
+      <Stack gap="2" part="ship.steward">
+        <Checkbox checked={steward()} onChange={setSteward} label={t('wisp.ship.dialog.steward')} disabled={!info()} part="ship.steward.on" />
+        <Show when={steward()}>
+          <Checkbox checked={stewardReview()} onChange={setStewardReview} label={t('wisp.ship.dialog.stewardReview')} disabled={!info()} part="ship.steward.review" />
+          <Text as="p" size="xs" tone="muted" part="ship.steward.hint">
+            {t(stewardReview() ? 'wisp.ship.dialog.stewardHintReview' : 'wisp.ship.dialog.stewardHint')}
+          </Text>
+        </Show>
+      </Stack>
       <Show when={info()?.hasWisp}>
         <Checkbox checked={saveTask()} onChange={setSaveTask} label={t('wisp.ship.dialog.saveTask')} disabled={!info()} part="ship.saveTask" />
       </Show>

@@ -164,3 +164,23 @@ test('delegation (agent) steps stay surfaced in both finished transcript mode an
   expect(quiet.map((e) => e.kind)).toEqual(['group', 'step', 'group']);
   expect(quiet[1]?.kind === 'step' && quiet[1].step.kind).toBe('agent');
 });
+
+test('thoughts stay surfaced as messages, never folded into the actions pill, in every mode', () => {
+  const steps: TranscriptStepRow[] = [
+    { kind: 'read', label: 'Reading a.ts', file: 'a.ts', seq: 1 },
+    { kind: 'thinking', label: 'Check-in 50 maps to…', out: 'Check-in 50 maps to existing code.', seq: 2 },
+    { kind: 'read', label: 'Reading b.ts', file: 'b.ts', seq: 3 },
+    { kind: 'run', label: 'ls', seq: 4 },
+    { kind: 'search', label: 'Searching x', seq: 5 },
+  ];
+  const finished = groupFinishedSteps(steps, false);
+  expect(finished.map((e) => e.kind)).toEqual(['step', 'step', 'group']);
+  expect(finished[1]?.kind === 'step' && finished[1].step.kind).toBe('thinking');
+
+  for (const running of [false, true]) {
+    const quiet = groupFinishedSteps(steps, running, (s) => s, true);
+    expect(quiet.map((e) => e.kind)).toEqual(['group', 'step', 'group']);
+    expect(quiet[1]?.kind === 'step' && quiet[1].step.kind).toBe('thinking');
+    for (const e of quiet) if (e.kind === 'group') expect(e.counts.thoughts).toBe(0);
+  }
+});

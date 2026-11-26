@@ -1,7 +1,8 @@
 // The project selector and switcher (frame/project-switch.ts): ⌘P, ⌘0–⌘9, and projects that hold their tasks.
 import { expect, test } from 'vitest';
-import { projectList, projectOf } from '../src/frame/rows-view.ts';
-import { PROJECT_SOURCE, PROJECT_TAIL, openSwitcher, projectShortcuts, projectTail } from '../src/frame/project-switch.ts';
+import { entityKey, peerId, signal } from '@wisp/client';
+import { PROJECT_ORDER, projectList, projectOf } from '../src/frame/rows-view.ts';
+import { PROJECT_SOURCE, PROJECT_TAIL, openSwitcher, projectShortcuts, projectsNow, projectTail } from '../src/frame/project-switch.ts';
 import { BUILT_IN_KEYS } from '../src/keys.ts';
 import type { ShellContext } from '../src/contract.ts';
 
@@ -20,7 +21,7 @@ test('cmd_p_opens_the_switcher_and_cmd_digits_jump_to_projects', () => {
   const rows = [{ id: 'a', name: 'api', path: '/a' }, { id: 'b', name: 'web', path: '/b' }];
   const list = (kind: string) => () => (kind === 'project' ? rows : []);
   const ctx = {
-    client: { entities: { list } },
+    client: { entities: { list, row: () => () => undefined }, home: () => 'laptop' },
     projectFilter: { value: () => 'all', set: (id: string) => set.push(id) },
     navigate: (i: unknown) => opened.push(i),
     t: (k: string) => k,
@@ -56,4 +57,25 @@ test('the_switcher_ends_with_add_and_manage_projects_and_the_bare_plus_is_gone',
   // the tail: only in the switcher (a narrowed palette), last, add then manage then the repo's history
   expect(projectTail(ctx, { narrowed: false })).toEqual([]);
   expect(projectTail(ctx, { narrowed: true }).map((i) => i.id)).toEqual(['project:add', 'project:manage', 'project:repo']);
+});
+
+// doc25c: ⌘1–⌘9 and ⌘K took the project order from whichever computer's `setting` row came first; it's this wisp's.
+test('projects_now_takes_the_home_computers_order_and_follows_set_home', () => {
+  const home = peerId('laptop');
+  const box = peerId('box');
+  // the store's rows by key; the other computer's order lands first
+  const settings = new Map<string, { key: string; value: string[] }>([
+    [entityKey(box, PROJECT_ORDER), { key: PROJECT_ORDER, value: ['b', 'a'] }],
+    [entityKey(home, PROJECT_ORDER), { key: PROJECT_ORDER, value: ['a', 'b'] }],
+  ]);
+  const projects = [{ id: 'a', name: 'api', path: '/a' }, { id: 'b', name: 'web', path: '/b' }];
+  const entities = {
+    list: (kind: string) => () => (kind === 'project' ? projects : kind === 'setting' ? [...settings.values()] : []),
+    row: (kind: string, key: string) => () => (kind === 'setting' ? settings.get(key) : undefined),
+  };
+  const now = signal(home);
+  const ctx = { client: { entities, home: now } } as unknown as ShellContext;
+  expect(projectsNow(ctx).map((p) => p.id)).toEqual(['a', 'b']);
+  now(box); // Client.setHome(box)
+  expect(projectsNow(ctx).map((p) => p.id)).toEqual(['b', 'a']);
 });

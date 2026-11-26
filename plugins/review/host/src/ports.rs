@@ -29,6 +29,8 @@ pub struct Task {
     pub base_ref: String,
     pub goal: String,
     pub review: Option<Review>,
+    /// ship's Steward reviews with another vendor (`wisp.ship` → `steward.mode: review`, not stopped, ADR-0132)
+    pub steward_review: bool,
 }
 
 /// What a session's ext slots hold, v1 shapes: `wisp.ship` → `{pr: {state, head}, shipping}`,
@@ -52,6 +54,7 @@ pub fn task_of(s: &wisp_runtime_api::model::Session) -> Task {
         base_ref: text(&wt["baseRef"]),
         goal: text(&s.ext_of(wisp_review_api::GOAL_EXT)["text"]),
         review: serde_json::from_value(s.ext_of(wisp_review_api::EXT).clone()).ok(),
+        steward_review: ship["steward"]["mode"] == "review" && ship["steward"]["step"] != "stopped",
     }
 }
 

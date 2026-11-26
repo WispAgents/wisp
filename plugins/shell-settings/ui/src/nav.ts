@@ -58,11 +58,12 @@ export function parseParams(p: unknown): SettingsParams {
   const o = p && typeof p === 'object' ? (p as Record<string, unknown>) : {};
   const pane = typeof o['pane'] === 'string' && o['pane'] !== '' ? o['pane'] : undefined;
   const filter = typeof o['filter'] === 'string' && o['filter'] !== '' ? o['filter'] : undefined;
-  return { ...(pane !== undefined && { pane }), ...(filter !== undefined && { filter }) };
+  const focus = typeof o['focus'] === 'string' && o['focus'] !== '' ? o['focus'] : undefined;
+  return { ...(pane !== undefined && { pane }), ...(filter !== undefined && { filter }), ...(focus !== undefined && { focus }) };
 }
 
-/** The intent that opens Settings on `pane` (or, on a phone, on the list). */
-export function settingsIntent(pane?: string, filter?: string, replace?: boolean) {
-  const params = { ...(pane !== undefined && { pane }), ...(filter !== undefined && { filter }) };
+/** The intent that opens Settings on `pane` (or, on a phone, on the list); `focus`: the setting whose row it lands on. */
+export function settingsIntent(pane?: string, filter?: string, replace?: boolean, focus?: string) {
+  const params = { ...(pane !== undefined && { pane }), ...(filter !== undefined && { filter }), ...(focus !== undefined && { focus }) };
   return { t: 'openOverlay' as const, overlay: { kind: 'viewer' as const, id: VIEW_ID, params }, ...(replace === true && { replace }) };
 }

@@ -17,7 +17,7 @@ members = [
 exclude = ["desktop/src-tauri"]
 
 [workspace.package]
-version = "1.0.0-alpha.14"
+version = "1.0.0-alpha.15"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
@@ -111,6 +111,9 @@ wisp-terminal-api = { path = "plugins/terminal/api" }
 wisp-terminal-core = { path = "plugins/terminal/core" }
 wisp-lsp-api = { path = "plugins/lsp/api" }
 wisp-lsp-core = { path = "plugins/lsp/core" }
+# computer use for every harness (ADR-0127)
+wisp-computer-api = { path = "plugins/computer/api" }
+wisp-computer-core = { path = "plugins/computer/core" }
 wisp-machine-api = { path = "plugins/machine/api" }
 wisp-machine-core = { path = "plugins/machine/core" }
 # channels, its transports, mcp, connectors (owned by the channels agent)
