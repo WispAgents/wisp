@@ -1435,6 +1435,9 @@
           "description": "Wait for the reset: a task at its usage limit carries on by itself after the reset, in the same conversation",
           "type": "boolean"
         },
+        "runtime.picker": {
+          "description": "The runner picker's Recent (the last 5 harness + model picks, latest first) and Favourites (starred): { recent: [{ agent, model }], favourites: [{ agent, model }] }"
+        },
         "runtime.projectOrder": {
           "description": "Your project order (names): the chips, New task's row and the Projects list show them so; drag to change it"
         },

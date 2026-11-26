@@ -402,7 +402,7 @@ fn commands(s: &mut Setup, slot: &Slot) {
     on!(s, slot, c::View, |st, ctx, a| {
         // the turns a client saw end are in what it reads (their drain, their Where it went): ADR-0073
         ctx.events_delivered(EVENTS_WAIT).await;
-        if a.agent == "antigravity" {
+        if live::read_on_view(&a.agent) {
             st.spawn_refresh(&ctx, &a.agent, "", true, false);
         }
         let mut v = lock(&st.budget).view(&a.agent, now(&ctx));

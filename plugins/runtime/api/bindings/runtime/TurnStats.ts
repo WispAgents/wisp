@@ -27,6 +27,11 @@ subagents?: Array<SubagentStat>,
  */
 compactions?: number, 
 /**
+ * the premium requests the turn used (Copilot's result `usage.premiumRequests`); absent: the harness doesn't
+ * count them. Additive (2026-11-25).
+ */
+premiumRequests?: number, 
+/**
  * what the turn read from the prompt cache and wrote to it, apart (`cache_tokens` is both, kept for older
  * readers): a usage line's cache share is the reads alone, the writes are input like any other. Absent: a turn
  * stored before (2026-11-25), or a harness that doesn't say. Additive (2026-11-25).

@@ -104,6 +104,9 @@ export interface DetectRow {
     models: { id: string; label: string }[];
     signedIn?: boolean;
     setup?: { tip: string; command?: string; url?: string };
+    /** its thinking levels and the program wisp runs (runtime AgentStatus; `bin` additive 2026-11-25) */
+    efforts?: string[];
+    bin?: string;
   };
 }
 

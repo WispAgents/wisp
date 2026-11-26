@@ -7,7 +7,7 @@ import type { MenuEntry } from '@wisp/ui/pure';
 import type { AccountRow, DetectRow, HarnessChange, HarnessRow, KeyRow, LoginRow, Pin, ToolRow } from './types.ts';
 import './i18n/lazy.ts';
 
-type Tone = 'neutral' | 'good' | 'warn' | 'bad';
+export type Tone = 'neutral' | 'good' | 'warn' | 'bad';
 
 const modelCount = (h: Pick<HarnessRow, 'models'> | undefined): number => (h?.models ?? []).filter((m) => m.id).length;
 
