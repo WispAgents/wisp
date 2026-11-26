@@ -105,6 +105,13 @@ fn send_cmd(
     }
 }
 
+/// Whether a send starts a new task: it is then filed under its project, with a worktree of its own in a git repo, as
+/// `wisp "task"` from the same folder is (`scripted::in_project`); the TUI's new tasks edited the checkout in place and
+/// sat under no project. A follow-up goes as it is.
+fn launches(cmd: &str) -> bool {
+    cmd == "runtime.create"
+}
+
 /// The terminal handed to `cmd` until it ends (the input thread paused), then taken back. → it succeeded.
 fn handed(paused: &AtomicBool, mut cmd: std::process::Command) -> bool {
     paused.store(true, Ordering::Relaxed);
@@ -184,9 +191,13 @@ pub async fn run(c: &Client, cwd: &str) -> Result<i32> {
             match e {
                 Effect::Quit => break 'run Ok(0),
                 Effect::Watch(id) => task = watch(c, &mut app, id).await,
-                Effect::Cmd { id, args, then } => {
+                Effect::Cmd { id, mut args, then } => {
                     let (c, tx) = (c.clone(), done_tx.clone());
                     tokio::spawn(async move {
+                        // in the command's own task: reading the projects never holds up a key
+                        if launches(&id) {
+                            crate::scripted::in_project(&c, &mut args).await;
+                        }
                         let r = c.cmd(&id, args).await.map_err(|e| e.to_string());
                         let _ = tx.send((then, r)).await;
                     });

@@ -215,9 +215,10 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         Some("run") if !(f.json || f.wait || !f.tries.is_empty() || f.compare.is_some()) => {
             return launch_and_open(p, &home, port, &cwd_s).await;
         }
-        Some(cmd) => commands::run(p, cmd, rest, &cwd_s, port).await?,
+        // `wisp wait` and `--wait` exit with how the task ended (`scripted::wait_exit`)
+        Some(cmd) => return commands::run(p, cmd, rest, &cwd_s, port).await,
         None if !p.words.is_empty() && (f.json || f.wait || !f.tries.is_empty() || f.compare.is_some()) => {
-            commands::run(p, "launch", &p.words, &cwd_s, port).await?;
+            return commands::run(p, "launch", &p.words, &cwd_s, port).await;
         }
         None if !p.words.is_empty() => return launch_and_open(p, &home, port, &cwd_s).await,
         None => desktop::open(&home, user_home, port, f.open, f.browser).await?,
@@ -283,6 +284,13 @@ fn misused_verb_path(p: &Parsed, flags: bool) -> Option<i32> {
 /// of the CLI's own (a plugin's name, or a typo of one).
 async fn not_a_task(p: &Parsed, home: &Path, port: u16, mut cat: Option<wisp_cli_core::verbs::Catalogue>) -> Option<i32> {
     let first = p.words.first()?;
+    // `wisp held x start`, `wisp merge x`: a task's command naming no task, never a prompt (nothing is launched)
+    if let Some(w) = words::no_task(&p.words, p.literal) {
+        // the way out every slip has (QA round 15): the words as a prompt
+        let all = p.words.join(" ").replace('"', "\\\"");
+        eprintln!("  ✗ no task {w}\n  To start a task with these words: wisp -- \"{all}\"   (or quote them as one: wisp \"{all}\")");
+        return Some(cli::USAGE_EXIT);
+    }
     // a built-in group and another word (`wisp crew start`): its plugin verbs too, to name them
     let maybe_group = p.words.len() >= 2 && p.literal != args::Literal::Task && words::is_group(first);
     if cat.is_none()

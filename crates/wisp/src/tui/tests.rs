@@ -832,3 +832,28 @@ fn the_thread_pane_shows_the_notes_and_the_header_how_worn_it_is() {
     a.key(ch('t'));
     assert_eq!(a.side, None);
 }
+
+/// A TUI new task skipped `scripted::in_project`: from a git repo it edited the checkout in place, filed under no
+/// project. It now goes out as `wisp "task"` from the same folder does; a follow-up as it was.
+#[test]
+fn a_new_task_from_a_git_repo_gets_its_own_worktree_and_a_follow_up_none() {
+    let root = std::env::temp_dir().join(format!("wisp-tui-launch-{}", std::process::id()));
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    let cwd = root.display().to_string();
+    let sent = |task: Option<String>, mode| {
+        let (id, mut args, _) = super::send_cmd(task, "fix it", &[], mode, false, "local-1".into(), &cwd);
+        if super::launches(&id) {
+            crate::scripted::file_in(&mut args, &json!([]));
+        }
+        args
+    };
+    assert_eq!(sent(None, super::app::Mode::Edits)["worktree"], json!(true));
+    assert_eq!(sent(None, super::app::Mode::Plan)["worktree"], json!(false), "plan mode writes nothing");
+    assert!(sent(Some("t1".into()), super::app::Mode::Edits).get("worktree").is_none(), "a follow-up stays as it is");
+    // a project's own spelling of the folder, and an explicit worktree kept
+    let projects = json!([{ "spec": { "path": "/var/p" } }]);
+    let mut a = json!({ "prompt": "x", "cwd": "/private/var/p/src", "worktree": false });
+    crate::scripted::file_in(&mut a, &projects);
+    assert_eq!((a["cwd"].as_str(), a["worktree"].as_bool()), (Some("/var/p/src"), Some(false)));
+    let _ = std::fs::remove_dir_all(&root);
+}
