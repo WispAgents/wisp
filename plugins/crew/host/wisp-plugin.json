@@ -18,6 +18,7 @@
     "runtime:turns",
     "sandbox:place",
     "sandbox:own",
+    "sandbox:drop",
     "machines:route",
     "machines:list",
     "machines:sessions",

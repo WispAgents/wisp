@@ -39,6 +39,16 @@ pub struct Launched {
     pub peer: String,
     pub task: String,
     pub sandbox: String,
+    /// how the project's `.wisp/sandbox.sh` went, when it ran
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<SetupRun>,
+}
+
+/// A run of the project's `.wisp/sandbox.sh` in a sandbox: whether it exited 0, and the end of what it said.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetupRun {
+    pub ok: bool,
+    pub tail: String,
 }
 
 /// `sandbox.start`: `sandbox.launch` that answers at once. The launch is a row of its own (`sandbox.launch` on
@@ -83,6 +93,9 @@ pub struct Placed {
     pub cwd: String,
     /// false: the owner's sandbox from before
     pub made: bool,
+    /// how the project's `.wisp/sandbox.sh` went, when it ran
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<SetupRun>,
 }
 
 /// What a sandbox's own wisp takes in: the project as a bundle, its uncommitted changes, its origin and author.
@@ -114,9 +127,12 @@ pub struct SeedArgs {
 #[serde(rename_all = "camelCase")]
 pub struct Seeded {
     pub cwd: String,
-    /// what `.wisp/sandbox.sh` said, when it ran (once)
+    /// what `.wisp/sandbox.sh` said, when it ran (once it succeeds: a failed run runs again with the next seed)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup: Option<String>,
+    /// that run failed (it exited non-zero, or couldn't start); `setup` says how
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub setup_failed: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

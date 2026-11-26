@@ -47,6 +47,11 @@ pub struct Held {
     pub owner: Option<Owner>,
     /// its drop failed once: the sweep tries again
     pub dropping: bool,
+    /// how its link is (`online`, `asleep`, `off`, `error`, …), as `machines.list` says it
+    pub state: String,
+    /// when its machine was added here (ms): an owner never written, or a job's never named, goes [`PENDING_MS`]
+    /// after this
+    pub added: i64,
 }
 
 /// The sandboxes among `machines.list`'s rows (the ones with `data.sandbox`).
@@ -62,6 +67,8 @@ pub fn held(machines: &[Value]) -> Vec<Held> {
                 sandbox,
                 owner: data.get("owner").and_then(|o| serde_json::from_value(o.clone()).ok()),
                 dropping: data.get("dropping").and_then(Value::as_bool).unwrap_or(false),
+                state: m.get("state").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                added: m.get("addedAt").and_then(Value::as_i64).unwrap_or_default(),
             })
         })
         .collect()
@@ -97,9 +104,38 @@ pub fn gone_with_member<'a>(all: &'a [Held], crew: &str) -> Vec<&'a Held> {
     all.iter().filter(|h| matches!(&h.owner, Some(Owner::Member { crew: c } | Owner::Job { crew: c, .. }) if c == crew)).collect()
 }
 
-/// What the sweep drops: a drop that failed, and a launch that never got its task.
+/// The task id the minute's look asks a sandbox's own wisp about: a task's, or a crew job's once it's named. A job's
+/// sandbox is placed as `{crew, job: ""}` and named after its task starts there; asked about `""` meanwhile, runtime
+/// answers not found and the sandbox went mid-launch.
+pub fn checkable(h: &Held) -> Option<&str> {
+    match &h.owner {
+        Some(Owner::Task { task: t } | Owner::Job { job: t, .. }) => Some(bare(t)).filter(|id| !id.is_empty()),
+        _ => None,
+    }
+}
+
+/// The sandboxes the minute's look asks, with the task id each is asked about: only those online now. Asking an
+/// asleep box wakes it (a routed command is a real request), so none ever slept; asleep, off or in error, it's kept
+/// and asked once it's up again.
+pub fn to_check(all: &[Held]) -> Vec<(&Held, &str)> {
+    all.iter().filter(|h| !h.dropping && h.state == "online").filter_map(|h| checkable(h).map(|id| (h, id))).collect()
+}
+
+/// What the sweep drops: a drop that failed, a launch that never got its task, and a crew job's sandbox never named
+/// (crew stopped before `sandbox.own`) [`PENDING_MS`] after its machine was added: it would hold one of the user's
+/// few sandboxes for good. One with no owner at all stays: `wisp sandbox new` makes the user's own that way (a make
+/// here that fails half way drops its box itself).
 pub fn sweep(all: &[Held], now: i64) -> Vec<&Held> {
-    all.iter().filter(|h| h.dropping || matches!(h.owner, Some(Owner::Pending { pending }) if now - pending > PENDING_MS)).collect()
+    all.iter()
+        .filter(|h| {
+            h.dropping
+                || match &h.owner {
+                    Some(Owner::Pending { pending }) => now - pending > PENDING_MS,
+                    Some(Owner::Job { job, .. }) => bare(job).is_empty() && now - h.added > PENDING_MS,
+                    _ => false,
+                }
+        })
+        .collect()
 }
 
 /// The sandbox a reusable owner already has (a member's own, a delegate's, a task's judges').
@@ -118,6 +154,18 @@ pub fn name_of(cwd: &str) -> String {
     let n: String = last.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' }).collect();
     let n = n.trim_matches(['-', '.']).chars().take(60).collect::<String>();
     if n.is_empty() { "project".to_owned() } else { n }
+}
+
+/// A crew member's own sandbox takes each job's project into a folder of its own (`~/code/<name>-<seed>`): the
+/// member runs jobs side by side in one sandbox, and a fresh copy into one shared `~/code/<name>` wiped the other
+/// job's live folder, and the last job's unpushed work. `seed` is any id unique to this seed; its last 8 letters or
+/// digits name it. [`name_of`]'s letters, 60 characters at most.
+pub fn seed_folder(cwd: &str, seed: &str) -> String {
+    let tail: Vec<char> = seed.chars().filter(char::is_ascii_alphanumeric).collect();
+    let tail: String = tail[tail.len().saturating_sub(8)..].iter().collect::<String>().to_ascii_lowercase();
+    let tail = if tail.is_empty() { "seed".to_owned() } else { tail };
+    let base: String = name_of(cwd).chars().take(60 - 1 - tail.len()).collect();
+    format!("{}-{tail}", base.trim_end_matches(['-', '.']))
 }
 
 /// Where the project goes raw (ADR-0060): `POST /api/sandbox/seed/<key>/<part>` on the sandbox, sent by
@@ -334,6 +382,79 @@ mod tests {
         ];
         let h = held(&list);
         assert_eq!(sweep(&h, PENDING_MS + 1).iter().map(|x| x.machine.as_str()).collect::<Vec<_>>(), ["s1", "s3"]);
+    }
+
+    /// A box as `machines.list` gives it: its data flattened in, its link's state, when it was added.
+    fn row(id: &str, state: &str, added: i64, owner: Value) -> Value {
+        json!({ "id": id, "sandbox": format!("sb-{id}"), "owner": owner, "state": state, "addedAt": added })
+    }
+
+    /// SBX-1: a crew job's sandbox is placed as `{crew, job: ""}` and named once its task started there. The minute's
+    /// look asked runtime there about task `""` (not found) and deleted it while it was still being seeded; it's never
+    /// asked now, and one crew never named goes with the sweep after `PENDING_MS`, as a launch that never got its task.
+    #[test]
+    fn a_crew_jobs_sandbox_not_named_yet_is_never_checked_and_the_sweep_takes_it_once_it_is_old() {
+        let h = held(&[
+            row("unnamed", "online", 1_000, json!({ "crew": "ada", "job": "" })),
+            row("named", "online", 1_000, json!({ "crew": "ada", "job": "m|t1" })),
+            row("task", "online", 1_000, json!({ "task": "p:t2" })),
+        ]);
+        assert_eq!(checkable(&h[0]), None, "job \"\" isn't asked about");
+        assert_eq!(checkable(&h[1]), Some("t1"));
+        assert_eq!(checkable(&h[2]), Some("t2"));
+        let ids = |v: Vec<&Held>| v.iter().map(|x| x.machine.clone()).collect::<Vec<_>>();
+        assert!(sweep(&h, 1_000 + PENDING_MS).is_empty(), "not before PENDING_MS");
+        assert_eq!(ids(sweep(&h, 1_001 + PENDING_MS)), ["unnamed"], "after it, only the one never named");
+    }
+
+    /// SBX-2: asking an asleep box about its task wakes it (machines sends a routed command to a box that wakes on a
+    /// request), so the minute's look kept every task's sandbox awake. Only online boxes are asked.
+    #[test]
+    fn the_minutes_look_asks_only_online_task_and_job_sandboxes() {
+        let mut list = Vec::new();
+        for state in ["online", "asleep", "off", "error", "connecting"] {
+            list.push(row(&format!("{state}-task"), state, 0, json!({ "task": "p:t1" })));
+            list.push(row(&format!("{state}-job"), state, 0, json!({ "crew": "ada", "job": "m|t2" })));
+            list.push(row(&format!("{state}-unnamed"), state, 0, json!({ "crew": "ada", "job": "" })));
+            list.push(row(&format!("{state}-member"), state, 0, json!({ "crew": "ada" })));
+            list.push(row(&format!("{state}-pending"), state, 0, json!({ "pending": 5 })));
+        }
+        let h = held(&list);
+        let asked: Vec<(&str, &str)> = to_check(&h).into_iter().map(|(h, id)| (h.machine.as_str(), id)).collect();
+        assert_eq!(asked, [("online-task", "t1"), ("online-job", "t2")]);
+    }
+
+    /// SBX-4: the sweep's rules around a make that failed half way. A make drops its own box on failure (host test
+    /// `tests/make.rs`); the sweep keeps an ownerless one, which `wisp sandbox new` makes as the user's own, keeps owned
+    /// ones, and takes failed drops and old launches as before.
+    #[test]
+    fn the_sweep_keeps_ownerless_and_owned_sandboxes_and_takes_failed_drops_and_old_launches() {
+        let h = held(&[
+            json!({ "id": "bare", "sandbox": "a0", "state": "off", "addedAt": 0 }),
+            row("member", "off", 0, json!({ "crew": "ada" })),
+            row("job", "off", 0, json!({ "crew": "ada", "job": "m|t1" })),
+            row("task", "off", 0, json!({ "task": "p:t1" })),
+            row("pending", "off", 0, json!({ "pending": 0 })),
+            json!({ "id": "dropping", "sandbox": "a5", "owner": { "task": "p:t" }, "dropping": true, "addedAt": PENDING_MS * 9 }),
+            json!({ "id": "young", "sandbox": "a6", "addedAt": PENDING_MS }),
+        ]);
+        assert_eq!(h[0].owner, None);
+        let ids: Vec<&str> = sweep(&h, PENDING_MS + 1).iter().map(|x| x.machine.as_str()).collect();
+        assert_eq!(ids, ["pending", "dropping"], "a `wisp sandbox new` box (no owner) is the user's");
+    }
+
+    /// SBX-3: each seed into a member's own sandbox gets a folder of its own, never another job's.
+    #[test]
+    fn a_members_seed_lands_in_a_folder_of_its_own() {
+        let a = seed_folder("/Users/me/code/web app/", "019a2b3c-0000-7000-8000-00000000abcd");
+        let b = seed_folder("/Users/me/code/web app/", "019a2b3c-0000-7000-8000-00000000abce");
+        assert_eq!(a, "web-app-0000abcd");
+        assert_ne!(a, b, "unique per seed");
+        assert_ne!(a, name_of("/Users/me/code/web app/"));
+        let long = seed_folder(&"x".repeat(200), "deadbeef");
+        assert!(long.len() <= 60 && long.ends_with("-deadbeef"), "{long}");
+        assert_eq!(seed_folder("/a/../.ssh", "../x"), "ssh-x", "letters, digits, ., _ and - only");
+        assert_eq!(name_of(&seed_folder("/a/web", "k1")), seed_folder("/a/web", "k1"), "the seed's name_of keeps it");
     }
 
     #[test]

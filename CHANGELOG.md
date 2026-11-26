@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sandboxes keep their work and their quota.** A crew job's sandbox is no longer deleted while it's still being set up (the minute's check asked about a task that didn't exist yet), and one crew never named goes after half an hour instead of staying for good. The minute's check only asks sandboxes that are awake, so an idle one finally gets to sleep, and a slow box no longer holds up the others. A sandbox that never came up, or whose owner couldn't be saved, is deleted at once instead of filling one of your 5. A crew member's own sandbox gives each job its own folder (`~/code/<project>-<id>`), so a job no longer wipes another job's live folder or the last job's unpushed work.
+- **A failing `.wisp/sandbox.sh` is shown, and runs again.** A `/sandbox` launch whose setup script failed now says so before it opens the task, with the end of what the script printed. A failed run no longer marks the setup as done, so the next seed tries it again.
+
 ## [1.0.0-alpha.16] - 2026-11-26
 
 ### Fixed

@@ -21,7 +21,13 @@ export interface LaunchRow {
   readonly agent: string;
   readonly peer?: string | null;
   readonly task?: string | null;
+  /** how the project's `.wisp/sandbox.sh` went, once started (when it ran) */
+  readonly setup?: { readonly ok: boolean; readonly tail: string } | null;
 }
+
+/** What a failed `.wisp/sandbox.sh` said, once the task started: the page shows it before opening the task. */
+export const setupFailed = (row: LaunchRow | undefined): string | undefined =>
+  row?.state === 'started' && row.setup && !row.setup.ok ? row.setup.tail : undefined;
 
 /** The rows the list shows: a started one is its task's own row by then. */
 export const shown = (rows: readonly LaunchRow[]): LaunchRow[] => rows.filter((r) => r.state !== 'started').sort((a, b) => b.at - a.at);
@@ -30,7 +36,8 @@ const STEPS: readonly LaunchStep[] = ['make', 'wake', 'copy', 'start'];
 
 /** Each step done, being done or still to come, from where the launch is. */
 export function stepsOf(row: LaunchRow | undefined): StepItem[] {
-  const at = row ? STEPS.indexOf(row.step as LaunchStep) : 0;
+  // started: every step done (its task is there)
+  const at = row?.state === 'started' ? STEPS.length : row ? STEPS.indexOf(row.step as LaunchStep) : 0;
   const failed = row?.state === 'failed';
   return STEPS.map((s, i) => ({
     title: t(`sandbox.step.${s}`),

@@ -1,14 +1,15 @@
 // A `/sandbox` launch's page (ADR-0047; the owner's 2026-11-25 report): the task's first line with the Sandbox pill
 // from the first frame, and its launch row as it goes: a glowing grid while the sandbox is made, started and gets the
 // project, step by step; Claude's sign-in for sandboxes right here when it's missing (Sign in → the browser → this
-// task goes on by itself, no trip to Settings); or why it didn't start, with Try again. Started: the task opens.
+// task goes on by itself, no trip to Settings); or why it didn't start, with Try again. Started: the task opens (after
+// what the project's `.wisp/sandbox.sh` said, when it failed: the task runs without what it sets up).
 import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
 import { entityKey, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Callout, GlowGrid, Icon, Inline, Input, Pill, Stack, Steps, Text, useSignal } from '@wisp/ui';
+import { Button, Callout, Code, GlowGrid, Icon, Inline, Input, Pill, Stack, Steps, Text, useSignal } from '@wisp/ui';
 import { claudeBegin, claudeCode, dismiss, retry, type SigninRow } from './commands.ts';
 import { t } from './i18n.ts';
-import { LAUNCH, LAUNCHES_TOPIC, stepsOf, type LaunchRow } from './launches.ts';
+import { LAUNCH, LAUNCHES_TOPIC, setupFailed, stepsOf, type LaunchRow } from './launches.ts';
 import { SIGNIN } from './signin-kind.ts';
 import type { LaunchingParams } from './views.ts';
 import './i18n/lazy.ts';
@@ -25,15 +26,20 @@ export default function Launching(props: { readonly client: PluginClient; readon
   const signinRow = useSignal(c.entities.row<SigninRow>(SIGNIN, entityKey(peer, 'claude')));
   const signin = (): SigninRow | undefined => signinRow() as SigninRow | undefined;
   const title = (): string => launch()?.title || props.params.prompt?.split('\n').find((l) => l.trim())?.trim().slice(0, 80) || '';
-  const state = createMemo(() => launch()?.state ?? (props.params.prompt ? 'preparing' : 'gone'));
+  // started with its `.wisp/sandbox.sh` failed: what it said, kept here (the row goes a minute after the start)
+  const [setup, setSetup] = createSignal<{ readonly tail: string; readonly peer: string; readonly task: string } | undefined>();
+  const state = createMemo(() => (setup() ? 'setup' : (launch()?.state ?? (props.params.prompt ? 'preparing' : 'gone'))));
 
-  // started: the task itself, once
+  // started: the task itself, once; a failed setup is shown first, with the task a click away
   let opened = false;
+  const openTask = (peerId: string, task: string): void => c.navigate({ t: 'openTask', id: entityKey(peerId as PeerId, task) as never });
   createEffect(() => {
     const l = launch();
     if (!opened && l?.state === 'started' && l.peer && l.task) {
       opened = true;
-      c.navigate({ t: 'openTask', id: entityKey(l.peer as PeerId, l.task) as never });
+      const tail = setupFailed(l);
+      if (tail === undefined) openTask(l.peer, l.task);
+      else setSetup({ tail, peer: l.peer, task: l.task });
     }
   });
 
@@ -91,54 +97,73 @@ export default function Launching(props: { readonly client: PluginClient; readon
           </Stack>
         }
       >
-        <GlowGrid state={glow()} part="sandbox.launching.grid">
-          <Show when={state() === 'preparing' || state() === 'started'}>
-            <Icon name="box" size="lg" />
-            <Text weight="semibold" size="md">
-              {t('sandbox.preparing')}
-            </Text>
-            <Text size="sm" tone="muted" align="center">
-              {t('sandbox.preparing.hint')}
-            </Text>
-          </Show>
-          <Show when={state() === 'signin'}>
-            <Icon name="lock" size="lg" />
-            <Text weight="semibold" size="md">
-              {inBrowser() ? t('sandbox.signin.browser') : t('sandbox.signin.title')}
-            </Text>
-            <Text size="sm" tone="muted" align="center">
-              {inBrowser() ? t('sandbox.signin.browser.hint') : t('sandbox.signin.lede')}
-            </Text>
-            <Show
-              when={inBrowser()}
-              fallback={
-                <Button variant="primary" icon="lock" loading={starting()} onClick={signIn} part="sandbox.launching.signin">
-                  {t('sandbox.signin.go')}
-                </Button>
-              }
-            >
-              <Show when={signin()?.state === 'saving'} fallback={
-                <Show when={signin()?.link}>
-                  {(link) => (
-                    <Button size="sm" variant="secondary" icon="web" onClick={() => void shell.platform.openExternal(link())}>
-                      {t('sandbox.signin.reopen')}
-                    </Button>
-                  )}
+        <Show when={state() === 'setup'}>
+          {/* the sandbox is up and the task runs there: what the project's setup said, and the task a click away */}
+          <Steps items={stepsOf(undefined).map((s) => ({ ...s, status: 'done' as const }))} part="sandbox.launching.steps" />
+          <Callout tone="warn" title={t('sandbox.setup.failed')} part="sandbox.launching.setup">
+            <Stack gap="2">
+              <Text size="sm">{t('sandbox.setup.failed.hint')}</Text>
+              <Code block plain wrap part="sandbox.launching.setup.tail">
+                {setup()?.tail ?? ''}
+              </Code>
+            </Stack>
+          </Callout>
+          <span>
+            <Button size="sm" variant="primary" onClick={() => setup() && openTask(setup()?.peer ?? '', setup()?.task ?? '')} part="sandbox.launching.open">
+              {t('sandbox.list.open')}
+            </Button>
+          </span>
+        </Show>
+        <Show when={state() !== 'setup'}>
+          <GlowGrid state={glow()} part="sandbox.launching.grid">
+            <Show when={state() === 'preparing' || state() === 'started'}>
+              <Icon name="box" size="lg" />
+              <Text weight="semibold" size="md">
+                {t('sandbox.preparing')}
+              </Text>
+              <Text size="sm" tone="muted" align="center">
+                {t('sandbox.preparing.hint')}
+              </Text>
+            </Show>
+            <Show when={state() === 'signin'}>
+              <Icon name="lock" size="lg" />
+              <Text weight="semibold" size="md">
+                {inBrowser() ? t('sandbox.signin.browser') : t('sandbox.signin.title')}
+              </Text>
+              <Text size="sm" tone="muted" align="center">
+                {inBrowser() ? t('sandbox.signin.browser.hint') : t('sandbox.signin.lede')}
+              </Text>
+              <Show
+                when={inBrowser()}
+                fallback={
+                  <Button variant="primary" icon="lock" loading={starting()} onClick={signIn} part="sandbox.launching.signin">
+                    {t('sandbox.signin.go')}
+                  </Button>
+                }
+              >
+                <Show when={signin()?.state === 'saving'} fallback={
+                  <Show when={signin()?.link}>
+                    {(link) => (
+                      <Button size="sm" variant="secondary" icon="web" onClick={() => void shell.platform.openExternal(link())}>
+                        {t('sandbox.signin.reopen')}
+                      </Button>
+                    )}
+                  </Show>
+                }>
+                  <Button size="sm" variant="secondary" loading>
+                    {t('sandbox.claude.saving')}
+                  </Button>
                 </Show>
-              }>
-                <Button size="sm" variant="secondary" loading>
-                  {t('sandbox.claude.saving')}
-                </Button>
               </Show>
             </Show>
-          </Show>
-          <Show when={state() === 'failed'}>
-            <Icon name="warn" size="lg" />
-            <Text weight="semibold" size="md">
-              {t('sandbox.failed')}
-            </Text>
-          </Show>
-        </GlowGrid>
+            <Show when={state() === 'failed'}>
+              <Icon name="warn" size="lg" />
+              <Text weight="semibold" size="md">
+                {t('sandbox.failed')}
+              </Text>
+            </Show>
+          </GlowGrid>
+        </Show>
         <Show when={state() === 'signin' && signin()?.state === 'link'}>
           <Inline gap="2" part="sandbox.launching.code">
             <Input size="sm" value={code()} onInput={setCode} placeholder={t('sandbox.signin.code')} aria-label={t('sandbox.signin.code')} onKeyDown={(e) => e.key === 'Enter' && sendCode()} />
