@@ -91,6 +91,46 @@ pub struct Running {
     pub feed: wisp_store::Subscription,
     /// glibc's heap handed back after bursts of first looks (ADR-0084), stopped with the server
     pub trimmer: Option<tokio::task::JoinHandle<()>>,
+    /// this home's one server ([`lock_home`]): held until the server is gone
+    _home_lock: HomeLock,
+}
+
+/// `<home>/server.lock`, locked by the one server running on that home. Two servers on one home (a `wisp serve` and the
+/// headless one a command started, the app's and a terminal's) each ran its triggers and schedules, and the second
+/// clobbered `server.json` and removed it on exit. The OS frees the lock however the process ends, so a crash never
+/// leaves a stale one behind.
+#[derive(Debug)]
+pub struct HomeLock {
+    _file: std::fs::File,
+}
+
+fn lock_file(home: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::create_dir_all(home)?;
+    std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(home.join("server.lock"))
+}
+
+/// The home's lock, or the words for the server that holds it: `wisp is already running for this home at <url> (pid N)`
+/// (from its `server.json`, while it has written one).
+pub fn lock_home(home: &Path) -> Result<HomeLock> {
+    let file = lock_file(home)?;
+    match file.try_lock() {
+        Ok(()) => Ok(HomeLock { _file: file }),
+        Err(std::fs::TryLockError::WouldBlock) => {
+            let v: Option<serde_json::Value> = std::fs::read(home.join("server.json")).ok().and_then(|b| serde_json::from_slice(&b).ok());
+            let field = |k: &str| v.as_ref().and_then(|v| v.get(k)).map(|x| x.as_str().map_or_else(|| x.to_string(), str::to_owned));
+            Err(CliError::said(match (field("url"), field("pid")) {
+                (Some(url), Some(pid)) => format!("wisp is already running for this home at {url} (pid {pid})"),
+                (Some(url), None) => format!("wisp is already running for this home at {url}"),
+                _ => "wisp is already running for this home (it is still starting)".to_owned(),
+            }))
+        }
+        Err(std::fs::TryLockError::Error(e)) => Err(CliError::Io(e)),
+    }
+}
+
+/// Whether a live server holds `home` ([`lock_home`]): asked and let go at once, nothing else touched.
+pub fn home_held(home: &Path) -> bool {
+    lock_file(home).is_ok_and(|f| matches!(f.try_lock(), Err(std::fs::TryLockError::WouldBlock)))
 }
 
 /// What `config` reads in full: the kernel's own kinds (settings, plugins). Plugins add theirs.
@@ -270,6 +310,8 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     let fallback = if box_mode { Group::Box } else { Group::Default };
     let group = env("WISP_PLUGINS").and_then(|g| Group::named(&g)).unwrap_or(fallback);
     tracing::info!("plugins in this build: {:?}", crate::groups::compiled(group));
+    // one server per home, before its store is opened or its server.json written; a second says where the first is
+    let home_lock = lock_home(home)?;
     let store = open_store(home)?;
     // bound first: the agents' runs are told this address before the edge serves it
     let ip: IpAddr = host
@@ -330,7 +372,7 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     let edge = Edge::new(cfg, backend, hub);
 
     let server = wisp_api::serve(edge, listener).await?;
-    Ok(Running { server, kernel, started, store, feed, trimmer })
+    Ok(Running { server, kernel, started, store, feed, trimmer, _home_lock: home_lock })
 }
 
 /// What the desktop app may tell its server on the stdin pipe, one line each. Nothing else is read there, and nothing
@@ -452,6 +494,28 @@ mod tests {
                 .filter(|s| s.kind.starts_with("threads_"))
                 .all(|s| !(s.matches)("list") && !(s.matches)("config"))
         );
+    }
+
+    /// Two servers ran on one home (each running its triggers, the second clobbering server.json): the second is
+    /// refused, naming the first; another home is its own, and the lock goes with its holder.
+    #[test]
+    fn one_server_per_home_and_the_lock_goes_with_its_holder() {
+        let root = std::env::temp_dir().join(format!("wisp-home-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (a, b) = (root.join("a"), root.join("b"));
+        let held = super::lock_home(&a).unwrap_or_else(|e| panic!("{e}"));
+        assert!(super::home_held(&a));
+        let said = super::lock_home(&a).map(|_| ()).unwrap_err().to_string();
+        assert_eq!(said, "wisp is already running for this home (it is still starting)");
+        std::fs::write(a.join("server.json"), r#"{"url":"http://127.0.0.1:4477","port":4477,"pid":42}"#).unwrap_or_default();
+        let said = super::lock_home(&a).map(|_| ()).unwrap_err().to_string();
+        assert_eq!(said, "wisp is already running for this home at http://127.0.0.1:4477 (pid 42)");
+        let other = super::lock_home(&b).unwrap_or_else(|e| panic!("another home: {e}"));
+        drop(held);
+        assert!(!super::home_held(&a), "released with its holder");
+        let again = super::lock_home(&a).unwrap_or_else(|e| panic!("after the first is gone: {e}"));
+        drop((again, other));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

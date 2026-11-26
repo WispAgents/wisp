@@ -32,6 +32,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- `wisp wait` and `wisp "…" --wait` exit with how the task ended: 0 done or review, 1 failed, stopped or blocked, 2 when it asks you something, 124 when the wait timed out. They exited 0 every time. `--timeout 30s|10m|2h` sets how long they wait (30 minutes by default), and `--json` says `"timedOut": true` when the wait ran out.
+- Installed from npm, one Ctrl-C in `wisp attach` detaches again, as it says. The launcher sent the terminal's Ctrl-C to wisp a second time, and a second Ctrl-C stops the task. `kill <pid>` and supervisors still reach wisp through the launcher.
+- Only one wisp server runs on a home (`~/.wisp`). A second `wisp serve` says `wisp is already running for this home at <url> (pid N)` and exits, instead of running every trigger and schedule a second time and taking over `server.json`. A command finds the running server instead of starting another.
+- `wisp merge last`, `wisp ship last` and a short id merge or ship that task. They launched an agent task with those words. `wisp held <id> start` with an id that names no task, and `wisp merge x`, say `no task x` and launch nothing.
+- A new task from the TUI gets its own worktree in a git repo and is filed under its project, as `wisp "task"` from the same folder is. It edited the checkout in place.
+
 - Chat mode: a turn whose answer leaves a dev server or another background task running now ends, and the follow-ups queued behind it start. Before, the turn stayed in Working for as long as the background task ran. With wisp blocks on and Chat mode off, a turn that says it will report back still waits for its background tasks, but for at most 30 minutes without new output.
 - Two permission prompts asked at once (parallel tool calls) now both wait for you: the card shows the first, and the next one comes up once you answer it. Before, the second replaced the first, which was denied with "No answer from the user in time". A question the agent replaces with a newer one now says so in the transcript, and the agent is told it was replaced instead of "the user did not answer".
 - A permission prompt nobody answers for 30 minutes is denied and taken off the task, and the task goes back to Working. Before, its card stayed up and the task waited on it, and a late **Allow** said "You allowed" for a call that never ran.

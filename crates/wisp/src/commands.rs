@@ -14,28 +14,43 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
 }
 
 #[allow(clippy::many_single_char_names)]
-pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -> Result<()> {
+pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -> Result<i32> {
     let f = &p.flags;
+    // a bad --timeout is said before anything starts or launches
+    let limit = match sc::wait_timeout(f.timeout.as_deref()) {
+        Ok(d) => d,
+        Err(e) if cmd == "wait" || (cmd == "launch" && f.wait) => {
+            eprintln!("  ✗ {e}");
+            return Ok(crate::cli::USAGE_EXIT);
+        }
+        Err(_) => Duration::ZERO,
+    };
     let c = Client::connect(port, true).await?;
-    // `wisp show last`, `stop last`, …: the newest task (QA round 14 #7)
+    // `wisp show last`, `stop last`, `merge last`, …: the newest task (QA round 14 #7)
     let resolved: Vec<String>;
-    let args = if matches!(cmd, "show" | "stop" | "wait" | "reply" | "btw" | "held") && args.first().is_some_and(|a| a == "last") {
+    let args = if matches!(cmd, "show" | "stop" | "wait" | "reply" | "btw" | "held" | "ship" | "merge")
+        && args.first().is_some_and(|a| a == "last")
+    {
         resolved = std::iter::once(sc::task_id(&c, "last").await?).chain(args[1..].iter().cloned()).collect();
         &resolved[..]
     } else {
         args
     };
+    // the two that wait exit with how the task ended (`sc::wait_exit`); every other command 0 when it worked
     match cmd {
-        "launch" => launch(&c, p, args, cwd).await,
-        "ls" | "list" => sc::ls(&c, f).await,
-        "show" => sc::show(&c, f, need(args.first(), "session id")?, None).await,
+        "launch" => return launch(&c, p, args, cwd, limit).await,
         "wait" => {
             let id = need(args.first(), "session id")?;
             // a task that isn't there is said at once, never waited for (QA round 11: `wisp wait x` hung 30 minutes)
             c.cmd("runtime.get", json!({ "id": id })).await?;
-            let w = sc::wait(&c, id, Duration::from_secs(30 * 60)).await?;
-            sc::show(&c, f, id, Some(w)).await
+            let w = sc::wait(&c, id, limit).await?;
+            return sc::shown(&c, f, id, Some(w)).await;
         }
+        _ => {}
+    }
+    let done: Result<()> = match cmd {
+        "ls" | "list" => sc::ls(&c, f).await,
+        "show" => sc::show(&c, f, need(args.first(), "session id")?, None).await,
         "reply" => sc::reply(&c, f, args).await,
         "btw" => {
             let id = need(args.first(), "session id")?;
@@ -77,12 +92,14 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
         "plugin" | "plugins" => crate::plugin_cmd::run(&c, p, args).await,
         "crew" => crate::plugin_cmd::crew(&c, p, args).await,
         other => Err(CliError::said(format!("unknown command {other}"))),
-    }
+    };
+    done.map(|()| 0)
 }
 
 /// `--compare a[:model],b`: one task per harness, the same ask (ADR-0027: compare is reruns side by side).
 #[allow(clippy::many_single_char_names)] // c, p, f as in the rest of the CLI
-async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()> {
+/// With `--wait`: the code a wait exits with, the worst of the runs' ([`sc::wait_exit`]).
+async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str, limit: Duration) -> Result<i32> {
     let f = &p.flags;
     // under a formula, `--agent` may name one of its agents: resources.overlay checks it with the formula's (ADR-0111)
     if f.formula.is_empty()
@@ -97,7 +114,7 @@ async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()
     }
     if !f.tries.is_empty() {
         // Try it two ways: one harness, run B with what --try names changed (ADR-0056)
-        return crate::trial_cli::launch(c, f, &prompt, cwd).await;
+        return crate::trial_cli::launch(c, f, &prompt, cwd).await.map(|()| 0);
     }
     let mut made = Vec::new();
     // `--formula f.yml` is the shell's own path (where you typed it), whatever `--cwd` names for the task
@@ -135,17 +152,18 @@ async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()
     if !f.wait {
         let lines: Vec<String> = made.iter().map(|m| format!("  ◌ launched: {}  wisp attach {}", s(m, "id"), s(m, "id"))).collect();
         out(f, &json!(made), &lines.join("\n"));
-        return Ok(());
+        return Ok(0);
     }
+    let mut code = 0;
     for m in &made {
         let id = s(m, "id").to_owned();
         if !f.json {
             eprintln!("  ◌ launched: {id} — waiting…");
         }
-        let w = sc::wait(c, &id, Duration::from_secs(30 * 60)).await?;
-        sc::show(c, f, &id, Some(w)).await?;
+        let w = sc::wait(c, &id, limit).await?;
+        code = code.max(sc::shown(c, f, &id, Some(w)).await?);
     }
-    Ok(())
+    Ok(code)
 }
 
 /// `wisp recipes`: the declared tasks (`tasks:` in a formula; recipes are tasks with `{params}`).
