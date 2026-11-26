@@ -456,7 +456,8 @@ pub fn still_ours(cur: &GoalState, ids: &[String]) -> bool {
 /// After a restart (v1 `interrupted`): checks that were under way never vote; their records say so, and their
 /// tasks' goals go back to working and their last answers are judged again. A round cut before its first check's record
 /// was written (`judging` is written first) has no record: its task's slot says `judging`, and is found by it. A task
-/// its round held in Working is held again, and lands after it.
+/// its round held in Working is held again, and lands after it. A task left in Working by a round cut with no such
+/// mark (`hold::stranded`) is judged again or landed.
 pub(crate) async fn recover(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, hold: &Holds) {
     let call = ctx.root_call();
     let mut ids = runs::interrupted(ctx, now(ctx)).await;
@@ -465,6 +466,7 @@ pub(crate) async fn recover(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflig
             ids.push(id);
         }
     }
+    let mut done: Vec<String> = Vec::new();
     for id in ids {
         let Ok(task) = task_of(ctx, &call, &id).await else { continue };
         let was = raw_of(&task);
@@ -480,6 +482,29 @@ pub(crate) async fn recover(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflig
             held_round(ctx, defaults, live, hold, &id, last.id.as_str()).await;
         } else {
             judge_turn(ctx, defaults, live, &id, last.id.as_str()).await;
+        }
+        done.push(id);
+    }
+    // a round cut where nothing above shows it (after the hold took the task, before `judging` was written; or after
+    // the verdict, before its landing): the task sat in Working for ever
+    let rows = ctx.run::<rt::List>(&call, rt::ListArgs { archived: Some(false), limit: None }).await.unwrap_or_default();
+    for row in rows.iter().filter(|r| r.state == wisp_runtime_api::model::SessionState::Running) {
+        let id = row.id.as_str();
+        if done.iter().any(|d| d == id) {
+            continue;
+        }
+        let Ok(task) = task_of(ctx, &call, id).await else { continue };
+        let turns = turns_of(ctx, &call, id).await.unwrap_or_default();
+        let Some(last) = turns.last() else { continue };
+        match crate::hold::stranded(&task, last) {
+            Some(crate::hold::Stranded::Judge) => held_round(ctx, defaults, live, hold, id, last.id.as_str()).await,
+            Some(crate::hold::Stranded::Land) => {
+                let _landing = hold.landing(id);
+                if let Err(err) = ctx.run::<rt::Settle>(&call, rt::SettleArgs { id: id.into(), quiet: false }).await {
+                    tracing::warn!(task = %id, "goal: runtime.settle: {}", err.message);
+                }
+            }
+            None => {}
         }
     }
 }

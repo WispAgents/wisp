@@ -264,7 +264,7 @@ pub(crate) fn gone() -> WireError {
 /// Placed against the member as they are after the awaits, not the copy `m`: two jobs given at once both wait (each
 /// wrote back its own copy's queue, and one was lost), and a member removed meanwhile isn't brought back. The place a
 /// job that starts takes is reserved as it's decided: two given at once to an idle member both read it idle, and both
-/// started past its limit.
+/// started past its limit. A job that fails to start gives its place back and waits at the head of the queue.
 pub(crate) async fn assign(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: WaitingJob) -> Result<c::Started, WireError> {
     record_link(ctx, st, &m.id, &w).await;
     let (busy, seen) = busy_of(ctx, call, st, m).await;
@@ -282,7 +282,18 @@ pub(crate) async fn assign(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: Wa
     match placed {
         (Some(slot), _) => {
             let m = st.member(&m.id)?;
-            Ok(c::Started { session: Some(start(ctx, call, st, &m, &w, None, slot).await?), ..c::Started::default() })
+            match start(ctx, call, st, &m, &w, None, slot).await {
+                Ok(session) => Ok(c::Started { session: Some(session), ..c::Started::default() }),
+                // its place is given back (the slot dropped) and the job waits first in line, as a drain's does on a
+                // full grid: it's never lost, and the next drain tries it again
+                Err(e) => {
+                    tracing::warn!(member = %m.name, error = %e.message, "crew job didn't start; it waits first in line");
+                    let back = WaitingJob { id: id.clone(), at, ..w };
+                    st.update(&m.id, |live| live.queue.insert(0, back)).ok_or_else(gone)?;
+                    st.save().await;
+                    Ok(c::Started { queued: Some(id), position: Some(1), session: None })
+                }
+            }
         }
         (None, position) => {
             st.save().await;

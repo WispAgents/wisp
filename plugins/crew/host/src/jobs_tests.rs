@@ -184,7 +184,7 @@ async fn two_jobs_handed_out_at_once_to_an_idle_member_start_one() {
     assert!(st.member("ada1").unwrap().queue.is_empty(), "never queued");
 }
 
-/// A job whose start fails gives its place back: the next one given starts.
+/// A job whose start fails gives its place back and waits first in line (it was lost): the next one given starts.
 #[tokio::test]
 async fn a_job_that_fails_to_start_gives_its_place_back() {
     let rt = Rt::default();
@@ -192,8 +192,14 @@ async fn a_job_that_fails_to_start_gives_its_place_back() {
     let m = idle_ada(&st);
     let call = ctx.root_call();
     rt.1.store(true, std::sync::atomic::Ordering::SeqCst);
-    assert!(assign(&ctx, &call, &st, &m, job("one")).await.is_err());
+    let failed = assign(&ctx, &call, &st, &m, job("one")).await.unwrap();
+    assert_eq!(failed.position, Some(1), "it waits first in line: {failed:?}");
+    assert!(failed.session.is_none());
     assert!(lock(&st.starting).is_empty());
+    let queue = st.member("ada1").unwrap().queue;
+    assert_eq!(queue.len(), 1);
+    assert_eq!(queue[0].prompt, "one");
+    assert_eq!(Some(&queue[0].id), failed.queued.as_ref());
     rt.1.store(false, std::sync::atomic::Ordering::SeqCst);
     let next = assign(&ctx, &call, &st, &m, job("two")).await.unwrap();
     assert!(next.session.is_some(), "it started: {next:?}");

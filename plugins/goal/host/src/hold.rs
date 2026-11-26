@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 use wisp_kernel::{BoxFuture, Ctx, Result};
-use wisp_runtime_api::model::{Session, Turn, TurnStatus};
+use wisp_runtime_api::model::{Session, SessionState, Turn, TurnStatus};
 use wisp_runtime_api::points::{AfterTurn, TurnEnd};
 
 use crate::calls::{spec_of, state_of};
@@ -38,6 +38,35 @@ pub fn wants_round(session: &Session, turn: &Turn, end: TurnEnd) -> bool {
     goal_with(&spec, Some(&st), &kinds::GoalSpec::default()).is_some()
         && !matches!(st.state.as_str(), "met" | "paused" | "cleared")
         && !judging_now(&st)
+}
+
+/// What a restart does with a task a goal round may have held: none (nothing of the goal's holds it), judge its last
+/// turn again (a cut came after the hold took it, before `judging` was written), or land it (after the verdict was
+/// written, before the round's `runtime.settle`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stranded {
+    Judge,
+    Land,
+}
+
+/// A task left in Working by a goal round a restart cut, where nothing else (its `judging` slot, a check's record) shows
+/// it: Running with no turn on (its last ended done), nothing it waits for (a delegate's report, a queued turn), and a
+/// goal on it with no round under way. Still being worked on: judged again; met or paused: landed.
+pub fn stranded(session: &Session, last: &Turn) -> Option<Stranded> {
+    if session.state != SessionState::Running || last.status != TurnStatus::Done || !session.queue.is_empty() {
+        return None;
+    }
+    let waits = session.ext_of(wisp_runtime_api::PLUGIN_ID).get("waitsOn");
+    if waits.is_some_and(|w| w.as_array().is_some_and(|a| !a.is_empty()) || w.as_str().is_some_and(|s| !s.is_empty())) {
+        return None;
+    }
+    if wants_round(session, last, TurnEnd { stopped: false, is_error: false }) {
+        return Some(Stranded::Judge);
+    }
+    let st = state_of(session).unwrap_or_default();
+    let spec: Value = spec_of(session);
+    let goal = judged(session, &spec) && goal_with(&spec, Some(&st), &kinds::GoalSpec::default()).is_some();
+    (goal && matches!(st.state.as_str(), "met" | "paused") && !judging_now(&st)).then_some(Stranded::Land)
 }
 
 impl AfterTurn for GoalHold {

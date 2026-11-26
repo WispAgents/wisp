@@ -14,7 +14,7 @@ use tokio::sync::watch;
 use wisp_goal::GoalPlugin;
 use wisp_kernel::{Caller, Kernel, Manifest, Plugin, Result, Setup, WireError};
 use wisp_runtime_api::commands as r;
-use wisp_runtime_api::model::{Session, SessionState, Turn, TurnStatus};
+use wisp_runtime_api::model::{Session, SessionState, Summary, Turn, TurnStatus};
 use wisp_runtime_api::points::{AFTER, AfterTurn, TurnEnd};
 use wisp_testkit::TestApp;
 
@@ -31,6 +31,8 @@ struct Rt {
     runs: Arc<Mutex<BTreeMap<String, String>>>,
     /// what happened, in order: `judge:a`, `stop:a`, `followUp`, `ask`, `landed`, `held`
     log: Arc<Mutex<Vec<String>>>,
+    /// `runtime.list` names the task (a restart's recovery finds it); else it lists nothing
+    listed: bool,
 }
 
 impl Rt {
@@ -69,6 +71,12 @@ impl Plugin for Runtime {
             async move { Ok(t) }
         });
         s.command::<r::Turns, _, _>(|_, _, _a| async move { Ok(vec![last_turn()]) });
+        let rt = self.0.clone();
+        s.command::<r::List, _, _>(move |_, _, _a| {
+            let t = rt.task();
+            let listed = rt.listed;
+            async move { Ok(if listed { vec![Summary { id: t.id, state: t.state, ..Summary::default() }] } else { Vec::new() }) }
+        });
         s.command::<r::Profiles, _, _>(|_, _, _a: Value| async move { Ok(Vec::new()) });
         let rt = self.0.clone();
         s.command::<r::Quick, _, _>(move |_, _, a: r::QuickArgs| {
@@ -157,10 +165,33 @@ async fn start(judges: Judges, vote: &str) -> (Kernel, Rt) {
     let mut task = Session { id: "t1".into(), cwd: "/tmp".into(), title: "t".into(), state: SessionState::Running, ..Session::default() };
     let names: Vec<&str> = judges.keys().copied().collect();
     task.ext.insert("wisp.runtime".into(), json!({ "spec": { "goal": { "text": "a.txt says hello", "judges": names, "vote": vote } } }));
-    let rt =
-        Rt { task: Arc::new(Mutex::new(task)), judges, cancelled: watch::channel(Vec::new()).0, runs: Arc::default(), log: Arc::default() };
+    boot(task, judges, false).await
+}
+
+async fn boot(task: Session, judges: Judges, listed: bool) -> (Kernel, Rt) {
+    let rt = Rt {
+        task: Arc::new(Mutex::new(task)),
+        judges,
+        cancelled: watch::channel(Vec::new()).0,
+        runs: Arc::default(),
+        log: Arc::default(),
+        listed,
+    };
     let k = TestApp::new().with(GoalPlugin).with(Runtime(rt.clone())).start().await;
     (k, rt)
+}
+
+/// wisp starts again with the task in Working, its last turn done, its runtime slot `runtime` (the goal's spec added)
+/// and its goal at `goal` (no `judging` mark, no check's record): a round a restart cut.
+async fn restarted(judges: Judges, mut runtime: Value, goal: Value) -> (Kernel, Rt) {
+    let mut task = Session { id: "t1".into(), cwd: "/tmp".into(), title: "t".into(), state: SessionState::Running, ..Session::default() };
+    let names: Vec<&str> = judges.keys().copied().collect();
+    runtime["spec"] = json!({ "goal": { "text": "a.txt says hello", "judges": names, "vote": "majority" } });
+    task.ext.insert("wisp.runtime".into(), runtime);
+    if !goal.is_null() {
+        task.ext.insert("wisp.goal".into(), goal);
+    }
+    boot(task, judges, true).await
 }
 
 /// The goal's after-turn step.
@@ -320,4 +351,37 @@ async fn the_verdicts_keep_the_judges_order() {
     let v = rt.goal()["verdicts"].as_array().cloned().unwrap_or_default();
     let got: Vec<(&str, bool)> = v.iter().map(|x| (x["judge"].as_str().unwrap_or_default(), x["met"] == true)).collect();
     assert_eq!(got, [("a", false), ("b", false), ("c", true)]);
+}
+
+/// A restart after the round took the task but before it wrote `judging`: the task sat in Working for ever. It's
+/// judged again, and lands once on met.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_cut_before_judging_is_judged_again_after_a_restart() {
+    let (_k, rt) = restarted(judges(&[("a", 10, "MET")]), json!({}), Value::Null).await;
+    until("it lands", || rt.count("landed") == 1).await;
+    assert_eq!(rt.count("judge:a"), 1, "{:?}", rt.seen());
+    let t = rt.task();
+    assert_eq!((t.state, t.unread), (SessionState::Review, true));
+    assert_eq!(rt.goal()["state"], "met");
+}
+
+/// A restart after the verdict (met) was written but before the round's landing: the task lands, not judged again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_cut_after_its_verdict_lands_after_a_restart() {
+    let goal = json!({ "state": "met", "rounds": 1, "text": "a.txt says hello" });
+    let (_k, rt) = restarted(judges(&[("a", 10, "MET")]), json!({}), goal).await;
+    until("it lands", || rt.count("landed") == 1).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(rt.count("judge:a"), 0, "{:?}", rt.seen());
+    assert_eq!(rt.count("landed"), 1);
+    assert_eq!(rt.task().state, SessionState::Review);
+}
+
+/// A task in Working that waits on its delegates' reports isn't a cut round: a restart leaves it as it is.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lead_waiting_on_its_delegates_is_left_alone_after_a_restart() {
+    let (_k, rt) = restarted(judges(&[("a", 10, "MET")]), json!({ "waitsOn": ["Bob"] }), Value::Null).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(rt.seen().is_empty(), "{:?}", rt.seen());
+    assert_eq!(rt.task().state, SessionState::Running);
 }
