@@ -102,6 +102,17 @@ async fn fresh_takes_detach_as_launches_do_audit_g17() {
     let (_, task) = run_task(&api, &dir, "claude").await;
     let id = task["id"].as_str().unwrap().to_owned();
     for flag in ["-d", "--detach"] {
+        // a turn's end lands a beat before the task is idle (its state, its queue): fresh refuses a busy task, so on a
+        // loaded runner the first or second fresh could come in that beat (macOS CI, 2026-11-27)
+        let at = std::time::Instant::now();
+        loop {
+            let t = api.cmd("runtime.get", json!({ "id": id })).await;
+            if t["state"] != "running" && t["state"] != "working" {
+                break;
+            }
+            assert!(at.elapsed() < std::time::Duration::from_secs(20), "{flag}: the task never settled: {t}");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
         let (code, out, err) = wisp(&dir, &dir, port, &["fresh", &id, flag]);
         assert_eq!(code, 0, "{flag}: {out}{err}");
         assert!(out.contains("Fresh thread") && !out.contains("launched"), "{flag}: {out}{err}");
