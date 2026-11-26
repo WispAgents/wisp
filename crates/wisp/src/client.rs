@@ -18,15 +18,35 @@ pub enum CliError {
     /// the command can't run as typed or where it was typed: exits `cli::USAGE_EXIT`, not 1
     #[error("{0}")]
     Usage(String),
+    /// the task the command names isn't there: exits `cli::NOT_FOUND`, so a script tells a mistyped id from a refusal
+    #[error("{0}")]
+    NotFound(String),
 }
 
 impl CliError {
     pub fn said(m: impl Into<String>) -> Self {
         Self::Said(m.into())
     }
+    /// A command line that doesn't fit: exits `cli::USAGE_EXIT`.
+    pub fn usage(m: impl Into<String>) -> Self {
+        Self::Usage(m.into())
+    }
     /// What `wisp` exits with when the command ends on this error.
     pub fn exit_code(&self) -> i32 {
-        if matches!(self, Self::Usage(_)) { crate::cli::USAGE_EXIT } else { 1 }
+        match self {
+            Self::Usage(_) => crate::cli::USAGE_EXIT,
+            Self::NotFound(_) => crate::cli::NOT_FOUND,
+            _ => 1,
+        }
+    }
+    /// wisp's 404 for the task a command named (`runtime.get` of an id that isn't there) as [`Self::NotFound`]; any
+    /// other error as it was.
+    #[must_use]
+    pub fn not_found(self) -> Self {
+        match self {
+            Self::Http { status: 404, message, .. } => Self::NotFound(message),
+            e => e,
+        }
     }
     pub fn status(&self) -> u16 {
         if let Self::Http { status, .. } = self { *status } else { 0 }
@@ -99,11 +119,23 @@ pub fn discover(home: &Path) -> Option<u16> {
     v.get("port")?.as_u64().and_then(|p| u16::try_from(p).ok())
 }
 
+/// Where to reach wisp on `port`: the URL `server.json` advertises when it names that port (a `wisp serve --host ::1`
+/// answers on `http://[::1]:P`, never on 127.0.0.1), else `127.0.0.1` on it.
+pub fn url_for(server_json: Option<&Value>, port: u16) -> String {
+    server_json
+        .filter(|v| v.get("port").and_then(Value::as_u64) == Some(u64::from(port)))
+        .and_then(|v| v.get("url").and_then(Value::as_str))
+        .filter(|u| u.starts_with("http://"))
+        .map_or_else(|| format!("http://127.0.0.1:{port}"), |u| u.trim_end_matches('/').to_owned())
+}
+
 impl Client {
     pub fn new(port: u16) -> Self {
         let http = reqwest::Client::builder().connect_timeout(Duration::from_secs(3)).build().unwrap_or_default();
+        let home = crate::services::home(std::env::var("WISP_HOME").ok().as_deref(), crate::services::user_home());
+        let advertised = std::fs::read(home.join("server.json")).ok().and_then(|t| serde_json::from_slice::<Value>(&t).ok());
         Self {
-            url: format!("http://127.0.0.1:{port}"),
+            url: url_for(advertised.as_ref(), port),
             http,
             token: std::env::var("WISP_TOKEN").ok().filter(|t| !t.is_empty()),
             on: ON.get().cloned(),
@@ -321,7 +353,19 @@ impl Client {
 mod tests {
     use serde_json::json;
 
-    use super::{serves_home, still_waking};
+    use super::{serves_home, still_waking, url_for};
+
+    /// cli-r6 M4: `wisp ls` reaches a `wisp serve --host ::1` through the URL its server.json says; a server.json for
+    /// another port, or none, is 127.0.0.1 as before.
+    #[test]
+    fn the_client_goes_where_server_json_says_for_its_port() {
+        let v6 = json!({ "url": "http://[::1]:4477", "port": 4477 });
+        assert_eq!(url_for(Some(&v6), 4477), "http://[::1]:4477");
+        assert_eq!(url_for(Some(&v6), 4500), "http://127.0.0.1:4500", "another port's");
+        assert_eq!(url_for(None, 4477), "http://127.0.0.1:4477");
+        assert_eq!(url_for(Some(&json!({ "port": 4477 })), 4477), "http://127.0.0.1:4477", "an older one with no url");
+        assert_eq!(url_for(Some(&json!({ "url": "file:///x", "port": 4477 })), 4477), "http://127.0.0.1:4477");
+    }
 
     // B51: only route's "waiting for <box> to wake" (retry) is waited out; any other refusal is the answer
     #[test]

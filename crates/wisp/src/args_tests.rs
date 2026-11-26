@@ -266,3 +266,29 @@ fn a_scripted_command_refuses_a_flag_it_does_not_read_and_a_bad_count() {
     }
     assert_eq!(p(&["--", "ls", "--bogus"]).command, None, "after --: a task");
 }
+
+/// cli-r6: `reply --wait --timeout abc` sent the reply and waited no time at all; its --timeout is checked as wait's is.
+#[test]
+fn reply_with_wait_validates_its_timeout() {
+    use crate::commands::validates_timeout;
+    assert!(validates_timeout("wait", false));
+    assert!(validates_timeout("launch", true) && !validates_timeout("launch", false));
+    assert!(validates_timeout("reply", true), "reply --wait reads --timeout");
+    assert!(!validates_timeout("reply", false), "reply alone waits on nothing");
+    assert!(!validates_timeout("show", true));
+    let r = p(&["reply", "abc123abc123", "ok", "--wait", "--timeout", "abc"]);
+    assert_eq!((r.command, r.flags.wait, r.flags.timeout.as_deref()), (Some("reply"), true, Some("abc")));
+    assert!(crate::scripted::wait_timeout(r.flags.timeout.as_deref()).is_err());
+}
+
+/// cli-r6 M2: the watch arms ran before the stray-flag check: `wisp ls --watch --bogus` and `wisp show --watch x --stat`
+/// followed on as if the flag weren't there.
+#[test]
+fn a_watch_refuses_a_flag_it_does_not_read() {
+    let refused = |a: &[&str]| crate::commands::refused_flag(&p(a), p(a).command.unwrap());
+    let ls = refused(&["ls", "--watch", "--bogus"]).expect("ls --watch --bogus ran");
+    assert!(ls.starts_with("  ✗ wisp ls doesn't take --bogus\n"), "{ls}");
+    let show = refused(&["show", "--watch", "abc123abc123", "--stat"]).expect("show --watch --stat ran");
+    assert!(show.starts_with("  ✗ wisp show doesn't take --stat\n"), "{show}");
+    assert_eq!(refused(&["ls", "--watch", "--state", "running", "--agent", "codex"]), None);
+}

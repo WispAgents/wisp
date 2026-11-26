@@ -44,6 +44,17 @@ wisp stop <id>
 `state` is one of `running`, `waiting` (blocked on a question to the user), `review` (finished,
 unread by the user) or `done`.
 
+Exit codes, so a script can branch (`wisp wait`, `--wait` and `wisp reply … --wait` use 0, 1, 3 and 124):
+
+| code | means |
+| ---- | ----- |
+| 0 | it worked; a waited task is done or in review |
+| 1 | wisp refused, or the task failed, was stopped or blocked |
+| 2 | the command line didn't fit (a missing id, a flag or value it doesn't take): nothing ran |
+| 3 | the task waits on the user (a question, a permission, a held turn): relay it |
+| 4 | no task with that id |
+| 124 | the wait timed out (`--timeout`); the task is still running |
+
 ## Rules
 
 - **Don't answer questions meant for the user.** When a session is `waiting`, relay the question

@@ -941,3 +941,36 @@ fn every_routed_word_has_usage_lines_of_its_own_audit_m1() {
         assert!(documented(word).is_some(), "{word}");
     }
 }
+
+/// cli-r6 L1: a launch typed wrong (`wisp "fix it" --mdoe plan`, `--mode opus`) is the command line, exit 2: it exited
+/// 1, a refusal's code. A command, or a launch that's fine, isn't refused here.
+#[test]
+fn a_launch_typed_wrong_exits_as_a_usage_error() {
+    for a in [
+        &["fix", "it", "--mdoe", "plan"][..],
+        &["fix", "it", "--mode", "opus"],
+        &["fix", "it", "--effort", "banana"],
+        &["fix", "--model", "plan"],
+    ] {
+        let (said, code) = launch_refused(&p(a)).unwrap_or_else(|| panic!("{a:?} launched"));
+        assert_eq!(code, crate::cli::USAGE_EXIT, "{a:?}: {said}");
+    }
+    assert!(launch_refused(&p(&["fix", "it", "--mdoe", "plan"])).unwrap().0.starts_with("wisp takes no --mdoe"));
+    assert_eq!(launch_refused(&p(&["fix", "it", "--mode", "plan"])), None);
+    assert_eq!(launch_refused(&p(&["ls", "--state", "done"])), None, "a command's flags are its own");
+}
+
+/// cli-r6: `--host` was read by `wisp serve` alone and silently dropped anywhere else (`wisp --host 0.0.0.0` opened wisp
+/// on 127.0.0.1). Refused everywhere but serve (and `wisp grid`, whose own binary takes its flags), before anything runs.
+#[test]
+fn host_is_refused_on_anything_but_serve() {
+    for a in [&["--host", "0.0.0.0"][..], &["--host", "x", "fix it"], &["ls", "--host", "x"], &["desktop", "--host", "x"]] {
+        let said = host_refused(&p(a)).unwrap_or_else(|| panic!("{a:?} ran"));
+        assert_eq!(said, "--host is wisp serve's alone (wisp serve --host ADDR)");
+    }
+    assert_eq!(p(&["--host", "0.0.0.0"]).command, None);
+    assert_eq!(p(&["desktop", "--host", "x"]).command, Some("desktop"));
+    assert_eq!(host_refused(&p(&["serve", "--host", "127.0.0.1"])), None);
+    assert_eq!(host_refused(&p(&["ls"])), None);
+    assert_eq!(host_refused(&p(&["--", "--host", "x"])), None, "after --: words");
+}

@@ -36,7 +36,7 @@ pub mod v2_store;
 pub use backend::{Backend, Binding};
 pub use edge::{API_VERSION, Edge, EdgeConfig};
 pub use error::ApiError;
-pub use serve::{Ident, Server, home_hash, serve};
+pub use serve::{Ident, Server, advertised_url, home_hash, serve};
 pub use sync::{Hub, SyncMount};
 pub use trust::TrustedProxy;
 

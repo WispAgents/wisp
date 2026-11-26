@@ -469,7 +469,7 @@ ui: {{ theme: dark, editor: zed }}
 
     // sharing: the preview's redactions, a signed file, opened, run, run with their setup, imported
     let (code, out, err) = wisp(&dir, port, &["share", &secret_task, "--level", "full", "--out", "shared.wisp-task"]);
-    assert_eq!(code, 1, "not a terminal: --yes after the preview: {out}{err}");
+    assert_eq!(code, 2, "not a terminal: --yes after the preview: {out}{err}");
     assert!(out.contains("secret") && out.contains("<secret>") && out.contains("<project>"), "the preview shows what's taken out: {out}");
     let (code, out, err) = wisp(&dir, port, &["share", &secret_task, "--level", "full", "--out", "shared.wisp-task", "--yes"]);
     assert_eq!(code, 0, "{out}{err}");

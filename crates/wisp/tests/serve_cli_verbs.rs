@@ -249,7 +249,7 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
     let before = api.cmd("runtime.list", json!({})).await.as_array().unwrap().len();
     let strict = ["--no-open", "fix", "the", "auth", "module", "--strict"].map(str::to_owned);
     let (code, out, err) = wisp(&dir, port, &strict);
-    assert!(code == 1 && err.contains("wisp takes no --strict") && !out.contains("launched"), "{strict:?} → {code}: {out}{err}");
+    assert!(code == 2 && err.contains("wisp takes no --strict") && !out.contains("launched"), "{strict:?} → {code}: {out}{err}");
     assert!(err.contains("A task that says it: wisp \"fix the auth module\" -- --strict"), "{err}");
     assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), before, "nothing was launched");
     let said = ["--no-open", "fix", "the", "auth", "module", "--", "--strict"].map(str::to_owned);

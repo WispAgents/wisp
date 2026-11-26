@@ -23,8 +23,9 @@ pub fn out(flags: &Flags, v: &Value, text: &str) {
     }
 }
 
+/// A word the command can't run without (`wisp show` with no id): a usage error, exit 2, never a refusal's 1.
 pub fn need<'a>(v: Option<&'a String>, what: &str) -> Result<&'a str> {
-    v.map(String::as_str).filter(|s| !s.trim().is_empty()).ok_or_else(|| CliError::said(format!("{what} required — see wisp --help")))
+    v.map(String::as_str).filter(|s| !s.trim().is_empty()).ok_or_else(|| CliError::usage(format!("{what} required — see wisp --help")))
 }
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
@@ -169,7 +170,7 @@ pub async fn wait(c: &Client, id: &str, timeout: Duration) -> Result<Value> {
 /// once instead of waited for (QA round 14 #7: `wisp attach last` hung).
 pub async fn task_id(c: &Client, w: &str) -> Result<String> {
     if w != "last" {
-        c.cmd("runtime.get", json!({ "id": w })).await?;
+        c.cmd("runtime.get", json!({ "id": w })).await.map_err(CliError::not_found)?;
         return Ok(w.to_owned());
     }
     newest(c).await?.ok_or_else(|| CliError::said("no tasks yet: wisp \"<what to do>\" starts one"))
@@ -203,16 +204,16 @@ pub async fn show(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Re
 }
 
 /// What `wisp wait` and `--wait` exit with, from where the task stopped ([`settled`]): 0 it finished (done, or its turn
-/// ended for review), 1 it failed, was stopped or blocked (its usage limit too), 2 it waits on you (a question, a
-/// permission, a turn held before it started), 124 the wait timed out (as `timeout(1)` says it). Each exited 0: a
-/// script couldn't tell a failed task from a finished one.
+/// ended for review), 1 it failed, was stopped or blocked (its usage limit too), [`crate::cli::WAIT_ASKS`] it waits on
+/// you (a question, a permission, a turn held before it started), 124 the wait timed out (as `timeout(1)` says it).
+/// Each exited 0: a script couldn't tell a failed task from a finished one; waiting was then 2, a usage error's code.
 pub fn wait_exit(task: &Value, last: Option<&Value>, timed_out: bool) -> i32 {
     let turn = |k: &str| last.and_then(|t| t.get(k)).filter(|v| !v.is_null());
     let status = turn("status").and_then(Value::as_str).unwrap_or_default();
     match state_of(task).as_str() {
         _ if timed_out => 124,
-        _ if status == "held" => 2,
-        "waiting" => 2,
+        _ if status == "held" => crate::cli::WAIT_ASKS,
+        "waiting" => crate::cli::WAIT_ASKS,
         "error" | "failed" | "blocked" | "stopped" => 1,
         _ if matches!(status, "error" | "stopped") || turn("limit").is_some() => 1,
         _ => 0,
@@ -258,7 +259,7 @@ pub fn wait_timeout(v: Option<&str>) -> std::result::Result<Duration, String> {
 
 /// [`show`], and the code a wait exits with ([`wait_exit`]).
 pub async fn shown(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Result<i32> {
-    let task = c.cmd("runtime.get", json!({ "id": id })).await?;
+    let task = c.cmd("runtime.get", json!({ "id": id })).await.map_err(CliError::not_found)?;
     let p = c.cmd("runtime.presentation", json!({ "id": id })).await.unwrap_or(Value::Null);
     let late = timed_out(summary.as_ref());
     let still = if late { ", still running" } else { "" };
@@ -322,9 +323,10 @@ pub fn ls_limit(f: &Flags) -> Option<u32> {
     if f.all { f.limit } else { Some(f.limit.unwrap_or(LS_DEFAULT)) }
 }
 
-pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
+/// `--state a,b` as the states it names (`needs` is review + waiting), each once. Err: one no task is in.
+pub fn ls_states(state: Option<&str>) -> Result<Vec<String>> {
     let mut states: Vec<String> = Vec::new();
-    for x in f.state.iter().flat_map(|st| st.split(',')).map(str::trim).filter(|x| !x.is_empty()) {
+    for x in state.iter().flat_map(|st| st.split(',')).map(str::trim).filter(|x| !x.is_empty()) {
         let add: &[&str] = if x == "needs" { &["review", "waiting"] } else { &[x] };
         for a in add {
             if !states.iter().any(|y| y == a) {
@@ -335,8 +337,76 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
     if let Some(bad) =
         Some(states.iter().filter(|x| !LS_STATES.contains(&x.as_str())).cloned().collect::<Vec<_>>()).filter(|b| !b.is_empty())
     {
-        return Err(CliError::said(format!("unknown state {}: use {} or needs (review + waiting)", bad.join(", "), LS_STATES.join(", "))));
+        return Err(CliError::usage(format!("unknown state {}: use {} or needs (review + waiting)", bad.join(", "), LS_STATES.join(", "))));
     }
+    Ok(states)
+}
+
+/// What `wisp ls` keeps of the task rows, and `wisp ls --watch` at each redraw (audit cli-r6 M2: the watch took only
+/// `--all` and showed every task whatever `--state`, `--agent` or `--limit` said). A row is a `runtime.list` task or a
+/// list topic's row (its columns, then its `body`); `--agent`, `--crew`, `--project` and `--since` as `runtime.history`
+/// reads them for plain `wisp ls`.
+#[derive(Debug, Default, Clone)]
+pub struct RowFilter {
+    pub states: Vec<String>,
+    pub cwd: Option<String>,
+    /// archived ones too
+    pub all: bool,
+    pub agent: Option<String>,
+    /// `--crew`: the words a row's member id or name may match, any case; [`crate::history_cli::crew_words`] turns
+    /// what was asked into them (id, name or handle through `crew.list`), as plain `wisp ls --crew` asks for them
+    pub crew: Vec<String>,
+    pub project: Option<String>,
+    /// made at or after (ms)
+    pub since: Option<i64>,
+    pub limit: Option<usize>,
+}
+
+impl RowFilter {
+    pub fn keep(&self, x: &Value) -> bool {
+        let get = |k: &str| x.get(k).filter(|v| !v.is_null()).or_else(|| x.pointer(&format!("/body/{k}")).filter(|v| !v.is_null()));
+        let text = |k: &str| get(k).and_then(Value::as_str).unwrap_or("");
+        let ext = |p: &str| x.pointer(&format!("/ext/{p}")).or_else(|| x.pointer(&format!("/body/ext/{p}"))).and_then(Value::as_str);
+        let made = get("createdAt").or_else(|| get("created_at")).and_then(Value::as_i64).unwrap_or(0);
+        let cwd = text("cwd");
+        (self.states.is_empty() || self.states.iter().any(|st| st == text("state")))
+            && self.cwd.as_ref().is_none_or(|c| cwd == c.as_str())
+            && (self.all || get("archived") != Some(&json!(true)))
+            && self.agent.as_ref().is_none_or(|a| text("agent") == a.as_str())
+            && (self.crew.is_empty()
+                || self.crew.iter().any(|c| {
+                    ext("wisp.crew/id").is_some_and(|i| i.eq_ignore_ascii_case(c))
+                        || ext("wisp.crew/name").is_some_and(|n| n.eq_ignore_ascii_case(c))
+                }))
+            && self.project.as_ref().is_none_or(|p| cwd == p.as_str() || cwd.ends_with(&format!("/{p}")) || project_of(x) == *p)
+            && self.since.is_none_or(|t| made >= t)
+    }
+
+    /// `wisp ls --watch`'s: the flags plain `wisp ls` takes (`o`: the ones only its history list reads), and as many
+    /// rows as `room` (the terminal's lines under its header) unless `--limit` says. `members` is `crew.list`'s answer,
+    /// read only when `--crew` was given, so `--crew <handle>` narrows to the member plain `wisp ls --crew` finds.
+    pub fn watching(f: &Flags, o: &crate::code::Opts, members: &Value, room: usize, now: i64) -> Result<Self> {
+        let since = o.since.as_deref().map(|t| crate::history_cli::since_ms(t, now)).transpose()?;
+        Ok(Self {
+            states: ls_states(f.state.as_deref())?,
+            cwd: None,
+            all: f.all,
+            agent: f.agent.clone().or_else(|| o.over.get("agent").and_then(Value::as_str).map(str::to_owned)),
+            crew: o.crew.as_deref().map(|c| crate::history_cli::crew_words(members, c)).unwrap_or_default(),
+            project: o.project.clone(),
+            since,
+            limit: Some(f.limit.map_or(room, |l| l as usize)),
+        })
+    }
+
+    /// The rows it keeps, in their order, at most `limit` of them.
+    pub fn rows<'a>(&self, rows: impl IntoIterator<Item = &'a Value>) -> Vec<&'a Value> {
+        rows.into_iter().filter(|x| self.keep(x)).take(self.limit.unwrap_or(usize::MAX)).collect()
+    }
+}
+
+pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
+    let states = ls_states(f.state.as_deref())?;
     // every task, archived ones too (`--all` keeps them below); `{archived: true}` is the archived ones only, which made
     // `ls --all` say "No sessions." with tasks there (QA round 13 #2)
     // what the server can narrow it reads there (perf audit 2026-11-18 #10, as v1 asked): live tasks unless `--all`, and
@@ -351,15 +421,8 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
     }
     let list = c.cmd("runtime.list", Value::Object(ask)).await?;
     let cwd = f.cwd.as_ref().map(|p| p.display().to_string());
-    let rows: Vec<&Value> = list
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|x| states.is_empty() || states.iter().any(|st| st == s(x, "state")))
-        .filter(|x| cwd.as_ref().is_none_or(|c| s(x, "cwd") == c.as_str()))
-        .filter(|x| f.all || x.get("archived") != Some(&json!(true)))
-        .take(limit.map_or(usize::MAX, |l| l as usize))
-        .collect();
+    let keep = RowFilter { states, cwd, all: f.all, limit: limit.map(|l| l as usize), ..RowFilter::default() };
+    let rows = keep.rows(list.as_array().into_iter().flatten());
     // the default cut said so, with how to see the rest
     let more = if f.limit.is_none() && !f.all && limit.is_some_and(|l| rows.len() == l as usize) {
         format!("\n… the newest {} shown: --limit N or --all for more", rows.len())
@@ -447,8 +510,10 @@ fn project_of(row: &Value) -> String {
     })
 }
 
+/// `wisp reply <id> <text>`; with `--wait`, until the task settles or `limit` runs out, exiting as `wisp wait` does
+/// ([`wait_exit`]). Without it, 0 once it's sent.
 #[allow(clippy::many_single_char_names)]
-pub async fn reply(c: &Client, f: &Flags, args: &[String]) -> Result<()> {
+pub async fn reply(c: &Client, f: &Flags, args: &[String], limit: Duration) -> Result<i32> {
     let id = need(args.first(), "session id")?;
     let text = args[1..].join(" ");
     let text = need(Some(&text), "text")?;
@@ -461,8 +526,13 @@ pub async fn reply(c: &Client, f: &Flags, args: &[String]) -> Result<()> {
             .filter(|a| a.get("setup").is_some_and(Value::is_object) || a.get("guard") == Some(&json!(true)))
     {
         let r = c.cmd("runtime.answer", json!({ "id": id, "text": text, "askId": s(ask, "id") })).await?;
-        out(f, &r, &format!("  ✓ {}", Some(s(&r, "said")).filter(|t| !t.is_empty()).unwrap_or("answered")));
-        return Ok(());
+        if !f.wait {
+            out(f, &r, &format!("  ✓ {}", Some(s(&r, "said")).filter(|t| !t.is_empty()).unwrap_or("answered")));
+            return Ok(0);
+        }
+        // --wait waits on what the answer let run, as a follow-up's does: it exits as `wisp wait` would
+        let w = wait(c, id, limit).await?;
+        return shown(c, f, id, Some(w)).await;
     }
     let mut a = json!({ "id": id, "text": text });
     if f.yes {
@@ -481,7 +551,7 @@ pub async fn reply(c: &Client, f: &Flags, args: &[String]) -> Result<()> {
     if !pick.is_empty() {
         a["run"] = Value::Object(pick);
     }
-    let r = c.cmd("runtime.followUp", a).await?;
+    let r = c.cmd("runtime.followUp", a).await.map_err(CliError::not_found)?;
     if !f.wait {
         // an interrupting follow-up says so (audit I3: "✓ queued" was printed for one that stopped the running turn)
         let said = if r.get("interrupts") == Some(&json!(true)) {
@@ -492,10 +562,10 @@ pub async fn reply(c: &Client, f: &Flags, args: &[String]) -> Result<()> {
             "  ✓ sent"
         };
         out(f, &r, said);
-        return Ok(());
+        return Ok(0);
     }
-    let w = wait(c, id, Duration::from_secs(30 * 60)).await?;
-    show(c, f, id, Some(w)).await
+    let w = wait(c, id, limit).await?;
+    shown(c, f, id, Some(w)).await
 }
 
 pub fn btw_out(f: &Flags, b: &Value) {
@@ -584,13 +654,65 @@ mod tests {
         assert_eq!(wait_exit(&t("review"), Some(&json!({ "status": "done", "limit": { "at": 1 } })), false), 1, "at its usage limit");
         let factory = json!({ "id": "t", "state": "review", "factory": { "name": "gated", "state": "stopped" } });
         assert_eq!(wait_exit(&factory, None, false), 1, "a stopped factory run");
-        assert_eq!(wait_exit(&t("waiting"), Some(&turn("running")), false), 2, "a question or a permission");
-        assert_eq!(wait_exit(&t("review"), Some(&turn("held")), false), 2, "held before it started");
+        assert_eq!(wait_exit(&t("waiting"), Some(&turn("running")), false), 3, "a question or a permission");
+        assert_eq!(wait_exit(&t("review"), Some(&turn("held")), false), 3, "held before it started");
+        assert_ne!(crate::cli::WAIT_ASKS, crate::cli::USAGE_EXIT, "waits on you is never a usage error's code");
         assert_eq!(wait_exit(&t("running"), Some(&turn("running")), true), 124, "timed out");
         let timed = shown_json(&t("running"), json!(null), Some(&json!({ "id": "t", "timedOut": true })));
         assert_eq!((timed["timedOut"].as_bool(), timed["state"].as_str()), (Some(true), Some("running")));
         assert!(shown_json(&t("done"), json!(null), Some(&t("done"))).get("timedOut").is_none());
         assert!(shown_json(&t("done"), json!(null), None).get("presentation").is_some());
+    }
+
+    /// cli-r6 M2: `wisp ls` and `wisp ls --watch` keep rows through one filter: state, agent, crew, project, since,
+    /// archived and limit, on `runtime.list` tasks and on the list topic's rows (columns, then `body`) alike.
+    #[test]
+    fn one_row_filter_narrows_ls_and_ls_watch() {
+        let rows = [
+            json!({ "id": "a", "state": "running", "agent": "claude", "cwd": "/w/api", "createdAt": 30 }),
+            json!({ "id": "b", "state": "waiting", "agent": "codex", "created_at": 20, "body": { "cwd": "/w/web", "ext": { "wisp.crew": { "id": "m1", "name": "Ada" } } } }),
+            json!({ "id": "c", "state": "review", "agent": "codex", "cwd": "/w/api", "createdAt": 10, "archived": true }),
+            json!({ "id": "d", "state": "done", "agent": "claude", "cwd": "/w/web", "createdAt": 5 }),
+        ];
+        let ids = |f: &RowFilter| f.rows(rows.iter()).iter().map(|r| r["id"].as_str().unwrap_or_default()).collect::<Vec<_>>();
+        assert_eq!(ids(&RowFilter::default()), ["a", "b", "d"], "archived ones only with --all");
+        assert_eq!(ids(&RowFilter { all: true, ..RowFilter::default() }), ["a", "b", "c", "d"]);
+        let needs = ls_states(Some("needs")).unwrap();
+        assert_eq!(ids(&RowFilter { states: needs, all: true, ..RowFilter::default() }), ["b", "c"]);
+        assert_eq!(ids(&RowFilter { states: vec!["running".into()], ..RowFilter::default() }), ["a"]);
+        assert_eq!(ids(&RowFilter { agent: Some("codex".into()), ..RowFilter::default() }), ["b"]);
+        assert_eq!(ids(&RowFilter { crew: vec!["ada".into()], ..RowFilter::default() }), ["b"], "a member by name, any case");
+        // `--crew ADA`, `m1` (a name in any case, an id): resolved through crew.list to the member's id and name, as plain `wisp ls --crew`
+        let members = json!([{ "id": "m1", "name": "Ada" }, { "id": "m2", "name": "Bob" }]);
+        let crew = crate::history_cli::crew_words(&members, "ADA");
+        assert_eq!(ids(&RowFilter { crew, ..RowFilter::default() }), ["b"], "by the member crew.list names");
+        let crew = crate::history_cli::crew_words(&members, "m1");
+        assert_eq!(ids(&RowFilter { crew, ..RowFilter::default() }), ["b"], "by its id");
+        let crew = crate::history_cli::crew_words(&members, "bob");
+        assert!(ids(&RowFilter { crew, ..RowFilter::default() }).is_empty(), "another member's tasks only");
+        assert_eq!(ids(&RowFilter { project: Some("web".into()), ..RowFilter::default() }), ["b", "d"]);
+        assert_eq!(ids(&RowFilter { since: Some(20), ..RowFilter::default() }), ["a", "b"]);
+        assert_eq!(ids(&RowFilter { limit: Some(2), ..RowFilter::default() }), ["a", "b"]);
+        assert_eq!(ids(&RowFilter { limit: Some(1), agent: Some("claude".into()), ..RowFilter::default() }), ["a"]);
+        assert_eq!(ls_states(Some("bogus")).unwrap_err().exit_code(), crate::cli::USAGE_EXIT);
+    }
+
+    /// `wisp show` with no id is a usage error (2), and a task that isn't there its own code (4), never a refusal's 1.
+    #[test]
+    fn a_missing_id_is_a_usage_error_and_an_unknown_task_is_not_found() {
+        let e = need(None, "session id").unwrap_err();
+        assert!(matches!(e, CliError::Usage(_)), "{e:?}");
+        assert_eq!(e.exit_code(), crate::cli::USAGE_EXIT);
+        assert_eq!(need(Some(&"  ".to_owned()), "text").unwrap_err().exit_code(), 2);
+        assert_eq!(need(Some(&"t1".to_owned()), "session id").unwrap(), "t1");
+        let gone = CliError::Http { status: 404, message: "no task t9".into(), body: json!({}) }.not_found();
+        assert!(matches!(&gone, CliError::NotFound(m) if m == "no task t9"), "{gone:?}");
+        assert_eq!(gone.exit_code(), crate::cli::NOT_FOUND);
+        assert_eq!(crate::cli::NOT_FOUND, 4);
+        let refused = CliError::Http { status: 409, message: "busy".into(), body: json!({}) }.not_found();
+        assert_eq!(refused.exit_code(), 1, "any other refusal stays 1");
+        let codes = [0, 1, crate::cli::USAGE_EXIT, crate::cli::WAIT_ASKS, crate::cli::NOT_FOUND, 124];
+        assert_eq!(codes.iter().collect::<std::collections::BTreeSet<_>>().len(), codes.len(), "one meaning each");
     }
 
     #[test]

@@ -402,3 +402,37 @@ async fn wisp_reply_answers_the_question_a_guard_change_asks_adr_0115() {
     assert!(r.to_string().contains("said no"), "{r}");
     assert_eq!(api.cmd("settings.get", json!({ "key": "worktrees.projectAsk" })).await, json!("on"));
 }
+
+/// `wisp reply <task> Deny --wait` answered the guard's question and exited 0 at once, never waiting or reading
+/// --timeout (audit cli-r6): it now waits on the task as a follow-up's --wait does and exits as `wisp wait` would.
+#[tokio::test(flavor = "multi_thread")]
+async fn wisp_reply_wait_on_a_guard_question_waits_like_wisp_wait() {
+    let dir = temp("serve-auditI-guard-reply-wait");
+    let (_serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let http = api.http.clone();
+    let call = tokio::spawn(async move {
+        mcp(&http, port, "tools/call", json!({ "name": "settings_set", "arguments": { "key": "worktrees.projectAsk", "value": "off" } }))
+            .await
+    });
+    let at = std::time::Instant::now();
+    let id = loop {
+        let list = api.cmd("runtime.list", json!({})).await;
+        if let Some(t) = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["title"].as_str().is_some_and(|x| x.starts_with("Your harness wants to")) && t["state"] == "waiting")
+        {
+            break t["id"].as_str().unwrap().to_owned();
+        }
+        assert!(at.elapsed() < std::time::Duration::from_secs(15), "no task asks: {list}");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    };
+    let (code, out, err) = wisp(&dir, port, &["--json", "reply", &id, "Deny", "--wait", "--timeout", "10s"]);
+    assert!(!out.contains("\"said\""), "--wait prints the task it waited on, not the answer's ack: {out}");
+    assert!(out.contains(&id), "the waited task is shown: {out}");
+    assert_ne!(code, 2, "{out}{err}");
+    let r = call.await.unwrap();
+    assert!(r.to_string().contains("said no"), "{r}");
+}

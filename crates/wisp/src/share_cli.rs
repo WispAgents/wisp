@@ -33,19 +33,25 @@ fn ask(q: &str) -> String {
     l.trim().to_owned()
 }
 
-/// `wisp share <id>`.
-pub async fn share(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
-    let st = crate::cli::style();
-    let Some(id) = o.words.first() else { return Err(CliError::said("wisp share <id> [--level spec|report|full] [--to file|gist]")) };
+/// `wisp share <id>`'s task, `--level` and `--to`; a missing id or a value neither takes is the command line, a usage
+/// error (exit 2; they exited 1, a refusal's code).
+fn share_flags(o: &Opts) -> Result<(&str, String, String)> {
+    let Some(id) = o.words.first() else { return Err(CliError::usage("wisp share <id> [--level spec|report|full] [--to file|gist]")) };
     let level = o.level.clone().unwrap_or_else(|| "spec".into());
     if !["spec", "report", "full"].contains(&level.as_str()) {
-        return Err(CliError::said(format!("--level {level}: spec, report or full")));
+        return Err(CliError::usage(format!("--level {level}: spec, report or full")));
     }
     let to = o.to.clone().map_or_else(|| "file".into(), |t| if t == "link" { "cloud".to_owned() } else { t });
     if !["file", "gist", "cloud", "wisp-cloud"].contains(&to.as_str()) {
-        eprintln!("  ✗ --to {to}: cloud, file or gist");
-        return Ok(1);
+        return Err(CliError::usage(format!("--to {to}: cloud, file or gist")));
     }
+    Ok((id, level, to))
+}
+
+/// `wisp share <id>`.
+pub async fn share(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
+    let st = crate::cli::style();
+    let (id, level, to) = share_flags(o)?;
     // wisp Cloud: say how to sign in before anything (nothing is uploaded until it's ready)
     if to.contains("cloud") && !crate::cloud_cli::ready(c).await? {
         return Ok(1);
@@ -74,8 +80,9 @@ pub async fn share(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
     }
     if !o.yes {
         if !tty() {
+            // where it was typed, not what wisp said: a usage error, as `wisp tui` in a pipe is
             eprintln!("  ✗ not a terminal: share with --yes once you've read the preview (--json shows it whole)");
-            return Ok(1);
+            return Ok(crate::cli::USAGE_EXIT);
         }
         if !matches!(ask("\n  Share it? [y/N] ").as_str(), "y" | "Y" | "yes") {
             say("  nothing shared");
@@ -160,7 +167,7 @@ async fn run(c: &Client, b: &Value, cwd: &Path, theirs: bool) -> Result<String> 
 
 /// `wisp open <file|url>`.
 pub async fn open(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
-    let Some(src) = o.words.first() else { return Err(CliError::said("wisp open <file.wisp-task|url|gist:<id>>")) };
+    let Some(src) = o.words.first() else { return Err(CliError::usage("wisp open <file.wisp-task|url|gist:<id>>")) };
     let bundle = read(src, cwd)?;
     open_bundle(c, o, cwd, bundle).await
 }
@@ -223,7 +230,35 @@ pub async fn open_bundle(c: &Client, o: &Opts, cwd: &Path, bundle: Value) -> Res
             let made = c.cmd("share.import", json!({ "bundle": bundle })).await?;
             say(&format!("  {} imported read-only: {}  (wisp task history {})", paint(&st, GREEN, "✓"), s(&made, "id"), s(&made, "id")));
         }
-        other => return Err(CliError::said(format!("--{other}: --run, --their-setup, --import or --compare"))),
+        other => return Err(CliError::usage(format!("--{other}: --run, --their-setup, --import or --compare"))),
     }
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// cli-r6 L1: `wisp share` with no id, `--level x` or `--to x` is the command line (exit 2), not a refusal (1).
+    #[test]
+    fn a_share_typed_wrong_is_a_usage_error() {
+        let o = |words: &[&str], level: Option<&str>, to: Option<&str>| Opts {
+            words: words.iter().map(|w| (*w).to_owned()).collect(),
+            level: level.map(str::to_owned),
+            to: to.map(str::to_owned),
+            ..Opts::default()
+        };
+        for (opts, said) in [
+            (o(&[], None, None), "wisp share <id>"),
+            (o(&["t1"], Some("all"), None), "--level all"),
+            (o(&["t1"], None, Some("s3")), "--to s3"),
+        ] {
+            let e = share_flags(&opts).unwrap_err();
+            assert_eq!(e.exit_code(), crate::cli::USAGE_EXIT, "{e}");
+            assert!(e.to_string().starts_with(said), "{e}");
+        }
+        let ok = o(&["t1"], Some("report"), Some("link"));
+        let (id, level, to) = share_flags(&ok).unwrap();
+        assert_eq!((id, level.as_str(), to.as_str()), ("t1", "report", "cloud"));
+    }
 }

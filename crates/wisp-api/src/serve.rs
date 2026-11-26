@@ -3,7 +3,7 @@
 //! front, so they never reuse a socket wisp is closing). `server.json` is written once listening, so
 //! integrations (CLI, MCP, editors) find wisp without knowing the port, and removed on exit only if its
 //! pid is ours (a second wisp that failed to bind must not delete the first one's).
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -30,9 +30,22 @@ pub struct Server {
     advertised: Option<PathBuf>,
 }
 
+/// The URL this computer reaches a server bound at `addr` on: any IPv4 address (`0.0.0.0`) or a loopback one as
+/// `127.0.0.1`, any IPv6 address (`::`) or its loopback as `[::1]`, and an address of its own as itself. It was always
+/// `127.0.0.1`, so `wisp serve --host ::1` advertised a URL nothing answered on.
+pub fn advertised_url(addr: SocketAddr) -> String {
+    let port = addr.port();
+    match addr.ip() {
+        IpAddr::V4(ip) if ip.is_unspecified() || ip.is_loopback() => format!("http://127.0.0.1:{port}"),
+        IpAddr::V6(ip) if ip.is_unspecified() || ip.is_loopback() => format!("http://[::1]:{port}"),
+        IpAddr::V4(ip) => format!("http://{ip}:{port}"),
+        IpAddr::V6(ip) => format!("http://[{ip}]:{port}"),
+    }
+}
+
 impl Server {
     pub fn url(&self) -> String {
-        format!("http://127.0.0.1:{}", self.addr.port())
+        advertised_url(self.addr)
     }
 
     pub fn edge(&self) -> &Arc<Edge> {
@@ -57,7 +70,7 @@ pub async fn serve(edge: Arc<Edge>, listener: TcpListener) -> std::io::Result<Se
         Some(home) => {
             tokio::fs::create_dir_all(home).await?;
             let id = edge.ident.get_or_init(|| Ident::new(&edge.cfg.master, home));
-            Some(write_server_json(home, addr.port(), &edge.cfg.version, id).await?)
+            Some(write_server_json(home, addr, &edge.cfg.version, id).await?)
         }
         None => None,
     };
@@ -129,9 +142,10 @@ pub fn home_hash(home: &Path) -> String {
     crate::auth::hex(&digest[..16])
 }
 
-async fn write_server_json(home: &Path, port: u16, version: &str, id: &Ident) -> std::io::Result<PathBuf> {
+async fn write_server_json(home: &Path, addr: SocketAddr, version: &str, id: &Ident) -> std::io::Result<PathBuf> {
     let file = home.join("server.json");
-    let body = json!({"url": format!("http://127.0.0.1:{port}"), "port": port, "pid": std::process::id(), "version": version, "apiVersion": API_VERSION, "startedAt": now_ms(), "instance": id.instance, "homeHash": id.home_hash});
+    let port = addr.port();
+    let body = json!({"url": advertised_url(addr), "port": port, "pid": std::process::id(), "version": version, "apiVersion": API_VERSION, "startedAt": now_ms(), "instance": id.instance, "homeHash": id.home_hash});
     let tmp = home.join(format!("server.json.{}.tmp", std::process::id()));
     tokio::fs::write(&tmp, serde_json::to_vec_pretty(&body).unwrap_or_default()).await?;
     tokio::fs::rename(&tmp, &file).await?;
@@ -146,5 +160,23 @@ pub async fn remove_if_ours(file: &Path) {
     let pid = serde_json::from_slice::<serde_json::Value>(&text).ok().and_then(|v| v.get("pid").and_then(serde_json::Value::as_u64));
     if pid == Some(u64::from(std::process::id())) {
         let _ = tokio::fs::remove_file(file).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::advertised_url;
+
+    /// cli-r6 M4: the URL server.json, `Server::url` and the agents' access say is the one this computer reaches.
+    #[test]
+    fn the_advertised_url_is_the_bound_address_this_computer_reaches() {
+        let at = |a: &str| advertised_url(a.parse().unwrap_or_else(|e| panic!("{a}: {e}")));
+        assert_eq!(at("0.0.0.0:4477"), "http://127.0.0.1:4477");
+        assert_eq!(at("127.0.0.1:4477"), "http://127.0.0.1:4477");
+        assert_eq!(at("127.0.0.2:4477"), "http://127.0.0.1:4477");
+        assert_eq!(at("[::]:4477"), "http://[::1]:4477");
+        assert_eq!(at("[::1]:4477"), "http://[::1]:4477");
+        assert_eq!(at("192.168.1.5:4477"), "http://192.168.1.5:4477");
+        assert_eq!(at("[fe80::1]:80"), "http://[fe80::1]:80");
     }
 }

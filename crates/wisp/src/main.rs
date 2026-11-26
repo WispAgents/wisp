@@ -115,6 +115,11 @@ async fn run(p: Parsed, user_home: &Path, cwd: &Path) -> i32 {
 }
 
 async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
+    // first, before anything answers, starts or writes: `--host` anywhere but serve was silently ignored
+    if let Some(said) = words::host_refused(p) {
+        eprintln!("  ✗ {said}");
+        return Ok(cli::USAGE_EXIT);
+    }
     let home = services::home(std::env::var("WISP_HOME").ok().as_deref(), Some(user_home.to_owned()));
     let f = &p.flags;
     let cwd_s = f.cwd.clone().unwrap_or_else(|| cwd.to_owned()).display().to_string();
@@ -151,18 +156,11 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
     {
         return Ok(code);
     }
-    // a prompt with a flag no launch takes (`wisp "fix it" --mdoe plan`): refused, nothing launched (audit H2)
-    if p.command.is_none()
-        && let Some(stray) = p.strays.first()
-    {
-        eprintln!("  ✗ {}", words::launch_stray(&p.words, stray));
-        return Ok(1);
-    }
-    if p.command.is_none()
-        && let Some(said) = words::bad_launch_words(f.mode.as_deref(), f.effort.as_deref(), f.model.as_deref())
-    {
+    // a prompt with a flag no launch takes (`wisp "fix it" --mdoe plan`, audit H2) or a bad --mode/--effort/--model:
+    // refused, nothing launched
+    if let Some((said, code)) = words::launch_refused(p) {
         eprintln!("  ✗ {said}");
-        return Ok(1);
+        return Ok(code);
     }
     // a group command with a verb it doesn't have (`wisp plugin frob`, `wisp mcp start`): its verbs, exit 2
     // a group that routed as a command (`mcp`, `skill`, `plugin`): its next word decides, however many follow (`wisp
@@ -720,20 +718,50 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
             let id = scripted::task_id(&c, scripted::need(words.get(1), "session id")?).await?;
             attach::attach(&c, home, &id, attach::Mode { interactive: tty, until_idle: !tty, fresh: false }).await?
         }
+        // the watch arms come before `commands::run`: its stray-flag refusal is theirs too, said before connecting
+        Some(cmd @ ("show" | "ls" | "list")) if f.watch && commands::refused_flag(p, cmd).is_some() => {
+            eprintln!("{}", commands::refused_flag(p, cmd).unwrap_or_default());
+            cli::USAGE_EXIT
+        }
         Some("show") if f.watch => {
             let c = Client::connect(port, true).await?;
             let id = scripted::task_id(&c, scripted::need(words.get(1), "session id")?).await?;
             attach::attach(&c, home, &id, attach::Mode { interactive: false, until_idle: true, fresh: false }).await?
         }
-        Some("ls" | "list") if f.watch => attach::ls_watch(&Client::connect(port, true).await?, f.all).await?,
-        Some("help") => {
+        Some(cmd @ ("ls" | "list")) if f.watch => {
+            // the history list's own flags (`--crew`, `--since`, `--project`) as `wisp ls` reads them; `-a` is --all
+            let at = p.argv.iter().position(|a| a == cmd).map_or(0, |i| i + 1);
+            let rest: Vec<String> = p.argv[at.min(p.argv.len())..].iter().filter(|a| *a != "-a").cloned().collect();
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+            // the terminal's lines under the watch's header (two lines) and the cursor's
+            let room = cli::lines().saturating_sub(3).max(1);
+            let o = code::opts(&rest);
             let c = Client::connect(port, true).await?;
-            cli::help(&cli::shown(&c, cli::catalogue(&c, home).await?).await, words)
+            // `--crew` names a member by id, name or handle, found as plain `wisp ls --crew` finds it
+            let members = if o.crew.is_some() {
+                c.cmd("crew.list", serde_json::json!({})).await.unwrap_or_default()
+            } else {
+                serde_json::Value::Null
+            };
+            let keep = scripted::RowFilter::watching(f, &o, &members, room, i64::try_from(now).unwrap_or(0))?;
+            attach::ls_watch(&c, f, &keep).await?
         }
-
+        // never a background wisp to say the usage (audit cli-r6): the running one's catalogue, else the one it left here,
+        // else the built-in usage alone
+        Some("help") => match quiet_catalogue(home, port, words.get(1)).await {
+            Some((cat, _)) => cli::help(&cat, words),
+            None => cli::help_alone(words),
+        },
         Some("completions") => {
-            let c = Client::connect(port, true).await?;
-            cli::completions(&c, &cli::shown(&c, cli::catalogue(&c, home).await?).await, words.get(1)).await
+            let c = Client::connect(port, false).await.ok();
+            let cat = match &c {
+                Some(c) => match cli::catalogue(c, home).await {
+                    Ok(cat) => Some(cli::shown(c, cat).await),
+                    Err(_) => cli::cached(home),
+                },
+                None => cli::cached(home),
+            };
+            cli::completions(c.as_ref(), cat.as_ref(), words.get(1)).await
         }
         Some("sdk") => {
             let c = Client::connect(port, true).await?;

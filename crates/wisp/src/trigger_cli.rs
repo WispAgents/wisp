@@ -198,10 +198,10 @@ async fn dry_run(c: &Client, name: String, said: &Said, json: bool) -> Result<()
 #[allow(clippy::many_single_char_names)] // c, p, s as in the rest of the CLI
 async fn trigger(c: &Client, p: &Parsed, verb: &str, s: &Said, cwd: &str) -> Result<i32> {
     let json = p.flags.json || s.on_off.iter().any(|f| f == "json");
-    let name = || s.words.first().cloned().ok_or_else(|| CliError::said(format!("wisp trigger {verb} <name>")));
+    let name = || s.words.first().cloned().ok_or_else(|| CliError::usage(format!("wisp trigger {verb} <name>")));
     match verb {
         "add" => {
-            let (name, spec) = spec_of(s, p, cwd).map_err(CliError::said)?;
+            let (name, spec) = spec_of(s, p, cwd).map_err(CliError::usage)?;
             let out = c
                 .cmd("resources.apply", json!({ "resources": [{ "kind": "trigger", "name": name, "spec": spec }], "trust": true }))
                 .await?;
@@ -274,7 +274,7 @@ async fn trigger(c: &Client, p: &Parsed, verb: &str, s: &Said, cwd: &str) -> Res
             say("  ✓ resumed");
         }
         "approve" => {
-            let job = s.words.get(1).ok_or_else(|| CliError::said("wisp trigger approve <name> <job> [--no]"))?;
+            let job = s.words.get(1).ok_or_else(|| CliError::usage("wisp trigger approve <name> <job> [--no]"))?;
             let yes = !s.on_off.iter().any(|f| f == "no");
             said_out(&c.cmd("automations.trigger.approve", json!({ "name": name()?, "job": job, "yes": yes })).await?, json);
         }
@@ -290,7 +290,9 @@ async fn trigger(c: &Client, p: &Parsed, verb: &str, s: &Said, cwd: &str) -> Res
             }
         }
         other => {
-            return Err(CliError::said(format!("wisp trigger {other}: add, ls, off, on, rm, fire, test, log, resume, approve or sources")));
+            return Err(CliError::usage(format!(
+                "wisp trigger {other}: add, ls, off, on, rm, fire, test, log, resume, approve or sources"
+            )));
         }
     }
     Ok(0)
@@ -299,7 +301,7 @@ async fn trigger(c: &Client, p: &Parsed, verb: &str, s: &Said, cwd: &str) -> Res
 async fn crew(c: &Client, p: &Parsed, verb: &str, s: &Said) -> Result<i32> {
     match verb {
         "wake" => {
-            let id = s.words.first().ok_or_else(|| CliError::said("wisp crew wake <member> [--why TEXT]"))?;
+            let id = s.words.first().ok_or_else(|| CliError::usage("wisp crew wake <member> [--why TEXT]"))?;
             let why = s.vals.get("why").cloned().unwrap_or_else(|| s.words[1..].join(" "));
             let v = c.cmd("crew.wake", json!({ "id": id, "why": why, "source": "cli" })).await?;
             if p.flags.json {
@@ -336,7 +338,7 @@ async fn crew(c: &Client, p: &Parsed, verb: &str, s: &Said) -> Result<i32> {
             }
         }
         "pause" | "resume" => {
-            let [id] = s.words.as_slice() else { return Err(CliError::said(format!("wisp crew {verb} <member> (its name or id)"))) };
+            let [id] = s.words.as_slice() else { return Err(CliError::usage(format!("wisp crew {verb} <member> (its name or id)"))) };
             let v = c.cmd("crew.update", json!({ "id": id, "paused": verb == "pause" })).await?;
             if p.flags.json {
                 say(&v.to_string());
@@ -344,7 +346,7 @@ async fn crew(c: &Client, p: &Parsed, verb: &str, s: &Said) -> Result<i32> {
                 say(&paused_words(&v, id, verb == "pause"));
             }
         }
-        other => return Err(CliError::said(format!("wisp crew {other}: wake, graph, pause or resume"))),
+        other => return Err(CliError::usage(format!("wisp crew {other}: wake, graph, pause or resume"))),
     }
     Ok(0)
 }
@@ -364,7 +366,7 @@ pub async fn run(c: &Client, p: &Parsed, area: &str, cwd: &str) -> Result<i32> {
     let at = p.argv.iter().position(|a| a == area).map_or(0, |i| i + 1);
     let rest = &p.argv[at.min(p.argv.len())..];
     let verb = rest.first().map_or("ls", String::as_str);
-    let s = read(rest.get(1..).unwrap_or_default()).map_err(CliError::said)?;
+    let s = read(rest.get(1..).unwrap_or_default()).map_err(CliError::usage)?;
     if area == "crew" { crew(c, p, verb, &s).await } else { trigger(c, p, verb, &s, cwd).await }
 }
 
@@ -401,5 +403,32 @@ mod tests {
         assert!(read(&words("x y --nope 1")).is_err(), "an unknown flag is said, not dropped");
         assert!(spec_of(&read(&words("only")).unwrap(), &p, "").is_err(), "needs an on");
         assert_eq!(spec["project"], "/w/api", "-C is the project");
+    }
+
+    /// cli-r6 L1: a trigger or crew verb typed wrong (no such verb, a missing name, a flag it doesn't take) is the
+    /// command line, exit 2, before anything is asked of wisp (nothing answers on port 1).
+    #[tokio::test]
+    async fn a_trigger_typed_wrong_is_a_usage_error() {
+        let c = Client::new(1);
+        let argv: Vec<String> = words("trigger frob");
+        let p = crate::args::parse(&argv, None, std::path::Path::new("/h"), std::path::Path::new("/w")).unwrap();
+        let none = Said::default();
+        for e in [
+            trigger(&c, &p, "frob", &none, "/w").await.unwrap_err(),
+            trigger(&c, &p, "add", &none, "/w").await.unwrap_err(),
+            trigger(&c, &p, "rm", &none, "/w").await.unwrap_err(),
+            crew(&c, &p, "frob", &none).await.unwrap_err(),
+            crew(&c, &p, "wake", &none).await.unwrap_err(),
+            run(
+                &c,
+                &crate::args::parse(&words("trigger ls --nope"), None, std::path::Path::new("/h"), std::path::Path::new("/w")).unwrap(),
+                "trigger",
+                "/w",
+            )
+            .await
+            .unwrap_err(),
+        ] {
+            assert_eq!(e.exit_code(), crate::cli::USAGE_EXIT, "{e}");
+        }
     }
 }
