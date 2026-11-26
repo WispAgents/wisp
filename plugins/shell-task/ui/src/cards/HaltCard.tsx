@@ -51,7 +51,7 @@ export function HaltCard(props: {
           variant={i() === 0 && h().kind === 'refused' ? 'primary' : 'ghost'}
           icon="agent"
           disabled={locked()}
-          title={props.t(to.model ? 'shell-task.halt.handTipModel' : 'shell-task.halt.handTip', { name: props.nameOf(to.agent), model: to.model })}
+          title={props.t(to.model ? 'shell-task.halt.handTipModel' : to.left !== undefined ? 'shell-task.halt.handTipLeft' : 'shell-task.halt.handTip', { name: props.nameOf(to.agent), model: to.model, left: String(Math.round((to.left ?? 0) * 100)) })}
           onClick={() => hand(to)}
         >
           {props.t('shell-task.halt.hand', { name: props.nameOf(to.agent) })}

@@ -13,7 +13,7 @@ import { agentsOf, type AgentStats } from './agents.ts';
 import { cwdOf, docOf, haltOf, heldOf, whatChanged, type TurnDoc } from './model.ts';
 import { Receipt } from './Receipt.tsx';
 import { TurnDelegations } from './TurnDelegations.tsx';
-import { handoffTargets, limitTarget, type AgentLike, type Target } from './vendors.ts';
+import { handoffTargets, limitTarget, type AgentLike, type PlanLike, type Target } from './vendors.ts';
 import { WhatChanged } from './WhatChanged.tsx';
 import { openContinue } from '../continue/open.ts';
 
@@ -52,6 +52,8 @@ const followUp = defineCommand<{ key: EntityKey; text: string; run?: { agent: st
 });
 const addLater = defineCommand<{ key: EntityKey; sessionId: string; text: string; at: number }>({ id: 'later.add', owner: (a) => a.key, wire: (a) => ({ sessionId: a.sessionId, text: a.text, at: a.at }), optimistic: 'none', pending: 'Wait until' });
 const agents = defineCommand<{ key: EntityKey }, AgentLike[]>({ id: 'runtime.agents', owner: (a) => a.key, wire: () => ({}), optimistic: 'none', pending: 'the hand-off buttons' });
+/** One harness's plan windows (wisp.budget), for ranking the limit card's hand-off by what each has left. */
+const plansOf = defineCommand<{ key: EntityKey; agent: string }, PlanLike[]>({ id: 'budget.view', owner: (a) => a.key, wire: (a) => ({ agent: a.agent }), optimistic: 'none', pending: 'the hand-off button' });
 /** v1's words for carrying on after a limit (server/later.js LIMIT_CARRY_ON). */
 const CARRY_ON = 'Carry on from where the last run stopped at the usage limit.';
 
@@ -79,11 +81,20 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
     () => c.run(agents, { key: taskKey() }).catch(() => [] as AgentLike[]),
   );
   const from = (): string => doc()?.agent ?? String(task()?.agent ?? '');
+  // a limit: each other harness's plan windows, read once, so the hand-off goes where there's room (check-in 50).
+  // A read that fails counts as unknown: the harness keeps its place after the ones known to have room
+  const [plans] = createResource(
+    () => (halt()?.kind === 'limit' && set() ? (set() ?? []).filter((a) => a.available && a.id !== from()) : undefined),
+    async (list) => {
+      const read = await Promise.all(list.map((a) => c.run(plansOf, { key: taskKey(), agent: a.id }).then((p) => [a.id, p] as const, () => [a.id, [] as PlanLike[]] as const)));
+      return Object.fromEntries(read) as Record<string, readonly PlanLike[]>;
+    },
+  );
   const targets = (): Target[] => {
     const h = halt();
     const list = set() ?? [];
     if (h?.kind === 'refused') return handoffTargets({ from: h.agent || from(), fromModel: h.model, ...(h.vendor && { vendor: h.vendor }), agents: list });
-    const one = h?.kind === 'limit' ? limitTarget(from(), list) : undefined;
+    const one = h?.kind === 'limit' ? limitTarget(from(), list, plans() ?? {}, Date.now()) : undefined;
     return one ? [one] : [];
   };
   // the harnesses the shell knows, followed (a harness plugin that registers later names its runs)
