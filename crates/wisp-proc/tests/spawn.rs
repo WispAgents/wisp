@@ -88,6 +88,25 @@ async fn exec_keeps_output_to_its_cap_and_kills_on_timeout() {
     assert_eq!(r.stdout_text(), "piped in");
 }
 
+/// The timeout bounds the whole exec: a child that closes its stdio and runs on gives EOF at once, and the wait for
+/// its exit had no deadline (the exec hung for the child's whole run). One that closes stdio and exits keeps its code.
+#[tokio::test]
+async fn exec_timeout_reaches_a_child_that_closed_its_stdio() {
+    let proc = wisp_proc::local();
+    let start = std::time::Instant::now();
+    let opts = ExecOpts { timeout: Some(Duration::from_millis(300)), ..ExecOpts::default() };
+    let r = tokio::time::timeout(Duration::from_secs(5), proc.exec("sh", &args(&["-c", "exec >/dev/null 2>&1; sleep 20"]), opts))
+        .await
+        .expect("the timeout ended the exec")
+        .unwrap();
+    assert!(start.elapsed() < Duration::from_secs(2), "{:?}", start.elapsed());
+    assert!(r.timed_out);
+    assert_eq!(r.exit.signal.as_deref(), Some("SIGKILL"));
+    let opts = ExecOpts { timeout: Some(Duration::from_secs(10)), ..ExecOpts::default() };
+    let r = proc.exec("sh", &args(&["-c", "exec >/dev/null; exit 3"]), opts).await.unwrap();
+    assert_eq!((r.exit.code, r.timed_out), (Some(3), false));
+}
+
 /// Round 211: an `exec` whose caller gives up (its future dropped: a closed request, a cancelled detect) never reaches
 /// its timeout, so the drop itself ends the child and what it started in its group; before, both ran on for good.
 #[tokio::test(flavor = "multi_thread")]
@@ -218,4 +237,22 @@ fn live_is_zero_as_soon_as_the_exit_is_known() {
         std::thread::sleep(Duration::from_millis(1));
     }
     assert_eq!(proc.live(), 0);
+}
+
+/// This Mac's Stop signals a pid its last sample saw, up to a minute later: by then the OS may have handed the pid to
+/// another process. `signal_if_same` signals only the process with the start that sample read; another start is
+/// `Exited`, and the process is left alone.
+#[test]
+fn signal_if_same_signals_only_the_process_it_saw() {
+    let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+    let pid = child.id();
+    let start = wisp_proc::processes().unwrap().into_iter().find(|p| p.pid == pid).unwrap().start;
+    assert_ne!(start, 0, "this OS reads a start");
+    assert!(matches!(wisp_proc::signal_if_same(pid, start + 1, Signal::Kill), Err(ProcError::Exited)));
+    assert!(wisp_proc::pid_alive(pid), "a stranger with its pid is never signalled");
+    wisp_proc::signal_if_same(pid, start, Signal::Kill).unwrap();
+    let status = child.wait().unwrap();
+    assert_eq!(std::os::unix::process::ExitStatusExt::signal(&status), Some(9));
+    assert!(matches!(wisp_proc::signal_if_same(pid, start, Signal::Kill), Err(ProcError::Exited)), "reaped: gone");
+    assert!(wisp_proc::signal_if_same(std::process::id(), 0, Signal::Term).is_err(), "never wisp itself");
 }

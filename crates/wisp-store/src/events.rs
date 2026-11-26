@@ -29,6 +29,9 @@ pub const DEDUPE_MS: i64 = 24 * 3_600_000;
 pub const KEEP_MS: i64 = 30 * 24 * 3_600_000;
 pub const KEEP_ROWS: i64 = 1_000_000;
 const TRIM_EVERY: u64 = 10_000;
+/// Keys added between two sweeps of `LogState::recent` at the least (or half the map, when that's more): the
+/// sweep walks the whole map, so it runs at most once per as many inserts as there are keys to walk.
+const SWEEP_EVERY: u64 = 4096;
 const ZSTD_OVER: usize = 1024;
 
 /// The tables, as the kernel owner's migration 2.
@@ -55,6 +58,8 @@ pub(crate) struct LogState {
     /// (type, key) → when it was appended, the last 24 h
     pub(crate) recent: Mutex<HashMap<(String, String), i64>>,
     pub(crate) appended: AtomicU64,
+    /// keys put in `recent` since its last sweep
+    pub(crate) unswept: AtomicU64,
 }
 
 fn encode(v: &Value) -> (i64, Vec<u8>) {
@@ -107,6 +112,13 @@ pub(crate) fn append_on(db: &Connection, st: &LogState, now: i64, rows: &[NewEve
             data
         ])?;
         out.push(u64::try_from(db.last_insert_rowid()).ok());
+    }
+    // A key older than DEDUPE_MS dedupes nothing, but only a rollback took one out: the map grew by every keyed
+    // event for as long as wisp ran. Swept here, amortised, so no append pays for walking it.
+    let fresh = added.len() as u64;
+    if fresh > 0 && st.unswept.fetch_add(fresh, Ordering::Relaxed) + fresh >= SWEEP_EVERY.max(recent.len() as u64 / 2) {
+        st.unswept.store(0, Ordering::Relaxed);
+        recent.retain(|_, at| now - *at < DEDUPE_MS);
     }
     Ok((out, added))
 }
@@ -545,6 +557,40 @@ mod tests {
         assert!(!old.is_empty() && old.len() < rows.len(), "a mixed log: some in the last 24 h, some older");
         assert_eq!(new, old);
         assert_eq!(recent_keys(&db, 100 * DEDUPE_MS).unwrap(), Vec::new(), "nothing in the last 24 h");
+    }
+
+    fn keyed(key: &str) -> NewEvent {
+        NewEvent {
+            ty: "t".into(),
+            plugin: "p".into(),
+            subject: None,
+            key: Some(key.into()),
+            cause: None,
+            root: "r".into(),
+            at: 0,
+            data: Value::Null,
+        }
+    }
+
+    /// The dedupe map lost a key only on a rollback: every keyed event stayed in memory for as long as wisp ran.
+    /// Keys past `DEDUPE_MS` go at the next sweep; within it a repeat is still dropped, and after it taken again.
+    #[test]
+    fn events_dedupe_map_drops_keys_older_than_a_day() {
+        let db = log();
+        let st = LogState::default();
+        let t0 = DEDUPE_MS;
+        let old: Vec<NewEvent> = (0..1000).map(|i| keyed(&format!("old{i}"))).collect();
+        append_on(&db, &st, t0, &old).unwrap();
+        let (seqs, _) = append_on(&db, &st, t0 + DEDUPE_MS - 1, &[keyed("old0")]).unwrap();
+        assert_eq!(seqs, vec![None], "a repeat within 24 h is dropped");
+        let later = t0 + DEDUPE_MS + 1;
+        let new: Vec<NewEvent> = (0..SWEEP_EVERY).map(|i| keyed(&format!("new{i}"))).collect();
+        append_on(&db, &st, later, &new).unwrap();
+        let len = lock(&st.recent).len() as u64;
+        assert_eq!(len, SWEEP_EVERY, "the day-old keys are gone");
+        let (seqs, _) = append_on(&db, &st, later, &[keyed("new0"), keyed("old1")]).unwrap();
+        assert_eq!(seqs[0], None, "a key kept is still deduped");
+        assert!(seqs[1].is_some(), "after 24 h a key is taken again");
     }
 
     /// The old query walked every row older than the boundary; the search looks at ~20.

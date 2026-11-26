@@ -286,6 +286,21 @@ pub fn signal_pid(pid: u32, sig: Signal) -> Result<()> {
     }
 }
 
+/// [`signal_pid`], only when `pid` is still the process seen earlier: its start (`ProcInfo::start`) is `start`. A pid
+/// that is gone, a zombie, or another process's now (the OS handed it out again since) is `Exited`, never signalled.
+/// A start of 0 on either side (unknown) checks only that the pid is running. One process-table read.
+pub fn signal_if_same(pid: u32, start: u64, sig: Signal) -> Result<()> {
+    // signal_pid's own refusals (pid 0, 1, wisp itself), whatever the table says
+    if pid <= 1 || pid == std::process::id() {
+        return signal_pid(pid, sig);
+    }
+    let same = sys::processes()?.iter().any(|p| p.pid == pid && !p.zombie && (start == 0 || p.start == 0 || p.start == start));
+    if !same {
+        return Err(ProcError::Exited);
+    }
+    signal_pid(pid, sig)
+}
+
 /// The OS's "no such process": `ESRCH` on Unix; on Windows `OpenProcess` answers a pid that isn't
 /// running with `ERROR_INVALID_PARAMETER` (87, "The parameter is incorrect").
 const fn no_such_process(code: Option<i32>, windows: bool) -> bool {
