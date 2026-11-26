@@ -21,9 +21,28 @@ pub fn due(archived: bool, state: SessionState, queued: usize) -> bool {
     archived && !matches!(state, SessionState::Running | SessionState::Waiting) && queued == 0
 }
 
-/// Ship it is using the folder (a ship or a conflict fix's push in flight, `ext["wisp.ship"]`): it waits.
+/// Ship it is using the folder (a ship or a conflict fix's push in flight, `ext["wisp.ship"]`): it waits. Read through
+/// ship's own model (`ShipTask::shipping`, `ShipTask::conflict_fix`); a slot that doesn't read as it (a newer or a
+/// broken shape) with something under `shipping` or `conflictFix` counts as in flight: a folder is never taken on a
+/// guess.
 pub fn shipping(ship: Option<&Value>) -> bool {
-    ship.is_some_and(|v| !v["shipping"].is_null() || v["conflictFix"]["step"] == "pushing")
+    use serde::Deserialize;
+    use wisp_ship_api::{ConflictFix, Shipping};
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct InFlight {
+        #[serde(default)]
+        shipping: Option<Shipping>,
+        #[serde(default)]
+        conflict_fix: Option<ConflictFix>,
+    }
+    let Some(v) = ship.filter(|v| !v.is_null()) else {
+        return false;
+    };
+    match InFlight::deserialize(v) {
+        Ok(s) => s.shipping.is_some() || s.conflict_fix.is_some_and(|f| f.step == "pushing"),
+        Err(_) => !v["shipping"].is_null() || !v["conflictFix"].is_null(),
+    }
 }
 
 /// The longest a /btw can be answering (runtime's `BTW_TIMEOUT`, 300 s, with room): an entry pending longer was
@@ -319,9 +338,18 @@ mod tests {
     #[test]
     fn an_archived_tasks_folder_waits_while_ship_it_pushes_from_it() {
         use serde_json::json;
+        use wisp_ship_api::{ConflictFix, ShipTask, Shipping};
+        let slot = |shipping: Option<Shipping>, conflict_fix: Option<ConflictFix>| {
+            serde_json::to_value(ShipTask { session: "t".into(), shipping, conflict_fix, ..ShipTask::default() }).unwrap()
+        };
+        let fix = |step: &str| Some(ConflictFix { step: step.into(), ..ConflictFix::default() });
+        assert!(shipping(Some(&slot(Some(Shipping { step: "push".into(), ..Shipping::default() }), None))));
+        assert!(shipping(Some(&slot(None, fix("pushing")))));
+        assert!(!shipping(Some(&slot(None, fix("done")))));
+        assert!(!shipping(Some(&slot(None, None))));
+        assert!(!shipping(None) && !shipping(Some(&serde_json::Value::Null)));
+        // a shape ship's model doesn't read: something under `shipping` keeps the folder
         assert!(shipping(Some(&json!({ "shipping": { "step": "push" } }))));
-        assert!(shipping(Some(&json!({ "shipping": null, "conflictFix": { "step": "pushing" } }))));
-        assert!(!shipping(Some(&json!({ "shipping": null, "conflictFix": { "step": "done" } }))));
-        assert!(!shipping(None));
+        assert!(!shipping(Some(&json!({ "shipping": null }))));
     }
 }

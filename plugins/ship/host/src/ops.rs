@@ -8,12 +8,17 @@ use wisp_kernel::{Call, CancellationToken, Clock};
 use wisp_ship_api::{PrSummary, RepoStatus, Synced, Worktree};
 use wisp_ship_core::Refusal;
 use wisp_ship_core::decide::{
-    cleans_up, commit_message, created_url, merge_plan, merged_head, pr_create_args, push_refspec, push_target, repo_status, reuse_pr,
-    unpushed_from,
+    Tidied, cleans_up, commit_message, created_url, merge_plan, merged_head, pr_create_args, push_refspec, push_target, repo_status,
+    reuse_pr, tidy_note, unpushed_from,
 };
 
 use crate::error::Result;
 use crate::gh::Gh;
+
+/// A merged task's folder removed through the worktrees plugin (`worktrees.remove`, strict, the branch left to ship):
+/// its per-folder lock, the turns' claims and the folders working tasks are in all hold, and Keep worktree keeps it.
+/// Given the call, the task's id and its worktree.
+pub type Tidier = Arc<dyn Fn(Call, String, Worktree) -> wisp_kernel::BoxFuture<'static, Tidied> + Send + Sync>;
 
 /// What Ship it runs on. Cheap to clone.
 #[derive(Clone)]
@@ -23,6 +28,7 @@ pub struct Shipper {
     /// the plugin's scope: repo handles are released with it
     pub owner: CancellationToken,
     pub clock: Arc<dyn Clock>,
+    pub tidier: Tidier,
 }
 
 impl std::fmt::Debug for Shipper {
@@ -53,14 +59,15 @@ impl Shipper {
     }
 
     /// v1 worktreeStatus: dirty paths, commits past the base, commits not on the PR. After its PR
-    /// merged, only commits since the merged head count (edge case Git 6).
+    /// merged, only commits since the merged head count (edge case Git 6). Err when `git status` fails: git can't
+    /// tell, which is never "clean".
     pub async fn status(&self, call: &Call, wt: &Worktree, pr: Option<&PrSummary>) -> Result<RepoStatus> {
         if !exists(&wt.path).await {
             return Ok(RepoStatus::default());
         }
         let repo = self.repo(call, &wt.path).await?;
         let (st, ahead) = tokio::join!(repo.status(call), repo.count(call, &format!("{}..HEAD", wt.base_ref)));
-        let dirty = st.map_or(0, |s| u32::try_from(s.dirty()).unwrap_or(u32::MAX));
+        let dirty = u32::try_from(st?.dirty()).unwrap_or(u32::MAX);
         let mut counts = Vec::new();
         for r in unpushed_from(wt, merged_head(pr)) {
             let n = repo.count(call, &format!("{r}..HEAD")).await.ok().flatten();
@@ -111,9 +118,24 @@ impl Shipper {
         self.gh.pr_view(&wt.path, &created_url(&out), now).await
     }
 
+    /// Commits on the task's branch the merged PR doesn't have, counted from the branch itself (`refs/heads/<branch>`):
+    /// HEAD may have left it, and what's there is still only in this repo. None when git can't tell.
+    async fn branch_unpushed(&self, call: &Call, wt: &Worktree, pr: &PrSummary) -> Option<u32> {
+        if wt.branch.is_empty() {
+            return Some(0);
+        }
+        let repo = self.repo(call, &wt.root).await.ok()?;
+        for r in unpushed_from(wt, merged_head(Some(pr))) {
+            if let Some(n) = repo.count(call, &format!("{r}..refs/heads/{}", wt.branch)).await.ok().flatten() {
+                return Some(n);
+            }
+        }
+        None
+    }
+
     /// Squash-merge the exact head that was reviewed (a draft readied first), fast-forward the user's
-    /// base, then tidy wisp's own worktree and branch (edge cases Git 7, 8).
-    pub async fn merge(&self, call: &Call, wt: &Worktree, number: u64) -> Result<(PrSummary, Synced, Option<String>)> {
+    /// base, then tidy wisp's own worktree and branch (edge cases Git 7, 8) for task `session`.
+    pub async fn merge(&self, call: &Call, session: &str, wt: &Worktree, number: u64) -> Result<(PrSummary, Synced, Option<String>)> {
         let dir = Self::dir_of(wt).await;
         let n = number.to_string();
         let pr = self.gh.pr_view(&dir, &n, self.now()).await?;
@@ -129,32 +151,46 @@ impl Shipper {
             |s| Synced { ok: s.ok, text: s.text },
         );
         if cleans_up(wt) {
-            // work the merge didn't take (uncommitted, or commits after the PR's head) keeps the folder and its branch
-            // (audit A orch #3: a merge removed a worktree holding uncommitted work, without a word)
-            let left = self.status(call, wt, Some(&pr)).await.unwrap_or_default();
-            if let Some(why) = kept_because(&left) {
-                let note = format!("The worktree {} was kept: {why}.", wt.path);
+            // work the merge didn't take (uncommitted, or commits after the PR's head, in the folder or on its branch)
+            // keeps the folder and its branch (audit A orch #3: a merge removed a worktree holding uncommitted work,
+            // without a word); git failing to say counts as work, never as clean
+            let note = match self.status(call, wt, Some(&pr)).await {
+                Err(e) => Some(format!("The worktree {} was kept: git status failed ({e}).", wt.path)),
+                Ok(mut left) => {
+                    if left.exists {
+                        left.unpushed = left.unpushed.max(self.branch_unpushed(call, wt, &pr).await.unwrap_or(0));
+                    }
+                    match kept_because(&left) {
+                        Some(why) => Some(format!("The worktree {} was kept: {why}.", wt.path)),
+                        None => self.tidy(call, session, &root, wt).await,
+                    }
+                }
+            };
+            if let Some(note) = note {
                 if !sync.text.is_empty() {
                     sync.text.push(' ');
                 }
                 sync.text.push_str(&note);
                 return Ok((pr, sync, Some(note)));
             }
-            self.tidy(call, &root, wt).await;
         }
         Ok((pr, sync, None))
     }
 
-    /// The merged task's worktree and branch go, here and on the remote. Best effort: the merge landed.
-    async fn tidy(&self, call: &Call, root: &Arc<dyn Repo>, wt: &Worktree) {
-        if exists(&wt.path).await
-            && let Err(e) = root.worktree_remove(call, &wt.path).await
-        {
-            tracing::warn!(path = %wt.path, "ship: worktree remove after merge: {}", e.message);
+    /// The merged task's worktree goes through the worktrees plugin (`tidier`), then its branch, here and then on the
+    /// remote, only once the folder went: a folder that stays keeps its branch (a follow-up brings it back from there).
+    /// Best effort: the merge landed. The note when it stayed.
+    async fn tidy(&self, call: &Call, session: &str, root: &Arc<dyn Repo>, wt: &Worktree) -> Option<String> {
+        let gone = if exists(&wt.path).await { (self.tidier)(call.clone(), session.to_owned(), wt.clone()).await } else { Tidied::Removed };
+        if let Some(note) = tidy_note(&wt.path, &gone) {
+            tracing::info!(path = %wt.path, "ship: worktree kept after merge: {note}");
+            return Some(note);
         }
-        root.branch_delete(call, &wt.branch).await.ok();
-        let remote = wt.remote.clone().unwrap_or_else(|| "origin".into());
-        root.push(call, PushRequest { remote, refspec: wt.branch.clone(), set_upstream: false, delete: true }).await.ok();
+        if root.branch_delete(call, &wt.branch).await.is_ok() {
+            let remote = wt.remote.clone().unwrap_or_else(|| "origin".into());
+            root.push(call, PushRequest { remote, refspec: wt.branch.clone(), set_upstream: false, delete: true }).await.ok();
+        }
+        None
     }
 
     /// Squash-merge a PR attached by URL: no worktree of wisp's to sync or tidy.

@@ -14,16 +14,25 @@ pub struct Pattern {
     dir_only: bool,
 }
 
+/// A line that would name something outside the repo: a `..` segment, or an absolute path (`/etc/passwd`, `C:\x`,
+/// `\\srv`, `~/x`). gitignore reads a leading `/` as the repo's root, but in a list of files to copy `/etc/passwd`
+/// reads as the system's, so it is dropped (with a note) rather than guessed at: write `etc/passwd` for the repo's.
+pub fn leaves_repo(line: &str) -> bool {
+    let p = line.trim();
+    p.split(['/', '\\']).any(|s| s == "..") || p.starts_with(['/', '\\', '~']) || p.as_bytes().get(1) == Some(&b':')
+}
+
 impl Pattern {
+    /// None also for a line that leaves the repo (`leaves_repo`): `rejected` names those for the task to say.
     pub fn parse(line: &str) -> Option<Self> {
         let p = line.trim();
-        if p.is_empty() || p.starts_with('#') || p.starts_with('!') {
+        if p.is_empty() || p.starts_with('#') || p.starts_with('!') || leaves_repo(p) {
             return None;
         }
         let dir_only = p.ends_with('/');
         let p = p.trim_end_matches('/');
+        // a `/` inside anchors at the root, as in gitignore (a leading one never gets here: `leaves_repo`)
         let anchored = p.contains('/');
-        let p = p.strip_prefix('/').unwrap_or(p);
         if p.is_empty() {
             return None;
         }
@@ -71,6 +80,11 @@ pub fn patterns(file: Option<&str>) -> Vec<Pattern> {
     }
 }
 
+/// The lines of a `.worktreeinclude` dropped because they leave the repo (`leaves_repo`), as written.
+pub fn rejected(file: Option<&str>) -> Vec<String> {
+    file.unwrap_or("").lines().map(str::trim).filter(|l| !l.starts_with('#') && leaves_repo(l)).map(str::to_owned).collect()
+}
+
 /// The ignored paths (from `ls-files ... -z`) the patterns name, as listed (folders keep their '/').
 pub fn included(patterns: &[Pattern], ls_files_z: &str) -> Vec<String> {
     if patterns.is_empty() {
@@ -109,7 +123,10 @@ mod tests {
         assert!(m(".env.*", ".env.local", false));
         assert!(!m(".env.*", ".env", false));
         assert!(m("config/local.json", "config/local.json", false));
-        assert!(!m("/local.json", "config/local.json", false), "anchored at the root");
+        assert!(
+            m("config/local.json", "config/local.json", false) && !m("config/local.json", "a/config/local.json", false),
+            "a '/' inside anchors at the root"
+        );
         assert!(m("local.json", "config/local.json", false), "unanchored matches at any depth");
         assert!(m("node_modules/", "node_modules/", true));
         assert!(!m("node_modules/", "node_modules", false), "a folder pattern skips a file");
@@ -131,6 +148,20 @@ mod tests {
     }
 
     #[test]
+    fn lines_that_leave_the_repo_name_nothing() {
+        for line in ["../x/.env", "a/../../b", "..", "/etc/passwd", "/", "C:\\secrets", "\\\\srv\\share", "~/.ssh/id_rsa"] {
+            assert_eq!(Pattern::parse(line), None, "{line}");
+            assert!(leaves_repo(line), "{line}");
+        }
+        assert_eq!(rejected(Some("../x/.env\n.env\n# ../not this\n~/.aws\n/etc/passwd\n")), ["../x/.env", "~/.aws", "/etc/passwd"]);
+        assert!(!m("../x/.env", "../x/.env", false));
+        // an absolute path is dropped, never read as the repo's root: nothing named `etc/passwd` gets copied for it
+        assert!(!m("/etc/passwd", "etc/passwd", false) && !m("/etc/passwd", "/etc/passwd", false));
+        assert!(m("etc/passwd", "etc/passwd", false), "the repo's own one is written without the '/'");
+        assert!(m("a..b", "a..b", false), "dots inside a name are fine");
+    }
+
+    #[test]
     fn copy_on_write_per_platform() {
         assert_eq!(cow_args("macos"), Some(&["-c", "-R"][..]));
         assert_eq!(cow_args("linux"), Some(&["-R", "--reflink=always"][..]));
@@ -147,8 +178,8 @@ mod tests {
             assert!(m(&name, &rel, false), "unanchored {name} in {rel}");
             assert!(m(&rel, &rel, false));
             assert!(m("*", &rel, false));
-            assert!(m(&format!("/{dir}/*"), &rel, false));
-            assert!(!m(&format!("/{name}X"), &rel, false));
+            assert!(m(&format!("{dir}/*"), &rel, false));
+            assert!(!m(&format!("{dir}/{name}X"), &rel, false));
             assert!(m(&format!("**/{name}"), &rel, false));
         }
     }

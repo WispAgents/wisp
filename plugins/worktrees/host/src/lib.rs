@@ -135,6 +135,7 @@ impl State {
 
     /// For tests and installs that wire the parts themselves.
     pub fn with(plugin: WorktreesPlugin, engine: Arc<Engine>, cleanup: Arc<Cleanup>, port: Arc<dyn Port>) -> Arc<Self> {
+        engine.watch(port.clone());
         Arc::new(Self {
             plugin,
             built: OnceCell::new_with(Some((engine, cleanup, port))),
@@ -195,6 +196,7 @@ impl State {
                     sources,
                     ctx.scope().clone(),
                 ));
+                engine.watch(port.clone());
                 let cleanup = Cleanup::new(engine.clone(), port.clone(), ctx.root_call());
                 Ok::<_, WireError>((engine, cleanup, port))
             })

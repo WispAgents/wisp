@@ -178,3 +178,85 @@ async fn boot_follows_from_one_list_and_one_slots_read_never_a_get_per_task() {
     assert_eq!(h.task("wt").repos[0].worktree.path, w.path);
     assert!(h.ship.tasks.get("plain").is_none() && h.ship.tasks.get("crew").is_none());
 }
+
+/// The real merge clean-up plumbing (`wire::tidier`) over a fake runtime and a fake worktrees plugin: a task with
+/// Keep worktree on is never asked about; otherwise the folder goes through `worktrees.remove` (strict, its own
+/// record, the branch left to ship) and the answer maps to what the merge says: busy (a task works in it, or it was
+/// in use again under the lock) is Busy, never "1 change only it holds"; dirty, foreign and an error keep it.
+#[tokio::test]
+async fn the_merge_clean_up_asks_worktrees_strictly_and_keeps_a_kept_or_busy_folder() {
+    use wisp_kernel::{App, Call, Caller, Declarative, Manifest, Plugin, PluginGroup, Result, Setup, WireError};
+    use wisp_runtime_api::commands::Get;
+    use wisp_ship_core::decide::Tidied;
+    use wisp_worktrees_api::{BranchMode, Remove, RemoveArgs, Removed};
+
+    type Seen = Arc<Mutex<Vec<RemoveArgs>>>;
+    type Answer = std::result::Result<Removed, String>;
+    struct Runtime(serde_json::Value);
+    impl Plugin for Runtime {
+        fn manifest(&self) -> Manifest {
+            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "1.0.0-alpha.1", "api": "^1" }))
+                .unwrap_or_default()
+        }
+        fn setup(&self, s: &mut Setup) -> Result<()> {
+            let slot = self.0.clone();
+            s.command::<Get, _, _>(move |_, _, a| {
+                let mut s = Session { id: a.id, ..Session::default() };
+                s.ext.insert("wisp.worktrees".into(), slot.clone());
+                async move { Ok(s) }
+            });
+            Ok(())
+        }
+    }
+    struct Worktrees(Seen, Answer);
+    impl Plugin for Worktrees {
+        fn manifest(&self) -> Manifest {
+            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.worktrees", "version": "1.0.0-alpha.1", "api": "^1" }))
+                .unwrap_or_default()
+        }
+        fn setup(&self, s: &mut Setup) -> Result<()> {
+            let (seen, answer) = (self.0.clone(), self.1.clone());
+            s.command::<Remove, _, _>(move |_, _, a| {
+                seen.lock().unwrap().push(a);
+                let answer = answer.clone();
+                async move { answer.map_err(WireError::invalid) }
+            });
+            Ok(())
+        }
+    }
+    let h = h();
+    let w = h.wt("app");
+    let slot = |kept: bool| json!({ "path": w.path, "cwd": w.path, "branch": w.branch, "base": "main", "baseRef": "origin/main", "remote": "origin", "root": w.root, "createdAt": 7, "kept": kept });
+    let run = async |kept: bool, answer: Answer| {
+        let seen: Seen = Arc::default();
+        let me = Declarative(
+            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.ship", "version": "1.0.0-alpha.1", "api": "^1", "permissions": ["runtime:get", "worktrees:remove"] }))
+                .unwrap_or_default(),
+        );
+        let k = App::new()
+            .plugins(PluginGroup::new().add(Runtime(slot(kept))).add(Worktrees(seen.clone(), answer)).add(me))
+            .start()
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+        let ctx = k.ctx("wisp.ship").unwrap_or_else(|| panic!("ship's context"));
+        let got = crate::wire::tidier(&ctx)(Call::new_root(Caller::user()), "t1".into(), w.clone()).await;
+        let asked = seen.lock().unwrap().clone();
+        (got, asked)
+    };
+
+    let (got, asked) = run(true, Ok(Removed { removed: true, ..Removed::default() })).await;
+    assert_eq!(got, Tidied::Kept);
+    assert!(asked.is_empty(), "a kept task's folder is never asked about");
+
+    let (got, asked) = run(false, Ok(Removed { removed: true, ..Removed::default() })).await;
+    assert_eq!(got, Tidied::Removed);
+    let a = &asked[0];
+    assert!(a.opts.strict && !a.opts.force && a.opts.branch == BranchMode::Keep, "strict, the branch left to ship: {:?}", a.opts);
+    assert_eq!((a.worktree.path.as_str(), a.worktree.created_at), (w.path.as_str(), 7), "the task's own record");
+
+    assert_eq!(run(false, Ok(Removed { busy: true, ..Removed::default() })).await.0, Tidied::Busy);
+    assert_eq!(run(false, Ok(Removed::default())).await.0, Tidied::Busy, "in use again under the lock: not dirty");
+    assert_eq!(run(false, Ok(Removed { dirty: Some(3), ..Removed::default() })).await.0, Tidied::Dirty(3));
+    assert!(matches!(run(false, Ok(Removed { foreign: true, ..Removed::default() })).await.0, Tidied::Failed(_)));
+    assert_eq!(run(false, Err("locked".into())).await.0, Tidied::Failed("locked".into()));
+}

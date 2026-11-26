@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use wisp_kernel::{BoxFuture, Call, Caller, CancellationToken, Clock};
 use wisp_ship_api::{PrSummary, ShipRepo, ShipTask, Worktree};
+use wisp_ship_core::decide::Tidied;
 
 use crate::gh::Gh;
 use crate::ops::Shipper;
@@ -45,6 +46,8 @@ pub struct H {
     pub clock: Arc<FakeClock>,
     pub dir: PathBuf,
     pub call: Call,
+    /// what the worktrees plugin answers a merged task's removal (None: the folder goes)
+    pub tidy: Arc<Mutex<Option<Tidied>>>,
 }
 
 static N: AtomicU32 = AtomicU32::new(0);
@@ -55,11 +58,28 @@ pub fn h() -> H {
     let clock = Arc::new(FakeClock { now: AtomicI64::new(1_000_000) });
     let outs: Arc<Mutex<Vec<Out>>> = Arc::default();
     let o = outs.clone();
+    let tidy: Arc<Mutex<Option<Tidied>>> = Arc::default();
+    let (t, g) = (tidy.clone(), git.clone());
+    // the worktrees plugin's removal: what the test set, else the folder goes (logged as git's would be)
+    let tidier: crate::ops::Tidier = Arc::new(move |_call, _id, wt| {
+        let answer = t.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        let g = g.clone();
+        Box::pin(async move {
+            g.lock().log.push(format!("tidy {}", wt.path));
+            if let Some(a) = answer {
+                return a;
+            }
+            let _ = std::fs::remove_dir_all(&wt.path);
+            g.lock().log.push(format!("worktree remove {}", wt.path));
+            Tidied::Removed
+        })
+    });
     let shipper = Shipper {
         git: Arc::new(git.clone()),
         gh: Gh::new(Arc::new(gh.clone()), "gh"),
         owner: CancellationToken::new(),
         clock: clock.clone(),
+        tidier,
     };
     let ship = Arc::new(Ship::new(
         shipper,
@@ -68,7 +88,7 @@ pub fn h() -> H {
     ));
     let dir = std::env::temp_dir().join(format!("wisp-ship-test-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
     let _ = std::fs::remove_dir_all(&dir);
-    H { ship, git, gh, outs, clock, dir, call: Call::new_root(Caller::user()) }
+    H { ship, git, gh, outs, clock, dir, call: Call::new_root(Caller::user()), tidy }
 }
 
 impl H {
@@ -157,6 +177,7 @@ fn the_manifest_is_valid_and_names_every_command() {
         "git:merge.ff",
         "git:worktree.remove",
         "git:branch.delete",
+        "worktrees:remove",
         "proc:exec{bin:gh}",
     ] {
         assert!(m.permissions.iter().any(|x| x == p), "{p}");

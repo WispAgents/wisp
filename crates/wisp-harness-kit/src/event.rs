@@ -190,6 +190,10 @@ pub enum HarnessEvent {
     /// the agent-side session id, to resume follow-ups
     Session {
         id: String,
+        /// where the conversation is now (Claude: its last main-thread assistant message's uuid), so a fork from this
+        /// turn can end its copy there (`--resume-session-at`). Additive (2026-11-25).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<String>,
     },
     Tool(Tool),
     ToolOutput {
@@ -245,7 +249,11 @@ pub enum HarnessEvent {
 
 impl HarnessEvent {
     pub fn session(id: impl Into<String>) -> Self {
-        Self::Session { id: id.into() }
+        Self::Session { id: id.into(), at: None }
+    }
+    /// The session id with where the conversation is now (a turn's resume point).
+    pub fn session_at(id: impl Into<String>, at: impl Into<String>) -> Self {
+        Self::Session { id: id.into(), at: Some(at.into()) }
     }
     pub fn text(text: impl Into<String>) -> Self {
         Self::Text { text: text.into() }
