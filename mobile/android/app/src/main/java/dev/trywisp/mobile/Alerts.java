@@ -54,6 +54,11 @@ final class Alerts {
         post(ctx, tag, title, body, pi);
     }
 
+    /** The note {@link #post} put up under `tag` goes (Notifications.removeDelivered). */
+    static void cancel(Context ctx, String tag) {
+        NotificationManagerCompat.from(ctx).cancel(tag, 1);
+    }
+
     private static void post(Context ctx, String id, String title, String body, PendingIntent tap) {
         NotificationManagerCompat nm = NotificationManagerCompat.from(ctx);
         if (!nm.areNotificationsEnabled()) return;

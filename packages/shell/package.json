@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./contract": "./src/contract.ts",
     "./platform": "./src/platform/index.ts",
-    "./pure": "./src/pure.ts"
+    "./pure": "./src/pure.ts",
+    "./share-form": "./src/platform/share-form.ts"
   },
   "dependencies": {
     "@wisp/client": "*",

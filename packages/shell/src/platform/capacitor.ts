@@ -45,8 +45,16 @@ export function capacitorPlatform(w: PlatformWindow, kind: 'android' | 'ios', op
     async notify(n) {
       const fn = pluginFn(cap, 'LocalNotifications', 'schedule');
       if (!fn) return base.notify(n);
-      await fn({ notifications: [{ id: Math.floor(Math.random() * 2 ** 31), title: n.title, body: n.body ?? '', extra: n.target ?? null }] });
+      // the tag is the note's id, so a task's later note replaces its earlier one: the Android app's plugin
+      // (Notifications.java) posts under a string tag; a stock plugin (the iPhone's) takes a number only
+      const id = kind === 'android' ? (n.tag ?? String(Math.floor(Math.random() * 2 ** 31))) : Math.floor(Math.random() * 2 ** 31);
+      await fn({ notifications: [{ id, title: n.title, body: n.body ?? '', extra: n.target ?? null }] });
       return 'shown';
+    },
+    async clearNote(tag) {
+      const fn = pluginFn(cap, 'LocalNotifications', 'removeDelivered');
+      if (!fn || kind !== 'android') return;
+      await fn({ notifications: [{ id: tag }] }).catch(() => {});
     },
     // the app's own share sheet first (WispSsh.share: Android's chooser; its System WebView has no navigator.share and
     // the build carries no Share plugin, so every Share was a silent copy), then @capacitor/share, then the browser's

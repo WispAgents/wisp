@@ -13,9 +13,15 @@
 //     navigation, at most one at a time and one per half minute: an open or resumed app learns of a new build;
 //   - a computer that isn't connected (its grid's 503 names its waiting page, `x-wisp-offline`): the tabs are sent
 //     to that page, never kept on the cached app (QA round 10 Grid #2);
+//   - the installed app's share target (manifest.webmanifest share_target): a POST /share is kept, capped
+//     (share-form.ts), in its own cache under a random id, and answered with /?shared=<id>, which the page reads
+//     once (apps/web shared.ts). Every other non-GET request goes by untouched;
+//   - a tapped notification (browser.ts shows them through this worker): an open tab is focused and told where
+//     to go (`{t:'open', url}`), else a window opens there;
 //   - never cached: /api/ (the sync stream, commands), /_grid/ (the grid's sign-in, waking and waiting pages),
 //     /__mock/, /sw.js itself.
 
+import { CACHE as SHARED, keep } from './share-form.ts';
 import { offlineWaiting, waitingFor } from './sw-offline.ts';
 
 interface FetchEventLike extends Event {
@@ -29,19 +35,27 @@ interface ExtendableMessageLike extends Event {
   waitUntil(p: Promise<unknown>): void;
 }
 interface ClientLike {
+  readonly url?: string;
   postMessage(m: unknown): void;
   navigate?(url: string): Promise<unknown>;
+  focus?(): Promise<unknown>;
+}
+interface NotificationEventLike extends Event {
+  readonly notification: { readonly data?: unknown; close(): void };
+  waitUntil(p: Promise<unknown>): void;
 }
 interface WorkerScope {
   readonly location: { readonly origin: string };
   readonly clients: {
     claim(): Promise<void>;
-    matchAll(o?: { type?: string }): Promise<readonly ClientLike[]>;
+    matchAll(o?: { type?: string; includeUncontrolled?: boolean }): Promise<readonly ClientLike[]>;
     get(id: string): Promise<ClientLike | undefined>;
+    openWindow?(url: string): Promise<unknown>;
   };
   skipWaiting(): Promise<void>;
   addEventListener(type: 'install' | 'activate' | 'fetch', fn: (e: FetchEventLike) => void): void;
   addEventListener(type: 'message', fn: (e: ExtendableMessageLike) => void): void;
+  addEventListener(type: 'notificationclick', fn: (e: NotificationEventLike) => void): void;
 }
 
 const sw = globalThis as unknown as WorkerScope;
@@ -179,7 +193,8 @@ sw.addEventListener('activate', (e) => {
   e.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      // a share not read yet stays: it is no build's (share-form.ts)
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== SHARED).map((k) => caches.delete(k))))
       .then(() => sw.clients.claim()),
   );
 });
@@ -207,9 +222,40 @@ sw.addEventListener('message', (e) => {
   if (d && typeof d === 'object' && d.t === 'check') e.waitUntil(check());
 });
 
+/** The share sheet's form, kept for the page: it opens on `/?shared=<id>` (a 303, so a reload doesn't post again).
+ *  One that can't be read still opens the app, with nothing to take. */
+async function shared(req: Request): Promise<Response> {
+  const id = await keep(req, caches).catch(() => 'none');
+  return Response.redirect(new URL(`/?shared=${encodeURIComponent(id)}`, sw.location.origin).href, 303);
+}
+
+/** Where a tapped note goes: a tab of this site, focused and told (browser.ts reads `{t:'open'}`), else a new window
+ *  there. */
+async function opened(url: string): Promise<void> {
+  const tabs = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const tab = tabs.find((c) => !c.url || new URL(c.url).origin === sw.location.origin);
+  if (tab) {
+    await tab.focus?.().catch(() => {});
+    tab.postMessage({ t: 'open', url });
+    return;
+  }
+  await sw.clients.openWindow?.(url);
+}
+
+sw.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const data = e.notification.data as { url?: unknown } | null | undefined;
+  const raw = typeof data?.url === 'string' ? data.url : '/';
+  // only a link of this site (a note's data is the page's own, but the worker never opens elsewhere)
+  const to = new URL(raw, sw.location.origin);
+  const url = to.origin === sw.location.origin ? to.pathname + to.search : '/';
+  e.waitUntil(opened(url).catch(() => {}));
+});
+
 sw.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
+  if (req.method === 'POST' && url.origin === sw.location.origin && url.pathname === '/share') return e.respondWith(shared(req));
   if (req.method !== 'GET' || skip(url)) return;
   e.respondWith(req.mode === 'navigate' ? navigate(e) : file(req));
 });

@@ -125,6 +125,9 @@ export interface Platform {
   /** asks once; a second ask after a refusal answers 'denied' without a prompt */
   requestNotify(): Promise<Permission>;
   notify(n: NotifyOptions): Promise<Shown>;
+  /** added 2026-11-26 (additive): takes the note tagged `tag` away (its task was opened). Absent, or nothing shown
+   * under it: nothing happens. */
+  clearNote?(tag: string): Promise<void>;
   /** the app icon's count (0 clears it) */
   badge(count: number): Promise<'set' | 'unsupported'>;
   share(d: ShareData): Promise<'shared' | 'cancelled' | 'unsupported'>;
@@ -181,6 +184,7 @@ export interface PlatformWindow {
   addEventListener(type: string, fn: (e: Event) => void): void;
   removeEventListener(type: string, fn: (e: Event) => void): void;
   open(url: string, target?: string, features?: string): unknown;
+  focus?(): void;
   readonly innerWidth?: number;
   readonly innerHeight?: number;
   /** the Viewport Segments API: one segment per screen of a foldable (Chrome 138+) */
