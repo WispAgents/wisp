@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use wisp_channels_api::policy::{Gate, GateArgs, RateLimit, STALE_S, gate};
 use wisp_channels_api::scrub::scrub_out;
 use wisp_channels_api::transport::{Headers, InboundOpts, InboundResult};
-use wisp_channels_api::views::{ActArgs, ActKind, Msg, SessionView, Signed};
+use wisp_channels_api::views::{ActArgs, ActKind, ActionKind, Mode, Msg, SessionView, Signed};
 use wisp_channels_api::{ChannelHub, HttpRequest, Status, TRANSPORTS, Transport, TransportDef, TransportKind};
 use wisp_kernel::{CancellationToken, Manifest, Plugin, Result, Setup, WireError};
 use wisp_telegram_core::{self as core, Message, Update, encode_tap, forwarded, links_it, parse_tap, publish_text, read_back, truncate};
@@ -68,6 +68,11 @@ fn linked_person(cfg: &Value, chat: &str, from: Option<&str>) -> bool {
     let Some(from) = from.filter(|f| !f.is_empty()) else { return false };
     let user = id_text(&cfg["userId"]);
     if user.is_empty() { from == chat } else { from == user }
+}
+
+/// A task running in Full auto (or one that's gone): its reply buttons are words instead.
+fn full_auto(sv: Option<&SessionView>) -> bool {
+    sv.is_none_or(|sv| sv.mode == Some(Mode::Auto))
 }
 
 /// A chat id as Telegram sends it (a number) or wisp keeps it (a string).
@@ -203,7 +208,12 @@ impl Telegram {
                     i: t.index,
                     sig: t.sig.clone(),
                 };
-                if self.hub.verify(&signed) {
+                if !self.hub.verify(&signed) {
+                    wisp_channels_api::OUT_OF_DATE.to_owned()
+                } else if t.kind == ActionKind::Reply && full_auto(self.hub.phone().session(&session).await.ok().flatten().as_ref()) {
+                    // a button can't say which mode: in Full auto a reply is for words, as on Slack and Discord (doc26a)
+                    wisp_channels_api::IN_WORDS.to_owned()
+                } else {
                     let a = ActArgs {
                         session_id: session,
                         kind: t.kind.into(),
@@ -214,14 +224,12 @@ impl Telegram {
                         person: linked_person(&self.cfg(), &chat, q.from.as_ref().and_then(|f| f.id.as_deref())),
                     };
                     match self.hub.act(&a).await {
-                        Ok(said) => {
-                            took = said != wisp_channels_api::SETUP_ELSEWHERE;
-                            said
+                        Ok(acted) => {
+                            took = acted.done;
+                            acted.words
                         }
                         Err(e) => e.message,
                     }
-                } else {
-                    "That button is out of date.".to_owned()
                 }
             }
             _ => "Unknown button.".to_owned(),
@@ -319,7 +327,7 @@ impl Telegram {
                 person: linked_person(&cfg, &chat, m.from.as_ref().and_then(|f| f.id.as_deref())),
             })
             .await
-            .unwrap_or_else(|e| e.message);
+            .map_or_else(|e| e.message, |a| a.words);
         self.say(&said, Some(m.message_id)).await?;
         Ok(())
     }
@@ -471,7 +479,8 @@ impl Transport for Telegram {
             return Err(WireError::unavailable("Telegram isn't linked to a chat"));
         }
         let parts = publish_text(msg, sv.is_some());
-        let buttons: Vec<Value> = sv.map_or_else(Vec::new, |sv| msg.actions.iter().map(|a| json!([{ "text": truncate(&a.label, core::text::LABEL_MAX), "callback_data": encode_tap(a.kind, a.index, &self.hub.sign(&sv.id, a.kind, &a.reference, a.index), &sv.id, &a.reference) }])).collect());
+        // no reply buttons on a Full auto task: a tap can't say which mode (doc26a, as on Slack and Discord)
+        let buttons: Vec<Value> = sv.map_or_else(Vec::new, |sv| msg.actions.iter().filter(|a| a.kind != ActionKind::Reply || !full_auto(Some(sv))).map(|a| json!([{ "text": truncate(&a.label, core::text::LABEL_MAX), "callback_data": encode_tap(a.kind, a.index, &self.hub.sign(&sv.id, a.kind, &a.reference, a.index), &sv.id, &a.reference) }])).collect());
         let n = parts.len();
         for (i, text) in parts.into_iter().enumerate() {
             let mut body = json!({ "chat_id": self.chat(), "text": text });
