@@ -43,7 +43,7 @@ pub const CHROME_TOOLS: &str = "mcp__claude-in-chrome";
 /// with a side effect, so the run goes without prompts and only these file-editing tools are off (v1 `EDIT_TOOLS`).
 pub const EDIT_TOOLS: [&str; 4] = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
 /// What the agent hears in Plan that runs commands (v1 runner.js `PLAN_NOTE`), after wisp's system prompt.
-pub const PLAN_NOTE: &str = "\n\n# Plan mode\n\nThis task is in Plan mode: don't change the project's files. The file-editing tools are off; don't write files from the shell either (no `sed -i`, `>` into a file, `patch`, `git commit`). Everything else is yours: run commands, tests, builds and the app, read logs, use wisp's tools and the connectors. Don't hand the user a command to run that you could run yourself: run it and report what it showed. End with the plan: what to change, where, and why.\n";
+pub const PLAN_NOTE: &str = "\n\n# Plan mode\n\nThis task is in Plan mode: you can't change the project's files. The file-editing tools are off, and your shell runs in a read-only sandbox: a write into the project, the added folders or your home fails by design (\"operation not permitted\"). Don't try to work around it. /tmp is writable, for builds, tests and scratch files. Everything else is yours: run commands, tests, builds and the app, read logs, use wisp's tools and the connectors. Don't hand the user a command to run that you could run yourself: run it and report what it showed. End with the plan: what to change, where, and why.\n";
 
 pub(crate) fn permission_mode(mode: Mode) -> &'static str {
     match mode {
@@ -92,9 +92,26 @@ fn offload_hook(run: &HarnessRun) -> Option<serde_json::Value> {
     Some(serde_json::json!({ "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": command, "timeout": 10 }] }] }))
 }
 
-/// One --settings: the gate's ask rules, and the hook that sends long Bash output to a file (ADR-0079).
-fn settings(run: &HarnessRun) -> Option<String> {
+/// Plan that runs commands holds its shell read-only in the OS (ADR-0135): the prompt alone was all that kept a
+/// `sed -i` or a `git commit` out of the project. Claude Code's sandbox writes only to the run's folders and the temp
+/// folder; denying the folders leaves /tmp (and the run's `{tmp}`), and $HOME was never writable in it. Unsandboxed
+/// retries are off, so a refused write stays refused.
+fn plan_sandbox(deny: &[String]) -> serde_json::Value {
+    serde_json::json!({
+        "enabled": true,
+        "autoAllowBashIfSandboxed": true,
+        "allowUnsandboxedCommands": false,
+        "filesystem": { "denyWrite": deny },
+    })
+}
+
+/// One --settings: the gate's ask rules, the hook that sends long Bash output to a file (ADR-0079), and Plan's
+/// read-only sandbox (`sandbox`: the folders it may not write).
+fn settings(run: &HarnessRun, sandbox: Option<&[String]>) -> Option<String> {
     let mut s = serde_json::Map::new();
+    if let Some(deny) = sandbox {
+        s.insert("sandbox".into(), plan_sandbox(deny));
+    }
     if run.gate {
         let ask: &[&str] = if run.side { &EDIT_TOOLS } else { &GATED };
         s.insert("permissions".into(), serde_json::json!({ "ask": ask }));
@@ -140,10 +157,24 @@ fn chrome_flag(run: &HarnessRun, args: &mut Vec<String>) -> bool {
     run.browser == Browser::Chrome
 }
 
+/// `--add-dir`: the run's folders and each attachment's, once each.
+fn add_dirs(run: &HarnessRun) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    run.dirs
+        .iter()
+        .cloned()
+        .chain(run.attachments.iter().filter_map(|a| a.path.as_deref().map(dir_of)))
+        .filter(|d| seen.insert(d.clone()))
+        .collect()
+}
+
 /// The launch for `run`, with `bin` the program to start.
 pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
-    // Plan that runs commands: a task you started (the runtime says), never past a side discussion's gate
-    let plan_runs = run.plan_commands && run.mode == Mode::Plan && !run.gate;
+    // Plan that runs commands: a task you started (the runtime says), never past a side discussion's gate, and only
+    // where the OS holds its shell read-only (else Claude Code's own plan mode: never an unsandboxed bypass)
+    let plan_runs = run.plan_commands && run.plan_sandbox && run.mode == Mode::Plan && !run.gate;
+    let dirs = add_dirs(run);
+    let deny: Vec<String> = std::iter::once(run.cwd.clone()).chain(dirs.iter().filter(|d| **d != run.cwd).cloned()).collect();
     let mut args: Vec<String> = vec!["-p".into(), "--output-format".into(), "stream-json".into()];
     args.push(if run.lean { "--system-prompt" } else { "--append-system-prompt" }.into());
     args.push(if plan_runs { format!("{}{PLAN_NOTE}", run.system_prompt) } else { run.system_prompt.clone() });
@@ -158,7 +189,7 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         }
         .into(),
     );
-    if let Some(s) = settings(run) {
+    if let Some(s) = settings(run, plan_runs.then_some(deny.as_slice())) {
         args.push("--settings".into());
         args.push(s);
     }
@@ -166,6 +197,9 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         args.extend(LEAN.iter().map(|s| (*s).to_owned()));
     } else if run.untrusted {
         args.extend(UNTRUSTED.iter().map(|s| (*s).to_owned()));
+    } else if plan_runs {
+        // a project's own MCP servers write outside the sandbox: only the run's (`--mcp-config`) start
+        args.push("--strict-mcp-config".into());
     }
     let chrome = chrome_flag(run, &mut args);
     let compact = run.prompt.trim().strip_prefix("/compact").is_some_and(|r| r.is_empty() || r.starts_with(char::is_whitespace));
@@ -217,14 +251,6 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         args.push("--disallowedTools".into());
         args.extend(off.into_iter().map(str::to_owned));
     }
-    let mut seen = BTreeSet::new();
-    let dirs: Vec<String> = run
-        .dirs
-        .iter()
-        .cloned()
-        .chain(run.attachments.iter().filter_map(|a| a.path.as_deref().map(dir_of)))
-        .filter(|d| seen.insert(d.clone()))
-        .collect();
     if !dirs.is_empty() {
         args.push("--add-dir".into());
         args.extend(dirs);
@@ -411,29 +437,73 @@ mod tests {
     /// note told; without it, Claude Code's own read-only plan mode; a side discussion's gate wins; only Plan.
     #[test]
     fn plan_that_runs_commands_has_no_prompts_its_edit_tools_off_and_the_plan_note_v1_794() {
-        let strict = launch(&HarnessRun { mode: Mode::Plan, ..run() }, "claude").args;
+        let strict = launch(&HarnessRun { mode: Mode::Plan, plan_sandbox: true, ..run() }, "claude").args;
         assert_eq!(flag(&strict, "--permission-mode"), "plan");
-        assert!(!strict.iter().any(|x| x == "--disallowedTools"));
+        assert!(!strict.iter().any(|x| x == "--disallowedTools" || x == "--settings" || x == "--strict-mcp-config"));
         assert!(!flag(&strict, "--append-system-prompt").contains("# Plan mode"));
 
-        let open = launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, delegating: true, ..run() }, "claude").args;
+        let mut open = HarnessRun { mode: Mode::Plan, plan_commands: true, plan_sandbox: true, delegating: true, ..run() };
+        open.mcp_servers.insert("wisp".into(), serde_json::json!({ "type": "http", "url": "http://x/api/mcp" }));
+        open.dirs = vec!["/a".into(), "/w".into()];
+        open.attachments =
+            vec![Attachment { path: Some("/up/pic.png".into()), mime: "image/png".into(), size: 3, ..Attachment::default() }];
+        let open = launch(&open, "claude").args;
         assert_eq!(flag(&open, "--permission-mode"), "bypassPermissions", "Claude Code's plan mode refuses commands with side effects");
         assert_eq!(after(&open, "--disallowedTools"), ["Task", "Agent", "Workflow", "Edit", "MultiEdit", "Write", "NotebookEdit"]);
         let sys = flag(&open, "--append-system-prompt");
         assert!(sys.starts_with("SYS\n\n# Plan mode\n\n"), "{sys}");
-        assert!(sys.contains("don't change the project's files") && sys.contains("run commands, tests, builds and the app"));
+        assert!(sys.contains("can't change the project's files") && sys.contains("run commands, tests, builds and the app"));
+        assert!(sys.contains("operation not permitted") && sys.contains("/tmp is writable"), "{sys}");
+        // ADR-0135: the shell can't write the project, an added folder or an attachment's; /tmp stays writable
+        assert_eq!(open.iter().filter(|a| *a == "--settings").count(), 1);
+        let sb = serde_json::from_str::<serde_json::Value>(flag(&open, "--settings")).unwrap()["sandbox"].clone();
+        assert_eq!(sb["enabled"], true);
+        assert_eq!(sb["allowUnsandboxedCommands"], false);
+        assert_eq!(sb["autoAllowBashIfSandboxed"], true);
+        assert_eq!(sb["filesystem"]["denyWrite"], serde_json::json!(["/w", "/a", "/up"]));
+        assert!(!sb.to_string().contains("/tmp"), "{sb}");
+        assert_eq!(open.iter().filter(|a| *a == "--strict-mcp-config").count(), 1);
+        assert!(after(&open, "--allowedTools").iter().any(|x| x == "mcp__wisp"), "wisp's own tools still run");
 
-        let alone = launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, ..run() }, "claude").args;
+        let alone = launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, plan_sandbox: true, ..run() }, "claude").args;
         assert_eq!(after(&alone, "--disallowedTools"), EDIT_TOOLS);
+        let shy =
+            launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, plan_sandbox: true, untrusted: true, ..run() }, "claude").args;
+        assert_eq!(shy.iter().filter(|a| *a == "--strict-mcp-config").count(), 1, "never twice: {shy:?}");
 
-        let gated = launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, gate: true, ..run() }, "claude").args;
+        let gated = launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, plan_sandbox: true, gate: true, ..run() }, "claude").args;
         assert_eq!(flag(&gated, "--permission-mode"), "default", "a side discussion's gate wins");
-        assert!(!gated.iter().any(|x| x == "--disallowedTools"));
+        assert!(!gated.iter().any(|x| x == "--disallowedTools" || x == "--strict-mcp-config"));
+        assert!(!flag(&gated, "--settings").contains("sandbox"));
 
-        let edits = launch(&HarnessRun { mode: Mode::Edits, plan_commands: true, ..run() }, "claude").args;
+        let edits = launch(&HarnessRun { mode: Mode::Edits, plan_commands: true, plan_sandbox: true, ..run() }, "claude").args;
         assert_eq!(flag(&edits, "--permission-mode"), "acceptEdits", "only Plan");
         assert!(!edits.iter().any(|x| x == "--disallowedTools"));
         assert!(!flag(&edits, "--append-system-prompt").contains("# Plan mode"));
+    }
+
+    /// ADR-0135: the same conversation resumed in Edits or Full auto after Plan has no sandbox and no strict MCP list:
+    /// they belonged to the Plan turn alone.
+    #[test]
+    fn a_session_resumed_after_plan_drops_the_sandbox() {
+        for mode in [Mode::Edits, Mode::Auto] {
+            let r = HarnessRun { mode, plan_commands: true, plan_sandbox: true, resume_id: Some("c1".into()), ..run() };
+            let a = launch(&r, "claude").args;
+            assert!(a.windows(2).any(|w| w == ["--resume", "c1"]), "{a:?}");
+            assert!(!a.iter().any(|x| x == "--strict-mcp-config" || x.contains("sandbox")), "{mode:?}: {a:?}");
+            let shy = launch(&HarnessRun { untrusted: true, ..r }, "claude").args;
+            assert_eq!(shy.iter().filter(|a| *a == "--strict-mcp-config").count(), 1, "an untrusted repo's own");
+        }
+    }
+
+    /// ADR-0135: where the OS can't sandbox the shell (Linux without bwrap and socat, Windows) Plan is Claude Code's own
+    /// plan mode, and the agent isn't told its commands run: never a bypass with nothing holding the writes back.
+    #[test]
+    fn plan_without_a_sandbox_is_claude_codes_own_plan_mode_never_a_bypass() {
+        let a = launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, plan_sandbox: false, ..run() }, "claude").args;
+        assert_eq!(flag(&a, "--permission-mode"), "plan");
+        assert!(!a.iter().any(|x| x == "bypassPermissions" || x == "--settings" || x == "--disallowedTools"), "{a:?}");
+        assert!(!flag(&a, "--append-system-prompt").contains("# Plan mode"));
     }
 
     fn mcp_config(l: &Launch) -> serde_json::Value {

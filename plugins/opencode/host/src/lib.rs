@@ -153,7 +153,7 @@ pub fn launch(run: &HarnessRun, bin: &str, v2: bool, user_config: Option<&str>) 
         v2,
     };
     let mut env = BTreeMap::new();
-    if let Some(c) = config(user_config, &run.mcp_servers, &run.grants, mode(run.mode), run.delegating, run.capped) {
+    if let Some(c) = config(user_config, &run.mcp_servers, &run.grants, mode(run.mode), run.delegating, run.capped, run.plan_commands) {
         env.insert("OPENCODE_CONFIG_CONTENT".to_owned(), c);
     }
     let notes: Vec<FileNote> =
@@ -390,6 +390,24 @@ mod tests {
         let cfg: Value = serde_json::from_str(&l.env["OPENCODE_CONFIG_CONTENT"]).unwrap_or_default();
         assert_eq!(cfg["mcp"]["wisp"]["url"], "http://x/api/mcp");
         assert_eq!(l.stdin, Stdin::Bytes(b"fix it".to_vec()));
+    }
+
+    /// ADR-0135: the run's `plan_commands` reaches opencode's config: a Plan task you started reads with its shell, one
+    /// from outside has none, both with edits off, even with nothing else in the config.
+    #[test]
+    fn a_plan_run_carries_its_read_only_rules() {
+        let cfg = |plan_commands: bool| {
+            let run = HarnessRun { cwd: "/w".into(), mode: Mode::Plan, plan_commands, ..HarnessRun::default() };
+            let l = launch(&run, "opencode", false, Some(r#"{"permission":{"edit":"allow","bash":"allow"}}"#));
+            serde_json::from_str::<Value>(&l.env["OPENCODE_CONFIG_CONTENT"]).unwrap_or_default()
+        };
+        let mine = cfg(true);
+        assert_eq!(mine["permission"]["edit"], "deny");
+        assert_eq!(mine["permission"]["bash"]["*"], "deny");
+        assert_eq!(mine["permission"]["bash"]["git diff *"], "allow");
+        assert_eq!(cfg(false)["permission"]["bash"], "deny");
+        let edits = HarnessRun { cwd: "/w".into(), mode: Mode::Edits, plan_commands: true, ..HarnessRun::default() };
+        assert!(!launch(&edits, "opencode", false, None).env.contains_key("OPENCODE_CONFIG_CONTENT"), "Edits as it was");
     }
 
     /// A computer with only the CLI's answers (`exec` by its arguments), its folders and its files: no real process.

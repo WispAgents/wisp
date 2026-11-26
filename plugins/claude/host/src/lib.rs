@@ -79,6 +79,24 @@ fn chrome_default(env: &dyn Fn(&str) -> Option<String>) -> bool {
         .is_some_and(|j| j["claudeInChromeDefaultEnabled"] == serde_json::Value::Bool(true))
 }
 
+/// Whether Claude Code can sandbox a Plan run's shell here (ADR-0135): Seatbelt is built into macOS; on Linux it needs
+/// bubblewrap and socat on PATH; elsewhere (Windows) there's none, and Plan stays Claude Code's own plan mode.
+fn sandbox_available(os: &str, on_path: &dyn Fn(&str) -> bool) -> bool {
+    match os {
+        "macos" => true,
+        "linux" => on_path("bwrap") && on_path("socat"),
+        _ => false,
+    }
+}
+
+/// [`sandbox_available`] on this machine, on the PATH `spawn` starts programs from (the desktop app's, ADR-0057), at
+/// each Plan launch: installing bubblewrap takes effect without a restart.
+fn sandbox_here() -> bool {
+    let path = wisp_proc::search_path().unwrap_or_default();
+    let on_path = |p: &str| std::env::split_paths(&path).any(|d| d.join(p).is_file());
+    sandbox_available(std::env::consts::OS, &on_path)
+}
+
 /// What a run says when it is signed out (v1 agent-login.js LOGINS.claude.authFailed).
 static AUTH_FAILED: Re = Re::new(
     r"(?im)^(?:Not logged in|Login expired|OAuth token revoked|Login reached its time limit|Authentication required|Failed to authenticate)\b|please run /login|run /login to (?:sign in|re-?authenticate)|oauth (?:access )?token has (?:expired|been revoked)|authentication_error|authentication_failed",
@@ -277,11 +295,15 @@ impl Harness for ClaudeHarness {
             .or_else(|| self.found_bin())
             .or_else(|| std::env::var("WISP_CLAUDE_BIN").ok().filter(|b| !b.is_empty()))
             .unwrap_or_else(|| DEFAULT_BIN.to_owned());
+        let mut run = HarnessRun {
+            plan_sandbox: run.plan_commands && run.mode == wisp_runtime_api::model::Mode::Plan && sandbox_here(),
+            ..run.clone()
+        };
         // `runtime.browser` unset: the user's own `/chrome` choice, as in v1 (ADR-0128)
         if run.browser == Browser::Default && chrome_default(&|k| run.account_env.get(k).cloned().or_else(|| std::env::var(k).ok())) {
-            return Ok(launch(&HarnessRun { browser: Browser::Chrome, ..run.clone() }, &bin));
+            run.browser = Browser::Chrome;
         }
-        Ok(launch(run, &bin))
+        Ok(launch(&run, &bin))
     }
 
     fn driver(&self, run: &HarnessRun) -> Box<dyn RunDriver> {
@@ -386,6 +408,16 @@ fn file_write(tool: &str, input: &serde_json::Value) -> Option<FileWrite> {
 
 #[cfg(test)]
 mod tests {
+    /// ADR-0135: a Plan run's shell is sandboxed on macOS, on Linux only with bubblewrap and socat, never on Windows.
+    #[test]
+    fn the_plan_sandbox_follows_the_platform() {
+        assert!(super::sandbox_available("macos", &|_| false));
+        assert!(super::sandbox_available("linux", &|_| true));
+        assert!(!super::sandbox_available("linux", &|p| p == "bwrap"), "socat too");
+        assert!(!super::sandbox_available("linux", &|_| false));
+        assert!(!super::sandbox_available("windows", &|_| true));
+    }
+
     /// v1 test/adapters.test.js "passes --chrome when Claude in Chrome is enabled by default": unset, a run follows the
     /// account's `/chrome` choice, and `WISP_CLAUDE_CHROME` wins over it.
     #[test]

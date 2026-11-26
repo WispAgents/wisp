@@ -93,7 +93,49 @@ fn server(srv: &Value) -> Value {
     json!({ "type": "local", "command": command, "environment": srv.get("env").filter(|e| !e.is_null()).cloned().unwrap_or_else(|| json!({})), "enabled": true, "timeout": ASK_TIMEOUT_MS })
 }
 
-/// The `OPENCODE_CONFIG_CONTENT` for a run, over `inline` (the user's own); None: nothing to add.
+/// The commands a Plan run's shell may run (ADR-0135): reading the project, never writing it. Each with its arguments,
+/// but never with a redirect, a pipe, a chain or a substitution, which could write through another command.
+const PLAN_READS: [&str; 13] =
+    ["git status", "git log", "git diff", "git show", "ls", "cat", "rg", "grep", "find", "pwd", "head", "tail", "wc"];
+/// What turns a read into a write: shell metacharacters after any read, and the flags that write or run a program.
+/// `>` also covers `>(`; `<(` is a process substitution, a command of its own.
+const PLAN_WRITES: [&str; 7] = [">", "|", ";", "&", "`", "$(", "<("];
+/// `--output` writes a file and `--ext-diff` runs a configured program, on each git read that takes them. Per command,
+/// not one `git *--output*`: that key would sort before `git log *` and lose to it.
+const PLAN_WRITE_FLAGS: [&str; 12] = [
+    "find *-delete*",
+    "find *-exec*",
+    "find *-ok*",
+    "find *-fprint*",
+    "find *-fls*",
+    "git diff *--output*",
+    "git log *--output*",
+    "git show *--output*",
+    "git diff *--ext-diff*",
+    "git log *--ext-diff*",
+    "git show *--ext-diff*",
+    "rg *--pre*",
+];
+
+/// Plan's `bash` rules: everything denied but the reads. opencode matches the last rule that fits, and the keys go out
+/// sorted, so a deny for `cat *>*` comes after the allow for `cat *` it narrows.
+fn plan_bash() -> Value {
+    let mut m = Map::from_iter([("*".to_owned(), json!("deny"))]);
+    for c in PLAN_READS {
+        m.insert(c.to_owned(), json!("allow"));
+        m.insert(format!("{c} *"), json!("allow"));
+        for w in PLAN_WRITES {
+            m.insert(format!("{c} *{w}*"), json!("deny"));
+        }
+    }
+    for f in PLAN_WRITE_FLAGS {
+        m.insert(f.to_owned(), json!("deny"));
+    }
+    Value::Object(m)
+}
+
+/// The `OPENCODE_CONFIG_CONTENT` for a run, over `inline` (the user's own); None: nothing to add. `plan_commands`: a
+/// Plan run may use its shell to read (a task you started), else it has none (a trigger's, a channel's, a capped one).
 pub fn config(
     inline: Option<&str>,
     mcp_servers: &BTreeMap<String, Value>,
@@ -101,9 +143,11 @@ pub fn config(
     mode: &str,
     delegating: bool,
     capped: bool,
+    plan_commands: bool,
 ) -> Option<String> {
     let allow: Vec<(String, Vec<String>)> = grants.iter().filter_map(|g| grant(g)).collect();
-    if mcp_servers.is_empty() && allow.is_empty() && !capped && !delegating {
+    let plan = mode == "plan";
+    if mcp_servers.is_empty() && allow.is_empty() && !capped && !delegating && !plan {
         return None;
     }
     let inline: Map<String, Value> =
@@ -132,6 +176,12 @@ pub fn config(
             m.insert(x.clone(), json!("allow"));
         }
         permission.insert(p.clone(), Value::Object(m));
+    }
+    // Plan can't write (ADR-0135): opencode's plan agent follows the user's rules, so an `edit: allow`, a `"*": allow`
+    // or a grant would let it edit, and its shell write anything; these win over all of them
+    if plan {
+        permission.insert("edit".into(), json!("deny"));
+        permission.insert("bash".into(), if plan_commands { plan_bash() } else { json!("deny") });
     }
     let mut out = inline.clone();
     if !mcp_servers.is_empty() {
@@ -193,8 +243,16 @@ mod tests {
         m.insert("wisp".to_owned(), json!({ "type": "http", "url": "http://127.0.0.1:1/api/mcp", "headers": { "x-wisp-token": "t" } }));
         let g = vec![json!({ "permission": "bash", "patterns": ["npm publish"] }).to_string()];
         let c: Value = serde_json::from_str(
-            &config(Some(r#"{"permission":{"bash":"ask"},"mcp":{"mine":{"type":"local"}},"theme":"x"}"#), &m, &g, "edits", true, false)
-                .unwrap_or_default(),
+            &config(
+                Some(r#"{"permission":{"bash":"ask"},"mcp":{"mine":{"type":"local"}},"theme":"x"}"#),
+                &m,
+                &g,
+                "edits",
+                true,
+                false,
+                false,
+            )
+            .unwrap_or_default(),
         )
         .unwrap_or_default();
         assert_eq!(c["theme"], "x");
@@ -203,9 +261,9 @@ mod tests {
         assert_eq!(c["mcp"]["wisp"]["headers"]["x-wisp-token"], "t");
         assert_eq!(c["permission"]["bash"], json!({ "*": "ask", "npm publish": "allow" }));
         assert_eq!(c["permission"]["task"], "deny");
-        assert!(config(None, &BTreeMap::new(), &[], "edits", false, false).is_none());
+        assert!(config(None, &BTreeMap::new(), &[], "edits", false, false, false).is_none());
         let capped: Value =
-            serde_json::from_str(&config(None, &BTreeMap::new(), &[], "edits", false, true).unwrap_or_default()).unwrap_or_default();
+            serde_json::from_str(&config(None, &BTreeMap::new(), &[], "edits", false, true, false).unwrap_or_default()).unwrap_or_default();
         assert_eq!(capped["permission"]["webfetch"], "ask");
     }
 
@@ -216,14 +274,63 @@ mod tests {
             "browser".to_owned(),
             json!({ "type": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp@0.0.86", "--headless", "--isolated"] }),
         )]);
-        let c: Value = serde_json::from_str(&config(None, &m, &[], "edits", false, false).unwrap_or_default()).unwrap_or_default();
+        let c: Value = serde_json::from_str(&config(None, &m, &[], "edits", false, false, false).unwrap_or_default()).unwrap_or_default();
         assert_eq!(c["mcp"]["browser"]["type"], "local");
         assert_eq!(c["mcp"]["browser"]["command"], json!(["npx", "-y", "@playwright/mcp@0.0.86", "--headless", "--isolated"]));
     }
 
+    /// ADR-0135: Plan always carries its rules, over the user's own and any grant: no edits, and a shell that only
+    /// reads (none at all for a task from outside).
+    #[test]
+    fn plan_denies_edits_and_every_command_but_a_read_over_the_users_config() {
+        let parse = |c: Option<String>| serde_json::from_str::<Value>(&c.expect("Plan always has a config")).unwrap_or_default();
+        let c = parse(config(None, &BTreeMap::new(), &[], "plan", false, false, true));
+        assert_eq!(c["permission"]["edit"], "deny");
+        let bash = &c["permission"]["bash"];
+        assert_eq!(bash["*"], "deny");
+        for read in ["git status *", "git log *", "ls *", "cat *", "rg *", "pwd"] {
+            assert_eq!(bash[read], "allow", "{read}");
+        }
+        assert_eq!(bash["cat *>*"], "deny");
+        assert_eq!(bash["find *-delete*"], "deny");
+        let keys: Vec<&String> = bash.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+        let at = |k: &str| keys.iter().position(|x| *x == k);
+        assert!(at("cat *") < at("cat *>*") && at("find *") < at("find *-exec*"), "a deny comes after the allow it narrows: {keys:?}");
+        for (allow, deny) in [
+            ("git log *", "git log *--output*"),
+            ("git show *", "git show *--output*"),
+            ("git diff *", "git diff *--output*"),
+            ("git log *", "git log *--ext-diff*"),
+            ("git show *", "git show *--ext-diff*"),
+            ("git diff *", "git diff *--ext-diff*"),
+            ("cat *", "cat *<(*"),
+        ] {
+            assert_eq!(bash[deny], "deny", "{deny}");
+            assert!(at(allow).is_some() && at(allow) < at(deny), "{deny} sorts after {allow}: {keys:?}");
+        }
+
+        let g = vec![
+            json!({ "permission": "bash", "patterns": ["npm install"] }).to_string(),
+            json!({ "permission": "edit", "patterns": ["*"] }).to_string(),
+        ];
+        let open =
+            parse(config(Some(r#"{"permission":{"edit":"allow","bash":"allow"}}"#), &BTreeMap::new(), &g, "plan", false, false, true));
+        assert_eq!(open["permission"]["edit"], "deny", "the user's edit: allow doesn't reach Plan");
+        assert_eq!(open["permission"]["bash"], *bash, "nor their bash: allow, nor a grant");
+        let star = parse(config(Some(r#"{"permission":"allow"}"#), &BTreeMap::new(), &[], "plan", false, false, true));
+        assert_eq!(star["permission"]["edit"], "deny");
+        assert_eq!(star["permission"]["*"], "allow", "the rest of the user's rules stay");
+
+        let outside = parse(config(None, &BTreeMap::new(), &[], "plan", false, true, false));
+        assert_eq!(outside["permission"]["bash"], "deny", "a trigger's or a channel's Plan has no shell");
+        assert_eq!(outside["permission"]["edit"], "deny");
+        assert!(config(None, &BTreeMap::new(), &[], "edits", false, false, true).is_none(), "Edits as it was");
+        assert!(config(None, &BTreeMap::new(), &[], "auto", false, false, true).is_none(), "Full auto as it was");
+    }
+
     #[test]
     fn a_delegating_run_turns_task_off_with_nothing_else_to_add() {
-        let c = config(None, &BTreeMap::new(), &[], "edits", true, false).expect("a config: its own subagents are off");
+        let c = config(None, &BTreeMap::new(), &[], "edits", true, false, false).expect("a config: its own subagents are off");
         let c: Value = serde_json::from_str(&c).unwrap_or_default();
         assert_eq!(c["permission"]["task"], "deny");
     }
