@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.16] - 2026-11-26
+
 ### Fixed
 
 - wisp Cloud computers' usage stats (app started, task turns) now carry the address you reach your computer from, so they're placed where you are instead of all showing the grid's server in Germany.

@@ -1,6 +1,6 @@
 {
   "name": "wisp-agents",
-  "version": "1.0.0-alpha.15",
+  "version": "1.0.0-alpha.16",
   "description": "Wisp Agents: manage the code your agents write. Run Claude Code, Codex, Cursor and more in parallel from a desktop app, TUI and CLI, declare them as code, and track every line they write.",
   "license": "MIT",
   "repository": {
@@ -51,12 +51,12 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "wisp-agents-darwin-arm64": "npm:wisp-agents@1.0.0-alpha.15-darwin-arm64",
-    "wisp-agents-darwin-x64": "npm:wisp-agents@1.0.0-alpha.15-darwin-x64",
-    "wisp-agents-linux-x64": "npm:wisp-agents@1.0.0-alpha.15-linux-x64",
-    "wisp-agents-linux-arm64": "npm:wisp-agents@1.0.0-alpha.15-linux-arm64",
-    "wisp-agents-linux-arm": "npm:wisp-agents@1.0.0-alpha.15-linux-arm",
-    "wisp-agents-win32-x64": "npm:wisp-agents@1.0.0-alpha.15-win32-x64",
-    "wisp-agents-win32-arm64": "npm:wisp-agents@1.0.0-alpha.15-win32-arm64"
+    "wisp-agents-darwin-arm64": "npm:wisp-agents@1.0.0-alpha.16-darwin-arm64",
+    "wisp-agents-darwin-x64": "npm:wisp-agents@1.0.0-alpha.16-darwin-x64",
+    "wisp-agents-linux-x64": "npm:wisp-agents@1.0.0-alpha.16-linux-x64",
+    "wisp-agents-linux-arm64": "npm:wisp-agents@1.0.0-alpha.16-linux-arm64",
+    "wisp-agents-linux-arm": "npm:wisp-agents@1.0.0-alpha.16-linux-arm",
+    "wisp-agents-win32-x64": "npm:wisp-agents@1.0.0-alpha.16-win32-x64",
+    "wisp-agents-win32-arm64": "npm:wisp-agents@1.0.0-alpha.16-win32-arm64"
   }
 }
