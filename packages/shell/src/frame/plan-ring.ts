@@ -7,6 +7,7 @@ import type { PeerId } from '@wisp/client';
 import { useSignal } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { planWindows, ringOf } from './runner.ts';
+import '../i18n/home.ts';
 
 /** The chip's ring, in the chip's words ("Weekly 91% used"); `agent` '' or 'auto': none (Auto picks per task). */
 export function usePlanRing(
