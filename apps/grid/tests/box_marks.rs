@@ -318,3 +318,17 @@ async fn a_grid_cookie_sent_twice_signs_nobody_in() {
     assert_eq!(get(format!("{ada}; {mallory}")).await.unwrap().status(), 401);
     g.done();
 }
+
+/// SBX-A2: the list said nothing of the cap the grid holds a make to (`per_user`), so Settings couldn't say "3 of 5".
+#[tokio::test(flavor = "multi_thread")]
+async fn the_sandbox_list_says_the_most_the_grid_keeps() {
+    let g = rig("limit").await;
+    let token = g.device("ada");
+    let r = g.web.post(format!("{}/api/sandboxes", g.root())).bearer_auth(&token).json(&json!({ "name": "sb" })).send().await.unwrap();
+    assert_eq!(r.status(), 201);
+    let list: Value = g.web.get(format!("{}/api/sandboxes", g.root())).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+    assert_eq!(list["sandboxes"].as_array().map(Vec::len), Some(1), "{list}");
+    assert_eq!(list["limit"], json!(g.grid.sandboxes.per_user), "{list}");
+    assert!(g.grid.sandboxes.per_user > 0);
+    g.done();
+}

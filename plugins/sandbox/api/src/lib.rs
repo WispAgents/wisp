@@ -147,6 +147,10 @@ pub struct DropArgs {
     /// one sandbox, by its machine
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
+    /// one sandbox, by its grid id: one the grid holds that no machine here keeps (made elsewhere, its machine gone).
+    /// Additive (2026-11-26).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<String>,
 }
 
 /// A sandbox's owner, once it's known (a crew job's sandbox, owned by the job's task once it exists).
@@ -234,6 +238,10 @@ pub struct SandboxView {
     pub name: String,
     pub owner: Value,
     pub state: String,
+    /// only the grid holds it: no machine here keeps it (made elsewhere, or its machine gone), so no peer to open; it
+    /// still counts against the user's sandboxes, and Delete removes it on the grid by its id. Additive (2026-11-26).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub elsewhere: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -249,6 +257,12 @@ pub struct Info {
     /// env var names every sandbox gets (values never come back)
     pub env: Vec<String>,
     pub sandboxes: Vec<SandboxView>,
+    /// how many the grid holds of the user's, and the most it keeps (`3 of 5`); absent from a grid that doesn't say
+    /// (or can't be asked). Additive (2026-11-26).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
 }
 
 /// `claude setup-token` on a pty here: its link first, then the code pasted back, then the token goes to the grid.

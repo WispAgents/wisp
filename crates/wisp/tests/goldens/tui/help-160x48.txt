@@ -17,7 +17,7 @@
                           │                                                                                                          │
                           │ THE TASK                                                                                                 │
                           │   i  Enter                write (the composer)                                                           │
-                          │   j k  Space              move between steps · open or close one (a tool call, a diff)                   │
+                          │   j k  Space              move · Space opens a step, again shows a cut output whole, again closes        │
                           │   o                       open in its harness (Claude Code, Codex…), back here after                     │
                           │   1-9                     answer the question with that choice                                           │
                           │   y  a  n                 allow · always allow · deny a tool (approvals only, never a question)          │
@@ -26,8 +26,8 @@
                           │   t                       the Thread pane: the task's Notes and how worn it is · again: close it         │
                           │   p                       the side pane's next tab (changes, files, terminal, setup, thread)             │
                           │   s                       stop the running task (asks first)                                             │
-                          │   /                       search the transcript: what matches is marked                                  │
-                          │   PgUp PgDn  G  End       scroll · to the end (and follow)                                               │
+                          │   /                       search the transcript: matches are marked, ↓ ↑ Enter jump between them         │
+                          │   PgUp PgDn  G End Home   scroll · to the end (and follow) · the focused side pane: j k g g too          │
                           │                                                                                                          │
                           │ COMPOSER                                                                                                 │
                           │   Enter                   send (queued while a turn runs)                                                │

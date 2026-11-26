@@ -2258,3 +2258,36 @@ async fn run_ends_with(a: &Agent, n: u64) -> Value {
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
 }
+
+/// SBX-A1 (ADR-0136): `sandbox.drop {machine}` and `sandbox.own` are an agent's writes, but they reached every sandbox:
+/// an agent in task A deleted or took over task B's. Now only its own task's.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_never_drops_or_reowns_another_tasks_sandbox() {
+    let a = Agent::start("sandbox-scope").await;
+    // B's sandbox, as a launch keeps it here (never connected: nothing answers there)
+    let theirs = json!({ "task": "srv:B" });
+    let made = a
+        .api
+        .cmd(
+            "machines.add",
+            json!({ "name": "Sandbox B", "transport": "loopback", "address": "127.0.0.1", "port": 9, "connect": false,
+                    "data": { "sandbox": "0b0b0b0b", "owner": theirs } }),
+        )
+        .await;
+    let b = made["id"].as_str().unwrap_or_else(|| panic!("{made}")).to_owned();
+    // with the token its run was given (no MCP tool lists these for an agent; the token reaches them all the same)
+    let r = raw_cmd(&a, "sandbox.drop", json!({ "machine": b })).await;
+    assert!(r["ok"] == false && r["error"]["code"] == "forbidden" && r.to_string().contains("only its own task's"), "{r}");
+    let r = raw_cmd(&a, "sandbox.drop", json!({ "task": "srv:B" })).await;
+    assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "another task's by its task: {r}");
+    for owner in [json!({ "task": format!("srv:{}", a.id) }), json!({ "pending": 1 })] {
+        let r = raw_cmd(&a, "sandbox.own", json!({ "machine": b, "owner": owner })).await;
+        assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{owner} → {r}");
+    }
+    // B's box is still here, still B's, and no drop was tried (`dropping` is what a drop that failed leaves)
+    let list = a.api.cmd("machines.list", json!({})).await;
+    let row = list.as_array().unwrap().iter().find(|m| m["id"] == b.as_str()).unwrap_or_else(|| panic!("B's box went: {list}"));
+    assert_eq!(row["owner"], theirs, "{row}");
+    assert!(row.get("dropping").is_none_or(|d| d != true), "{row}");
+    a.serve.stop();
+}

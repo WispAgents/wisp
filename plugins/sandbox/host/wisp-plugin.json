@@ -40,7 +40,7 @@
       { "id": "sandbox.rebase", "title": "Count a project's changes from the state they last came back at (inside a sandbox only)" },
       { "id": "sandbox.bring", "title": "A delegate's changes in its sandbox, into the lead's folder here" },
       { "id": "sandbox.own", "title": "Name a sandbox's owner once it exists (a crew job's task)" },
-      { "id": "sandbox.drop", "title": "Delete the sandboxes of a task, a crew member, or one by its machine" },
+      { "id": "sandbox.drop", "title": "Delete the sandboxes of a task, a crew member, or one by its machine or its sandbox id (an agent: only its own task's)" },
       { "id": "sandbox.info", "title": "Your sandboxes, their owners, and what they start with", "readOnly": true },
       { "id": "sandbox.claude.begin", "title": "Sign in to Claude for every sandbox (claude setup-token)" },
       { "id": "sandbox.claude.code", "title": "The code Claude's sign-in page showed" },
