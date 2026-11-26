@@ -32,8 +32,9 @@ use crate::this_mac::{Guard, lock, run, run_any};
 /// Sampling when nothing runs and nobody reads the page: once a minute (the history's pace).
 const IDLE_MS: i64 = 60_000;
 
-/// The last view, the pids Stop may take, and what started wisp.
-type Last = (MachineView, HashSet<u32>, HashSet<u32>);
+/// The last view, the pids Stop may take with the start each had then (`ProcInfo::start`, 0: unknown), and what
+/// started wisp.
+type Last = (MachineView, HashMap<u32, u64>, HashSet<u32>);
 
 /// What sampling keeps between ticks.
 pub struct Procs {
@@ -272,6 +273,8 @@ impl Procs {
             h.points()
         };
         let stoppable: HashSet<u32> = placed.trees.values().flatten().copied().chain(leftovers.iter().map(|l| l.pid)).collect();
+        // each one's start as it is now: Stop comes up to IDLE_MS later, when the pid may be another process's
+        let stoppable = if stoppable.is_empty() { HashMap::new() } else { starts(stoppable).await };
         let v = view::build(
             ViewInput {
                 now,
@@ -345,30 +348,42 @@ impl Procs {
     }
 }
 
+/// The start of each of `pids` (`ProcInfo::start`), 0 where the table has none (it ended, or no table here).
+async fn starts(pids: HashSet<u32>) -> HashMap<u32, u64> {
+    let table = tokio::task::spawn_blocking(wisp_proc::processes).await.ok().and_then(std::result::Result::ok).unwrap_or_default();
+    let mut out: HashMap<u32, u64> = pids.into_iter().map(|p| (p, 0)).collect();
+    for p in table {
+        if let Some(s) = out.get_mut(&p.pid) {
+            *s = p.start;
+        }
+    }
+    out
+}
+
 /// Stop: SIGTERM, then SIGKILL `KILL_MS` on if it's still there. Only a leftover or a process in a running
 /// task's tree, as the last sample placed it; never wisp or what started it.
 fn stop(p: &Procs, pid: &Value) -> Result<Stopped> {
     let pid = holds::check_pid(pid).map_err(refusal)?;
-    let (mine, ancestor, since) = {
+    let (start, ancestor, since) = {
         let last = lock(&p.last);
-        last.as_ref().map_or((false, false, None), |(v, ok, anc)| {
+        last.as_ref().map_or((None, false, None), |(v, ok, anc)| {
             let n = u32::try_from(pid).unwrap_or(0);
-            (ok.contains(&n), anc.contains(&n), v.leftovers.iter().find(|l| l.pid == n).map(|l| l.since))
+            (ok.get(&n).copied(), anc.contains(&n), v.leftovers.iter().find(|l| l.pid == n).map(|l| l.since))
         })
     };
-    let pid = holds::check_stop(pid, std::process::id(), ancestor, mine).map_err(refusal)?;
-    match wisp_proc::signal_pid(pid, wisp_proc::Signal::Term) {
+    let pid = holds::check_stop(pid, std::process::id(), ancestor, start.is_some()).map_err(refusal)?;
+    let start = start.unwrap_or(0);
+    // the process the sample saw, by pid and start: one that ended and gave its pid to another is "it already ended"
+    match wisp_proc::signal_if_same(pid, start, wisp_proc::Signal::Term) {
         Ok(()) => {}
         Err(wisp_proc::ProcError::Exited) => return Ok(Stopped { stopped: 0, since }),
         Err(e) => return Err(WireError::internal(e.to_string())),
     }
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(u64::try_from(KILL_MS).unwrap_or(5_000))).await;
-        if wisp_proc::pid_alive(pid) {
-            match wisp_proc::signal_pid(pid, wisp_proc::Signal::Kill) {
-                Ok(()) | Err(wisp_proc::ProcError::Exited) => {}
-                Err(e) => tracing::warn!(error = %e, pid, "machine: SIGKILL after SIGTERM"),
-            }
+        match wisp_proc::signal_if_same(pid, start, wisp_proc::Signal::Kill) {
+            Ok(()) | Err(wisp_proc::ProcError::Exited) => {}
+            Err(e) => tracing::warn!(error = %e, pid, "machine: SIGKILL after SIGTERM"),
         }
     });
     if let Some(l) = lock(&p.last).as_mut() {
@@ -546,12 +561,30 @@ mod tests {
             },
             Vec::new(),
         );
-        *lock(&p.last) = Some((v, HashSet::from([4_000_000]), HashSet::from([4_000_001])));
+        *lock(&p.last) = Some((v.clone(), HashMap::from([(4_000_000, 0)]), HashSet::from([4_000_001])));
         assert!(stop(&p, &json!(me)).is_err(), "wisp itself");
         assert!(stop(&p, &json!(4_000_001)).is_err(), "what started wisp");
         assert!(stop(&p, &json!(4_000_002)).is_err(), "not a task's");
         assert!(stop(&p, &json!("abc")).is_err(), "not a pid");
         // a placed pid that already ended: nothing to stop, not an error
         assert_eq!(stop(&p, &json!(4_000_000)).unwrap().stopped, 0);
+        stale_start_is_refused(&p, v);
     }
+
+    /// The sample saw a pid with one start; at Stop the pid is another process's (the OS gave it out again): nothing
+    /// is signalled and the answer is "it already ended". Unix: a `sleep` stands in for the stranger.
+    #[cfg(unix)]
+    fn stale_start_is_refused(p: &Procs, v: MachineView) {
+        let mut stranger = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let pid = stranger.id();
+        let start = wisp_proc::processes().unwrap().into_iter().find(|x| x.pid == pid).unwrap().start;
+        *lock(&p.last) = Some((v, HashMap::from([(pid, start + 1)]), HashSet::new()));
+        assert_eq!(stop(p, &json!(pid)).unwrap().stopped, 0);
+        assert!(wisp_proc::pid_alive(pid), "the stranger was never signalled");
+        let _ = stranger.kill();
+        let _ = stranger.wait();
+    }
+
+    #[cfg(not(unix))]
+    fn stale_start_is_refused(_: &Procs, _: MachineView) {}
 }
