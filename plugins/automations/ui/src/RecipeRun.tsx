@@ -3,7 +3,7 @@
 // Run, even with nothing to fill in, so a click on a recipe never launches it outright. Run starts it
 // (`automations.task.run`) and the dialog closes; a refusal keeps it open with why.
 import { createMemo, createResource, createSignal, For, Show, type JSX } from 'solid-js';
-import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
+import { defineCommand, homeSetting, type PeerId, type PluginClient } from '@wisp/client';
 import { PROJECT_ORDER, projectList, useRunWords, useShell } from '@wisp/shell';
 import { Button, Dialog, Field, Inline, Input, Select, Stack, Text, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
@@ -42,9 +42,9 @@ export default function RecipeRun(props: { readonly client: PluginClient; readon
   const fields = createMemo(() => (recipe() ? fieldsOf(recipe() as Declared) : []));
   const [values, setValues] = createSignal<Record<string, string>>({});
   const rows = useSignal(c.entities.list<unknown>('project'));
-  const settings = useSignal(c.entities.list<{ key: string; value: unknown }>('setting'));
+  const order = useSignal(homeSetting(c, PROJECT_ORDER)); // this wisp's order, not another computer's (doc25c)
   // in the launcher's order (Settings › Projects), as Home lists them
-  const projects = createMemo(() => projectList(rows(), settings().find((r) => r.key === PROJECT_ORDER)?.value));
+  const projects = createMemo(() => projectList(rows(), order()));
   const pick = useSignal(shell.projectFilter?.value ?? (() => 'all'));
   // the launcher's project until one is picked here ('' is No folder, picked)
   const [chosen, setProject] = createSignal<string | undefined>(props.params.project || undefined);

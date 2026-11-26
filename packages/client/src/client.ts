@@ -66,6 +66,9 @@ export interface PluginClient {
   http(peer: PeerId): PeerHttp;
   /** this client's own wisp (ClientOptions.home; the one setHome named last, read when asked) */
   readonly home: PeerId;
+  /** added 2026-11-26 (additive): `home` as a signal, so what reads it inside a computed or effect follows setHome (the
+   *  phone launching another computer without a reload); homeSetting reads it */
+  readonly homeNow: Readable<PeerId>;
   /** kind 5: text and files being written, keyed (entity, field), kept across reloads (the composer's drafts) */
   readonly drafts: Drafts;
 }
@@ -228,6 +231,7 @@ export function createClient(o: ClientOptions): Client {
       get home() {
         return untracked(home);
       },
+      homeNow: homeNow,
       drafts,
     };
   }

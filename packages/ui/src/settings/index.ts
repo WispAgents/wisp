@@ -12,3 +12,4 @@ export { PlanAccount, PlanCompare, PlanList, type PlanAccountProps, type PlanCom
 export { SwitchSetting, SelectSetting, ChoiceSetting, type SettingSource, type SelectSettingProps, type ChoiceSettingProps, type ChoiceOption } from './SettingControls.tsx';
 export { SettingsSignIn, type SettingsSignInProps, type SettingsSignInLabels } from './SettingsSignIn.tsx';
 export { SettingsMasterDetail, type SettingsMasterDetailProps, type SettingsMasterItem } from './SettingsMasterDetail.tsx';
+export { FOUND_MS, settingRow, useRevealSetting } from './reveal.ts';

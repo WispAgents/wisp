@@ -12,7 +12,8 @@ test('a_task_found_in_search_opens_by_its_entity_key_not_its_bare_id', () => {
   };
   const ctx = {
     client: {
-      entities: { list: (k: string) => () => rows[k] ?? [], keys: (k: string) => () => (k === 'session' ? ['peer1:s1'] : []) },
+      home: () => 'peer1',
+      entities: { list: (k: string) => () => rows[k] ?? [], row: () => () => undefined, keys: (k: string) => () => (k === 'session' ? ['peer1:s1'] : []) },
       scope: { timers: { now: () => 0 } },
     },
     t: (k: string) => k,

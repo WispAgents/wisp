@@ -80,6 +80,9 @@ export interface SettingsRowProps extends KitProps {
    *  cloud computer's agents). Additive
    *  (2026-11-17). */
   readonly below?: JSX.Element;
+  /** the setting this row sets (its registry key): Settings' search finds the row by it, scrolls to it and lights it
+   *  (revealSetting). Additive (2026-11-26). */
+  readonly settingKey?: string | undefined;
 }
 
 export function SettingsRow(props: SettingsRowProps): JSX.Element {
@@ -96,6 +99,7 @@ export function SettingsRow(props: SettingsRowProps): JSX.Element {
       data-big={props.big ? '' : undefined}
       data-choices={props.choices ? '' : undefined}
       data-keep-right={props.keepRight ? '' : undefined}
+      data-setting-key={props.settingKey}
     >
       <Show when={props.tile}>
         {(n) => (
