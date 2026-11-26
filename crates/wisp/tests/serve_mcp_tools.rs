@@ -993,6 +993,8 @@ async fn an_agents_capability_set_writes_only_its_own_work() {
         "runtime.setExt",
         "runtime.turn.setExt",
         "runtime.approveBlocked",
+        "runtime.proposal.apply",
+        "runtime.proposal.discard",
         "runtime.overage",
         "runtime.signIn",
         "runtime.import",

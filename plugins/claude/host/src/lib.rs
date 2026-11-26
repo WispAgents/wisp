@@ -19,8 +19,8 @@ use wisp_harness_kit::Re;
 use wisp_harness_kit::RunPaths;
 use wisp_kernel::{BoxFuture, Manifest, Plugin, Result, Setup};
 use wisp_runtime_api::harness::{
-    ExecReq, HarnessAccounts, HarnessFound, HarnessInfo, HarnessLogin, HarnessModel, HarnessRun, HarnessSys, Launch, PermissionAsk,
-    RunDriver, SetupTip,
+    ExecReq, FileChangeOf, FileWrite, HarnessAccounts, HarnessFound, HarnessInfo, HarnessLogin, HarnessModel, HarnessRun, HarnessSys,
+    Launch, PermissionAsk, RunDriver, SetupTip, TextEdit,
 };
 use wisp_runtime_api::{HARNESS, Harness};
 
@@ -276,6 +276,12 @@ impl Harness for ClaudeHarness {
         })
     }
 
+    /// Claude Code's file-writing tools (`launch::EDIT_TOOLS`), as the file and the change they make: what a side
+    /// discussion's gate turns into a proposal on its main task when that task changed the file.
+    fn file_write(&self, tool: &str, input: &serde_json::Value) -> Option<FileWrite> {
+        file_write(tool, input)
+    }
+
     fn login(&self) -> Option<&HarnessLogin> {
         Some(&self.login)
     }
@@ -326,6 +332,29 @@ impl Plugin for ClaudePlugin {
         s.contribute(&wisp_runtime_api::harness::sessions::SESSIONS, sessions);
         Ok(())
     }
+}
+
+/// `Harness::file_write` for Claude Code's tool inputs (`file_path`, `old_string`/`new_string`, `edits`, `content`).
+fn file_write(tool: &str, input: &serde_json::Value) -> Option<FileWrite> {
+    let s = |v: &serde_json::Value, k: &str| v.get(k).and_then(serde_json::Value::as_str).map(str::to_owned);
+    let edit = |v: &serde_json::Value| {
+        Some(TextEdit {
+            old: s(v, "old_string")?,
+            new: s(v, "new_string")?,
+            all: v.get("replace_all").and_then(serde_json::Value::as_bool).unwrap_or(false),
+        })
+    };
+    let (path, change) = match tool {
+        "Write" => (s(input, "file_path")?, FileChangeOf::Whole { text: s(input, "content")? }),
+        "Edit" => (s(input, "file_path")?, FileChangeOf::Edits { edits: vec![edit(input)?] }),
+        "MultiEdit" => {
+            let edits: Option<Vec<TextEdit>> = input.get("edits")?.as_array()?.iter().map(edit).collect();
+            (s(input, "file_path")?, FileChangeOf::Edits { edits: edits? })
+        }
+        "NotebookEdit" => (s(input, "notebook_path")?, FileChangeOf::Opaque),
+        _ => return None,
+    };
+    Some(FileWrite { path, change })
 }
 
 #[cfg(test)]
@@ -400,6 +429,27 @@ mod tests {
         assert_eq!((p.detail.as_str(), p.action.as_str(), p.why.as_deref()), ("npm publish", "run `npm publish`", Some("Publish")));
         assert_ne!((p.tool.as_str(), p.detail.as_str()), (q.tool.as_str(), q.detail.as_str()));
         assert_eq!(h.permission("Write", &serde_json::json!({ "file_path": "/w/a.js" }), "/w").map(|x| x.detail).as_deref(), Some("a.js"));
+    }
+
+    /// Audit user-side-edits-for-approval: each of Claude Code's file-writing tools reads as its file and its change;
+    /// anything else writes no file.
+    #[test]
+    fn its_file_writing_tools_name_the_file_and_the_change() {
+        let h = ClaudeHarness::default();
+        let w = h.file_write("Write", &serde_json::json!({ "file_path": "/w/a.js", "content": "x" })).expect("a write");
+        assert_eq!((w.path.as_str(), w.change), ("/w/a.js", FileChangeOf::Whole { text: "x".into() }));
+        let e =
+            h.file_write("Edit", &serde_json::json!({ "file_path": "/w/a.js", "old_string": "a", "new_string": "b", "replace_all": true }));
+        assert_eq!(
+            e.expect("an edit").change,
+            FileChangeOf::Edits { edits: vec![TextEdit { old: "a".into(), new: "b".into(), all: true }] }
+        );
+        let edits = serde_json::json!({ "file_path": "/w/a.js", "edits": [{ "old_string": "a", "new_string": "b" }, { "old_string": "c", "new_string": "d" }] });
+        assert!(matches!(h.file_write("MultiEdit", &edits).expect("edits").change, FileChangeOf::Edits { edits } if edits.len() == 2));
+        let nb = h.file_write("NotebookEdit", &serde_json::json!({ "notebook_path": "/w/n.ipynb" }));
+        assert_eq!(nb.map(|w| w.change), Some(FileChangeOf::Opaque));
+        assert_eq!(h.file_write("Bash", &serde_json::json!({ "command": "ls" })), None);
+        assert_eq!(h.file_write("Read", &serde_json::json!({ "file_path": "/w/a.js" })), None);
     }
 
     #[test]

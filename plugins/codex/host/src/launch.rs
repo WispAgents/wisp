@@ -55,6 +55,7 @@ pub fn launch(run: &HarnessRun, bin: &str, developer: bool) -> Launch {
         resume_id: resume,
         fork: run.fork,
         capped: run.capped,
+        network: run.side,
         lean_base: run.lean.then_some(lean_base.as_str()),
         developer,
         mcp_servers: Some(&run.mcp_servers),
@@ -110,6 +111,24 @@ mod tests {
             Stdin::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
             _ => String::new(),
         }
+    }
+
+    /// Audit user-side-full-access: a side discussion's run is never read-only: workspace-write with the network on, or
+    /// Full auto's bypass when its main task runs in Full auto; a channel's cap still keeps the network off.
+    #[test]
+    fn a_side_discussions_run_writes_and_reaches_the_network() {
+        let side = HarnessRun { side: true, ..run() };
+        let a = launch(&side, "codex", true).args;
+        assert!(!a.iter().any(|x| x.contains("read-only")), "{a:?}");
+        assert!(a.iter().any(|x| x == r#"sandbox_mode="workspace-write""#), "{a:?}");
+        assert!(a.iter().any(|x| x == "sandbox_workspace_write.network_access=true"), "{a:?}");
+        let full = launch(&HarnessRun { mode: Mode::Auto, ..side.clone() }, "codex", true).args;
+        assert!(full.iter().any(|x| x == "--dangerously-bypass-approvals-and-sandbox"));
+        assert!(!full.iter().any(|x| x.contains("read-only") || x.contains("network_access")));
+        let capped = launch(&HarnessRun { capped: true, ..side }, "codex", true).args;
+        assert!(capped.iter().any(|x| x == "sandbox_workspace_write.network_access=false"));
+        let plain = launch(&run(), "codex", true).args;
+        assert!(!plain.iter().any(|x| x.contains("network_access")), "a task's own run is as it was");
     }
 
     /// ADR-0097: a Full auto run that names its offload folder gets the long-thread hooks; without the folder, none.

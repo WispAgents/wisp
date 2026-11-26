@@ -55,6 +55,38 @@ pub struct LimitsReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub banked: Option<Banked>,
+    /// the plan or tier the CLI names (Cursor's `about`: "Pro"). Additive (2026-11-25, ADR-0124).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub plan: Option<String>,
+    /// what the CLI itself says was spent and used lately (opencode `stats --days 7`, grok `usage`). Additive
+    /// (2026-11-25, ADR-0124).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub spent: Option<CliSpend>,
+}
+
+/// What a CLI itself reports of the account's recent use: its own sum, not wisp's turns.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "budget/")]
+pub struct CliSpend {
+    /// USD, as the CLI totals it; None: it gave tokens only
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cost: Option<f64>,
+    /// the days it covers (7 for `opencode stats --days 7`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub days: Option<u32>,
+    /// tokens in that time (input, output and cache together)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub tokens: Option<u64>,
+    /// when it was read (ms); set by budget when it records it
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -245,6 +277,14 @@ pub struct AccountView {
     #[serde(default, rename = "where", skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub where_went: Option<crate::usage::WhereView>,
+    /// the plan or tier its CLI names (Cursor). Additive (2026-11-25, ADR-0124).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub plan: Option<String>,
+    /// what its CLI says was spent lately (opencode, Grok). Additive (2026-11-25, ADR-0124).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub spent: Option<CliSpend>,
 }
 
 /// A window's closed period (v1 `Budget.periods`). `cut`: it ended before its reset.

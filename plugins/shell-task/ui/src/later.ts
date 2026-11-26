@@ -1,4 +1,5 @@
 // wisp.shell-task's UI, the part only a press reaches (ADR-0067: PluginUiDef.later): loaded as the first screen draws.
+import { lazy } from 'solid-js';
 import { defineCommand, uuidv7 } from '@wisp/client';
 import type { PluginUiLater } from '@wisp/shell';
 import { defineExtension } from './define.ts';
@@ -7,6 +8,11 @@ import { added, commentStore, marksOn, waiting, withComments } from './comments.
 import { CATALOGUE } from './i18n/index.ts';
 import { appRunning, runRequest } from './side/run-request.ts';
 import { filesSource } from './side/open-file.ts';
+import { openContinue } from './continue/open.ts';
+import './i18n/lazy.ts';
+
+/** The task a palette row or a key is about: the focused one, as its entity key. */
+const taskKeyOf = (focused: string | undefined): string | undefined => (focused && focused.includes(':') ? focused : undefined);
 
 /** Stop app (v1 stopRun): wisp.terminal closes the task's run */
 const stopRun = defineCommand<{ key: string; id: string }, { ok: boolean }>({
@@ -19,6 +25,31 @@ const stopRun = defineCommand<{ key: string; id: string }, { ok: boolean }>({
 
 const later: PluginUiLater = {
   extensions: [
+    // over a turn that switched harness: the Timeline's divider (ADR-0125), drawn once this part is in (ADR-0011)
+    defineExtension({ id: 'shell-task.switch', attachTo: { id: 'shell.turn:head' }, component: lazy(() => import('./continue/SwitchDivider.tsx')) }),
+    // Continue on… in a task's menu (its More and the row's right-click, ADR-0125): the runner picker, then what
+    // carries over, then one follow-up on that harness
+    defineExtension({
+      id: 'shell-task.rowContinue',
+      attachTo: { id: 'shell.row:menu' },
+      component: () => null,
+      order: 12,
+      if: (p) => {
+        const s = p.session?.() as { pending?: boolean; agent?: string } | undefined;
+        return !!s && !s.pending;
+      },
+      bar: {
+        icon: 'agent',
+        label: 'shell-task.continue.menu',
+        priority: 12,
+        section: 'task',
+        keys: '⇧C',
+        select: (p) => {
+          const key = String((p.session?.() as { id?: string } | undefined)?.id ?? '');
+          if (key) openContinue(p.client, { key: key as never });
+        },
+      },
+    }),
     // Run app / Stop app in a task's row menu (v1 panel.js runItem, runApp): a task with a worktree. While its app runs
     // (the row's mark from wisp.terminal) it stops it; else the task's Preview opens and starts it with its command
     defineExtension({
@@ -71,6 +102,23 @@ const later: PluginUiLater = {
   // a terminal task's CLI beside it (`shell-task.term`, the Terminal tab)
   // the comments go at the top of the next follow-up (v1 comment-text.js withComments)
   prompt: [
+    // `/continue` in the reply box (ADR-0125): Continue on…, with what's typed after it as the follow-up's words
+    {
+      id: 'shell-task.continue',
+      trigger: '/',
+      where: ['reply'],
+      order: 40,
+      items: (q) =>
+        'continue'.startsWith(q.trim().toLowerCase())
+          ? [{ value: 'continue', label: CATALOGUE['shell-task.continue.slash'] ?? '/continue', hint: CATALOGUE['shell-task.continue.slashHint'] ?? '', icon: 'agent', insert: '/continue ' }]
+          : [],
+      send: (text, ctx) => {
+        const m = /^\/continue(?:\s+([\s\S]*))?$/i.exec(text.trim());
+        if (!m || !ctx.task.includes(':')) return false;
+        openContinue(ctx.client, { key: ctx.task as never, ...(m[1]?.trim() && { text: m[1].trim() }) });
+        return true;
+      },
+    },
     {
       id: 'shell-task.comments',
       trigger: '/',
@@ -103,6 +151,34 @@ const later: PluginUiLater = {
     },
   ],
   // Changes' Open file…: the palette on the task's files alone, then the words inside them (v1 openFileFinder)
-  palette: [filesSource],
+  palette: [
+    filesSource,
+    // ⌘K → This task: Continue on… (ADR-0125)
+    {
+      id: 'shell-task.continue',
+      order: 20,
+      items: (ctx) => {
+        const key = taskKeyOf(ctx.focused);
+        if (!key || ctx.narrowed) return [];
+        return [{ id: 'shell-task.continue', group: 'shell-task.continue.group', label: 'shell-task.continue.menu', icon: 'agent', kbd: '⇧C', keywords: 'hand off handoff switch harness agent model', run: () => openContinue(ctx.client, { key: key as never }) }];
+      },
+    },
+  ],
+  // ⇧C on a task: Continue on… (ADR-0125)
+  shortcuts: [
+    {
+      id: 'shell-task.continue',
+      keys: 'shift+c',
+      label: 'shell-task.continue.menu',
+      group: 'task',
+      when: 'task',
+      run: (ctx) => {
+        const key = taskKeyOf(ctx.focused);
+        if (!key) return false;
+        openContinue(ctx.client, { key: key as never });
+        return true;
+      },
+    },
+  ],
 };
 export default later;

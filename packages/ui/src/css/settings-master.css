@@ -1,0 +1,157 @@
+/* SettingsMasterDetail (Settings → Agents, harness audit r2): the list beside the picked item's settings; under 720px
+   the list is one row of chips over them. */
+@layer kit {
+  [data-kit='settings-master'] {
+    display: grid;
+    grid-template-columns: 13.5rem minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+  [data-kit='settings-master-side'] {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  [data-kit='settings-master-search'] {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 10px;
+    border: var(--size-hairline) solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    color: var(--muted);
+  }
+  [data-kit='settings-master-search']:focus-within {
+    border-color: var(--line-2);
+  }
+  [data-kit='settings-master-search'] > [data-kit='icon'] {
+    flex: none;
+    width: 14px;
+    height: 14px;
+  }
+  [data-kit='settings-master-search'] > input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: none;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  [data-kit='settings-master-list'] {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  [data-kit='settings-master-item'] {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-height: 40px;
+    padding: 6px 9px;
+    border-radius: 9px;
+    text-align: left;
+    color: var(--ink-2);
+    outline: 0;
+  }
+  [data-kit='settings-master-item']:hover {
+    background: var(--bg-2);
+  }
+  [data-kit='settings-master-item']:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--line-2);
+  }
+  [data-kit='settings-master-item'][data-on] {
+    background: var(--bg-2);
+    color: var(--ink);
+  }
+  [data-kit='settings-master-mark'] {
+    flex: none;
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    align-items: center;
+    justify-content: center;
+  }
+  [data-kit='settings-master-mark'] > img,
+  [data-kit='settings-master-mark'] > [data-kit='icon'] {
+    width: 16px;
+    height: 16px;
+  }
+  [data-kit='settings-master-text'] {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+  }
+  [data-kit='settings-master-text'] > b {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: var(--fw-medium);
+  }
+  [data-kit='settings-master-text'] > small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  [data-kit='settings-master-dot'] {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--faint);
+  }
+  [data-kit='settings-master-dot'][data-tone='good'] {
+    background: var(--good);
+  }
+  [data-kit='settings-master-dot'][data-tone='warn'] {
+    background: var(--warn);
+  }
+  [data-kit='settings-master-dot'][data-tone='bad'] {
+    background: var(--bad);
+  }
+  [data-kit='settings-master-empty'] {
+    padding: 10px 9px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  [data-kit='settings-master-detail'] {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  @media (max-width: 720px) {
+    [data-kit='settings-master'] {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
+    }
+    [data-kit='settings-master-side'] {
+      position: static;
+    }
+    [data-kit='settings-master-list'] {
+      flex-direction: row;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    [data-kit='settings-master-item'] {
+      width: auto;
+      flex: none;
+      min-height: 34px;
+      border: var(--size-hairline) solid var(--line);
+      border-radius: var(--radius-pill);
+    }
+    [data-kit='settings-master-text'] > small {
+      display: none;
+    }
+  }
+}

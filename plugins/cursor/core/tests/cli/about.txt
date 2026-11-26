@@ -1,0 +1,10 @@
+About Cursor CLI
+
+CLI Version         2026.11.13-eacade1
+Latest              2026.11.22-e9042b2 (update available — run `agent update`)
+Model               Composer 2.5 Fast
+Subscription Tier   Free
+OS                  darwin (arm64)
+Terminal            ghostty
+Shell               zsh
+User Email          user@example.com

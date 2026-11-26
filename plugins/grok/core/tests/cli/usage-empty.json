@@ -1,0 +1,28 @@
+{
+  "sessionId": "01a155d3-5b2d-7e93-b242-e60d2d6fe266",
+  "updatedAt": "2026-10-19T20:21:21.136651+00:00",
+  "session": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cachedReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "reasoningTokens": 0,
+    "totalTokens": 0,
+    "modelCalls": 0,
+    "turnCount": 1
+  },
+  "turns": [
+    {
+      "turnNumber": 1,
+      "endedAt": "2026-10-19T20:21:21.136651+00:00",
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cachedReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "reasoningTokens": 0,
+      "totalTokens": 0,
+      "modelCalls": 0,
+      "turnCount": 1
+    }
+  ]
+}

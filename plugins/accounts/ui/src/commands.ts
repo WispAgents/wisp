@@ -216,3 +216,37 @@ export const setAsk = defineCommand<{ peer: PeerId; on: boolean }>({
   wire: (a) => ({ on: a.on }),
   optimistic: (base, a) => merge<{ id: string; grid: boolean; ask: boolean }>(base, 'accounts.place', at(a.peer, 'this'), { ask: a.on }),
 });
+
+/** A harness's switch in its Settings → Agents detail: its plugin (`wisp.<harness>`) on or off, through the kernel's
+ *  own `plugins.setEnabled` (the state Settings → Plugins shows; nothing new is kept). */
+export const pluginList = defineCommand<{ peer: PeerId }, { id: string; enabled: boolean; state: string }[]>({
+  id: 'plugins.list',
+  owner: (a) => a.peer,
+  wire: () => ({}),
+  optimistic: 'none',
+  pending: 'the harnesses’ switches',
+});
+export const pluginSet = defineCommand<{ peer: PeerId; id: string; enabled: boolean }>({
+  id: 'plugins.setEnabled',
+  owner: (a) => a.peer,
+  wire: (a) => ({ id: a.id, enabled: a.enabled }),
+  optimistic: 'none',
+  pending: 'the harness’s switch',
+});
+
+/** A setting row (a harness's defaults in `runtime.launch`): it reads its new value at once. */
+export const settingSet = defineCommand<{ peer: PeerId; key: string; value: unknown }>({
+  id: 'settings.set',
+  owner: (a) => a.peer,
+  optimistic: (_b, a) => [{ e: 'setting', id: entityKey(a.peer, a.key), op: 'upsert', v: { key: a.key, value: a.value, locked_by: null } as never }],
+});
+
+/** A harness's plan windows (wisp.budget's `budget.view`), quiet: its item's dot says when it's at its limit. */
+export const planView = defineCommand<{ peer: PeerId; agent: string }, { windows: { used: number }[] }[]>({
+  id: 'budget.view',
+  owner: (a) => a.peer,
+  wire: (a) => ({ agent: a.agent }),
+  optimistic: 'none',
+  pending: 'the harness’s usage dot',
+  quiet: true,
+});

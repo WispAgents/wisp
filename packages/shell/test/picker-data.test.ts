@@ -2,7 +2,7 @@
 // and one budget.view per harness, 7) and applied the usage answers one by one. Kept per peer: a hover warms it, an
 // open soon after asks nothing, and the usage lands as one map.
 import { expect, test } from 'vitest';
-import { FRESH_MS, holdHarnesses, pickerData } from '../src/frame/picker-data.ts';
+import { FRESH_MS, OPEN_MS, holdHarnesses, pickerData } from '../src/frame/picker-data.ts';
 
 const HARNESSES = ['claude', 'codex', 'opencode', 'cursor', 'copilot', 'grok', 'antigravity'];
 
@@ -101,4 +101,20 @@ test('a_failed_answer_is_not_kept_and_the_next_open_asks_again', async () => {
   fail = false;
   expect((await d.agents()).map((a) => a.id), 'asked again, not 30 s of an empty list').toEqual(['claude']);
   expect(asked).toBe(2);
+});
+
+test('each_open_asks_the_usage_again_unless_a_hover_just_did_and_no_window_reads_null', async () => {
+  const s = server();
+  let now = 0;
+  const d = pickerData(s.run, 'laptop', () => now);
+  await d.usage(['claude'], OPEN_MS);
+  expect(count(s.asked, 'budget.view')).toBe(1);
+  now += OPEN_MS - 1;
+  await d.usage(['claude'], OPEN_MS);
+  expect(count(s.asked, 'budget.view'), 'a hover just read it').toBe(1);
+  now += 2;
+  await d.usage(['claude'], OPEN_MS);
+  expect(count(s.asked, 'budget.view'), 'the next open reads it again, well inside FRESH_MS').toBe(2);
+  const none = pickerData(((cmd: { id: string }) => Promise.resolve((cmd.id === 'budget.view' ? [{ windows: [] }] : []) as never)) as never, 'laptop', () => 0);
+  expect((await none.usage(['cursor'])).get('cursor'), 'read, no window: null (limits not reported)').toBeNull();
 });

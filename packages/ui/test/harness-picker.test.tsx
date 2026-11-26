@@ -543,3 +543,60 @@ test('a_picked_files_pill_names_its_agent_on_a_narrow_bar_and_its_model_in_the_p
   mount(() => <Launcher {...launcher({})} runner={{ ...launcher({}).runner, auto: false, label: 'Codex', pick: 'gpt-5' }} />);
   expect(document.querySelectorAll('[data-part="launcher.harness"]')[1]?.hasAttribute('data-file')).toBe(false);
 });
+
+test('harness picker: the find box is focused on open, Tab jumps between harness groups, f stars a row, Sign in under a row', async () => {
+  const anchor = document.createElement('button');
+  document.body.append(anchor);
+  const [q, setQ] = createSignal('');
+  const starred: string[] = [];
+  const picked: string[] = [];
+  const signIn: string[] = [];
+  const pane = (): HarnessPickerPane => ({
+    label: 'Model',
+    groups: q()
+      ? [
+          { head: 'Claude Code', items: [{ id: 'claude\topus', label: 'Opus 5.5', star: false }, { id: 'claude\tsonnet', label: 'Sonnet 5.5', star: true }] },
+          { head: 'opencode', items: [{ id: 'opencode\tanthropic/opus', label: 'Opus' }] },
+        ]
+      : [{ items: [{ id: 'opus', label: 'Opus 5.5', star: false }] }],
+    value: '',
+    onPick: (id) => picked.push(id),
+    empty: 'No harness or model matches',
+    onStar: (id) => starred.push(id),
+    starLabel: 'Favourite (f)',
+  });
+  mount(() => (
+    <HarnessPicker
+      anchor={() => anchor}
+      label="Harness"
+      head="Harness"
+      rows={[...ROWS.slice(1, 3), { id: 'grok', name: 'Grok', sub: 'Signed out', off: true, action: { label: 'Sign in', onClick: () => signIn.push('grok') } }]}
+      inUse="claude"
+      inUseLabel="In use"
+      focused="claude"
+      onPreview={() => undefined}
+      onUse={() => undefined}
+      pane={pane()}
+      onClose={() => undefined}
+      find={{ placeholder: 'Search harnesses and models', value: q(), onInput: setQ }}
+    />
+  ));
+  await frame();
+  const find = document.querySelector<HTMLInputElement>('[data-part="runner.find"] input');
+  expect(document.activeElement).toBe(find);
+  setQ('opus');
+  key('Tab');
+  expect((document.activeElement as HTMLElement).dataset['id']).toBe('claude\topus');
+  key('Tab');
+  expect((document.activeElement as HTMLElement).dataset['id'], 'the next harness').toBe('opencode\tanthropic/opus');
+  key('Tab');
+  expect((document.activeElement as HTMLElement).dataset['id'], 'round to the first').toBe('claude\topus');
+  key('f');
+  expect(starred).toEqual(['claude\topus']);
+  expect([...document.querySelectorAll('[data-kit="pk-star"]')].map((s) => s.getAttribute('aria-checked'))).toEqual(['false', 'true']);
+  key('Enter');
+  document.querySelector<HTMLButtonElement>('[data-kit="pk-hact"]')?.click();
+  expect(signIn).toEqual(['grok']);
+  document.querySelectorAll('[data-kit="picker"]').forEach((n) => n.remove());
+  anchor.remove();
+});

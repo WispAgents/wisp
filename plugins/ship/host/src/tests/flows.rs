@@ -87,6 +87,63 @@ async fn merge_readies_a_draft_squashes_the_reviewed_head_and_tidies() {
     assert!(h.ship.merge_all(&h.call, "t").await.is_err(), "nothing left to merge");
 }
 
+/// After a merge the folder and its branch stay (here and on the remote), with a note why, when git can't read the
+/// folder, the task has Keep worktree on, it is working, a commit sits on its branch the PR lacks (HEAD elsewhere), or
+/// the worktrees plugin couldn't remove it. The branch goes only once the folder did.
+#[tokio::test]
+async fn a_merge_keeps_the_folder_and_its_branch_unless_its_removal_went() {
+    use wisp_ship_core::decide::Tidied;
+    async fn merged(h: &crate::tests::H) -> (wisp_ship_api::Worktree, wisp_ship_api::Merged) {
+        let wts = h.track("t", &[("repo", None)]);
+        h.dirty(&wts[0], 1);
+        h.ship.ship_all(&h.call, "t", "feat: x", "", false).await.unwrap_or_else(|e| panic!("{e}"));
+        (wts[0].clone(), h.ship.merge_all(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}")))
+    }
+    let untouched = |h: &crate::tests::H, wt: &wisp_ship_api::Worktree| {
+        assert!(std::path::Path::new(&wt.path).is_dir(), "the folder stays");
+        assert_eq!(h.git.logged("branch -D"), [] as [String; 0], "its branch stays");
+        assert!(!h.git.logged("push").iter().any(|l| l.contains("--delete")), "and on the remote");
+    };
+
+    // git status fails: never read as clean, and the worktrees plugin isn't even asked
+    let h = h();
+    let wts = h.track("t", &[("repo", None)]);
+    h.dirty(&wts[0], 1);
+    h.ship.ship_all(&h.call, "t", "feat: x", "", false).await.unwrap_or_else(|e| panic!("{e}"));
+    h.git.lock().status_fails = Some("index file corrupt".into());
+    let m = h.ship.merge_all(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}"));
+    assert!(m.kept.iter().any(|n| n.contains("git status failed") && n.contains("index file corrupt")), "{:?}", m.kept);
+    assert_eq!(h.git.logged("tidy"), [] as [String; 0]);
+    untouched(&h, &wts[0]);
+
+    for (answer, says) in [
+        (Tidied::Kept, "Keep worktree is on"),
+        (Tidied::Busy, "still working"),
+        (Tidied::Failed("it is locked".into()), "couldn't be removed (it is locked)"),
+    ] {
+        let h = crate::tests::h();
+        *h.tidy.lock().unwrap() = Some(answer);
+        let (wt, m) = merged(&h).await;
+        assert!(m.kept.iter().any(|n| n.contains(says)), "{says}: {:?}", m.kept);
+        assert_eq!(h.git.logged("tidy").len(), 1, "removed through the worktrees plugin");
+        untouched(&h, &wt);
+    }
+
+    // a commit on the branch the PR doesn't have, while the folder's HEAD is elsewhere
+    let h = crate::tests::h();
+    h.git.lock().counts.insert("refs/remotes/origin/wisp/repo..refs/heads/wisp/repo".into(), Some(1));
+    let (wt, m) = merged(&h).await;
+    assert!(m.kept.iter().any(|n| n.contains("1 commit the pull request doesn't have")), "{:?}", m.kept);
+    untouched(&h, &wt);
+
+    // and when it went: the branch too, here then on the remote
+    let h = crate::tests::h();
+    let (wt, m) = merged(&h).await;
+    assert!(m.kept.is_empty() && !std::path::Path::new(&wt.path).exists());
+    assert_eq!(h.git.logged("branch -D"), [format!("branch -D {}", wt.branch)]);
+    assert!(h.git.logged("push").iter().any(|l| l.contains("--delete")));
+}
+
 #[tokio::test]
 async fn a_foreign_worktree_is_merged_but_never_tidied() {
     let h = h();

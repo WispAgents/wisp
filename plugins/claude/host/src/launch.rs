@@ -9,8 +9,11 @@ use wisp_runtime_api::model::{Attachment, Mode};
 /// The program when detect found none and `WISP_CLAUDE_BIN` isn't set.
 pub const DEFAULT_BIN: &str = "claude";
 
-/// Its own tools wisp's gate always asks about (v1 claude.js:26).
+/// Its own tools wisp's gate always asks about (v1 claude.js:26): a /btw's and a probe's, which only answer.
 const GATED: [&str; 5] = ["Edit", "MultiEdit", "Write", "NotebookEdit", "Bash"];
+/// What a side discussion runs without asking (audit user-side-full-access): it has its main task's access, and only its
+/// file writes (`EDIT_TOOLS`) go to wisp first, where one to a file the main task changed becomes a proposal there.
+const SIDE_FREE: [&str; 3] = ["Bash", "WebFetch", "WebSearch"];
 /// A side run that only answers (v1 claude.js:21).
 const LEAN: [&str; 7] =
     ["--tools", "", "--strict-mcp-config", "--setting-sources", "user", "--disable-slash-commands", "--no-session-persistence"];
@@ -88,12 +91,33 @@ fn offload_hook(run: &HarnessRun) -> Option<serde_json::Value> {
 fn settings(run: &HarnessRun) -> Option<String> {
     let mut s = serde_json::Map::new();
     if run.gate {
-        s.insert("permissions".into(), serde_json::json!({ "ask": GATED }));
+        let ask: &[&str] = if run.side { &EDIT_TOOLS } else { &GATED };
+        s.insert("permissions".into(), serde_json::json!({ "ask": ask }));
     }
     if let Some(hook) = offload_hook(run) {
         s.insert("hooks".into(), hook);
     }
     (!s.is_empty()).then(|| serde_json::Value::Object(s).to_string())
+}
+
+/// `--resume`, and for a fork `--fork-session`: a fork from an earlier turn ends its copy where that turn did, and a
+/// forked task's copy is its own conversation from now on, saved, or its next turn resumes nothing (a /btw's or a
+/// probe's copy is thrown away).
+fn resume(run: &HarnessRun, args: &mut Vec<String>) {
+    let Some(r) = run.resume_id.as_ref().filter(|r| !r.is_empty()) else { return };
+    args.push("--resume".into());
+    args.push(r.clone());
+    if !run.fork {
+        return;
+    }
+    args.push("--fork-session".into());
+    if let Some(at) = run.resume_at.as_ref().filter(|a| !a.is_empty()) {
+        args.push("--resume-session-at".into());
+        args.push(at.clone());
+    }
+    if !run.fork_keep {
+        args.push("--no-session-persistence".into());
+    }
 }
 
 /// The launch for `run`, with `bin` the program to start.
@@ -133,14 +157,7 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
             args.push(v.clone());
         }
     }
-    if let Some(r) = run.resume_id.as_ref().filter(|r| !r.is_empty()) {
-        args.push("--resume".into());
-        args.push(r.clone());
-        if run.fork {
-            args.push("--fork-session".into());
-            args.push("--no-session-persistence".into());
-        }
-    }
+    resume(run, &mut args);
     // as a file of the run's own (0600), never inline: a connector's secret env and the run's wisp token on argv are
     // anyone's to read with `ps` (ADR-0116, audit I IS3)
     let mut files = Vec::new();
@@ -149,11 +166,13 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         args.push(format!("{{tmp}}/{MCP_CONFIG_FILE}"));
         files.push(LaunchFile { path: MCP_CONFIG_FILE.into(), contents: serde_json::json!({ "mcpServers": run.mcp_servers }).to_string() });
     }
-    if run.mcp_servers.contains_key("wisp") && run.mode == Mode::Edits {
+    // a side discussion's writes go to wisp in whatever mode it runs (its main task's, Full auto too)
+    if run.mcp_servers.contains_key("wisp") && (run.mode == Mode::Edits || (run.gate && run.side)) {
         args.push("--permission-prompt-tool".into());
         args.push(APPROVE_TOOL.into());
     }
-    let allowed: Vec<String> = run.mcp_servers.keys().map(|n| format!("mcp__{n}")).chain(run.grants.iter().cloned()).collect();
+    let free = SIDE_FREE.iter().filter(|_| run.gate && run.side).map(|t| (*t).to_owned());
+    let allowed: Vec<String> = run.mcp_servers.keys().map(|n| format!("mcp__{n}")).chain(run.grants.iter().cloned()).chain(free).collect();
     if !allowed.is_empty() {
         args.push("--allowedTools".into());
         args.extend(allowed);
@@ -251,12 +270,30 @@ mod tests {
         ));
         assert!(a.contains("--permission-prompt-tool mcp__wisp__approve --allowedTools mcp__wisp --disallowedTools Task Agent Workflow --add-dir /a /up --verbose"));
         assert!(a.contains("--mcp-config {tmp}/wisp-mcp.json --permission-prompt-tool"), "a file of the run's own: {a}");
+        // a forked task's first run keeps its copy (audit fork-claude-session-lost: its next turn resumed a session
+        // that was never written); a /btw's copy (above) is thrown away
+        let kept = launch(&HarnessRun { fork_keep: true, ..r.clone() }, "claude").args.join(" ");
+        assert!(kept.contains("--resume c1 --fork-session --mcp-config"), "{kept}");
+        assert!(!kept.contains("--no-session-persistence"), "{kept}");
         let Stdin::Bytes(b) = launch(&r, "claude").stdin else { panic!("stdin") };
         assert!(String::from_utf8_lossy(&b).contains("- /up/pic.png  (image/png, 3 KB)"));
         // a 13-byte file is 13 B, not "1 KB" (audit B #19)
         r.attachments = vec![Attachment { path: Some("/up/a.txt".into()), mime: "text/plain".into(), size: 13, ..Attachment::default() }];
         let Stdin::Bytes(b) = launch(&r, "claude").stdin else { panic!("stdin") };
         assert!(String::from_utf8_lossy(&b).contains("- /up/a.txt  (text/plain, 13 B)"));
+    }
+
+    /// Audit fork-turn-includes-later: a fork from a turn before the latest ends its copy where that turn did
+    /// (`--resume-session-at`, with `--fork-session`); a fork from the latest turn names no point.
+    #[test]
+    fn a_fork_at_an_earlier_turn_resumes_the_conversation_at_that_turn() {
+        let at = HarnessRun { resume_id: Some("c1".into()), fork: true, fork_keep: true, resume_at: Some("msg-7".into()), ..run() };
+        let a = launch(&at, "claude").args.join(" ");
+        assert!(a.contains("--resume c1 --fork-session --resume-session-at msg-7"), "{a}");
+        let latest = launch(&HarnessRun { resume_at: None, ..at.clone() }, "claude").args;
+        assert!(!latest.iter().any(|x| x == "--resume-session-at"));
+        let plain = launch(&HarnessRun { fork: false, ..at }, "claude").args;
+        assert!(!plain.iter().any(|x| x == "--resume-session-at"), "only a fork ends its copy early");
     }
 
     /// ADR-0079: a run that names an offload folder gets the `PreToolUse` hook on Bash, beside the gate's rules in the
@@ -300,6 +337,34 @@ mod tests {
         let a = launch(&l, "claude").args;
         assert_eq!(a[3], "--system-prompt");
         assert!(a.iter().any(|x| x == "--strict-mcp-config"));
+    }
+
+    /// Audit user-side-full-access: a side discussion's commands and web tools never reach wisp's approve tool; only its
+    /// file writes ask (so a write to a file the main task changed can become a proposal there), in Full auto too. A
+    /// /btw's gate still asks about everything (it only answers).
+    #[test]
+    fn a_side_discussion_asks_wisp_about_its_file_writes_only() {
+        let settings = |r: &HarnessRun| {
+            let a = launch(r, "claude").args;
+            serde_json::from_str::<serde_json::Value>(flag(&a, "--settings")).unwrap()
+        };
+        let mut side = run();
+        side.gate = true;
+        side.side = true;
+        side.mode = Mode::Auto;
+        side.mcp_servers.insert("wisp".into(), serde_json::json!({"command": "x"}));
+        let ask = settings(&side)["permissions"]["ask"].clone();
+        assert_eq!(ask, serde_json::json!(EDIT_TOOLS), "no Bash in the ask list");
+        let a = launch(&side, "claude").args;
+        assert_eq!(flag(&a, "--permission-prompt-tool"), APPROVE_TOOL, "its writes reach wisp in Full auto too");
+        let allowed = after(&a, "--allowedTools");
+        for t in ["Bash", "WebFetch", "WebSearch"] {
+            assert!(allowed.iter().any(|x| x == t), "{t} runs without a card: {allowed:?}");
+        }
+        let btw = HarnessRun { side: false, mode: Mode::Plan, ..side };
+        assert_eq!(settings(&btw)["permissions"]["ask"], serde_json::json!(GATED), "a /btw's gate is as it was");
+        let a = launch(&btw, "claude").args;
+        assert!(!a.iter().any(|x| x == "--permission-prompt-tool") && !after(&a, "--allowedTools").iter().any(|x| x == "Bash"));
     }
 
     fn flag<'a>(a: &'a [String], f: &str) -> &'a str {
