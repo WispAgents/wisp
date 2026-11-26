@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`wisp tui`'s side panes scroll, show under 100 columns, and the Terminal shows only the terminal.** With a pane focused (Tab), j k, PgUp PgDn, g g / Home and G / End scroll it and the wheel over it scrolls it, instead of moving the transcript beside it; the Terminal follows its newest output and says how much is below when you scroll back. Under 100 columns `d`, `t` and `p` open the pane in the task's place (Esc or Tab goes back), and closing a pane gives the focus back to the task. The Terminal lists shell commands with their own output under each, and no longer shows what a Read or a fetch returned. `/` from a pane searches the transcript (typing there used to close the pane or ask to stop the task), ↓ ↑ Ctrl-N Ctrl-P and Enter jump to the next or previous match with a "2/5" count, and an open step with a long output says how many lines are cut, with Enter (or Space again) showing all of it.
+
 ## [1.0.0-alpha.17] - 2026-11-26
 
 ### Changed
@@ -24,7 +28,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **y, a and n in `wisp tui` answer only tool approvals**, with the approval's own Allow, Always or Deny. On a question ("Postgres or SQLite?") they used to send "allow" or "deny" as the answer.
 - **Answers from `wisp tui` and `wisp attach` name the question they answer.** Setup cards can now be answered from the terminal, and an answer to a question that was already answered or replaced is refused with that reason instead of landing on the next one.
 - **`/btw` works in `wisp tui`.** It was refused every time; now it asks the open task on the side and shows the answer in the transcript, and says so when there's no question or no task open.
-- **`wisp tui`'s side panes scroll, show under 100 columns, and the Terminal shows only the terminal.** With a pane focused (Tab), j k, PgUp PgDn, g g / Home and G / End scroll it and the wheel over it scrolls it, instead of moving the transcript beside it; the Terminal follows its newest output and says how much is below when you scroll back. Under 100 columns `d`, `t` and `p` open the pane in the task's place (Esc or Tab goes back), and closing a pane gives the focus back to the task. The Terminal lists shell commands with their own output under each, and no longer shows what a Read or a fetch returned. `/` from a pane searches the transcript (typing there used to close the pane or ask to stop the task), ↓ ↑ Ctrl-N Ctrl-P and Enter jump to the next or previous match with a "2/5" count, and an open step with a long output says how many lines are cut, with Enter (or Space again) showing all of it.
 - **The `?` keys in `wisp tui` match what the keys do.** It shows the rows that were missing (`s`, `p`, `h`/←, `/`, Ctrl-A), and the goto row lists every view's letter, a plugin's included (Blame's `b`).
 
 - **Plan mode can't change your files, on every agent.** A Claude Code task in Plan still runs commands, tests and builds, but its shell now runs in a read-only sandbox: a write into the project, an added folder or your home fails, and /tmp stays writable. Where your computer has no sandbox for it (Linux without `bwrap` and `socat`, Windows, wisp Cloud), Plan is Claude Code's own read-only plan mode instead. An opencode task in Plan can't edit even when your opencode config allows it, and its shell only runs reads (`git status`, `git diff`, `ls`, `cat`, `rg` and the like); a Plan task a trigger or a channel started has no shell.
