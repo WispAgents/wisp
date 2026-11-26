@@ -114,9 +114,10 @@ pub async fn seed(ctx: &Ctx, home: &Path, a: &api::SeedArgs) -> Result<api::Seed
     tokio::fs::create_dir_all(&code).await.map_err(|e| WireError::internal(format!("~/code: {e}")))?;
     let Some((bundle, patch, used)) = bundle_and_patch(home, &name, a).await? else {
         tokio::fs::create_dir_all(&dir).await.map_err(|e| WireError::internal(format!("{name}: {e}")))?;
-        return Ok(api::Seeded { cwd: dir.display().to_string(), setup: None });
+        return Ok(api::Seeded { cwd: dir.display().to_string(), setup: None, setup_failed: false });
     };
-    // the same project again (a member's own sandbox, the next job): a fresh copy of what came now
+    // the same folder again (a delegate's or judges' sandbox, the next time): a fresh copy of what came now. A crew
+    // member's own sandbox names each seed's folder apart (`core::seed_folder`), so a job never wipes another's
     let _ = wisp_proc::remove_tree(&dir).await;
     let cloned = async {
         for args in core::seed_commands(&bundle.display().to_string(), &dir.display().to_string(), &a.branch, &a.origin) {
@@ -148,12 +149,17 @@ pub async fn seed(ctx: &Ctx, home: &Path, a: &api::SeedArgs) -> Result<api::Seed
     // made, no ref moved, the folder's index untouched)
     let base = tree_of(&proc, &dir).await.map_err(|e| WireError::internal(format!("the project's state: {e}")))?;
     let _ = tokio::fs::write(home.join(".sandbox").join(format!("base-{name}")), base).await;
-    let setup = setup_once(&proc, home, &dir, &name).await;
-    Ok(api::Seeded { cwd: dir.display().to_string(), setup })
+    let (setup, setup_failed) = match setup_once(&proc, home, &dir, &name).await {
+        Some((said, ok)) => (Some(said), !ok),
+        None => (None, false),
+    };
+    Ok(api::Seeded { cwd: dir.display().to_string(), setup, setup_failed })
 }
 
-/// The project's `.wisp/sandbox.sh`, the first time this sandbox gets the project (a mark in `~/.sandbox`).
-async fn setup_once(proc: &Proc, home: &Path, dir: &Path, name: &str) -> Option<String> {
+/// The project's `.wisp/sandbox.sh`, until it once succeeds in this folder (a mark in `~/.sandbox`): the end of what it
+/// said, and whether it exited 0. A failed run leaves no mark, so the next seed runs it again (a mark written either
+/// way kept a setup that failed once from ever running).
+async fn setup_once(proc: &Proc, home: &Path, dir: &Path, name: &str) -> Option<(String, bool)> {
     let script = dir.join(".wisp").join("sandbox.sh");
     if !tokio::fs::metadata(&script).await.is_ok_and(|m| m.is_file()) {
         return None;
@@ -162,12 +168,14 @@ async fn setup_once(proc: &Proc, home: &Path, dir: &Path, name: &str) -> Option<
     if tokio::fs::metadata(&mark).await.is_ok() {
         return None;
     }
-    let said = match run(proc, dir, "sh", &[".wisp/sandbox.sh".to_owned()], None, 900).await {
-        Ok(o) => o,
-        Err(e) => format!("setup failed: {e}"),
+    let (said, ok) = match run(proc, dir, "sh", &[".wisp/sandbox.sh".to_owned()], None, 900).await {
+        Ok(o) => (o, true),
+        Err(e) => (format!("setup failed: {e}"), false),
     };
-    let _ = tokio::fs::write(&mark, b"").await;
-    Some(said.chars().rev().take(4000).collect::<Vec<_>>().into_iter().rev().collect())
+    if ok {
+        let _ = tokio::fs::write(&mark, b"").await;
+    }
+    Some((said.chars().rev().take(4000).collect::<Vec<_>>().into_iter().rev().collect(), ok))
 }
 
 /// `sandbox.patch` (inside a sandbox): what changed in a project since it came in, new files too, as one binary diff.

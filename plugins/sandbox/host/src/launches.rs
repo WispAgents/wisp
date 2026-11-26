@@ -16,12 +16,16 @@ use wisp_store::{Col, EntityDef, Migration, Query, Row, Store};
 
 use crate::make::{self, Step};
 
-const MIGRATIONS: &[Migration] = &[Migration::sql(
-    1,
-    "CREATE TABLE sandbox_v_launch (id TEXT PRIMARY KEY, title TEXT NOT NULL, state TEXT NOT NULL, step TEXT NOT NULL, error TEXT,
+const MIGRATIONS: &[Migration] = &[
+    Migration::sql(
+        1,
+        "CREATE TABLE sandbox_v_launch (id TEXT PRIMARY KEY, title TEXT NOT NULL, state TEXT NOT NULL, step TEXT NOT NULL, error TEXT,
        at INTEGER NOT NULL, agent TEXT NOT NULL, peer TEXT, task TEXT, args TEXT NOT NULL) STRICT;
      CREATE TABLE sandbox_v_signin (id TEXT PRIMARY KEY, state TEXT NOT NULL, link TEXT, error TEXT) STRICT;",
-)];
+    ),
+    // SBX-7: how the project's `.wisp/sandbox.sh` went (`{ok, tail}`), so a failed one is shown
+    Migration::sql(2, "ALTER TABLE sandbox_v_launch ADD COLUMN setup TEXT;"),
+];
 
 fn topics(_: &Row) -> Vec<String> {
     vec![api::LAUNCHES_TOPIC.into()]
@@ -43,8 +47,10 @@ pub const LAUNCH: EntityDef = EntityDef {
         ("peer", Col::Text),
         ("task", Col::Text),
         ("args", Col::Text),
+        // the setup's run once started (`api::SetupRun`), when it ran
+        ("setup", Col::Text),
     ],
-    json_columns: &["args"],
+    json_columns: &["args", "setup"],
     parent: None,
     seq: None,
     topics,
@@ -200,7 +206,7 @@ pub async fn retry(ctx: &Ctx, l: &Shared, id: &str) -> Result<api::Empty> {
     }
     let a: api::LaunchArgs = serde_json::from_value(row.get("args").cloned().unwrap_or(Value::Null))
         .map_err(|_| WireError::internal("that launch's task can't be read back"))?;
-    update(l, id, json!({ "state": "preparing", "step": "make", "error": null, "at": make::now(ctx) })).await;
+    update(l, id, json!({ "state": "preparing", "step": "make", "error": null, "setup": null, "at": make::now(ctx) })).await;
     spawn_run(ctx, l, id.to_owned(), a);
     Ok(api::Empty {})
 }
@@ -262,7 +268,7 @@ async fn run(ctx: &Ctx, l: &Shared, id: &str, a: &api::LaunchArgs) {
     };
     match make::launch_with(ctx, &call, a, &step).await {
         Ok(done) => {
-            update(l, id, json!({ "state": "started", "peer": done.peer, "task": done.task, "error": null })).await;
+            update(l, id, json!({ "state": "started", "peer": done.peer, "task": done.task, "error": null, "setup": done.setup })).await;
             let (c, l, id) = (ctx.clone(), l.clone(), id.to_owned());
             ctx.spawn(async move {
                 if let Ok(clock) = c.clock() {

@@ -7,7 +7,7 @@ import { effect, type PluginClient } from '@wisp/client';
 import { afterFirstScreen } from '@wisp/ui';
 import { shown, type LaunchRow } from './launch-model.ts';
 
-export { shown, stepsOf, type LaunchRow, type LaunchStep } from './launch-model.ts';
+export { setupFailed, shown, stepsOf, type LaunchRow, type LaunchStep } from './launch-model.ts';
 
 export const LAUNCHES_TOPIC = 'plugin:wisp.sandbox:launches' as const;
 export const LAUNCH = 'sandbox.launch';

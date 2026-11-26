@@ -171,13 +171,24 @@ async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, c
         Some((machine, cwd)) => {
             // no folder: the machine's own default (a member's there may have none)
             args["cwd"] = if cwd.is_empty() { Value::Null } else { json!(cwd) };
-            let made = calls::routed::<rt::Create>(ctx, call, machine, args).await?;
+            // a sandbox of the job's own goes when its start fails half way: never named as the job's, it would hold
+            // one of the user's few sandboxes, `{crew, job: ""}`, until the sweep's half hour
+            let made = match calls::routed::<rt::Create>(ctx, call, machine, args).await {
+                Ok(made) => made,
+                Err(e) => {
+                    if m.sandbox == "job" {
+                        calls::warn("dropping a job's sandbox", calls::drop_sandbox(ctx, call, machine).await);
+                    }
+                    return Err(e);
+                }
+            };
             let id = format!("{machine}|{}", made.get("id").and_then(Value::as_str).unwrap_or_default());
-            if m.sandbox == "job" {
-                calls::warn(
-                    "a job's sandbox isn't kept as the job's",
-                    calls::own(ctx, call, machine, json!({ "crew": m.id, "job": id })).await,
-                );
+            if m.sandbox == "job"
+                && let Err(e) = calls::own(ctx, call, machine, json!({ "crew": m.id, "job": id })).await
+            {
+                tracing::warn!(error = %e.message, machine, "crew: a job's sandbox couldn't be named the job's; dropped");
+                calls::warn("dropping a job's sandbox", calls::drop_sandbox(ctx, call, machine).await);
+                return Err(e);
             }
             let mut made = made;
             made["id"] = json!(id);

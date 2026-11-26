@@ -41,16 +41,26 @@ pub(crate) async fn logins(ctx: &Ctx, call: &Call) -> Result<Vec<String>> {
     Ok(core::logins_of(v.get("logins")))
 }
 
-/// A sandbox for `owner`, up and answering: `(machine, peer, sandbox id)`. A full grid fails at once.
+/// A sandbox for `owner`, up and answering: `(machine, peer, sandbox id)`. A full grid fails at once. Once the grid
+/// made it, a failure after (its owner's write, its wait) drops it: left behind, it held one of the user's few
+/// sandboxes for good, with no owner to go with.
 pub(crate) async fn make(ctx: &Ctx, call: &Call, owner: &Owner, name: &str) -> Result<(String, String, String)> {
     let made = calls::grid_new(ctx, call, name).await?;
     let (machine, sandbox) = (made.machine, made.id);
     if machine.is_empty() {
         return Err(WireError::internal("the sandbox was made but no machine here keeps it"));
     }
-    set_owner(ctx, call, &machine, owner).await?;
-    let peer = wait_up(ctx, call, &machine).await?;
-    Ok((machine, peer, sandbox))
+    let up = async {
+        set_owner(ctx, call, &machine, owner).await?;
+        wait_up(ctx, call, &machine).await
+    };
+    match up.await {
+        Ok(peer) => Ok((machine, peer, sandbox)),
+        Err(e) => {
+            drop_one(ctx, call, &machine, &sandbox).await;
+            Err(e)
+        }
+    }
 }
 
 /// [`UP_MS`] from now, on the plugin's clock.
@@ -122,8 +132,10 @@ async fn route_up<C: Command>(ctx: &Ctx, call: &Call, machine: &str, args: C::Ar
     }
 }
 
-/// The project in, there: its folder in the sandbox (an empty `~/code/scratch` when there's none).
-async fn seed(ctx: &Ctx, call: &Call, machine: &str, cwd: Option<&str>) -> Result<String> {
+/// The project in, there: its folder in the sandbox (an empty `~/code/scratch` when there's none), and how its
+/// `.wisp/sandbox.sh` went when it ran. `apart`: a folder of this seed's own (a crew member's sandbox, whose jobs run
+/// side by side), else `~/code/<name>`.
+async fn seed(ctx: &Ctx, call: &Call, machine: &str, cwd: Option<&str>, apart: bool) -> Result<(String, Option<api::SetupRun>)> {
     let args = match cwd.filter(|c| !c.is_empty()) {
         // the project goes raw (`machines.send`, every ref and what isn't committed), never inside a sync message
         // (2 MB at most): only the seed's own args go through `machines.route`
@@ -131,7 +143,7 @@ async fn seed(ctx: &Ctx, call: &Call, machine: &str, cwd: Option<&str>) -> Resul
             let key = format!("seed-{}", wisp_kernel::ids::uuid7());
             let sent = calls::send(ctx, call, machine, c, &key).await?;
             api::SeedArgs {
-                name: core::name_of(c),
+                name: if apart { core::seed_folder(c, &key) } else { core::name_of(c) },
                 key: sent.key,
                 branch: sent.branch,
                 origin: sent.origin,
@@ -146,7 +158,8 @@ async fn seed(ctx: &Ctx, call: &Call, machine: &str, cwd: Option<&str>) -> Resul
     if out.cwd.is_empty() {
         return Err(WireError::internal("the sandbox took the project but didn't say where"));
     }
-    Ok(out.cwd)
+    let setup = out.setup.map(|tail| api::SetupRun { ok: !out.setup_failed, tail });
+    Ok((out.cwd, setup))
 }
 
 /// `sandbox.place`: the owner's sandbox from before (a member's own, a delegate's, a task's judges'), else a new one,
@@ -154,15 +167,17 @@ async fn seed(ctx: &Ctx, call: &Call, machine: &str, cwd: Option<&str>) -> Resul
 pub(crate) async fn place(ctx: &Ctx, call: &Call, a: &api::PlaceArgs) -> Result<api::Placed> {
     let owner: Owner = serde_json::from_value(a.owner.clone())
         .map_err(|_| WireError::invalid("a sandbox's owner is a task, a delegate, a crew job or member, or a goal's judges"))?;
+    // a member's own sandbox runs their jobs side by side: each seed in a folder of its own
+    let apart = matches!(owner, Owner::Member { .. });
     if let Some(h) = core::reusable(&held(ctx, call).await, &owner) {
         let peer = wait_up(ctx, call, &h.machine).await?;
-        let cwd = seed(ctx, call, &h.machine, a.cwd.as_deref()).await?;
-        return Ok(api::Placed { machine: h.machine.clone(), peer, sandbox: h.sandbox.clone(), cwd, made: false });
+        let (cwd, setup) = seed(ctx, call, &h.machine, a.cwd.as_deref(), apart).await?;
+        return Ok(api::Placed { machine: h.machine.clone(), peer, sandbox: h.sandbox.clone(), cwd, made: false, setup });
     }
     let name = a.cwd.as_deref().map_or_else(|| "work".to_owned(), core::name_of);
     let (machine, peer, sandbox) = make(ctx, call, &owner, &name).await?;
-    match seed(ctx, call, &machine, a.cwd.as_deref()).await {
-        Ok(cwd) => Ok(api::Placed { machine, peer, sandbox, cwd, made: true }),
+    match seed(ctx, call, &machine, a.cwd.as_deref(), apart).await {
+        Ok((cwd, setup)) => Ok(api::Placed { machine, peer, sandbox, cwd, made: true, setup }),
         Err(e) => {
             drop_one(ctx, call, &machine, &sandbox).await;
             Err(e)
@@ -214,7 +229,11 @@ pub(crate) async fn launch_with(ctx: &Ctx, call: &Call, a: &api::LaunchArgs, ste
     if machine.is_empty() {
         return Err(WireError::internal("the sandbox was made but no machine here keeps it"));
     }
-    set_owner(ctx, call, &machine, &pending).await?;
+    if let Err(e) = set_owner(ctx, call, &machine, &pending).await {
+        // no owner, nothing would ever drop it
+        drop_one(ctx, call, &machine, &sandbox).await;
+        return Err(e);
+    }
     step(Step::Wake).await;
     let peer = match wait_up(ctx, call, &machine).await {
         Ok(p) => p,
@@ -224,7 +243,7 @@ pub(crate) async fn launch_with(ctx: &Ctx, call: &Call, a: &api::LaunchArgs, ste
         }
     };
     step(Step::Copy).await;
-    let cwd = match seed(ctx, call, &machine, a.cwd.as_deref()).await {
+    let (cwd, setup) = match seed(ctx, call, &machine, a.cwd.as_deref(), false).await {
         Ok(c) => c,
         Err(e) => {
             drop_one(ctx, call, &machine, &sandbox).await;
@@ -253,7 +272,7 @@ pub(crate) async fn launch_with(ctx: &Ctx, call: &Call, a: &api::LaunchArgs, ste
     };
     let task = made.id.0;
     set_owner(ctx, call, &machine, &Owner::Task { task: format!("{peer}:{task}") }).await?;
-    Ok(api::Launched { machine, peer, task, sandbox })
+    Ok(api::Launched { machine, peer, task, sandbox, setup })
 }
 
 /// Deletes one on the grid, then its machine here. A grid that can't be reached marks it `dropping` for the sweep.

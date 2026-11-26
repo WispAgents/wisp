@@ -4,8 +4,9 @@
 //!
 //! An owner going: a local task deleted (`session.deleted`: its delegates', judges' and a crew job's sandboxes), a
 //! member leaving the crew (`crew.left`), and a sandboxed task deleted on its sandbox's own wisp, seen by the
-//! minute's look at each task-owned sandbox (its task gone there: the sandbox goes). The sweep, at start and every
-//! 10 minutes, drops what a failed drop left and launches that never got their task.
+//! minute's look at each task-owned sandbox online now (its task gone there: the sandbox goes; an asleep one is never
+//! woken for it). The sweep, at start and every 10 minutes, drops what a failed drop left, launches that never got
+//! their task, and crew jobs' sandboxes never named.
 //!
 //! resources: data-only (its tables are launches under way and a sign-in's progress, nothing a user declares)
 
@@ -41,6 +42,8 @@ pub struct SandboxPlugin {
 
 /// How often task-owned sandboxes are looked at (is their task still there?).
 const OWNERS_MS: u64 = 60_000;
+/// How long one sandbox is asked about its task, at most (kept: asked again the next minute).
+const CHECK_MS: u64 = 10_000;
 
 /// `$HOME` (else the temp folder), spelled as every path in wisp is (ADR-0071: an 8.3 short name spelled out), so a
 /// project under `~/code` compares with the task folders runtime stores. Startup only (blocking).
@@ -86,20 +89,36 @@ async fn info(ctx: &Ctx, call: &wisp_kernel::Call) -> Result<api::Info> {
     Ok(api::Info { enabled, why, logins, env, sandboxes })
 }
 
-/// Task-owned sandboxes whose task is gone on their own wisp go (a sandbox asleep or unreachable is kept).
+/// Task-owned sandboxes whose task is gone on their own wisp go. Only online ones are asked ([`core::to_check`]): an
+/// asleep box is never woken (a routed command is a real request, and every box was woken once a minute, so none ever
+/// slept), and one asleep, off or unreachable is kept. They're asked side by side, each for [`CHECK_MS`] at most, so
+/// one slow box holds back neither the others nor the sweep.
 async fn owners_gone(ctx: &Ctx) {
     let call = ctx.root_call();
-    for h in make::held(ctx, &call).await {
-        let Some(Owner::Task { task } | Owner::Job { job: task, .. }) = &h.owner else { continue };
-        let id = core::bare(task);
-        if let Err(e) =
-            calls::route::<wisp_runtime_api::commands::Get>(ctx, &call, &h.machine, wisp_runtime_api::commands::IdArgs { id: id.into() })
-                .await
-            && e.code == wisp_kernel::Code::NotFound
-        {
-            make::drop_one(ctx, &call, &h.machine, &h.sandbox).await;
+    let Ok(clock) = ctx.clock() else { return };
+    let all = make::held(ctx, &call).await;
+    let asks = core::to_check(&all).into_iter().map(|(h, id)| {
+        let (call, clock) = (&call, clock.clone());
+        async move {
+            let get = calls::route::<wisp_runtime_api::commands::Get>(
+                ctx,
+                call,
+                &h.machine,
+                wisp_runtime_api::commands::IdArgs { id: id.into() },
+            );
+            tokio::select! {
+                r = get => {
+                    if let Err(e) = r
+                        && e.code == wisp_kernel::Code::NotFound
+                    {
+                        make::drop_one(ctx, call, &h.machine, &h.sandbox).await;
+                    }
+                }
+                () = clock.sleep(CHECK_MS) => {}
+            }
         }
-    }
+    });
+    futures::future::join_all(asks).await;
 }
 
 async fn sweep(ctx: &Ctx) {

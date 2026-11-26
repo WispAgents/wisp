@@ -42,6 +42,8 @@
   "sandbox.signin.reopen": "Open the page again",
   "sandbox.signin.code": "The page shows a code instead? Paste it here",
   "sandbox.failed": "The sandbox didn't start",
+  "sandbox.setup.failed": "The task started, but its setup failed",
+  "sandbox.setup.failed.hint": "Your project's .wisp/sandbox.sh exited with an error, so the task runs without what it sets up. The end of what it said:",
   "sandbox.retry": "Try again",
   "sandbox.dismiss": "Dismiss",
   "sandbox.gone": "This launch is no longer here",
