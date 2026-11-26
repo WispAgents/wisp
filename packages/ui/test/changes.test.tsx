@@ -276,12 +276,18 @@ test('show_more_lines_reveals_a_huge_diff_in_steps_until_every_line_shows', () =
   const lines = (): number => host.querySelectorAll('[data-kit="cx-line"]').length;
   expect(lines()).toBe(300);
   expect(more()?.textContent).toBe('Show 1000 more lines (9700 left)');
-  const at = performance.now();
+  // what one click mounts, counted (not timed: a wall-clock bound in jsdom on a shared CI runner fails by load alone)
+  const seen = new MutationObserver(() => {});
+  seen.observe(host, { childList: true, subtree: true });
   more()?.click();
-  const ms = performance.now() - at;
+  const mounted = seen
+    .takeRecords()
+    .flatMap((r) => [...r.addedNodes])
+    .reduce((n, node) => (node instanceof Element ? n + (node.matches('[data-kit="cx-line"]') ? 1 : 0) + node.querySelectorAll('[data-kit="cx-line"]').length : n), 0);
+  seen.disconnect();
   expect(host.querySelectorAll('tr').length).toBeLessThanOrEqual(1_300 + 2);
   expect(lines()).toBe(1_300);
-  expect(ms).toBeLessThan(150);
+  expect(mounted).toBe(1_000);
   // the rows already shown stay where they are: only the new ones mount
   const first = host.querySelector('[data-kit="cx-line"]');
   more()?.click();
