@@ -6,6 +6,6 @@
   "sandbox.owner.job": "A job of {name}'s",
   "sandbox.owner.member": "{name}'s own",
   "sandbox.owner.judges": "A goal's judges'",
-  "sandbox.owner.none": "Nobody's (the sweep removes it)",
+  "sandbox.owner.none": "Yours: it stays until you delete it",
   "sandbox.pill": "Sandbox"
 }

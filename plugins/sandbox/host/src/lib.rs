@@ -68,25 +68,64 @@ async fn info(ctx: &Ctx, call: &wisp_kernel::Call) -> Result<api::Info> {
         }
         Err(e) => (false, Some(e.message.clone()), Vec::new(), Vec::new()),
     };
-    let list = calls::machines(ctx, call).await;
-    let sandboxes = list
-        .iter()
-        .filter_map(|m| {
-            let data = if m.get("sandbox").is_some() { m } else { m.get("data")? };
-            let sandbox = data.get("sandbox")?.as_str()?.to_owned();
-            let s = |k: &str| m.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
-            // the app reaches a machine by its own id (`/api/peer/<id>`): that's its peer there
-            Some(api::SandboxView {
-                machine: s("id"),
-                peer: s("id"),
-                sandbox,
-                name: s("name"),
-                owner: data.get("owner").cloned().unwrap_or(Value::Null),
-                state: s("state"),
-            })
+    // every sandbox the grid holds counts against the user's cap: one no machine here keeps is listed too, and the
+    // grid not answering leaves this computer's list rather than a blank one
+    let theirs = grid.as_ref().ok().and_then(|v| v.get("sandboxes")).and_then(Value::as_array).map(Vec::as_slice);
+    let sandboxes = core::listed(&calls::machines(ctx, call).await, theirs)
+        .into_iter()
+        // the app reaches a machine by its own id (`/api/peer/<id>`): that's its peer there
+        .map(|l| api::SandboxView {
+            peer: l.machine.clone(),
+            machine: l.machine,
+            sandbox: l.sandbox,
+            name: l.name,
+            owner: l.owner,
+            state: l.state,
+            elsewhere: l.elsewhere,
         })
         .collect();
-    Ok(api::Info { enabled, why, logins, env, sandboxes })
+    let used = theirs.and_then(|t| u32::try_from(t.len()).ok());
+    let limit = grid.as_ref().ok().and_then(|v| v.get("limit")).and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok());
+    Ok(api::Info { enabled, why, logins, env, sandboxes, used, limit })
+}
+
+/// `sandbox.drop`: a task's sandboxes, a crew member's, one by its machine, or one the grid holds that no machine here
+/// keeps (by its sandbox id: made elsewhere, or its machine gone). An agent drops only its own task's, and never one
+/// still holding work its owner never got (ADR-0136): the user deletes that in Settings.
+async fn drop_cmd(ctx: &Ctx, call: &wisp_kernel::Call, a: &api::DropArgs) -> Result<api::Dropped> {
+    let all = make::held(ctx, call).await;
+    let list: Vec<&core::Held> = if let Some(m) = &a.machine {
+        all.iter().filter(|h| &h.machine == m).collect()
+    } else if let Some(t) = &a.task {
+        core::gone_with_task(&all, t)
+    } else if let Some(c) = &a.crew {
+        core::gone_with_member(&all, c)
+    } else if let Some(sb) = &a.sandbox {
+        let here: Vec<&core::Held> = all.iter().filter(|h| &h.sandbox == sb).collect();
+        if here.is_empty() {
+            // no machine keeps it, so no owner names a task: only the user deletes it
+            if wisp_kernel::scope::agent_task(call.caller()).is_some() {
+                return Err(WireError::forbidden(format!("{sb}: an agent drops only its own task's sandboxes")));
+            }
+            calls::grid_remove(ctx, call, sb).await?;
+            return Ok(api::Dropped { dropped: 1 });
+        }
+        here
+    } else {
+        return Err(WireError::invalid("say whose sandboxes: a task, a crew member, a machine or a sandbox"));
+    };
+    if let Some(me) = wisp_kernel::scope::agent_task(call.caller()) {
+        if a.task.as_deref().is_some_and(|t| core::bare(t) != core::bare(me)) {
+            return Err(WireError::forbidden("an agent drops only its own task's sandboxes"));
+        }
+        for h in &list {
+            let work = make::holds_work(ctx, call, h).await;
+            if let Some(why) = core::agent_drop_refusal(h, me, work) {
+                return Err(WireError::forbidden(why));
+            }
+        }
+    }
+    Ok(api::Dropped { dropped: make::drop_all(ctx, call, &list).await })
 }
 
 /// Task-owned sandboxes whose task is gone on their own wisp go. Only online ones are asked ([`core::to_check`]): an
@@ -253,23 +292,18 @@ impl Plugin for SandboxPlugin {
         s.command::<api::Bring, _, _>(|ctx, call, a| async move { make::bring(&ctx, &call, &a).await });
         s.command::<api::Launch, _, _>(|ctx, call, a| async move { make::launch(&ctx, &call, &a).await });
         s.command::<api::Place, _, _>(|ctx, call, a| async move { make::place(&ctx, &call, &a).await });
-        s.command::<api::Drop, _, _>(|ctx, call, a| async move {
-            let all = make::held(&ctx, &call).await;
-            let list: Vec<&core::Held> = if let Some(m) = &a.machine {
-                all.iter().filter(|h| &h.machine == m).collect()
-            } else if let Some(t) = &a.task {
-                core::gone_with_task(&all, t)
-            } else if let Some(c) = &a.crew {
-                core::gone_with_member(&all, c)
-            } else {
-                return Err(WireError::invalid("say whose sandboxes: a task, a crew member, or a machine"));
-            };
-            Ok(api::Dropped { dropped: make::drop_all(&ctx, &call, &list).await })
-        });
+        s.command::<api::Drop, _, _>(|ctx, call, a| async move { drop_cmd(&ctx, &call, &a).await });
         s.command::<api::Own, _, _>(|ctx, call, a| async move {
             let owner: Owner = serde_json::from_value(a.owner).map_err(|_| WireError::invalid("not a sandbox owner"))?;
-            if !make::held(&ctx, &call).await.iter().any(|h| h.machine == a.machine) {
+            let all = make::held(&ctx, &call).await;
+            let Some(h) = all.iter().find(|h| h.machine == a.machine) else {
                 return Err(WireError::not_found("That machine isn't a sandbox."));
+            };
+            // an agent names its own task's only (ADR-0136): never another task's box, never a launch's
+            if let Some(me) = wisp_kernel::scope::agent_task(call.caller())
+                && let Some(why) = core::agent_own_refusal(h.owner.as_ref(), &owner, me)
+            {
+                return Err(WireError::forbidden(why));
             }
             make::set_owner(&ctx, &call, &a.machine, &owner).await?;
             Ok(api::Empty {})
