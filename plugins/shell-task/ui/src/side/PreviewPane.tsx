@@ -58,6 +58,11 @@ export function PreviewPane(): JSX.Element {
   const screen = new Screen(100, 24);
   let es: AbortController | undefined;
   let seen = '';
+  // attached again after a stream that ended without exit or gone (the server dropped this page as it fell behind, or
+  // the connection went): soon, then backing off to 5 s; a hello resets it
+  let backoff = 250;
+  let again: (() => void) | undefined;
+  onCleanup(() => again?.());
   const [state, setState] = createSignal<'idle' | 'live' | 'ended'>('idle');
   const [command, setCommand] = createSignal('');
   const [said, setSaid] = createSignal<string | undefined>();
@@ -130,14 +135,18 @@ export function PreviewPane(): JSX.Element {
   });
 
   const watch = (): void => {
+    again?.();
     es?.abort();
     const ac = new AbortController();
     es = ac;
     seen = '';
+    let over = false;
     void (async () => {
       try {
         for await (const ev of c.http(ownerOf(task.key)).events(`/sessions/${encodeURIComponent(id)}/run`, ac.signal)) {
           if (ev.event === 'hello') {
+            backoff = 250;
+            seen = '';
             const h = JSON.parse(ev.data) as { cols: number; rows: number };
             screen.reset();
             screen.resize(h.cols, h.rows);
@@ -154,6 +163,7 @@ export function PreviewPane(): JSX.Element {
             setUrl(undefined);
             setEnded(code ? t('shell-task.preview.exited', { code }) : t('shell-task.preview.stopped'));
             setState('ended');
+            over = true;
             ac.abort();
           }
         }
@@ -162,7 +172,12 @@ export function PreviewPane(): JSX.Element {
           setEnded(e instanceof Error ? e.message : String(e));
           setState('ended');
         }
+        return;
       }
+      // ended without saying the app did: attach again, for its whole output (the replay) and its end if it ended
+      if (over || ac.signal.aborted) return;
+      again = c.scope.timeout(backoff, watch);
+      backoff = Math.min(backoff * 2, 5000);
     })();
   };
   // known once run.info answered: then Run app from the menu can start it here (v1 runApp)
@@ -220,6 +235,7 @@ export function PreviewPane(): JSX.Element {
     );
   };
   const halt = (): void => {
+    again?.();
     es?.abort();
     setUrl(undefined);
     setState('idle');
