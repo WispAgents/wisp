@@ -1,0 +1,14 @@
+{
+  "cliVersion": "2026.11.13-eacade1",
+  "latestStatus": "update_available",
+  "latestVersion": "2026.11.22-e9042b2",
+  "agentHost": null,
+  "model": "Composer 2.5 Fast",
+  "subscriptionTier": "Free",
+  "osPlatform": "darwin",
+  "osArch": "arm64",
+  "userEmail": "user@example.com",
+  "terminalProgram": "ghostty",
+  "shell": "zsh",
+  "lastRequestId": null
+}

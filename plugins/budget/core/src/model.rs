@@ -118,6 +118,17 @@ impl Budget {
             }
             acc.credits = Some(credits);
         }
+        if let Some(p) = report.plan.as_ref().filter(|p| !p.is_empty()) {
+            let acc = self.ensure(agent, account);
+            out.moved |= acc.plan.as_deref() != Some(p.as_str());
+            acc.plan = Some(p.clone());
+        }
+        if let Some(sp) = &report.spent {
+            let acc = self.ensure(agent, account);
+            let next = wisp_budget_api::CliSpend { at: Some(now), ..sp.clone() };
+            out.moved |= acc.spent.as_ref().map(|x| (x.cost, x.days, x.tokens)) != Some((next.cost, next.days, next.tokens));
+            acc.spent = Some(next);
+        }
         if report.windows.is_empty() {
             return out;
         }

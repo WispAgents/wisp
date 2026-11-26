@@ -1663,6 +1663,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           )) : undefined)));
           return (
             <>
+              {/* over each turn, what plugins mark before it (shell-task's harness-switch divider): `shell.turn:head` */}
+              <Slot input="shell.turn:head" layout="contents" id={entityKey(peer, turn.id)} session={() => s() as never} />
               <TurnView
                 id={turn.id}
                 latest={turn.id === turns().at(-1)?.id}

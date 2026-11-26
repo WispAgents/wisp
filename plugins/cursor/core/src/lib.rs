@@ -43,6 +43,27 @@ pub fn list_models(out: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// What `cursor-agent about --format json` says of the account (tests/cli/about.json, captured from 2026.11.13): its
+/// subscription tier. Cursor reports no usage window or spend, so its limits read as not reported.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct About {
+    pub tier: Option<String>,
+    pub version: Option<String>,
+}
+
+/// `cursor-agent about --format json`, or the text form's `Subscription Tier   Free` line when JSON isn't there.
+pub fn about(out: &str) -> Option<About> {
+    let word = |v: &Value| v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+    if let Ok(v) = serde_json::from_str::<Value>(out.trim()) {
+        let a = About { tier: word(&v["subscriptionTier"]), version: word(&v["cliVersion"]) };
+        return (a.tier.is_some() || a.version.is_some()).then_some(a);
+    }
+    let field =
+        |name: &str| out.lines().find_map(|l| l.trim().strip_prefix(name).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned));
+    let a = About { tier: field("Subscription Tier"), version: field("CLI Version") };
+    (a.tier.is_some() || a.version.is_some()).then_some(a)
+}
+
 /// A protobuf oneof: `{ editToolCall: {...} }` or `{ case: 'editToolCall', value: {...} }`.
 fn oneof(o: &Value) -> Option<(String, Value)> {
     let obj = o.as_object()?;
@@ -281,5 +302,14 @@ mod tests {
             Some("readToolCall")
         );
         assert_eq!(result_of(&json!({ "result": { "case": "success", "value": {} } })).map(|x| x.0).as_deref(), Some("success"));
+    }
+
+    /// Both forms of the real `cursor-agent about` (2026.11.13, the email scrubbed) give the tier.
+    #[test]
+    fn about_reads_the_tier_from_the_real_cli() {
+        let want = About { tier: Some("Free".into()), version: Some("2026.11.13-eacade1".into()) };
+        assert_eq!(about(include_str!("../tests/cli/about.json")), Some(want.clone()));
+        assert_eq!(about(include_str!("../tests/cli/about.txt")), Some(want));
+        assert_eq!(about("Error: not logged in"), None);
     }
 }
