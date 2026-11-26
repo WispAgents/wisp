@@ -32,6 +32,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Factories: a run wisp restarts in the middle of starting a station picks up where it was. It starts only the station tasks it hadn't started and sends only the follow-ups it hadn't sent. Before, it could end failed with "the spec station made no task", or take round 1's review as round 2's.
+- Factories: a run that fails now stops its station tasks, as a stopped run does. A build whose second agent couldn't start no longer leaves the first one running. A finished run still keeps its build for you to read or merge.
+- Factories: `factory.set` takes the loop as `back_to` (and `backTo`). Before, its tool said `backTo`, and a factory written that way was refused.
+- Factories: the run's band shows the start of the spec next to **Approve the spec?**. Before, it showed only the question.
 - Triggers: a trigger whose run was stopped, whose task was deleted, or whose target is a workflow or a crew member now runs again on its next event. A follow-up that interrupts the run's turn no longer counts as its end, so a second run no longer starts beside it. Before, it said "skipped: already running" for good. A run whose end wisp never heard is let go at the next check, about 15 seconds later.
 - Triggers: two triggers that fire on each other's runs now stop after three rounds, as a trigger on its own tasks does. A trigger whose target is a workflow no longer fires on the workflow's own steps.
 - Triggers: jobs queued outside a trigger's hours now wait for the hours. A trigger set to run one job at a time (or N at a time) now starts its queued jobs one (or N) at a time. A paused or switched-off trigger keeps its queue.

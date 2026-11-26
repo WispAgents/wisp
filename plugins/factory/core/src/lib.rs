@@ -67,11 +67,12 @@ pub fn check_env(vars: Vec<(String, String)>) -> Vec<(String, String)> {
         .collect()
 }
 
-/// One task a station starts or follows up.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One task a station starts or follows up. It's kept on the run while the station's tasks are made (doc23a).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskStep {
     Start {
-        station: &'static str,
+        #[serde(with = "station_name")]
+        station: Station,
         /// its place among the station's tasks (the second builder is 1)
         index: usize,
         agent: String,
@@ -86,6 +87,52 @@ pub enum TaskStep {
         task: String,
         text: String,
     },
+}
+
+/// A station's name (one of the five). Named so serde reads it with `station_name`, not as a `&str` borrowed from
+/// what it reads (which a kept run, read back, can't lend for `'static`).
+pub type Station = &'static str;
+
+/// A station's name as a kept [`TaskStep`] says it: read back as the same `&'static str` (one of the five).
+mod station_name {
+    use serde::de::Error as _;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    #[allow(clippy::trivially_copy_pass_by_ref)] // serde's `with` hands the field by reference
+    pub fn serialize<S: Serializer>(s: &&'static str, ser: S) -> Result<S::Ok, S::Error> {
+        ser.serialize_str(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<&'static str, D::Error> {
+        let s = String::deserialize(de)?;
+        wisp_factory_api::STATIONS.iter().copied().find(|x| *x == s).ok_or_else(|| D::Error::custom(format!("no station {s:?}")))
+    }
+}
+
+/// A task a station waits on: until `turn` (the one its step started) has ended, else its first turn after `since`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Pending {
+    pub task: String,
+    pub turn: Option<String>,
+    /// the task's last turn (its `idx`) when the follow-up was sent: that turn and the ones before it are an earlier
+    /// round's, never this one's end (doc23a). None: a new task, any turn counts
+    pub since: Option<u32>,
+}
+
+impl Pending {
+    /// The task's turn `idx` can be the one waited on: it came after the follow-up was sent.
+    pub fn counts(&self, idx: u32) -> bool {
+        self.since.is_none_or(|s| idx > s)
+    }
+}
+
+/// One step of the station's make, and what it made once the host did it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Making {
+    step: TaskStep,
+    #[serde(default)]
+    made: Option<Pending>,
 }
 
 /// What the host does next.
@@ -361,13 +408,13 @@ enum At {
 pub enum Resume {
     /// wait on these tasks' turns again, then [`Event::Ended`] as before
     Tasks {
-        tasks: Vec<String>,
+        pending: Vec<Pending>,
     },
     /// the question is still on the run's task: read its answer, then [`Event::Answered`]
     Ask {
         ask_id: String,
     },
-    /// a step that does no harm twice: do it again
+    /// a step that does no harm twice: do it again (a station's make cut short: only the steps it hadn't done)
     Redo(Next),
     Over,
 }
@@ -399,6 +446,10 @@ pub struct Run {
     /// the last question's options
     options: Vec<String>,
     pr: String,
+    /// the station's tasks being made: each step and what it made, kept at every step so a restart in the middle redoes
+    /// only what's missing and waits on what was made (doc23a). Empty: no make going (or a run kept before this was)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    making: Vec<Making>,
     pub view: RunView,
 }
 
@@ -432,6 +483,7 @@ impl Run {
             revising: false,
             options: Vec::new(),
             pr: String::new(),
+            making: Vec::new(),
             view,
         }
     }
@@ -515,6 +567,38 @@ impl Run {
         {
             s.tasks.push(task.to_owned());
         }
+        // its step is done: a restart before its turn is kept waits on this task, never makes a second one
+        if let Some(m) =
+            self.making.iter_mut().find(|m| matches!(&m.step, TaskStep::Start { station: s, index: i, .. } if *s == station && *i == index))
+        {
+            m.made.get_or_insert_with(|| Pending { task: task.to_owned(), ..Pending::default() });
+        }
+    }
+
+    /// The station's steps still to do, by their place in its make (all of them before the host starts).
+    pub fn to_make(&self) -> Vec<(usize, TaskStep)> {
+        self.making.iter().enumerate().filter(|(_, m)| m.made.is_none()).map(|(i, m)| (i, m.step.clone())).collect()
+    }
+
+    /// The host did the make's step `i`: what to wait on.
+    pub fn sent(&mut self, i: usize, p: Pending) {
+        if let Some(m) = self.making.get_mut(i) {
+            m.made = Some(p);
+        }
+    }
+
+    /// What the station waits on, in its steps' order: what its make made so far.
+    pub fn pending(&self) -> Vec<Pending> {
+        self.making.iter().filter_map(|m| m.made.clone()).collect()
+    }
+
+    /// The station tasks to stop now the run is over (doc23b): every one when it failed or you stopped it, so nothing
+    /// of a run that ended goes on; none when it's done (its build is yours to read or merge).
+    pub fn to_stop(&self) -> Vec<String> {
+        if self.at != At::Over || !matches!(self.view.state, RunState::Failed | RunState::Stopped) {
+            return Vec::new();
+        }
+        self.view.stations.iter().flat_map(|s| s.tasks.iter().cloned()).collect()
     }
 
     /// The question's id, once the host asked it (what an answer from the band names).
@@ -534,6 +618,7 @@ impl Run {
         if let Some(why) = self.spent() {
             return self.end(RunState::Failed, &why);
         }
+        self.making = steps.iter().map(|step| Making { step: step.clone(), made: None }).collect();
         Next::Tasks(steps)
     }
 
@@ -828,6 +913,8 @@ impl Run {
     /// What happened; the next step.
     #[allow(clippy::too_many_lines)] // one match over where the run is: each arm is a station's result
     pub fn on(&mut self, e: Event) -> Next {
+        // whatever happened, the last make is over (its tasks ended, or the run goes another way)
+        self.making.clear();
         if self.at == At::Over {
             return Next::End { state: self.view.state, why: self.view.why.clone() };
         }
@@ -1094,9 +1181,23 @@ impl Run {
             At::ApproveSpec | At::Limit | At::ApproveMerge | At::ApproveChecks => {
                 Resume::Ask { ask_id: self.view.waiting.as_ref().map(|w| w.ask_id.clone()).unwrap_or_default() }
             }
-            At::Spec => Resume::Tasks { tasks: self.spec_task.iter().cloned().collect() },
-            At::Build => Resume::Tasks { tasks: self.builds.clone() },
-            At::Review => Resume::Tasks { tasks: self.review_tasks.clone() },
+            // the station's make, as it was kept: the steps it hadn't done yet, else what it made (doc23a: a restart in
+            // the middle resumed on no task, "the spec station made no task", or on the round before's turn)
+            At::Spec | At::Build | At::Review if !self.making.is_empty() => {
+                let left: Vec<TaskStep> = self.to_make().into_iter().map(|(_, s)| s).collect();
+                if left.is_empty() { Resume::Tasks { pending: self.pending() } } else { Resume::Redo(Next::Tasks(left)) }
+            }
+            // a run kept before its make was: the station's tasks' last turns, or its step again when it has none
+            At::Spec => match &self.spec_task {
+                Some(t) => Resume::Tasks { pending: vec![Pending { task: t.clone(), ..Pending::default() }] },
+                None => Resume::Redo(self.start()),
+            },
+            At::Build if self.builds.is_empty() => Resume::Redo(self.build()),
+            At::Build => Resume::Tasks { pending: self.builds.iter().map(|t| Pending { task: t.clone(), ..Pending::default() }).collect() },
+            At::Review if self.review_tasks.is_empty() => Resume::Redo(self.review()),
+            At::Review => {
+                Resume::Tasks { pending: self.review_tasks.iter().map(|t| Pending { task: t.clone(), ..Pending::default() }).collect() }
+            }
             At::Checks => {
                 let (commands, minutes) = self.check_commands();
                 match self.to_check.first().and_then(|i| self.builds.get(*i)) {
@@ -1138,6 +1239,9 @@ pub fn status_of(v: &RunView) -> Option<&'static str> {
     }
 }
 
+/// How much of a question's context goes on the run's row (the band's line, under "Approve the spec?").
+const CONTEXT_SHOWN: usize = 400;
+
 /// The list row's line (`runtime.summary`'s `factory`): the factory, where it is, the round of the limit, each station's
 /// state, round, tasks and short output, and what it waits on you for. A station's whole detail stays on the task.
 pub fn summary_of(v: &RunView) -> Value {
@@ -1149,6 +1253,11 @@ pub fn summary_of(v: &RunView) -> Value {
     let mut out = json!({ "name": v.factory, "state": v.state, "station": v.station, "round": v.round, "max": v.max, "stations": stations, "why": short(&v.why, 300) });
     if let Some(w) = &v.waiting {
         out["waiting"] = json!({ "station": w.station, "question": short(&w.question, 300), "options": w.options, "askId": w.ask_id });
+        // what it asks about (the spec beside "Approve the spec?"): the band shows it from the row, so it goes, kept short
+        // so the row stays small (the whole spec stays on the task)
+        if !w.context.trim().is_empty() {
+            out["waiting"]["context"] = json!(short(&w.context, CONTEXT_SHOWN));
+        }
     }
     if let Some(pr) = &v.pr {
         out["pr"] = json!(pr);
