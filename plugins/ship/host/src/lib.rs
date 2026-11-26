@@ -227,6 +227,7 @@ impl Plugin for ShipPlugin {
                     ),
                     owner: ctx.scope().clone(),
                     clock: ctx.clock()?,
+                    tidier: wire::tidier(&ctx),
                 };
                 let ship = Arc::new(Ship::new(shipper, Arc::new(Tasks::default()), sink(&ctx)));
                 slot.set(ship.clone());

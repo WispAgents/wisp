@@ -88,7 +88,12 @@ pub(crate) fn task_info(s: &Summary, ext: &BTreeMap<String, Value>, now: i64) ->
         title: s.title.clone(),
         project: project_of(&s.cwd),
         done: s.state == SessionState::Done,
-        busy: s.state == SessionState::Running || s.queued > 0 || crate::archived::side_pending(runtime, now),
+        // in use as `archived::to_remove` reads it: a turn running or asking (Waiting), one queued, a /btw being
+        // answered, or Ship it pushing from the folder
+        busy: matches!(s.state, SessionState::Running | SessionState::Waiting)
+            || s.queued > 0
+            || crate::archived::side_pending(runtime, now)
+            || crate::archived::shipping(ext.get("wisp.ship")),
         kept: slot.get("kept").and_then(Value::as_bool).unwrap_or(false),
         parked: slot.get("parked").and_then(Value::as_bool).unwrap_or(false),
         updated_at: s.updated_at,
@@ -381,6 +386,29 @@ mod tests {
         assert!(pr_of(None).is_none());
         assert!(pr_of(Some(&json!({ "pr": null }))).is_none());
         assert!(pr_of(Some(&json!({ "pr": { "number": "x" } }))).is_none());
+    }
+
+    /// A task is busy (its folder stays) while its agent asks something (Waiting) and while Ship it pushes from its
+    /// folder, as `archived::to_remove` reads it; an idle one with nothing in flight isn't.
+    #[test]
+    fn a_waiting_or_shipping_task_is_busy_and_an_idle_one_isnt() {
+        use std::collections::BTreeMap;
+        let row = |state: &str| -> wisp_runtime_api::model::Summary {
+            serde_json::from_value(json!({ "id": "t", "title": "", "agent": "claude", "model": "", "effort": "", "mode": "auto", "cwd": "/w", "state": state, "status": "", "unread": false, "archived": false, "createdAt": 0, "updatedAt": 0, "turnCount": 1, "queued": 0, "preview": "", "live": "" })).unwrap()
+        };
+        let tree: BTreeMap<String, serde_json::Value> = [(
+            "wisp.worktrees".to_owned(),
+            json!({ "path": "/w/t", "cwd": "/w/t", "branch": "b", "base": "main", "baseRef": "origin/main", "root": "/w", "createdAt": 1 }),
+        )]
+        .into();
+        assert!(super::task_info(&row("waiting"), &tree, 0).busy, "a clean tree, its agent asking: busy");
+        let mut shipping = tree.clone();
+        shipping.insert("wisp.ship".into(), json!({ "session": "t", "repos": [], "shipping": { "step": "push", "startedAt": 1 } }));
+        assert!(super::task_info(&row("review"), &shipping, 0).busy, "a ship in flight");
+        let mut shipped = tree.clone();
+        shipped.insert("wisp.ship".into(), json!({ "session": "t", "repos": [], "shipping": null }));
+        assert!(!super::task_info(&row("review"), &shipped, 0).busy, "idle, no ship in flight");
+        assert!(!super::task_info(&row("done"), &tree, 0).busy);
     }
 
     /// Done's list walks a task's kids: every session whose parent is it.

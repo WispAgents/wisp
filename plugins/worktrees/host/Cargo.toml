@@ -12,6 +12,7 @@ wisp-kernel.workspace = true
 wisp-proc.workspace = true
 wisp-git-api.workspace = true
 wisp-worktrees-api.workspace = true
+wisp-ship-api.workspace = true
 wisp-automations-api.workspace = true
 wisp-runtime-api.workspace = true
 wisp-telemetry-api.workspace = true

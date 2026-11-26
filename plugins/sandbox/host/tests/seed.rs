@@ -10,11 +10,12 @@ use base64::Engine as _;
 use serde_json::json;
 use wisp_kernel::Caller;
 use wisp_sandbox::SandboxPlugin;
+use wisp_store::{Location, Store, SystemClock};
 use wisp_testkit::TestApp;
 
-/// A computer's wisp.sandbox keeps its launches (`sandbox.start`) as rows in the store, so it starts only with one.
-fn store() -> wisp_store::Store {
-    wisp_store::Store::open(wisp_store::Location::Memory, std::sync::Arc::new(wisp_store::SystemClock)).unwrap()
+/// A test wisp with the store the plugin keeps its launches in (`sandbox_view`, #926).
+fn app() -> TestApp {
+    TestApp::new().service(Store::open(Location::Memory, std::sync::Arc::new(SystemClock)).unwrap())
 }
 
 fn dir(name: &str) -> PathBuf {
@@ -58,15 +59,10 @@ async fn only_a_sandbox_takes_a_seed_and_its_setup_runs_once() {
     let home = dir("home");
     let (_p, args) = project();
     // a computer refuses: a seed would write into its ~/code
-    let here = TestApp::new()
-        .with(SandboxPlugin { inside: Some(false), home: Some(home.clone()) })
-        .service(wisp_proc::local())
-        .service(store())
-        .start()
-        .await;
+    let here = app().with(SandboxPlugin { inside: Some(false), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
     let no = here.call(Caller::user(), "sandbox.seed", args.clone()).await.unwrap_err();
     assert!(no.message.contains("Only a sandbox"), "{no:?}");
-    let sb = TestApp::new().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let sb = app().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
     let out = sb.call(Caller::user(), "sandbox.seed", args.clone()).await.unwrap();
     let cwd = PathBuf::from(out["cwd"].as_str().unwrap());
     assert_eq!(cwd, home.join("code").join("my-app"));
@@ -89,7 +85,7 @@ async fn only_a_sandbox_takes_a_seed_and_its_setup_runs_once() {
 async fn a_delegates_changes_come_back_as_the_difference_from_what_came_in() {
     let home = dir("home2");
     let (lead, args) = project();
-    let sb = TestApp::new().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let sb = app().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
     let out = sb.call(Caller::user(), "sandbox.seed", args).await.unwrap();
     let cwd = PathBuf::from(out["cwd"].as_str().unwrap());
     std::fs::write(cwd.join("app.js"), "one\ntwo, not committed\nthree, by the delegate\n").unwrap();
@@ -133,17 +129,12 @@ async fn only_a_sandbox_takes_an_upload_and_a_seed_reads_it_by_key() {
     let bytes = std::fs::read(&bundle).unwrap();
 
     let home = dir("home3");
-    let here = TestApp::new()
-        .with(SandboxPlugin { inside: Some(false), home: Some(home.clone()) })
-        .service(wisp_proc::local())
-        .service(store())
-        .start()
-        .await;
+    let here = app().with(SandboxPlugin { inside: Some(false), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
     let no = here.serve(Caller::user(), upload("k1", "bundle", bytes.clone())).await.unwrap_err();
     assert!(no.message.contains("Only a sandbox"), "{no:?}");
     assert!(!home.join(".sandbox").exists(), "nothing written on a computer");
 
-    let sb = TestApp::new().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let sb = app().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
     let none = sb.call(Caller::user(), "sandbox.seed", json!({ "name": "app", "key": "k1" })).await.unwrap_err();
     assert!(none.message.contains("Nothing was sent"), "{none:?}");
     assert!(sb.serve(Caller::user(), upload("k1", "../x", Vec::new())).await.is_err(), "a part is a bundle or a patch");
@@ -213,7 +204,7 @@ async fn a_seed_is_byte_for_byte_what_came_whatever_the_boxs_git_says() {
     let config = home.join("windows.gitconfig");
     std::fs::write(&config, "[core]\n\tautocrlf = true\n").unwrap();
     let proc: wisp_proc::Proc = std::sync::Arc::new(AutocrlfGit { inner: wisp_proc::local(), config });
-    let sb = TestApp::new().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(proc).start().await;
+    let sb = app().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(proc).start().await;
 
     // the lead's own checkout says autocrlf=true too (kept: wisp never changes it); its blobs are written as they are
     let p = dir("proj-crlf");

@@ -81,6 +81,7 @@ fn own_trees<'a>(e: &Engine, t: &'a TaskInfo) -> Vec<&'a Worktree> {
 impl Cleanup {
     pub fn new(engine: Arc<Engine>, port: Arc<dyn Port>, call: Call) -> Arc<Self> {
         let seen = Seen { changed: true, ..Seen::default() };
+        engine.watch(port.clone());
         Arc::new(Self {
             engine,
             port,
@@ -270,10 +271,29 @@ impl Cleanup {
         Worktree { path: path.to_owned(), cwd: path.to_owned(), root, ..Worktree::default() }
     }
 
+    /// A folder whose `.git` is a folder: a full clone someone put in wisp's worktrees folder, never a leftover to remove.
+    async fn a_clone(path: &str) -> bool {
+        tokio::fs::metadata(fsx::join(path, ".git")).await.is_ok_and(|m| m.is_dir())
+    }
+
     async fn snaps(&self, tasks: &[TaskInfo]) -> Vec<TaskSnap> {
+        // the folders working tasks are in: a task sharing one (a recurring run's kept folder) is in use too, whatever
+        // its own state says, so no plan picks it
+        let mut working = HashSet::new();
+        for t in tasks.iter().filter(|t| t.busy) {
+            for w in own_trees(&self.engine, t) {
+                working.insert(fsx::norm(&w.path).await);
+            }
+        }
         let s = self.seen.lock().await;
         let mut out = Vec::with_capacity(tasks.len());
         for t in tasks {
+            let mut shared = false;
+            if !t.busy && !working.is_empty() {
+                for w in own_trees(&self.engine, t) {
+                    shared |= working.contains(&fsx::norm(&w.path).await);
+                }
+            }
             let mut trees = Vec::new();
             for w in own_trees(&self.engine, t) {
                 let l = s.trees.get(&w.path);
@@ -293,7 +313,7 @@ impl Cleanup {
                 title: t.title.clone(),
                 project: t.project.clone(),
                 done: t.done,
-                busy: t.busy,
+                busy: t.busy || shared,
                 kept: t.kept,
                 parked: t.parked,
                 pr_open: prs().any(|p| p.state == "OPEN"),
@@ -469,6 +489,9 @@ impl Cleanup {
             Job::Leftover(name) => {
                 let path = fsx::join(&dir, &name);
                 let size = self.seen.lock().await.sizes.get(&path).copied().unwrap_or(0);
+                if Self::a_clone(&path).await {
+                    return (false, 0);
+                }
                 let wt = self.leftover(&path).await;
                 let r = self.engine.remove(&self.call, &wt, RemoveOpts { force: true, ..RemoveOpts::default() }, None).await;
                 (r.is_ok_and(|r| r.removed), size)

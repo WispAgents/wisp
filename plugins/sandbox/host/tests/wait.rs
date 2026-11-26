@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Value, json};
 use wisp_kernel::{Caller, Command, Manifest, Plugin, Result, Setup};
 use wisp_sandbox::SandboxPlugin;
+use wisp_store::{Location, Store, SystemClock};
 use wisp_testkit::{FakeClock, TestApp};
 
 macro_rules! cmd {
@@ -127,7 +128,7 @@ async fn place(b: &Box_) -> std::result::Result<Value, wisp_kernel::WireError> {
     let clock = FakeClock::at(1_000);
     let k = TestApp::new()
         .clock(&clock)
-        .service(wisp_store::Store::open(wisp_store::Location::Memory, Arc::new(wisp_store::SystemClock)).unwrap())
+        .service(Store::open(Location::Memory, Arc::new(SystemClock)).unwrap())
         .with(SandboxPlugin { inside: Some(false), home: None })
         .with(Machines(b.clone()))
         .start()

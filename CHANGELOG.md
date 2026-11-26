@@ -18,8 +18,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Mark done → *Remove its worktree?*: a folder holding uncommitted work lists its files. Click **3 uncommitted files** on the row to see each file with its change (A, M, D, R, or U for untracked) and its path. When only one folder holds work, its files show when the dialog opens. Past 100 files, the last line says how many more.
 - Task details: click the branch chip to copy the task's worktree path. A tooltip says **Worktree path copied**. Hover the chip to see the branch and the path.
 
+### Changed
+
+- The npm package, the README and the site's structured data now say **Wisp Agents** and point to trywisp.dev, so searches for "Wisp Agents" find the project.
+
 ### Fixed
 
+- Changes and diffs: a removed line that starts with `--` (such as a Markdown rule `---`) or an added line that starts with `++` is now shown as a removed or added line. Before, it was taken for a file header and left out, and reverting that hunk dropped the line from the file. The same fix applies to diffs in `wisp` CLI answers and in the terminal UI.
+- Worktrees: a folder that several runs of a recurring job share is no longer removed while any of them is working in it. Before, the sweep, **Done**, archiving or the end of another run could remove it. A task that is waiting on your answer, or whose **Ship it** is pushing, now counts as working, so its folder stays too. A folder that stays for this reason shows as in use, not as failed.
+- Worktrees: wisp no longer deletes a folder when git refuses to remove it (for example, a locked worktree), and it never removes a repository's own checkout, a full clone, or a folder outside wisp's worktrees folder that no task made. When git can't read a folder's status, the folder counts as holding work and stays.
+- Merge (**Ship it**): the task's worktree stays, with a note that says why, when git can't read its status, when **Keep worktree** is on, when the task is still working, or when its branch has a commit that the pull request doesn't have. The folder is now removed through the same safe removal as every other clean-up. The branch is deleted, locally and then on the remote, only after the folder is gone.
+- New worktrees: `.worktreeinclude` lines with `..` or an absolute path (`/x`, a drive path, `~`) are skipped with a note, and a symlink that points out of the repo is not followed. Until you trust a repository, a new worktree gets only its root `.env` files; the rest of its `.worktreeinclude` list is copied when you trust it.
 - New task remembers the computer you picked under **Run on**: the next new task starts on that machine too, after a page change or a reload, until you pick another. If that computer is gone, it runs on this one.
 - Answers: a `diff` block that names only its file (how agents are told to write it) said "No captured edits for this file" for every file: the block now shows the edits wisp captured for that file in the turn, as v1 did, and `files` rows without their own diff fold those edits open.
 - **/sandbox with Claude Code signed in**: signing in to Claude for sandboxes now works when the browser finishes the sign-in by itself (Claude's page approves it with no code to paste). Before, the token never reached the grid, so every `/sandbox` still said *Sign in to Claude for sandboxes first*. Settings → Sandboxes shows **Signed in** as soon as the browser is done, and the sign-in link no longer comes out as two links run together.
