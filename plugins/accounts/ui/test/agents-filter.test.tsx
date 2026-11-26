@@ -51,8 +51,13 @@ test('agents_follows_a_new_filter_while_open_and_an_empty_one_keeps_the_pick', (
   );
   const selected = (): string | null | undefined => host.querySelector('[data-kit="settings-master-item"][aria-selected="true"]')?.getAttribute('data-id');
   expect(selected()).toBe('claude');
+  const keyed = (k: string): boolean => host.querySelector(`[data-setting-key="${k}"]`) !== null;
+  // Settings' search lands on a detail row by its key (shell-settings harnessRowKey): this harness's own
+  expect(keyed('agents.claude.model') && keyed('agents.claude.mode') && keyed('agents.claude.signIn') && keyed('agents.claude.program')).toBe(true);
   setFilter('codex'); // the same pane, a new filter: no remount
   expect(selected()).toBe('codex');
+  expect(keyed('agents.codex.model') && keyed('agents.codex.mode') && keyed('agents.codex.signIn') && keyed('agents.codex.program')).toBe(true);
+  expect(keyed('agents.claude.model'), 'the last harness detail is gone, so a reveal never lands on it').toBe(false);
   setFilter(undefined);
   expect(selected(), 'no filter: the pick stays').toBe('codex');
   setFilter('');

@@ -13,7 +13,7 @@ import { t as own } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
 import { pickPane, samePane, settingsIntent, type PaneEntry } from './nav.ts';
 import { filterSections, offeredPanes, sectionedPanes } from './phone-nav.ts';
-import { foundSettings, harnessRows, HARNESS_ROWS, settingTarget, type FoundSetting } from './search.ts';
+import { focusOf, foundSettings, harnessRows, HARNESS_ROWS, settingTarget, type FoundSetting } from './search.ts';
 import './i18n/lazy.ts';
 
 /** What the frame reads: every registered pane and a translator (titles are other plugins' keys). */
@@ -88,7 +88,11 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
   // and each harness's detail rows in Settings → Agents (harness audit r2): "cursor model" opens Agents on Cursor
   const searchable = (): FoundSetting[] => [
     ...(declared() ?? []),
-    ...(panes().some((e) => e.pane.id === 'agents') ? harnessRows(deps.harnesses?.() ?? [], HARNESS_ROWS.map((k) => own(k))) : []),
+    ...(panes().some((e) => e.pane.id === 'agents') ? harnessRows(
+          deps.harnesses?.() ?? [],
+          HARNESS_ROWS.map((k) => own(k)),
+          (declared() ?? []).map((d) => d.key),
+        ) : []),
   ];
   const paneOwners = (): { id: string; plugin: string }[] => panes().map((e) => ({ id: e.pane.id, plugin: (e.pane as { plugin?: string }).plugin ?? '' }));
   const groups = createMemo(() => {
@@ -102,9 +106,8 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
     const f = searchable().find((x) => `setting:${x.key}` === id);
     if (!f) return;
     const to = settingTarget(f, paneOwners(), (deps.harnesses?.() ?? []).map((h) => h.id));
-    // and on its row (doc924a), not only its pane; a harness detail's rows have no key of their own
-    const focus = f.key.startsWith('agents:') ? undefined : f.key;
-    props.client.navigate(settingsIntent(to.pane, to.filter, deps.sideBySide?.() === true, focus));
+    // and on its row (doc924a), not only its pane: a harness detail's row by the key Agents puts on it
+    props.client.navigate(settingsIntent(to.pane, to.filter, deps.sideBySide?.() === true, focusOf(f)));
   };
   const nothing = (): boolean => query().trim() !== '' && !declared.loading && groups().length === 0;
   const onSearchKey = (e: KeyboardEvent): void => {

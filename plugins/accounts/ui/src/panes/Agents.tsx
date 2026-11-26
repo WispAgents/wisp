@@ -258,6 +258,9 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
    *  then its program, its switch, its defaults for a new task, and what other plugins add (wisp.budget's stop line). */
   const HarnessDetail = (p: { readonly id: string }): JSX.Element => {
     const id = p.id;
+    // what Settings' search finds each row by (shell-settings search.ts harnessRowKey): this harness's, so a re-pick
+    // never lands on the last harness's row
+    const rowKey = (part: 'signIn' | 'program' | 'enabled' | 'model' | 'effort' | 'mode'): string => `agents.${id}.${part}`;
     // the last row it had: a harness that goes (its plugin switched off) may be read once more before its row unmounts
     let last = byId().get(id) as HarnessRow;
     const h = (): HarnessRow => (last = byId().get(id) ?? last);
@@ -280,6 +283,7 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
         <SettingsGroup part="accounts.harnesses">
           <SettingsRow
             part="accounts.harness"
+            settingKey={rowKey('signIn')}
             title={h().name}
             {...(logoOf(h().id) && { logo: logoOf(h().id) as string })}
             description={
@@ -380,6 +384,7 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
         <SettingsGroup part="accounts.detail" title={t('accounts.detail.title')}>
           <SettingsRow
             part="accounts.detail.program"
+            settingKey={rowKey('program')}
             title={t('accounts.detail.program')}
             description={
               <Show when={present(h()) || h().checking} fallback={bad(t('accounts.detail.missing', { name: h().name }))}>
@@ -403,6 +408,7 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
             {(pl) => (
               <SettingsRow
                 part="accounts.detail.enabled"
+                settingKey={rowKey('enabled')}
                 title={t('accounts.detail.enabled')}
                 description={t('accounts.detail.enabledHint', { name: h().name })}
                 control={
@@ -426,7 +432,7 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
                 {bad(t('accounts.detail.modelUnknown', { model: defaultsOf(id).model, name: h().name }))}
               </Show>
             }
-            source={{ value: () => defaultsOf(id).model, set: (v) => setDefaults(id, { model: v, label: models().find((m) => m.id === v)?.label ?? v }) }}
+            source={{ key: rowKey('model'), value: () => defaultsOf(id).model, set: (v) => setDefaults(id, { model: v, label: models().find((m) => m.id === v)?.label ?? v }) }}
             items={[
               { value: '', label: runs() ? t('accounts.detail.defaultIs', { model: runs() ?? '' }) : t('accounts.detail.default') },
               ...models().map((m) => ({ value: m.id, label: m.label })),
@@ -439,7 +445,7 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
               part="accounts.detail.effort"
               title={t('accounts.detail.effort')}
               description={t('accounts.detail.effortHint')}
-              source={{ value: () => defaultsOf(id).effort, set: (v) => setDefaults(id, { effort: v }) }}
+              source={{ key: rowKey('effort'), value: () => defaultsOf(id).effort, set: (v) => setDefaults(id, { effort: v }) }}
               items={[{ value: '', label: t('accounts.detail.default') }, ...efforts().map((e) => ({ value: e, label: e.charAt(0).toUpperCase() + e.slice(1) }))]}
             />
           </Show>
@@ -447,7 +453,7 @@ export default function Agents(props: { readonly client: PluginClient; readonly 
             part="accounts.detail.mode"
             title={t('accounts.detail.mode')}
             description={t('accounts.detail.modeHint')}
-            source={{ value: () => defaultsOf(id).mode, set: (v) => setDefaults(id, { mode: v }) }}
+            source={{ key: rowKey('mode'), value: () => defaultsOf(id).mode, set: (v) => setDefaults(id, { mode: v }) }}
             items={[{ value: '', label: t('accounts.detail.modeAsPicked') }, ...MODES_FOR_HARNESS.map((m) => ({ value: m, label: t(`accounts.detail.mode.${m}`) }))]}
           />
         </SettingsGroup>

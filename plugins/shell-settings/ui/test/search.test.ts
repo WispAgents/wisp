@@ -2,7 +2,7 @@
 // old pane showing). It finds a pane by its rows' words too, and every declared setting by its label, description or
 // key, each opening the pane that has it (else All settings, on that setting).
 import { expect, test } from 'vitest';
-import { foundSettings, harnessOfKey, harnessRows, PANE_OF_KEY, settingTarget, type FoundSetting } from '../src/search.ts';
+import { focusOf, foundSettings, harnessOfKey, harnessRowKey, harnessRows, HARNESS_ROWS, PANE_OF_KEY, settingTarget, type FoundSetting } from '../src/search.ts';
 import { filterSections } from '../src/phone-nav.ts';
 
 const groups = [
@@ -85,5 +85,28 @@ test('a_setting_opens_the_pane_that_draws_its_row_whoever_declares_it', () => {
   expect(settingTarget({ key: 'budget.autoStopCursor', owner: 'wisp.budget' }, panes, ['cursor'])).toEqual({ pane: 'agents', filter: 'cursor' });
   // the drawing pane missing (a phone without it): owner routing as before
   expect(settingTarget({ key: 'channels.acceptChannels', owner: 'wisp.channels' }, panes.filter((p) => p.id !== 'notifications'))).toEqual({ pane: 'phone' });
-  expect(PANE_OF_KEY.size).toBe(22);
+  // General draws Terminal only with more than one app and its command only for Custom: All settings always does
+  expect(settingTarget({ key: 'terminal.terminal', owner: 'wisp.terminal' }, panes)).toEqual({ pane: 'all', filter: 'terminal.terminal' });
+  expect(settingTarget({ key: 'terminal.command', owner: 'wisp.terminal' }, panes)).toEqual({ pane: 'all', filter: 'terminal.command' });
+  expect(PANE_OF_KEY.size).toBe(20);
+});
+
+// doc924a review: a hit that lands on Agents lights its row too: a harness detail row by the key Agents puts on it
+// (this harness's), its stop line by wisp.budget's declared key, a declared key by itself
+test('a_harness_row_hit_lands_on_its_row_in_agents', () => {
+  const declared = ['budget.autoStop', 'budget.autoStopClaude', 'budget.autoStopCodex'];
+  const rows = harnessRows([{ id: 'codex', name: 'Codex' }], [...HARNESS_ROWS], declared);
+  expect(rows.map((r) => r.focus)).toEqual([
+    'agents.codex.signIn',
+    'agents.codex.program',
+    'agents.codex.enabled',
+    'agents.codex.model',
+    'agents.codex.effort',
+    'agents.codex.mode',
+    'budget.autoStopCodex',
+  ]);
+  expect(rows.map(focusOf)).toEqual(rows.map((r) => r.focus));
+  expect(harnessRowKey('cursor', HARNESS_ROWS.length - 1, declared), 'no declared stop line: no row to light').toBeUndefined();
+  expect(focusOf({ key: 'budget.autoStopClaude' })).toBe('budget.autoStopClaude');
+  expect(focusOf({ key: 'agents:codex:9' })).toBeUndefined();
 });
