@@ -13,7 +13,8 @@
 //! size-ok: one pane's commands and their rows
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -31,7 +32,7 @@ use wisp_kernel::{Ctx, Result, Setup, WireError};
 use wisp_resources_api::{Op, OpKind, ResourceKind, StoredKind};
 use wisp_store::{Col, EntityDef, Migration, Row, Store};
 
-use crate::kinds::ConnectorSpec;
+use crate::kinds::{ConnectorSpec, RunCache};
 
 pub const OWNER: &str = "connectors";
 
@@ -308,6 +309,14 @@ pub struct Pane {
     testing: Mutex<HashSet<String>>,
     dismissed: Mutex<BTreeSet<String>>,
     pending: Mutex<PendingSignins>,
+    /// the run cache, read again after a token was refreshed
+    pub(crate) runs: RunCache,
+    /// one refresh at a time per connector (`auth`)
+    pub(crate) refreshing: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// the refresh armed ahead of each connector's token end: only the latest acts
+    pub(crate) timers: Mutex<HashMap<String, u64>>,
+    pub(crate) timer_seq: AtomicU64,
+    pub(crate) me: Weak<Pane>,
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -473,6 +482,7 @@ impl Pane {
             }
         }
         lock(&self.tests).remove(id);
+        self.forget_token(id);
         Ok(self.publish(ctx).await)
     }
 
@@ -492,16 +502,31 @@ impl Pane {
         for v in c.env.values_mut().chain(c.headers.values_mut()) {
             *v = crate::kinds::reveal(ctx, id, v).await;
         }
-        if c.oauth == Some(true)
-            && let Some(t) = crate::kinds::bearer(ctx, id, &c.url).await
-        {
+        let mut bearer = None;
+        if c.oauth == Some(true) && crate::kinds::bearer_ok(&c.url) {
+            // a token that ran out is refreshed first; one that can't be leaves the row asking for a sign-in
+            let Ok(t) = self.fresh_token(ctx, id, None).await else { return Ok(self.tested(ctx, id, None).await) };
             c.headers.insert("Authorization".into(), format!("Bearer {t}"));
+            bearer = Some(t);
         }
         let at = ctx.clock().map_or(0, |k| k.now_ms());
-        let r = if c.url.is_empty() { probe_local(ctx, id, &c, at).await } else { probe_remote(ctx, id, &c, at).await };
+        let mut r = if c.url.is_empty() { probe_local(ctx, id, &c, at).await } else { probe_remote(ctx, id, &c, at).await };
+        if let (true, Some(t)) = (r.auth, bearer) {
+            // refused: refreshed even before its end, and asked once more (a second refusal stands)
+            let Ok(t) = self.fresh_token(ctx, id, Some(&t)).await else { return Ok(self.tested(ctx, id, None).await) };
+            c.headers.insert("Authorization".into(), format!("Bearer {t}"));
+            r = probe_remote(ctx, id, &c, at).await;
+        }
+        Ok(self.tested(ctx, id, Some(r)).await)
+    }
+
+    /// A check is over: its outcome on the row (none: `needs_signin` put it there).
+    async fn tested(&self, ctx: &Ctx, id: &str, r: Option<ProbeResult>) -> ConnectorsView {
         lock(&self.testing).remove(id);
-        lock(&self.tests).insert(id.to_owned(), r);
-        Ok(self.publish(ctx).await)
+        if let Some(r) = r {
+            lock(&self.tests).insert(id.to_owned(), r);
+        }
+        self.publish(ctx).await
     }
 
     pub async fn import(self: &Arc<Self>, ctx: &Ctx, names: &[String], dismiss: &[String]) -> Result<ImportView> {
@@ -573,8 +598,8 @@ impl Pane {
         let found = oauth::meta_from(prm.as_ref(), meta.as_ref(), &issuer, &spec.url);
         let redirect = oauth::redirect_for(origin)?;
         let had = Self::oauth_of(ctx, id).await;
-        let o = if let Some(o) = oauth::reuse_client(had.as_ref(), &found, &redirect) {
-            o
+        let (o, secret) = if let Some(o) = oauth::reuse_client(had.as_ref(), &found, &redirect) {
+            (o, oauth::ClientSecret::Kept)
         } else {
             {
                 let reg = found.register.clone().ok_or_else(|| WireError::from(oauth::no_registration(&issuer)))?;
@@ -590,18 +615,16 @@ impl Pane {
                     .ok();
                 let body = r.as_ref().and_then(|r| r.json::<Value>().ok());
                 let (client_id, secret) = oauth::registered(&issuer, r.as_ref().map(|r| r.status), body.as_ref())?;
-                if let Some(sc) = secret {
-                    secrets(ctx)?.set(&format!("{}:client_secret", secrets_ns(id)), &sc).await?;
-                }
-                OAuthMeta { client_id: Some(client_id), redirect: Some(redirect.clone()), ..found }
+                (OAuthMeta { client_id: Some(client_id), redirect: Some(redirect.clone()), ..found }, oauth::ClientSecret::Fresh(secret))
             }
         };
         let verifier = format!("{}{}", wisp_kernel::ids::uuid7().replace('-', ""), wisp_kernel::ids::uuid7().replace('-', ""));
         let state = wisp_kernel::ids::uuid7().replace('-', "");
         let url = oauth::authorize_url(&o, &redirect, &oauth::challenge(&verifier), &state)?;
-        secrets(ctx)?.set(&format!("{}:oauth", secrets_ns(id)), &serde_json::to_string(&o).unwrap_or_default()).await?;
+        // nothing stored yet: the new client and its secret wait with the sign-in, so one left in the browser (or
+        // refused) leaves the working sign-in as it was
         let at = ctx.clock().map_or(0, |k| k.now_ms());
-        lock(&self.pending).begin(state, oauth::Pending { id: id.to_owned(), verifier, redirect, at });
+        lock(&self.pending).begin(state, oauth::Pending { id: id.to_owned(), verifier, redirect, at, meta: o, secret });
         Ok(SigninUrl { url })
     }
 
@@ -613,28 +636,28 @@ impl Pane {
         oauth::callback_refusal(q)?;
         let code = q.get("code").filter(|c| !c.is_empty()).ok_or_else(|| WireError::invalid("The sign-in sent no code back"))?;
         let s = secrets(ctx)?;
-        let o = Self::oauth_of(ctx, &p.id).await.ok_or_else(|| WireError::invalid("Start the sign-in again from Settings → Connectors"))?;
-        let secret = s.get(&format!("{}:client_secret", secrets_ns(&p.id))).await.ok().flatten();
-        let form = oauth::form_encode(&oauth::code_form(&o, code, &p, secret.as_deref()));
-        let r = net(ctx)?
-            .fetch(NetRequest {
-                method: "POST".into(),
-                url: o.token.clone(),
-                headers: vec![
-                    ("content-type".into(), "application/x-www-form-urlencoded".into()),
-                    ("accept".into(), "application/json".into()),
-                ],
-                body: form.into_bytes(),
-                timeout_ms: 15_000,
-            })
-            .await?;
-        let t = oauth::token_reply(r.status, &String::from_utf8_lossy(&r.body))?;
-        s.set(&format!("{}:token", secrets_ns(&p.id)), &t.access).await?;
-        if let Some(rf) = &t.refresh {
-            s.set(&format!("{}:refresh", secrets_ns(&p.id)), rf).await?;
+        let o = p.meta.clone();
+        let key = |k: &str| format!("{}:{k}", secrets_ns(&p.id));
+        let secret = match &p.secret {
+            oauth::ClientSecret::Kept => s.get(&key("client_secret")).await.ok().flatten(),
+            oauth::ClientSecret::Fresh(sc) => sc.clone(),
+        };
+        let t = crate::auth::token_request(ctx, &o.token, &oauth::code_form(&o, code, &p, secret.as_deref())).await?;
+        s.set(&key("token"), &t.access).await?;
+        match &t.refresh {
+            Some(rf) => s.set(&key("refresh"), rf).await?,
+            // an older sign-in's refresh token isn't this one's
+            None => s.delete(&key("refresh")).await?,
         }
-        s.set(&format!("{}:oauth", secrets_ns(&p.id)), &serde_json::to_string(&oauth::after_tokens(&o, &t, at)).unwrap_or_default())
-            .await?;
+        // a fresh client's secret replaces the stored one, and none means none (an old client's would go along)
+        match &p.secret {
+            oauth::ClientSecret::Kept => {}
+            oauth::ClientSecret::Fresh(Some(sc)) => s.set(&key("client_secret"), sc).await?,
+            oauth::ClientSecret::Fresh(None) => s.delete(&key("client_secret")).await?,
+        }
+        let signed = oauth::after_signin(&o, &t, at);
+        s.set(&key("oauth"), &serde_json::to_string(&signed).unwrap_or_default()).await?;
+        self.refresh_later(ctx, &p.id, &signed);
         let prev = self.spec(&p.id).await?;
         self.apply(ctx, OpKind::Update, &p.id, &ConnectorSpec { oauth: Some(true), ..prev.clone() }, Some(&prev)).await?;
         let _ = self.test(ctx, &p.id).await;
@@ -649,6 +672,7 @@ impl Pane {
         }
         self.apply(ctx, OpKind::Update, id, &ConnectorSpec { oauth: None, ..prev.clone() }, Some(&prev)).await?;
         lock(&self.tests).remove(id);
+        self.forget_token(id);
         Ok(self.publish(ctx).await)
     }
 }
@@ -756,14 +780,19 @@ async fn probe_remote(ctx: &Ctx, id: &str, c: &ConnectorSpec, at: i64) -> ProbeR
     probe.result(Outcome::Failed("It didn't list its tools".into()), at)
 }
 
-pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn ResourceKind>) {
-    let pane = Arc::new(Pane {
+pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn ResourceKind>, runs: RunCache) -> Arc<Pane> {
+    let pane = Arc::new_cyclic(|me| Pane {
         kind,
         connectors,
         tests: Mutex::default(),
         testing: Mutex::default(),
         dismissed: Mutex::default(),
         pending: Mutex::default(),
+        runs,
+        refreshing: Mutex::default(),
+        timers: Mutex::default(),
+        timer_seq: AtomicU64::default(),
+        me: me.clone(),
     });
     macro_rules! on {
         ($C:ty, |$p:ident, $ctx:ident, $a:ident| $body:expr) => {{
@@ -783,8 +812,9 @@ pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn
     on!(api::Signin, |p, ctx, a| p.signin(&ctx, &a.id, &a.origin).await);
     on!(api::OauthFinish, |p, ctx, a| p.finish(&ctx, &a.query).await);
     on!(api::Signout, |p, ctx, a| p.signout(&ctx, &a.id).await);
+    on!(api::Token, |p, ctx, a| p.token_for(&ctx, &a.id, a.force).await);
     crate::agent::register(s, &pane);
-    let cb = pane.clone();
+    let (cb, out) = (pane.clone(), pane.clone());
     s.route(wisp_kernel::http::Route {
         method: "GET",
         pattern: "/connectors/oauth/callback",
@@ -822,9 +852,11 @@ pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn
                 lock(&p.tests).extend(kept);
             }
             p.publish(&c).await;
+            p.keep_fresh(&c).await;
         });
         Ok(())
     });
+    out
 }
 
 /// Each connector's last check, as its row on the pane's topic kept it.

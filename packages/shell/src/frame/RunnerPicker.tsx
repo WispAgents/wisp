@@ -60,6 +60,7 @@ import { SUBAGENT_NAME, type Variant } from './trial.ts';
 import { AUTO_SETTING, FACTORY, autoEnabled } from './launch-pick.ts';
 import { FACTORY_HOW_URL, factoryNames, factoryPane, factoryPick, factoryRow, useFactory } from './factory-pick.ts';
 import '../i18n/lazy.ts';
+import '../i18n/home.ts';
 
 /** v1 effortLabel: "X-High", else the level capitalised */
 const levelLabel = (e: string): string => (e === 'xhigh' ? 'X-High' : e.charAt(0).toUpperCase() + e.slice(1));
