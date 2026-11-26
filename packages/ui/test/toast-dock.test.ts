@@ -1,6 +1,6 @@
 // The toast stack keeps clear of the box at the bottom (toast-dock-scope.ts; v1 toast.js clearDock): B18.
 import { expect, test } from 'vitest';
-import { centreX, dockBottom, roomFor } from '../src/controls/toast-dock-scope.ts';
+import { centreX, dockBottom, promptX, roomFor } from '../src/controls/toast-dock-scope.ts';
 
 const box = (top: number, bottom: number, left = 400, right = 1100) => ({ top, bottom, left, right, width: right - left });
 
@@ -35,4 +35,18 @@ test('the dock is looked for under the stack centre, not the window middle', () 
   // a reply box in the main pane (400..1100) is under a centre of 880, but not under one of 300
   expect(dockBottom(900, 1440, [box(804, 884)], 880)).toBe('106px');
   expect(dockBottom(900, 1440, [box(804, 884)], 300)).toBe('');
+});
+
+test('the stack centres on the prompt box, not the main pane, when one is drawn', () => {
+  const main = { left: 320, right: 1440, width: 1120 };
+  // a reply box at 400..1100 (a side pane on the right): centre 750, not the pane's 880
+  expect(promptX(1440, main, [box(804, 884)])).toBe(750);
+  // the lowest prompt box wins (a composer above a reply box)
+  expect(promptX(1440, main, [box(300, 400, 500, 900), box(804, 884)])).toBe(750);
+  // no prompt box, one not drawn, or one outside the main pane: the pane's middle
+  expect(promptX(1440, main, [])).toBe(880);
+  expect(promptX(1440, main, [{ top: 0, bottom: 0, left: 0, right: 0, width: 0 }])).toBe(880);
+  expect(promptX(1440, main, [box(804, 884, 0, 300)])).toBe(880);
+  // no main pane: a prompt box in the window still wins
+  expect(promptX(390, null, [box(700, 800, 10, 370)])).toBe(190);
 });
