@@ -261,6 +261,8 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
     rows: (t) => topicRows(t),
   };
 
+  // the turn streaming in each task: a direct follow-up stops it as Interrupted before its own starts (the runtime does)
+  const live = new Map<string, { turnId: string; stop: () => void }>();
   /** A turn that streams: a tool call, the answer token by token, then done with a presentation. */
   function runStream(sid: string, tokens: number, everyMs: number, ownId?: string, prompt?: string): void {
     // the task's topic is `session:<bare id>` (as the client subscribes), its rows keep the peer's key
@@ -268,6 +270,29 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
     const turns = topicRows(topic).filter((r) => r.e === 'turn');
     // the client may have named it (its follow-up shows at once under that id)
     const turnId = ownId ?? `${sid}:t${turns.length + 1}`;
+    live.get(sid)?.stop();
+    let text = '';
+    let over = false;
+    live.set(sid, {
+      turnId,
+      stop: () => {
+        over = true;
+        live.delete(sid);
+        commit([
+          {
+            topic,
+            e: 'turn',
+            id: turnId,
+            op: 'patch',
+            ops: [
+              { op: 'replace', path: '/status', value: 'stopped' },
+              { op: 'replace', path: '/answer', value: text.trim() },
+              { op: 'replace', path: '/body/presentation', value: { blocks: [{ type: 'hero', title: 'Interrupted', summary: 'A follow-up came in; it goes next.', status: 'partial' }] } },
+            ],
+          },
+        ]);
+      },
+    });
     const words = data.words;
     const events = (): { seq: number }[] => (store.get(topic)?.get(rowKey('event', sid))?.v as { seq: number }[] | undefined) ?? [];
     const nextSeq = (): number => (events().at(-1)?.seq ?? 0) + 1;
@@ -287,9 +312,9 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
         ...(ended() ? [{ op: 'remove' as const, path: '/summary/endedAt' }] : []),
       ]),
     ]);
-    let text = '';
     let n = 0;
     const tick = (): void => {
+      if (over) return;
       const at = events().length - 1;
       text += `${words[n % words.length] ?? 'and'} `;
       n += 1;
@@ -306,6 +331,7 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
         timers.setTimeout(tick, everyMs);
         return;
       }
+      live.delete(sid);
       commit([
         ...ops,
         {

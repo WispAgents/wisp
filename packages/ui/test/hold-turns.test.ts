@@ -227,3 +227,54 @@ test('holdMedia_keeps_following_when_already_at_bottom_across_async_scroll_event
 
   held.stop();
 });
+
+test('holdMedia_a_follow_up_interrupting_a_run_keeps_the_end_when_the_page_shrinks_and_grows_before_the_scroll_event', () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    },
+  );
+  const p = page({ scrollHeight: 1500, clientHeight: 500, scrollTop: 1000, chat: true });
+  p.add('t1', 0);
+  const held = holdMedia(p.body, p.dock);
+  held.toEnd();
+  expect(held.following()).toBe(true);
+  // the interrupted turn folds (the browser clamps the view to 933) and the follow-up's turn lands (+148) before the
+  // clamp's scroll event: 67 px up, 148 px from the new end, and no wheel, touch, key or scrollbar behind it
+  p.m.scrollTop = 933;
+  p.m.scrollHeight = 1581;
+  p.body.dispatchEvent(new Event('scroll'));
+  expect(held.following()).toBe(true);
+  expect(p.m.scrollTop).toBe(1081);
+  // the reader's own wheel up still leaves the end
+  p.body.dispatchEvent(new WheelEvent('wheel', { deltaY: -10 }));
+  p.m.scrollTop = 900;
+  p.body.dispatchEvent(new Event('scroll'));
+  expect(held.following()).toBe(false);
+  held.stop();
+});
+
+test('cards_mode_a_turn_already_there_when_the_reader_asked_for_the_end_finishing_never_lands_on_its_start', () => {
+  const p = page({ scrollHeight: 1000, clientHeight: 500, scrollTop: 500 });
+  const t1 = p.add('t1', -300);
+  t1.setAttribute('data-live', '');
+  const f = turnFollower(p.body, p.turns, true, undefined, () => true);
+  flush();
+  // a follow-up sent while t1 runs: the end, from here
+  f.stayEnd();
+  // t1 stops (Interrupted) and grows by its end card: the view stays at the end, not on t1's start
+  t1.removeAttribute('data-live');
+  f.changed([{ type: 'attributes', target: t1, attributeName: 'data-live' } as unknown as MutationRecord]);
+  p.m.scrollHeight = 1100;
+  expect(f.grew(100)).toBe(true);
+  expect(p.m.scrollTop).toBe(600);
+  // the follow-up's own turn lands after it and finishes: Cards still shows it from its start (F-page-44)
+  const t2 = p.add('t2', 120);
+  f.changed([{ type: 'childList', addedNodes: [t2] as unknown as NodeList, target: p.turns } as unknown as MutationRecord]);
+  p.m.scrollHeight = 1400;
+  expect(f.grew(300)).toBe(true);
+  expect(p.m.scrollTop).toBe(720);
+});
