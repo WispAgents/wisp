@@ -174,6 +174,18 @@ fn split_source(source: &str) -> (String, String) {
     (sub, r.to_owned())
 }
 
+/// A `grid://<handle>/<key>[?ref=v2][#<cap>]` module source at the version to fetch: its own `?ref=`, else `pinned`
+/// (`v3`, from lock.yml), else the latest. The `#<cap>` an unlisted share opens with (ADR-0130) stays, at the end.
+fn grid_link(source: &str, pinned: Option<i64>) -> String {
+    let (rest, cap) = source.split_once('#').map_or((source, String::new()), |(r, c)| (r, format!("#{c}")));
+    // a cap written before `?ref=` (`#<cap>?ref=v2`) is still the cap, and its ref still the ref
+    let (cap, late) = cap.split_once("?ref=").map_or((cap.clone(), String::new()), |(c, r)| (c.to_owned(), r.to_owned()));
+    let (base, r) = rest.split_once("?ref=").unwrap_or((rest, ""));
+    let r = if r.is_empty() { late } else { r.to_owned() };
+    let want = if r.is_empty() { pinned.map(|v| format!("v{v}")).unwrap_or_default() } else { r };
+    if want.is_empty() { format!("{base}{cap}") } else { format!("{base}?ref={want}{cap}") }
+}
+
 /// The folder evaluated: resources, outputs, graph.
 pub fn config(o: &Opts, ks: &[KindInfo], dir: &Path) -> Result<Config> {
     let files = files_in(dir);
@@ -251,13 +263,10 @@ pub fn init_modules(dir: &Path, upgrade: bool) -> Result<Vec<String>> {
     let mut said = Vec::new();
     for (name, source) in declared_modules(dir) {
         if source.starts_with("grid://") {
-            // a share on the grid: pinned by its version, moved by -upgrade (or its own ?ref=)
-            let (_, r) = split_source(&source);
-            let base = source.split("?ref=").next().unwrap_or_default();
+            // a share on the grid: pinned by its version, moved by -upgrade (or its own ?ref=); lock.yml keeps the
+            // source as written, its `#<cap>` too
             let pinned = had.get(&name).and_then(|m| m.get("version")).and_then(Value::as_i64).filter(|_| !upgrade);
-            let want = if r.is_empty() { pinned.map(|v| format!("v{v}")).unwrap_or_default() } else { r };
-            let link = if want.is_empty() { base.to_owned() } else { format!("{base}?ref={want}") };
-            let (files, version) = crate::cloud_cli::fetch_module(&link)?;
+            let (files, version) = crate::cloud_cli::fetch_module(&grid_link(&source, pinned))?;
             let at = dir.join("modules").join(&name);
             let _ = std::fs::remove_dir_all(&at);
             std::fs::create_dir_all(&at).map_err(|e| CliError::said(e.to_string()))?;
@@ -816,5 +825,17 @@ mod tests {
         assert_eq!(split_source("github.com/acme/mods//team"), ("team".into(), String::new()));
         assert!(remote("github.com/acme/x") && !remote("./mods/team"));
         assert_eq!(fmt_text("a:\t1  \n\n\n"), "a:  1\n");
+    }
+
+    /// ADR-0130: an unlisted module share is `grid://ada/team#<cap>`; pinning it in lock.yml put `?ref=` after the cap,
+    /// and dropping the cap made it 404. The cap stays, last; the ref is its own, else the pinned one.
+    #[test]
+    fn a_grid_module_keeps_its_cap_when_pinned() {
+        assert_eq!(grid_link("grid://ada/team#abc", Some(3)), "grid://ada/team?ref=v3#abc");
+        assert_eq!(grid_link("grid://ada/team#abc", None), "grid://ada/team#abc");
+        assert_eq!(grid_link("grid://ada/team?ref=v1#abc", Some(3)), "grid://ada/team?ref=v1#abc");
+        assert_eq!(grid_link("grid://ada/team#abc?ref=v1", Some(3)), "grid://ada/team?ref=v1#abc");
+        assert_eq!(grid_link("grid://ada/team", Some(2)), "grid://ada/team?ref=v2");
+        assert_eq!(grid_link("grid://ada/team?ref=v1", None), "grid://ada/team?ref=v1");
     }
 }

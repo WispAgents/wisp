@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 use wisp_runtime_api::harness::{HarnessEvent, HarnessStats};
-use wisp_runtime_api::model::{Activity, ChangeOp, Edit, FileChange, Mode, ToolKind};
+use wisp_runtime_api::model::{Activity, ChangeOp, Edit, FileChange, FullOutput, Mode, ToolKind};
 
 /// How long a turn waits on a background shell (a dev server, a watcher) with nothing new from its CLI before it ends
 /// with the answer it already gave (`Head::interim`): an answer that said "I'll report once it's done" over a task that
@@ -73,6 +73,19 @@ pub fn clip_output(text: &str) -> String {
     format!("{head}\n… {what} cut …\n{tail}")
 }
 
+/// The whole of an output [`clip_output`] cuts, as a step names it (audit F8: what the clip cut was gone for good, a
+/// build's middle with it): its hash as the store's blobs name it (BLAKE3), lines and bytes. None when nothing is cut,
+/// so a short output writes nothing more.
+#[must_use]
+pub fn full_of(text: &str) -> Option<FullOutput> {
+    let out = text.trim_end();
+    (utf16_len(out) > MAX_OUTPUT).then(|| FullOutput {
+        blob: format!("blake3:{}", blake3::hash(out.as_bytes()).to_hex()),
+        lines: u32::try_from(out.lines().count()).unwrap_or(u32::MAX),
+        bytes: out.len() as u64,
+    })
+}
+
 /// A blocked action the turn's permissions refused (the card after the turn offers to retry it).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BlockedAction {
@@ -137,9 +150,19 @@ pub struct Head {
     /// its thinking, tool errors, tool calls and outputs that quote one are flagged where (`hide`). In memory only:
     /// never written, never logged.
     pub env_values: EnvValues,
+    /// whole outputs the steps just made name (`full`), for the host to keep in the store's blobs: taken after each
+    /// event ([`Head::take_full`]). Never one that read or quotes a .env value (ADR-0050).
+    pub full: Vec<String>,
+    /// its host keeps whole outputs (a turn's run): a side run's steps are kept nowhere, so they name none
+    pub keep_full: bool,
 }
 
 impl Head {
+    /// The whole outputs to keep since the last call.
+    pub fn take_full(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.full)
+    }
+
     /// The turn waits only on a background shell it left up (a dev server), not on its subagents: after
     /// [`BACKGROUND_QUIET_MS`] with nothing new from its CLI it ends with the answer it gave.
     #[must_use]
@@ -247,11 +270,18 @@ pub fn step_of(ev: &HarnessEvent) -> Option<Activity> {
             call_id: id.clone(),
             output: output.as_deref().filter(|_| shows_output(*kind)).map(clip_output),
             hide: std::collections::BTreeMap::new(),
+            full: None,
         },
         HarnessEvent::Text { text } => Activity::Text { text: head16(text, MAX_TEXT).to_owned(), hide: Vec::new() },
-        HarnessEvent::ToolError { name, text, .. } => {
-            Activity::ToolError { name: if name.is_empty() { "Tool".into() } else { name.clone() }, text: text.clone(), hide: Vec::new() }
-        }
+        // a failed call's error comes whole from its parser and is kept like an output, start and end (audit F2: a
+        // test run's failure is at its end); it names the call it ends, so the app shows it as that call's output (F3)
+        HarnessEvent::ToolError { name, text, id } => Activity::ToolError {
+            name: if name.is_empty() { "Tool".into() } else { name.clone() },
+            text: if utf16_len(text) <= MAX_OUTPUT { text.clone() } else { clip_output(text) },
+            call_id: id.clone(),
+            hide: Vec::new(),
+            full: None,
+        },
         HarnessEvent::Thinking { text } => Activity::Thinking { text: text.clone(), hide: Vec::new() },
         _ => return None,
     })
@@ -274,6 +304,7 @@ pub fn waiting_step(tasks: &[String]) -> Activity {
         output: None,
         title: None,
         hide: std::collections::BTreeMap::new(),
+        full: None,
     }
 }
 
@@ -331,6 +362,36 @@ fn flag_quotes(head: &mut Head, ev: &HarnessEvent, mut a: Activity) -> Activity 
     a
 }
 
+/// A clipped step's whole output kept (`full`, [`Head::full`]) unless it read a .env file or quotes a value the task
+/// read anywhere in it, the cut part too: that one stays as clipped (ADR-0050).
+fn keep_full(head: &mut Head, ev: &HarnessEvent, mut a: Activity) -> Activity {
+    if !head.keep_full {
+        return a;
+    }
+    let (whole, env, hidden, full) = match (&mut a, ev) {
+        (Activity::Tool { output: Some(_), hide, full, .. }, HarnessEvent::Tool { output: Some(o), file, detail, label, .. }) => {
+            let env = crate::env_mask::call_reads_env(file.as_deref(), detail.as_deref(), Some(label));
+            (o, env || !wisp_envmask::value_spans(o, &head.env_values.0).is_empty(), !hide.is_empty(), full)
+        }
+        (Activity::ToolError { hide, full, .. }, HarnessEvent::ToolError { id, text, .. }) => {
+            let env = id.as_ref().is_some_and(|id| head.env_calls.contains(id));
+            (text, env || !wisp_envmask::quote_spans(text, &head.env_values.0).is_empty(), !hide.is_empty(), full)
+        }
+        (Activity::ToolOutput { env, hide, full, .. }, HarnessEvent::ToolOutput { text, .. }) => {
+            (text, *env || !wisp_envmask::value_spans(text, &head.env_values.0).is_empty(), !hide.is_empty(), full)
+        }
+        _ => return a,
+    };
+    if !env
+        && !hidden
+        && let Some(f) = full_of(whole)
+    {
+        head.full.push(whole.trim_end().to_owned());
+        *full = Some(f);
+    }
+    a
+}
+
 /// Applies one event to the head and says what else to do. `plain`: the turn asked for a plain answer
 /// (wisp blocks off, or Chat mode: no end-of-turn report), so its prose is the whole answer; `is_fallback`: whether a text is an answer that broke the protocol (the block
 /// parser's `fallback`), passed in so this module stays independent of it.
@@ -354,17 +415,21 @@ pub fn apply(head: &mut Head, ev: &HarnessEvent, plain: bool, is_fallback: &dyn 
         }
         HarnessEvent::Tool { .. } | HarnessEvent::ToolError { .. } | HarnessEvent::Thinking { .. } => {
             note_env_call(head, ev);
-            return step_of(ev).map_or(Effect::None, |a| Effect::Append(flag_quotes(head, ev, a)));
+            return step_of(ev).map_or(Effect::None, |a| {
+                let a = flag_quotes(head, ev, a);
+                Effect::Append(keep_full(head, ev, a))
+            });
         }
         HarnessEvent::ToolOutput { id, text } => {
             let env = head.env_calls.contains(id);
             if env {
                 head.env_values.add(text);
             }
-            let text = clip_output(text);
+            let clipped = clip_output(text);
             // another command's output quoting a value the task read (`printenv`, `echo $KEY`)
-            let hide = if env { Vec::new() } else { wisp_envmask::value_spans(&text, &head.env_values.0) };
-            return Effect::Append(Activity::ToolOutput { call_id: id.clone(), text, env, hide });
+            let hide = if env { Vec::new() } else { wisp_envmask::value_spans(&clipped, &head.env_values.0) };
+            let a = Activity::ToolOutput { call_id: id.clone(), text: clipped, env, hide, full: None };
+            return Effect::Append(keep_full(head, ev, a));
         }
         HarnessEvent::Change { file, op, edits, early, .. } => {
             if !*early || !head.changes.iter().any(|c| &c.file == file) {

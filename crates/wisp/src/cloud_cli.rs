@@ -9,7 +9,7 @@
 //!   `wisp share <task> --to cloud` is `share_cli`'s, through `share.send`;
 //! - `wisp shares [--revoke <id>] [--updates]`: what you've shared (access, views, imports, versions), and
 //!   what you imported that has an update;
-//! - `wisp open <link>`: a share link (`…/s/<id>`, `grid://<handle>/<name>`, `wisp://open/<id>`): a setup's
+//! - `wisp open <link>`: a share link (`…/s/<id>`, `grid://<handle>/<name>[#<cap>]`, `wisp://open/<id>`): a setup's
 //!   plan, then apply it (`--yes`); a task goes to `wisp open`'s choices.
 use std::fmt::Write as _;
 use std::io::IsTerminal as _;
@@ -671,6 +671,7 @@ mod tests {
         );
         assert!(
             is_link("grid://ada/review")
+                && is_link("grid://ada/crew#abc")
                 && is_link("http://wisp.localhost:8080/s/AbC")
                 && is_link("wisp://open/AbC")
                 && !is_link("https://example.com/x.wisp-task")

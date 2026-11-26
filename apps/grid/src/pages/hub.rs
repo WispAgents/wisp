@@ -23,7 +23,8 @@ pub struct ShareCard {
     pub summary: String,
     pub from: String,
     pub version: i64,
-    /// `grid://<handle>/<key>`
+    /// `grid://<handle>/<key>` once published, else `grid://<handle>/<key>#<cap>` (`Shares::source`, ADR-0130): the page
+    /// shows the name that opens it, never one that 404s for the reader
     pub source: String,
     /// who may open it: `anyone` | `people` | `teams` | `password`
     pub access: String,
@@ -164,13 +165,29 @@ pub fn share_page(cfg: &PageCfg, c: &ShareCard, content: &Value, viewer: Option<
     app_page(&AppPage { head: STYLE, ..AppPage::new(cfg, &c.title, &body) }.signed(viewer))
 }
 
-/// A locked share: only that it's locked, and how it opens. Nothing of what it is.
-pub fn locked_page(cfg: &PageCfg, id: &str, access: &str, wrong: bool, viewer: Option<&PageUser>) -> String {
+/// What came of the password the locked page was sent with, if any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tried {
+    #[default]
+    Not,
+    Wrong,
+    /// past the guesses a minute allows: nothing was checked
+    TooMany,
+}
+
+/// A locked share: only that it's locked, and how it opens. Nothing of what it is. `version` is the link's
+/// `?ref=vN` (parsed, so only ever a number here): the form posts back to it, so unlocking opens that version.
+pub fn locked_page(cfg: &PageCfg, id: &str, access: &str, tried: Tried, version: Option<i64>, viewer: Option<&PageUser>) -> String {
     let body = match access {
         "password" => format!(
-            r#"<h1 class="h1">This share has a password</h1><p class="sub">Ask whoever shared it for the password.</p>{}<form method="post" action="/s/{}" style="margin-top:16px;display:flex;gap:10px"><input class="input" type="password" name="password" autocomplete="off" autofocus required><button class="primary tall">Open</button></form>"#,
-            if wrong { r#"<div class="flash bad">That password isn’t right.</div>"# } else { "" },
-            esc(id)
+            r#"<h1 class="h1">This share has a password</h1><p class="sub">Ask whoever shared it for the password.</p>{}<form method="post" action="/s/{}{}" style="margin-top:16px;display:flex;gap:10px"><input class="input" type="password" name="password" autocomplete="off" autofocus required><button class="primary tall">Open</button></form>"#,
+            match tried {
+                Tried::Not => "",
+                Tried::Wrong => r#"<div class="flash bad">That password isn’t right.</div>"#,
+                Tried::TooMany => r#"<div class="flash bad">Too many tries. Wait a minute and try again.</div>"#,
+            },
+            esc(id),
+            version.map(|v| format!("?ref=v{v}")).unwrap_or_default()
         ),
         "people" => {
             r#"<h1 class="h1">This share is for some people only</h1><p class="sub">Sign in as one of them to open it.</p>"#.to_owned()
@@ -255,10 +272,22 @@ mod tests {
         assert!(setup.contains("reviewer") && setup.contains("agents.wisp.yml") && setup.contains("v2"));
         let doc = share_page(&cfg(), &card("doc"), &json!({ "markdown": "# Notes" }), None);
         assert!(doc.contains("# Notes"));
-        let locked = locked_page(&cfg(), "abc", "password", true, None);
+        let locked = locked_page(&cfg(), "abc", "password", Tried::Wrong, None, None);
         assert!(locked.contains("password isn’t right") && !locked.contains("Review"));
         assert!(gone_page(&cfg(), "expired", None).contains("expired"));
         assert!(gallery_page(&cfg(), "<q>", &[], None).contains("Nothing matches"));
+    }
+
+    /// Unlocking `/s/<id>?ref=v2` opened the latest version: the form posted to `/s/<id>`, and the version is read
+    /// from the post's own query. It keeps the link's (parsed) version, the too-many-tries state included.
+    #[test]
+    fn a_locked_share_s_form_keeps_its_version() {
+        let v2 = locked_page(&cfg(), "abc", "password", Tried::Not, Some(2), None);
+        assert!(v2.contains(r#"action="/s/abc?ref=v2""#), "{v2}");
+        assert!(locked_page(&cfg(), "abc", "password", Tried::Not, None, None).contains(r#"action="/s/abc" "#));
+        let many = locked_page(&cfg(), "abc", "password", Tried::TooMany, Some(2), None);
+        assert!(many.contains("Too many tries. Wait a minute and try again.") && !many.contains("isn’t right"));
+        assert!(many.contains(r#"action="/s/abc?ref=v2""#));
     }
 
     #[test]
@@ -349,7 +378,7 @@ mod tests {
         assert!(share_page(&cfg(), &c, &json!({}), Some(&u)).contains(nav));
         assert!(!share_page(&cfg(), &c, &json!({}), None).contains(nav));
         assert!(gone_page(&cfg(), "expired", Some(&u)).contains(nav));
-        assert!(locked_page(&cfg(), "abc", "password", false, Some(&u)).contains(nav));
+        assert!(locked_page(&cfg(), "abc", "password", Tried::Not, None, Some(&u)).contains(nav));
         assert!(gallery_page(&cfg(), "", &[], Some(&u)).contains(nav));
     }
 }

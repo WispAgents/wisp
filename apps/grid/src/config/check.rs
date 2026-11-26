@@ -66,6 +66,9 @@ pub(super) fn validate_hostd(cfg: &GridConfig) -> Result<()> {
             ));
         }
     }
+    if h.max_running_per_user.is_some_and(|n| n < 1) {
+        return Err(GridError::Config("hostd.maxRunningPerUser: a whole number above 0.".into()));
+    }
     for (k, v) in [("evictAfterMs", h.evict_after_ms), ("queueMs", h.queue_ms)] {
         if v.is_some_and(|v| v < 0) {
             return Err(GridError::Config(format!("hostd.{k}: milliseconds, a whole number.")));

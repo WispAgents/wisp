@@ -10,7 +10,7 @@ import { copyText } from './clipboard.ts';
 import { sharePreview, shareCreate, shareStop, SESSION } from './commands.ts';
 import { CarryChips, LinkRow, WhatGoes, WhoPicker, WorkOption } from './DialogParts.tsx';
 import { suggestPasskey } from './link.ts';
-import { canShare, previewNote, workOption } from './model.ts';
+import { canShare, passkeyArg, previewNote, workOption } from './model.ts';
 import type { ShareableTask, Shared, SharePreview } from './types.ts';
 import '../i18n/lazy.ts';
 
@@ -52,16 +52,15 @@ export default function ShareDialog(props: { client: PluginClient; params: Share
     if (v === 'pass' && !untracked(passkey)) setPasskey(suggestPasskey());
   };
   const share = async (): Promise<void> => {
-    const locked = who() === 'pass';
-    const key = locked ? passkey().trim() : '';
-    if (locked && !key && !shared()?.locked) return;
+    const pass = passkeyArg(who(), passkey(), !!shared()?.locked);
+    if (!pass) return;
     setBusy(true);
     try {
-      // Locked with nothing typed keeps the passkey it has; open sends '' to take it off.
-      const r = await c.run(shareCreate, { session: props.params.session, ...(!(locked && !key) && { passkey: key }), work: work() });
+      const r = await c.run(shareCreate, { session: props.params.session, ...pass, work: work() });
       setShared(r);
       const copied = await copyText(r.url);
-      const head = t(copied ? (locked ? 'stuff.share.copiedPass' : 'stuff.share.copied') : 'stuff.share.made');
+      // locked as the grid answered it (a kept passkey too), not as typed here
+      const head = t(copied ? (r.locked ? 'stuff.share.copiedPass' : 'stuff.share.copied') : 'stuff.share.made');
       setNotes([head, ...(r.notes ?? [])].map((text) => ({ text, tone: 'info' })));
     } catch (err) {
       setNotes([{ text: err instanceof Error ? err.message : String(err), tone: 'bad' }]);
@@ -93,7 +92,7 @@ export default function ShareDialog(props: { client: PluginClient; params: Share
           size="sm"
           icon="share"
           loading={busy()}
-          disabled={!ready() || (who() === 'pass' && !passkey().trim() && !shared()?.locked)}
+          disabled={!ready() || !passkeyArg(who(), passkey(), !!shared()?.locked)}
           onClick={() => void share()}
         >
           {shared() ? t('stuff.share.update') : t('stuff.share.share')}

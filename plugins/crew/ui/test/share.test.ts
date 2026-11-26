@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { bundleText, shareNotes, shareWhat } from '../src/share.ts';
+import { bundleText, linkAccess, linkHintKey, shareNotes, shareWhat } from '../src/share.ts';
 import type { Member } from '../src/types.ts';
 
 const m = (id: string, x: Partial<Member> = {}): Member => ({ id, name: id.toUpperCase(), kit: [], notebook: '', team: [], ...x }) as Member;
@@ -19,4 +19,14 @@ test('the_delegates_note_is_left_out_when_the_option_says_it_and_a_bundle_is_sav
   expect(shareNotes(notes, ['Bob'])).toEqual(['Their notebook goes along.']);
   expect(shareNotes(notes, [])).toEqual(notes);
   expect(bundleText({ wispCrew: 1 })).toBe('{\n  "wispCrew": 1\n}\n');
+});
+
+// Sharing the crew again reset `wisp cloud access teams:acme` to anyone; now the link keeps it, and the dialog says so
+test('the_link_says_who_opens_it_as_the_grid_kept_it', () => {
+  expect(linkAccess({ access: { kind: 'teams', teams: ['acme'] } })).toBe('teams');
+  expect(linkHintKey(linkAccess({ access: { kind: 'teams' } }))).toBe('wisp.crew.share.linkHintTeams');
+  expect(linkHintKey(linkAccess({ access: { kind: 'password' } }))).toBe('wisp.crew.share.linkHintPassword');
+  // an older wisp's answer has no view: anyone with the link, as before
+  expect([linkAccess(undefined), linkAccess({}), linkAccess({ access: { kind: 'odd' } })]).toEqual(['anyone', 'anyone', 'anyone']);
+  expect(linkHintKey('anyone')).toBe('wisp.crew.share.linkHint');
 });

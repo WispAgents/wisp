@@ -22,7 +22,8 @@ import org.json.JSONObject;
  */
 @CapacitorPlugin(name = "LocalNotifications", permissions = @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "display"))
 public class Notifications extends Plugin {
-    /** {notifications: [{id, title, body, extra}]}: extra is where a tap goes (a Target). */
+    /** {notifications: [{id, title, body, extra}]}: extra is where a tap goes (a Target); id is the note's tag (the
+     *  shell sends a task's id), so a later note under it replaces the earlier one. */
     @PluginMethod
     public void schedule(PluginCall call) {
         JSArray list = call.getArray("notifications", new JSArray());
@@ -37,6 +38,18 @@ public class Notifications extends Plugin {
             ids.put(new JSObject().put("id", tag));
         }
         call.resolve(new JSObject().put("notifications", ids));
+    }
+
+    /** {notifications: [{id}]}: the notes posted under those tags go (their task was opened in the app). */
+    @PluginMethod
+    public void removeDelivered(PluginCall call) {
+        JSArray list = call.getArray("notifications", new JSArray());
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject n = list.optJSONObject(i);
+            String tag = n == null ? "" : n.optString("id", "");
+            if (!tag.isEmpty()) Alerts.cancel(getContext(), tag);
+        }
+        call.resolve();
     }
 
     @Override

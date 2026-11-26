@@ -11,7 +11,8 @@ pub const MAX_FETCHED: usize = 1 << 20;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
-    /// a share link (`https://<grid>/s/<id>`, `wisp://open/<id>`, `grid://<handle>/<name>`), fetched through wisp.grid-client
+    /// a share link (`https://<grid>/s/<id>`, `wisp://open/<id>`, `grid://<handle>/<name>[#<cap>]`), fetched through
+    /// wisp.grid-client as pasted: an unlisted share's `#<cap>` is what opens it by name (ADR-0130)
     Share(String),
     /// a GitHub gist by id (v1's Share as a secret gist), read from api.github.com without a token
     Gist(String),
@@ -175,6 +176,8 @@ mod tests {
         assert_eq!(source_of("https://grid.trywisp.dev/s/k3j").unwrap(), Source::Share("https://grid.trywisp.dev/s/k3j".into()));
         assert_eq!(source_of("http://localhost:7000/s/k3j").unwrap().kind(), "link");
         assert_eq!(source_of("wisp://open/k3j").unwrap().kind(), "link");
+        // an unlisted crew's name keeps its cap (ADR-0130): without it the grid answers as if there were none
+        assert_eq!(source_of(" grid://ada/crew#0f3a ").unwrap(), Source::Share("grid://ada/crew#0f3a".into()));
         assert_eq!(source_of("https://example.com/ada.crew.json").unwrap().kind(), "url");
         assert!(source_of("http://example.com/ada.crew.json").is_err(), "plain http only for a share link");
         assert!(source_of("gist:../etc").is_err());

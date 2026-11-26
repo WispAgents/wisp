@@ -134,7 +134,21 @@ fn url_of(grid: &str, l: &Link) -> String {
     let q = |v: &Option<String>| v.as_ref().map(|r| format!("?ref={r}")).unwrap_or_default();
     match l {
         Link::Id { id, version, .. } => format!("{grid}/api/shares/{id}{}", q(version)),
-        Link::Name { handle, name, version } => format!("{grid}/api/shares/by/{handle}/{name}{}", q(version)),
+        Link::Name { handle, name, version, cap } => {
+            let cap = cap.as_ref().map(|c| format!("{}cap={c}", if version.is_some() { '&' } else { '?' })).unwrap_or_default();
+            format!("{grid}/api/shares/by/{handle}/{name}{}{cap}", q(version))
+        }
+    }
+}
+
+/// A name with no cap that the grid doesn't know: since ADR-0130 an unlisted share opens by name only with its cap, so
+/// an old `grid://<handle>/<key>` link may be one of those. Says so, instead of a bare "not found".
+fn uncapped_miss(l: &Link, status: u16) -> Option<String> {
+    match l {
+        Link::Name { handle, name, cap: None, .. } if status == 404 => {
+            Some(format!("There's no grid://{handle}/{name}, or this link is unlisted: ask its sharer for the new link"))
+        }
+        _ => None,
     }
 }
 
@@ -147,6 +161,9 @@ pub async fn fetch(st: &St, raw: &str, password: Option<&str>) -> Result<Fetched
     let (status, v) = net::call(&st.http, "GET", &url_of(&grid, &l), token.as_deref(), None, &headers).await?;
     if status >= 400 {
         let mut e = net::refused(status, &v);
+        if let Some(why) = uncapped_miss(&l, status) {
+            e.message = why;
+        }
         if let Some(how) = v.get("locked").and_then(Value::as_str) {
             e.message = match how {
                 "password" => "This share has a password: --password".into(),
@@ -225,6 +242,19 @@ mod tests {
         assert!(!verify("nope", &sig, b"files"));
         let l = link("grid://ada/review?ref=v1").unwrap_or(Link::Id { grid: None, id: String::new(), version: None });
         assert_eq!(url_of("http://g", &l), "http://g/api/shares/by/ada/review?ref=v1");
+        assert!(uncapped_miss(&l, 404).is_some_and(|m| m.contains("unlisted: ask its sharer for the new link")));
+    }
+
+    /// ADR-0130: an unlisted share opens by name only with its cap, so the cap in `grid://ada/crew#<cap>` goes to the
+    /// grid; a capped name that 404s is just missing.
+    #[test]
+    fn a_name_s_cap_goes_to_the_grid() {
+        let none = Link::Id { grid: None, id: String::new(), version: None };
+        let l = link("grid://ada/crew#abc").unwrap_or_else(|| none.clone());
+        assert_eq!(url_of("http://g", &l), "http://g/api/shares/by/ada/crew?cap=abc");
+        assert_eq!(uncapped_miss(&l, 404), None);
+        let l = link("grid://ada/crew?ref=v2#abc").unwrap_or(none);
+        assert_eq!(url_of("http://g", &l), "http://g/api/shares/by/ada/crew?ref=v2&cap=abc");
     }
 }
 

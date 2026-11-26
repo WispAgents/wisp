@@ -141,7 +141,7 @@ async fn through(r: reqwest::RequestBuilder) -> (Map<String, Value>, Vec<String>
     (v["headers"].as_object().unwrap().clone(), set)
 }
 
-const CLIENT_MARKS: [(&str, &str); 8] = [
+const CLIENT_MARKS: [(&str, &str); 9] = [
     ("x-wisp-preview", "22"),
     ("x-wisp-route", "grid"),
     ("x-wisp-upgrade", "websocket"),
@@ -150,6 +150,7 @@ const CLIENT_MARKS: [(&str, &str); 8] = [
     ("x-wisp-proxy-secret", "guess"),
     ("x-wisp-proxy-anything", "1"),
     ("x-forwarded-for", "10.0.0.1"),
+    ("x-wisp-proxy-client-ip", "6.6.6.6"),
 ];
 
 fn with_marks(mut r: reqwest::RequestBuilder, preview: &str) -> reqwest::RequestBuilder {
@@ -161,13 +162,15 @@ fn with_marks(mut r: reqwest::RequestBuilder, preview: &str) -> reqwest::Request
 
 fn no_client_marks(got: &Map<String, Value>, secret: &str) {
     for (k, _) in CLIENT_MARKS {
-        if k == "x-wisp-proxy-secret" {
+        if k == "x-wisp-proxy-secret" || k == "x-wisp-proxy-client-ip" {
             continue;
         }
         assert!(!got.contains_key(k), "{k} reached the box: {got:?}");
     }
     // the grid's own marks are still there, and its secret is the box's, never the client's guess
     assert_eq!(got["x-wisp-proxy-secret"], json!(secret));
+    // who is asking is the address Caddy put last in X-Forwarded-For (here the test's), never the client's claim
+    assert_eq!(got["x-wisp-proxy-client-ip"], json!("10.0.0.1"), "{got:?}");
     assert!(got.contains_key("x-forwarded-host"), "{got:?}");
     assert!(!got.contains_key("x-wisp-proxy-anything"));
 }

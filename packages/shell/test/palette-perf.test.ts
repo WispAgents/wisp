@@ -23,7 +23,7 @@ test('building_5000_tasks_palette_items_reads_the_keys_list_once_not_once_per_ta
   const rows: Record<string, unknown[]> = { session: sessions, project: [], setting: [] };
   const opened: unknown[] = [];
   const ctx = {
-    client: { entities: { list: (k: string) => () => rows[k] ?? [], keys: () => () => keys }, scope: { timers: { now: () => 0 } } },
+    client: { entities: { list: (k: string) => () => rows[k] ?? [], row: () => () => undefined, keys: () => () => keys }, home: () => 'peer1', scope: { timers: { now: () => 0 } } },
     t: (k: string) => k,
     navigate: (n: unknown) => opened.push(n),
   } as never;

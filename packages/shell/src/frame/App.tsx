@@ -4,7 +4,7 @@
 // view or New task is open (New task from the list opens Home's prompt box as its own page).
 
 import { createMemo, createSignal, createEffect, lazy, on, onCleanup, onMount, Show, type JSX } from 'solid-js';
-import type { Readable } from '@wisp/client';
+import { homeSetting, type Readable } from '@wisp/client';
 import { Sheet, Stage, Toasts, afterFirstScreen, useSignal, type StagePage } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Area, ClientsProvider, type Clients } from '../slot.tsx';
@@ -95,7 +95,8 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
   });
   // a crew member picked on the rail tints the list beside it (v1 #768); Settings → General → Crew tint turns it off
   const crew = useSignal(shell.client.entities.list<TintMember>('crew_member'));
-  const settings = useSignal(shell.client.entities.list<{ key: string; value: unknown }>('setting'));
+  // this wisp's own setting, not whichever computer's row came first (doc25c)
+  const tintSetting = useSignal(homeSetting(shell.client, 'crew.tint'));
   const tint = createMemo(() => {
     const n = nav().main;
     const picked =
@@ -105,7 +106,7 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
             // the page is keyed `<peer>:<id>`, a member's row by its bare id (the tint never matched)
             .find((m) => m.id === n.id || m.id === String(n.id).slice(String(n.id).indexOf(':') + 1))
         : undefined;
-    return crewTint(picked, settings().find((r) => r.key === 'crew.tint')?.value);
+    return crewTint(picked, tintSetting());
   });
   // the list and the side panel: shown or hidden, and as wide as you dragged them (v1 wisp.sideHidden, wisp.sideW,
   // the panel's pref.w), kept on this device. A drag shows at once and is saved as it's let go.

@@ -89,6 +89,7 @@ export default function All(props: { readonly client: PluginClient; /** Settings
                 {(s) => (
                   <SettingsRow
                     part="settings.all.row"
+                    settingKey={s.key}
                     title={titleParts(s.decl.title ?? s.key).label}
                     description={
                       <>

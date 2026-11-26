@@ -735,6 +735,8 @@ export const COMMANDS: Record<string, CommandFn> = {
     ];
     return { ops: [], result: [{ ...pr, repo: 'WispAgents/wisp', branch: 'fix/retry-scope', base: 'main', author: 'you', additions: 2, deletions: 2, changedFiles: 2, review: 'REVIEW_REQUIRED', files: [{ path: 'packages/client/src/peers.ts', additions: 1, deletions: 1 }, { path: 'packages/client/test/peers.test.ts', additions: 1, deletions: 1 }], checkList, reviewers: [], notes: [], threads: [] }] };
   },
+  // Find in task (R4-3): the mock sends every turn whole (no stubs), so the client finds everything itself
+  'runtime.searchTask': () => ({ ops: [], result: { hits: [] } }),
   // ⌘K past work: words in a task's prompts and answers (the peer's full-text index), a snippet around them
   'runtime.search': (a, ctx) => {
     const q = str(obj(a), 'q').toLowerCase().trim();

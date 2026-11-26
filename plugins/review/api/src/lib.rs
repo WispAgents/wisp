@@ -168,6 +168,11 @@ pub struct MaybeArgs {
     /// Review again (or the first, by hand): runs whatever the setting says
     #[serde(default)]
     pub force: bool,
+    /// who reviews this time instead of the setting (ship's Steward asks for `other-vendor`): runs even when the
+    /// setting is off. Additive (2026-11-26).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub pick: Option<String>,
 }
 
 /// Why it didn't start; "" when it did (or one is already running for that head).

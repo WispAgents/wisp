@@ -1,4 +1,5 @@
-//! Reading a share (ADR-0038): who may, which version, what counts as a view or an import, and the gallery.
+//! Reading a share (ADR-0038, ADR-0130): who may, by which name, which version, what counts as a view or an import, what a
+//! reader sees, and the gallery.
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
@@ -6,9 +7,65 @@ use super::{Content, Rec, Refused, SELECT, Shares, check_password, rec};
 use crate::error::Result;
 use crate::rows::UserRow;
 
+/// Whether `got` is `cap`, compared in constant time. An empty cap (none kept) opens nothing.
+fn cap_is(cap: &str, got: &str) -> bool {
+    use subtle::ConstantTimeEq as _;
+    !cap.is_empty() && bool::from(cap.as_bytes().ct_eq(got.trim().as_bytes()))
+}
+
 impl Shares {
+    /// The share's name: `grid://<handle>/<key>` once published, else with its capability after `#` (ADR-0130), the
+    /// one way it opens by name.
+    pub fn source(s: &Rec) -> String {
+        if s.published { format!("grid://{}/{}", s.handle, s.key) } else { format!("grid://{}/{}#{}", s.handle, s.key, s.cap) }
+    }
+
+    /// What a reader sees before the content: who shared it, what it is. Only ever shown to a reader who opened it
+    /// (by id, or by name with its cap) or, published, in the gallery: its source (with the cap while unlisted) tells
+    /// them nothing the link they used didn't.
+    pub fn card(&self, s: &Rec) -> Value {
+        json!({
+            "id": s.id, "url": self.url(&s.id), "kind": s.kind, "title": s.title, "summary": s.summary, "tags": s.tags,
+            "version": s.version, "ref": format!("v{}", s.version), "from": { "handle": s.handle },
+            "source": Self::source(s), "updatedAt": s.updated_at,
+        })
+    }
+
+    /// `grid://<handle>/<key>[#cap]` as `who` asks for it (ADR-0130): None, the same as no such name, unless it's
+    /// published, `who` shared it, `cap` is its capability, or it's for people or teams and `who` is one of them. An
+    /// unlisted `anyone` or `password` share needs the cap: its password is asked only once the name has opened.
+    pub fn named(&self, handle: &str, key: &str, who: Option<&UserRow>, cap: Option<&str>) -> Result<Option<Rec>> {
+        let Some(s) = self.by_name(handle, key)? else { return Ok(None) };
+        let opens = s.published
+            || who.is_some_and(|u| u.id == s.user_id)
+            || cap.is_some_and(|c| cap_is(&s.cap, c))
+            || (matches!(s.access.as_str(), "people" | "teams") && self.may_read(&s, who, None)?.is_ok());
+        Ok(opens.then_some(s))
+    }
+
     /// Whether `who` (signed in, or not) with `password` may read `s`; why not otherwise.
     pub fn may_read(&self, s: &Rec, who: Option<&UserRow>, password: Option<&str>) -> Result<std::result::Result<(), Refused>> {
+        self.may_read_checked(s, who, |kept| password.is_some_and(|p| check_password(kept, p)))
+    }
+
+    /// Whether this read would have to check a password: a password share, open still, read by someone not its
+    /// sharer. Only then does the edge count a guess and hash it.
+    pub fn asks_password(&self, s: &Rec, who: Option<&UserRow>) -> bool {
+        s.access == "password"
+            && s.pass.is_some()
+            && who.is_none_or(|u| u.id != s.user_id)
+            && s.revoked_at.is_none()
+            && s.expires_at.is_none_or(|e| e > self.clock.now_ms())
+    }
+
+    /// `may_read`, with the password's check (`pass_ok`, given the kept `salt:hash`) done by the caller: the edge
+    /// runs scrypt on the blocking pool first and hands in its answer.
+    pub fn may_read_checked(
+        &self,
+        s: &Rec,
+        who: Option<&UserRow>,
+        pass_ok: impl FnOnce(&str) -> bool,
+    ) -> Result<std::result::Result<(), Refused>> {
         if who.is_some_and(|u| u.id == s.user_id) {
             return Ok(Ok(()));
         }
@@ -31,7 +88,7 @@ impl Shares {
                 }
                 None => false,
             },
-            "password" => s.pass.as_deref().zip(password).is_some_and(|(k, p)| check_password(k, p)),
+            "password" => s.pass.as_deref().is_some_and(pass_ok),
             _ => false,
         };
         Ok(if ok { Ok(()) } else { Err(Refused::Locked(s.access.clone())) })

@@ -28,7 +28,9 @@ used and what breaks.
   model, mode, how long it took, token counts and cost, how many files changed). Error reports
   include the error's type, message and stack trace with paths removed.
 - **Who it's tied to:** a random ID made on install. No name, email or account, and PostHog keeps
-  no person profile for it.
+  no person profile for it. PostHog sees the IP address the events come from and uses it for a rough
+  location. On a wisp Cloud computer that would be the server's, so the computer sends the address
+  you reach it from instead.
 - **Turning it off:** Settings → Privacy → *Anonymous usage stats*, or run wisp with
   `WISP_TELEMETRY=0` or `DO_NOT_TRACK=1`. It's always off in CI.
 

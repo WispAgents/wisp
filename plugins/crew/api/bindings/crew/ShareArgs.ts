@@ -18,9 +18,14 @@ notebook?: boolean,
  */
 team?: boolean, 
 /**
- * a password: only who has it opens the link (none: anyone with the link)
+ * a password: only who has it opens the link (none: as `open` says)
  */
 password?: string, 
+/**
+ * true: anyone with the link opens it, whoever could before. None: a new link is anyone's with the link, and
+ * sharing again keeps who opens it (people, teams, a password set with `wisp cloud access`). Additive (2026-11-26).
+ */
+open?: boolean, 
 /**
  * when the link stops working (ms since the epoch)
  */

@@ -96,8 +96,8 @@ pub fn grid_url(raw: &str) -> Option<String> {
 pub enum Link {
     /// `<grid>/s/<id>[?ref=v2]`, or a bare id
     Id { grid: Option<String>, id: String, version: Option<String> },
-    /// `grid://<handle>/<name>[?ref=v2]`
-    Name { handle: String, name: String, version: Option<String> },
+    /// `grid://<handle>/<name>[?ref=v2][#<cap>]`: `cap` opens it while it's unlisted (ADR-0130)
+    Name { handle: String, name: String, version: Option<String>, cap: Option<String> },
 }
 
 fn split_ref(s: &str) -> (&str, Option<String>) {
@@ -107,16 +107,22 @@ fn split_ref(s: &str) -> (&str, Option<String>) {
     }
 }
 
-/// `https://grid.trywisp.dev/s/AbC…`, `grid://ada/review?ref=v1`, `wisp://open/AbC…` or an id.
+/// `https://grid.trywisp.dev/s/AbC…`, `grid://ada/review?ref=v1`, `grid://ada/crew#<cap>`, `wisp://open/AbC…` or an id.
+/// The cap is a fragment, after `?ref=` or before it (a hand-pinned `grid://ada/crew#<cap>?ref=v2` in a module source).
 pub fn link(raw: &str) -> Option<Link> {
     let raw = raw.trim();
     if let Some(rest) = raw.strip_prefix("grid://") {
+        let (rest, frag) = rest.split_once('#').unwrap_or((rest, ""));
+        let (cap, late_ref) = split_ref(frag);
+        let cap = Some(cap.to_owned()).filter(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_alphanumeric()));
         let (path, version) = split_ref(rest);
+        let version = version.or(late_ref);
         let (handle, name) = path.trim_end_matches('/').split_once('/')?;
         return (!handle.is_empty() && !name.is_empty() && !name.contains('/')).then(|| Link::Name {
             handle: handle.into(),
             name: name.into(),
             version,
+            cap,
         });
     }
     if let Some(id) = raw.strip_prefix("wisp://open/") {
@@ -203,8 +209,21 @@ mod tests {
         );
         assert_eq!(
             link("grid://ada/review?ref=v1"),
-            Some(Link::Name { handle: "ada".into(), name: "review".into(), version: Some("v1".into()) })
+            Some(Link::Name { handle: "ada".into(), name: "review".into(), version: Some("v1".into()), cap: None })
         );
+        // an unlisted share's name carries its cap (ADR-0130), wherever `?ref=` sits
+        let crew = |version: Option<&str>| Link::Name {
+            handle: "ada".into(),
+            name: "crew".into(),
+            version: version.map(Into::into),
+            cap: Some("abc".into()),
+        };
+        assert_eq!(link("grid://ada/crew#abc"), Some(crew(None)));
+        assert_eq!(
+            (link("grid://ada/crew?ref=v2#abc"), link("grid://ada/crew#abc?ref=v2")),
+            (Some(crew(Some("v2"))), Some(crew(Some("v2"))))
+        );
+        assert_eq!(link("grid://ada/crew#"), Some(Link::Name { handle: "ada".into(), name: "crew".into(), version: None, cap: None }));
         assert_eq!(link("wisp://open/AbC"), Some(Link::Id { grid: None, id: "AbC".into(), version: None }));
         assert_eq!(link("AbC"), Some(Link::Id { grid: None, id: "AbC".into(), version: None }));
         assert_eq!((link("grid://ada"), link("../x")), (None, None));

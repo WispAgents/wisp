@@ -2,6 +2,7 @@
 // export's args for the options ticked, the notes worth showing, and the text a bundle is copied or saved as.
 
 import type { Member } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface ShareOpts {
   kit: boolean;
@@ -33,3 +34,22 @@ export const shareNotes = (notes: readonly string[], mates: readonly string[]): 
 
 /** The file as it is saved or copied (v1: pretty, with a newline at the end). */
 export const bundleText = (bundle: unknown): string => `${JSON.stringify(bundle, null, 2)}\n`;
+
+/** Who opens a crew link, from crew.share's answer (the grid's view of it, `link.access.kind`). */
+export type LinkAccess = 'anyone' | 'people' | 'teams' | 'password';
+
+export function linkAccess(link: unknown): LinkAccess {
+  const k = (link as { access?: { kind?: unknown } } | null | undefined)?.access?.kind;
+  return k === 'people' || k === 'teams' || k === 'password' ? k : 'anyone';
+}
+
+type HintKey = 'wisp.crew.share.linkHint' | 'wisp.crew.share.linkHintPeople' | 'wisp.crew.share.linkHintTeams' | 'wisp.crew.share.linkHintPassword';
+
+/** The hint under the link: who opens it. Sharing again keeps who that is (set with `wisp cloud access`), so a link
+ *  that isn't anyone's says it was kept, and the dialog offers to open it to anyone. */
+export function linkHintKey(a: LinkAccess): HintKey {
+  if (a === 'people') return 'wisp.crew.share.linkHintPeople';
+  if (a === 'teams') return 'wisp.crew.share.linkHintTeams';
+  if (a === 'password') return 'wisp.crew.share.linkHintPassword';
+  return 'wisp.crew.share.linkHint';
+}

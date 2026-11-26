@@ -86,6 +86,26 @@ function start(platform: Platform): void {
   // after the first screen (ADR-0105): it watches tasks change state, nothing the first screen draws waits for it
   if (homeClient) shell.afterFirstScreen(() => void startNotifier({ client: homeClient, platform, toast: toaster, nav: shell.nav, focused: () => document.hasFocus() }));
 
+  // the installed app's share sheet (manifest share_target → sw.ts → `/?shared=<id>`): its reader is its own module,
+  // fetched after the first screen and only by a page opened with a share
+  const sharedId = client.nav.takeShared?.();
+  if (sharedId !== undefined) {
+    shell.afterFirstScreen(
+      () =>
+        void import('./shared.ts')
+          .then((m) =>
+            m.readShared({
+              id: sharedId,
+              caches,
+              stuff: () => shell.pluginClient('wisp.stuff'),
+              attach: (files) => shell.context.prompts?.attach?.('launcher', files),
+              say: (text) => void toaster.error(text),
+            }),
+          )
+          .catch(() => undefined),
+    );
+  }
+
   // Settings: the frame (an overlay view) and its own panes, given what only the shell has (ADR-0003: inputs, no
   // private API): every plugin's panes, each with its plugin's client, and the translator. It has no default
   // definition, so the glob above skips it: registered here, after the others, so their panes are there.

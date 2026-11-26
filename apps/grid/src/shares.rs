@@ -12,6 +12,9 @@
 //! - **Counts:** a read of the page or the content is a view, an import an import; the sharer's own
 //!   reads count for nothing.
 //! - **Gallery:** a share its sharer published (and whose access is `anyone`) is listed and searchable.
+//! - **Names** (ADR-0130): a published share opens by name, `grid://<handle>/<key>`. One that isn't opens by its id
+//!   (`/s/<id>`), or by name with its capability, `grid://<handle>/<key>#<cap>`: keys are guessable (`crew`, a
+//!   setup's name), so a name alone must not open an unlisted link. A name refused answers exactly as a missing one.
 use std::sync::Arc;
 
 use base64::Engine as _;
@@ -32,7 +35,9 @@ use crate::teams::Teams;
 mod pass;
 #[path = "shares_read.rs"]
 mod read;
-pub use pass::{check_password, hash_password};
+#[cfg(test)]
+pub(crate) use pass::derived;
+pub use pass::{check_password, could_be_password, hash_password};
 
 /// What a share may be.
 pub const KINDS: &[&str] = &["task", "setup", "module", "crew", "workflow", "agent", "app", "plugin", "doc", "report", "stuff"];
@@ -53,6 +58,10 @@ pub struct Access {
     pub teams: Vec<String>,
     #[serde(default)]
     pub password: Option<String>,
+    /// `password` already hashed, by the edge on the blocking pool (scrypt never runs on an async worker); without
+    /// it `check_access` hashes inline, as the CLI and tests do
+    #[serde(skip)]
+    pub hashed: Option<String>,
 }
 
 /// What a sharer's wisp sends.
@@ -115,6 +124,8 @@ pub struct Rec {
     pub imports: i64,
     pub signer: Option<String>,
     pub published: bool,
+    /// 128 random bits, hex: what opens it by name while it isn't published (ADR-0130)
+    pub cap: String,
     pub size: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -138,9 +149,13 @@ pub enum Refused {
     Locked(String),
     /// 404
     NoVersion,
+    /// 429: too many password guesses at this share in the last minute, from this address or from everywhere
+    TooMany,
+    /// 503: every scrypt permit is taken; try again in a second (`Retry-After: 1`)
+    Busy,
 }
 
-const SELECT: &str = "SELECT s.id, s.user_id, u.handle, s.key, s.kind, s.title, s.summary, s.tags, s.version, s.access, s.people, s.teams, s.pass, s.expires_at, s.revoked_at, s.views, s.imports, s.signer, s.published, s.size, s.created_at, s.updated_at FROM shares s JOIN users u ON u.id = s.user_id";
+const SELECT: &str = "SELECT s.id, s.user_id, u.handle, s.key, s.kind, s.title, s.summary, s.tags, s.version, s.access, s.people, s.teams, s.pass, s.expires_at, s.revoked_at, s.views, s.imports, s.signer, s.published, s.size, s.created_at, s.updated_at, s.cap FROM shares s JOIN users u ON u.id = s.user_id";
 
 fn list(v: &str) -> Vec<String> {
     serde_json::from_str(v).unwrap_or_default()
@@ -170,6 +185,7 @@ fn rec(r: &rusqlite::Row<'_>) -> rusqlite::Result<Rec> {
         size: r.get(19)?,
         created_at: r.get(20)?,
         updated_at: r.get(21)?,
+        cap: r.get::<_, Option<String>>(22)?.unwrap_or_default(),
     })
 }
 
@@ -178,6 +194,11 @@ fn rec(r: &rusqlite::Row<'_>) -> rusqlite::Result<Rec> {
 /// `grid://<handle>/<key>` and `/api/shares/by/<handle>/<key>`.
 pub(crate) fn key_ok(k: &str) -> bool {
     !k.is_empty() && k.len() <= 256 && k.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b':' | b','))
+}
+
+/// A new share's capability: 128 random bits, hex.
+fn new_cap() -> String {
+    format!("{:032x}", rand::random::<u128>())
 }
 
 /// `v2`, `2` → 2.
@@ -214,16 +235,7 @@ impl Shares {
             "access": { "kind": s.access, "people": s.people, "teams": s.teams },
             "expiresAt": s.expires_at, "revoked": s.revoked_at.is_some(), "views": s.views, "imports": s.imports,
             "published": s.published, "size": s.size, "createdAt": s.created_at, "updatedAt": s.updated_at,
-            "source": format!("grid://{}/{}", s.handle, s.key),
-        })
-    }
-
-    /// What a reader sees before the content: who shared it, what it is.
-    pub fn card(&self, s: &Rec) -> Value {
-        json!({
-            "id": s.id, "url": self.url(&s.id), "kind": s.kind, "title": s.title, "summary": s.summary, "tags": s.tags,
-            "version": s.version, "ref": format!("v{}", s.version), "from": { "handle": s.handle },
-            "source": format!("grid://{}/{}", s.handle, s.key), "updatedAt": s.updated_at,
+            "source": Self::source(s),
         })
     }
 
@@ -234,7 +246,8 @@ impl Shares {
         self.db.with(|c| c.query_row(&format!("{SELECT} WHERE s.id = ?1"), [id], rec).optional())
     }
 
-    /// `grid://<handle>/<key>`'s share.
+    /// `grid://<handle>/<key>`'s share, whoever asks (the sharer's own update finds it here). A reader goes through
+    /// `named`.
     pub fn by_name(&self, handle: &str, key: &str) -> Result<Option<Rec>> {
         self.db.with(|c| c.query_row(&format!("{SELECT} WHERE u.handle = ?1 AND s.key = ?2"), params![handle, key], rec).optional())
     }
@@ -273,7 +286,7 @@ impl Shares {
                 if p.is_empty() || p.len() > PASSWORD_MAX {
                     return Err(bad(format!("A password is 1 to {PASSWORD_MAX} characters."), 400));
                 }
-                Ok(("password".into(), "[]".into(), "[]".into(), Some(hash_password(p))))
+                Ok(("password".into(), "[]".into(), "[]".into(), Some(a.hashed.clone().unwrap_or_else(|| hash_password(p)))))
             }
             _ => Err(bad("Access is anyone, people, teams or password.", 400)),
         }
@@ -295,8 +308,8 @@ impl Shares {
         self.db.tx(|tx| {
             if have.is_none() {
                 tx.execute(
-                    "INSERT INTO shares (id, user_id, key, title, pass, size, meta, created_at, updated_at, kind, version, signer, summary, tags) VALUES (?1, ?2, ?3, ?4, NULL, ?5, '{}', ?6, ?6, ?7, 0, ?8, ?9, ?10)",
-                    params![id, user.id, p.key, title, i64::try_from(body.len()).unwrap_or(i64::MAX), now, p.kind, p.signer.trim(), summary, json!(tags).to_string()],
+                    "INSERT INTO shares (id, user_id, key, title, pass, size, meta, created_at, updated_at, kind, version, signer, summary, tags, cap) VALUES (?1, ?2, ?3, ?4, NULL, ?5, '{}', ?6, ?6, ?7, 0, ?8, ?9, ?10, ?11)",
+                    params![id, user.id, p.key, title, i64::try_from(body.len()).unwrap_or(i64::MAX), now, p.kind, p.signer.trim(), summary, json!(tags).to_string(), new_cap()],
                 )?;
             }
             let last: Option<String> = tx.query_row("SELECT hash FROM share_versions WHERE share_id = ?1 ORDER BY version DESC LIMIT 1", [&id], |r| r.get(0)).optional()?;
@@ -344,13 +357,40 @@ impl Shares {
         {
             return Err(bad("This share was signed by another key: only the wisp that shared it can update it.", 403));
         }
-        if have.is_none() {
-            let n: i64 = self.db.with(|c| c.query_row("SELECT count(*) FROM shares WHERE user_id = ?1", [&user.id], |r| r.get(0)))?;
-            if n >= PER_USER {
-                return Err(bad(format!("You have {PER_USER} shares, as many as this grid keeps. Revoke one first."), 409));
-            }
+        // a new key, or a revoked (or expired) one this brings back, takes a slot; one already live has its own
+        let expires = match p.expires_at {
+            Some(e) => (e > 0).then_some(e),
+            None => have.as_ref().and_then(|h| h.expires_at),
+        };
+        if have.as_ref().is_none_or(|h| !self.live(h.revoked_at, h.expires_at)) && self.live(None, expires) {
+            self.room_for_one(&user.id)?;
         }
         Ok((body, have))
+    }
+
+    /// Whether a share with these is live: not revoked, not expired. Only live shares count toward `PER_USER`.
+    fn live(&self, revoked_at: Option<i64>, expires_at: Option<i64>) -> bool {
+        revoked_at.is_none() && expires_at.is_none_or(|e| e > self.clock.now_ms())
+    }
+
+    /// Refuses one more live share past `PER_USER`. Revoked and expired rows are never deleted (sharing the key again
+    /// brings the link back), so they mustn't count, or a user at the cap stays stuck however many they revoke.
+    fn room_for_one(&self, user_id: &str) -> Result<()> {
+        let now = self.clock.now_ms();
+        let n: i64 = self.db.with(|c| {
+            c.query_row(
+                "SELECT count(*) FROM shares WHERE user_id = ?1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?2)",
+                params![user_id, now],
+                |r| r.get(0),
+            )
+        })?;
+        if n >= PER_USER {
+            return Err(bad(
+                format!("You have {PER_USER} live shares, as many as this grid keeps. Revoke or let one expire to make room."),
+                409,
+            ));
+        }
+        Ok(())
     }
 
     fn own(&self, user: &UserRow, id: &str) -> Result<Rec> {
@@ -360,6 +400,13 @@ impl Shares {
     /// Change who may read it, its expiry, whether it's in the gallery.
     pub fn patch(&self, user: &UserRow, id: &str, p: &Patch) -> Result<Value> {
         let s = self.own(user, id)?;
+        // clearing or moving an expired share's expiry brings it back: that takes a slot too
+        if let Some(e) = p.expires_at
+            && !self.live(s.revoked_at, s.expires_at)
+            && self.live(s.revoked_at, (e > 0).then_some(e))
+        {
+            self.room_for_one(&user.id)?;
+        }
         let access = p.access.as_ref().map(|a| self.check_access(user, a)).transpose()?;
         self.db.tx(|tx| {
             if let Some((kind, people, teams, pass)) = &access {

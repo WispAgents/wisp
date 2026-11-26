@@ -137,6 +137,24 @@ pub struct RevealArgs {
     pub path: String,
 }
 
+/// A step's whole output, when the step kept only its start and end (`Activity` `full`): the step by its event `step`
+/// (seq) of the task's turn. Masked as the step is (ADR-0050): an output that read a .env file never has one, and a
+/// quote of a value the task read leaves as `••••` unless Hide .env values is off. Additive (2026-11-26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct FullOutputArgs {
+    pub id: SessionId,
+    pub turn_id: TurnId,
+    pub step: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct FullOutputText {
+    pub text: String,
+}
+
 /// Reveal one masked .env item of a turn as it is (ADR-0050, v1 GET /sessions/:id/unmasked): a step's output by its
 /// event `step` (seq), an answer `block` by its index, or the captured change to `file`. Exactly one. Refused to a
 /// capped agent and to a share page's caller; answers `not_found` for an item that isn't masked. Additive (2026-11-13).
@@ -155,6 +173,44 @@ pub struct UnmaskedArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub file: Option<String>,
+}
+
+/// Find in a task (R4-3, ADR-0133): the steps of its turns that hold `query` (case-insensitive), searched on the
+/// server for the turns the window sends as stubs, with no events. `turnIds`: those turns (default: every turn older
+/// than the window's latest). A .env value is masked before it is matched, as the wire masks it. Additive (2026-11-26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct SearchTaskArgs {
+    pub id: SessionId,
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_ids: Option<Vec<TurnId>>,
+    /// at most this many hits (default and most: 200)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limit: Option<u32>,
+}
+
+/// One step that holds the words: its turn, its event (`seq`) and a line around them, masked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct SearchTaskHit {
+    pub turn_id: TurnId,
+    pub seq: u64,
+    pub snippet: String,
+}
+
+/// `runtime.searchTask`'s answer: the hits in turn order, and whether the cap cut it short.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct SearchTaskOut {
+    pub hits: Vec<SearchTaskHit>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub more: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]

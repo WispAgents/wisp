@@ -208,7 +208,7 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
     'machines.add', 'machines.connect', 'machines.disconnect', 'machines.letIn', 'machines.remove',
     'machines.stop', 'machines.update',
   ]),
-  ...reason('GitHub: needs gh and a real PR', ['ship.check_log', 'ship.fix_conflicts', 'ship.merge', 'ship.refresh', 'ship.ship', 'ship.view', 'review.maybe', 'git.clone']),
+  ...reason('GitHub: needs gh and a real PR', ['ship.check_log', 'ship.fix_conflicts', 'ship.steward', 'ship.merge', 'ship.refresh', 'ship.ship', 'ship.view', 'review.maybe', 'git.clone']),
   ...reason('a real repo, language server or pty on disk: the mock git (mock-git.ts) has no files to read', [
     'history.blame', 'history.list', 'history.report', 'history.save', 'history.track',
     'lsp.ask', 'worktrees.grep', 'worktrees.save',
@@ -226,7 +226,7 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
     'plugins.install', 'plugins.setEnabled', 'plugins.trust', 'plugins.uninstall',
     'resources.plan', 'resources.read', 'resources.rename', 'resources.write', 'router.reset',
     'runtime.appState', 'runtime.approveBlocked', 'runtime.compact', 'runtime.projectTest', 'runtime.release',
-    'runtime.resumeCommand', 'runtime.setLean', 'runtime.unmasked',
+    'runtime.fullOutput', 'runtime.resumeCommand', 'runtime.setLean', 'runtime.unmasked',
     'stuff.resetData', 'stuff.restore', 'stuff.reveal', 'stuff.save', 'stuff.stop', 'stuff.update', 'telemetry.set',
     'worktrees.bringIn', 'worktrees.dismiss', 'worktrees.done.apply', 'worktrees.keep',
   ]),

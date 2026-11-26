@@ -11,11 +11,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::broadcast;
 use wisp_factory_api::{EXT, FactorySpec, RunState};
-use wisp_factory_core::{CheckRun, Event, Input, Next, Resume, Run, TaskEnd, TaskStep, check_env, short, tail};
+use wisp_factory_core::{CheckRun, Event, Input, Next, Pending, Resume, Run, TaskEnd, TaskStep, check_env, short, tail};
 use wisp_kernel::{Call, Ctx, Result, WireError};
 use wisp_runtime_api::commands as r;
 use wisp_runtime_api::spec::Lineage;
@@ -27,13 +26,6 @@ use crate::{State, goal_of, lock};
 const LOOK_MS: u64 = 2_000;
 /// How often a question's answer is looked for.
 const ANSWER_MS: u64 = 500;
-
-/// A task a station waits on: until `turn` (a follow-up's) has ended, or (None) its first turn.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Pending {
-    task: String,
-    turn: Option<String>,
-}
 
 fn mode_of(m: &str) -> Option<Mode> {
     if m.is_empty() { None } else { serde_json::from_value(json!(m)).ok() }
@@ -53,12 +45,13 @@ async fn set_state(ctx: &Ctx, call: &Call, id: &str, state: SessionState) {
     }
 }
 
-/// The run's slot: its view, what it started from, and the machine with the tasks it waits on (what a restart picks up).
-async fn report(ctx: &Ctx, call: &Call, id: &str, m: &Run, input: &Value, pending: &[Pending]) {
+/// The run's slot: its view, what it started from, and the machine with the tasks it waits on (what a restart picks up;
+/// `pending` too, for a wisp from before the machine kept them).
+async fn report(ctx: &Ctx, call: &Call, id: &str, m: &Run, input: &Value) {
     let mut value = serde_json::to_value(m.view()).unwrap_or_else(|_| json!({}));
     value["input"] = input.clone();
     value["machine"] = serde_json::to_value(m).unwrap_or(Value::Null);
-    value["pending"] = serde_json::to_value(pending).unwrap_or(Value::Null);
+    value["pending"] = serde_json::to_value(m.pending()).unwrap_or(Value::Null);
     // set-ext: whole one writer: the run's task is made by its create and only this run's loop writes this slot
     let a = r::SetExtArgs { id: SessionId(id.to_owned()), plugin: EXT.into(), value, expect: None };
     if let Err(err) = ctx.run::<r::SetExt>(call, a).await {
@@ -153,9 +146,15 @@ pub(crate) async fn resume(ctx: Ctx, st: Arc<State>, id: String) -> bool {
     let event = match m.resume() {
         Resume::Over => return true,
         Resume::Redo(next) => return drive_on(&ctx, &st, &id, m, &input_v, &place, next).await,
-        Resume::Tasks { tasks } => {
-            // the turns it was waiting on, as they were saved; else the station's tasks' last turns
-            let pending = if saved.is_empty() { tasks.into_iter().map(|task| Pending { task, turn: None }).collect() } else { saved };
+        Resume::Tasks { pending } => {
+            // the turns the machine kept; a run kept before it did: the turns saved beside it, else the tasks' last turns
+            let pending: Vec<Pending> = pending
+                .into_iter()
+                .map(|p| match saved.iter().find(|s| s.task == p.task) {
+                    Some(s) if p.turn.is_none() && p.since.is_none() => s.clone(),
+                    _ => p,
+                })
+                .collect();
             wait(&ctx, &call, &st, &mut wake, &id, &m, &pending).await
         }
         Resume::Ask { ask_id } if !ask_id.is_empty() => poll(&ctx, &call, &st, &id, &ask_id).await,
@@ -180,23 +179,21 @@ async fn drive(ctx: &Ctx, st: &Arc<State>, id: &str, mut m: Run, input_v: &Value
     let mut wake = st.ended.subscribe();
     let mut next = first;
     loop {
-        report(ctx, &call, id, &m, input_v, &[]).await;
+        // the step it's about to do is kept first: a make's steps before any is done (doc23a)
+        report(ctx, &call, id, &m, input_v).await;
         let event = match next {
             Next::End { state, .. } => {
-                if state == RunState::Stopped {
-                    stop_stations(ctx, &call, &m).await;
-                }
+                // a run that failed or that you stopped leaves nothing running; a done one keeps its build (doc23b)
+                stop_stations(ctx, &call, &m.to_stop()).await;
                 let s = if state == RunState::Failed { SessionState::Error } else { SessionState::Review };
                 set_state(ctx, &call, id, s).await;
                 lock(&st.stops).remove(id);
                 lock(&st.cancels).remove(id);
                 return;
             }
-            Next::Tasks(steps) => match make(ctx, &call, id, &mut m, place, steps).await {
-                Ok(pending) => {
-                    report(ctx, &call, id, &m, input_v, &pending).await;
-                    wait(ctx, &call, st, &mut wake, id, &m, &pending).await
-                }
+            // the steps are the machine's own (kept on it): a make cut short does only what it hadn't
+            Next::Tasks(_) => match make(ctx, &call, id, &mut m, place, input_v).await {
+                Ok(pending) => wait(ctx, &call, st, &mut wake, id, &m, &pending).await,
                 Err(e) => e,
             },
             Next::Ask { question, options, context } => ask(ctx, &call, st, id, &mut m, input_v, question, options, context).await,
@@ -205,7 +202,7 @@ async fn drive(ctx: &Ctx, st: &Arc<State>, id: &str, mut m: Run, input_v: &Value
                 None => checks(ctx, &call, st, id, &task, &commands, minutes).await,
             },
             Next::Ship { task, title, body, draft } => {
-                let a = wisp_ship_api::ShipArgs { session: task, title, body, draft, save_task: false };
+                let a = wisp_ship_api::ShipArgs { session: task, title, body, draft, save_task: false, steward: String::new() };
                 match ctx.run::<wisp_ship_api::ShipIt>(&call, a).await {
                     Ok(s) => Event::Shipped { ok: !s.pr.url.is_empty(), pr: s.pr.url.clone(), why: "no PR came back".into() },
                     Err(e) => Event::Shipped { ok: false, pr: String::new(), why: e.message },
@@ -220,76 +217,109 @@ async fn drive(ctx: &Ctx, st: &Arc<State>, id: &str, mut m: Run, input_v: &Value
     }
 }
 
-/// Every station's task still running stops (a Stop ends the run, its stations with it: review r194 factories #4).
-async fn stop_stations(ctx: &Ctx, call: &Call, m: &Run) {
-    for task in m.view().stations.iter().flat_map(|s| s.tasks.iter()) {
+/// These station tasks stop (a Stop or a failure ends the run, its stations with it: review r194 factories #4, doc23b).
+async fn stop_stations(ctx: &Ctx, call: &Call, tasks: &[String]) {
+    for task in tasks {
         if let Err(err) = ctx.run::<r::Stop>(call, r::StopArgs { id: SessionId(task.clone()), clear_queue: true }).await {
             tracing::debug!(error = %err.message, task, "factory: runtime.stop of a station");
         }
     }
 }
 
+/// The task's last turn (its `idx`), before a follow-up is sent: the turn the follow-up's wait comes after.
+async fn last_turn(ctx: &Ctx, call: &Call, task: &str) -> Option<u32> {
+    let a = r::TurnsArgs { id: SessionId(task.to_owned()), before: None, limit: Some(1), masked: None };
+    ctx.run::<r::Turns>(call, a).await.ok().and_then(|t| t.last().map(|t| t.idx))
+}
+
 fn stopped(st: &State, id: &str) -> Option<String> {
     lock(&st.stops).remove(id)
 }
 
-/// Makes or follows up a station's tasks: the turns to wait on.
+/// Makes or follows up a station's tasks, the machine's steps it hadn't done yet: the turns to wait on. Each step done is
+/// kept at once (a restart redoes only the rest, doc23a); one that fails stops the tasks this make started (doc23b).
 async fn make(
     ctx: &Ctx,
     call: &Call,
     run: &str,
     m: &mut Run,
     place: &(String, Vec<String>),
-    steps: Vec<TaskStep>,
+    input_v: &Value,
 ) -> std::result::Result<Vec<Pending>, Event> {
-    let mut pending = Vec::new();
-    for step in steps {
-        match step {
-            TaskStep::Start { station, index, agent, title, prompt, mode, worktree, folder_of } => {
-                let (cwd, dirs) = match folder_of {
-                    Some(t) => match get(ctx, call, &t).await {
-                        Ok(s) => (s.cwd, s.dirs),
-                        Err(e) => return Err(Event::Failed(format!("{station}: its build's folder can't be read: {}", e.message))),
-                    },
-                    None => place.clone(),
-                };
-                let a = r::StartArgs {
-                    prompt,
-                    title: Some(title),
-                    parent_id: Some(SessionId(run.to_owned())),
-                    lineage: Lineage { workflow_run: Some(run.to_owned()), ..Lineage::default() },
-                    ext: [(EXT.to_owned(), json!({ "run": run, "station": station }))].into(),
-                    agent: some(&agent),
-                    mode: mode_of(&mode),
-                    cwd: some(&cwd),
-                    dirs,
-                    worktree,
-                    ..r::StartArgs::default()
-                };
-                match ctx.run::<r::Create>(call, a).await {
-                    Ok(made) => {
-                        m.made(station, index, made.id.as_str());
-                        pending.push(Pending { task: made.id.0, turn: made.turn_id.map(|t| t.0) });
-                    }
-                    Err(e) => return Err(Event::Failed(format!("the {station} station's task couldn't start: {}", e.message))),
+    let mut started = Vec::new();
+    for (i, step) in m.to_make() {
+        match make_one(ctx, call, run, m, place, step).await {
+            Ok((p, new)) => {
+                if new {
+                    started.push(p.task.clone());
                 }
+                m.sent(i, p);
+                report(ctx, call, run, m, input_v).await;
             }
-            TaskStep::FollowUp { task, text } => {
-                let a = r::FollowUpArgs {
-                    id: SessionId(task.clone()),
-                    text,
-                    queue: Some(true),
-                    by: Some("factory".into()),
-                    ..r::FollowUpArgs::default()
-                };
-                match ctx.run::<r::FollowUp>(call, a).await {
-                    Ok(f) => pending.push(Pending { task, turn: f.turn_id.map(|t| t.0).or(f.queued) }),
-                    Err(e) => return Err(Event::Failed(format!("a follow-up couldn't be sent: {}", e.message))),
-                }
+            Err(e) => {
+                stop_stations(ctx, call, &started).await;
+                return Err(e);
             }
         }
     }
-    Ok(pending)
+    Ok(m.pending())
+}
+
+/// One step of a make: what to wait on, and whether it started a task.
+async fn make_one(
+    ctx: &Ctx,
+    call: &Call,
+    run: &str,
+    m: &mut Run,
+    place: &(String, Vec<String>),
+    step: TaskStep,
+) -> std::result::Result<(Pending, bool), Event> {
+    match step {
+        TaskStep::Start { station, index, agent, title, prompt, mode, worktree, folder_of } => {
+            let (cwd, dirs) = match folder_of {
+                Some(t) => match get(ctx, call, &t).await {
+                    Ok(s) => (s.cwd, s.dirs),
+                    Err(e) => return Err(Event::Failed(format!("{station}: its build's folder can't be read: {}", e.message))),
+                },
+                None => place.clone(),
+            };
+            let a = r::StartArgs {
+                prompt,
+                title: Some(title),
+                parent_id: Some(SessionId(run.to_owned())),
+                lineage: Lineage { workflow_run: Some(run.to_owned()), ..Lineage::default() },
+                ext: [(EXT.to_owned(), json!({ "run": run, "station": station }))].into(),
+                agent: some(&agent),
+                mode: mode_of(&mode),
+                cwd: some(&cwd),
+                dirs,
+                worktree,
+                ..r::StartArgs::default()
+            };
+            match ctx.run::<r::Create>(call, a).await {
+                Ok(made) => {
+                    m.made(station, index, made.id.as_str());
+                    Ok((Pending { task: made.id.0, turn: made.turn_id.map(|t| t.0), since: None }, true))
+                }
+                Err(e) => Err(Event::Failed(format!("the {station} station's task couldn't start: {}", e.message))),
+            }
+        }
+        TaskStep::FollowUp { task, text } => {
+            // its turn is one after the task's last now: the round before's never counts as this one's (doc23a)
+            let since = last_turn(ctx, call, &task).await;
+            let a = r::FollowUpArgs {
+                id: SessionId(task.clone()),
+                text,
+                queue: Some(true),
+                by: Some("factory".into()),
+                ..r::FollowUpArgs::default()
+            };
+            match ctx.run::<r::FollowUp>(call, a).await {
+                Ok(f) => Ok((Pending { task, turn: f.turn_id.map(|t| t.0).or(f.queued), since }, false)),
+                Err(e) => Err(Event::Failed(format!("a follow-up couldn't be sent: {}", e.message))),
+            }
+        }
+    }
 }
 
 /// Waits until each pending turn has ended; a Stop stops them, and the run's total passing its budget stops them too.
@@ -359,7 +389,7 @@ async fn ended(ctx: &Ctx, call: &Call, p: &Pending) -> Option<TaskEnd> {
             Ok(turns) => turns,
             Err(e) => return unread(&p.task, &e),
         };
-    end_of(&p.task, &t, &turns, p.turn.as_deref())
+    end_of(&t, &turns, p)
 }
 
 /// A station's task that couldn't be read: deleted, the station failed (the run waited on it for ever); any other
@@ -373,15 +403,18 @@ pub(crate) fn unread(task: &str, e: &WireError) -> Option<TaskEnd> {
     })
 }
 
-/// How a station's task ended, from the task and its last turns (`want`: the follow-up waited on): None while its
-/// turn runs, is held before it starts (a limit, trust, the plan: not "it ended held") or its queue waits.
-pub(crate) fn end_of(
-    task: &str,
-    t: &wisp_runtime_api::model::Session,
-    turns: &[wisp_runtime_api::model::Turn],
-    want: Option<&str>,
-) -> Option<TaskEnd> {
-    let last = turns.last();
+/// How a station's task ended, from the task and its last turns (`p.turn`: the follow-up waited on; only turns after
+/// `p.since` count): None while its turn runs, is held before it starts (a limit, trust, the plan: not "it ended
+/// held") or its queue waits.
+pub(crate) fn end_of(t: &wisp_runtime_api::model::Session, turns: &[wisp_runtime_api::model::Turn], p: &Pending) -> Option<TaskEnd> {
+    let (task, want) = (p.task.as_str(), p.turn.as_deref());
+    // a turn at or before the one the follow-up came after is an earlier round's (doc23a): none after it yet, it's still
+    // to run (it was sent: its queue drains, or the run's Stop or budget ends the wait)
+    let turns: Vec<&wisp_runtime_api::model::Turn> = turns.iter().filter(|x| p.counts(x.idx)).collect();
+    if p.since.is_some() && turns.is_empty() {
+        return None;
+    }
+    let last = turns.last().copied();
     // a follow-up still queued (no turn of its id yet) hasn't run
     if let Some(want) = want
         && !turns.iter().any(|x| x.id.0 == want)
@@ -430,7 +463,7 @@ async fn ask(
         Err(e) => return Event::Failed(format!("couldn't ask: {}", e.message)),
     };
     m.asked(&asked);
-    report(ctx, call, run, m, input, &[]).await;
+    report(ctx, call, run, m, input).await;
     poll(ctx, call, st, run, &asked).await
 }
 

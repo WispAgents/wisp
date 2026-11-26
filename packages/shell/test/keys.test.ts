@@ -47,6 +47,8 @@ test("'task' shortcuts need a focused task; later registrations are tried first"
 test("a user plugin can't take a key wisp uses itself", () => {
   expect(allowed(s('x', 'e', { plugin: 'acme' }))).toBe(false);
   expect(allowed(s('x', 'mod+k', { plugin: 'acme' }))).toBe(false);
+  // Find in task (R4-3)
+  expect(allowed(s('x', 'mod+f', { plugin: 'acme' }))).toBe(false);
   expect(allowed(s('x', 'g', { plugin: 'acme' }))).toBe(true);
   expect(allowed(s('x', 'e', { plugin: 'wisp.task' }))).toBe(true);
 });

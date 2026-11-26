@@ -12,6 +12,7 @@ export type TaskKey =
   | 'pr'
   | 'changes'
   | 'transcript'
+  | 'find'
   | 'rerun'
   | 'fork'
   | 'ship'

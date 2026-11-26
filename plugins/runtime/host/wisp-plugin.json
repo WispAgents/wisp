@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.runtime",
   "name": "Tasks",
-  "version": "1.0.0-alpha.14",
+  "version": "1.0.0-alpha.15",
   "api": "1",
   "description": "Tasks (sessions), their turns and activity, the follow-up queue and the harness lifecycle",
   "author": "wisp",
@@ -259,6 +259,18 @@
         "title": "Reveal one hidden .env value of a task's turn",
         "readOnly": true,
         "uiOnly": "the Reveal button on a masked .env view; an agent reads the file itself, and a capped agent is refused"
+      },
+      {
+        "id": "runtime.searchTask",
+        "title": "Find words in a task's older turns, .env values masked",
+        "readOnly": true,
+        "uiOnly": "Find in task (mod+f) over the turns the window sends as stubs; an agent reads a task's turns with wisp_session"
+      },
+      {
+        "id": "runtime.fullOutput",
+        "title": "A step's whole output, when the transcript kept only its start and end",
+        "readOnly": true,
+        "uiOnly": "the Show all button on an opened step; an agent reads its own commands' output"
       },
       {
         "id": "runtime.compact",

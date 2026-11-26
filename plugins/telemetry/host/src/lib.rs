@@ -167,9 +167,14 @@ impl State {
 
     /// Hands the queue to every sink, each on its own (a slow or failing one holds nothing up).
     fn flush(&self, ctx: &Ctx) -> usize {
-        let batch = lock(&self.t).drain();
+        let mut batch = lock(&self.t).drain();
         if batch.is_empty() {
             return 0;
+        }
+        // on a grid box: the user's address, not the grid's (stamped at send, so the start event, queued
+        // before the first proxied request, gets it too)
+        if let Some(ip) = wisp_kernel::services::client_addr(ctx) {
+            wisp_telemetry_core::events::with_client_ip(&mut batch, &ip);
         }
         let n = batch.len();
         for sink in ctx.contributions(&SINK) {

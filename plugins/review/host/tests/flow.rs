@@ -78,8 +78,8 @@ impl Env for Fake {
     }
     fn agents(&self, _call: &Call) -> Fut<Vec<Agent>> {
         ready(vec![
-            Agent { id: "claude".into(), name: "Claude".into(), available: true },
-            Agent { id: "codex".into(), name: "Codex".into(), available: true },
+            Agent { id: "claude".into(), name: "Claude".into(), available: true, models: Vec::new() },
+            Agent { id: "codex".into(), name: "Codex".into(), available: true, models: Vec::new() },
         ])
     }
     fn hold(&self, _call: &Call, _agent: &str) -> Fut<Option<String>> {

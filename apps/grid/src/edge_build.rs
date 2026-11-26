@@ -18,6 +18,10 @@ use crate::shares::Shares;
 use crate::teams::Teams;
 use crate::tunnels::Tunnels;
 
+/// Share passwords hashed at once (scrypt, ~50 ms of CPU each): enough for real readers, few enough that guesses
+/// can't take the blocking pool from everything else.
+const SCRYPT_PERMITS: usize = 4;
+
 impl Grid {
     pub fn new(cfg: GridConfig, db: Arc<Db>, clock: SharedClock, boxes: Arc<ProcessHost>) -> Arc<Self> {
         let teams = Teams { db: db.clone(), clock: clock.clone() };
@@ -57,6 +61,7 @@ impl Grid {
             accounts,
             keys,
             limits: crate::http::Limiter::default(),
+            scrypt: Arc::new(tokio::sync::Semaphore::new(SCRYPT_PERMITS)),
             fresh_keys: crate::keys_fresh::FreshKeys::default(),
             shares,
             teams,

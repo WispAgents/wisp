@@ -2,7 +2,7 @@
 // and git (`history.list`). Grouped by month, filtered by words, a path or an agent; a row opens its read-only
 // report (`history.report`) with Resume (a new task that carries on from there, on today's code).
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
-import { defineCommand, entityKey, type PeerId, type PluginClient } from '@wisp/client';
+import { defineCommand, entityKey, homeSetting, type PeerId, type PluginClient } from '@wisp/client';
 import { PROJECT_ORDER, projectList, useShell } from '@wisp/shell';
 import {
   Button,
@@ -80,9 +80,9 @@ export default function Repo(props: { readonly client: PluginClient; readonly pa
   // routes `history.*` commands to the computer that actually owns the repo
   const projectRows = useSignal(c.entities.list<unknown>('project'));
   const projectKeys = useSignal(c.entities.keys('project'));
-  const settings = useSignal(c.entities.list<{ key: string; value: unknown }>('setting'));
+  const order = useSignal(homeSetting(c, PROJECT_ORDER)); // this wisp's order, not another computer's (doc25c)
   const projects = createMemo((): Project[] =>
-    projectList(projectRows(), settings().find((r) => r.key === PROJECT_ORDER)?.value, projectKeys()).filter((p) => !!p.path),
+    projectList(projectRows(), order(), projectKeys()).filter((p) => !!p.path),
   );
   const [picked, setPicked] = createSignal(props.params.project ?? '');
   const project = createMemo(() => projects().find((p) => p.id === picked()) ?? projects()[0]);

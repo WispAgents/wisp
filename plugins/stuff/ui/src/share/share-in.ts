@@ -5,7 +5,7 @@
 
 import { untracked, type PluginClient } from '@wisp/client';
 import '../i18n/lazy.ts';
-import { MAX_BYTES, MAX_FILES, promptOf } from './form.ts';
+import { MAX_BYTES, MAX_FILES, promptOf } from '@wisp/shell/share-form';
 import { launcherKey, SHARED_IN_FIELD, TEXT_FIELD } from './launcher.ts';
 
 export interface Received {
@@ -38,6 +38,6 @@ export function receiveShared(c: PluginClient, r: Received, current?: string): s
   c.drafts.set(key, SHARED_IN_FIELD, true);
   c.navigate({ t: 'home' });
   if (!r.left) return '';
-  // the count picks one/other; the caps as the share sheet applied them (form.ts, Shared.java)
+  // the count picks one/other; the caps as the share sheet applied them (@wisp/shell share-form.ts, Shared.java)
   return t('stuff.share.in.leftOut', { count: r.left, files: MAX_FILES, mb: MAX_BYTES / 1024 / 1024 });
 }

@@ -20,6 +20,8 @@ pub struct EdgeConfig {
     pub version: String,
     /// keep-alive idle and header read timeout (v1: 65 s / 66 s)
     pub keep_alive: Duration,
+    /// where the proxied user's address goes (usage stats read it as `$ip`); None: not kept
+    pub client_addr: Option<std::sync::Arc<wisp_kernel::services::ClientAddr>>,
 }
 
 impl EdgeConfig {
@@ -33,6 +35,7 @@ impl EdgeConfig {
             home: None,
             version: version.into(),
             keep_alive: Duration::from_secs(65),
+            client_addr: None,
         }
     }
 }

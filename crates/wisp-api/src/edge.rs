@@ -163,6 +163,12 @@ impl Edge {
 
     pub async fn handle(self: &Arc<Self>, req: http::Request<Incoming>) -> Answer {
         let via = self.cfg.proxy.via(req.headers());
+        if via
+            && let Some(slot) = &self.cfg.client_addr
+            && let Some(ip) = self.cfg.proxy.client_ip(req.headers())
+        {
+            slot.set(&ip);
+        }
         if via && req.headers().contains_key("x-wisp-preview") {
             return match preview::preview_port(req.headers(), self.port()).filter(|_| self.cfg.previews) {
                 Some(p) => preview::forward(&self.preview, req, p).await,

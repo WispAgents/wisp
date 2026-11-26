@@ -1,5 +1,5 @@
 //! What a removal never takes, whoever asks (audit, git round 1). A recurring run's kept folder is shared by its runs
-//! (ADR-0108): while any task works in it, the sweep, Done, archiving and a run ending all leave it. And a bad record
+//! (ADR-0108): while any task works in it, the sweep, Done, archiving and a run done all leave it. And a bad record
 //! never costs the user a repo: the main checkout, a folder outside wisp's worktrees, a worktree git refuses to remove
 //! (locked), one git can't read, and a full clone left in wisp's worktrees folder all stay. Over real repos in temp
 //! folders and the real git service.
@@ -106,7 +106,7 @@ fn set(port: &MemPort, id: &str, f: impl Fn(&mut TaskInfo)) {
 }
 
 /// Two runs of one recurring job share its kept folder: A is done and idle past `DONE_IDLE`, B works in it. The sweep,
-/// Done on A, archiving A and A's run ending each leave the folder (said in use, never a failure); once B stops, the
+/// Done on A, archiving A and A's run done each leave the folder (said in use, never a failure); once B stops, the
 /// sweep takes it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_shared_kept_folder_stays_while_any_task_works_in_it() {
@@ -134,10 +134,13 @@ async fn a_shared_kept_folder_stays_while_any_task_works_in_it() {
     let r = archived::tidy(&e, &user(), &wt, e.mark()).await.unwrap();
     assert!(!r.removed && r.busy && Path::new(&wt.path).is_dir(), "archiving A: {r:?}");
 
+    // A's run ending alone never tidies (ADR-0131); A's run done tidies, and leaves the folder B works in
     let mut ended = Session { id: "a".to_owned().into(), state: SessionState::Review, ..Session::default() };
     ended.ext.insert(EXT.into(), serde_json::to_value(Worktree { tidy: true, ..wt.clone() }).unwrap());
+    assert!(archived::tidy_ended(&e, &user(), &ended, e.mark(), &[], false).await.is_none() && Path::new(&wt.path).is_dir());
+    ended.state = SessionState::Done;
     let r = archived::tidy_ended(&e, &user(), &ended, e.mark(), &[], false).await.map(|(_, r)| r).unwrap();
-    assert!(!r.removed && Path::new(&wt.path).is_dir(), "A's run ending: {r:?}");
+    assert!(!r.removed && Path::new(&wt.path).is_dir(), "A's run done: {r:?}");
 
     set(&port, "b", |x| x.busy = false);
     c.sweep(limits).await;
@@ -204,4 +207,37 @@ async fn a_leftover_that_is_a_full_clone_is_skipped() {
     .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(clone.join("work.txt").is_file() && clone.join(".git").is_dir(), "the clone stays");
+}
+
+/// Done's "holds work" (wisp task 8501e0): an agent ran `git checkout -b fix/x` in its worktree and committed there.
+/// HEAD left the task's branch, but the commit lives on `fix/x`, so removing the folder loses nothing: no "Commits off
+/// its branch". A detached HEAD with a commit no branch has is still held; one back inside the task's branch isn't.
+#[tokio::test]
+async fn head_on_another_branch_is_not_work_only_the_folder_holds() {
+    let t = tmp("offbranch");
+    let root = repo(&t);
+    let e = engine(&t, 1);
+    let wt = add_tree(&root, &t.0.join("wts/app/task"), "wisp/task-1");
+    let dir = Path::new(&wt.path);
+    git(dir, &["checkout", "-q", "-b", "fix/x"]);
+    std::fs::write(dir.join("b.txt"), "two\n").unwrap();
+    git(dir, &["add", "b.txt"]);
+    git(dir, &["commit", "-q", "-m", "fix"]);
+    assert_eq!(e.folder_only(&user(), &wt).await.unwrap(), 0, "fix/x keeps the commit");
+
+    git(dir, &["checkout", "-q", "--detach"]);
+    std::fs::write(dir.join("c.txt"), "three\n").unwrap();
+    git(dir, &["add", "c.txt"]);
+    git(dir, &["commit", "-q", "-m", "stray"]);
+    assert_eq!(e.folder_only(&user(), &wt).await.unwrap(), 1, "a detached commit no branch has is held");
+
+    git(dir, &["checkout", "-q", "--detach", "wisp/task-1"]);
+    assert_eq!(e.folder_only(&user(), &wt).await.unwrap(), 0, "detached on the task's tip holds nothing");
+    let tip = git(&root, &["rev-parse", "wisp/task-1"]);
+    git(dir, &["checkout", "-q", "wisp/task-1"]);
+    std::fs::write(dir.join("d.txt"), "four\n").unwrap();
+    git(dir, &["add", "d.txt"]);
+    git(dir, &["commit", "-q", "-m", "ahead"]);
+    git(dir, &["checkout", "-q", "--detach", &tip]);
+    assert_eq!(e.folder_only(&user(), &wt).await.unwrap(), 0, "detached behind the task's branch holds nothing");
 }

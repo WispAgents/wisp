@@ -36,8 +36,8 @@ export type { Paging, Transcript, Transcripts } from './transcript.ts'; // opene
 // kind 5: drafts
 export type { Drafts } from './drafts.ts';
 // kind 6: preferences
-export { setSetting, validateSetting } from './settings.ts';
-export type { SettingRow, Settings, SettingValue, TypedSettings } from './settings.ts';
+export { homeSetting, setSetting, validateSetting } from './settings.ts';
+export type { HomeReader, SettingRow, Settings, SettingValue, TypedSettings } from './settings.ts';
 export type { PluginStore, StoreDecl } from './define-store.ts';
 // persistence
 export { memoryPersist } from './persist.ts';

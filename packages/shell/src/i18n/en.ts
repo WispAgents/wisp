@@ -67,6 +67,7 @@ export const SHELL_STRINGS = {
   'shell.key.pr': 'Review the PR in the side panel',
   'shell.key.changes': 'Changes',
   'shell.key.transcript': 'Full transcript',
+  'shell.key.find': 'Find in task',
   'shell.key.rerun': 'Rerun',
   'shell.key.fork': 'Fork',
   'shell.key.ship': 'Ship it',

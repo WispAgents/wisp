@@ -152,12 +152,12 @@ impl Harness for AntigravityHarness {
             let help = help.map(|(o, e)| format!("{o}\n{e}")).unwrap_or_default();
             let efforts = help_efforts(&help);
             let mut models = vec![self.info.models[0].clone()];
-            models.extend(list_models(&listed.map(|(o, _)| o).unwrap_or_default()).into_iter().map(|(id, label, baked)| HarnessModel {
-                hint: Some(id.clone()),
-                id,
-                label,
-                // `gemini-…-high` holds its level: no selector (agy refuses it with --effort)
-                efforts: baked.then(Vec::new),
+            models.extend(list_models(&listed.map(|(o, _)| o).unwrap_or_default()).into_iter().map(|m| HarnessModel {
+                hint: Some(m.id.clone()),
+                id: m.id,
+                label: m.label,
+                // its own levels (agy refuses one it lacks); none for a model agy lists without
+                efforts: Some(m.efforts),
                 resolves: None,
             }));
             let v = version_in(&line);
