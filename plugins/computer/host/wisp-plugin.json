@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.computer",
   "name": "Computer use",
-  "version": "1.0.0-alpha.14",
+  "version": "1.0.0-alpha.15",
   "api": "^1",
   "description": "Computer use for every harness through Cua Driver: each task's run gets the computer MCP server (screenshots, clicks, typing, windows, apps), behind wisp's policy; on a grid box or sandbox, the box's screen and browser too.",
   "server": {

@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.15] - 2026-11-26
+
 ### Added
 
 - **A browser for every agent**: Settings → Agents → **Browser** picks what agents drive: **Default** (Claude Code follows its own `/chrome` choice, as before), **Off**, **On (Chrome)** (Claude in Chrome on Claude Code, Playwright on your Chrome for Codex, opencode, Copilot and Grok) or **Headless** (Playwright's own hidden browser, a fresh profile each run). Each harness can have its own, from its page in Settings → Agents or the **Browser** row in the harness picker. Cursor and Antigravity can't take one and the picker says why. In a sandbox, any choice but Off uses the sandbox's own browser, the one you can watch; On (Chrome) is unavailable there because Claude in Chrome needs your own Chrome. In Edits mode, Claude in Chrome's clicks and screenshots no longer each ask for approval, and a browser step that does ask names the page ("open https://example.com").
