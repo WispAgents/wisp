@@ -50,6 +50,7 @@
   "wisp.later.plan.reminder": "Reminder",
   "wisp.later.plan.after": "After “{title}” is done · {run}",
   "wisp.later.plan.lost": "Was waiting for “{title}”, {why} before it was done · {run}",
+  "wisp.later.plan.failed": "Couldn’t start at its time (tried 3 times) · {run}",
   "wisp.later.plan.startNow": "Start now",
   "wisp.later.plan.remindNow": "Remind me now",
   "wisp.later.plan.changeTime": "Change time…",

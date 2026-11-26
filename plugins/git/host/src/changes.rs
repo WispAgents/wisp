@@ -49,7 +49,9 @@ impl Inner {
         let Some(at) = self.merge_base("HEAD", base).await? else {
             return Ok(None);
         };
-        let diff_args = ["diff", "--no-color", "--no-ext-diff", "-M", "-U3", at.as_str()];
+        // `--relative`: from a subfolder of a monorepo, diff paths are the subfolder's like `ls-files`', so
+        // every path in Changes is one frame and Stage, Revert and Undo resolve it in `dir` (outside it, unseen)
+        let diff_args = ["diff", "--relative", "--no-color", "--no-ext-diff", "-M", "-U3", at.as_str()];
         let (out, listed) = tokio::join!(
             self.git.raw(&self.dir, &diff_args),
             self.git.raw(&self.dir, &["ls-files", "--others", "--exclude-standard", "-z"]),
@@ -81,7 +83,7 @@ impl Inner {
     }
 
     pub async fn diff(&self, req: DiffRequest) -> Result<Body> {
-        let mut a: Vec<&str> = vec!["diff", "--no-color", "--no-ext-diff", "-M", "-U3", &req.from];
+        let mut a: Vec<&str> = vec!["diff", "--relative", "--no-color", "--no-ext-diff", "-M", "-U3", &req.from];
         if let Some(to) = &req.to {
             a.push(to);
         }
@@ -115,10 +117,13 @@ impl Inner {
     /// git's own two diffs (index → folder, HEAD → index) and the untracked list, side by side:
     /// lock-free reads, so they may run with the Changes diff itself.
     pub async fn stage_reads(&self) -> StageReads {
-        let mut cached: Vec<&str> = APPLY_DIFF.to_vec();
+        // in Changes' frame (see `collect`)
+        let mut un: Vec<&str> = APPLY_DIFF.to_vec();
+        un.push("--relative");
+        let mut cached = un.clone();
         cached.push("--cached");
         let (un, st, ut) = tokio::join!(
-            self.git.raw(&self.dir, APPLY_DIFF),
+            self.git.raw(&self.dir, &un),
             self.git.raw(&self.dir, &cached),
             self.git.quiet(&self.dir, &["ls-files", "--others", "--exclude-standard", "-z"]),
         );
