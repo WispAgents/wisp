@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use wisp_channels_api::views::{
-    ActArgs, ActKind, ActionKind, ChannelCtx, Parsed, ProjectView, Remote, RunOpts, SessionView, Signed, StartOpts, Started, Thread,
+    ActArgs, ActKind, Acted, ActionKind, ChannelCtx, Parsed, ProjectView, Remote, RunOpts, SessionView, Signed, StartOpts, Started, Thread,
     ThreadCtx, TurnView,
 };
 use wisp_channels_api::{
@@ -262,17 +262,30 @@ impl BoxApi for KBox {
     }
 }
 
-/// A task as a channel sees it, from `runtime.get`.
+/// A task as a channel sees it, from `runtime.get`: with its mode (Slack's, Discord's and Telegram's reply buttons
+/// are for a task below Full auto; doc26a: never read, so a Full auto task's reply buttons stayed), and what makes a
+/// report go up a level (`report::up_of`): runtime's `sideOf` and crew's slot, as those plugins write them.
 pub fn session_view(t: &Value) -> SessionView {
     let s = |k: &str| t.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
+    let slot = |k: &str| t.pointer(k).filter(|v| !v.is_null()).cloned();
+    let crew = slot("/ext/wisp.crew");
+    // a `capped` with no readable mode is Edits, as the runtime reads it (wisp_runtime_core::cap::of)
+    let capped = slot("/ext/wisp.runtime/capped").map(|c| wisp_channels_api::views::Capped {
+        mode: c.get("mode").and_then(|m| serde_json::from_value(m.clone()).ok()).unwrap_or(wisp_channels_api::views::Mode::Edits),
+    });
     SessionView {
         id: s("id"),
         title: s("title"),
         state: s("state"),
         agent: s("agent"),
         model: Some(s("model")).filter(|m| !m.is_empty()),
+        mode: t.get("mode").and_then(|m| serde_json::from_value(m.clone()).ok()),
         cwd: Some(s("cwd")).filter(|m| !m.is_empty()),
         parent_id: t.get("parentId").and_then(Value::as_str).map(str::to_owned),
+        side_of: slot("/ext/wisp.runtime/sideOf"),
+        delegated: crew.as_ref().and_then(|c| c.get("job")).and_then(Value::as_str) == Some("delegated"),
+        crew,
+        capped,
         queue_held: t.get("queueHeld").and_then(Value::as_bool).unwrap_or(false),
         branch: t.pointer("/ext/wisp.worktrees/branch").and_then(Value::as_str).filter(|b| !b.is_empty()).map(str::to_owned),
         created_at: t.get("createdAt").and_then(Value::as_i64),
@@ -358,6 +371,15 @@ impl KPhone {
         let picked = self.0.setting(dp::SETTING);
         let default = dp::default_project(&projects, picked.as_ref().and_then(Value::as_str));
         (projects, default)
+    }
+    /// The reply option `index` of the turn `reference` names, when that turn is still the newest (as `session` reads
+    /// it) and has that option; else none.
+    async fn tapped_option(&self, id: &str, reference: Option<&str>, index: u32) -> Result<Option<String>> {
+        let turns = self.cmd_json::<rt::Turns>(json!({ "id": id, "limit": 1 })).await?;
+        let newest = turns.as_array().and_then(|t| t.first()).and_then(|t| serde_json::from_value::<TurnView>(t.clone()).ok());
+        let Some(turn) = newest.filter(|t| reference.is_some_and(|r| r == t.id)) else { return Ok(None) };
+        let options = wisp_channels_core::report::reply_options(Some(&turn));
+        Ok(usize::try_from(index).ok().and_then(|i| options.into_iter().nth(i)).map(|o| o.reply))
     }
 }
 
@@ -552,12 +574,12 @@ impl Phone for KPhone {
         let made = self.cmd_json::<rt::Create>(json!({ "prompt": prompt, "cwd": project.path, "mode": "plan", "cap": cap })).await?;
         self.session(made.get("id").and_then(Value::as_str).unwrap_or_default()).await
     }
-    async fn act(&self, a: &ActArgs) -> Result<String> {
+    async fn act(&self, a: &ActArgs) -> Result<Acted> {
         let text = a.text.clone().unwrap_or_default();
         match a.kind {
             ActKind::Done => {
                 self.cmd_json::<rt::SetState>(json!({ "id": a.session_id, "state": "done" })).await?;
-                Ok("Marked done.".into())
+                Ok(Acted::done("Marked done."))
             }
             ActKind::Answer => {
                 let s = self.cmd_json::<rt::Get>(json!({ "id": a.session_id })).await?;
@@ -572,11 +594,11 @@ impl Phone for KPhone {
                     .unwrap_or_default();
                 // a setup card or a guard question: the linked person's tap only (ADR-0113, ADR-0115 §4; audit I IS1)
                 if wisp_channels_core::answered_in_person(&ask) && !a.person {
-                    return Ok(wisp_channels_core::SETUP_ELSEWHERE.into());
+                    return Ok(Acted::refused(wisp_channels_core::SETUP_ELSEWHERE));
                 }
                 // the question this answers: the button's (refused once it isn't the open one)
                 self.cmd_json::<rt::Answer>(json!({ "id": a.session_id, "text": text, "askId": a.reference })).await?;
-                Ok("Answered.".into())
+                Ok(Acted::done("Answered."))
             }
             ActKind::Reply | ActKind::Text => {
                 // under a setup card or a guard question a typed reply answers it, naming it, for the linked person only
@@ -585,16 +607,25 @@ impl Phone for KPhone {
                 let s = self.cmd_json::<rt::Get>(json!({ "id": a.session_id })).await?;
                 if let Some(ask) = s.pointer("/ext/wisp.runtime/ask").filter(|x| wisp_channels_core::answered_in_person(x)) {
                     if !a.person {
-                        return Ok(wisp_channels_core::SETUP_ELSEWHERE.into());
+                        return Ok(Acted::refused(wisp_channels_core::SETUP_ELSEWHERE));
                     }
                     let card = ask.get("id").cloned().unwrap_or(Value::Null);
                     self.cmd_json::<rt::Answer>(json!({ "id": a.session_id, "text": text, "askId": card })).await?;
-                    return Ok("Answered.".into());
+                    return Ok(Acted::done("Answered."));
                 }
+                // a reply button sends the option it shows, of the turn it was made under (doc26b: the index was
+                // ignored, and the empty follow-up refused); under a turn that isn't the newest it's out of date
+                let text = match (a.kind, &a.text, a.index) {
+                    (ActKind::Reply, None, Some(i)) => match self.tapped_option(&a.session_id, a.reference.as_deref(), i).await? {
+                        Some(o) => o,
+                        None => return Ok(Acted::refused(wisp_channels_api::OUT_OF_DATE)),
+                    },
+                    _ => text,
+                };
                 self.cmd_json::<rt::FollowUp>(json!({ "id": a.session_id, "text": text })).await?;
-                Ok("Sent.".into())
+                Ok(Acted::done("Sent."))
             }
-            ActKind::Stop => self.stop(&a.session_id).await,
+            ActKind::Stop => Ok(Acted::done(self.stop(&a.session_id).await?)),
         }
     }
     /// The `project` resources (`resources.export` answers `Vec<Resource>`), as a message picks from them.
@@ -736,7 +767,7 @@ impl ChannelHub for Hub {
         let phone = KPhone(self.ctx.clone());
         phone.projects_and_default(&phone.sessions().await.unwrap_or_default()).await.1
     }
-    async fn act(&self, a: &ActArgs) -> Result<String> {
+    async fn act(&self, a: &ActArgs) -> Result<Acted> {
         KPhone(self.ctx.clone()).act(a).await
     }
     async fn converse(
@@ -795,6 +826,25 @@ mod box_tests {
 mod tests {
     use super::*;
     use wisp_resources_api::Resource;
+
+    /// doc26a: the mode and the slots a report goes up by were never read, so Slack's and Discord's Full auto guard
+    /// never hid or refused a reply button, and a side discussion's or delegated job's ask had no thread to go to.
+    #[test]
+    fn a_task_reads_its_mode_side_discussion_crew_job_and_cap_doc26a() {
+        use wisp_channels_api::views::{Capped, Mode};
+        let side = session_view(&json!({ "id": "s2", "title": "t", "mode": "auto", "state": "waiting",
+            "ext": { "wisp.runtime": { "sideOf": { "id": "s1", "title": "Fix login" }, "capped": { "mode": "plan" } } } }));
+        assert_eq!(side.mode, Some(Mode::Auto));
+        assert_eq!(side.side_of, Some(json!({ "id": "s1", "title": "Fix login" })));
+        assert_eq!(side.capped, Some(Capped { mode: Mode::Plan }));
+        assert_eq!(wisp_channels_core::report::up_of(&side).as_deref(), Some("s1"));
+        let job = session_view(&json!({ "id": "s3", "mode": "edits",
+            "ext": { "wisp.crew": { "id": "m1", "job": "delegated", "from": { "id": "s9", "title": "The lead" } } } }));
+        assert_eq!((job.mode, job.delegated, job.crew.is_some()), (Some(Mode::Edits), true, true));
+        assert_eq!(wisp_channels_core::report::up_of(&job).as_deref(), Some("s9"));
+        let plain = session_view(&json!({ "id": "s4", "mode": "nonsense", "ext": { "wisp.runtime": { "sideOf": null } } }));
+        assert_eq!((plain.mode, plain.side_of, plain.crew, plain.capped, plain.delegated), (None, None, None, None, false));
+    }
 
     #[test]
     fn a_channel_reads_projects_from_the_export_list_and_the_first_is_the_default() {
