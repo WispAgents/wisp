@@ -172,6 +172,51 @@ async fn a_reports_choices_are_buttons_and_a_signed_press_answers_the_task() {
     assert!(said.last().unwrap().contains("doesn’t work any more"), "{said:?}");
 }
 
+/// One signed press on a report's Answer button by someone linked, the phone answering `acted`: whether the buttons
+/// went, and what was said in the thread after the report.
+async fn pressed_with(acted: Option<wisp_channels_api::Acted>) -> (bool, Vec<String>) {
+    let h = hub(&["U1"], false, "");
+    *h.phone.acted.lock().unwrap() = acted;
+    h.remotes
+        .lock()
+        .unwrap()
+        .insert("t1".into(), [("discord".to_owned(), json!({ "channel": "TH1", "thread": true, "ids": [] }))].into_iter().collect());
+    let t = start(&h);
+    let msg = Msg {
+        title: "Pick one".into(),
+        text: "Which way?".into(),
+        actions: vec![Action { kind: ActionKind::Answer, label: "Left".into(), reference: "q1".into(), index: 0 }],
+    };
+    t.publish(&msg, Some(&SessionView { id: "t1".into(), ..SessionView::default() })).await.unwrap();
+    let post = calls(&h).into_iter().find(|(_, u, _)| u.ends_with("/channels/TH1/messages")).unwrap().2;
+    let custom = post["components"][0]["components"][0]["custom_id"].as_str().unwrap().to_owned();
+    let press = json!({ "id": "1173000000000000005", "type": 3, "token": "P", "application_id": "777", "channel_id": "TH1", "guild_id": "G1", "member": { "user": { "id": "U1" } }, "data": { "custom_id": custom } });
+    h.ws.push(frames(&press));
+    t.start(h.stop.clone()).await;
+    h.run_spawned().await;
+    let c = calls(&h);
+    let stripped = c.iter().any(|(m, u, b)| m == "PATCH" && u.ends_with("/messages/@original") && b["components"] == json!([]));
+    let said = c
+        .iter()
+        .filter(|(m, u, _)| m == "POST" && u.ends_with("/channels/TH1/messages"))
+        .skip(1)
+        .map(|(_, _, b)| b["content"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    (stripped, said)
+}
+
+/// doc26d: a press took the message's buttons whatever came of it, so a refused one (a stale ask, a setup card) or one
+/// that failed couldn't be pressed again. They go only when it went through; either way the result is said.
+#[tokio::test]
+async fn a_press_takes_the_buttons_only_when_it_went_through_doc26d() {
+    let (stripped, said) = pressed_with(Some(wisp_channels_api::Acted::done("Answered."))).await;
+    assert!(stripped, "the buttons go");
+    assert_eq!(said, ["Answered."]);
+    let (stripped, said) = pressed_with(Some(wisp_channels_api::Acted::refused(wisp_channels_api::OUT_OF_DATE))).await;
+    assert!(!stripped, "a refused press keeps them");
+    assert_eq!(said, [wisp_channels_api::OUT_OF_DATE]);
+}
+
 fn signed(k: &SigningKey, body: &[u8]) -> Vec<(String, String)> {
     let mut msg = b"1700000000".to_vec();
     msg.extend_from_slice(body);

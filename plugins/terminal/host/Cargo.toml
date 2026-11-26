@@ -27,5 +27,8 @@ hyper-util.workspace = true
 flate2.workspace = true
 brotli.workspace = true
 
+[dev-dependencies]
+wisp-testkit.workspace = true
+
 [lints]
 workspace = true

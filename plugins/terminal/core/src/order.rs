@@ -4,6 +4,11 @@
 //! `GAP_MS` after the last key that came. At most `MAX_SENDERS` pages are remembered; the one heard of
 //! first is forgotten first.
 //!
+//! A page heard of for the first time starts at its first seq: one whose count went on across a restart, or whose
+//! first send was lost, isn't held. Only a first seq below `FRESH_SEQS` is taken as a fresh page whose earlier keys
+//! are still on the way (keys sent without waiting can overtake each other, so seq 1 may come before seq 0): those
+//! wait for the missing ones as usual, so an out-of-order seq 0 is never lost.
+//!
 //! Sans-IO: time comes in as `now` (ms) and what is ready to type comes back out; the host types it and
 //! wakes `tick` at `deadline()`.
 
@@ -11,6 +16,9 @@ use std::collections::BTreeMap;
 
 pub const GAP_MS: i64 = 1000;
 pub const MAX_SENDERS: usize = 8;
+/// A new page's first seq below this waits for the keys before it (a fresh page, its first keys overtaken); one at
+/// or above it is where the page's count already stood, and goes in at once.
+pub const FRESH_SEQS: i64 = 4;
 
 #[derive(Debug, Default)]
 struct Sender {
@@ -22,14 +30,17 @@ struct Sender {
 }
 
 impl Sender {
-    /// Everything that can go in now; `skip` jumps a gap first.
+    /// Everything that can go in now; `skip` jumps every gap (they all waited `GAP_MS` since the last key came).
     fn flush(&mut self, skip: bool, now: i64, out: &mut Vec<String>) {
-        if skip && let Some((&first, _)) = self.held.first_key_value() {
-            self.next = first;
-        }
-        while let Some(d) = self.held.remove(&self.next) {
-            out.push(d);
-            self.next += 1;
+        loop {
+            while let Some(d) = self.held.remove(&self.next) {
+                out.push(d);
+                self.next += 1;
+            }
+            match self.held.first_key_value() {
+                Some((&first, _)) if skip => self.next = first,
+                _ => break,
+            }
         }
         self.due = (!self.held.is_empty()).then_some(now + GAP_MS);
     }
@@ -54,7 +65,8 @@ impl InputOrder {
             if self.senders.len() >= MAX_SENDERS {
                 self.senders.remove(0);
             }
-            self.senders.push(Sender { from: from.to_owned(), ..Sender::default() });
+            let next = if seq >= FRESH_SEQS { seq } else { 0 };
+            self.senders.push(Sender { from: from.to_owned(), next, ..Sender::default() });
             self.senders.len() - 1
         };
         let mut out = Vec::new();
@@ -139,14 +151,52 @@ mod tests {
     }
 
     #[test]
+    fn a_new_senders_first_key_at_seq_5_goes_in_at_once() {
+        let mut o = InputOrder::new();
+        assert_eq!(o.put("e".into(), 5, "p", 0), ["e"], "its count went on across a restart: not held");
+        assert_eq!(o.deadline(), None);
+        assert_eq!(o.put("f".into(), 6, "p", 1), ["f"]);
+        assert_eq!(o.put("e".into(), 5, "p", 2), [] as [String; 0], "known now: a resend");
+        assert_eq!(o.put("old".into(), 2, "p", 3), [] as [String; 0], "below where it started: dropped");
+    }
+
+    #[test]
+    fn put_1_then_3_and_after_the_gap_3_goes_in() {
+        // a known page (its 0 came): 1 goes in, 3 waits for 2, then 2 is skipped
+        let mut o = InputOrder::new();
+        assert_eq!(o.put("a".into(), 0, "p", 0), ["a"]);
+        assert_eq!(o.put("b".into(), 1, "p", 0), ["b"]);
+        assert_eq!(o.put("d".into(), 3, "p", 0), [] as [String; 0]);
+        assert_eq!(o.tick(GAP_MS), ["d"]);
+        assert_eq!(o.deadline(), None);
+        // a page never heard of whose first keys are 1 and 3: 1 waits for 0 (it may be on the way), and after
+        // the gap both go in, in order: every gap that waited is skipped at once
+        let mut o = InputOrder::new();
+        assert_eq!(o.put("b".into(), 1, "q", 0), [] as [String; 0]);
+        assert_eq!(o.put("d".into(), 3, "q", 0), [] as [String; 0]);
+        assert_eq!(o.tick(GAP_MS), ["b", "d"]);
+        assert_eq!(o.deadline(), None);
+    }
+
+    #[test]
+    fn a_fresh_pages_seq_0_overtaken_by_its_next_keys_is_not_lost() {
+        let mut o = InputOrder::new();
+        assert_eq!(o.put("c".into(), 2, "p", 0), [] as [String; 0]);
+        assert_eq!(o.put("b".into(), 1, "p", 0), [] as [String; 0]);
+        assert_eq!(o.put("a".into(), 0, "p", 0), ["a", "b", "c"]);
+    }
+
+    #[test]
     fn a_negative_seq_is_a_resend() {
         let mut o = InputOrder::new();
         assert_eq!(o.put("x".into(), -1, "p", 0), [] as [std::string::String; 0]);
         assert_eq!(o.put("y".into(), 0, "p", 0), ["y"]);
     }
 
-    /// Property: whatever order a page's keys arrive in (with resends), each goes in exactly once and in
-    /// order, as long as none is missing; a missing one only ever costs a skip, never a reorder.
+    /// Property: whatever order a fresh page's keys arrive in (with resends), each goes in exactly once and in
+    /// order, as long as none is missing; a missing one only ever costs a skip, never a reorder. The one bound:
+    /// the first key to come is one of its first `FRESH_SEQS` (a later one first means the page counted on from
+    /// before, see `a_new_senders_first_key_at_seq_5_goes_in_at_once`).
     #[test]
     fn shuffled_keys_go_in_once_in_order() {
         let mut rng = crate::testrand::Rng::new(42);
@@ -158,6 +208,10 @@ mod tests {
                 sends.push(rng.below(n));
             }
             rng.shuffle(&mut sends);
+            let fresh = |i: &usize| i64::try_from(*i).is_ok_and(|i| i < FRESH_SEQS) && Some(*i) != missing;
+            if let Some(j) = sends.iter().position(fresh) {
+                sends.swap(0, j);
+            }
             let (mut o, mut out, mut now) = (InputOrder::new(), Vec::new(), 0);
             for i in sends.iter().filter(|i| Some(**i) != missing) {
                 now += 1;

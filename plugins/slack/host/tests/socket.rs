@@ -189,3 +189,43 @@ async fn a_signed_button_answers_and_says_who_and_a_forged_one_does_nothing() {
     let only: Vec<String> = h.net.sent("chat.postEphemeral").iter().map(|b| b["text"].as_str().unwrap_or_default().to_owned()).collect();
     assert_eq!(only, ["That button doesn’t work any more."], "a stranger's click: silence");
 }
+
+/// One signed click by a linked person, with the phone answering `acted`: what Slack was sent.
+async fn clicked_with(acted: wisp_channels_api::Acted) -> (Vec<Value>, Vec<Value>) {
+    let h = hub(&["U1"]);
+    *h.phone.acted.lock().unwrap() = Some(acted);
+    h.net
+        .replies
+        .lock()
+        .unwrap()
+        .extend([Reply::json("chat.update", json!({ "ok": true })), Reply::json("chat.postEphemeral", json!({ "ok": true }))]);
+    let good = json!({ "k": "a", "s": "t1", "r": "ask1", "i": 0, "sig": "sig.t1.a.ask1.0" });
+    h.ws.push(vec![
+        ScriptWs::text(&json!({ "type": "hello" })),
+        click("c1", "U1", &good),
+        ScriptWs::text(&json!({ "type": "disconnect", "reason": "invalid_auth" })),
+    ]);
+    transport(&h).start(h.stop.clone()).await;
+    h.run_spawned().await;
+    (h.net.sent("chat.update"), h.net.sent("chat.postEphemeral"))
+}
+
+/// doc26c: a click that went through waited for a `✓` none of wisp's answers has ("Answered.", "Sent.", "Marked
+/// done."), so every one ended as an ephemeral: the buttons stayed and nobody saw who answered. It updates the message.
+#[tokio::test]
+async fn an_answer_that_went_through_takes_the_buttons_and_says_who_doc26c() {
+    let (up, only) = clicked_with(wisp_channels_api::Acted::done("Answered.")).await;
+    assert_eq!(up.len(), 1, "the message is updated");
+    let blocks = up[0]["blocks"].as_array().unwrap();
+    assert!(!blocks.iter().any(|b| b["type"] == "actions"), "its buttons go");
+    assert_eq!(blocks.last().unwrap()["elements"][0]["text"], "Answered. · <@U1>");
+    assert!(only.is_empty(), "no ephemeral: {only:?}");
+}
+
+/// A refused click (a stale ask, a setup card) changed nothing: only the clicker is told, and the buttons stay.
+#[tokio::test]
+async fn a_refused_click_tells_only_the_clicker_and_keeps_the_buttons_doc26c() {
+    let (up, only) = clicked_with(wisp_channels_api::Acted::refused(wisp_channels_api::OUT_OF_DATE)).await;
+    assert!(up.is_empty(), "no update: {up:?}");
+    assert_eq!(only.iter().map(|b| b["text"].as_str().unwrap_or_default()).collect::<Vec<_>>(), [wisp_channels_api::OUT_OF_DATE]);
+}

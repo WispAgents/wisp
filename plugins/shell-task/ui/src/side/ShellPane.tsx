@@ -77,9 +77,15 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
   const id = bare(task.key);
   const tui = props.kind === 'takeover';
   const screen = new Screen(100, 30);
-  const from = Math.random().toString(36).slice(2, 10);
+  const sender = (): string => Math.random().toString(36).slice(2, 10);
+  let from = sender();
   let seq = 0;
   let es: AbortController | undefined;
+  // attached again after a stream that ended without exit or gone (the server dropped this page as it fell behind, or
+  // the connection went): soon, then backing off to 5 s; a hello resets it
+  let backoff = 250;
+  let again: (() => void) | undefined;
+  onCleanup(() => again?.());
   const [where, setWhere] = createSignal<Info | undefined>();
   const [error, setError] = createSignal('');
   const phone = shell.platform.phone;
@@ -104,14 +110,17 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
   setWalked(false);
 
   const connect = (): void => {
+    again?.();
     es?.abort();
     const ac = new AbortController();
     es = ac;
+    let over = false;
     // the task's peer's own route, through its transport (this computer, a machine, the grid)
     void (async () => {
       try {
         for await (const ev of c.http(ownerOf(task.key)).events(`/sessions/${encodeURIComponent(id)}/${tui ? 'term' : 'shell'}`, ac.signal)) {
           if (ev.event === 'hello') {
+            backoff = 250;
             const h = JSON.parse(ev.data) as { cols: number; rows: number };
             screen.reset();
             // a shell started at another width (another window, the panel dragged since) is told the pane's own, so
@@ -124,13 +133,19 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
             screen.write(JSON.parse(ev.data) as string);
             setDrawn(true);
           } else if (ev.event === 'exit' || ev.event === 'gone') {
+            over = true;
             setEnded(ev.event === 'exit' ? ((JSON.parse(ev.data) as { code: number | null }).code ?? 0) : 0);
             ac.abort();
           }
         }
       } catch (e: unknown) {
         if (!ac.signal.aborted) setError(say(e));
+        return;
       }
+      // ended without saying the shell did: attach again, for the whole screen (the replay) and its end if it ended
+      if (over || ac.signal.aborted) return;
+      again = c.scope.timeout(backoff, connect);
+      backoff = Math.min(backoff * 2, 5000);
     })();
   };
   // the terminal mounts the frame after the panel's first: measuring and painting it in the open put 100 ms of forced
@@ -216,6 +231,11 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
     onCleanup(() => document.removeEventListener('click', pressed));
   });
   const begin = (restart = false): void => {
+    // a new shell numbers its keys afresh: a page still counting from the last one had every key held as a gap
+    if (restart) {
+      from = sender();
+      seq = 0;
+    }
     setError('');
     setDrawn(false);
     setEnded(undefined);
@@ -256,6 +276,7 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
   };
   const end = (): void => {
     setEnded(0);
+    again?.();
     es?.abort();
     void c.run(close, { key: task.key, kind: props.kind, id }).catch(() => undefined);
   };

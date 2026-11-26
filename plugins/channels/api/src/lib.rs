@@ -40,6 +40,12 @@ pub const SETTING_ACCEPT: &str = "channels.acceptChannels";
 /// (audit I: Telegram took the keyboard away, and the linked person could only type).
 pub const SETUP_ELSEWHERE: &str =
     "That's a change to your setup: answer it in wisp (or from the chat you linked, yourself). Nothing changed.";
+/// What a reply button says when it isn't Full auto's to press: a button can't say which mode, words can (a channel's
+/// follow-up runs in Edits at most). Slack, Discord and Telegram all refuse it so.
+pub const IN_WORDS: &str = "Say that in words here, so it runs in Edits at most.";
+/// What a tap on a button for something that's gone reads (a reply button under a turn that isn't the newest, an
+/// option that isn't there any more): nothing was sent.
+pub const OUT_OF_DATE: &str = "That button is out of date.";
 
 macro_rules! command {
     ($ty:ident, $id:literal, $args:ty, $out:ty $(, read_only = $ro:literal)?) => {

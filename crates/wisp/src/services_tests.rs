@@ -41,6 +41,65 @@ async fn a_v1_file_reads_as_it_is_and_odd_values_are_dropped() {
 }
 
 #[tokio::test]
+async fn corrupt_file_is_never_overwritten() {
+    let d = tmp("corrupt");
+    for bytes in [&b"{not json"[..], b"[1,2]"] {
+        std::fs::write(d.join("secrets.json"), bytes).unwrap();
+        let s = FileSecrets::new(&d);
+        assert!(s.get("k").await.is_err(), "a corrupt file isn't read as empty");
+        assert!(s.keys("").await.is_err());
+        assert!(s.set("a.b", "v").await.is_err(), "set refuses instead of writing over it");
+        assert!(s.delete("a.b").await.is_err());
+        assert_eq!(std::fs::read(d.join("secrets.json")).unwrap(), bytes, "the original bytes are untouched");
+    }
+}
+
+#[tokio::test]
+async fn one_bad_namespace_keeps_the_rest() {
+    let d = tmp("badns");
+    std::fs::write(d.join("secrets.json"), r#"{"x":"str","wisp":{"k":"v"}}"#).unwrap();
+    let s = FileSecrets::new(&d);
+    assert_eq!(s.get("k").await.unwrap().as_deref(), Some("v"));
+    s.set("wisp/k2", "w").await.unwrap();
+    let on_disk: serde_json::Value = serde_json::from_slice(&std::fs::read(d.join("secrets.json")).unwrap()).unwrap();
+    assert_eq!(on_disk["wisp"], serde_json::json!({"k": "v", "k2": "w"}));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn read_error_is_not_cached() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = tmp("unreadable");
+    let f = d.join("secrets.json");
+    std::fs::write(&f, r#"{"wisp":{"k":"v"}}"#).unwrap();
+    std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // root reads a 000 file anyway; there's nothing to test then
+    if std::fs::read(&f).is_ok() {
+        return;
+    }
+    let s = FileSecrets::new(&d);
+    assert!(s.get("k").await.is_err());
+    assert!(s.set("k3", "x").await.is_err(), "nothing is written over a file that couldn't be read");
+    std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(s.get("k").await.unwrap().as_deref(), Some("v"), "the next call reads the file again");
+}
+
+#[tokio::test]
+async fn a_missing_file_reads_empty_and_set_creates_it_0600() {
+    let d = tmp("missing");
+    let s = FileSecrets::new(&d);
+    assert_eq!(s.get("k").await.unwrap(), None);
+    assert_eq!(s.keys("").await.unwrap(), Vec::<String>::new());
+    s.set("k", "v").await.unwrap();
+    assert_eq!(FileSecrets::new(&d).get("k").await.unwrap().as_deref(), Some("v"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(d.join("secrets.json")).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+}
+
+#[tokio::test]
 async fn concurrent_writes_all_land() {
     let d = tmp("concurrent");
     let s = FileSecrets::new(&d);

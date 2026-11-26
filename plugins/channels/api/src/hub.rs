@@ -10,7 +10,8 @@ use wisp_kernel::{BoxFuture, Result};
 
 use crate::transport::Status;
 use crate::views::{
-    ActArgs, ActionKind, ChannelCtx, Parsed, ProjectView, Remote, RunOpts, SessionView, Signed, StartOpts, Started, Thread, ThreadCtx,
+    ActArgs, Acted, ActionKind, ChannelCtx, Parsed, ProjectView, Remote, RunOpts, SessionView, Signed, StartOpts, Started, Thread,
+    ThreadCtx,
 };
 
 // ---------- IO handles ----------
@@ -204,7 +205,8 @@ pub trait Phone: Send + Sync + 'static {
     async fn upload(&self, _name: &str, _mime: &str, _bytes: Vec<u8>) -> Result<serde_json::Value> {
         Err(wisp_kernel::WireError::unavailable("files can't be kept here"))
     }
-    async fn act(&self, a: &ActArgs) -> Result<String>;
+    /// a tap or a reply: whether it went through, and what to say
+    async fn act(&self, a: &ActArgs) -> Result<Acted>;
     async fn projects(&self) -> Result<Vec<ProjectView>>;
     /// a task here or on a machine (`<id>@<machine>`), with its turns and ask
     async fn session(&self, id: &str) -> Result<Option<SessionView>>;
@@ -264,7 +266,7 @@ pub trait ChannelHub: Send + Sync + 'static {
     fn mark_started(&self, session_id: &str, channel: &str, by: Option<&str>);
     fn thread_started(&self, s: Option<&SessionView>, thread: Option<&Thread>, by: Option<&str>, err: Option<&str>);
     async fn default_project(&self) -> Option<ProjectView>;
-    async fn act(&self, a: &ActArgs) -> Result<String>;
+    async fn act(&self, a: &ActArgs) -> Result<Acted>;
 
     /// One message through `c`'s door: the grammar and what it asks for (wisp.channels' flow, v1
     /// `converse`). `session_id`: the task its thread belongs to; `thread_text`: the message as it reads

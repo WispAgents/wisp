@@ -354,7 +354,9 @@ fn commands(s: &mut Setup, live: &Arc<Live>) {
             Ok(wisp_channels_api::Empty {})
         }
     });
-    s.command::<Act, _, _>(|ctx, _call, a| async move { Ok(Line { line: wisp_channels_api::Phone::act(&hub::KPhone(ctx), &a).await? }) });
+    s.command::<Act, _, _>(
+        |ctx, _call, a| async move { Ok(Line { line: wisp_channels_api::Phone::act(&hub::KPhone(ctx), &a).await?.words }) },
+    );
     let l = live.clone();
     s.command::<Refresh, _, _>(move |ctx, _call, _a| {
         let live = l.clone();

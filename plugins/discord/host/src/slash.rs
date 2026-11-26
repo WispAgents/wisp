@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use wisp_channels_api::policy::{Gate, GateArgs, RateHit, allowed, gate};
-use wisp_channels_api::views::{ActArgs, ActionKind, Msg, SessionView, Signed};
+use wisp_channels_api::views::{ActArgs, Acted, ActionKind, Msg, SessionView, Signed};
 use wisp_channels_api::{ChannelCtx, Headers, InboundOpts, InboundResult, Mode, header};
 use wisp_discord_core::interaction::{self as ix, Interaction, Kind};
 use wisp_discord_core::message::{Message, snowflake_ms};
@@ -19,7 +19,7 @@ use wisp_kernel::Result;
 use crate::{Discord, LINKED, NAME, STRANGER, WRONG_CODE, code_matches, discord_text, link_code, lock, s};
 
 pub const DEAD_BUTTON: &str = "That button doesn’t work any more.";
-pub const IN_WORDS: &str = "Say that in words here, so it runs in Edits at most.";
+pub use wisp_channels_api::IN_WORDS;
 pub const WENT_WRONG: &str = "wisp hit an error answering that. Check in wisp before you try again.";
 pub const STRANGER_BOX: &str = "This wisp only answers people linked to it. To link, use `/wisp` here with `link` and the code shown in wisp → Settings → Phone → Discord.";
 pub const NO_HUB: &str =
@@ -282,7 +282,8 @@ impl Discord {
         went.map(drop)
     }
 
-    /// A press: signed by this wisp, by someone linked. The message loses its buttons and the result is said.
+    /// A press: signed by this wisp, by someone linked. The result is said; the message loses its buttons only when the
+    /// press went through, so a refused or failed one can be pressed again (doc26d: they went whatever happened).
     async fn press(&self, i: &Interaction, id: &str, held: bool) -> Result<()> {
         if !self.door(i, held, false).await? {
             return Ok(());
@@ -301,7 +302,7 @@ impl Discord {
         {
             return say(IN_WORDS).await;
         }
-        let result = match self
+        let acted = match self
             .hub
             .act(&ActArgs {
                 session_id: session,
@@ -314,11 +315,13 @@ impl Discord {
             })
             .await
         {
-            Ok(r) => r,
-            Err(e) => format!("Couldn’t send that: {}", wisp_channels_api::scrub::truncate(&e.message, 300)),
+            Ok(a) => a,
+            Err(e) => Acted::refused(format!("Couldn’t send that: {}", wisp_channels_api::scrub::truncate(&e.message, 300))),
         };
-        let _ = self.rest("PATCH", &self.original(i), Some(&json!({ "components": [] }))).await;
-        say(&result).await
+        if acted.done {
+            let _ = self.rest("PATCH", &self.original(i), Some(&json!({ "components": [] }))).await;
+        }
+        say(&acted.words).await
     }
 
     /// A report's choices as signed buttons: answers, and replies unless the task runs in Full auto.
