@@ -138,3 +138,19 @@ fn the_adopt_hook_quotes_wisps_path_for_the_shell_that_runs_it() {
         assert_eq!(back, exe, "PowerShell reads the path back whole");
     }
 }
+
+/// Audit cli-r3: an editor that started `wisp mcp` before wisp listed 11 tools and never more. The list now reaches
+/// for the running wisp (started if none answers) as a catalogue tool's call does, and initialize says the list can
+/// change (a wisp reached later sends `notifications/tools/list_changed`).
+#[test]
+fn the_tool_list_starts_wisp_and_can_change() {
+    use super::{Need, mcp_reply, needs_wisp};
+    assert_eq!(needs_wisp("tools/list", ""), Need::Start);
+    assert_eq!(needs_wisp("tools/call", "wisp_wait"), Need::Start, "a task tool");
+    assert_eq!(needs_wisp("tools/call", "runtime_list"), Need::Start, "a catalogue tool");
+    assert_eq!(needs_wisp("tools/call", "wisp_resume"), Need::Running);
+    assert_eq!(needs_wisp("tools/call", "wisp_history"), Need::No, "the history tools need no wisp");
+    assert_eq!(needs_wisp("ping", ""), Need::No);
+    let init = mcp_reply(Path::new("/nowhere"), &serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize" })).unwrap();
+    assert_eq!(init["result"]["capabilities"]["tools"]["listChanged"], true, "{init}");
+}

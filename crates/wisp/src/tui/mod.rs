@@ -157,7 +157,8 @@ fn handed(paused: &AtomicBool, mut cmd: std::process::Command) -> std::result::R
         Ok(s) => Err(s.code().map_or_else(|| "it was stopped".to_owned(), |c| format!("exit {c}"))),
         Err(e) => Err(format!("{}: {e}", cmd.get_program().to_string_lossy())),
     };
-    let _ = ratatui::init();
+    // try_init, never init (it panics): a terminal that can't be taken back fails the next draw, which ends the TUI
+    let _ = ratatui::try_init();
     let _ = execute!(std::io::stdout(), event::EnableMouseCapture, event::EnableBracketedPaste);
     paused.store(false, Ordering::Relaxed);
     got
@@ -223,7 +224,7 @@ pub async fn run(c: &Client, cwd: &str) -> Result<i32> {
     let (tx, mut inputs) = mpsc::channel::<Input>(64);
     let paused = Arc::new(AtomicBool::new(false));
     input_thread(tx, paused.clone());
-    let mut term = start_screen(&mut app);
+    let mut term = start_screen(&mut app)?;
     let mut frame = tokio::time::interval(Duration::from_millis(16));
     frame.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut dirty = true;
@@ -312,12 +313,26 @@ pub async fn run(c: &Client, cwd: &str) -> Result<i32> {
 
 /// The terminal, full-screen, on a clean screen (what the shell printed before never shows through a cell the TUI
 /// draws), with the mouse and bracketed paste on, and the glyphs it can show.
-fn start_screen(app: &mut App) -> ratatui::DefaultTerminal {
-    let mut term = ratatui::init();
+fn start_screen(app: &mut App) -> Result<ratatui::DefaultTerminal> {
+    needs_terminal()?;
+    let mut term = ratatui::try_init().map_err(|e| CliError::said(format!("wisp tui couldn't take the terminal: {e}")))?;
     let _ = term.clear();
     let _ = execute!(std::io::stdout(), event::EnableMouseCapture, event::EnableBracketedPaste);
     app.ascii = std::env::var("TERM").is_ok_and(|t| t == "dumb");
-    term
+    Ok(term)
+}
+
+const NO_TERMINAL: &str = "wisp tui needs a terminal: try wisp ls --watch or wisp attach <id>";
+
+/// `wisp tui` in a pipe or CI (stdin or stdout not a terminal): the line that says what works there, exit 2, never
+/// ratatui's panic on a terminal it can't set up.
+fn terminal_guard(stdin_tty: bool, stdout_tty: bool) -> Result<()> {
+    if stdin_tty && stdout_tty { Ok(()) } else { Err(CliError::Usage(NO_TERMINAL.to_owned())) }
+}
+
+pub fn needs_terminal() -> Result<()> {
+    use std::io::IsTerminal;
+    terminal_guard(std::io::stdin().is_terminal(), std::io::stdout().is_terminal())
 }
 
 /// A frame went by: the clock and the spinners move. → whether something animates (a redraw is due anyway).
