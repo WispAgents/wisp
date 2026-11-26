@@ -4,7 +4,8 @@
 //!   - setup F5, F10, F11: `wisp update` never says "latest" unchecked; `wisp update view` needs no --peer;
 //!     `wisp connectors remove <id>` takes the id as its word.
 //!   - orchestration F2: a fork of a merged task (its worktree and branch gone) gets a folder of its own, fresh from the
-//!     project, never the gone folder; a follow-up there says the branch is gone, in plain words.
+//!     project, never the gone folder; a follow-up there goes on in its worktree made again from the base and says so
+//!     (ADR-0131), never git's "invalid reference".
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::too_many_lines)]
 
 mod common;
@@ -112,11 +113,20 @@ async fn a_merged_tasks_fork_and_follow_up_say_where_they_are_audit_f_orchestrat
     assert!(Path::new(&fcwd).is_dir(), "the fork has a folder of its own: {fcwd:?}");
     assert_ne!(fcwd, cwd, "never the merged task's gone worktree");
 
+    // its follow-up goes on in its worktree made again from the base, and says so (ADR-0131 supersedes the refusal)
     api.cmd("runtime.followUp", json!({ "id": id, "text": "one more thing" })).await;
-    let said = api.until(&id, "the follow-up is refused", |t| t.len() >= 2 && ended(&t[1])).await;
-    let text = said[1].to_string();
-    assert!(text.contains("is gone") && text.contains("merged"), "{text}");
+    let turns = api.until(&id, "the follow-up runs", |t| t.len() >= 2 && ended(&t[1])).await;
+    let text = turns[1].to_string();
+    assert_ne!(turns[1]["presentation"]["blocks"][0]["title"], "Not started", "{text}");
     assert!(!text.contains("invalid reference"), "{text}");
+    assert_eq!(git_out(Path::new(&cwd), &["branch", "--show-current"]).trim(), branch, "back on its branch, at {cwd}");
+    let tid = turns[1]["id"].as_str().unwrap();
+    let steps = api.cmd("runtime.activity", json!({ "id": id, "turnId": tid })).await;
+    let said =
+        steps["items"].as_array().unwrap().iter().any(|s| {
+            s["kind"] == "notice" && s["text"].as_str().is_some_and(|t| t.contains("worktree was deleted") && t.contains(&branch))
+        });
+    assert!(said, "the turn says where it is: {steps}");
 }
 
 fn git_out(dir: &Path, args: &[&str]) -> String {

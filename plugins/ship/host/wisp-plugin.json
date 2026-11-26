@@ -69,7 +69,7 @@
       },
       {
         "id": "ship.steward",
-        "title": "Keep a task's PR green (the Steward, ADR-0132): fix, review (fix + another vendor's review of each push) or off"
+        "title": "Keep a task's PR green (the Steward): fix, review (fix + another vendor's review of each push) or off"
       },
       {
         "id": "ship.check_log",
