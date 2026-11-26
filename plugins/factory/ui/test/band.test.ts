@@ -74,6 +74,27 @@ describe('wisp.factory ui', () => {
     expect(words(where(run({ station: 'build', round: 1 })).said)).toBe('Build');
   });
 
+  it('a row waiting at the spec shows the spec beside the question (new2)', () => {
+    // the row as runtime.summary writes it (wisp-factory-core's summary_of): the spec went only in the hand-made line above
+    const row = {
+      summary: {
+        factory: {
+          name: 'default',
+          state: 'waiting',
+          station: 'spec',
+          round: 1,
+          max: 3,
+          why: '',
+          stations: [{ id: 'spec', state: 'asking', round: 1, tasks: ['s1'], output: 'SPEC: add adds', why: '' }],
+          waiting: { station: 'spec', question: 'Approve the spec? Approve to build it, Stop, or say what to change.', options: ['Approve', 'Stop'], askId: 'a2', context: 'SPEC: add adds\n- a test' },
+        },
+      },
+    };
+    const r = runOf(row);
+    expect(r).toBeDefined();
+    expect(words(step(r!, r!.stations[0]!).detail as never)).toBe('SPEC: add adds\n- a test · waiting on you');
+  });
+
   it('reads the run from a synced row, flattened from summary', () => {
     expect(runOf({ summary: { factory: run() } })?.name).toBe('default');
     expect(runOf({ factory: run() })?.station).toBe('review');
