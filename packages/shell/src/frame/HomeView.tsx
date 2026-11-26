@@ -59,6 +59,7 @@ import type { FormulaPick } from './formula-pick.ts';
 import { barArgs, fileRunner } from './file-runner.ts';
 import { TEAMS_SETTING, presetsOf, teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
 import type { DelegatePlace } from './DelegatePanel.tsx';
+import '../i18n/home.ts';
 
 // Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
 const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
