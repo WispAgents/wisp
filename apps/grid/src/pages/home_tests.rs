@@ -15,6 +15,14 @@ fn page() -> HomePage {
     }
 }
 
+/// hostd puts a start with no room in line now (grid-r2-1), so the row's queued copy is what a person sees.
+#[test]
+fn a_cloud_wisp_in_line_for_room_says_so_on_its_row() {
+    let p = HomePage { instance: InstanceView { state: "queued".into(), ..InstanceView::default() }, ..page() };
+    let h = home_page(&cfg(), &p);
+    assert!(h.contains("Waiting for room · the grid is busy: it starts as soon as there’s room"), "{h}");
+}
+
 #[test]
 fn a_fresh_account_gets_one_machines_list_and_the_checklist() {
     let h = home_page(&cfg(), &page());

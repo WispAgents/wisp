@@ -103,6 +103,11 @@ struct Rig {
 }
 
 async fn rig(name: &str, next_wake: Option<i64>) -> Rig {
+    rig_with(name, next_wake, |_| {}).await
+}
+
+/// `rig` with hostd's options changed first (room on the grid, the box's binary).
+async fn rig_with(name: &str, next_wake: Option<i64>, tune: impl FnOnce(&mut wisp_grid::hostd::ProcessOptions)) -> Rig {
     let dir = std::env::temp_dir().join(format!("wisp-grid-life-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -114,21 +119,22 @@ async fn rig(name: &str, next_wake: Option<i64>) -> Rig {
     let db = Arc::new(wisp_grid::db::Db::open(&dir, clock.now_ms()).unwrap());
     let url_cfg = cfg.clone();
     let env = next_wake.map(|t| vec![("WISP_FAKE_NEXT_WAKE".to_owned(), t.to_string())]).unwrap_or_default();
-    let boxes = wisp_grid::hostd::ProcessHost::new(
-        wisp_grid::hostd::ProcessOptions {
-            bin: std::env::current_exe().unwrap(),
-            data: dir.clone(),
-            idle_ms: 600_000,
-            check_ms: 200,
-            start_ms: 20_000,
-            max_running: 2,
-            env,
-            url_of: Arc::new(move |h| url_cfg.instance_url(h)),
-            boxd: None,
-            previews: false,
-        },
-        clock.clone(),
-    );
+    let mut o = wisp_grid::hostd::ProcessOptions {
+        bin: std::env::current_exe().unwrap(),
+        data: dir.clone(),
+        idle_ms: 600_000,
+        check_ms: 200,
+        start_ms: 20_000,
+        max_running: 2,
+        max_running_per_user: 4,
+        wake_retry_ms: 30_000,
+        env,
+        url_of: Arc::new(move |h| url_cfg.instance_url(h)),
+        boxd: None,
+        previews: false,
+    };
+    tune(&mut o);
+    let boxes = wisp_grid::hostd::ProcessHost::new(o, clock.clone());
     let grid = wisp_grid::edge::Grid::new(cfg, db, clock, boxes);
     let stop = CancellationToken::new();
     tokio::spawn(wisp_grid::edge::serve(grid.clone(), listener, stop.clone()));
@@ -155,12 +161,27 @@ impl Rig {
     }
     /// Opens ada's cloud wisp as the browser does (`/go`, its ticket), and asks it something.
     async fn open(&self, grid_cookie: &str) -> String {
+        let cookie = self.box_cookie(grid_cookie).await;
+        let r = self.c.get(format!("http://ada.wisp.localhost:{}/x", self.port)).header("cookie", &cookie).send().await.unwrap();
+        r.text().await.unwrap()
+    }
+    /// ada's cookie at her box's address, as `/go` and its ticket leave it.
+    async fn box_cookie(&self, grid_cookie: &str) -> String {
         let root = format!("http://wisp.localhost:{}", self.port);
         let r = self.c.get(format!("{root}/go")).header("cookie", grid_cookie).send().await.unwrap();
         let r = self.c.get(r.headers()["location"].to_str().unwrap()).send().await.unwrap();
-        let cookie = r.headers()["set-cookie"].to_str().unwrap().split(';').next().unwrap().to_owned();
-        let r = self.c.get(format!("http://ada.wisp.localhost:{}/x", self.port)).header("cookie", &cookie).send().await.unwrap();
-        r.text().await.unwrap()
+        r.headers()["set-cookie"].to_str().unwrap().split(';').next().unwrap().to_owned()
+    }
+    /// `path` at ada's box, asked for as `accept` (a browser navigating: `text/html`).
+    async fn at_box(&self, path: &str, cookie: &str, accept: &str) -> reqwest::Response {
+        let mut r = self.c.get(format!("http://ada.wisp.localhost:{}{path}", self.port)).header("cookie", cookie).header("accept", accept);
+        if accept.contains("text/html") {
+            r = r.header("sec-fetch-mode", "navigate");
+        }
+        r.send().await.unwrap()
+    }
+    async fn state(&self, cookie: &str) -> serde_json::Value {
+        self.at_box("/_grid/state", cookie, "application/json").await.json().await.unwrap()
     }
     async fn home(&self, cookie: &str) -> String {
         let root = format!("http://wisp.localhost:{}", self.port);
@@ -398,4 +419,362 @@ async fn a_box_that_exits_unexpectedly_is_reaped_and_restarts_on_next_request() 
     assert_eq!(g.open(&cookie).await, "fake box");
     assert_ne!(g.pid(), first_pid, "restarted as a new process");
     g.done().await;
+}
+
+fn bob() -> wisp_grid::rows::BoxUser {
+    wisp_grid::rows::BoxUser { id: "u-bob".into(), handle: "bob".into(), sandbox: None, owner: None }
+}
+
+/// grid-r2-1: a browser opening a sleeping box gets its waiting page at once (not a blank tab until the box is up,
+/// up to `startMs`), the box starts behind it, and the page's next load is the wisp.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_browser_opening_a_sleeping_box_gets_its_waiting_page_at_once_then_the_wisp() {
+    let g = rig("waiting-page", None).await;
+    let cookie = g.box_cookie(&g.session()).await;
+    let t = std::time::Instant::now();
+    let r = g.at_box("/x", &cookie, "text/html,application/xhtml+xml").await;
+    let took = t.elapsed();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["cache-control"], "no-store");
+    let page = r.text().await.unwrap();
+    assert!(page.contains("Waking your wisp") && page.contains("fetch('/_grid/state'"), "{page}");
+    assert!(took < Duration::from_millis(1500), "answered before the box was up: {took:?}");
+    until("the box started behind the page", || g.grid.boxes.state(&g.uid()) == BoxState::Running).await;
+    assert_eq!(g.state(&cookie).await["state"], "running");
+    let r = g.at_box("/x", &cookie, "text/html").await;
+    assert_eq!(r.text().await.unwrap(), "fake box", "once it runs, the page's reload is the wisp");
+    g.done().await;
+}
+
+/// grid-r2-1: a full grid puts a start in line. A caller that isn't a page hears 503 with when to ask again and its
+/// place; `/_grid/state` says queued and where; once room frees, the box starts by itself.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_full_grid_queues_a_start_and_starts_it_when_room_frees() {
+    let g = rig_with("full", None, |o| o.max_running = 1).await;
+    g.grid.boxes.ensure(&bob(), false).await.unwrap();
+    let cookie = g.box_cookie(&g.session()).await;
+    let r = g.at_box("/api/x", &cookie, "application/json").await;
+    assert_eq!(r.status(), 503);
+    assert_eq!(r.headers()["retry-after"], "10");
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!((body["queued"].as_bool(), body["position"].as_u64()), (Some(true), Some(1)), "{body}");
+    let s = g.state(&cookie).await;
+    assert_eq!((s["state"].as_str(), s["position"].as_u64()), (Some("queued"), Some(1)), "{s}");
+    // a page says its place in line
+    let page = g.at_box("/", &cookie, "text/html").await.text().await.unwrap();
+    assert!(page.contains("Waiting for room") && page.contains("You’re next in line"), "{page}");
+    g.grid.boxes.stop("u-bob", "idle").await.unwrap();
+    until("ada's box starts once there's room", || g.grid.boxes.state(&g.uid()) == BoxState::Running).await;
+    g.done().await;
+}
+
+/// grid-r2-1: a start that fails says why on the waiting page, with Try again (never the old dead end).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_start_that_fails_says_why_on_the_waiting_page_with_try_again() {
+    let g = rig_with("spawn-fails", None, |o| o.bin = "/nonexistent/wisp".into()).await;
+    let cookie = g.box_cookie(&g.session()).await;
+    let r = g.at_box("/", &cookie, "text/html").await;
+    assert_eq!(r.status(), 200);
+    let page = r.text().await.unwrap();
+    assert!(page.contains(r#"id="again" type="button">Try again</button>"#) && !page.contains(">Back<"), "{page}");
+    let mut s = serde_json::Value::Null;
+    for _ in 0..100 {
+        s = g.state(&cookie).await;
+        if s["error"].is_string() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(s["state"], "stopped", "{s}");
+    assert!(s["error"].as_str().unwrap().contains("wisp didn't start in the box"), "{s}");
+    g.done().await;
+}
+
+/// hostd against a fake boxd whose boxes take their time (to answer, to stop) and can refuse to start: the races
+/// between stops, starts and wakes, and the line for room. Unix only: boxd serves a Unix socket.
+#[cfg(unix)]
+mod races {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use bytes::Bytes;
+    use http_body_util::Full;
+    use hyper_util::rt::TokioIo;
+    use serde_json::Value;
+    use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
+    use tokio::net::{TcpListener, UnixListener};
+    use wisp_grid::boxhost::{BoxHost as _, BoxState};
+    use wisp_grid::hostd::{ProcessHost, ProcessOptions};
+    use wisp_grid::rows::BoxUser;
+
+    #[derive(Default)]
+    struct Fake {
+        /// before a box answers
+        health_ms: u64,
+        /// between SIGTERM and its exit
+        stop_ms: u64,
+        /// runs refused (boxd's `error`) before one starts
+        fail: AtomicUsize,
+        /// boxes up now
+        live: AtomicUsize,
+    }
+
+    fn fake_boxd(sock: &std::path::Path, fake: Arc<Fake>) {
+        let l = UnixListener::bind(sock).unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((conn, _)) = l.accept().await else { return };
+                let f = fake.clone();
+                tokio::spawn(async move {
+                    let (rd, mut wr) = conn.into_split();
+                    let mut lines = BufReader::new(rd).lines();
+                    let Ok(Some(first)) = lines.next_line().await else { return };
+                    let m: Value = serde_json::from_str(&first).unwrap();
+                    if m["op"] == "remove" {
+                        let _ = wr.write_all(b"{\"ok\":true}\n").await;
+                        return;
+                    }
+                    if f.fail.load(Ordering::SeqCst) > 0 {
+                        f.fail.fetch_sub(1, Ordering::SeqCst);
+                        let _ = wr.write_all(b"{\"error\":\"the host is out of memory\"}\n").await;
+                        return;
+                    }
+                    let port = u16::try_from(m["port"].as_u64().unwrap()).unwrap();
+                    tokio::time::sleep(Duration::from_millis(f.health_ms)).await;
+                    let http = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+                    f.live.fetch_add(1, Ordering::SeqCst);
+                    let server = tokio::spawn(async move {
+                        loop {
+                            let Ok((s, _)) = http.accept().await else { return };
+                            tokio::spawn(async move {
+                                let svc = hyper::service::service_fn(|_r| async {
+                                    Ok::<_, std::convert::Infallible>(http::Response::new(Full::new(Bytes::from_static(b"{\"ok\":true}"))))
+                                });
+                                let _ = hyper::server::conn::http1::Builder::new().serve_connection(TokioIo::new(s), svc).await;
+                            });
+                        }
+                    });
+                    while let Ok(Some(l)) = lines.next_line().await {
+                        if l.contains("SIGTERM") {
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(f.stop_ms)).await;
+                    server.abort();
+                    f.live.fetch_sub(1, Ordering::SeqCst);
+                    let _ = wr.write_all(b"{\"exit\":0}\n").await;
+                });
+            }
+        });
+    }
+
+    struct Host {
+        h: Arc<ProcessHost>,
+        f: Arc<Fake>,
+        dir: std::path::PathBuf,
+    }
+
+    fn host(name: &str, f: Fake, tune: impl FnOnce(&mut ProcessOptions)) -> Host {
+        let dir = std::env::temp_dir().join(format!("wisp-grid-race-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("box.sock");
+        let f = Arc::new(f);
+        fake_boxd(&sock, f.clone());
+        let mut o = ProcessOptions {
+            bin: "/nonexistent/wisp".into(),
+            data: dir.clone(),
+            idle_ms: 600_000,
+            check_ms: 60_000,
+            start_ms: 10_000,
+            max_running: 4,
+            max_running_per_user: 4,
+            wake_retry_ms: 30_000,
+            env: Vec::new(),
+            url_of: Arc::new(|h| format!("https://{h}.grid.test")),
+            boxd: Some(wisp_grid::boxd::Driver { socket: sock, limits: Value::Null, dns: None }),
+            previews: false,
+        };
+        tune(&mut o);
+        Host { h: ProcessHost::new(o, wisp_grid::clock::system()), f, dir }
+    }
+
+    impl Host {
+        async fn done(self) {
+            self.h.close_all().await;
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+        fn live(&self) -> usize {
+            self.f.live.load(Ordering::SeqCst)
+        }
+        async fn answers(&self, id: &str) -> bool {
+            let Some(port) = self.h.port(id) else { return false };
+            let c = reqwest::Client::builder().no_proxy().build().unwrap();
+            c.get(format!("http://127.0.0.1:{port}/api/health")).send().await.is_ok_and(|r| r.status().is_success())
+        }
+    }
+
+    fn user(id: &str) -> BoxUser {
+        BoxUser { id: id.into(), handle: id.into(), sandbox: None, owner: None }
+    }
+
+    fn sandbox(owner: &str, n: u32) -> BoxUser {
+        BoxUser {
+            id: format!("{owner}-sb-{n}"),
+            handle: format!("sb-{n}--{owner}"),
+            sandbox: Some(n.to_string()),
+            owner: Some(owner.into()),
+        }
+    }
+
+    async fn until(what: &str, mut ok: impl FnMut() -> bool) {
+        for _ in 0..200 {
+            if ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("never: {what}");
+    }
+
+    /// grid-r2-3: a start asked for while the box is still stopping waits for the stop, and the stop's end never
+    /// marks the new run stopped: the box ends up, on a port that answers, with one box and none orphaned. Before,
+    /// the start began at once and the slow stop's tail wrote Stopped over it, its container still running.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_start_racing_a_slow_stop_waits_for_it_and_ends_up_running() {
+        let x = host("stop-start", Fake { stop_ms: 800, ..Fake::default() }, |_| {});
+        let ada = user("u1");
+        x.h.ensure(&ada, false).await.unwrap();
+        let (stopped, started) = tokio::join!(x.h.stop("u1", "idle"), async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            x.h.ensure(&ada, false).await
+        });
+        assert!(stopped.unwrap());
+        started.unwrap();
+        assert_eq!(x.h.state("u1"), BoxState::Running);
+        assert!(x.answers("u1").await, "its port answers");
+        assert!(x.h.secret("u1").is_some_and(|s| !s.is_empty()), "the edge still has its secret");
+        assert_eq!(x.live(), 1, "the old box stopped and the new one isn't orphaned");
+        x.done().await;
+    }
+
+    /// grid-r2-3: the idle tick's stop racing a scheduled wake (`ensure(…, wake: true)`) ends running, not stopped
+    /// with a box still up.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_idle_stop_racing_a_scheduled_wake_ends_running() {
+        let x = host("idle-wake", Fake { stop_ms: 800, ..Fake::default() }, |o| {
+            o.idle_ms = 1_500;
+            o.check_ms = 200;
+        });
+        let ada = user("u1");
+        x.h.ensure(&ada, false).await.unwrap();
+        until("the idle tick stops it", || x.h.state("u1") == BoxState::Stopping).await;
+        let t = std::time::Instant::now();
+        x.h.ensure(&ada, true).await.unwrap();
+        // past the slow stop's end, well before the next idle stop
+        if let Some(rest) = Duration::from_millis(1_000).checked_sub(t.elapsed()) {
+            tokio::time::sleep(rest).await;
+        }
+        assert_eq!(x.h.state("u1"), BoxState::Running);
+        assert!(x.answers("u1").await);
+        assert_eq!(x.live(), 1);
+        x.done().await;
+    }
+
+    /// grid-r2-6: room is counted and taken at once. Two cold starts for the last slot: one runs, the other waits in
+    /// line (503). Before, both counted the box up (not the one starting) and both ran.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn two_cold_starts_for_the_last_slot_run_one_and_queue_the_other() {
+        let x = host("last-slot", Fake { health_ms: 400, ..Fake::default() }, |o| o.max_running = 1);
+        let (ua, ub) = (user("a"), user("b"));
+        let (a, b) = tokio::join!(x.h.ensure(&ua, false), x.h.ensure(&ub, false));
+        assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1, "exactly one starts");
+        let e = a.err().or(b.err()).unwrap();
+        assert_eq!(e.status(), 503);
+        let mut states = [x.h.state("a"), x.h.state("b")];
+        states.sort_by_key(|s| s.as_str());
+        assert_eq!(states, [BoxState::Queued, BoxState::Running]);
+        assert_eq!(x.live(), 1);
+        x.done().await;
+    }
+
+    /// grid-r2-6: `maxRunningPerUser` holds one person's sandboxes back without holding anyone else, or their own
+    /// box, back.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_sandbox_past_its_owners_limit_waits_while_others_and_the_owners_box_start() {
+        let x = host("per-user", Fake::default(), |o| {
+            o.max_running = 10;
+            o.max_running_per_user = 2;
+        });
+        x.h.ensure(&sandbox("o1", 1), false).await.unwrap();
+        x.h.ensure(&sandbox("o1", 2), false).await.unwrap();
+        let e = x.h.ensure(&sandbox("o1", 3), false).await.unwrap_err();
+        assert_eq!(e.status(), 503);
+        assert_eq!(x.h.state("o1-sb-3"), BoxState::Queued);
+        x.h.ensure(&user("bob"), false).await.expect("another user still starts");
+        x.h.ensure(&user("o1"), false).await.expect("the owner's own box is never held back");
+        assert_eq!(x.h.state("o1-sb-3"), BoxState::Queued, "still waiting: the owner has 3 up");
+        x.h.stop("o1-sb-1", "idle").await.unwrap();
+        x.h.stop("o1", "idle").await.unwrap();
+        until("the sandbox starts once its owner has room", || x.h.state("o1-sb-3") == BoxState::Running).await;
+        x.done().await;
+    }
+
+    /// grid-r2-1: with no room the second box waits at place 1 in line, and starts once the first stops.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_box_in_line_starts_when_the_one_running_stops() {
+        let x = host("line", Fake::default(), |o| o.max_running = 1);
+        x.h.ensure(&user("a"), false).await.unwrap();
+        let e = x.h.ensure(&user("b"), false).await.unwrap_err();
+        assert!(e.to_string().contains("You’re next in line"), "{e}");
+        assert_eq!((x.h.state("b"), x.h.queued_at("b")), (BoxState::Queued, Some(1)));
+        x.h.stop("a", "idle").await.unwrap();
+        until("b starts", || x.h.state("b") == BoxState::Running).await;
+        assert_eq!(x.h.queued_at("b"), None);
+        x.done().await;
+    }
+
+    /// grid-r2-2: a scheduled wake with no room waits in line (`wake queued`) while the grid is full, and starts once
+    /// there's room. Before, it failed, was logged, and the box slept through its task.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_scheduled_wake_on_a_full_grid_waits_in_line_and_wakes_once_theres_room() {
+        let x = host("wake-full", Fake::default(), |o| o.max_running = 1);
+        let mut changes = x.h.changes();
+        x.h.ensure(&user("a"), false).await.unwrap();
+        x.h.restore(&user("b"), Some(wisp_grid::clock::system().now_ms()));
+        until("b's wake waits in line", || x.h.state("b") == BoxState::Queued).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(x.h.state("b"), BoxState::Queued, "not while a is up");
+        let mut said = Vec::new();
+        while let Ok(c) = changes.try_recv() {
+            said.push((c.user.id, c.event));
+        }
+        assert!(said.contains(&("b".into(), "wake queued".into())), "{said:?}");
+        x.h.stop("a", "idle").await.unwrap();
+        until("b wakes once a stops", || x.h.state("b") == BoxState::Running).await;
+        x.done().await;
+    }
+
+    /// grid-r2-2: a wake whose start fails says so (`wake failed`, with why, its schedule kept) and is tried again,
+    /// and then runs. Before, its schedule was cleared as it began and nothing tried again.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_scheduled_wake_that_fails_keeps_its_schedule_and_is_tried_again() {
+        let fake = Fake { fail: AtomicUsize::new(1), ..Fake::default() };
+        let x = host("wake-fails", fake, |o| o.wake_retry_ms = 200);
+        let mut changes = x.h.changes();
+        let at = wisp_grid::clock::system().now_ms();
+        x.h.restore(&user("b"), Some(at));
+        until("b wakes on its second try", || x.h.state("b") == BoxState::Running).await;
+        let mut failed = None;
+        while let Ok(c) = changes.try_recv() {
+            if c.event == "wake failed" {
+                failed = Some(c);
+            }
+        }
+        let c = failed.expect("a `wake failed` change");
+        assert_eq!((c.state, c.next_wake_at), (BoxState::Stopped, Some(at)), "its schedule kept through the failure");
+        assert!(c.error.contains("out of memory"), "{}", c.error);
+        x.done().await;
+    }
 }

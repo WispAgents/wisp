@@ -207,6 +207,8 @@ pub fn box_options(cfg: &crate::config::GridConfig) -> crate::Result<crate::host
         check_ms: h.check_ms,
         start_ms: h.start_ms,
         max_running: usize::try_from(h.max_running).unwrap_or(1).max(1),
+        max_running_per_user: usize::try_from(h.max_running_per_user.unwrap_or(4)).unwrap_or(1).max(1),
+        wake_retry_ms: 30_000,
         // the grid itself, for what a box asks of it (its channels' URLs, mail replies): v1 hostd.js `WISP_GRID_URL`
         env: std::iter::once(("WISP_GRID_URL".to_owned(), cfg.public_url.clone()))
             .chain(h.env.iter().map(|(k, v)| (k.clone(), v.clone())))

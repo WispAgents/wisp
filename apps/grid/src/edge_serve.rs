@@ -97,6 +97,8 @@ pub async fn dev(
             check_ms: 1000,
             start_ms: 30_000,
             max_running: 8,
+            max_running_per_user: 4,
+            wake_retry_ms: 30_000,
             env,
             url_of: Arc::new(move |h| url_cfg.instance_url(h)),
             boxd: None,

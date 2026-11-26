@@ -10,8 +10,11 @@
 //!   gets here (the edge answers it asleep), so watching a box never wakes or keeps it up.
 //! - **Idle:** every `checkMs`, a running box with no request open, nothing going on (its `/api/status`:
 //!   no turn, side question, terminal or channel at work) and no use for `idleMs` is stopped. Its home stays.
-//! - **One start:** several callers waiting on a stopped box share one start.
-use std::collections::HashMap;
+//! - **One start:** several callers waiting on a stopped box share one start, and a stop and a start of one box never
+//!   overlap (both take its `starts` gate).
+//! - **Room:** a start past `maxRunning` (or a sandbox past its owner's `maxRunningPerUser`) waits in line
+//!   (`hostd_queue.rs`) and starts once there's room, people ahead of scheduled wakes.
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -23,10 +26,13 @@ use crate::clock::SharedClock;
 use crate::error::{Result, bad};
 use crate::rows::BoxUser;
 
+#[path = "hostd_queue.rs"]
+mod queue;
 #[path = "hostd_spawn.rs"]
 mod spawn;
 #[path = "hostd_wake.rs"]
 mod wake;
+use queue::Waiting;
 use spawn::BoxProc;
 
 #[derive(Clone)]
@@ -39,6 +45,11 @@ pub struct ProcessOptions {
     pub check_ms: i64,
     pub start_ms: i64,
     pub max_running: usize,
+    /// a user's own box and their sandboxes that may run at once (config `hostd.maxRunningPerUser`): past it a
+    /// sandbox waits in line, so one person's sandboxes can't fill the grid; their own box is never held back
+    pub max_running_per_user: usize,
+    /// a scheduled wake that didn't start tries again after this, doubling (to 10 min) while the wake is recent
+    pub wake_retry_ms: i64,
     /// more environment for every box (the operator's choice: a harness's path, a test's fakes)
     pub env: Vec<(String, String)>,
     /// `<handle>` → the box's public URL (`WISP_PUBLIC_URL`)
@@ -83,6 +94,8 @@ struct Inst {
     wake: Option<tokio::task::AbortHandle>,
     /// monotonic per-start id so an old exit watcher never reaps a newer start
     run_id: u64,
+    /// why its last start didn't work (cleared when the next one begins): what its waiting page says
+    error: String,
 }
 
 #[derive(Debug)]
@@ -91,6 +104,8 @@ pub struct ProcessHost {
     clock: SharedClock,
     inst: Arc<Mutex<HashMap<String, Inst>>>,
     starts: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// starts waiting for room, in order (locked after `inst`, never before it)
+    queue: Mutex<VecDeque<Waiting>>,
     tx: broadcast::Sender<BoxChange>,
     peak: Mutex<(usize, usize)>,
     http: reqwest::Client,
@@ -136,6 +151,7 @@ impl ProcessHost {
             clock,
             inst: Arc::new(Mutex::new(HashMap::new())),
             starts: Mutex::new(HashMap::new()),
+            queue: Mutex::new(VecDeque::new()),
             tx,
             peak: Mutex::new((0, 0)),
             http,
@@ -172,11 +188,11 @@ impl ProcessHost {
     }
 
     fn change(&self, user: &BoxUser, state: BoxState, event: &str) {
-        let (who, started_at, stopped_at, next, last) = lock(&self.inst).get(&user.id).map_or_else(
-            || (user.clone(), None, None, None, None),
+        let (who, started_at, stopped_at, next, last, error) = lock(&self.inst).get(&user.id).map_or_else(
+            || (user.clone(), None, None, None, None, String::new()),
             |i| {
                 let last = i.last_active_at.max(Some(i.last_touch)).filter(|t| *t > 0);
-                (i.user.clone().unwrap_or_else(|| user.clone()), i.started_at, i.stopped_at, i.next_wake_at, last)
+                (i.user.clone().unwrap_or_else(|| user.clone()), i.started_at, i.stopped_at, i.next_wake_at, last, i.error.clone())
             },
         );
         let _ = self.tx.send(BoxChange {
@@ -187,44 +203,39 @@ impl ProcessHost {
             stopped_at,
             next_wake_at: next,
             last_active_at: last,
-            error: String::new(),
+            error,
         });
     }
 
-    async fn start(&self, user: &BoxUser) -> Result<Running> {
+    /// Starts the box (its gate held): now if there's room, else in line (`Queued`, a 503 naming its place).
+    /// `wake`: a scheduled wake's, behind people in line.
+    async fn start(&self, user: &BoxUser, wake: bool) -> Result<Running> {
         if self.is_closed() {
             return Err(bad("The grid is shutting down.", 503));
-        }
-        let running = lock(&self.inst).values().filter(|i| i.state == BoxState::Running).count();
-        if running >= self.o.max_running {
-            let mut p = lock(&self.peak);
-            p.1 += 1;
-            return Err(bad("This grid is full right now. Try again in a few minutes.", 503));
         }
         // a process box binds its own port and says which (`WISP_PORT=0`): none is read here and handed over
         let port = if self.o.boxd.is_some() { free_port()? } else { 0 };
         let secret = crate::accounts::token("");
-        {
-            let mut m = lock(&self.inst);
-            let i = m.entry(user.id.clone()).or_default();
-            i.state = BoxState::Starting;
-            i.user = Some(user.clone());
-            // awake now: its schedule is its own again until it next sleeps (v1)
-            i.next_wake_at = None;
-            if let Some(w) = i.wake.take() {
-                w.abort();
-            }
+        // room is counted and taken in one critical section: two cold starts can't both see the last slot
+        if let Some(e) = self.admit_or_queue(user, wake) {
+            return Err(e);
         }
         self.change(user, BoxState::Starting, "starting");
+        let failed = if wake { "wake failed" } else { "failed" };
         let child = match self.spawn(user, port, &secret).await {
             Ok(c) => c,
             Err(e) => {
-                lock(&self.inst).entry(user.id.clone()).or_default().state = BoxState::Stopped;
-                self.change(user, BoxState::Stopped, "failed");
+                self.start_failed(user, failed, wake, &e);
                 return Err(e);
             }
         };
-        let (child, port) = self.healthy(user, port, child).await?;
+        let (child, port) = match self.healthy(user, port, child).await {
+            Ok(up) => up,
+            Err((event, e)) => {
+                self.start_failed(user, if event == "failed" { failed } else { event }, wake, &e);
+                return Err(e);
+            }
+        };
         let now = self.clock.now_ms();
         let run_id = self.next_run.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         let mut exit_rx = child.watch_exit();
@@ -233,6 +244,12 @@ impl ProcessHost {
             let i = m.entry(user.id.clone()).or_default();
             (i.state, i.port, i.secret, i.child, i.started_at, i.last_touch, i.run_id) =
                 (BoxState::Running, Some(port), secret, Some(child), Some(now), now, run_id);
+            // awake now: its schedule is its own again until it next sleeps (v1). Only now: a start that didn't come
+            // up leaves the box asleep with its schedule, so its wake still comes (grid-r2-2)
+            i.next_wake_at = None;
+            if let Some(w) = i.wake.take() {
+                w.abort();
+            }
             let up = m.values().filter(|i| i.state == BoxState::Running).count();
             let mut p = lock(&self.peak);
             p.0 = p.0.max(up);
@@ -249,6 +266,23 @@ impl ProcessHost {
             h.on_unexpected_exit(&who, run_id, &why);
         });
         Ok(Running { port })
+    }
+
+    /// A start that didn't come up: asleep again, with why (its waiting page says it) and its schedule kept; the room
+    /// it held goes to the next in line. A person's start re-arms the box's wake; a scheduled wake's tries again by
+    /// itself (`wake_failed`).
+    fn start_failed(&self, user: &BoxUser, event: &str, wake: bool, e: &crate::error::GridError) {
+        {
+            let mut m = lock(&self.inst);
+            let i = m.entry(user.id.clone()).or_default();
+            i.state = BoxState::Stopped;
+            i.error = start_error(e);
+        }
+        self.change(user, BoxState::Stopped, event);
+        if !wake {
+            self.schedule_wake(&user.id);
+        }
+        self.drain();
     }
 
     /// Reaps a running box whose process or container exited unexpectedly (if `run_id` still matches).
@@ -290,6 +324,57 @@ impl ProcessHost {
         tracing::warn!("hostd: {} ({}) stopped unexpectedly: {reason}", user.handle, user.id);
         self.change(user, BoxState::Stopped, &reason);
         self.schedule_wake(&user.id);
+        self.drain();
+    }
+
+    /// The box's `starts` gate: one start or stop of a box at a time.
+    fn gate(&self, user_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        lock(&self.starts).entry(user_id.to_owned()).or_default().clone()
+    }
+
+    /// `stop` with the box's gate already held (`remove` holds it across the stop and the delete).
+    async fn stop_held(&self, user_id: &str, reason: &str) -> Result<bool> {
+        let (child, run_id) = {
+            let mut m = lock(&self.inst);
+            let Some(i) = m.get_mut(user_id) else { return Ok(false) };
+            if i.state == BoxState::Queued {
+                // put to sleep while waiting for room: out of line
+                i.state = BoxState::Stopped;
+                drop(m);
+                lock(&self.queue).retain(|w| w.user.id != user_id);
+                return Ok(false);
+            }
+            if i.state != BoxState::Running {
+                return Ok(false);
+            }
+            i.state = BoxState::Stopping;
+            (i.child.take(), i.run_id)
+        };
+        if let Some(c) = child {
+            c.stop().await;
+        }
+        let now = self.clock.now_ms();
+        {
+            let mut m = lock(&self.inst);
+            // only the run this stop began on: a start in between (the gate should rule that out) keeps its box
+            let Some(i) = m.get_mut(user_id).filter(|i| i.state == BoxState::Stopping && i.run_id == run_id) else { return Ok(true) };
+            (i.state, i.port, i.stopped_at) = (BoxState::Stopped, None, Some(now));
+            i.secret.clear();
+        }
+        let user = BoxUser { id: user_id.to_owned(), handle: String::new(), sandbox: None, owner: None };
+        self.change(&user, BoxState::Stopped, reason);
+        // asleep with a task scheduled: it wakes for it (v1 hostd.js `#scheduleWake`)
+        self.schedule_wake(user_id);
+        self.drain();
+        Ok(true)
+    }
+}
+
+/// Why a start didn't work, for its waiting page: what hostd said (its 503s and 504s are written for people).
+fn start_error(e: &crate::error::GridError) -> String {
+    match e {
+        crate::error::GridError::Http { status: 503 | 504, message, .. } => message.clone(),
+        _ => e.public_message(),
     }
 }
 
@@ -332,7 +417,8 @@ impl BoxHost for ProcessHost {
         })
     }
     async fn ensure(&self, user: &BoxUser, wake: bool) -> Result<Running> {
-        let gate = lock(&self.starts).entry(user.id.clone()).or_default().clone();
+        let gate = self.gate(&user.id);
+        // also waits out a stop under way: a start never begins on a box that's still stopping (grid-r2-3)
         let _one = gate.lock().await;
         self.reap_if_exited(&user.id);
         if let Some(port) = self.port(&user.id) {
@@ -341,34 +427,20 @@ impl BoxHost for ProcessHost {
             }
             return Ok(Running { port });
         }
-        self.start(user).await
+        self.start(user, wake).await
     }
     async fn stop(&self, user_id: &str, reason: &str) -> Result<bool> {
-        let child = {
-            let mut m = lock(&self.inst);
-            let Some(i) = m.get_mut(user_id).filter(|i| i.state == BoxState::Running) else { return Ok(false) };
-            i.state = BoxState::Stopping;
-            i.child.take()
-        };
-        if let Some(c) = child {
-            c.stop().await;
-        }
-        let now = self.clock.now_ms();
-        {
-            let mut m = lock(&self.inst);
-            if let Some(i) = m.get_mut(user_id) {
-                (i.state, i.port, i.stopped_at) = (BoxState::Stopped, None, Some(now));
-                i.secret.clear();
-            }
-        }
-        let user = BoxUser { id: user_id.to_owned(), handle: String::new(), sandbox: None, owner: None };
-        self.change(&user, BoxState::Stopped, reason);
-        // asleep with a task scheduled: it wakes for it (v1 hostd.js `#scheduleWake`)
-        self.schedule_wake(user_id);
-        Ok(true)
+        // the same gate as a start: a stop never ends a run that began while it was stopping the last one
+        let gate = self.gate(user_id);
+        let _one = gate.lock().await;
+        self.stop_held(user_id, reason).await
     }
     async fn remove(&self, user: &BoxUser) -> Result<()> {
-        self.stop(&user.id, "deleted").await?;
+        let gate = self.gate(&user.id);
+        let _one = gate.lock().await;
+        // out of line first: room freed by the stop below never starts it again
+        lock(&self.queue).retain(|w| w.user.id != user.id);
+        self.stop_held(&user.id, "deleted").await?;
         match &self.o.boxd {
             // the container, then its folder (home, logins and all): boxd's to delete
             Some(d) => {

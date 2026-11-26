@@ -201,7 +201,15 @@ impl Grid {
     pub(super) async fn proxy(&self, req: http::Request<Incoming>, bu: &BoxUser, handle: &str) -> Result<Resp> {
         let path = req.uri().path().to_owned();
         if path == "/_grid/state" {
-            return Ok(json(200, &json!({ "state": self.boxes.state(&bu.id).as_str() })));
+            // what its waiting page shows: its place in line, or why its last start didn't work
+            let mut s = json!({ "state": self.boxes.state(&bu.id).as_str() });
+            if let Some(at) = self.boxes.queued_at(&bu.id) {
+                s["position"] = json!(at);
+            }
+            if let Some(e) = self.boxes.last_error(&bu.id) {
+                s["error"] = json!(e);
+            }
+            return Ok(json_with(200, &s, &[("cache-control", "no-store".into())]));
         }
         if path == "/_grid/stop" && req.method() == Method::POST {
             let was = self.boxes.stop(&bu.id, "stopped").await?;
@@ -212,7 +220,29 @@ impl Grid {
         if passive && self.boxes.state(&bu.id) != BoxState::Running {
             return Ok(json_with(503, &json!({ "error": "This box is asleep.", "asleep": true }), &[("retry-after", "20".into())]));
         }
-        let running = self.boxes.ensure(bu, false).await?;
+        self.boxes.reap_if_exited(&bu.id);
+        // a browser opening a box that isn't up: its waiting page at once, the start in the background (not a blank
+        // tab for up to `startMs`); the page follows `/_grid/state` and opens what was asked for once it's running
+        if self.boxes.state(&bu.id) != BoxState::Running && crate::http::wants_html(req.method(), h) {
+            if self.boxes.state(&bu.id) != BoxState::Starting {
+                let (boxes, who) = (self.boxes.clone(), bu.clone());
+                tokio::spawn(async move {
+                    if let Err(e) = boxes.ensure(&who, false).await {
+                        tracing::info!("grid: opening {}: {e}", who.handle);
+                    }
+                });
+            }
+            return Ok(self.waking(&bu.id));
+        }
+        let running = match self.boxes.ensure(bu, false).await {
+            Ok(r) => r,
+            // in line for room: a caller that isn't a page hears when to ask again
+            Err(e) if self.boxes.state(&bu.id) == BoxState::Queued => {
+                let body = json!({ "error": e.to_string(), "queued": true, "position": self.boxes.queued_at(&bu.id) });
+                return Ok(json_with(503, &body, &[("retry-after", "10".into()), ("cache-control", "no-store".into())]));
+            }
+            Err(e) => return Err(e),
+        };
         let busy = std::sync::Mutex::new(self.boxes.begin(&bu.id, !passive));
         let secret = self.boxes.secret(&bu.id).unwrap_or_default();
         let (mut head, body) = req.into_parts();

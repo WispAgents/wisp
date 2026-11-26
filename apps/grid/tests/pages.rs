@@ -17,6 +17,7 @@ fn csrf_in(page: &str) -> String {
 }
 
 struct Rig {
+    grid: Arc<wisp_grid::edge::Grid>,
     c: reqwest::Client,
     root: String,
     stop: CancellationToken,
@@ -27,6 +28,20 @@ async fn rig(name: &str, extra: serde_json::Value) -> Rig {
     let dir = std::env::temp_dir().join(format!("wisp-grid-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
+    // a grid that keeps sandboxes needs a master key (they're sealed)
+    if extra.get("sandboxes").is_some() {
+        use base64::Engine as _;
+        let secrets = dir.join("secrets");
+        std::fs::create_dir_all(&secrets).unwrap();
+        let key = base64::engine::general_purpose::STANDARD.encode([7u8; 32]);
+        let master = secrets.join("master.json");
+        std::fs::write(&master, json!({ "current": "k1", "keys": { "k1": key } }).to_string()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&master, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let mut file = json!({ "domain": "wisp.localhost", "listen": { "host": "127.0.0.1", "port": port }, "auth": { "dev": true } });
@@ -45,6 +60,8 @@ async fn rig(name: &str, extra: serde_json::Value) -> Rig {
             check_ms: 1000,
             start_ms: 30_000,
             max_running: 1,
+            max_running_per_user: 4,
+            wake_retry_ms: 30_000,
             env: Vec::new(),
             url_of: Arc::new(move |h| url_cfg.instance_url(h)),
             boxd: None,
@@ -61,7 +78,7 @@ async fn rig(name: &str, extra: serde_json::Value) -> Rig {
         .resolve("wisp.localhost", ([127, 0, 0, 1], port).into())
         .build()
         .unwrap();
-    Rig { c, root: format!("http://wisp.localhost:{port}"), stop, dir }
+    Rig { grid, c, root: format!("http://wisp.localhost:{port}"), stop, dir }
 }
 
 /// What a form said it did: the one-time flash cookie (`!` first when it went wrong).
@@ -178,6 +195,49 @@ async fn the_account_page_offers_the_telegram_routing_form_and_says_what_was_wro
     assert_eq!((r.status().as_u16(), r.headers()["location"].to_str().unwrap()), (302, "/account"));
     let f = flash(&r);
     assert!(f.starts_with('!') && f.contains("BotFather"), "{f}");
+    rig.stop.cancel();
+    let _ = std::fs::remove_dir_all(&rig.dir);
+}
+
+/// Deleting an account takes everything of it (grid-r2-4): the user's own box and each sandbox's box and home
+/// (`<uid>-sb-<id>`), and every sealed secret (the sandbox's token, its sign-in and env) with the data key that
+/// sealed them. Before, only the user's own box and apps went: the sandboxes' homes and `user_secrets`/`keys` stayed.
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_an_account_removes_its_sandboxes_and_shreds_its_secrets() {
+    let rig = rig("delete-all", json!({ "sandboxes": { "enabled": true } })).await;
+    let (c, root) = (&rig.c, &rig.root);
+    let cookie = sign_in(&rig, "ada").await;
+    let g = &rig.grid;
+    let u = g.accounts.user_by_handle("ada").unwrap().unwrap();
+    let (sb, _bearer) = g.sandboxes.create(&u, "task", &|_| false).unwrap();
+    g.sandboxes.set_login(&u.id, "claude", &format!("sk-ant-oat01-{}", "a".repeat(40))).unwrap();
+    g.sandboxes.set_env(&u.id, "DATABASE_URL", "postgres://x").unwrap();
+    // the homes the boxes would have (the process driver deletes each box's folder)
+    let users = rig.dir.join("users");
+    let own = users.join(&u.id);
+    let sandbox = users.join(format!("{}-sb-{}", u.id, sb.id));
+    for d in [&own, &sandbox] {
+        std::fs::create_dir_all(d.join("home")).unwrap();
+    }
+    let count = |table: &str| -> i64 {
+        g.db.with(|c| c.query_row(&format!("SELECT count(*) FROM {table} WHERE user_id = ?1"), [&u.id], |r| r.get(0))).unwrap()
+    };
+    assert!(count("user_secrets") >= 3 && count("keys") == 1, "sealed before");
+    let account = c.get(format!("{root}/account")).header("cookie", &cookie).send().await.unwrap().text().await.unwrap();
+    let r = c
+        .post(format!("{root}/account/delete"))
+        .header("cookie", &cookie)
+        .header("content-type", FORM)
+        .body(format!("csrf={}&confirm=ada", csrf_in(&account)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 302);
+    assert!(r.headers()["location"].to_str().unwrap().starts_with("/signin?m="));
+    assert!(g.accounts.user_by_handle("ada").unwrap().is_none());
+    assert!(!own.exists(), "the user's own box is removed");
+    assert!(!sandbox.exists(), "the sandbox's box and home are removed too");
+    assert_eq!((count("user_secrets"), count("keys")), (0, 0), "every sealed secret and the data key are gone");
     rig.stop.cancel();
     let _ = std::fs::remove_dir_all(&rig.dir);
 }
