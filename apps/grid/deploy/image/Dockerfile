@@ -50,12 +50,26 @@ RUN mkdir -p /opt/agents \
 # box has no helper, no capabilities and no-new-privileges.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium xvfb x11vnc x11-xserver-utils xdotool novnc websockify fonts-liberation fonts-noto-core fonts-wqy-microhei fonts-noto-color-emoji python3-pip python3-venv \
+    matchbox-window-manager dbus-x11 at-spi2-core \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 RUN npm install -g @playwright/mcp && npm cache clean --force && command -v playwright-mcp
+# Computer use (wisp.computer, ADR-0127): Cua Driver (MIT, trycua/cua), the version wisp is tested with, checked
+# against the release's SHA256SUMS; wisp-computer starts the screen (wisp-desktop: its window manager and the
+# accessibility bus too) and the driver on it. The box is the sandbox, so computer use is on here, and runs get
+# the browser's Playwright server too. Never the AGPL perception extension (`cua-driver perception`).
+ARG CUA_DRIVER_VERSION=0.62.1
+RUN arch="$(dpkg --print-architecture | sed 's/amd64/x86_64/')" && f="cua-driver-rs-${CUA_DRIVER_VERSION}-linux-${arch}-binary.tar.gz" && cd /tmp \
+ && curl -fsSLO "https://github.com/trycua/cua/releases/download/cua-driver-rs-v${CUA_DRIVER_VERSION}/${f}" \
+ && printf '%s  %s\n' 13a51d303f48c299aac8d504ad2f5c1ec5ca5a7ef92382f9e5d8c46810ac62e9 cua-driver-rs-0.62.1-linux-arm64-binary.tar.gz 2900f9860f62e9d95994243f68695fb08d930800d1e7045ca5d98c16023631c0 cua-driver-rs-0.62.1-linux-x86_64-binary.tar.gz | grep "  ${f}\$" | sha256sum -c - \
+ && mkdir -p /opt/cua-driver && tar xzf "${f}" -C /opt/cua-driver && rm "${f}" \
+ && ln -sf /opt/cua-driver/cua-driver /usr/local/bin/cua-driver && chmod -R a+rX /opt/cua-driver \
+ && cua-driver --version | grep -qF "${CUA_DRIVER_VERSION}"
+ENV WISP_COMPUTER=on WISP_COMPUTER_DRIVER=/usr/local/bin/wisp-computer WISP_COMPUTER_BROWSER=wisp-browser-mcp \
+    CUA_DRIVER_RS_TELEMETRY_ENABLED=0 CUA_TELEMETRY_ENABLED=0 CUA_DRIVER_RS_UPDATE_CHECK=false
 # apt and apt-get remember what a sandbox installs (secure_path puts /usr/local/sbin first under sudo).
 COPY apps/grid/deploy/image/sandbox/apt apps/grid/deploy/image/sandbox/apt-get /usr/local/sbin/
-COPY apps/grid/deploy/image/sandbox/wisp-desktop apps/grid/deploy/image/sandbox/wisp-browser-mcp apps/grid/deploy/image/sandbox/sudo /usr/local/bin/
+COPY apps/grid/deploy/image/sandbox/wisp-desktop apps/grid/deploy/image/sandbox/wisp-browser-mcp apps/grid/deploy/image/sandbox/wisp-computer apps/grid/deploy/image/sandbox/sudo /usr/local/bin/
 COPY apps/grid/deploy/image/sandbox/wisp-sandbox-init /usr/local/sbin/
 COPY apps/grid/deploy/image/sandbox/rootd.mjs /usr/local/lib/wisp/
 COPY apps/grid/deploy/image/sandbox/wisp.html /usr/share/novnc/

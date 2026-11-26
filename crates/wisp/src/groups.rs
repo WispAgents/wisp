@@ -18,7 +18,7 @@ pub struct Where {
     pub user_home: PathBuf,
 }
 
-pub const DEFAULT: [&str; 52] = [
+pub const DEFAULT: [&str; 53] = [
     "cli",
     "events",
     "threads",
@@ -71,6 +71,7 @@ pub const DEFAULT: [&str; 52] = [
     "update",
     "termctx",
     "sandbox",
+    "computer",
 ];
 /// A grid box serves the web frontend only (ADR-0024).
 pub const BOX_OFF: [&str; 3] = ["machines", "update", "cli"];
@@ -195,6 +196,8 @@ fn add(g: PluginGroup, name: &str, at: &Where) -> PluginGroup {
         "history" => g.add(wisp_history::HistoryPlugin),
         #[cfg(feature = "sandbox")]
         "sandbox" => g.add(wisp_sandbox::SandboxPlugin::default()),
+        #[cfg(feature = "computer")]
+        "computer" => g.add(wisp_computer::ComputerPlugin::default()),
         #[cfg(feature = "later")]
         "later" => g.add(wisp_later::LaterPlugin),
         #[cfg(feature = "budget")]
@@ -289,6 +292,7 @@ pub fn in_build(name: &str) -> bool {
         "goal" => cfg!(feature = "goal"),
         "history" => cfg!(feature = "history"),
         "sandbox" => cfg!(feature = "sandbox"),
+        "computer" => cfg!(feature = "computer"),
         "later" => cfg!(feature = "later"),
         "budget" => cfg!(feature = "budget"),
         "router" => cfg!(feature = "router"),
