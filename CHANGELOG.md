@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.16] - 2026-11-26
+
 ### Fixed
 
 - **Mark done no longer says a worktree "holds work" when it doesn't.** An agent that switched to its own branch in a task's worktree (`git checkout -b fix/x`) left its commits on that branch, so removing the folder loses nothing, but the Done dialog warned "Commits off its branch" and wouldn't remove it unless you ticked it. Now only commits that no branch keeps (a detached HEAD) count as work the folder holds.
