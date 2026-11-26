@@ -224,12 +224,13 @@ pub fn get_app_line(why: &str) -> String {
     format!("no wisp app here ({why}). Get it at {GET_APP}, or open wisp in a browser tab: wisp --browser")
 }
 
-/// Whether a wisp answers on `port`. Something listening that doesn't answer yet may be a wisp still starting (two
-/// `wisp` at once): five seconds for it, then it's someone else's port, and nothing starts a second server on it.
-pub async fn reach(port: u16) -> crate::client::Result<bool> {
+/// Whether this home's wisp answers on `port`. Something listening that doesn't answer yet may be a wisp still starting
+/// (two `wisp` at once): five seconds for it, then it's someone else's port, and nothing starts a second server on it.
+/// A wisp for another home there is refused the same way: never opened as this one's, never raced.
+pub async fn reach(port: u16, home: &Path) -> crate::client::Result<bool> {
     let c = Client::new(port);
-    if c.ping().await {
-        return Ok(true);
+    if let Some(found) = c.found(home).await {
+        return found.map(|()| true);
     }
     let taken = tokio::time::timeout(Duration::from_millis(500), tokio::net::TcpStream::connect(("127.0.0.1", port)))
         .await
@@ -238,7 +239,7 @@ pub async fn reach(port: u16) -> crate::client::Result<bool> {
         return Ok(false);
     }
     if up_within(&c, Duration::from_secs(5)).await {
-        return Ok(true);
+        return c.found(home).await.unwrap_or(Ok(())).map(|()| true);
     }
     Err(CliError::said(format!("port {port} is taken by something that isn't wisp (wisp --port N picks another)")))
 }
@@ -257,7 +258,7 @@ async fn up_within(c: &Client, within: Duration) -> bool {
 /// `wisp` (and `npx wisp-agents`): the running wisp, else one started. Shown in the desktop app if there is one (it
 /// attaches to the running wisp, or runs its own), else (or `--browser`) in a tab; `--no-open` shows nothing.
 pub async fn open(home: &Path, user_home: &Path, port: u16, open: bool, browser: bool) -> crate::client::Result<()> {
-    let running = reach(port).await?;
+    let running = reach(port, home).await?;
     if open && !browser && desktop(home, user_home, port, running, false).await? {
         return Ok(());
     }

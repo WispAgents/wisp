@@ -150,7 +150,10 @@ async fn track_blame_log_resume_mcp_and_auto_track() {
     let input: String = msgs.iter().map(|m| format!("{m}\n")).collect();
     let (code, out, err) = wisp(&dir, &repo, 1, &["mcp"], Some(&input));
     assert_eq!(code, 0, "{err}");
-    let replies: Vec<Value> = out.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+    // in the order they're answered (requests run at once): read by id
+    let mut replies: Vec<Value> =
+        out.lines().filter_map(|l| serde_json::from_str(l).ok()).filter(|r: &Value| r.get("id").is_some()).collect();
+    replies.sort_by_key(|r| r["id"].as_u64());
     assert_eq!(replies.len(), 4, "{out}");
     let names: Vec<&str> = replies[1]["result"]["tools"].as_array().unwrap().iter().filter_map(|t| t["name"].as_str()).collect();
     // its own tools first, in order: the history tools, then v1's task tools (audit A); with a wisp running, the
