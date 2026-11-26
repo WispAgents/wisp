@@ -1116,6 +1116,7 @@ async fn an_agents_capability_set_writes_only_its_own_work() {
         "sandbox.launch",
         "sandbox.own",
         "sandbox.place",
+        "sandbox.rebase",
         "sandbox.retry",
         "sandbox.seed",
         "sandbox.start",

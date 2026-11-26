@@ -47,6 +47,10 @@ pub struct Held {
     pub owner: Option<Owner>,
     /// its drop failed once: the sweep tries again
     pub dropping: bool,
+    /// the project's folder there (`data.cwd`, noted when it was placed; empty: not known)
+    pub cwd: String,
+    /// a patch of its changes is kept here (`data.kept`: a clash or a hold), work its owner never got
+    pub kept: bool,
     /// how its link is (`online`, `asleep`, `off`, `error`, …), as `machines.list` says it
     pub state: String,
     /// when its machine was added here (ms): an owner never written, or a job's never named, goes [`PENDING_MS`]
@@ -67,6 +71,8 @@ pub fn held(machines: &[Value]) -> Vec<Held> {
                 sandbox,
                 owner: data.get("owner").and_then(|o| serde_json::from_value(o.clone()).ok()),
                 dropping: data.get("dropping").and_then(Value::as_bool).unwrap_or(false),
+                cwd: data.get("cwd").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                kept: data.get("kept").and_then(Value::as_bool).unwrap_or(false),
                 state: m.get("state").and_then(Value::as_str).unwrap_or_default().to_owned(),
                 added: m.get("addedAt").and_then(Value::as_i64).unwrap_or_default(),
             })
@@ -216,12 +222,6 @@ pub fn may_start(agent: &str, logins: &[String]) -> Result<(), String> {
         return Err("Sign in to Claude for sandboxes first: Settings → Cloud → Sandboxes → Sign in (once for all of them).".into());
     }
     Ok(())
-}
-
-/// A full grid: a launch or a delegation fails at once; a crew job waits and tries again, doubling to 30 minutes.
-pub fn full(message: &str) -> bool {
-    let m = message.to_lowercase();
-    m.contains("is full") || m.contains("sandboxes of yours") || m.contains("at most")
 }
 
 /// When a crew job that met a full grid tries again: after `RETRY_MS`, doubling per try, at most `RETRY_MAX_MS`.
@@ -485,10 +485,7 @@ mod tests {
     }
 
     #[test]
-    fn a_full_grid_fails_a_launch_at_once_and_a_crew_job_waits() {
-        assert!(full("This grid is full right now. Try again in a few minutes."));
-        assert!(full("You have 5 sandboxes of yours already: at most 5."));
-        assert!(!full("Sign in first."));
+    fn a_crew_job_that_met_a_full_grid_tries_again_later_and_later() {
         assert_eq!((retry_in(0), retry_in(1), retry_in(9)), (60_000, 120_000, RETRY_MAX_MS));
     }
 

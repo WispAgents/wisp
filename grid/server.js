@@ -588,7 +588,7 @@ export async function startGrid(cfg, { log = (m) => console.log(m), resolveTxt }
             return send(200, { ok: true });
           }
         } catch (err) {
-          return send(err.status || 400, { error: err.message });
+          return send(err.status || 400, { error: err.message, ...err.body });
         }
         return send(404, { error: 'not found' });
       }

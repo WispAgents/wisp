@@ -16,8 +16,11 @@ use crate::runtime::Runtime;
 
 /// The lead's delegations on other machines (`ext["wisp.runtime"].away`): key → the machine's name.
 pub(super) const AWAY: &str = "away";
-/// The jobs whose changes came back, as `<key>@<turn there>` (one bring per job, not per member).
+/// The jobs whose changes came back, as `<key>@<turn there>` (one bring per job, not per member): a machine member's
+/// and a sandbox member's alike.
 const BROUGHT: &str = "broughtJobs";
+/// Before marks were per job, a sandbox member's were per member (`<key>`): read so that job isn't brought twice.
+const BROUGHT_ONCE: &str = "brought";
 
 /// A delegation that went to another machine (not a sandbox, not a crew job).
 pub(super) fn on_machine(d: &Delegation) -> bool {
@@ -46,13 +49,38 @@ impl There {
     }
 }
 
-/// The note a far job's report carries about its changes: how many came into the lead's folder, or why they didn't.
-fn bring_note(got: wisp_kernel::Result<(u32, Option<String>)>) -> String {
-    match got {
-        Ok((_, Some(e))) => format!("\n\n(Its changes didn't come back: {e})"),
-        Ok((files, None)) if files > 0 => format!("\n\n(Its changes to {files} file(s) are in your folder now.)"),
-        Ok(_) => String::new(),
-        Err(e) => format!("\n\n(Its changes didn't come back: {})", e.message),
+/// What a bring answered (`machines.bring`, `sandbox.bring`): files touched, why they didn't go in, where they're kept.
+struct Got {
+    files: u32,
+    error: Option<String>,
+    kept: Option<String>,
+}
+
+/// Why a done far job's changes are held, not put in the lead's folder (None: they go in). A lead in Plan changes no
+/// file, and only a job that finished has changes worth taking: a stopped or failed one's are kept for the user.
+fn held_why(l: &Session, t: &There) -> Option<&'static str> {
+    if l.mode == wisp_runtime_api::model::Mode::Plan {
+        return Some("the lead is in Plan");
+    }
+    // a turn not shown there (an older wisp's answer) counts by the task's end, as its report does
+    match t.job_status() {
+        Some(TurnStatus::Stopped) => Some("the job stopped"),
+        Some(TurnStatus::Error) => Some("the job failed"),
+        Some(TurnStatus::Running | TurnStatus::Held) => Some("the job didn't finish"),
+        Some(TurnStatus::Done) | None => None,
+    }
+}
+
+/// The note a far job's report carries about its changes: how many came into the lead's folder, held, or kept on a
+/// clash (with where, so the lead and the user can find them).
+fn bring_note(got: &Got, held: Option<&str>) -> String {
+    match (held, got) {
+        (Some(why), Got { kept: Some(at), .. }) => format!("\n\n(Its changes are held: {why}. Kept at {at}.)"),
+        (_, Got { kept: Some(at), .. }) => format!("\n\n(Its changes clash with yours: kept at {at}. Apply with git apply {at})"),
+        (Some(why), Got { error: Some(e), .. }) => format!("\n\n(Its changes are held: {why}, but {e}.)"),
+        (_, Got { error: Some(e), .. }) => format!("\n\n(Its changes didn't come back: {e})"),
+        (None, Got { files, .. }) if *files > 0 => format!("\n\n(Its changes to {files} file(s) are in your folder now.)"),
+        _ => String::new(),
     }
 }
 
@@ -160,16 +188,19 @@ impl Runtime {
     async fn far_turn_of(&self, lead: &str, key: &str) -> String {
         let mut recent = self.repo.turns(lead, None, Some(8)).await.unwrap_or_default();
         recent.sort_by_key(|t| std::cmp::Reverse(t.idx));
+        // the latest record within a turn too: a member followed up in the lead's same turn has two, its last is the job
         recent
             .iter()
-            .flat_map(super::report_back::records)
+            .flat_map(|t| super::report_back::records(t).iter().rev())
             .find(|d| str_at(d, "sessionId") == key)
             .map(|d| str_at(d, "turnId"))
             .unwrap_or_default()
     }
 
-    /// A done far job's changes into lead `lead`'s folder, once (v1 relay.js `return`), with the note its report
-    /// carries; None: nothing to bring (a crew job there worked in the member's folder), or it was brought already.
+    /// A done far job's changes into lead `lead`'s folder, once per job (v1 relay.js `return`), with the note its
+    /// report carries; None: nothing to bring (a crew job there worked in the member's folder), or it was brought
+    /// already. Held instead (kept in a file, the folder left as it is) for a lead in Plan or a job that didn't finish.
+    /// A bring that didn't answer (the sandbox asleep, the machine unreachable) marks nothing: the next look tries again.
     /// Off the lead's lock (git and the machine's link can take long): bringers of one lead go one at a time under a
     /// lock of their own, and the mark (on the lead, the note on the owed record) is written before the next looks.
     pub(crate) async fn bring_far(self: &Arc<Self>, lead: &str, key: &str, t: &There) -> Option<String> {
@@ -184,22 +215,32 @@ impl Runtime {
             own.and_then(|m| m.get(list)).and_then(Value::as_array).is_some_and(|b| b.iter().any(|x| x.as_str() == Some(mark)))
         };
         let machine_member = own.and_then(|m| m.get(AWAY)).and_then(|a| a.get(key)).is_some();
-        let (list, mark) = if machine_member { (BROUGHT, format!("{key}@{}", str_at(&t.job, "id"))) } else { ("brought", key.to_owned()) };
-        if has(list, &mark) {
+        let mark = format!("{key}@{}", str_at(&t.job, "id"));
+        if has(BROUGHT, &mark) {
             return None;
         }
-        let (from, into) = (str_at(&t.session, "cwd"), l.cwd.clone());
-        let got = if machine_member {
-            let a = wisp_machines_api::BringArgs { id: machine.to_owned(), from, into };
-            crate::calls::run::<wisp_machines_api::Bring>(&*self.host, a).await.map(|b| (b.files, b.error))
+        // a sandbox member's job brought under the old per-member mark: that one counts as this job, brought; the mark
+        // moves to this job, so the member's next job comes back
+        let once = !machine_member && has(BROUGHT_ONCE, key);
+        let note = if once {
+            String::new()
         } else {
-            let a = wisp_sandbox_api::BringArgs { machine: machine.to_owned(), from, into };
-            crate::calls::run::<wisp_sandbox_api::Bring>(&*self.host, a).await.map(|b| (b.files, b.error))
+            match self.bring_one(&l, machine, machine_member, t).await {
+                Ok(n) => n,
+                Err(n) => {
+                    self.note_not_back(lead, key, &n).await;
+                    return Some(n);
+                }
+            }
         };
-        let note = bring_note(got);
         let _g = self.task_lock(lead).await;
         let mut l = self.repo.session(lead).await.ok()?;
-        with_slot(&mut l.ext, |x| push(x, list, json!(mark)));
+        with_slot(&mut l.ext, |x| {
+            if let Some(Value::Array(old)) = x.get_mut(BROUGHT_ONCE) {
+                old.retain(|v| v.as_str() != Some(key));
+            }
+            push(x, BROUGHT, json!(mark));
+        });
         let mut turns = Vec::new();
         if let Ok(Some(mut owing)) = self.owed_turn(lead, None).await
             && with_slot(&mut owing.ext, |x| super::report_back::note_brought(x, key, &note))
@@ -210,6 +251,39 @@ impl Runtime {
             tracing::warn!(error = %err, task = lead, "runtime: a delegate's changes elsewhere, marked brought");
         }
         Some(note)
+    }
+
+    /// One far job's changes brought (or held) for lead `l`: the note its report carries. Err: the bring didn't
+    /// answer, and the note says they're tried again.
+    async fn bring_one(&self, l: &Session, machine: &str, machine_member: bool, t: &There) -> std::result::Result<String, String> {
+        let held = held_why(l, t);
+        let (from, into, keep) = (str_at(&t.session, "cwd"), l.cwd.clone(), held.is_some());
+        let got = if machine_member {
+            let a = wisp_machines_api::BringArgs { id: machine.to_owned(), from, into, keep };
+            crate::calls::run::<wisp_machines_api::Bring>(&*self.host, a).await.map(|b| Got {
+                files: b.files,
+                error: b.error,
+                kept: b.kept,
+            })
+        } else {
+            let a = wisp_sandbox_api::BringArgs { machine: machine.to_owned(), from, into, keep };
+            crate::calls::run::<wisp_sandbox_api::Bring>(&*self.host, a).await.map(|b| Got { files: b.files, error: b.error, kept: b.kept })
+        };
+        got.map(|g| bring_note(&g, held)).map_err(|e| {
+            tracing::info!(error = %e.message, task = %l.id, "runtime: a delegate's changes elsewhere didn't come back yet");
+            format!("\n\n(Its changes didn't come back yet: {}. They'll be tried again.)", e.message)
+        })
+    }
+
+    /// A bring that didn't answer: its note on the owed record (the report says so), and no mark.
+    async fn note_not_back(self: &Arc<Self>, lead: &str, key: &str, note: &str) {
+        let _g = self.task_lock(lead).await;
+        let (Ok(mut l), Ok(Some(mut owing))) = (self.repo.session(lead).await, self.owed_turn(lead, None).await) else { return };
+        if with_slot(&mut owing.ext, |x| super::report_back::note_brought(x, key, note))
+            && let Err(err) = self.persist(&mut l, vec![owing]).await
+        {
+            tracing::warn!(error = %err, task = lead, "runtime: a delegate's changes elsewhere, noted not back yet");
+        }
     }
 }
 

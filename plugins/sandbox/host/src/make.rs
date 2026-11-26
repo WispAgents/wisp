@@ -3,10 +3,11 @@
 //! through `machines.send`, raw: ADR-0060), git through proc.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::Value;
+use wisp_kernel::services::Paths;
 use wisp_kernel::{Call, Command, Ctx, Result, WireError};
 use wisp_machines_api::PeerState;
 use wisp_proc::{ExecOpts, Proc};
@@ -172,15 +173,50 @@ pub(crate) async fn place(ctx: &Ctx, call: &Call, a: &api::PlaceArgs) -> Result<
     if let Some(h) = core::reusable(&held(ctx, call).await, &owner) {
         let peer = wait_up(ctx, call, &h.machine).await?;
         let (cwd, setup) = seed(ctx, call, &h.machine, a.cwd.as_deref(), apart).await?;
+        note_cwd(ctx, call, &h.machine, &cwd).await;
         return Ok(api::Placed { machine: h.machine.clone(), peer, sandbox: h.sandbox.clone(), cwd, made: false, setup });
     }
     let name = a.cwd.as_deref().map_or_else(|| "work".to_owned(), core::name_of);
     let (machine, peer, sandbox) = make(ctx, call, &owner, &name).await?;
     match seed(ctx, call, &machine, a.cwd.as_deref(), apart).await {
-        Ok((cwd, setup)) => Ok(api::Placed { machine, peer, sandbox, cwd, made: true, setup }),
+        Ok((cwd, setup)) => {
+            note_cwd(ctx, call, &machine, &cwd).await;
+            Ok(api::Placed { machine, peer, sandbox, cwd, made: true, setup })
+        }
         Err(e) => {
             drop_one(ctx, call, &machine, &sandbox).await;
             Err(e)
+        }
+    }
+}
+
+/// The project's folder there, on the machine (`data.cwd`): its owner going asks there whether work is left.
+async fn note_cwd(ctx: &Ctx, call: &Call, machine: &str, cwd: &str) {
+    calls::warn(
+        "noting a sandbox's folder",
+        calls::set_data(ctx, call, machine, BTreeMap::from([("cwd".to_owned(), Value::from(cwd))])).await,
+    );
+}
+
+/// A delegate's sandbox still holds work its lead never got: a patch kept here (a clash, a hold), or changes there not
+/// brought back yet (one that can't be asked counts as holding some). Such a sandbox outlives its lead, for the user to
+/// delete in Settings → Computers → Sandboxes.
+pub(crate) async fn holds_work(ctx: &Ctx, call: &Call, h: &Held) -> bool {
+    if !matches!(h.owner, Some(Owner::Delegate { .. })) {
+        return false;
+    }
+    if h.kept {
+        return true;
+    }
+    // one placed before its folder was noted: nothing to ask, so it goes with its lead as it did
+    if h.cwd.is_empty() {
+        return false;
+    }
+    match calls::route::<api::PatchCmd>(ctx, call, &h.machine, api::PatchArgs { cwd: h.cwd.clone() }).await {
+        Ok(p) => !p.patch.trim().is_empty(),
+        Err(e) => {
+            tracing::info!(machine = %h.machine, "sandbox: couldn't ask what's left there ({}), so it stays", e.message);
+            true
         }
     }
 }
@@ -300,17 +336,42 @@ pub(crate) async fn drop_all(ctx: &Ctx, call: &Call, list: &[&Held]) -> u32 {
     n
 }
 
-/// `sandbox.bring`: a delegate's changes in its sandbox, applied to the lead's folder here.
+/// `sandbox.bring`: a delegate's changes in its sandbox, applied to the lead's folder here (or kept in a file, `keep`).
+/// Once they came back, in either place, the sandbox counts its changes from there (`sandbox.rebase`), so the next job
+/// brings only its own.
 pub(crate) async fn bring(ctx: &Ctx, call: &Call, a: &api::BringArgs) -> Result<api::Brought> {
-    let patch = calls::route::<api::PatchCmd>(ctx, call, &a.machine, api::PatchArgs { cwd: a.from.clone() }).await?.patch;
+    let got = calls::route::<api::PatchCmd>(ctx, call, &a.machine, api::PatchArgs { cwd: a.from.clone() }).await?;
+    let proc = ctx.service::<Proc>()?;
+    let plugin = ctx.service::<Paths>()?.plugin_dir(api::PLUGIN_ID);
+    let out = take_back(&proc, &plugin, &a.into, a.keep, got.patch).await?;
+    if out.kept.is_some() {
+        let kept = BTreeMap::from([("kept".to_owned(), Value::Bool(true))]);
+        calls::warn("marking a sandbox's patch kept", calls::set_data(ctx, call, &a.machine, kept).await);
+    }
+    let back = out.error.is_none() || out.kept.is_some();
+    if back && !got.tree.is_empty() {
+        let r = calls::route::<api::Rebase>(ctx, call, &a.machine, api::RebaseArgs { cwd: a.from.clone(), tree: got.tree }).await;
+        calls::warn("moving a sandbox's base on", r);
+    }
+    Ok(out)
+}
+
+/// A sandbox's patch into `into`, or kept in `<plugin>/patches/<id>.patch` (`keep`, or when it doesn't apply), as
+/// machines' carry keeps a copy's.
+pub(crate) async fn take_back(proc: &Proc, plugin: &Path, into: &str, keep: bool, patch: String) -> Result<api::Brought> {
     if patch.trim().is_empty() {
-        return Ok(api::Brought { files: 0, error: None });
+        return Ok(api::Brought::default());
     }
     let files = u32::try_from(patch.lines().filter(|l| l.starts_with("diff --git ")).count()).unwrap_or(u32::MAX);
-    let proc = ctx.service::<Proc>()?;
+    if keep {
+        return Ok(match keep_patch(plugin, &patch).await {
+            Some(at) => api::Brought { files, error: None, kept: Some(at) },
+            None => api::Brought { files, error: Some("they couldn't be kept here".into()), kept: None },
+        });
+    }
     let opts = ExecOpts {
-        cwd: Some(PathBuf::from(&a.into)),
-        input: Some(patch.into_bytes()),
+        cwd: Some(PathBuf::from(into)),
+        input: Some(patch.clone().into_bytes()),
         timeout: Some(Duration::from_secs(60)),
         max_output: 1 << 20,
         ..ExecOpts::default()
@@ -318,8 +379,68 @@ pub(crate) async fn bring(ctx: &Ctx, call: &Call, a: &api::BringArgs) -> Result<
     let args = ["apply", "--whitespace=nowarn", "-"].map(str::to_owned).to_vec();
     let r = proc.exec("git", &args, opts).await.map_err(|e| WireError::unavailable(format!("git: {e}")))?;
     if r.exit.success() {
-        Ok(api::Brought { files, error: None })
-    } else {
-        Ok(api::Brought { files, error: Some(format!("Its changes clash with yours here: {}", r.stderr_text().trim())) })
+        return Ok(api::Brought { files, error: None, kept: None });
+    }
+    let why = r.stderr_text().trim().to_owned();
+    let kept = keep_patch(plugin, &patch).await;
+    let at = kept.as_deref().unwrap_or("nowhere (it couldn't be saved)");
+    Ok(api::Brought {
+        files,
+        error: Some(format!("Its changes clash with yours here, so none went in. They are kept in {at}. ({why})")),
+        kept,
+    })
+}
+
+/// The patch saved under `<plugin>/patches`; its path (None: it couldn't be written).
+async fn keep_patch(plugin: &Path, patch: &str) -> Option<String> {
+    let at = plugin.join("patches").join(format!("{}.patch", wisp_kernel::ids::uuid7()));
+    let dir = at.parent()?;
+    (tokio::fs::create_dir_all(dir).await.is_ok() && tokio::fs::write(&at, patch).await.is_ok()).then(|| at.display().to_string())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn sh(at: &Path, args: &[&str]) {
+        let o = std::process::Command::new("git").current_dir(at).args(args).output().unwrap();
+        assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+    }
+
+    /// A delegate's patch that doesn't apply to the lead's folder is kept in a file, its path said, and the folder left
+    /// as it was. (Before, the clash was said and the patch dropped: the delegate's work was lost with its sandbox.)
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_patch_that_clashes_is_kept_and_nothing_here_moves() {
+        let root = std::env::temp_dir().join(format!("wisp-sbx-bring-{}", wisp_kernel::ids::uuid7()));
+        let (lead, plugin) = (root.join("lead"), root.join("plugin"));
+        std::fs::create_dir_all(&lead).unwrap();
+        sh(&lead, &["init", "-q"]);
+        sh(&lead, &["config", "core.autocrlf", "false"]);
+        std::fs::write(lead.join("math.js"), "a - b\n").unwrap();
+        sh(&lead, &["add", "."]);
+        sh(&lead, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "one"]);
+        // the lead changed the same line meanwhile
+        std::fs::write(lead.join("math.js"), "a * b\n").unwrap();
+        let patch = "diff --git a/math.js b/math.js\n--- a/math.js\n+++ b/math.js\n@@ -1 +1 @@\n-a - b\n+a + b\n".to_owned();
+        let proc = wisp_proc::local();
+        let out = take_back(&proc, &plugin, lead.to_str().unwrap(), false, patch.clone()).await.unwrap();
+        assert_eq!(out.files, 1);
+        let kept = out.kept.clone().expect("kept");
+        assert!(out.error.as_deref().unwrap().contains(&kept), "{out:?}");
+        assert!(Path::new(&kept).starts_with(plugin.join("patches")), "{kept}");
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), patch, "the work isn't lost");
+        assert_eq!(std::fs::read_to_string(lead.join("math.js")).unwrap(), "a * b\n", "nothing here moved");
+        // held (`keep`): kept even though it would go in, and nothing here moves
+        std::fs::write(lead.join("math.js"), "a - b\n").unwrap();
+        let held = take_back(&proc, &plugin, lead.to_str().unwrap(), true, patch.clone()).await.unwrap();
+        assert!(held.error.is_none(), "{held:?}");
+        assert_eq!(std::fs::read_to_string(held.kept.unwrap()).unwrap(), patch);
+        assert_eq!(std::fs::read_to_string(lead.join("math.js")).unwrap(), "a - b\n");
+        // one that fits goes in
+        let ok = take_back(&proc, &plugin, lead.to_str().unwrap(), false, patch).await.unwrap();
+        assert_eq!((ok.files, ok.error, ok.kept), (1, None, None));
+        assert_eq!(std::fs::read_to_string(lead.join("math.js")).unwrap(), "a + b\n");
+        let _ = std::fs::remove_dir_all(root);
     }
 }

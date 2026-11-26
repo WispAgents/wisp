@@ -71,14 +71,38 @@ pub async fn call(
 /// A refusal in the grid's words.
 pub fn refused(status: u16, v: &Value) -> WireError {
     let msg = v.get("error").and_then(Value::as_str).map_or_else(|| format!("the grid said {status}"), str::to_owned);
-    match status {
+    let e = match status {
         401 | 403 => WireError::forbidden(msg),
         404 | 410 => WireError::not_found(msg),
         _ if status >= 500 => WireError::unavailable(msg),
         _ => WireError::invalid(msg),
+    };
+    // the grid's typed refusal (`sandbox_cap`, with `have` and `max`) goes along: callers tell it by its code
+    if v.get("code").and_then(Value::as_str).is_none() {
+        return e;
     }
+    let mut d = v.as_object().cloned().unwrap_or_default();
+    d.remove("error");
+    e.with_details(Value::Object(d))
 }
 
 pub fn host_of(url: &str) -> &str {
     url.split_once("://").map_or(url, |(_, r)| r.split('/').next().unwrap_or(r))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The grid's sandbox cap comes back with its code (and its numbers) in the error's details.
+    #[test]
+    fn a_typed_refusal_keeps_its_code() {
+        let e = refused(
+            409,
+            &serde_json::json!({ "error": "You have 3 sandboxes, the most this grid keeps.", "code": "sandbox_cap", "have": 3, "max": 3 }),
+        );
+        assert_eq!(e.message, "You have 3 sandboxes, the most this grid keeps.");
+        assert_eq!(e.details, Some(serde_json::json!({ "code": "sandbox_cap", "have": 3, "max": 3 })));
+        assert_eq!(refused(409, &serde_json::json!({ "error": "no" })).details, None);
+    }
 }

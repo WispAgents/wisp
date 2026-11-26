@@ -59,12 +59,6 @@ pub(crate) async fn job_follow_up(ctx: &Ctx, call: &Call, id: &str, text: String
     }
 }
 
-/// The grid said it's full (or the user has all the sandboxes they may): a crew job waits and tries again.
-fn grid_full(message: &str) -> bool {
-    let m = message.to_lowercase();
-    m.contains("is full") || m.contains("sandboxes of yours")
-}
-
 /// Where a member's job runs when it isn't here: on their machine (v1 crew.js `{ machine: m.machine }`, its folder
 /// one there), a sandbox per job, or their own (ADR-0047). `(machine, cwd)`.
 async fn sandbox_for(ctx: &Ctx, call: &Call, m: &Member) -> Result<Option<(String, String)>, WireError> {
@@ -608,7 +602,7 @@ async fn drain(ctx: &Ctx, call: &Call, st: &State, id: &str) {
         if let Err(e) = start(ctx, call, st, &m, &w, None).await {
             tracing::warn!(member = %m.name, error = %e.message, "crew job");
             // a full grid (its sandboxes): the job waits its turn again instead of being lost (ADR-0047)
-            if grid_full(&e.message) {
+            if wisp_sandbox_api::full(&e) {
                 st.update(id, |again| again.queue.insert(0, w));
             }
         }

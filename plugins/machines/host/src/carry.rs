@@ -272,24 +272,34 @@ pub(crate) async fn changes(ctx: &Ctx, cwd: &str) -> wisp_kernel::Result<api::Ch
     Ok(api::Changes { patch })
 }
 
-/// A copy's patch into the lead's folder `into`; kept in `<plugin>/patches` when it doesn't go in.
-pub(crate) async fn apply_back(proc: &Proc, plugin: &Path, into: &str, patch: String) -> api::Brought {
+/// A copy's patch into the lead's folder `into`; kept in `<plugin>/patches` when it doesn't go in, or held (`keep`:
+/// the lead is in Plan, the job didn't finish) without trying.
+pub(crate) async fn apply_back(proc: &Proc, plugin: &Path, into: &str, keep: bool, patch: String) -> api::Brought {
     if patch.trim().is_empty() {
         return api::Brought::default();
     }
     let files = core::files_in(&patch);
+    if keep {
+        return match keep_patch(plugin, &patch).await {
+            Some(at) => api::Brought { files, error: None, kept: Some(at) },
+            None => api::Brought { files, error: Some("they couldn't be kept here".into()), kept: None },
+        };
+    }
     match git(proc, Path::new(into), &["apply", "--whitespace=nowarn", "-"], None, Some(patch.clone().into_bytes())).await {
         Ok(_) => api::Brought { files, error: None, kept: None },
         Err(why) => {
-            let kept = plugin.join(core::PATCHES).join(format!("{}.patch", wisp_kernel::ids::uuid7()));
-            let saved = match kept.parent() {
-                Some(p) => tokio::fs::create_dir_all(p).await.is_ok() && tokio::fs::write(&kept, patch).await.is_ok(),
-                None => false,
-            };
-            let at = if saved { kept.display().to_string() } else { "nowhere (it couldn't be saved)".to_owned() };
-            api::Brought { files, error: Some(core::clash(&at, &why)), kept: saved.then(|| kept.display().to_string()) }
+            let kept = keep_patch(plugin, &patch).await;
+            let at = kept.as_deref().unwrap_or("nowhere (it couldn't be saved)");
+            api::Brought { files, error: Some(core::clash(at, &why)), kept }
         }
     }
+}
+
+/// The patch saved under `<plugin>/patches`; its path (None: it couldn't be written).
+async fn keep_patch(plugin: &Path, patch: &str) -> Option<String> {
+    let at = plugin.join(core::PATCHES).join(format!("{}.patch", wisp_kernel::ids::uuid7()));
+    let dir = at.parent()?;
+    (tokio::fs::create_dir_all(dir).await.is_ok() && tokio::fs::write(&at, patch).await.is_ok()).then(|| at.display().to_string())
 }
 
 /// `machines.bring`: the copy's changes there, into the lead's folder here.
@@ -298,7 +308,7 @@ async fn bring(st: &Arc<State>, a: api::BringArgs) -> Res<api::Brought> {
     let patch = on_machine::<api::ChangesOf>(st, &a.id, api::ChangesArgs { cwd: a.from.clone() }).await?.patch;
     let proc = st.ctx.service::<Proc>().map_err(MachinesError::Wire)?;
     let plugin = plugin_dir(&st.ctx).map_err(MachinesError::Wire)?;
-    Ok(apply_back(&proc, &plugin, &a.into, patch).await)
+    Ok(apply_back(&proc, &plugin, &a.into, a.keep, patch).await)
 }
 
 /// The upload route (`POST /api/machines/carry/:key/:part`, on the machine): the bytes, kept for `machines.takeIn`.
@@ -429,15 +439,20 @@ mod tests {
         // the lead changed the same line meanwhile
         std::fs::write(lead.join("math.js"), "a * b\n").unwrap();
         let patch = "diff --git a/math.js b/math.js\n--- a/math.js\n+++ b/math.js\n@@ -1 +1 @@\n-a - b\n+a + b\n".to_owned();
-        let out = apply_back(&wisp_proc::local(), &plugin, lead.to_str().unwrap(), patch.clone()).await;
+        let out = apply_back(&wisp_proc::local(), &plugin, lead.to_str().unwrap(), false, patch.clone()).await;
         assert_eq!(out.files, 1);
         let kept = out.kept.clone().unwrap();
         assert!(out.error.as_deref().unwrap().contains(&kept), "{out:?}");
         assert_eq!(std::fs::read_to_string(&kept).unwrap(), patch, "the work isn't lost");
         assert_eq!(std::fs::read_to_string(lead.join("math.js")).unwrap(), "a * b\n", "nothing here moved");
-        // a patch that fits goes in
+        // held (`keep`: a lead in Plan, a job that didn't finish): kept though it would go in, and nothing here moves
         std::fs::write(lead.join("math.js"), "a - b\n").unwrap();
-        let ok = apply_back(&wisp_proc::local(), &plugin, lead.to_str().unwrap(), patch).await;
+        let held = apply_back(&wisp_proc::local(), &plugin, lead.to_str().unwrap(), true, patch.clone()).await;
+        assert!(held.error.is_none(), "{held:?}");
+        assert_eq!(std::fs::read_to_string(held.kept.unwrap()).unwrap(), patch);
+        assert_eq!(std::fs::read_to_string(lead.join("math.js")).unwrap(), "a - b\n", "held: nothing here moved");
+        // a patch that fits goes in
+        let ok = apply_back(&wisp_proc::local(), &plugin, lead.to_str().unwrap(), false, patch).await;
         assert_eq!((ok.files, ok.error.is_none()), (1, true), "{ok:?}");
         assert_eq!(std::fs::read_to_string(lead.join("math.js")).unwrap(), "a + b\n");
         let _ = std::fs::remove_dir_all(root);
