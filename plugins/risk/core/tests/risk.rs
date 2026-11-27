@@ -34,7 +34,7 @@ fn every_open_pr_with_a_head_counts_once_the_tasks_own_first() {
     let urls: Vec<&str> = open.iter().map(|p| p.url.as_str()).collect();
     assert_eq!(urls, ["u1", "u2"], "merged and headless PRs aren't judged; an attached copy of its own PR counts once");
     assert_eq!((open[1].repo.as_str(), open[1].number), ("lib", 7));
-    assert!(core::open_prs(&serde_json::Value::Null).is_empty());
+    assert_eq!(core::open_prs(&serde_json::Value::Null).len(), 0, "a missing PR list judges nothing");
 }
 
 #[test]

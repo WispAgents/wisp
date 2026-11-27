@@ -910,6 +910,8 @@ export const COMMANDS: Record<string, CommandFn> = {
     const ids = (obj(a)['ids'] as string[] | undefined) ?? [];
     return { ops: [], result: { bundle: { wispCrew: 1, members: ids.map((id) => ({ key: id.replace(/^crew:/, ''), name: id })) }, notes: obj(a)['notebook'] ? ['Their notebook goes along: read it first.'] : [], file: `${(ids[0] ?? 'crew').replace(/^crew:/, '')}.crew.json` } };
   },
+  // This computer's re-read (ADR-0144): the UI ignores the answer and waits on the snapshot topic; the mock's snapshot is seeded
+  'machine.read': () => ({ ops: [], result: {} }),
   // Settings → Machines → This computer over SSH, as v1's reference showed it (names the same length, not the same)
   'machines.reachable': () => ({
     ops: [],

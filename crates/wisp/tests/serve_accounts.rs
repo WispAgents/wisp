@@ -601,7 +601,7 @@ async fn a_sign_in_cut_by_a_restart_is_not_left_waiting() {
     drop(serve);
 }
 
-/// PostHog, alpha.15 (27 Nov): three extra Claude accounts were added and removed at once, and the removes reported
+/// `PostHog`, alpha.15 (27 Nov): three extra Claude accounts were added and removed at once, and the removes reported
 /// 2, 3 and 1 accounts left, not 3, 2, 1. Each remove read the list, waited on its sign-in's cancel and the CLI's
 /// logout (seconds on a real CLI), then saved the list it read before: a remove that finished later put back the
 /// accounts the others had just removed. Removes at once leave the list as if they ran one after another.
