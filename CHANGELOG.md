@@ -21,6 +21,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Add to your crew has a new look.** Your new member's spirit glows at the top in its colour, and you type their
+  name in large text under it, with the role and @handle. The fields are now on four tabs: Who, Their job, When,
+  and Where & how. Each tab shows a tick once it's filled in. Skip any you like: Add stays in view at the bottom
+  and works from every tab. Editing a crew member uses the same dialog (ADR-0141).
+
 - **A sandbox being prepared shows a box building itself** instead of the glowing grid: its edges draw in, its faces
   fill and its lid lifts and settles. Waiting for your sign-in, the built box breathes in amber; if the sandbox
   didn't start, the box is grey, its lid knocked off and cracked. Its row in the task list has the same box,
