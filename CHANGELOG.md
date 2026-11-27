@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **A task's details read as one line of thought.** The column beside the turns now goes: the harness, 📁 *in* the project,
+  *on* the computer it runs on, its branch, then its usage and context (the usage used to sit between the project and
+  the computer). The narrow bar and the phone sheet are unchanged.
+
 ## [1.0.0-alpha.19] - 2026-11-28
 
 ### Added

@@ -62,6 +62,12 @@ export interface TaskDetailsProps {
   };
   /** the machine it runs on (this computer, a peer, a sandbox), over the branch. Additive. */
   readonly machine?: { readonly name: string; readonly icon: IconName; readonly title?: string };
+  /**
+   * the wide column's words before the project and the machine ("in" wisp, "on" This computer), so the column reads as
+   * one sentence: harness, in project, on computer, branch, then usage. The narrow bar and the phone sheet don't show
+   * them. Additive.
+   */
+  readonly leads?: { readonly project: string; readonly machine: string };
   /** its usage, its subagents' in, and how full its context is (v1 #785): the wide pane's lines. Additive. */
   readonly usage?: TaskUsageProps;
   readonly actions: readonly TaskAction[];
@@ -110,7 +116,7 @@ function BranchChip(props: NonNullable<TaskDetailsProps['branch']>): JSX.Element
   );
 }
 
-/** v1 .it-bar: the harness and project, the branch, then the task's actions. */
+/** v1 .it-bar: the harness, in its project, on its computer, the branch, the usage, then the task's actions. */
 export function TaskDetails(props: TaskDetailsProps): JSX.Element {
   return (
     <div data-kit="it-bar" data-part="split.details">
@@ -135,38 +141,44 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
           <Show when={props.logo}>{(src) => <img src={src()} alt="" />}</Show>
           <span data-kit="ml-name">{props.harness}</span>
         </span>
-        <Show
-          when={props.places}
-          fallback={
-            <span data-kit="q-proj" data-color={props.color}>
-              {props.project}
-            </span>
-          }
-        >
-          {(places) => (
-            // by place, each chip made once (the row changes while the task runs: B31)
-            <Index each={places()}>
-              {(p) => (
-                <Show
-                  when={p().onOpen}
-                  fallback={
-                    <span data-kit="q-proj" data-part="split.place" data-color={p().color} data-also={flag(p().also)} title={p().title}>
-                      {p().name}
-                    </span>
-                  }
-                >
-                  {(open) => (
-                    <button type="button" data-kit="q-proj" data-part="split.place" data-color={p().color} data-also={flag(p().also)} title={p().title} onClick={() => open()()}>
-                      {p().name}
-                    </button>
-                  )}
-                </Show>
-              )}
-            </Index>
-          )}
-        </Show>
-        {/* after the harness and the folder, as v1's it-props (split.js paintDetails: headPills, then planLine) */}
-        <Show when={props.usage}>{(u) => <TaskUsage {...u()} />}</Show>
+        {/* in its project: one line in the wide column ("📁 in wisp", the folder in the project's colour), the chips as they
+            were in the narrow bar */}
+        <span data-kit="it-in" data-part="split.details.project" data-color={props.places?.[0]?.color ?? props.color}>
+          <Show when={props.leads}>
+            <Icon name="folder" />
+          </Show>
+          <Show when={props.leads}>{(l) => <span data-kit="it-lead">{l().project}</span>}</Show>
+          <Show
+            when={props.places}
+            fallback={
+              <span data-kit="q-proj" data-color={props.color}>
+                {props.project}
+              </span>
+            }
+          >
+            {(places) => (
+              // by place, each chip made once (the row changes while the task runs: B31)
+              <Index each={places()}>
+                {(p) => (
+                  <Show
+                    when={p().onOpen}
+                    fallback={
+                      <span data-kit="q-proj" data-part="split.place" data-color={p().color} data-also={flag(p().also)} title={p().title}>
+                        {p().name}
+                      </span>
+                    }
+                  >
+                    {(open) => (
+                      <button type="button" data-kit="q-proj" data-part="split.place" data-color={p().color} data-also={flag(p().also)} title={p().title} onClick={() => open()()}>
+                        {p().name}
+                      </button>
+                    )}
+                  </Show>
+                )}
+              </Index>
+            )}
+          </Show>
+        </span>
       </div>
       <Show when={props.branch || props.machine}>
         <div data-kit="it-meta">
@@ -174,6 +186,7 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
             {(m) => (
               <span data-kit="m-where" data-part="split.machine" title={m().title ?? m().name}>
                 <Icon name={m().icon} />
+                <Show when={props.leads}>{(l) => <span data-kit="it-lead">{l().machine}</span>}</Show>
                 <span>{m().name}</span>
               </span>
             )}
@@ -182,6 +195,15 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
             {(b) => <BranchChip {...b()} />}
           </Show>
         </div>
+      </Show>
+      {/* the usage after where it runs (owner 2026-11-28: harness, in project, on computer, branch, then tokens and
+          context); it shows in the wide column only (app-usage.css) */}
+      <Show when={props.usage}>
+        {(u) => (
+          <div data-kit="it-usage" data-part="split.details.usage">
+            <TaskUsage {...u()} />
+          </div>
+        )}
       </Show>
       <Show when={props.extra}>
         <div data-kit="it-extra" data-part="split.extra">

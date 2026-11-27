@@ -1,5 +1,5 @@
-// The open task's details as v1's .it-bar holds them (TaskView.tsx): the harness and model it runs on, its project
-// and folders, its status, where it runs, its branch (a click copies the worktree's path) and its usage. Beside the
+// The open task's details as v1's .it-bar holds them (TaskView.tsx): the harness and model it runs on, in its project
+// and folders, its status, on where it runs, its branch (a click copies the worktree's path), then its usage. Beside the
 // turns on a computer, in a sheet from the menu on a phone (TaskTop.tsx).
 import '../i18n/lazy.ts';
 import { createMemo, type JSX } from 'solid-js';
@@ -63,6 +63,7 @@ export function TaskSide(props: { readonly p: TaskPage; readonly s: () => Sessio
       places={placeChips(s())}
       status={statusOf(s(), t)}
       machine={machine()}
+      leads={{ project: t('shell.task.inProject'), machine: t('shell.task.onMachine') }}
       {...(branch() && { branch: branchChip() })}
       {...((u) => (u ? { usage: u } : {}))(usage())}
       actions={[]}
