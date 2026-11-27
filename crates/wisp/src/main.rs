@@ -191,7 +191,11 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
                 return repo_cli::skill_install(&p.argv, cwd);
             }
         }
-        Some("serve") => serve_here(&home, f.port, f.host.as_deref(), false, None).await?,
+        // this home's wisp already up (on this port, or on the one its server.json names): that one, never a refusal
+        Some("serve") => match already_serving(&home, f.port).await {
+            Some(url) => eprintln!("\n  ◌ wisp is already running at {url}\n"),
+            None => serve_here(&home, f.port, f.host.as_deref(), false, None).await?,
+        },
         Some("desktop") => {
             desktop::desktop(&home, user_home, port, desktop::reach(port, &home).await?, true).await?;
         }
@@ -830,6 +834,20 @@ async fn off_plugins(c: &Client) -> Vec<(String, Option<String>)> {
         .filter(|r| r["enabled"] == Value::Bool(false) || matches!(r["state"].as_str(), Some("off" | "refused")))
         .filter_map(|r| Some((r["id"].as_str()?.to_owned(), r["reason"].as_str().map(str::to_owned))))
         .collect()
+}
+
+/// The URL of this home's wisp when one already runs: on `port`, else wherever it serves (it holds the home's lock, so
+/// a second server here would be refused). None: nothing to attach to, so `wisp serve` starts one.
+async fn already_serving(home: &Path, port: u16) -> Option<String> {
+    let c = Client::new(port);
+    if c.serves(home).await {
+        return Some(c.url);
+    }
+    if !serve::home_held(home) {
+        return None;
+    }
+    let at = Client::new(client::discover(home)?);
+    at.serves(home).await.then_some(at.url)
 }
 
 /// Runs wisp here until a signal; `open`: then show it in the browser at `path`.

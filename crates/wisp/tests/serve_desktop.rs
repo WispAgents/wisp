@@ -202,3 +202,19 @@ fn with_no_wisp_running_the_app_starts_one() {
     assert!(!f.browser_log.exists(), "no tab");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `wisp serve` with this home's wisp already up attaches to it, on its port or any other `--port` (the home has one
+/// server): it said "is wisp already running?" and exited 1, as if the port being open were the user's mistake.
+#[test]
+fn serve_with_wisp_already_running_attaches_to_it() {
+    let dir = temp("serve-desktop-again");
+    let (serve, port) = start(&dir);
+    let p = port.to_string();
+    for args in [&["serve"][..], &["serve", "--port", p.as_str()], &["serve", "--port", "0"]] {
+        let (code, out, err) = wisp(&dir, "home", args, &[]);
+        assert_eq!(code, 0, "{args:?}: {out}{err}");
+        assert!(err.contains(&format!("wisp is already running at http://127.0.0.1:{port}")), "{args:?}: {err}");
+    }
+    drop(serve);
+    let _ = std::fs::remove_dir_all(&dir);
+}
