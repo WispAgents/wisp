@@ -18,7 +18,8 @@ use crate::{Engine, Port, fsx};
 pub const OWNER: &str = "worktrees";
 pub const TOPIC: &str = "plugin:wisp.worktrees:worktrees";
 
-const MIGRATIONS: &[Migration] = &[Migration::sql(
+const MIGRATIONS: &[Migration] = &[
+    Migration::sql(
     1,
     "CREATE TABLE worktrees_item (id TEXT PRIMARY KEY, title TEXT NOT NULL, project TEXT NOT NULL, branch TEXT NOT NULL, status TEXT NOT NULL,
        only INTEGER NOT NULL, size INTEGER, used_at INTEGER NOT NULL, clean_at INTEGER) STRICT;
@@ -26,7 +27,10 @@ const MIGRATIONS: &[Migration] = &[Migration::sql(
      CREATE TABLE worktrees_status (id TEXT PRIMARY KEY, size INTEGER, disk TEXT, looking INTEGER NOT NULL, cleaning TEXT, last TEXT) STRICT;
      CREATE TABLE worktrees_offer (id TEXT PRIMARY KEY, project TEXT NOT NULL, name TEXT NOT NULL, \"from\" TEXT NOT NULL, items TEXT NOT NULL,
        detached INTEGER NOT NULL) STRICT;",
-)];
+    ),
+    // each folder's build output (ADR-0144)
+    Migration::sql(2, "ALTER TABLE worktrees_item ADD COLUMN build INTEGER; ALTER TABLE worktrees_leftover ADD COLUMN build INTEGER;"),
+];
 
 fn topics(_: &Row) -> Vec<String> {
     vec![TOPIC.into()]
@@ -46,6 +50,7 @@ pub const ITEM: EntityDef = EntityDef {
         ("size", Col::Int),
         ("used_at", Col::Int),
         ("clean_at", Col::Int),
+        ("build", Col::Int),
     ],
     json_columns: &[],
     parent: None,
@@ -56,7 +61,7 @@ pub const LEFTOVER: EntityDef = EntityDef {
     kind: "worktrees.leftover",
     table: "worktrees_leftover",
     key: "id",
-    columns: &[("id", Col::Text), ("name", Col::Text), ("size", Col::Int), ("only", Col::Int), ("used_at", Col::Int)],
+    columns: &[("id", Col::Text), ("name", Col::Text), ("size", Col::Int), ("only", Col::Int), ("used_at", Col::Int), ("build", Col::Int)],
     json_columns: &[],
     parent: None,
     seq: None,
@@ -252,7 +257,7 @@ mod tests {
             cleanup: "7".into(),
             max: "40".into(),
             items,
-            leftovers: vec![LeftoverRow { name: "old-x".into(), size: Some(9), only: None, used_at: 3 }],
+            leftovers: vec![LeftoverRow { name: "old-x".into(), size: Some(9), only: None, used_at: 3, build: None }],
             size: Some(10),
             disk: None,
             ready: 0,
@@ -273,6 +278,7 @@ mod tests {
             size: Some(1),
             used_at: 5,
             clean_at: None,
+            build: None,
         }
     }
 

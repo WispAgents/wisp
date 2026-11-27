@@ -95,6 +95,10 @@ impl Reader<'_> {
     pub fn key_of(&self, kind: &str) -> Option<&'static str> {
         self.shared.kind(kind).ok().map(|k| k.def.key)
     }
+    /// The defined kinds whose every row is on `topic` (kind, key column): a first look at it is their whole tables.
+    pub fn whole_kinds(&self, topic: &str) -> Vec<(&'static str, &'static str)> {
+        self.shared.whole_kinds(topic)
+    }
     pub fn query(&self, kind: &str, q: &Query) -> Result<Vec<Row>> {
         query(self.db, &*self.shared.kind(kind)?, q)
     }

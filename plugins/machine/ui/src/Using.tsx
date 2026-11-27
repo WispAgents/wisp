@@ -9,7 +9,7 @@ import { For, Show, createMemo, createSignal, type JSX } from 'solid-js';
 import { machineCommands, stopTask } from './commands.ts';
 import type { MachineData } from './data.ts';
 import type { Host } from './host.ts';
-import { clock, laterChoices, pctText, size, stopAsk, usingRows, wispRow, type UsingRow } from './view.ts';
+import { clock, laterChoices, pctText, shortCommand, size, stopAsk, usingRows, wispRow, type UsingRow } from './view.ts';
 import './i18n/lazy.ts';
 
 interface Props {
@@ -75,15 +75,10 @@ export function Using(props: Props): JSX.Element {
     { label: t('machine.col.folder'), value: x.bytes === null ? '' : size(x.bytes) },
   ];
   return (
-    <Section title={t('machine.using.title')} description={t('machine.using.desc')} part="machine.using">
+    <Section title={t('machine.using.now')} part="machine.using">
       <UsageList>
         <UsageHead labels={[t('machine.col.ram'), t('machine.col.cpu'), t('machine.col.folder')]} />
         <Show when={props.data.snap()} fallback={<For each={[0, 1, 2]}>{() => <UsageSkeleton cols={3} />}</For>}>
-          <Show when={rows().length === 0}>
-            <Text as="p" tone="muted" size="sm">
-              {t('machine.using.none')}
-            </Text>
-          </Show>
           <Each items={all()} key={(x) => x.key}>
             {(x) => (
               <UsageRow
@@ -98,6 +93,12 @@ export function Using(props: Props): JSX.Element {
           </Each>
         </Show>
       </UsageList>
+      {/* under wisp's own row, not above an empty table: what's missing, said where it would be */}
+      <Show when={props.data.snap() && rows().length === 0}>
+        <Text as="p" tone="muted" size="sm">
+          {t('machine.using.none')}
+        </Text>
+      </Show>
     </Section>
   );
 }
@@ -126,7 +127,7 @@ export function LeftBehind(props: Props): JSX.Element {
   return (
     <Show when={left().length > 0}>
       <Section
-        title={t('machine.left.title')}
+        title={t('machine.left.needs', { count: left().length })}
         description={t('machine.left.desc')}
         part="machine.leftBehind"
         actions={
@@ -141,7 +142,8 @@ export function LeftBehind(props: Props): JSX.Element {
               const group = (): { id: string; command: string } | undefined => groups().find((g) => g.pids.includes(row().pid));
               return (
                 <UsageRow
-                  title={row().command}
+                  title={shortCommand(row().command)}
+                  tip={row().command}
                   mono
                   sub={t('machine.left.meta', { from: from(row().task), age: ageOf(row().since, props.data.now()), pid: row().pid })}
                   cells={[{ label: t('machine.col.ram'), value: size(row().rss) }]}

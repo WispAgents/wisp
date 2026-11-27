@@ -5,6 +5,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing))]
 
 pub mod base;
+pub mod build;
 pub mod changes;
 pub mod done;
 pub mod include;

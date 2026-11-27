@@ -1,14 +1,14 @@
-// Automations (design/machine-page.md §5) and the last 24 hours (§6). Pause automations ▾ shows
+// Automations (design/machine-page.md §5); the last 24 hours (§6) are Overview.tsx's DayChart. Pause automations ▾ shows
 // paused at once (the command's patch) and Resume now undoes it; the limits live in Settings →
 // Usage → Machine load, one place, so Change goes there.
 
 import type { PluginClient } from '@wisp/client';
-import { Button, Menu, Section, SettingsRow, Skeleton, Stats } from '@wisp/ui';
-import { Show, createMemo, type JSX } from 'solid-js';
+import { Button, Menu, Section, SettingsRow } from '@wisp/ui';
+import { Show, type JSX } from 'solid-js';
 import { machineCommands } from './commands.ts';
 import type { MachineData } from './data.ts';
 import type { Host } from './host.ts';
-import { automationsLine, batteryLine, dayStats, limitsLine, pauseChoices, pctText, size, span } from './view.ts';
+import { automationsLine, batteryLine, limitsLine, pauseChoices } from './view.ts';
 import './i18n/lazy.ts';
 
 interface Props {
@@ -59,31 +59,6 @@ export function Automations(props: Props): JSX.Element {
           </Button>
         }
       />
-    </Section>
-  );
-}
-
-export function Day(props: { readonly client: PluginClient; readonly data: MachineData }): JSX.Element {
-  const t = props.client.t;
-  const d = createMemo(() => {
-    const m = props.data.snap();
-    return m ? dayStats(m.history, props.data.now()) : undefined;
-  });
-  const items = createMemo(() => {
-    const x = d();
-    const none = t('machine.day.none');
-    return [
-      { label: t('machine.day.lowFree'), value: x?.lowFree === null || !x ? '—' : pctText(x.lowFree) },
-      { label: t('machine.day.peakRuns'), value: x ? x.peakRuns : '—' },
-      { label: t('machine.day.waited'), value: x ? (x.waited ? span(x.waited, t) : none) : '—' },
-      { label: t('machine.day.freed'), value: x ? (x.freed ? size(x.freed) : none) : '—' },
-    ];
-  });
-  return (
-    <Section title={t('machine.day.title')} part="machine.day">
-      <Show when={props.data.snap()} fallback={<Skeleton shape="block" width="full" height="touch" />}>
-        <Stats items={items()} part="machine.day.stats" />
-      </Show>
     </Section>
   );
 }

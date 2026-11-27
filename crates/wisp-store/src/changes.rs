@@ -204,7 +204,7 @@ pub(crate) fn changed_since(
     let mut pages: Vec<Vec<ChangeRow>> = Vec::new();
     let mut cursor = since;
     loop {
-        let page = read(db, cursor, Some(&[topic]), MAX_LIMIT)?;
+        let page = read_keys(db, cursor, topic, MAX_LIMIT)?;
         let Some(last) = page.last() else { break };
         cursor = last.seq;
         let more = page.len() == MAX_LIMIT as usize;
@@ -234,6 +234,34 @@ pub(crate) fn changed_since(
         }
     }
     Ok(Some(delta))
+}
+
+/// [`read`] of one topic for [`changed_since`], which needs only which rows changed: an append's patch (its rows' keys)
+/// is read, every other change's is not. A first look at a topic with no snapshot source replays its whole feed here,
+/// and a plugin that upserts a 30 KB row every 10 s (This Mac's snapshot) left 21k such patches on its topic: parsing
+/// them all held the page on "Reading…" for 10–12 s.
+fn read_keys(db: &Connection, since: i64, topic: &str, limit: u32) -> Result<Vec<ChangeRow>> {
+    let mut st = db.prepare_cached(
+        "SELECT c.seq, c.entity, c.id, c.op, CASE WHEN c.op = 'append' THEN c.patch END, c.at
+         FROM change_topic t JOIN change c ON c.seq = t.seq WHERE t.topic = ? AND t.seq > ? ORDER BY t.seq LIMIT ?",
+    )?;
+    let mut rows = st.query(params![topic, since, i64::from(limit)])?;
+    let mut out = Vec::new();
+    while let Some(r) = rows.next()? {
+        let op: String = r.get(3)?;
+        let patch: Option<String> = r.get(4)?;
+        out.push(ChangeRow {
+            seq: r.get(0)?,
+            topic: topic.to_owned(),
+            topics: vec![topic.to_owned()],
+            entity: r.get(1)?,
+            id: r.get(2)?,
+            op: ChangeOp::parse(&op)?,
+            patch: patch.map_or(Ok(Value::Null), |p| serde_json::from_str(&p))?,
+            at: r.get(5)?,
+        });
+    }
+    Ok(out)
 }
 
 fn touched(c: &ChangeRow, kinds: &dyn Fn(&str) -> Option<std::sync::Arc<Kind>>) -> Result<Vec<Id>> {

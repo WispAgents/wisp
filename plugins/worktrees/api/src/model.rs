@@ -151,6 +151,9 @@ pub struct ItemRow {
     pub size: Option<u64>,
     pub used_at: i64,
     pub clean_at: Option<i64>,
+    /// of `size`, the build output (`target/`, `node_modules/`, …) a low disk takes first (ADR-0144); None: not sized yet
+    #[serde(default)]
+    pub build: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -161,6 +164,9 @@ pub struct LeftoverRow {
     pub size: Option<u64>,
     pub only: Option<u32>,
     pub used_at: i64,
+    /// of `size`, its build output (ADR-0144); None: not sized yet
+    #[serde(default)]
+    pub build: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

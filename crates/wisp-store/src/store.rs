@@ -102,6 +102,15 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Shared {
+    /// The kinds whose every row is on `topic` (`Kind::whole`), as (kind, key column), by name.
+    pub fn whole_kinds(&self, topic: &str) -> Vec<(&'static str, &'static str)> {
+        let kinds = self.kinds.read().unwrap_or_else(PoisonError::into_inner);
+        let mut out: Vec<(&'static str, &'static str)> =
+            kinds.values().filter(|k| k.whole.iter().any(|t| t == topic)).map(|k| (k.def.kind, k.def.key)).collect();
+        out.sort_unstable();
+        out
+    }
+
     pub fn kind(&self, name: &str) -> Result<Arc<Kind>> {
         self.kinds
             .read()

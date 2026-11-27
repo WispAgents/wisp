@@ -92,8 +92,18 @@ pub(crate) fn task_of_session(s: &Session) -> TaskInfo {
 /// Settings → Worktrees' answer, as much as This Mac reads.
 pub(crate) fn wt_of(v: &WorktreesView) -> WtView {
     WtView {
-        items: v.items.iter().map(|x| WtItem { id: x.id.clone(), idle: x.status == Standing::Idle, size: x.size }).collect(),
-        leftovers: v.leftovers.iter().map(|x| WtLeftover { name: x.name.clone(), size: x.size, only: x.only }).collect(),
+        items: v
+            .items
+            .iter()
+            .map(|x| WtItem {
+                id: x.id.clone(),
+                idle: x.status == Standing::Idle,
+                size: x.size,
+                busy: x.status == Standing::Busy,
+                build: x.build,
+            })
+            .collect(),
+        leftovers: v.leftovers.iter().map(|x| WtLeftover { name: x.name.clone(), size: x.size, only: x.only, build: x.build }).collect(),
         size: v.size,
         disk: v.disk.map(|d| (d.free, d.total)),
     }

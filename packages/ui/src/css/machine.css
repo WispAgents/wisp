@@ -66,4 +66,24 @@
     [data-kit='usage-cell'] { grid-row: 2; display: flex; gap: var(--space-3); text-align: start; }
     [data-kit='usage-cell']::before { content: attr(data-label); color: var(--muted); font-size: var(--fs-xs); }
   }
+
+  /* LoadRow: name · bar with its wait mark · the numbers (ADR-0144) */
+  [data-kit='load-row'] { display: grid; grid-template-columns: calc(var(--size-avatar-lg) * 2) minmax(0, 1fr) calc(var(--size-avatar-lg) * 5); align-items: center; column-gap: var(--space-6); padding: var(--space-4) 0; border-bottom: var(--size-hairline) solid var(--line); min-width: 0; }
+  /* the track shows on the pane's own background (the settings meter's sits on a box) */
+  [data-kit='load-row'] [data-kit='meter'] { background: var(--line); }
+  [data-kit='load-name'] { color: var(--ink); font-size: var(--fs-sm); white-space: nowrap; }
+  [data-kit='load-value'] { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  [data-kit='load-value'] b { font-weight: var(--fw-medium); color: var(--ink); font-size: var(--fs-sm); }
+  [data-kit='load-value'] small { color: var(--muted); font-size: var(--fs-xs); }
+
+  /* DayLines: the day as lines, a legend over it and a sentence under it */
+  [data-kit='day-lines'] { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; min-width: 0; }
+  [data-kit='day-lines-legend'] { --k-gap: var(--space-4); margin: 0; padding: 0; list-style: none; font-size: var(--fs-xs); color: var(--muted); }
+  [data-kit='day-lines-key'] { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+  [data-kit='day-lines-key']::before { content: ''; width: var(--space-3); height: var(--size-ring); border-radius: var(--radius-pill); background: var(--k-tone); }
+  [data-kit='day-lines-chart'] { display: block; width: 100%; height: calc(var(--size-avatar-lg) * 2); overflow: visible; }
+  [data-kit='day-lines-line'] { fill: none; stroke: var(--k-tone); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  [data-kit='day-lines-chart'] { border-bottom: var(--size-hairline) solid var(--line); }
+  [data-kit='day-lines-axis'] { display: flex; justify-content: space-between; color: var(--faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+  [data-kit='day-lines-caption'] { color: var(--muted); font-size: var(--fs-xs); }
 }

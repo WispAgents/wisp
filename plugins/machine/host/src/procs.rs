@@ -47,6 +47,8 @@ pub struct Procs {
     /// when `last` was made: a `machine.read` within `TICK_MS` of it answers it (perf audit 2026-11-19 #3)
     last_at: Mutex<i64>,
     point_at: Mutex<i64>,
+    /// the history the row has (its length and last point's time): a sample that added no point leaves the column out
+    history_sent: Mutex<Option<(usize, i64)>>,
     ran_at: Mutex<i64>,
     /// the tasks a sample names, kept current from runtime's events (never every task each sample)
     index: crate::index::TaskIndex,
@@ -120,6 +122,7 @@ impl Procs {
             sampled_at: Mutex::new(0),
             last_at: Mutex::new(i64::MIN),
             point_at: Mutex::new(0),
+            history_sent: Mutex::new(None),
             ran_at: Mutex::new(0),
             index: crate::index::TaskIndex::default(),
         }
@@ -335,9 +338,18 @@ impl Procs {
         let reading = g.with(Load::reading);
         let paused = holds::paused_until(&lock(&g.knobs), now);
         let cleanup = ctx.setting("worktrees.cleanup").and_then(|v| v.as_str().map(str::to_owned));
-        let (snap, load) = rows(v, &reading, paused, cleanup.as_deref(), platform_name());
-        if let Err(e) = store.write(move |w| w.upsert(SNAPSHOT.kind, snap).and_then(|_| w.upsert(LOAD.kind, load)).map(|_| ())).await {
-            tracing::warn!(error = %e, "machine: writing the snapshot");
+        let (mut snap, load) = rows(v, &reading, paused, cleanup.as_deref(), platform_name());
+        // the day's points gain one a minute, and samples come every 10 s: the 30 KB column went into the change feed
+        // each time (7 days of it was 1.5 GB of the store, and a first look replayed it all), so it's written only
+        // when a point came; the upsert keeps the column as it was otherwise
+        let mark = (v.history.len(), v.history.last().map_or(0, |p| p.at));
+        let same = *lock(&self.history_sent) == Some(mark);
+        if same {
+            snap.remove("history");
+        }
+        match store.write(move |w| w.upsert(SNAPSHOT.kind, snap).and_then(|_| w.upsert(LOAD.kind, load)).map(|_| ())).await {
+            Ok(()) => *lock(&self.history_sent) = Some(mark),
+            Err(e) => tracing::warn!(error = %e, "machine: writing the snapshot"),
         }
     }
 
@@ -436,6 +448,18 @@ pub(crate) fn setup(s: &mut Setup, g: &Arc<Guard>) -> Arc<Procs> {
     s.on::<SessionDeleted, _, _>(move |_ctx, e| {
         ip.index.deleted(e.id.as_str());
         async {}
+    });
+    // a clean-up ended (Space's Remove, the sweep): a sample now, so the page's folders and free space follow at once
+    // and an optimistic removal isn't undone by the last sample for up to a minute
+    let (wp, wg) = (p.clone(), g.clone());
+    s.on::<wisp_worktrees_api::WorktreesCleaned, _, _>(move |ctx, _e| {
+        let (p, g) = (wp.clone(), wg.clone());
+        async move {
+            let (Ok(clock), Ok(proc)) = (ctx.clock(), ctx.service::<wisp_proc::Proc>()) else { return };
+            let now = clock.now_ms();
+            let v = p.sample(&ctx, &g, &proc, now).await;
+            p.publish(&ctx, &g, &v, now).await;
+        }
     });
     let (rp, rg) = (p.clone(), g.clone());
     s.command::<c::Read, _, _>(move |ctx, _call, _| {

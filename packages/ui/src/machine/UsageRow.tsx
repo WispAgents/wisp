@@ -19,6 +19,9 @@ export interface UsageRowProps extends KitProps {
   /** opens what the row is (a task): the title becomes a button */
   readonly onOpen?: () => void;
   readonly sub?: string;
+  /** the title's tooltip when the title is a short form ("python3 qa/parity.mjs" of a whole command line); default
+   * the title. Additive (2026-11-27). */
+  readonly tip?: string;
   readonly mono?: boolean;
   readonly cells: readonly UsageCell[];
   readonly actions?: JSX.Element;
@@ -29,7 +32,7 @@ export interface UsageRowProps extends KitProps {
 export function UsageRow(props: UsageRowProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.usage-row';
   const title = (): JSX.Element => (
-    <span data-kit="usage-title" data-text="control" data-mono={flag(props.mono)} title={props.title}>
+    <span data-kit="usage-title" data-text="control" data-mono={flag(props.mono)} title={props.tip ?? props.title}>
       {props.title}
     </span>
   );
