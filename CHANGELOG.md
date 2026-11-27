@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **The Update pill shows up on its own each morning.** wisp looked for a new version at start and then only a full
+  day after that look, so a release out a few hours after you opened wisp stayed hidden until the next day (or until
+  you had already updated with npm and restarted). It now also looks every morning at 9 on your computer's clock (or
+  as soon as it wakes after that), and a look that got no answer (offline) is tried again 30 minutes later instead
+  of counting as done; Settings → Updates no longer says "up to date" after a check that never got an answer.
 - **A save set aside by a Ship that was cut off mid-merge is no longer dropped for the remote's older copy.** A merge
   killed after it wrote the remote's history files but before it committed left those files in the folder, newer on
   disk than the set-aside save, so the next restore took them for a save made since and deleted yours. Ship now notes

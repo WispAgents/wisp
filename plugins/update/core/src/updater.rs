@@ -13,7 +13,10 @@ use crate::install::{DOWNLOADS, FORMULA, Install, Method, PKG, Platform, REGISTR
 use crate::version::{find_version, newer, newest};
 
 pub const DAY_MS: i64 = 24 * 3600 * 1000;
-/// Timers stall while the machine sleeps, so the host polls the wall clock this often.
+/// The daily check's hour, on the user's clock: a release out overnight shows as the Update pill in the morning.
+pub const MORNING_HOUR: i64 = 9;
+/// Timers stall while the machine sleeps, so the host polls the wall clock this often (a computer that slept
+/// through the morning checks within this of waking; a check that failed is tried again this much later).
 pub const TICK_MS: u64 = 30 * 60 * 1000;
 /// The first check, after start.
 pub const FIRST_CHECK_MS: u64 = 5000;
@@ -106,6 +109,8 @@ pub fn feed_override(v: Option<&str>) -> Option<String> {
 /// The fetch a check makes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckRequest {
+    /// when it was asked: what [`Updater::due`] counts from once it's answered
+    pub at: i64,
     pub url: String,
     pub accept: &'static str,
     pub channel: Channel,
@@ -154,6 +159,13 @@ pub struct Updater {
     pub swap: Option<Swap>,
     /// Windows npm: what the hand-off installs once this wisp has exited
     pub deferred: Option<String>,
+}
+
+/// The latest [`MORNING_HOUR`] on the user's clock at or before `now_ms` (UTC ms; `offset_ms`: the zone's offset).
+pub fn last_morning(now_ms: i64, offset_ms: i64) -> i64 {
+    let local = now_ms + offset_ms;
+    let morning = local.div_euclid(DAY_MS) * DAY_MS + MORNING_HOUR * 3_600_000;
+    (if local < morning { morning - DAY_MS } else { morning }) - offset_ms
 }
 
 fn falsy(v: Option<&str>) -> bool {
@@ -210,9 +222,12 @@ impl Updater {
         if self.method() == Method::Brew { Channel::Stable } else { Channel::of(pref) }
     }
 
-    /// At most once a day, however long wisp stays open (or asleep).
-    pub fn due(&self, now_ms: i64) -> bool {
-        self.enabled && self.checked_at.is_none_or(|t| now_ms - t >= DAY_MS)
+    /// At start, then every morning ([`MORNING_HOUR`] on the user's clock, `offset_ms` east of UTC): due when no
+    /// check has been answered since the latest morning. Was "a day after the last check": a wisp started at
+    /// 10:00 before the evening's release next looked at 10:00 the day after, so the pill only showed once the
+    /// user had updated by hand and restarted. A check that wasn't answered (offline) doesn't count.
+    pub fn due(&self, now_ms: i64, offset_ms: i64) -> bool {
+        self.enabled && self.checked_at.is_none_or(|t| t < last_morning(now_ms, offset_ms))
     }
 
     pub fn view(&self, pref: &str) -> View {
@@ -261,8 +276,7 @@ impl Updater {
     /// Starts a check: records the time and says what to fetch. The app follows GitHub Releases (a release
     /// is published once all its downloads are up): stable asks for the latest one, the other channels look
     /// through the newest few.
-    pub fn begin_check(&mut self, now_ms: i64, pref: &str) -> CheckRequest {
-        self.checked_at = Some(now_ms);
+    pub fn begin_check(&self, now_ms: i64, pref: &str) -> CheckRequest {
         let channel = self.channel(pref);
         let app = self.method() == Method::App;
         let url = match (app, channel) {
@@ -270,13 +284,14 @@ impl Updater {
             (true, Channel::Stable) => format!("{}/latest", self.releases()),
             (true, _) => format!("{}?per_page=30", self.releases()),
         };
-        CheckRequest { url, accept: if app { "application/vnd.github+json" } else { "application/json" }, channel }
+        CheckRequest { at: now_ms, url, accept: if app { "application/vnd.github+json" } else { "application/json" }, channel }
     }
 
     /// The check's answer. `body` is None when the fetch failed or wasn't 2xx (offline: next round).
     /// True when what the UI shows changed.
     pub fn end_check(&mut self, req: &CheckRequest, body: Option<&Value>) -> bool {
         let Some(body) = body else { return false };
+        self.checked_at = Some(req.at);
         let channel = req.channel;
         let version = if self.method() == Method::App { self.pick_release(channel, body) } else { self.pick_tag(channel, body) };
         let available = self.method() != Method::Git && version.as_deref().is_some_and(|v| newer(v, &self.current));

@@ -6177,6 +6177,7 @@ dependencies = [
 name = "wisp-update"
 version = "1.0.0-alpha.17"
 dependencies = [
+ "jiff",
  "serde",
  "serde_json",
  "tokio",

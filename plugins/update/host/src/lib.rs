@@ -1,8 +1,9 @@
 //! wisp.update (v1 server/update.js): is there a newer wisp, and install it. The decisions are
 //! `wisp_update_core::updater::Updater`'s (sans-IO); this runs them:
 //!
-//! - **check:** five seconds after start, then whenever a day has passed (checked every 30 minutes, so a computer
-//!   that slept checks when it wakes), and on `update.check`. The npm registry's dist-tags (or GitHub Releases for
+//! - **check:** five seconds after start, then every morning at 9 on this computer's clock (`Updater::due`, looked
+//!   at every 30 minutes, so a computer that slept checks when it wakes and an unanswered check is tried again),
+//!   and on `update.check`. The npm registry's dist-tags (or GitHub Releases for
 //!   the desktop app) through the net service; offline is "next round", never an error.
 //! - **install** (`update.install`): npm (`npm install -g wisp-agents@<tag>`) or Homebrew, run through the proc
 //!   service; then the updated copy's `package.json` must say a newer version, or it says what went wrong. npx has
@@ -132,6 +133,11 @@ impl St {
     }
 }
 
+/// This computer's zone's offset from UTC at `at` (ms), for the morning check; 0 if it can't be read.
+fn local_offset_ms(at: i64) -> i64 {
+    jiff::Timestamp::from_millisecond(at).map_or(0, |ts| i64::from(jiff::tz::TimeZone::system().to_offset(ts).seconds()) * 1_000)
+}
+
 fn pref(ctx: &Ctx) -> String {
     ctx.setting(CHANNEL).and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_else(|| "stable".into())
 }
@@ -179,7 +185,7 @@ async fn check(ctx: &Ctx, st: &St) -> Value {
     let now = ctx.clock().map_or(0, |c| c.now_ms());
     let p = pref(ctx);
     let req = {
-        let mut u = lock(&st.up);
+        let u = lock(&st.up);
         u.enabled.then(|| u.begin_check(now, &p))
     };
     let Some(req) = req else { return publish(ctx, st).await };
@@ -202,7 +208,10 @@ async fn check(ctx: &Ctx, st: &St) -> Value {
     };
     lock(&st.up).end_check(&req, body.as_ref());
     *lock(&st.checking) = false;
-    *lock(&st.checked_at) = Some(now);
+    // only an answer is "checked" (the pane says "up to date" once it's set); offline is tried again next tick
+    if body.is_some() {
+        *lock(&st.checked_at) = Some(now);
+    }
     publish(ctx, st).await
 }
 
@@ -358,7 +367,8 @@ impl Plugin for UpdatePlugin {
                 publish(&c2, &st).await;
                 clock.sleep(up::FIRST_CHECK_MS).await;
                 loop {
-                    if lock(&st.up).due(clock.now_ms()) {
+                    let now = clock.now_ms();
+                    if lock(&st.up).due(now, local_offset_ms(now)) {
                         check(&c2, &st).await;
                     }
                     clock.sleep(up::TICK_MS).await;
