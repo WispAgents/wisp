@@ -1,30 +1,65 @@
 /* Ship it's pieces (src/ship/, design/side-panel.md PR): checks in fixed columns, the tone chip and
    the docked merge bar. Control text stays on one line; narrow boxes reflow by container query. */
 @layer kit {
+  /* v1 panel.css .pn-check: a 30px line, icon · name · duration · actions, flush with the pane's edge (no inset, no
+     hover box), so checks, folds and files share one left edge. */
   [data-kit='check-list'] { container: checks / inline-size; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   [data-kit='check-row'] {
-    display: grid; grid-template-columns: auto minmax(0, 1fr) auto var(--size-time-col) auto; align-items: center;
-    column-gap: var(--space-4); min-height: var(--size-row-min); padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-md); font-size: var(--fs-md); color: var(--ink);
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center;
+    column-gap: var(--space-4); min-height: 30px; padding: var(--space-1) var(--space-0); font-size: var(--fs-md); color: var(--ink-2);
   }
-  [data-kit='check-row']:hover { background: var(--bg-2); }
-  [data-kit='check-row-icon'] { display: flex; color: var(--faint); }
+  [data-kit='check-row-icon'] { display: flex; color: var(--good); }
+  [data-kit='check-row-icon'] > [data-kit='icon'] { width: 14px; height: 14px; }
   [data-kit='check-row'][data-state='fail'] [data-kit='check-row-icon'] { color: var(--bad); }
   [data-kit='check-row'][data-state='pending'] [data-kit='check-row-icon'] { color: var(--warn); }
-  [data-kit='check-row'][data-state='pass'] [data-kit='check-row-icon'] { color: var(--good); }
+  [data-kit='check-row'][data-state='skipped'] [data-kit='check-row-icon'] { color: var(--faint); }
+  [data-kit='check-row'][data-state='fail'] [data-kit='check-row-name'] { color: var(--ink); }
   [data-kit='check-row-name'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   [data-kit='check-row-note'] { white-space: nowrap; font-size: var(--fs-xs); color: var(--faint); }
   [data-kit='check-row-note']:empty { display: none; }
   [data-kit='check-row-dur'] { grid-column: 4; text-align: end; white-space: nowrap; font-size: var(--fs-xs); color: var(--faint); font-variant-numeric: tabular-nums; }
   [data-kit='check-row-actions'] { grid-column: 5; display: flex; align-items: center; gap: var(--space-1); }
+  [data-kit='check-row-actions'] [data-kit='icon-button'] { width: 24px; height: 24px; border-radius: 7px; }
   @container checks (max-width: 520px) {
-    /* actions keep the check's line (a ↗ logs icon on a row of its own doubled every row: QA r2 phone #7); the name
-       gives way */
-    [data-kit='check-row'] { grid-template-columns: auto minmax(0, 1fr) var(--size-time-col) auto; min-height: var(--size-touch); }
     [data-kit='check-row-note'] { display: none; }
-    [data-kit='check-row-dur'] { grid-column: 3; }
-    [data-kit='check-row-actions'] { grid-column: 4; }
   }
+  @media (pointer: coarse) {
+    [data-kit='check-row'], [data-kit='fold-row'], [data-kit='file-stat-row'] { min-height: var(--size-touch); }
+  }
+
+  /* v1 .pn-pr h4: a quiet uppercase title, its count beside it in --faint. */
+  [data-kit='pane-head'] { display: flex; align-items: baseline; gap: var(--space-4); margin: var(--space-0) 0 var(--space-1); }
+  [data-kit='pane-head-title'] { margin: 0; color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; }
+  [data-kit='pane-head-meta'] { color: var(--faint); font-size: var(--fs-xs); font-weight: var(--fw-medium); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* v1 .pn-fold: a 28px line under a list, the icon in the rows' icon column, a chevron after the words. */
+  [data-kit='fold-row'] {
+    display: inline-flex; align-self: flex-start; align-items: center; gap: var(--space-4); min-height: 28px; padding: 0; border: 0;
+    background: none; color: var(--muted); font: inherit; font-size: var(--fs-sm); white-space: nowrap; cursor: pointer;
+  }
+  [data-kit='fold-row']:hover { color: var(--ink); }
+  [data-kit='fold-row-icon'], [data-kit='fold-row-chev'] { display: flex; }
+  [data-kit='fold-row-icon'] > [data-kit='icon'] { width: 14px; height: 14px; }
+  [data-kit='fold-row-chev'] { margin-inline-start: calc(var(--space-2) * -1); }
+  [data-kit='fold-row-chev'] > [data-kit='icon'] { width: 12px; height: 12px; transform: rotate(90deg); }
+  [data-kit='fold-row'][aria-expanded='true'] [data-kit='fold-row-chev'] > [data-kit='icon'] { transform: rotate(-90deg); }
+  [data-kit='fold-row'][data-tone='good'] [data-kit='fold-row-icon'] { color: var(--good); }
+
+  /* v1 .pn-foot: the last line under a hairline. */
+  [data-part='side.pr.foot'] { margin-top: var(--space-3); padding-top: var(--space-5); border-top: var(--size-hairline) solid var(--line); }
+
+  /* v1 .pn-files: 26px rows, the whole path in mono that gives way from its start, +n −n in the diff colours. */
+  [data-kit='file-stat-list'] { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  [data-kit='file-stat-row'] { display: flex; align-items: center; min-height: 26px; }
+  [data-kit='file-stat-link'] { display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--space-4); color: var(--ink-2); text-decoration: none; }
+  a[data-kit='file-stat-link']:hover { color: var(--ink); }
+  a[data-kit='file-stat-link']:hover [data-kit='file-stat-base'] { text-decoration: underline; text-underline-offset: 3px; }
+  [data-kit='file-stat-path'] { display: flex; flex: 1; min-width: 0; font: var(--fs-xs) var(--mono); white-space: nowrap; }
+  [data-kit='file-stat-dir'] { flex: 1 0 0; width: 0; max-width: max-content; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; color: var(--faint); }
+  [data-kit='file-stat-base'] { flex: 0 1 auto; min-width: 3ch; overflow: hidden; text-overflow: ellipsis; }
+  [data-kit='file-stat-n'] { flex: none; width: 5ch; text-align: end; font: var(--fs-xs) var(--mono); font-variant-numeric: tabular-nums; }
+  [data-kit='file-stat-n'][data-op='add'] { color: var(--add); }
+  [data-kit='file-stat-n'][data-op='del'] { color: var(--del); }
 
   /* The tone chip: v1's PR pill, as a button. Never wider than its box: a long repo name truncates inside it
      while its trailing PR number (tone-chip-suffix) stays whole. */
