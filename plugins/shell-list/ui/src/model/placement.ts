@@ -23,6 +23,8 @@ export function signature(s: SessionRow): string {
     l?.length ? `${l.length}.${l[0]?.at}.${l.some((x) => !x.remind) ? 1 : 0}` : '',
     s.held ? `${s.held.waiting ? 1 : 0}.${s.held.until ?? ''}` : '',
     s.reminder ? 1 : 0,
+    s.shipping ? 1 : 0,
+    s.pr?.state ?? '',
     s.pending ? 1 : 0,
     s.tui ? 1 : 0,
     s.term ? 1 : 0,

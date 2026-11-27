@@ -16,7 +16,8 @@ export type ColorName = 'violet' | 'teal' | 'amber' | 'rose' | 'sky' | 'lime' | 
 export interface PrRef {
   number: number;
   url: string;
-  state: 'open' | 'closed' | 'merged';
+  /** wisp.ship's PrSummary state, as GitHub says it */
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
   draft?: boolean;
   review?: string;
   checks?: 'pass' | 'fail' | 'pending' | string;
