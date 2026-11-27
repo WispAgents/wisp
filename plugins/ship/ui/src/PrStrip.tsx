@@ -8,13 +8,13 @@ import { CommandError, entityKey, readonly, type EntityKey, type PluginClient } 
 import { mergeRequest } from './merge-request.ts';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { Button, Card, Icon, IconButton, ListRow, Stack, Switch as OnOff, Text, Toolbar, ToneChip, useSignal, Wrap, type ToolbarItem } from '@wisp/ui';
-import { fixConflicts, judgeRisk, refresh, review, setSteward } from './commands.ts';
+import { fixConflicts, refresh, review, setSteward } from './commands.ts';
 import { t } from './i18n.ts';
 import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
 import { fixing, openPrs, prChipTitle, prsOf, prTone, worstTone, type PrTone } from './model/pr.ts';
 import { prStripSub, prStripTitle } from './model/strip.ts';
 import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
-import { chipRisk, RISK_ICON, riskActs, riskLine, riskStrip, verdictOf } from './model/risk.ts';
+import { chipRisk, RISK_ICON, RISK_TONE, riskLine, riskRow, verdictOf } from './model/risk.ts';
 import { stepsOfLive, track } from './model/ship.ts';
 import { stewardLine, stewardStatus, stewardSwitch } from './model/steward.ts';
 import { ShipRun } from './ShipRun.tsx';
@@ -106,7 +106,7 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
   const tone = createMemo((): PrTone => worstTone(prs().map((x) => prTone(x.pr, fixFor(x)))));
   const open = createMemo(() => openPrs(props.s));
   const rv = () => (props.s.pr?.state === 'OPEN' ? reviewState(t, props.s, ctx()) : undefined);
-  const risk = createMemo(() => riskStrip(t, props.s, open()));
+  const risk = createMemo(() => riskRow(t, props.s, open()));
   // A single settled (merged/closed) PR has no active toolbar actions: put its GitHub link inline in the row
   // instead of opening a mostly empty 32px toolbar beneath it.
   const inlineGithub = createMemo((): string | undefined => {
@@ -182,36 +182,6 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           ),
       });
     }
-    // merge risk (ADR-0142): the worst of the open PRs' verdicts; its title has every PR's line
-    const rk = risk();
-    if (rk) {
-      const go = (): void =>
-        riskActs(rk.kind)
-          ? void props.client.run(judgeRisk, { key: props.k }).then(
-              (r) => {
-                if (r && !r.started && r.why) ship.shell.toast.show(r.why);
-              },
-              () => {}, // the shell's onError toasts it
-            )
-          : ship.openPane();
-      const bad = rk.kind === 'high';
-      out.push({
-        id: 'risk',
-        icon: RISK_ICON[rk.kind],
-        label: rk.label,
-        priority: 3,
-        ...(bad ? { tone: 'bad' as const } : {}),
-        onSelect: go,
-        render: (form) =>
-          form === 'icon' ? (
-            <IconButton icon={RISK_ICON[rk.kind]} size="sm" variant="ghost" {...(bad ? { tone: 'bad' as const } : {})} label={`${rk.label}: ${rk.title}`} onClick={go} part="pr.strip.risk" />
-          ) : (
-            <Button size="sm" variant="ghost" icon={RISK_ICON[rk.kind]} {...(bad ? { tone: 'bad' as const } : {})} title={rk.title} onClick={go} part="pr.strip.risk">
-              {rk.label}
-            </Button>
-          ),
-      });
-    }
     // Pinned primary action (Fix conflicts or Merge) always sits last so Toolbar pushes it cleanly to the end.
     if (props.s.pr?.state === 'OPEN' && props.s.pr.conflict && !fixing(props.s.conflictFix) && props.s.state !== 'running') {
       out.push({ id: 'fix', icon: 'merge', label: t('wisp.ship.action.fix'), priority: 'pin', onSelect: () => quiet(props.client.run(fixConflicts, { key: props.k })) });
@@ -264,6 +234,25 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
               sub={stewardStatus(t, props.s) ?? t('wisp.ship.steward.off')}
               subTitle={t(k().on ? 'wisp.ship.steward.switchOff' : 'wisp.ship.steward.switchOn')}
               actions={<OnOff checked={k().on} onChange={flipSteward} aria-label={t('wisp.ship.steward.title')} title={t(k().on ? 'wisp.ship.steward.switchOff' : 'wisp.ship.steward.switchOn')} part="pr.strip.steward.switch" />}
+            />
+          )}
+        </Show>
+        {/* merge risk (ADR-0142) on its own row, built as the Steward's: the worst open PR's verdict in a line and its
+            level on the right (every PR's line on hover); each PR's own word is on its chip, the reasons in the PR pane */}
+        <Show when={risk()}>
+          {(r) => (
+            <ListRow
+              part="pr.strip.risk"
+              lead={<Icon name={RISK_ICON[r().kind]} size="sm" tone={RISK_TONE[r().kind] === 'muted' ? 'faint' : RISK_TONE[r().kind]} />}
+              title={t('wisp.ship.risk.title')}
+              sub={r().sub}
+              subTitle={`${r().title}\n${t('wisp.ship.risk.open')}`}
+              actions={
+                <Text size="sm" weight="medium" tone={RISK_TONE[r().kind]} nowrap part="pr.strip.risk.level">
+                  {r().level}
+                </Text>
+              }
+              onOpen={() => ship.openPane()}
             />
           )}
         </Show>

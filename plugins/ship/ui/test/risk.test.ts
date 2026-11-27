@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 import { t } from '../src/i18n.ts';
 import { mergePlan } from '../src/model/merge.ts';
 import { openPrs } from '../src/model/pr.ts';
-import { chipRisk, riskStrip, riskWarnings } from '../src/model/risk.ts';
+import { chipRisk, riskRow, riskWarnings } from '../src/model/risk.ts';
 import type { RiskVerdict, ShipSession } from '../src/types.ts';
 
 const ctx = { reviewOn: false, agentName: () => undefined };
@@ -23,41 +23,40 @@ const two = (risk: RiskVerdict[], riskOn = true): ShipSession => ({
 
 test('off_or_without_an_open_pr_the_strip_says_nothing', () => {
   const s = two([v(1, 'a', { level: 'high' })], false);
-  expect(riskStrip(t, s, openPrs(s))).toBeUndefined();
+  expect(riskRow(t, s, openPrs(s))).toBeUndefined();
   expect(chipRisk(t, s, pr(1, 'a'))).toBeUndefined();
   expect(riskWarnings(t, s, openPrs(s)).high).toEqual([]);
   const on = two([]);
-  expect(riskStrip(t, on, [])).toBeUndefined();
+  expect(riskRow(t, on, [])).toBeUndefined();
 });
 
-test('the_strip_shows_the_worst_open_pr_and_every_prs_line', () => {
-  const s = two([v(1, 'a', { level: 'low', score: 10, summary: 'docs only' }), v(2, 'b', { level: 'high', score: 82, summary: 'drops a column' })]);
-  const r = riskStrip(t, s, openPrs(s));
+test('the_row_says_the_worst_open_pr_in_a_line_and_its_level_on_the_right', () => {
+  const s = two([v(1, 'a', { level: 'low', score: 10, summary: 'docs only' }), v(2, 'b', { level: 'high', score: 82, summary: 'drops a column old clients read' })]);
+  const r = riskRow(t, s, openPrs(s));
   expect(r?.kind).toBe('high');
-  expect(r?.label).toBe('High risk');
+  expect(r?.sub).toBe('High · lib #2: drops a column old clients read');
+  expect(r?.level).toBe('High');
   expect(r?.title).toContain('app #1 Low risk (10/100): docs only');
-  expect(r?.title).toContain('lib #2 High risk (82/100): drops a column');
   expect(chipRisk(t, s, pr(1, 'a'))).toBe('low risk');
   expect(chipRisk(t, s, pr(2, 'b'))).toBe('high risk');
 });
 
-test('a_high_one_outweighs_one_still_being_judged_and_two_high_are_counted', () => {
+test('one_pr_names_no_pr_and_a_high_one_outweighs_one_being_judged', () => {
+  const one: ShipSession = { id: 's1', agent: 'claude', project: 'app', pr: pr(1, 'a'), riskOn: true, risk: [v(1, 'a', { level: 'medium', summary: 'wide refactor' })] };
+  expect(riskRow(t, one, openPrs(one))).toMatchObject({ sub: 'Medium: wide refactor', level: 'Medium' });
   const judging = two([v(1, 'a', { status: 'running' }), v(2, 'b', { level: 'high' })]);
-  expect(riskStrip(t, judging, openPrs(judging))?.kind).toBe('high');
+  expect(riskRow(t, judging, openPrs(judging))?.kind).toBe('high');
   const both = two([v(1, 'a', { level: 'high' }), v(2, 'b', { level: 'high' })]);
-  expect(riskStrip(t, both, openPrs(both))?.label).toBe('High risk · 2');
-  const allLow = two([v(1, 'a', { level: 'low' }), v(2, 'b', { level: 'low' })]);
-  expect(riskStrip(t, allLow, openPrs(allLow))?.kind).toBe('low');
+  expect(riskRow(t, both, openPrs(both))?.level).toBe('High · 2');
 });
 
-test('a_push_since_the_verdict_reads_as_not_judged_and_the_button_judges', () => {
-  const s = two([v(1, 'a', { level: 'low', current: false }), v(2, 'b', { status: 'failed', why: 'gh failed' })]);
-  const r = riskStrip(t, s, openPrs(s));
-  expect(r?.kind).toBe('failed');
-  expect(r?.toJudge).toBe(2);
-  expect(r?.title).toContain('lib #2 Risk unknown: gh failed');
-  expect(r?.title).toContain('Click to have another harness judge it');
+test('a_push_since_the_verdict_reads_as_not_judged', () => {
+  const s = two([v(1, 'a', { level: 'low', current: false }), v(2, 'b', { level: 'low' })]);
+  const r = riskRow(t, s, openPrs(s));
+  expect(r).toMatchObject({ kind: 'none', level: 'Not judged', sub: 'Not judged · app #1: open the PR panel to judge it' });
   expect(chipRisk(t, s, pr(1, 'a'))).toBeUndefined();
+  const failed = two([v(1, 'a', { level: 'low' }), v(2, 'b', { status: 'failed', why: 'gh failed' })]);
+  expect(riskRow(t, failed, openPrs(failed))?.sub).toBe('Unknown · lib #2: gh failed');
 });
 
 test('merge_turns_red_for_a_high_risk_pr_and_warns_for_a_medium_one', () => {

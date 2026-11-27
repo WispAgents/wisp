@@ -181,7 +181,14 @@
   "wisp.ship.risk.short.low": "low risk",
   "wisp.ship.risk.short.medium": "medium risk",
   "wisp.ship.risk.short.high": "high risk",
-  "wisp.ship.risk.clickJudge": "Click to have another harness judge it",
-  "wisp.ship.risk.clickOpen": "Click for the reasons",
-  "wisp.ship.risk.warn": "Merge risk: {line}"
+  "wisp.ship.risk.warn": "Merge risk: {line}",
+  "wisp.ship.risk.title": "Merge risk",
+  "wisp.ship.risk.open": "Open the PR panel for every PR's reasons",
+  "wisp.ship.risk.notYet": "open the PR panel to judge it",
+  "wisp.ship.risk.level.high": "High",
+  "wisp.ship.risk.level.medium": "Medium",
+  "wisp.ship.risk.level.low": "Low",
+  "wisp.ship.risk.level.running": "Judging",
+  "wisp.ship.risk.level.none": "Not judged",
+  "wisp.ship.risk.level.failed": "Unknown"
 }

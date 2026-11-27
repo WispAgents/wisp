@@ -1,5 +1,5 @@
 // Merge risk (wisp.risk, ADR-0140): another harness's judgment of each open PR, low · medium · high and why. One
-// verdict per PR, of its head; the strip shows the worst of the task's open PRs (a task may have several, across
+// verdict per PR, of its head; the PR card's row shows the worst of the task's open PRs (a task may have several, across
 // repos), each PR's chip its own, and Merge's confirm warns about the risky ones. Pure; the verdicts come on the row
 // (`risk`, with `riskOn` while Settings → Merge risk is on).
 import type { IconName } from '@wisp/ui';
@@ -10,13 +10,13 @@ import '../i18n/lazy.ts';
 /** Where one PR stands: being judged, judged (its level), the judge failed, or no verdict of its head yet. */
 export type RiskKind = 'running' | 'none' | 'failed' | 'low' | 'medium' | 'high';
 
-export const RISK_ICON = { running: 'clock', none: 'judge', failed: 'warn', low: 'check', medium: 'warn', high: 'warn' } as const satisfies Record<RiskKind, IconName>;
+export const RISK_ICON = { running: 'clock', none: 'warn', failed: 'warn', low: 'check', medium: 'warn', high: 'warn' } as const satisfies Record<RiskKind, IconName>;
+
+/** The level's tone on the row (the kit's text tones). */
+export const RISK_TONE = { running: 'muted', none: 'muted', failed: 'warn', low: 'good', medium: 'warn', high: 'bad' } as const satisfies Record<RiskKind, 'muted' | 'good' | 'warn' | 'bad'>;
 
 /** Worst first: what the strip shows for several PRs (a high one outweighs one still being judged). */
 const RANK: Readonly<Record<RiskKind, number>> = { high: 6, medium: 5, running: 4, failed: 3, none: 2, low: 1 };
-
-/** Not judged, or the judge failed: the strip's button starts a judgment. Otherwise it opens the PR pane. */
-export const riskActs = (k: RiskKind): boolean => k === 'none' || k === 'failed';
 
 /** The verdict of this PR's head, when there is one. */
 export function verdictOf(s: ShipSession | undefined, pr: PrSummary): RiskVerdict | undefined {
@@ -39,28 +39,31 @@ export function riskLine(t: T, x: RepoPr, v: RiskVerdict | undefined, several: b
   return `${pr}${t(`wisp.ship.risk.${k}`)}${score}${why ? `: ${why}` : ''}`;
 }
 
-export interface RiskStrip {
+export interface RiskRow {
   readonly kind: RiskKind;
-  readonly label: string;
-  /** every PR's line, one per line */
+  /** the row's line: the worst verdict ("High · sync-lib #44: drops a column old clients read") */
+  readonly sub: string;
+  /** on the right: the worst level ("High", "High · 2" when two PRs share it) */
+  readonly level: string;
+  /** every PR's line, one per line (the row's hover) */
   readonly title: string;
-  /** PRs with no verdict of their head, or a failed one: what Judge starts */
-  readonly toJudge: number;
 }
 
-/** The strip's merge-risk button over the task's open PRs, or undefined while the setting is off or none is open. */
-export function riskStrip(t: T, s: ShipSession | undefined, open: readonly RepoPr[]): RiskStrip | undefined {
+/** The PR card's merge-risk row over the task's open PRs (worst first, a high one outweighs one being judged), or
+ *  undefined while the setting is off or none is open. */
+export function riskRow(t: T, s: ShipSession | undefined, open: readonly RepoPr[]): RiskRow | undefined {
   if (!s?.riskOn || open.length === 0) return undefined;
   const several = open.length > 1;
-  const each = open.map((x) => ({ x, v: verdictOf(s, x.pr) }));
-  const kinds = each.map((e) => riskKind(e.v));
-  const kind = kinds.reduce<RiskKind>((w, k) => (RANK[k] > RANK[w] ? k : w), 'low');
-  const lines = each.map((e) => riskLine(t, e.x, e.v, several));
-  const hint = riskActs(kind) ? t('wisp.ship.risk.clickJudge') : t('wisp.ship.risk.clickOpen');
-  const bad = kinds.filter((k) => k === kind).length;
-  // several PRs: "High risk · 2" says how many share the worst
-  const label = several && bad > 1 && (kind === 'high' || kind === 'medium') ? `${t(`wisp.ship.risk.${kind}`)} · ${bad}` : t(`wisp.ship.risk.${kind}`);
-  return { kind, label, title: [...lines, hint].join('\n'), toJudge: kinds.filter(riskActs).length };
+  const each = open.map((x) => ({ x, v: verdictOf(s, x.pr), k: riskKind(verdictOf(s, x.pr)) }));
+  const worst = each.reduce((w, e) => (RANK[e.k] > RANK[w.k] ? e : w));
+  const kind = worst.k;
+  const n = each.filter((e) => e.k === kind).length;
+  const pr = several ? `${worst.x.repo ? `${worst.x.repo} ` : ''}#${worst.x.pr.number}` : '';
+  const why = kind === 'failed' ? worst.v?.why : kind === 'none' ? t('wisp.ship.risk.notYet') : kind === 'running' ? '' : worst.v?.summary;
+  const word = t(`wisp.ship.risk.level.${kind}`);
+  const sub = [[word, pr].filter(Boolean).join(' · '), why].filter(Boolean).join(': ');
+  const level = several && n > 1 && (kind === 'high' || kind === 'medium') ? `${word} · ${n}` : word;
+  return { kind, sub, level, title: each.map((e) => riskLine(t, e.x, e.v, several)).join('\n') };
 }
 
 /** One PR's chip suffix ("high risk"), when the setting is on and its head is judged; nothing while unjudged. */
