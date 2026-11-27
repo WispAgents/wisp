@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **A crew member works in several folders, and carries on with fallbacks at a usage limit.** Beside their own folder
+  (where each job starts), a member can have up to 10 more that every job of theirs may read and change: **More
+  folders** on the member editor's bar, `--dirs` on `wisp crew create|update`, `dirs` in `wisp_crew_add`/`_edit`
+  and in `wisp.yml`. They can also have up to 5 **Fallbacks**, harnesses (and models) in order. When a job's run hits
+  its usage limit or its model is at capacity, the job carries on with the next one in the same conversation, and
+  nobody is pinged. With every fallback tried, you get the limit card as before (ADR-0139).
+
 ## [1.0.0-alpha.18] - 2026-11-27
 
 ### Fixed

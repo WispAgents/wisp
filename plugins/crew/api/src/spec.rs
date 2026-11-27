@@ -23,6 +23,9 @@ pub struct CrewSpec {
     /// the folder they work in
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub cwd: String,
+    /// more folders their jobs may work in, beside `cwd`
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dirs: Vec<String>,
     /// the computer their jobs run on ('' = this one)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub machine: String,
@@ -36,6 +39,9 @@ pub struct CrewSpec {
     pub model: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub effort: String,
+    /// where a job carries on, in order, when its run stops at a usage limit: `[{ agent, model?, effort? }]`
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallbacks: Vec<crate::Fallback>,
     /// plan | edits | auto
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub mode: String,

@@ -280,6 +280,25 @@ pub struct ReplyTo {
     pub entry_id: String,
 }
 
+/// A harness and model a member's job carries on with when its run stops at a limit (`Member.fallbacks`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export, export_to = "crew/")]
+pub struct Fallback {
+    /// a harness (claude, codex …); '' keeps the member's
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub agent: String,
+    /// its model; '' for the harness's default
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub model: String,
+    /// its thinking level; '' for the default
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub effort: String,
+}
+
 /// One job's own model, effort or mode ("@ada with opus plan: …"); `agent` only from wisp's own prompt box (#764).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -381,6 +400,10 @@ pub struct Member {
     pub brief: String,
     #[serde(default)]
     pub cwd: String,
+    /// more folders their jobs may work in, beside `cwd` (where a job starts). Additive (2026-11-27).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub dirs: Vec<String>,
     /// '' = this computer
     #[serde(default)]
     pub machine: String,
@@ -392,6 +415,11 @@ pub struct Member {
     pub model: String,
     #[serde(default)]
     pub effort: String,
+    /// where a job carries on, in order, when its run stops at a usage limit or its model is at capacity.
+    /// Additive (2026-11-27).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<Fallback>>", optional)]
+    pub fallbacks: Vec<Fallback>,
     pub mode: String,
     /// a checked 5-field cron, '' for none
     #[serde(default)]

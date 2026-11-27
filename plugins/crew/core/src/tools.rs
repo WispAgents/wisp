@@ -10,9 +10,11 @@ fn member_props() -> Map<String, Value> {
         "role": { "type": "string", "description": "A few words, e.g. \"CI watcher\", \"Docs writer\"." },
         "brief": { "type": "string", "description": "Their standing job and how the user likes it done, written to them (\"Watch CI on main; when a run fails, find why and…\"). Every job they run reads it." },
         "cwd": { "type": "string", "description": "Absolute path of the folder they work in. Default when adding: the current project. \"\" = no folder." },
+        "dirs": { "type": "array", "items": { "type": "string" }, "maxItems": 10, "description": "More folders they may work in beside cwd, as absolute paths. Every job starts in cwd and may read and change these too. [] = none." },
         "agent": { "type": "string", "description": "Harness: auto, claude, codex, opencode, cursor, antigravity, grok or copilot. Default auto." },
         "model": { "type": "string", "description": "Model id for that harness; \"\" for its default." },
         "effort": { "type": "string", "description": "Thinking level, e.g. low | medium | high; \"\" for the default." },
+        "fallbacks": { "type": "array", "maxItems": 5, "items": { "type": "object", "properties": { "agent": { "type": "string", "description": "Harness: claude, codex, opencode, cursor, antigravity, grok or copilot. \"\" keeps theirs." }, "model": { "type": "string", "description": "Model id for that harness; \"\" for its default." }, "effort": { "type": "string", "description": "Thinking level; \"\" for the default." } } }, "description": "Where a job carries on, in order, when its run stops at a usage limit or its model is at capacity, e.g. [{\"agent\":\"codex\",\"model\":\"gpt-5.5\"}]. [] = none." },
         "mode": { "type": "string", "enum": ["plan", "edits", "auto"], "description": "plan = read-only, edits = auto-accept edits, auto = no permission prompts. Default auto." },
         "cron": { "type": "string", "description": "When they check in on their own, in words (\"every monday\", \"8am every weekday\", \"every 30 min\") or a 5-field cron, local time. \"\" = only when given work." },
         "parallel": { "type": "integer", "minimum": 1, "maximum": 5, "description": "Jobs at once; more wait in their queue. Default 2." },
@@ -31,8 +33,8 @@ fn notebook_props() -> Map<String, Value> {
 }
 
 /// The fields the tools may set (the rest is the member's memory and wisp's bookkeeping).
-pub const CREW_FIELDS: [&str; 12] =
-    ["name", "role", "brief", "cwd", "agent", "model", "effort", "mode", "cron", "parallel", "paused", "avatar"];
+pub const CREW_FIELDS: [&str; 14] =
+    ["name", "role", "brief", "cwd", "dirs", "agent", "model", "effort", "fallbacks", "mode", "cron", "parallel", "paused", "avatar"];
 
 fn with(mut a: Map<String, Value>, b: Map<String, Value>) -> Value {
     a.extend(b);
@@ -112,11 +114,25 @@ pub fn member_line(v: &MemberView) -> String {
     ];
     parts.push(if !m.machine.is_empty() {
         format!("on machine {}", m.machine)
+    } else if !m.cwd.is_empty() && !m.dirs.is_empty() {
+        format!("in {} (and {})", m.cwd, m.dirs.join(", "))
     } else if !m.cwd.is_empty() {
         format!("in {}", m.cwd)
     } else {
         "no folder".into()
     });
+    if !m.fallbacks.is_empty() {
+        let f: Vec<String> = m
+            .fallbacks
+            .iter()
+            .map(|f| match (f.agent.as_str(), f.model.as_str()) {
+                (a, "") => a.to_owned(),
+                ("", m) => m.to_owned(),
+                (a, m) => format!("{a} ({m})"),
+            })
+            .collect();
+        parts.push(format!("falls back to {}", f.join(", then ")));
+    }
     parts.push(if m.cron.is_empty() { "no schedule".into() } else { format!("checks in on `{}`", m.cron) });
     if m.paused {
         parts.push("paused".into());

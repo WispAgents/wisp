@@ -79,6 +79,13 @@ export interface SpellLock {
   def: Record<string, unknown>;
 }
 
+/** One of a member's fallbacks (crew api `Fallback`): '' keeps theirs, or the harness's default model. */
+export interface FallbackPick {
+  agent?: string;
+  model?: string;
+  effort?: string;
+}
+
 export interface Member {
   id: string;
   name: string;
@@ -90,12 +97,16 @@ export interface Member {
   bg?: string;
   brief: string;
   cwd: string;
+  /** more folders their jobs may work in, beside `cwd` (where a job starts) */
+  dirs?: string[];
   /** '' = this computer */
   machine: string;
   sandbox: '' | 'job' | 'own';
   agent: string;
   model: string;
   effort: string;
+  /** where a job carries on, in order, when its run stops at a usage limit or its model is at capacity */
+  fallbacks?: FallbackPick[];
   mode: 'plan' | 'edits' | 'auto';
   cron: string;
   /** what else starts its jobs (automations.syncMember kinds: finished, done, ci) */

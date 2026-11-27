@@ -686,3 +686,29 @@ async fn a_running_tasks_row_says_its_latest_step_not_starting_up() {
     assert_eq!(s.state, SessionState::Running, "still its turn");
     r.rt.stop(id.as_str(), true).await.unwrap();
 }
+
+/// A task with fallbacks (a crew member's) carries on with the first one when a run stops at its usage limit: the
+/// hero says where, it lands quietly, and the follow-up runs on the fallback's harness and model, never waiting for
+/// the reset even with Wait for the reset on (owner, 2026-11-27).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_at_its_usage_limit_carries_on_with_the_tasks_fallback() {
+    let r = rig_with(Recorder {
+        router: Some(std::sync::Arc::new(Limits)),
+        settings: [("runtime.limitWait".to_owned(), serde_json::json!(true))].into(),
+        ..Default::default()
+    })
+    .await;
+    let fb = wisp_runtime_api::commands::RunPick { agent: Some("fake".into()), model: Some("m2".into()), effort: None };
+    let id = r.rt.create(StartArgs { fallbacks: vec![fb], ..start("limit hit") }).await.unwrap().id.0;
+    until("the fallback's follow-up", || async { r.host.asked.lock().unwrap().iter().any(|(c, _)| c == "runtime.followUp") }).await;
+    let asked = r.host.asked.lock().unwrap().clone();
+    let (_, a) = asked.iter().find(|(c, _)| c == "runtime.followUp").unwrap();
+    assert_eq!((a["id"].as_str(), a["run"]["agent"].as_str(), a["run"]["model"].as_str()), (Some(id.as_str()), Some("fake"), Some("m2")));
+    assert!(a["text"].as_str().unwrap().contains("carrying on with fake m2"), "{a}");
+    assert!(!asked.iter().any(|(c, _)| c == "later.waitAtLimit"), "a fallback first, never the wait");
+    let t = r.rt.turns(&id, None, None).await.unwrap().pop().unwrap();
+    let hero = &t.presentation.unwrap().blocks[0];
+    assert_eq!(hero["status"], "partial");
+    assert!(hero["summary"].as_str().unwrap().contains("fake m2"), "{hero}");
+    assert!(!r.rt.get(&id).await.unwrap().unread, "nobody is pinged");
+}

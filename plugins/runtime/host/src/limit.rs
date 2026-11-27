@@ -12,6 +12,7 @@ use wisp_budget_api::commands as budget;
 use wisp_later_api::commands as later;
 use wisp_router_api::service::RunError;
 use wisp_router_api::{LimitKind, LimitScope};
+use wisp_runtime_api::commands::{FollowUp, FollowUpArgs, RunPick};
 use wisp_runtime_api::model::{Presentation, Session, SessionState, Turn, TurnLimit};
 use wisp_runtime_core::land::Landing;
 use wisp_runtime_core::limit;
@@ -72,6 +73,49 @@ impl Runtime {
         turn.limit = Some(card);
         p.blocks = blocks;
         true
+    }
+
+    /// The task's next fallback after a run stopped at a limit (`session.fallbacks`), when nothing else holds the
+    /// task: it lands quietly and the hero says where it carries on; the follow-up starts once the task is saved.
+    pub(crate) async fn moves_on(&self, s: &Session, turn: &mut Turn, l: &mut Landing) -> Option<(RunPick, String)> {
+        if s.fallbacks.is_empty() || s.parent_id.is_some() || l.state != SessionState::Review || !limit::stopped_at_limit(turn) {
+            return None;
+        }
+        let mut turns = match self.repo.turns(s.id.as_str(), None, None).await {
+            Ok(t) => t,
+            Err(err) => {
+                tracing::warn!(%err, "runtime: no turns, no fallback");
+                return None;
+            }
+        };
+        turns.retain(|t| t.id != turn.id);
+        turns.push(turn.clone());
+        let (run, text) = limit::next_fallback(&s.fallbacks, &turns, &s.agent, |a| self.harness(a).is_ok())?;
+        let to = match (&run.agent, &run.model) {
+            (Some(a), Some(m)) => format!("{a} {m}"),
+            (Some(a), None) => a.clone(),
+            _ => String::new(),
+        };
+        if let Some(p) = turn.presentation.as_mut() {
+            limit::moving_on(&mut p.blocks, &to);
+        }
+        l.state = SessionState::Done;
+        l.unread = false;
+        l.notify = false;
+        l.quiet = true;
+        Some((run, text))
+    }
+
+    /// The fallback's follow-up, once the task is saved: through the command (its hooks see it, as a pipeline's
+    /// follow-up does), never `follow_up` from inside `finish`.
+    pub(crate) fn spawn_fallback(&self, id: &wisp_runtime_api::SessionId, (run, text): (RunPick, String)) {
+        let (host, id) = (self.host.clone(), id.clone());
+        tokio::spawn(async move {
+            let args = FollowUpArgs { id, text, run: Some(run), by: Some("fallback".into()), ..Default::default() };
+            if let Err(err) = calls::run::<FollowUp>(&*host, args).await {
+                tracing::warn!(error = %err.message, "runtime: a fallback didn't start");
+            }
+        });
     }
 
     /// Wait for the reset (Settings), when nothing else holds the task: it lands quietly, the hero says it carries

@@ -21,7 +21,7 @@ const firstTurn = defineCommand<{ key: string; id: string }, readonly { prompt?:
   pending: 'the task’s first prompt',
 });
 import { crewData } from './data.ts';
-import { EVENTS, TEMPLATES, addWake, draftOf, faceOf, fromTemplate, patchOf, problemOf, toggleOn, toggleTeam, type Draft } from './editor.ts';
+import { EVENTS, TEMPLATES, addWake, draftOf, faceOf, fromTemplate, patchOf, problemOf, toggleDir, toggleFallback, toggleOn, toggleTeam, type Draft } from './editor.ts';
 import { t, type Key } from './i18n.ts';
 import { CADENCES } from './model.ts';
 import { cronWords, toCron } from './rules/schedule.ts';
@@ -144,6 +144,31 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
         },
       },
     },
+    // Folders: more folders their jobs may work in, beside their project (where each job starts)
+    {
+      id: 'folders',
+      kind: 'tog',
+      icon: 'folder',
+      label: d().dirs.length ? say('wisp.crew.editor.foldersN', { count: d().dirs.length }) : t('wisp.crew.editor.folders'),
+      title: t('wisp.crew.editor.foldersTitle'),
+      ...(d().dirs.length > 0 && { tone: 'accent' as const }),
+      act: {
+        menu: {
+          items: d().cwd
+            ? [
+                ...projects()
+                  .filter((p) => p.path !== d().cwd)
+                  .map((p) => ({ value: p.path, label: p.name, hint: p.path, checked: d().dirs.includes(p.path) })),
+                // a folder set from the CLI, MCP or a formula that isn't a project here stays, and can be taken out
+                ...d()
+                  .dirs.filter((x) => !projects().some((p) => p.path === x))
+                  .map((x) => ({ value: x, label: x.split(/[\\/]/).pop() ?? x, hint: x, checked: true })),
+              ]
+            : [{ value: '', label: t('wisp.crew.editor.foldersFirst'), disabled: true }],
+          onSelect: (dir) => set({ dirs: toggleDir(d().dirs, dir, d().cwd) }),
+        },
+      },
+    },
     {
       id: 'runner',
       kind: 'runner',
@@ -160,6 +185,27 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
       label: t(`wisp.crew.page.mode.${mode().id}`),
       tone: mode().tone,
       act: { menu: { items: MODES.map((m) => ({ value: m.id, label: t(`wisp.crew.page.mode.${m.id}`) })), onSelect: (v) => set({ mode: v as Draft['mode'] }) } },
+    },
+    // Fallbacks: where a job carries on, in order, when its run stops at a usage limit or its model is at capacity
+    {
+      id: 'fallbacks',
+      kind: 'tog',
+      icon: 'replay',
+      label: d().fallbacks.length ? say('wisp.crew.editor.fallbacksN', { count: d().fallbacks.length }) : t('wisp.crew.editor.fallbacks'),
+      title: t('wisp.crew.editor.fallbacksTitle'),
+      ...(d().fallbacks.length > 0 && { tone: 'accent' as const }),
+      act: {
+        menu: {
+          items: harnesses()
+            .filter((h) => h.id !== d().agent)
+            .map((h) => {
+              const at = d().fallbacks.findIndex((f) => f.agent === h.id);
+              const f = d().fallbacks[at];
+              return { value: h.id, label: h.name, checked: at >= 0, ...(f && { hint: say('wisp.crew.editor.fallbackAt', { n: at + 1, model: f.model || t('wisp.crew.editor.default') }) }) };
+            }),
+          onSelect: (agent) => set({ fallbacks: toggleFallback(d().fallbacks, agent) }),
+        },
+      },
     },
     // Delegate (v1 .ce-team): who their jobs can hand work to: a harness's copies, or other crew members
     {

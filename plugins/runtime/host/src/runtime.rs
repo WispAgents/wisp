@@ -657,6 +657,7 @@ impl Runtime {
             mode: a.mode.unwrap_or(Mode::Auto),
             cwd: a.cwd.clone().unwrap_or_default(),
             dirs: a.dirs.clone(),
+            fallbacks: a.fallbacks.clone(),
             state: SessionState::Running,
             parent_id: a.parent_id.clone(),
             created_at: now,

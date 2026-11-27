@@ -70,6 +70,10 @@ pub struct MemberBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cwd: Option<String>,
+    /// more folders their jobs may work in, beside `cwd` (where a job starts); `[]` clears them
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub dirs: Option<Vec<String>>,
     /// the computer their jobs run on (one of your machines; this one when left out)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -90,6 +94,11 @@ pub struct MemberBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub effort: Option<String>,
+    /// where a job carries on, in order, when its run stops at a usage limit or its model is at capacity
+    /// (`[{ agent, model?, effort? }]`); `[]` clears them
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub fallbacks: Option<Vec<crate::Fallback>>,
     /// how far their jobs may go: plan, edits or auto
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
