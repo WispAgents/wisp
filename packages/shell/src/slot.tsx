@@ -5,7 +5,7 @@
 import { Show, createContext, createMemo, createSignal, useContext, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import type { PluginClient, Readable } from '@wisp/client';
-import { ExtensionSlot, useSignal } from '@wisp/ui';
+import { ExtensionSlot, LinkRenderer, useSignal } from '@wisp/ui';
 import type { ExtensionProps, PaletteSourceDef, ResolvedExtension, ShortcutDef } from './contract.ts';
 import { useShell } from './context.tsx';
 
@@ -40,6 +40,8 @@ export interface Scoped {
   readonly pickAgent?: (agent: string) => void;
   /** added 2026-11-18: on Home's inputs, the harness in the prompt box now */
   readonly agent?: () => string;
+  /** added 2026-11-27: on `shell.task:link`, the link's URL */
+  readonly href?: string;
 }
 
 export function extensionProps(ext: ResolvedExtension, client: PluginClient, s: Scoped): ExtensionProps {
@@ -51,6 +53,7 @@ export function extensionProps(ext: ResolvedExtension, client: PluginClient, s: 
     ...(s.form && { form: s.form }),
     ...(s.pickAgent && { pickAgent: s.pickAgent }),
     ...(s.agent && { agent: s.agent }),
+    ...(s.href !== undefined && { href: s.href }),
   };
 }
 
@@ -152,4 +155,34 @@ export function Area(props: { readonly input: string; readonly fallback: JSX.Ele
       }}
     </Show>
   );
+}
+
+/** The open task's links (ADR-0145): each asks `shell.task:link`'s extensions, the first whose `if` holds for its
+ *  `href` draws it; none, and the kit's own anchor (or a prompt's text) stays. Read as the list changes: a plugin that
+ *  registers later draws the links already on the page. */
+export function TaskLinks(props: Scoped & { readonly children: JSX.Element }): JSX.Element {
+  const list = useExtensions('shell.task:link');
+  const clients = useClients();
+  const render = (href: string, fallback: () => JSX.Element): JSX.Element => {
+    // never `{ ...props }`: spreading reads `children`, which drew the whole transcript again inside each link
+    const s: Scoped = { ...(props.session && { session: props.session }), ...(props.id !== undefined && { id: props.id }), href };
+    const pick = createMemo(
+      () =>
+        list().find((ext) => {
+          try {
+            return !ext.def.if || ext.def.if(extensionProps(ext, clients.client(ext.plugin), s));
+          } catch {
+            return false;
+          }
+        }),
+      undefined,
+      { equals: sameExtension },
+    );
+    return (
+      <Show when={pick()} keyed fallback={fallback()}>
+        {(ext) => <ExtView ext={ext} {...s} />}
+      </Show>
+    );
+  };
+  return <LinkRenderer render={render}>{props.children}</LinkRenderer>;
 }

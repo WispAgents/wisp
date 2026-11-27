@@ -76,6 +76,21 @@
   [data-kit='tone-chip-label'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
   [data-kit='tone-chip-suffix'] { flex: none; font-variant-numeric: tabular-nums; }
 
+  /* PrPeek (ADR-0145): a PR's chip in a sentence, sitting on the text's line; its card under the tooltip's surface */
+  [data-kit='pr-peek'] { display: inline-flex; vertical-align: middle; max-width: 100%; margin-block: calc(-1 * var(--space-1)); }
+  [data-kit='pr-peek'] [data-kit='tone-chip'] { height: calc(var(--size-pill) - var(--space-1)); font-size: var(--fs-xs); }
+  [data-kit='pr-peek-card'] { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; font-size: var(--fs-sm); line-height: var(--lh-snug); }
+  [data-kit='pr-peek-title'] { color: var(--ink); font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+  [data-kit='pr-peek-line'] { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  [data-kit='pr-peek-branches'] { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--muted); }
+  [data-kit='pr-peek-branch'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xs) var(--mono); }
+  [data-kit='pr-peek-checks'] { display: flex; gap: var(--space-4); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  [data-kit='pr-peek-checks'] > span { display: inline-flex; align-items: center; gap: var(--space-1); }
+  [data-kit='pr-peek-checks'] > [data-state='pass'] { color: var(--good); }
+  [data-kit='pr-peek-checks'] > [data-state='fail'] { color: var(--bad); }
+  [data-kit='pr-peek-checks'] > [data-state='pending'] { color: var(--warn); }
+  [data-kit='pr-peek-hint'] { color: var(--muted); font-size: var(--fs-xs); }
+
   /* The task's PR card (PrStrip): v1's subtle tone-tinted surface, compact row aligned with its chips and bar,
      chevron always visible and never stealing clicks (even on :hover/:focus-within, where list-row raises actions),
      inline GitHub icon button clickable on its own, and bounded chip scroll so the sticky column stays on screen. */

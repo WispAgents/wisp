@@ -1,4 +1,4 @@
-//! A connector's MCP Events by webhook (SEP-3415 `events/subscribe`; ADR-0145), as wisp receives them: the subscribe
+//! A connector's MCP Events by webhook (SEP-3415 `events/subscribe`; ADR-0146), as wisp receives them: the subscribe
 //! params, checking a delivery's Standard Webhooks signature and freshness, and what its body is. Pure: the host
 //! makes the secret, holds the route and calls the server.
 

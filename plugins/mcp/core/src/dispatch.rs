@@ -1,9 +1,9 @@
 //! The dispatcher: one parsed message and who sent it in, what to answer out. `initialize`, `server/discover`,
 //! `tools/list`, `ping`, refusals and unknown methods are answered here at once; a tool call comes back as a `Call`
 //! for the host to run (it waits on the kernel), and `finish` turns its outcome into v1's answer. A method another
-//! plugin serves (`mcp.method@1`, ADR-0145: `events/poll`) comes back as `Step::Method`.
+//! plugin serves (`mcp.method@1`, ADR-0146: `events/poll`) comes back as `Step::Method`.
 //!
-//! Dual-era (ADR-0145): a legacy client opens with `initialize`; a modern (`2026-07-28`) one declares its version in
+//! Dual-era (ADR-0146): a legacy client opens with `initialize`; a modern (`2026-07-28`) one declares its version in
 //! each request's `_meta` and gets `"resultType":"complete"` on every result. Every request is served statelessly
 //! either way, as it always was.
 
@@ -171,7 +171,7 @@ fn not_found(id: &RawValue, method: &str) -> String {
     rpc::error(id, rpc::METHOD_NOT_FOUND, &format!("Method not found: {method}"))
 }
 
-/// `{"tools":{}}`, with `"extensions":{…}` when plugins declare any (ADR-0145).
+/// `{"tools":{}}`, with `"extensions":{…}` when plugins declare any (ADR-0146).
 fn capabilities(extensions: &Map<String, Value>) -> String {
     if extensions.is_empty() {
         return "{\"tools\":{}}".into();

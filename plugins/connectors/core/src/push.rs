@@ -1,4 +1,4 @@
-//! Push (`events/stream`, SEP-3415; ADR-0145) as an `mcp.event` trigger reads it: whether a connector offers it and
+//! Push (`events/stream`, SEP-3415; ADR-0146) as an `mcp.event` trigger reads it: whether a connector offers it and
 //! the trigger wants it, the stream's params, each message off the stream as a [`Frame`], and the backoff before a
 //! stream is opened again. Pure: the host holds the stream.
 

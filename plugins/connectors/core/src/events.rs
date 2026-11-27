@@ -1,4 +1,4 @@
-//! MCP Events (SEP-3415, `io.modelcontextprotocol/events`; ADR-0145) as an `mcp.event` trigger reads them: the
+//! MCP Events (SEP-3415, `io.modelcontextprotocol/events`; ADR-0146) as an `mcp.event` trigger reads them: the
 //! `events/poll` params from a trigger's `match` (`connector`, `event`, `arguments`), the cursor wisp keeps between
 //! polls, and each `EventOccurrence` as a trigger event. Pure: the host does the call.
 //!

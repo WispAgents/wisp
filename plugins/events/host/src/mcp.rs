@@ -1,4 +1,4 @@
-//! MCP Events (SEP-3415, `io.modelcontextprotocol/events`; ADR-0145): the durable log served to any MCP client, so
+//! MCP Events (SEP-3415, `io.modelcontextprotocol/events`; ADR-0146): the durable log served to any MCP client, so
 //! an SDK agent, a chat app or another harness can react to `task.finished`, `pr.opened` or `goal.failed` without
 //! `wisp_events` in a loop of its own.
 //!
@@ -6,7 +6,7 @@
 //!   (`subject`, a task id).
 //! - `events/poll`: `events.poll`, run as the caller, so a task's agent sees its own task's events only. The cursor
 //!   is the log's seq; a cursor past retention answers `truncated: true` and goes on from the oldest kept.
-//! - `events/stream` (push, ADR-0145): opened with `events.poll`'s checks, then `active`, the backlog and each new event
+//! - `events/stream` (push, ADR-0146): opened with `events.poll`'s checks, then `active`, the backlog and each new event
 //!   as the feed writes it, a heartbeat with the cursor in quiet stretches, over Streamable HTTP's SSE.
 //! - `events/subscribe` / `events/unsubscribe` (webhook, `webhook.rs`): signed POSTs to a verified callback.
 

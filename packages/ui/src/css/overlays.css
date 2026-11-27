@@ -22,6 +22,11 @@
     box-shadow: var(--shadow-2); pointer-events: none; animation: kit-fade var(--dur-base) var(--ease);
   }
   [data-kit='tooltip-hint'] { opacity: 0.7; }
+  /* a card tooltip (PrPeek, ADR-0145): a popover's surface, a little wider, still read-only */
+  [data-kit='tooltip'][data-card] {
+    max-width: min(var(--size-menu-min) * 1.5, calc(100vw - var(--space-7))); padding: var(--space-4) var(--space-5);
+    border: var(--size-hairline) solid var(--line); border-radius: var(--radius-lg); background: var(--surface); color: var(--ink);
+  }
   @media (hover: none) and (pointer: coarse) {
     [data-kit='tooltip-positioner'] { display: none; }
   }

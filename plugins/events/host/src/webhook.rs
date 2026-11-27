@@ -1,4 +1,4 @@
-//! MCP Events' webhook delivery (SEP-3415 `events/subscribe`, `events/unsubscribe`; ADR-0145): wisp POSTs its
+//! MCP Events' webhook delivery (SEP-3415 `events/subscribe`, `events/unsubscribe`; ADR-0146): wisp POSTs its
 //! durable events to a client's callback, signed per Standard Webhooks.
 //!
 //! - **Subscribe** is checked as a poll is (`events.poll` run as the caller: the type, the cursor, the capability,

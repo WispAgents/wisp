@@ -7,7 +7,7 @@
 //! - **The topic:** a durable subscription (`feed`) keeps the last 5 000 events as `events_view` rows, each
 //!   on `events:*`, `events:<area>.*` and `events:<type>`, so a client subscribes and resumes from its
 //!   cursor like any topic (no second protocol). The row and the cursor are one write.
-//! - **MCP:** `wisp_events` (read), and MCP Events (`mcp.rs`, ADR-0145): `events/list` and `events/poll` for any
+//! - **MCP:** `wisp_events` (read), and MCP Events (`mcp.rs`, ADR-0146): `events/list` and `events/poll` for any
 //!   MCP client, over `events.poll`.
 //! - **Sinks** (`sinks.rs`): `events.sink@1`, and a signed webhook.
 //!

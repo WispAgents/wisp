@@ -1,4 +1,4 @@
-//! An `mcp.event` trigger (ADR-0145): checked when it's applied (its connector and event named, a known delivery),
+//! An `mcp.event` trigger (ADR-0146): checked when it's applied (its connector and event named, a known delivery),
 //! and its `project` is where the task runs, never a filter (an MCP server's event names no project).
 #![allow(clippy::unwrap_used)]
 

@@ -46,6 +46,7 @@
   ],
   "contributes": {
     "settings": [
+      { "key": "ship.attachPasted", "type": "bool", "default": true, "title": "Follow PRs I link: a GitHub PR link in a prompt or follow-up attaches that PR to the task, with its checks and reviews" },
       { "key": "ship.fixConflicts", "type": "bool", "default": false, "title": "Fix merge conflicts by itself: when a task's PR has conflicts, its agent is asked to fix them without waiting for you" },
       { "key": "ship.steward", "type": "enum", "values": ["off", "fix", "review"], "default": "off", "title": "Keep PRs green (Steward), ticked in Ship it by default: the task fixes its PR's failing checks and new review comments, wisp pushes; review also has another vendor's model review each push. Never merges" }
     ],

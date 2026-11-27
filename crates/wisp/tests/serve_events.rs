@@ -118,7 +118,7 @@ async fn capped_agent_sees_only_its_task_events_over_mcp() {
     // asking for another task's is refused
     let refused = mcp(&api.http, port, &agent, json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "wisp_events", "arguments": { "subject": other } } })).await;
     assert!(refused.to_string().contains("its own task"), "{refused}");
-    // MCP Events (ADR-0145): its poll is scoped the same way, in SEP-3415's Forbidden
+    // MCP Events (ADR-0146): its poll is scoped the same way, in SEP-3415's Forbidden
     let poll = json!({ "jsonrpc": "2.0", "id": 3, "method": "events/poll", "params": { "name": "turn.finished", "arguments": { "subject": other }, "cursor": "0" } });
     let refused = mcp(&api.http, port, &agent, poll).await;
     assert_eq!(refused["error"]["code"], -32024, "{refused}");
@@ -134,7 +134,7 @@ async fn capped_agent_sees_only_its_task_events_over_mcp() {
     drop(serve);
 }
 
-/// MCP Events (SEP-3415, ADR-0145) on wisp's own MCP endpoint: the extension declared, the durable types listed, a
+/// MCP Events (SEP-3415, ADR-0146) on wisp's own MCP endpoint: the extension declared, the durable types listed, a
 /// poll with no cursor starting from now, the next one bringing what happened since (once), a modern request's
 /// `resultType`, and the codes for an unknown type and a subscribe without its delivery.
 #[tokio::test(flavor = "multi_thread")]
@@ -188,7 +188,7 @@ async fn mcp_events_poll_brings_what_happened_after_the_cursor_once() {
     drop(serve);
 }
 
-/// `events/stream` (push, ADR-0145): one POST answered with SSE. `active` first (with the subscription id and the
+/// `events/stream` (push, ADR-0146): one POST answered with SSE. `active` first (with the subscription id and the
 /// granted heartbeat), then the turn's `turn.finished` as it happens, with the cursor past it; a type that isn't kept is
 /// refused before any stream, and a stream inside a batch is refused (it can't be sent there).
 #[tokio::test(flavor = "multi_thread")]
@@ -246,7 +246,7 @@ async fn mcp_events_stream_pushes_each_event_as_it_happens() {
     drop(serve);
 }
 
-/// Webhook delivery (ADR-0145), both ways on one `wisp serve`: a callback that doesn't echo the challenge is refused
+/// Webhook delivery (ADR-0146), both ways on one `wisp serve`: a callback that doesn't echo the challenge is refused
 /// (`-32027 challenge_failed`), a bad secret or an `http` URL without `events.webhooks.allowPrivate` is
 /// `InvalidParams`, and wisp's own client, given its own address as the public one, subscribes to wisp's own
 /// `task.finished` and fires an `mcp.event` trigger from the delivery.

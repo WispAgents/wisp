@@ -177,7 +177,7 @@ impl Grid {
             (None, None, Some(u)) => (Credential::Cookie, Some(u.id)),
             // the phone's <img> of a link its device asked for (edge_media.rs): checked after every other way in
             (None, None, None) if self.signed_media(&mut req, handle, &user) => (Credential::Device, Some(user.id.clone())),
-            // an MCP server's webhook delivery (ADR-0145): the box's wisp checks its signature; the box sees it as no one
+            // an MCP server's webhook delivery (ADR-0146): the box's wisp checks its signature; the box sees it as no one
             (None, None, None) if events_hook(req.method(), req.uri().path()) => (Credential::Hook, Some(user.id.clone())),
             (None, None, None) => {
                 let pq = req.uri().path_and_query().map_or("/", |p| p.as_str()).to_owned();
@@ -330,7 +330,7 @@ impl Grid {
 }
 
 /// The one way into a box without signing in: an MCP server's webhook delivery to a connector's subscription
-/// (`POST /api/connectors/events/<token>`, wisp.connectors, ADR-0145). The token is random and the body is signed
+/// (`POST /api/connectors/events/<token>`, wisp.connectors, ADR-0146). The token is random and the body is signed
 /// (Standard Webhooks), both checked by the box's wisp; anything else here still asks for a sign-in.
 pub fn events_hook(method: &Method, path: &str) -> bool {
     *method == Method::POST

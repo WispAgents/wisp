@@ -1,4 +1,4 @@
-// The rows an MCP server event trigger asks (ADR-0145): which remote connector, which of its event types (its
+// The rows an MCP server event trigger asks (ADR-0146): which remote connector, which of its event types (its
 // `events/list`, read when the connector is picked), that type's arguments (from its `inputSchema`: a boolean is Any,
 // Yes or No, so it can leave the argument out), and how events come (webhook, push or poll; automatic takes the first
 // the server offers).

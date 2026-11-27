@@ -16,7 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (each with its payload's shape), and follows `task.finished`, `pr.opened`, `goal.failed` and the rest by poll,
   stream or a signed webhook to a verified address. A task's agent sees only its own task's events, and
   `events.webhooks` lists where events go. wisp also answers `server/discover` and the `2026-07-28` protocol
-  (ADR-0145).
+  (ADR-0146).
+- **Paste a PR link, and the task follows that PR.** A GitHub pull request link in a prompt or a follow-up (from the composer, `wisp task`, an MCP `wisp_task`, Telegram, Slack…) attaches that PR to the task, the way `wisp_pr` does: it shows on the row, the PR card and the panel with its checks and reviews, kept current, with Merge. A PR's link in the task's turns, yours or the agent's, now reads as its live chip in the PR's colour; hovering it shows the title, state, branch → base and checks, and a click opens the PR beside the task. Switch it off with Settings → General → Follow PRs I link (ADR-0145).
 
 ## [1.0.0-alpha.18] - 2026-11-27
 

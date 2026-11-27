@@ -1129,7 +1129,7 @@ export const COMMANDS: Record<string, CommandFn> = {
   'automations.tasks': () => ({ ops: [], result: COMPOSER ? RECIPES : [] }),
   'automations.task.run': () => ({ ops: [], result: {} }),
   'automations.trigger.ls': () => ({ ops: [], result: [] }),
-  // the MCP server event trigger's pickers (ADR-0145): one remote connector serving events, one serving none
+  // the MCP server event trigger's pickers (ADR-0146): one remote connector serving events, one serving none
   'connectors.list': () => ({
     ops: [],
     result: {

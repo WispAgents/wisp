@@ -1,4 +1,4 @@
-//! A connector's MCP Events by push (SEP-3415 `events/stream`; ADR-0145): one stream a subscription, shared by the
+//! A connector's MCP Events by push (SEP-3415 `events/stream`; ADR-0146): one stream a subscription, shared by the
 //! triggers that name it, kept alive by the engine's polls. Each event goes to the engine as it comes; no message for
 //! three heartbeats, it's opened again with backoff; failing or ended, polling takes over from its cursor.
 

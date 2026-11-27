@@ -97,7 +97,7 @@ pub enum Got {
 
 /// One JSON-RPC request to a remote connector, with its headers and sign-in: the whole answer (`result` or `error`),
 /// for the caller to read. `modern`: a server that refuses `initialize` is asked again the `2026-07-28` way, the
-/// version in `_meta` and the `MCP-Protocol-Version` header (MCP Events, ADR-0145).
+/// version in `_meta` and the `MCP-Protocol-Version` header (MCP Events, ADR-0146).
 pub async fn request(ctx: &Ctx, pane: &Pane, id: &str, method: &str, params: Value, modern: bool) -> Result<Value> {
     match send(ctx, pane, id, method, params, modern, false).await? {
         Got::Answer(v) => Ok(v),

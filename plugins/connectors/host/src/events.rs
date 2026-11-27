@@ -1,10 +1,10 @@
-//! MCP Events from a remote connector (SEP-3415; ADR-0145): `connectors.events` lists what it serves (`events/list`),
+//! MCP Events from a remote connector (SEP-3415; ADR-0146): `connectors.events` lists what it serves (`events/list`),
 //! and the `mcp.event` trigger source (`trigger.source@1`, poll) reads `events/poll` with the cursor the engine keeps,
 //! so any events-capable MCP server (an incident pager, a mail inbox, a CI) can start a task or wake a crew member with no wisp
 //! plugin of its own. Every request carries the connector's sign-in and headers (`call::request`); a server that
 //! refuses `initialize` is asked the `2026-07-28` way.
 //!
-//! Webhook first when this wisp has a public address (`hook.rs`), then push (ADR-0145): when the connector's listing offers `push` for the event (and the trigger doesn't say
+//! Webhook first when this wisp has a public address (`hook.rs`), then push (ADR-0146): when the connector's listing offers `push` for the event (and the trigger doesn't say
 //! `match.delivery: poll`), the first poll opens `events/stream` and every event reaches the engine as it happens
 //! (`automations.trigger.push`). Polls then only keep the stream alive and carry its cursor to the trigger's row; a
 //! stream that's down hands back to polling from its own cursor. Webhook delivery is later.

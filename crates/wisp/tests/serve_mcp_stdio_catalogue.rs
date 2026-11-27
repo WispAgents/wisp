@@ -86,7 +86,7 @@ async fn wisp_mcp_offers_the_user_what_api_mcp_does_audit_b_4() {
     assert!(a["result"]["content"][0]["text"].is_string(), "{a}");
 }
 
-/// MCP Events through `wisp mcp` (ADR-0145): the stdio server declares the extension, forwards `events/list` and
+/// MCP Events through `wisp mcp` (ADR-0146): the stdio server declares the extension, forwards `events/list` and
 /// `events/poll` to the running wisp, and an `events/stream`'s notifications come out on stdout as they happen, each
 /// with its subscription id. `notifications/cancelled` ends it: stdin closed after, the process exits (nothing hangs on
 /// a stream nobody reads).

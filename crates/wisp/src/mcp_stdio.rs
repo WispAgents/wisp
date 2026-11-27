@@ -108,7 +108,7 @@ pub fn stdout_writer() -> (mpsc::UnboundedSender<Value>, tokio::task::JoinHandle
     (tx, task)
 }
 
-/// A message to the running wisp that may be answered with a stream (MCP Events' `events/stream`, ADR-0145): each SSE
+/// A message to the running wisp that may be answered with a stream (MCP Events' `events/stream`, ADR-0146): each SSE
 /// frame's message to `out` as it comes, until the stream ends (`None`: everything was said there), or the plain
 /// answer. Dropping the future (`notifications/cancelled` aborts the request's task) closes the connection, which
 /// ends the stream on the server.

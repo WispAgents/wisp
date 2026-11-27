@@ -31,7 +31,7 @@ pub struct TailArgs {
     pub limit: Option<u32>,
 }
 
-/// `events.poll` (ADR-0145): MCP Events' `events/poll` (SEP-3415) over the durable log, one subscription a call.
+/// `events.poll` (ADR-0146): MCP Events' `events/poll` (SEP-3415) over the durable log, one subscription a call.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "events/")]

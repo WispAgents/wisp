@@ -1,4 +1,4 @@
-//! MCP Events' webhook delivery, sending (ADR-0145): each message signed per Standard Webhooks and sent through
+//! MCP Events' webhook delivery, sending (ADR-0146): each message signed per Standard Webhooks and sent through
 //! `Net::fetch_untrusted`, retried with a fresh timestamp and signature, and a subscription's events delivered in order
 //! with a watermark cursor (see `webhook.rs` for subscribing).
 

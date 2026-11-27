@@ -838,7 +838,7 @@ pub(crate) fn needs_wisp(method: &str, tool: &str) -> Need {
         "tools/list" => Need::Start,
         "tools/call" if !is_own_tool(tool) || crate::mcp_tasks::is_task_tool(tool) => Need::Start,
         "tools/call" if tool == "wisp_resume" => Need::Running,
-        // MCP Events (ADR-0145): the running wisp's, started when none answers
+        // MCP Events (ADR-0146): the running wisp's, started when none answers
         m if m.starts_with("events/") => Need::Start,
         _ => Need::No,
     }
@@ -899,7 +899,7 @@ impl Mcp {
                 };
                 Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
             }
-            // MCP Events on the running wisp (ADR-0145): a stream's notifications go out as they come; cancelling the
+            // MCP Events on the running wisp (ADR-0146): a stream's notifications go out as they come; cancelling the
             // request (`notifications/cancelled`) drops it, which closes the stream there
             (m, Some(c)) if m.starts_with("events/") => crate::mcp_stdio::forward(c, &msg, &self.at, &self.out).await,
             (m, None) if m.starts_with("events/") => Some(

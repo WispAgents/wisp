@@ -1,4 +1,4 @@
-//! MCP Events from a remote connector (ADR-0145), in one process: `connectors.events` lists what the server serves,
+//! MCP Events from a remote connector (ADR-0146), in one process: `connectors.events` lists what the server serves,
 //! and the `mcp.event` trigger source polls it: the first poll starts from now, later ones bring what happened since
 //! (each event keyed once, the cursor kept), `hasMore` drained at once, a server with no events said in words, and a
 //! modern-only server (it refuses `initialize`) asked the `2026-07-28` way. The server is a fake `Net`.
@@ -315,7 +315,7 @@ async fn eventually(what: &str, f: impl Fn() -> bool) {
     panic!("never: {what}");
 }
 
-/// Push (ADR-0145): offered, the first poll opens `events/stream`; each event reaches the engine as it comes
+/// Push (ADR-0146): offered, the first poll opens `events/stream`; each event reaches the engine as it comes
 /// (`automations.trigger.push`), and a poll meanwhile asks nothing and hands back the stream's cursor. A stream that
 /// drops opens again from its cursor; one the server ends hands back to polling, from that same cursor.
 #[tokio::test(flavor = "multi_thread")]
@@ -361,7 +361,7 @@ async fn a_trigger_can_keep_to_polling() {
     assert_eq!(a.sent("events/poll").len(), 1);
 }
 
-/// Webhook (ADR-0145): with a public address set and webhook offered, the first poll subscribes; a refused
+/// Webhook (ADR-0146): with a public address set and webhook offered, the first poll subscribes; a refused
 /// subscribe leaves the trigger to poll at once, and it isn't asked again on the next poll (an hour).
 #[tokio::test(flavor = "multi_thread")]
 async fn a_refused_webhook_falls_back_to_polling_and_isnt_asked_again_soon() {

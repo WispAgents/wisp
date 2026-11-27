@@ -290,7 +290,7 @@ pub struct TokenOut {
     pub token: Option<String>,
 }
 
-/// `connectors.events` (ADR-0145): the event types a remote connector serves (MCP Events, SEP-3415 `events/list`),
+/// `connectors.events` (ADR-0146): the event types a remote connector serves (MCP Events, SEP-3415 `events/list`),
 /// what an `mcp.event` trigger can wait on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "connectors/")]

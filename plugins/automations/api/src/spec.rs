@@ -143,7 +143,7 @@ impl TriggerSpec {
         let mut f = self.filters.clone();
         // a schedule, a one-off, a webhook or a manual fire names no project: its `project` is only where the
         // task runs (as a filter it refused every event they send); so does a chat message, which comes from a
-        // channel, not a project (v1's Slack trigger ran in its folder); nor does an MCP server's event (ADR-0145)
+        // channel, not a project (v1's Slack trigger ran in its folder); nor does an MCP server's event (ADR-0146)
         let own = matches!(self.on.as_str(), "schedule" | "once" | "webhook" | "manual" | "chat.message" | "mcp.event");
         for (k, v) in [("project", &self.project), ("branch", &self.branch), ("label", &self.label)] {
             if !v.is_empty() && !f.contains_key(k) && (!own || k != "project") {

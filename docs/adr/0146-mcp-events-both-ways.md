@@ -1,4 +1,4 @@
-# ADR-0145: MCP Events both ways, every delivery mode: an `mcp.event` trigger source, and wisp's log served by poll, push and webhook
+# ADR-0146: MCP Events both ways, every delivery mode: an `mcp.event` trigger source, and wisp's log served by poll, push and webhook
 
 - Status: accepted
 - Date: 2026-11-27

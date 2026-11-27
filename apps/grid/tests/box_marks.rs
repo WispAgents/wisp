@@ -333,7 +333,7 @@ async fn the_sandbox_list_says_the_most_the_grid_keeps() {
     g.done();
 }
 
-/// An MCP server's webhook delivery (ADR-0145) is the one request that reaches a box without a sign-in: `POST
+/// An MCP server's webhook delivery (ADR-0146) is the one request that reaches a box without a sign-in: `POST
 /// /api/connectors/events/<token>`, marked `x-wisp-proxy-via: hook` (the box's wisp sees it as `public`), with no
 /// cookie or bearer and none of the client's marks. A GET there, another path, or a token that can't be one still
 /// asks for a sign-in.

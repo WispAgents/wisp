@@ -245,7 +245,7 @@ pub enum MethodAnswer {
 pub type MethodFn =
     Arc<dyn Fn(Ctx, Call, MethodRequest) -> BoxFuture<'static, std::result::Result<MethodAnswer, MethodError>> + Send + Sync>;
 
-/// `mcp.method@1` (ADR-0145): a plugin serves a JSON-RPC method of its own on wisp's MCP endpoint, beyond tools: an
+/// `mcp.method@1` (ADR-0146): a plugin serves a JSON-RPC method of its own on wisp's MCP endpoint, beyond tools: an
 /// MCP extension's (`events/list`, `events/poll`), declared under `capabilities.extensions` by its identifier. `run` gets
 /// wisp.mcp's context and the caller's `Call`: a contribution runs its own commands from its own context (`s.ctx()`,
 /// so its manifest's permissions hold) with that `Call` (the caller's capability set and scoping apply). Its `params`

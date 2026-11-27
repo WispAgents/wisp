@@ -2,7 +2,7 @@
 // (`resources.apply` kind `trigger`, ADR-0043). DOM-free: the kinds as v1 named them, what each one asks, and the spec
 // a filled form becomes. Linear, Sentry and PagerDuty are webhooks signed in their own header (spec `header`); a Slack
 // mention is a `chat.message` from the Slack channel (wisp.channels), filtered by who sent it and a keyword. An MCP
-// server's event is an `mcp.event` (ADR-0145): a connector, one of its event types and that type's arguments.
+// server's event is an `mcp.event` (ADR-0146): a connector, one of its event types and that type's arguments.
 import { toCron } from '@wisp/shell/pure';
 
 export interface Kind {
@@ -250,7 +250,7 @@ export function typedArg(v: string): unknown {
   return t;
 }
 
-/** One argument of an MCP event type, from its `inputSchema` (ADR-0145): a switch, a pick or a box. */
+/** One argument of an MCP event type, from its `inputSchema` (ADR-0146): a switch, a pick or a box. */
 export interface ArgField {
   readonly key: string;
   readonly kind: 'boolean' | 'enum' | 'text';

@@ -1,4 +1,4 @@
-//! An event type's `payloadSchema` for `events/list` (ADR-0145), inferred from the newest events of that type the log
+//! An event type's `payloadSchema` for `events/list` (ADR-0146), inferred from the newest events of that type the log
 //! keeps: each field's JSON types (an integer that's sometimes a fraction is a number), objects and lists looked into
 //! up to four deep, and `required` for the fields every sample had. Inferred, and said so in its `description`: wisp's
 //! event structs carry no JSON Schema of their own (ADR-0044 left it to a later change), and the samples are what a

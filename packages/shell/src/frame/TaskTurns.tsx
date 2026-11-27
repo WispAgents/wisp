@@ -5,7 +5,7 @@ import '../i18n/lazy.ts';
 import { Show, createMemo, lazy, type JSX } from 'solid-js';
 import { entityKey, ownerOf } from '@wisp/client';
 import { BtwList, ForKeyed, Ledger, Skeleton, Stack } from '@wisp/ui';
-import { Slot } from '../slot.tsx';
+import { Slot, TaskLinks } from '../slot.tsx';
 import { dismiss } from './overlap-dismiss.ts';
 import { btwDrop, btwOf, proposalApply, proposalDiscard, proposalsOf } from './commands.ts';
 import type { TurnRow } from './task-rows.ts';
@@ -67,6 +67,8 @@ export function TaskTurns(props: { readonly p: TaskPage; readonly s: () => Sessi
       </Show>
       {/* the earlier turns as a ledger (ADR-0068): outcome rows, day cards, notice folds, search, the scrubber;
           the latest turn whole after them, as it always was (design/ux.md) */}
+      {/* its links ask `shell.task:link` first (ADR-0145): a PR's link reads as its live chip */}
+      <TaskLinks id={key} session={() => s() as never}>
       <Ledger
         turns={ledger()}
         total={turns().length}
@@ -85,6 +87,7 @@ export function TaskTurns(props: { readonly p: TaskPage; readonly s: () => Sessi
         clock={clock}
         tools={turns().length > LEDGER_TOOLS}
       />
+      </TaskLinks>
       {/* the /btw side questions asked on it (v1 btw.js), after its turns: answered on the side, the run carries on */}
       <BtwList
         items={btwOf(row()).map((b) => ({

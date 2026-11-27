@@ -111,7 +111,7 @@ enum MethodOut {
     Stream(tokio::sync::mpsc::Receiver<Value>),
 }
 
-/// What the dispatcher hands over (`mcp.method@1`, ADR-0145): each contributed method once (the first plugin to name
+/// What the dispatcher hands over (`mcp.method@1`, ADR-0146): each contributed method once (the first plugin to name
 /// one has it), and the extensions they declare.
 fn served(methods: &[std::sync::Arc<wisp_mcp_api::MethodContribution>]) -> wisp_mcp_core::Served {
     let mut s = wisp_mcp_core::Served::default();

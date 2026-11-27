@@ -1,4 +1,4 @@
-//! A connector's MCP Events by webhook (SEP-3415; ADR-0145): with this wisp's public address set
+//! A connector's MCP Events by webhook (SEP-3415; ADR-0146): with this wisp's public address set
 //! (`connectors.events.callback`), an `mcp.event` trigger whose connector offers `webhook` subscribes with
 //! `events/subscribe` and its events come to `POST /api/connectors/events/:token`.
 //!

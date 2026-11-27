@@ -1,4 +1,4 @@
-//! MCP Events' push delivery (SEP-3415 `events/stream`; ADR-0145): one long-lived request a subscription, answered
+//! MCP Events' push delivery (SEP-3415 `events/stream`; ADR-0146): one long-lived request a subscription, answered
 //! with SSE by wisp.mcp. Opened with a poll's checks, then `active`, the backlog and each new event as the feed writes
 //! it, and a heartbeat with the cursor in quiet stretches. A caller holds at most `STREAMS_PER_CALLER` of them.
 

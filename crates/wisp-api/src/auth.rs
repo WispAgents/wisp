@@ -144,7 +144,7 @@ pub fn resolve(h: &HeaderMap, params: &BTreeMap<String, String>, body: &[u8], o:
     if o.via_proxy && header(h, "x-wisp-proxy-via") == Some("key") {
         return Ok(Caller { set: sets::APIKEY.into(), session: None, plugin: None });
     }
-    // a webhook delivery the grid let in without a sign-in (ADR-0145): no one, whatever route it reaches
+    // a webhook delivery the grid let in without a sign-in (ADR-0146): no one, whatever route it reaches
     if o.via_proxy && header(h, "x-wisp-proxy-via") == Some("hook") {
         return Ok(Caller { set: sets::PUBLIC.into(), session: None, plugin: None });
     }
