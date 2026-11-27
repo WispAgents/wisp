@@ -37,7 +37,7 @@ export interface LookBudget {
  * lowers it to the new number plus 2 KB, toward BUDGETS; raising it needs a new ADR. */
 export const FIRST_SCREEN_BUDGETS: Readonly<Record<Look, LookBudget>> = {
   desktop: { jsBr: 173 * 1024, cssBr: 30 * 1024 },
-  phone: { jsBr: 167 * 1024, cssBr: 40.5 * 1024 },
+  phone: { jsBr: 167 * 1024, cssBr: 41 * 1024 }, // ADR-0138
 };
 
 /** A lazy chunk with its own ceiling: `pattern` names its file in assets/; `neverFirst` fails the build when any look's

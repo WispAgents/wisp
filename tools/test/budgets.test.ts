@@ -148,7 +148,7 @@ test('budgets: spikes/server-budgets gates on SERVER_BUDGETS, the one list of th
 // down toward ADR-0011's 120 / 30; index.html's own files stay gated at 120 / 30 as before
 test('budgets: the ratchet is pinned here (lowering it is a deliberate edit, raising it needs an ADR) and never under the target', () => {
   const KB = 1024;
-  assert.deepEqual(FIRST_SCREEN_BUDGETS, { desktop: { jsBr: 173 * KB, cssBr: 30 * KB }, phone: { jsBr: 167 * KB, cssBr: 40.5 * KB } });
+  assert.deepEqual(FIRST_SCREEN_BUDGETS, { desktop: { jsBr: 173 * KB, cssBr: 30 * KB }, phone: { jsBr: 167 * KB, cssBr: 41 * KB } });
   for (const b of Object.values(FIRST_SCREEN_BUDGETS)) {
     assert.ok(b.jsBr >= BUDGETS.initialJsBr && b.cssBr >= BUDGETS.initialCssBr, 'a ratchet below the target is the target: lower BUDGETS instead');
   }

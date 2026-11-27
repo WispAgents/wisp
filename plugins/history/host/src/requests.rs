@@ -25,14 +25,22 @@ const DEF: EntityDef = EntityDef {
     topics,
 };
 
-static READY: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+/// The stores this kind is set up on: per store, not per process, so a second store in one process (a test's, or a
+/// daemon's after another's) gets its table and entity too.
+static READY: std::sync::Mutex<Vec<std::sync::Weak<Store>>> = std::sync::Mutex::new(Vec::new());
+
+fn ready(s: &std::sync::Arc<Store>) -> bool {
+    let mut seen = READY.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    seen.retain(|w| w.strong_count() > 0);
+    seen.iter().any(|w| std::ptr::eq(w.as_ptr(), std::sync::Arc::as_ptr(s)))
+}
 
 fn store(ctx: &Ctx) -> Result<std::sync::Arc<Store>> {
     let s = ctx.service::<Store>()?;
-    if READY.get().is_none() {
+    if !ready(&s) {
         s.migrate("history.request", &[Migration::sql(1, SQL)]).map_err(|e| WireError::internal(e.to_string()))?;
         s.define_entity(DEF).map_err(|e| WireError::internal(e.to_string()))?;
-        let _ = READY.set(());
+        READY.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(std::sync::Arc::downgrade(&s));
     }
     Ok(s)
 }
