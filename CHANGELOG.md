@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.18] - 2026-11-27
+
 ### Added
 
 - **This computer, in three tabs.** Overview opens on one line that says whether the computer is fine and why (memory short, disk almost full, automations waiting, a process left running, or *Room to spare*), then memory, CPU and disk as bars with a mark where automations start to wait, what needs you, what runs now, and the last 24 hours as a chart and one sentence. A process left running is named by what it runs (`python3 -m http.server`), not its interpreter's path. Space has the disk as one bar (build output, wisp's folders, everything else, free), each folder's build output with Remove and Remove all, Free up space and the harnesses' folders. Limits has automations. A warning on top says when the disk runs short, with one button that frees the build output, or when memory is under the floor (ADR-0144).
@@ -71,11 +73,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   grid, but wisp Cloud already ran the new grid, which didn't have them. The new grid now signs these links
   (`POST /_grid/media`) and accepts them, at a cloud wisp's address and at a computer's. A link opens only its own
   file, for an hour, and stops working when you remove the phone from your account.
-
-## [1.0.0-alpha.18] - 2026-11-27
-
-### Fixed
-
 - **The Update pill shows up on its own each morning.** wisp looked for a new version at start and then only a full
   day after that look, so a release out a few hours after you opened wisp stayed hidden until the next day (or until
   you had already updated with npm and restarted). It now also looks every morning at 9 on your computer's clock (or
@@ -154,6 +151,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (with **Open PR**) after a reload, ⋯ → **Push to repo** toasts the branch and its PR, and pushing again after the
   files went out answers the earlier push instead of "Save to repo again". Saving again after a push offers **Push**
   again instead of the old "Pushed to …".
+
 ## [1.0.0-alpha.17] - 2026-11-27
 
 ### Changed
