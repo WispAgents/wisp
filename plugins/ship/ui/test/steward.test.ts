@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { stewardAction, stewardArg, stewardLine, stewardStart } from '../src/model/steward.ts';
+import { stewardArg, stewardLine, stewardStart, stewardSwitch } from '../src/model/steward.ts';
 import type { T } from '../src/i18n.ts';
 import type { PrSummary, ShipSession, Steward } from '../src/types.ts';
 
@@ -27,7 +27,6 @@ test('the_pr_row_says_what_the_steward_does_and_offers_one_control', () => {
   // merged: the line goes (a stop's reason stays), and there's nothing to steward
   expect(stewardLine(t, row({ mode: 'fix', step: 'green' }, 'MERGED'))).toBeUndefined();
   expect(stewardLine(t, row({ mode: 'fix', step: 'stopped', why: 'The PR merged.' }, 'MERGED'))).toBe('wisp.ship.steward.stopped{"why":"The PR merged."}');
-  expect([stewardAction(row()), stewardAction(row({ mode: 'fix', step: 'fixing' })), stewardAction(row({ mode: 'fix', step: 'stopped' })), stewardAction(row(undefined, 'MERGED'))]).toEqual(['start', 'stop', 'again', undefined]);
 });
 
 test('the_steward_says_green_only_for_the_head_it_judged_once_its_checks_ran', () => {
@@ -37,4 +36,15 @@ test('the_steward_says_green_only_for_the_head_it_judged_once_its_checks_ran', (
   expect(stewardLine(t, at({ checks: { pass: 1, fail: 0, pending: 5 } }))).toBe('wisp.ship.steward.watching');
   expect(stewardLine(t, at({ checks: { pass: 0, fail: 0, pending: 0 }, waitingChecks: true }))).toBe('wisp.ship.steward.watching');
   expect(stewardLine(t, at({ head: 'h2', checks: { pass: 3, fail: 0, pending: 0 } })), 'a newer push').toBe('wisp.ship.steward.watching');
+});
+
+test('the_pr_row_switch_shows_on_any_open_pr_and_restarts_in_the_mode_it_had_else_the_setting', () => {
+  // a PR the agent attached (wisp_pr) is the same row as a shipped one: no Steward yet, the switch is off
+  expect(stewardSwitch(row(), 'off')).toEqual({ on: false, next: 'fix' });
+  expect(stewardSwitch(row(), 'review'), 'Settings → Ship says review').toEqual({ on: false, next: 'review' });
+  expect(stewardSwitch(row({ mode: 'fix', step: 'fixing' }), 'review')).toEqual({ on: true, next: 'off' });
+  expect(stewardSwitch(row({ mode: 'review', step: 'green' }), 'off')).toEqual({ on: true, next: 'off' });
+  // stopped: off, and on again keeps its mode over the setting
+  expect(stewardSwitch(row({ mode: 'review', step: 'stopped' }), 'fix')).toEqual({ on: false, next: 'review' });
+  expect(stewardSwitch(row(undefined, 'MERGED'), 'fix'), 'nothing to steward').toBeUndefined();
 });

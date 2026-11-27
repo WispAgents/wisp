@@ -40,12 +40,15 @@ export function stewardLine(t: T, s: ShipSession): string | undefined {
   }
 }
 
-/** The row's one Steward control: Stop while it's on, Start again after a stop, Keep green on an open PR without one. */
-export function stewardAction(s: ShipSession): 'stop' | 'again' | 'start' | undefined {
+/** The PR row's Steward switch (ADR-0132): on any open PR of the task's own branch, shipped with Ship it or attached
+ * by the agent (`wisp_pr`). `on` while it watches, fixes or pushes; `next`: what flipping it sends, `off`, or else the
+ * mode it had, else Settings → Ship's default (`ship.steward`), else `fix`. */
+export function stewardSwitch(s: ShipSession, setting: unknown): { readonly on: boolean; readonly next: 'fix' | 'review' | 'off' } | undefined {
   if (s.pr?.state !== 'OPEN') return undefined;
   const st = s.steward;
-  if (!st) return 'start';
-  return st.step === 'stopped' ? 'again' : 'stop';
+  if (st && st.step !== 'stopped') return { on: true, next: 'off' };
+  const mode = st?.mode ?? (typeof setting === 'string' ? setting : '');
+  return { on: false, next: mode === 'review' ? 'review' : 'fix' };
 }
 
 /** The dialog's two boxes as `ship.ship`'s `steward`: unticked sends `off` only when one is on now. */

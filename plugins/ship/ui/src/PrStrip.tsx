@@ -4,10 +4,10 @@
 // instead; while the PR pane is open beside the task it hides, so the verdict never shows twice.
 
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, type Accessor, type JSX } from 'solid-js';
-import { CommandError, readonly, type EntityKey, type PluginClient } from '@wisp/client';
+import { CommandError, entityKey, readonly, type EntityKey, type PluginClient } from '@wisp/client';
 import { mergeRequest } from './merge-request.ts';
 import type { ExtensionProps } from '@wisp/shell/contract';
-import { Button, Card, Icon, IconButton, ListRow, Stack, Text, Toolbar, ToneChip, useSignal, Wrap, type ToolbarItem } from '@wisp/ui';
+import { Button, Card, Icon, IconButton, ListRow, Stack, Switch as OnOff, Text, Toolbar, ToneChip, useSignal, Wrap, type ToolbarItem } from '@wisp/ui';
 import { fixConflicts, refresh, review, setSteward } from './commands.ts';
 import { t } from './i18n.ts';
 import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
@@ -15,7 +15,7 @@ import { fixing, openPrs, prChipTitle, prsOf, prTone, worstTone, type PrTone } f
 import { prStripSub, prStripTitle } from './model/strip.ts';
 import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
 import { stepsOfLive, track } from './model/ship.ts';
-import { stewardAction, stewardLine } from './model/steward.ts';
+import { stewardLine, stewardSwitch } from './model/steward.ts';
 import { ShipRun } from './ShipRun.tsx';
 import { TONE, TONE_ICON } from './tones.ts';
 import { useBusy } from './busy.ts';
@@ -88,6 +88,8 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
   const ctx = props.ctx;
   const checking = useBusy();
   const [expanded, setExpanded] = createSignal(false);
+  // Settings → Ship's Steward mode: what the PR row's switch starts with on a PR that never had one
+  const stewardSetting = useSignal(props.client.entities.row<{ value?: unknown }>('setting', entityKey(props.client.home, 'ship.steward')));
   const prs = createMemo(() => prsOf(props.s));
   const several = (): boolean => prs().length > 1;
   // When every PR belongs to the task's own repo (already named above the card), chips show "#853" cleanly
@@ -163,16 +165,20 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           ),
       });
     }
-    // the Steward (ADR-0132): Stop while it's on, Start again after a stop, Keep green on an open PR without one
-    const keep = stewardAction(props.s);
+    // the Steward (ADR-0132) as a switch on the bar: on a shipped PR and on one the agent attached (`wisp_pr`), so
+    // it's one click to start or stop; it outlasts the other actions as the bar narrows (label first, then the switch)
+    const keep = stewardSwitch(props.s, stewardSetting()?.value);
     if (keep) {
-      const mode = keep === 'stop' ? 'off' : props.s.steward?.mode === 'review' ? 'review' : 'fix';
+      const flip = (): void => quiet(props.client.run(setSteward, { key: props.k, mode: keep.next }));
+      const label = t('wisp.ship.steward.switch');
       out.push({
         id: 'steward',
-        icon: keep === 'stop' ? 'stop' : keep === 'again' ? 'replay' : 'judge',
-        label: t(keep === 'stop' ? 'wisp.ship.steward.action.stop' : keep === 'again' ? 'wisp.ship.steward.action.again' : 'wisp.ship.steward.action.start'),
-        priority: 4,
-        onSelect: () => quiet(props.client.run(setSteward, { key: props.k, mode })),
+        icon: 'judge',
+        label,
+        pressed: keep.on,
+        priority: 5,
+        onSelect: flip,
+        render: (form) => <OnOff checked={keep.on} onChange={flip} title={t(keep.on ? 'wisp.ship.steward.switchOff' : 'wisp.ship.steward.switchOn')} {...(form === 'full' ? { label } : { 'aria-label': label })} part="pr.strip.steward.switch" />,
       });
     }
     // Pinned primary action (Fix conflicts or Merge) always sits last so Toolbar pushes it cleanly to the end.
