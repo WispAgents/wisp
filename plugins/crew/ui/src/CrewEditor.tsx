@@ -363,6 +363,15 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
         onStep: (by) => set({ parallel: Math.min(5, Math.max(1, d().parallel + by)) }),
       }}
       checkin={editing() || task ? undefined : { label: t('wisp.crew.editor.checkin'), on: checkin(), onToggle: setCheckin }}
+      steps={{
+        who: t('wisp.crew.editor.step.who'),
+        job: t('wisp.crew.editor.step.job'),
+        when: t('wisp.crew.editor.step.when'),
+        where: t('wisp.crew.editor.step.where'),
+        back: t('wisp.crew.editor.step.back'),
+        next: (step) => say('wisp.crew.editor.step.next', { step }),
+        close: t('wisp.crew.editor.close'),
+      }}
       cancel={{ label: t('wisp.crew.page.cancel'), onClick: close }}
       submit={{ label: editing() ? t('wisp.crew.page.save') : t('wisp.crew.editor.addButton'), onClick: save }}
     />
