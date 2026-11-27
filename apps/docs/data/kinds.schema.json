@@ -1625,6 +1625,10 @@
           ],
           "type": "string"
         },
+        "ship.attachPasted": {
+          "description": "Follow PRs I link: a GitHub PR link in a prompt or follow-up attaches that PR to the task, with its checks and reviews",
+          "type": "boolean"
+        },
         "ship.fixConflicts": {
           "description": "Fix merge conflicts by itself: when a task's PR has conflicts, its agent is asked to fix them without waiting for you",
           "type": "boolean"
