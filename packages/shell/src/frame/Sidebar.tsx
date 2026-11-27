@@ -43,12 +43,15 @@ function useSessions(): () => readonly SessionRow[] {
 export function Rail(): JSX.Element {
   const shell = useShell();
   const crew = useSignal(shell.client.entities.list<CrewRow>('crew_member'));
+  const sessions = useSessions();
+  // who has a job running: their face gets a ring (ADR-0142)
+  const busy = createMemo(() => new Set(sessions().flatMap((s) => (s.state === 'running' ? [crewOf(s)] : []))));
   // the crew host keeps a member in its row's body
   const members = createMemo<RailMember[]>(() =>
     crew()
       .map((r) => flatRow<CrewRow>(r))
       .toSorted((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-      .map((c) => ({ id: c.id, name: c.name, avatar: c.avatar ?? '', color: c.color ?? 'violet' })),
+      .map((c) => ({ id: c.id, name: c.name, avatar: c.avatar ?? '', color: c.color ?? 'violet', live: busy().has(c.id) })),
   );
   const nav = useSignal(shell.nav);
   const cardExt = useExtensions('shell.rail:card');

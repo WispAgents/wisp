@@ -60,3 +60,73 @@ export function pillOf(s: SessionRow, t: T): { label: string; tone: string } | u
 
 /** The thread: the newest `show` items, how many earlier ones there are. */
 export const thread = (jobs: readonly SessionRow[], show: number): { items: ThreadItem[]; earlier: number } => threadItems(jobs, show);
+
+// ---------- the hero (ADR-0142) ----------
+
+const DAY = 86_400_000;
+
+/** How long a run took, short: "40s", "14m", "2h 5m". */
+export function shortDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+}
+
+/** The hero's numbers, all from its jobs and its delegates: jobs done, this week, how long a job takes, who it hands
+ * work to. A number with nothing behind it is left out (a new member shows none). */
+export function heroStats(m: Pick<Member, 'team'>, jobs: readonly SessionRow[], o: { t: T; now: number }): { value: string; label: string }[] {
+  const { t } = o;
+  const done = jobs.filter((s) => (s.state === 'review' || s.state === 'done') && s.status !== 'failed').length;
+  const week = jobs.filter((s) => s.createdAt > o.now - 7 * DAY).length;
+  const runs = jobs.flatMap((s) => (s.startedAt && s.endedAt && s.endedAt > s.startedAt ? [s.endedAt - s.startedAt] : []));
+  const team = m.team ?? [];
+  const out: { value: string; label: string }[] = [];
+  if (done)
+    out.push({
+      value: String(done),
+      label: t('wisp.crew.page.stat.done', { count: done }),
+    });
+  if (week) out.push({ value: String(week), label: t('wisp.crew.page.stat.week') });
+  if (runs.length)
+    out.push({
+      value: shortDuration(runs.reduce((a, b) => a + b, 0) / runs.length),
+      label: t('wisp.crew.page.stat.avg'),
+    });
+  if (team.length === 1)
+    out.push({
+      value: team[0]?.label || team[0]?.name || '',
+      label: t('wisp.crew.page.stat.handsTo'),
+    });
+  else if (team.length > 1)
+    out.push({
+      value: t('wisp.crew.page.stat.helpers', { count: team.length }),
+      label: t('wisp.crew.page.stat.handsTo'),
+    });
+  return out;
+}
+
+/** Above the box: the jobs you gave it, newest first, each once (at most `max`). */
+export function againPrompts(jobs: readonly SessionRow[], max = 3): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of [...jobs].sort((a, b) => b.createdAt - a.createdAt)) {
+    const p = s.crew?.job === 'task' ? s.crew.prompt?.trim() : undefined;
+    if (!p || seen.has(p)) continue;
+    seen.add(p);
+    out.push(p);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** The hero's folder chip: the folder it starts in (and how many more), and the computer when it isn't this one. */
+export function folderChip(m: Pick<Member, 'cwd' | 'dirs' | 'machine'>, o: { t: T; place: (machine: string) => string }): string {
+  return [
+    m.cwd ? base(m.cwd) : o.t('wisp.crew.page.noFolderChip'),
+    ...(m.cwd && m.dirs?.length ? [o.t('wisp.crew.page.moreFolders', { count: m.dirs.length })] : []),
+    ...(m.machine ? [o.place(m.machine)] : []),
+  ].join(' · ');
+}

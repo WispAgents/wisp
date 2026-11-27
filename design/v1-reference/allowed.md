@@ -90,6 +90,10 @@ shift every later index. Everything outside the part still has to match.
   dialog: the spirit in a glow, the name typed large, then Who, Their job, When, and Where & how, with a foot that
   stays in view. v1's fields and values stay; their layout is new. The whole dialog (`x.dialog`, `crew.editor` and its parts) is
   masked in crew.add. The rail and page behind it are still checked.
+- **A crew member's page is a profile** (the owner, 2026-11-27, ADR-0142; mock B of three): a hero (face in its
+  colour's glow, name, role, chips, real numbers) and tabs (Activity, Kit, Notebook, How they work) in place of v1's
+  head and side column, and the rail's face gets a ring of its colour while a job of theirs runs. Masked: the page
+  (`crew.page`) on the crew views and the rail's faces (`crew.avatar`) everywhere.
 
 ## 6. The list rows' glyph phase: found and fixed (2026-11-17)
 
@@ -201,4 +205,6 @@ settings*  settings.item  owner
 settings.usage  settings.budget  owner
 settings.usage  budget.usage.*  owner
 home*  split.next  owner
+crew*  crew.page  owner
+*   crew.avatar  owner
 ```

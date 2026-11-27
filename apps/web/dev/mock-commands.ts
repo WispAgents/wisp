@@ -768,7 +768,7 @@ export const COMMANDS: Record<string, CommandFn> = {
     const attached = ((sum(ctx.row('list', 'session', key))['prs'] ?? []) as { repo: string; pr: Args }[]).map((x) => ({ ...x.pr, repo: `WispAgents/${x.repo}`, branch: 'drop-cursor', base: 'main', author: 'you', additions: 40, deletions: 12, changedFiles: 2, review: '', files: [{ path: 'migrations/0042_drop_cursor.sql', additions: 6, deletions: 0 }], checkList: [{ name: 'test', workflow: 'ci', state: 'pass', ms: 30_000 }], reviewers: [], notes: [], threads: [] }));
     return { ops: [], result: [{ ...pr, repo: 'WispAgents/wisp', branch: 'fix/retry-scope', base: 'main', author: 'you', additions: 337, deletions: 17, changedFiles: files.length, checks: { pass: 2, fail: 1, pending: 2 }, review: 'REVIEW_REQUIRED', files, checkList, reviewers: [], notes: [], threads: [] }, ...attached] };
   },
-  // merge risk (ADR-0142): Judge again re-judges at once (the mock's judge is instant): the verdicts' time moves on
+  // merge risk (ADR-0143): Judge again re-judges at once (the mock's judge is instant): the verdicts' time moves on
   'risk.judge': (a, ctx) => {
     const x = obj(a);
     const key = str(x, 'id').includes(':') ? str(x, 'id') : `${ctx.peer}:${str(x, 'id')}`;

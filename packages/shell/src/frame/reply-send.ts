@@ -2,6 +2,8 @@
 // /btw a side question, /side a side discussion; then the goal gate, the hold near a usage limit (v1 hold.js,
 // ADR-0091), plugins' prompt sources (comments on lines, an @crew member, Send later), a setup card's answer, and
 // last the follow-up itself, its files uploaded first.
+import '../i18n/lazy.ts';
+import '../i18n/home.ts';
 import { createSignal, type Accessor } from 'solid-js';
 import { entityKey, newRowId, uuidv7, type EntityKey, type PeerId } from '@wisp/client';
 import type { SendHold } from '../contract.ts';

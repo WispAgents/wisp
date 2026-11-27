@@ -7,7 +7,7 @@
 //   POST /__mock/reset           the mock starts over from its seed (?seed=computers: a second computer,
 //                                 Studio, at /api/peer/studio, and a project here; MOCK_COMPUTERS=1 starts that way;
 //                                 ?seed=ask: the first answer ends in a question (Needs your call);
-//                                 ?seed=risk: that task with two PRs, merge risk on, one low and one high (ADR-0142);
+//                                 ?seed=risk: that task with two PRs, merge risk on, one low and one high (ADR-0143);
 //                                 ?seed=first-run: no tasks yet; ?seed=usage: a lead's usage and context fill;
 //                                 ?seed=trial: a Try it two ways pair (Compare says what differed);
 //                                 ?seed=cloud: signed in to wisp Cloud (Settings → Cloud → API keys), MOCK_CLOUD=1;

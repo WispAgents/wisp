@@ -7,7 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Merge risk.** Turn on Settings → General → Merge risk, and another harness than the one that wrote a task reads each of its open pull requests (the ones Ship it opened and the ones its agent attached) and says how risky merging is: low, medium or high, a score and why. The PR card gets a Merge risk row under the Steward with the riskiest PR's verdict, each PR's chip says its own, the PR panel lists the reasons with Judge again, and Merge turns red for a PR judged high. A push judges that PR again. Off by default (ADR-0142).
+- **Merge risk.** Turn on Settings → General → Merge risk, and another harness than the one that wrote a task reads each of its open pull requests (the ones Ship it opened and the ones its agent attached) and says how risky merging is: low, medium or high, a score and why. The PR card gets a Merge risk row under the Steward with the riskiest PR's verdict, each PR's chip says its own, the PR panel lists the reasons with Judge again, and Merge turns red for a PR judged high. A push judges that PR again. Off by default (ADR-0143).
+- **A crew member's page is now a profile.** It opens on the member: their face in a glow of their colour, the name
+  and role, chips for what they're doing, their harness, what wakes them and their folder, and their numbers (jobs
+  done, this week, how long a job takes, who they hand work to). Tabs replace the side column: Activity, Kit,
+  Notebook, How they work. The jobs you gave them before sit above the job box, one click away, and a member's face on
+  the rail gets a ring of their colour while they work (ADR-0142).
 - **A Steward row on the PR card.** Every open PR of a task's branch, whether Ship it opened it or the agent attached it with `wisp_pr`, has a Steward row under it: its status ("Watching checks and reviews", "Fixing failing checks (2/6)", "Green"), or what it would do when off, and a switch. On, the task fixes failing checks, merge conflicts and new review comments, and wisp pushes; off stops it in one click. The switch's tooltip says what it does. It replaces the Keep green / Stop Steward button that hid in More.
 - **A new loader: Liquid.** Everything that loads now shows the same mark: three drops that orbit, merge and split
   like mercury. It replaces the dot grid on a working task, the ring on a busy button, and the pulsing dots and spinning icons elsewhere. It turns amber while a task waits on you and
@@ -39,6 +44,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the project's: All computers, or one computer's tasks, picked from the same kind of list.
 
 ### Fixed
+
+- **Sandbox: a project with a huge new folder says which folder, instead of a screen of git output.** Starting a
+  sandbox from a checkout with a big untracked build folder (an 87 GB `target-agents/`) and nested agent worktrees
+  ran `git add -A` until it timed out, then showed hundreds of lines of git's embedded-repository hints as the error.
+  wisp now measures new folders before copying and refuses at 16 MB, naming the three biggest (*"Too much in files git
+  doesn't track to copy: target-agents/ (over 16 MB); at most 16 MB goes. Add them to .gitignore …"*); a timeout says so; git's hints are dropped; and
+  the error shows in three lines with Show all.
 
 - **Phone app: pictures and videos show again on wisp Cloud and on computers reached through the grid.** Each one
   said "This picture can't be shown here." (or video). alpha.15's fix added the one-hour signed links to the old

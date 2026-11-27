@@ -1,6 +1,7 @@
 // Find in task (mod+f, R4-3) as the page wires it (TaskView.tsx): every turn's rows as its transcript draws them, a
 // hit brought into sight (its turn shown, the transcript on, its step opened); Copy turn as Markdown (R4-6); and each
 // turn's open steps, one store per turn for its live and finished transcripts (step-open.ts).
+import '../i18n/lazy.ts';
 import { createSignal, type Accessor } from 'solid-js';
 import type { EnvReveal, TaskScroll } from '@wisp/ui';
 import { buildChatSteps } from './chat-steps.ts';

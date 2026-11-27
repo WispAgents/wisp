@@ -48,7 +48,7 @@ export interface MockPeerOptions {
   media?: boolean;
   /** the first answer ends in a question with options (POST /__mock/reset?seed=ask) */
   ask?: boolean;
-  /** `ask`'s task with a second PR, both judged by merge risk (POST /__mock/reset?seed=risk, ADR-0142) */
+  /** `ask`'s task with a second PR, both judged by merge risk (POST /__mock/reset?seed=risk, ADR-0143) */
   risk?: boolean;
   /** a task whose work changed a `.env.local`: Changes masks its values until Reveal (POST /__mock/reset?seed=env) */
   env?: boolean;

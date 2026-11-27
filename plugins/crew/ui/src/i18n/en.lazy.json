@@ -520,5 +520,18 @@
   "wisp.crew.team.subagent": "Subagent",
   "wisp.crew.team.noSteps": "No steps yet",
   "wisp.crew.record.kindFew.one": "1 run × {each} · {quiet}% found nothing to do",
-  "wisp.crew.record.kindFew.other": "{count} runs × {each} each · {quiet}% found nothing to do"
+  "wisp.crew.record.kindFew.other": "{count} runs × {each} each · {quiet}% found nothing to do",
+  "wisp.crew.page.tabs": "{name}'s page",
+  "wisp.crew.page.tab.activity": "Activity",
+  "wisp.crew.page.tab.kit": "Kit",
+  "wisp.crew.page.tab.how": "How they work",
+  "wisp.crew.page.stat.done.one": "job done",
+  "wisp.crew.page.stat.done.other": "jobs done",
+  "wisp.crew.page.stat.week": "this week",
+  "wisp.crew.page.stat.avg": "a job takes",
+  "wisp.crew.page.stat.handsTo": "hands work to",
+  "wisp.crew.page.stat.helpers": "{count} helpers",
+  "wisp.crew.page.chip.edit": "Change how {name} works",
+  "wisp.crew.page.again": "Put this job in the box again",
+  "wisp.crew.page.noFolderChip": "No folder"
 }

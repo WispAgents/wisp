@@ -100,18 +100,24 @@ is a row in the list; the rail's pick (below) turns the list into that member's 
   under the cursor; a single quiet member never folds alone.
 - **Opening a member** is opening a task: its thread takes the main pane (any open task closes), or
   stacked, a page with Back. Its row looks selected; on the rail its tile is, once it's picked.
-- **The thread**: a task's header (face, name, role, state, Pause, ⋯, close), then its jobs oldest
-  first, each what was asked and where from (*You*, *Check-in*, *Tagged in “…”*, *Delegated by
-  “…”*, *Trigger …*) and the member's answer: working (its live line), asking you (the question, its
-  choices or Allow / Deny, a box to answer), or done (headline, summary, the tasks it followed up in,
-  **Open job**, **Follow up**). Quiet check-ins fold into one faint line. At the bottom, the box that
-  hands it a job (it shows *Starting up* at once; `@` brings another member in as a delegate of that
-  job). Beside the thread on a wide pane (folded above it otherwise): schedule and next check-in, jobs
-  at once, project, computer, harness, mode, delegates, the actions, the notebook, the brief, and the
-  tasks it's part of. In the phone app, dragging the thread to the left brings those in as an
-  *About Ada* page with Back, the way a task's side panel comes in (side-panel.md → Swipe, the same
-  feel and numbers, `panel-swipe.js`); dragging it right, Back or the phone's Back return to the
-  thread. `crew.page.swipe: false` turns it off; the page is the `crew.about` part.
+- **The member's page** (ADR-0142, owner 2026-11-27, mock B in `design/mockups/crew-premium-B-*.png`): a profile,
+  not a task page. Only the buttons sit in the head (Back when stacked, Pause, ⋯, close), over the **hero**: the face
+  at 82 px on a disc in the member's colour's glow, the name (28 px), the role, then chips: what it's doing (the
+  status line; a pulsing dot while a job runs, amber while it asks you), its harness, what wakes it (only while
+  busy, when the status chip doesn't say it), its folder. The last three open the editor. Under them, the numbers
+  its jobs back up, each left out when nothing does: jobs done, this week, how long a job takes, who it hands work
+  to. Then **tabs**, centred, the panel in the reading column:
+  - *Activity*: its jobs oldest first, each what was asked and where from (*You*, *Check-in*, *Tagged in “…”*,
+    *Delegated by “…”*, *Trigger …*) and the member's answer: working (its live line), asking you (the question, its
+    choices or Allow / Deny, a box to answer), or done (headline, summary, the tasks it followed up in, **Open job**,
+    **Follow up**). Quiet check-ins fold into one faint line.
+  - *Kit* (its count): skills and instructions. *Notebook*. *How they work*: schedule, jobs at once, folders,
+    computer, harness and mode, fallbacks, delegates, Check in / Edit… / Remove, the brief.
+  At the bottom, the box that hands it a job (it shows *Starting up* at once; `@` brings another member in as a
+  delegate of that job). On Activity, the last three prompts you gave it sit above the box; a click puts one back in
+  the box. Under 520 px of its own width the disc and name shrink and the tab row scrolls. The phone apps keep
+  their native page (`CrewPhone.tsx`), with its *About Ada* page swiped in (`crew.about`).
+- **The rail rings a busy member**: while one of its jobs runs, its face has a ring of its colour.
 - **When it needs you**: its face (and row) say so, and a notification names it. The thread's row
   opens the thread at that job, where you answer without opening anything else; the toast's **Open**
   and the notification open the job itself (below). Answering is optimistic: the

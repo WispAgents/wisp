@@ -98,7 +98,7 @@ function Review(props: { readonly client: PluginClient }): JSX.Element {
   return <SelectSetting part="settings.review" title={t('shell-settings.review')} description={t('shell-settings.review.hint')} source={review} locked={locked} items={items()} />;
 }
 
-/** Merge risk (wisp.risk, ADR-0142): off by default; Another harness, or one that's here, judges each open PR. */
+/** Merge risk (wisp.risk, ADR-0143): off by default; Another harness, or one that's here, judges each open PR. */
 function Risk(props: { readonly client: PluginClient }): JSX.Element {
   const risk = text(fromRow(props.client, KEYS.risk), 'off');
   const picked = useSignal(risk.value);

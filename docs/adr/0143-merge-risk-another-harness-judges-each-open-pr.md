@@ -1,4 +1,4 @@
-# ADR-0142: merge risk, another harness judges each open PR
+# ADR-0143: merge risk, another harness judges each open PR
 
 - Status: accepted
 - Date: 2026-11-27

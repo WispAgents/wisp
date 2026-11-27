@@ -237,7 +237,7 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
             />
           )}
         </Show>
-        {/* merge risk (ADR-0142) on its own row, built as the Steward's: the worst open PR's verdict in a line and its
+        {/* merge risk (ADR-0143) on its own row, built as the Steward's: the worst open PR's verdict in a line and its
             level on the right (every PR's line on hover); each PR's own word is on its chip, the reasons in the PR pane */}
         <Show when={risk()}>
           {(r) => (

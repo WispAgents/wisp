@@ -43,7 +43,7 @@ export function mergePlan(t: T, s: ShipSession | undefined, ctx: ReviewContext):
   const first = open[0];
   if (!s || !first) return undefined;
   const several = open.length > 1;
-  // merge risk (ADR-0142): a PR judged high is wrong enough to turn Merge red; a medium one is a line only
+  // merge risk (ADR-0143): a PR judged high is wrong enough to turn Merge red; a medium one is a line only
   const risk = riskWarnings(t, s, open);
   const warn = [...checkWarnings(t, s, several), reviewWarning(t, s, ctx), ...risk.high, s.overlap ?? ''].filter(Boolean);
   const what = several

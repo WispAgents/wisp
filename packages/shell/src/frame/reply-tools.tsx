@@ -1,5 +1,7 @@
 // The reply box's tools (TaskView.tsx, UX 2026-11-18 #3): `+` for what's off (attach, Goal…, Delegate…, Send later),
 // a chip with ✕ for each that's on (the goal, the team, the time), and the Delegate panel on its chip.
+import '../i18n/lazy.ts';
+import '../i18n/home.ts';
 import { createMemo, lazy, on, type Accessor } from 'solid-js';
 import type { MenuEntry, Act, LauncherTool } from '@wisp/ui';
 import { startsAt, whenTip } from './hold.ts';

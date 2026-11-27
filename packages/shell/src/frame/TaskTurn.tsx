@@ -1,6 +1,7 @@
 // One turn of the open task as the page draws it (TaskView.tsx): its prompt card, its working panel while it runs, its
 // transcript and answer, its trail and tools. Made once per turn id (B35): `turn` and `b` read the latest row, and
 // what's derived from them is a function, read where it's shown.
+import '../i18n/lazy.ts';
 import { Show, createMemo, getOwner, on, onCleanup, runWithOwner, untrack, type JSX, type Accessor } from 'solid-js';
 import { entityKey, type EntityKey, type PeerId } from '@wisp/client';
 import { Answer, Button, RateButtons, TurnView, WhyForm, WorkingPanel, type EnvReveal } from '@wisp/ui';

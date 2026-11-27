@@ -590,7 +590,7 @@ function withAsk(topics: Map<Topic, Row[]>, list: Row[]): void {
 
 /** `risk`: on top of `ask`'s PR #812, the task has PR #44 attached in another repo; Settings → Merge risk is on and
  *  Codex judged both heads: #812 low, #44 high (the PR row's worst-of button, each chip's word, the PR pane, Merge's
- *  red confirm; ADR-0142). */
+ *  red confirm; ADR-0143). */
 function withRisk(topics: Map<Topic, Row[]>, list: Row[], now: number): void {
   withAsk(topics, list);
   const own = { number: 812, url: 'https://github.com/WispAgents/wisp/pull/812', head: 'a1b2c3', title: 'Keep the retry in the stream scope', state: 'OPEN', checks: { pass: 3, fail: 0, pending: 0 } };

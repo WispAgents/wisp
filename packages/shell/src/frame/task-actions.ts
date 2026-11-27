@@ -1,6 +1,7 @@
 // The open task's actions (TaskView.tsx): the head's bar (Changes, Ship ▾, Done, ⋯), its More menu in v1's order
 // (v1 actions.js moreMenu, #786 taskMenuHtml) with what plugins attach to a task's menu, and the shell's task keys
 // (v1 kbd.js), which do what those buttons and entries do.
+import '../i18n/lazy.ts';
 import { createMemo, onCleanup, untrack, type Accessor } from 'solid-js';
 import { useSignal, type MenuEntry, type HeadAction, type TaskScroll } from '@wisp/ui';
 import { sameEntries } from './same-entries.ts';
