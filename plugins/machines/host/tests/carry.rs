@@ -132,6 +132,35 @@ async fn a_lead_folder_that_isnt_a_repo_or_an_unknown_machine_is_refused_before_
     assert!(e.message.contains("isn't a git repo with a commit"), "{e:?}");
 }
 
+/// A build folder git doesn't ignore (an 87 GB `target-agents/` ran `git add -A` into its timeout, and the error was 50
+/// nested-repo warnings): refused by name, at once, before anything goes; a nested repo (a worktree) weighs nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_folder_with_a_huge_untracked_build_folder_is_refused_by_name_before_anything_goes() {
+    let home = dir("home-big");
+    let k = kernel(&home).await;
+    let (p, _) = carried(&home, "big");
+    let wt = p.join(".claude/worktrees/agent-1");
+    std::fs::create_dir_all(&wt).unwrap();
+    git(&wt, &["init", "-q", "-b", "main"]);
+    std::fs::write(wt.join("x.txt"), "x".repeat(20 << 20)).unwrap();
+    git(&wt, &["add", "."]);
+    git(&wt, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "w"]);
+    let m = k
+        .call(Caller::user(), "machines.add", json!({ "transport": "loopback", "address": "127.0.0.1", "port": 9, "connect": false }))
+        .await
+        .unwrap();
+    // only the nested repo: it's no new file, so the pack goes on to the (unreachable) machine
+    let e = k.call(Caller::user(), "machines.carry", json!({ "id": m["id"], "cwd": p, "key": "k1" })).await.unwrap_err();
+    assert_ne!(e.code, Code::TooLarge, "{e:?}");
+    let build = p.join("target-agents/debug");
+    std::fs::create_dir_all(&build).unwrap();
+    std::fs::write(build.join("a.rlib"), vec![7u8; 17 << 20]).unwrap();
+    let e = k.call(Caller::user(), "machines.carry", json!({ "id": m["id"], "cwd": p, "key": "k2" })).await.unwrap_err();
+    assert_eq!(e.code, Code::TooLarge, "{e:?}");
+    assert!(e.message.contains("target-agents/ (over 16 MB)") && e.message.contains(".gitignore"), "{e:?}");
+    assert!(!e.message.contains("embedded"), "{e:?}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn carrying_and_taking_in_need_their_permissions() {
     let home = dir("home5");
