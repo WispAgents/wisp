@@ -97,16 +97,16 @@ const press = (init: KeyboardEventInit, target: EventTarget = document.body): Ke
   return e;
 };
 
-// final4 F3: a modified early key (⌘P, Ctrl+P) ran the browser's print or tab switch, then wisp's replay too
-test('an_early_modified_key_is_wisps_in_place_of_the_browsers', async () => {
+// final4 F3 / final5 F4: a modified early key (⌘P, Ctrl+P, ⌘F) is the browser's: kept, it ran twice; kept and
+// prevented, an early ⌘F with no task open did nothing at all
+test('an_early_modified_key_is_the_browsers_and_never_kept', async () => {
   for (const apple of [true, false]) {
     const f = fake(apple);
     f.loading();
     const e = press({ key: 'p', code: 'KeyP', metaKey: apple, ctrlKey: !apple });
-    expect(e.defaultPrevented).toBe(true);
-    expect(f.ran).toEqual([]);
+    expect(e.defaultPrevented).toBe(false);
     await f.lands();
-    expect(f.ran).toEqual(['open']);
+    expect(f.ran).toEqual([]);
     f.stop();
   }
 });

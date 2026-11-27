@@ -24,7 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   counted as a reference, across spaces and lines, so `${env: x token=sk-ant-…}` (or `${secret:ghp_…}`) went out
   as written. Only a real `${secret:NAME}` or `${env:NAME}` is skipped now.
 - **⌘P, ⌘F, ⌘1–9 and the other modified keys pressed as the page opens no longer run twice.** The browser's print,
-  find or tab switch ran, then wisp's action once its keys arrived; now only wisp's runs.
+  find or tab switch ran, then wisp's action once its keys arrived; now the browser's runs, as it did before wisp's
+  keys were in.
 - **Push to repo from a task's worktree pushes only its history.** It used to push the worktree's whole branch,
   so commits the agent hadn't shipped went out with it, and with the saved files gone it pushed the branch with no
   history at all. It now adds just the `.wisp/` files on top of what's already on the remote branch, leaving the

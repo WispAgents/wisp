@@ -41,15 +41,15 @@ export function installKeys(w: ShellWindow, ctx: ShellContext, registry: Registr
     if (run(e)) return void e.preventDefault();
     // one of wisp's own keys pressed while its later part (builtins-later.ts: the task and row keys) is still on its
     // way, in the page's first moments: it runs once that lands, where the press found it (⇧F right after a task opens
-    // did nothing). A key typed into a box, held down, or an Enter or Space on a control (it presses that) is never
-    // kept; nothing starts early or loads again for it (laterPending), and once the parts are in it's never kept.
-    if (e.repeat || isTyping(e.target) || onControl(e) || ![...BUILT_IN_KEYS].some((k) => matches(k, e, ctx.platform.apple))) return;
+    // did nothing). Never kept: a key typed into a box, held down, an Enter or Space on a control (it presses that),
+    // and a modified one (⌘F, ⌘P, ⌘1…): the browser's own find, print or tab switch runs instead, as before the keys
+    // were wisp's (kept, it ran twice; kept and prevented, an early ⌘F with no task open did nothing at all). Nothing
+    // starts early or loads again for a kept key (laterPending), and once the parts are in nothing is kept.
+    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target) || onControl(e)) return;
+    if (![...BUILT_IN_KEYS].some((k) => matches(k, e, ctx.platform.apple))) return;
     const wait = ctx.laterPending?.();
-    // nothing on its way: its default is left alone
+    // nothing on its way: its default is left alone, as a kept key's is (the replay may not run)
     if (!wait) return;
-    // a modified one (⌘F, ⌘P, ⌘1…) is wisp's in place of the browser's: left alone, find, print or a tab switch ran
-    // and then the replay too. A plain key's default (a scroll, a letter) stays, since the replay may not run
-    if (e.metaKey || e.ctrlKey || e.altKey) e.preventDefault();
     const where = (): string => {
       const nav = ctx.nav();
       return JSON.stringify([nav.main, nav.overlays.length, ctx.selection.get() ?? null]);
