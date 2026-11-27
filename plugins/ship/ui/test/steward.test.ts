@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { stewardArg, stewardLine, stewardStart, stewardSwitch } from '../src/model/steward.ts';
+import { stewardArg, stewardLine, stewardStart, stewardStatus, stewardSwitch } from '../src/model/steward.ts';
 import type { T } from '../src/i18n.ts';
 import type { PrSummary, ShipSession, Steward } from '../src/types.ts';
 
@@ -47,4 +47,13 @@ test('the_pr_row_switch_shows_on_any_open_pr_and_restarts_in_the_mode_it_had_els
   // stopped: off, and on again keeps its mode over the setting
   expect(stewardSwitch(row({ mode: 'review', step: 'stopped' }), 'fix')).toEqual({ on: false, next: 'review' });
   expect(stewardSwitch(row(undefined, 'MERGED'), 'fix'), 'nothing to steward').toBeUndefined();
+});
+
+test('the_steward_row_says_its_status_without_repeating_steward', () => {
+  // the row's title already says Steward: its status uses the bare keys, the same states as the line
+  expect(stewardStatus(t, row({ mode: 'fix', step: 'fixing', causes: ['checks'], passes: { checks: 2 } }))).toBe('wisp.ship.steward.s.fixing{"what":"wisp.ship.steward.cause.checks","n":2}');
+  expect(stewardStatus(t, row({ mode: 'review', step: 'watching' }))).toBe('wisp.ship.steward.s.watchingReview');
+  expect(stewardStatus(t, row({ mode: 'fix', step: 'stopped', why: 'Tried 3 times' }))).toBe('wisp.ship.steward.s.stopped{"why":"Tried 3 times"}');
+  expect(stewardStatus(t, row()), 'off: the row says what it would do instead').toBeUndefined();
+  expect(stewardLine(t, row({ mode: 'fix', step: 'pushing' }))).toBe('wisp.ship.steward.pushing');
 });

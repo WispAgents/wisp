@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Keep green switch on the PR row.** Every open PR of a task's branch, whether Ship it opened it or the agent attached it with `wisp_pr`, has a small Keep green switch on its row: on, the Steward has the task fix failing checks, merge conflicts and new review comments, and wisp pushes; off stops it in one click. It replaces the Keep green / Stop Steward button that hid in More.
+- **A Steward row on the PR card.** Every open PR of a task's branch, whether Ship it opened it or the agent attached it with `wisp_pr`, has a Steward row under it: its status ("Watching checks and reviews", "Fixing failing checks (2/6)", "Green"), or what it would do when off, and a switch. On, the task fixes failing checks, merge conflicts and new review comments, and wisp pushes; off stops it in one click. The switch's tooltip says what it does. It replaces the Keep green / Stop Steward button that hid in More.
 - **Usage in the profile menu.** The menu under your profile now has Usage, just above Settings: it opens
   Settings on its Usage pane.
 - **A crew member works in several folders, and carries on with fallbacks at a usage limit.** Beside their own folder

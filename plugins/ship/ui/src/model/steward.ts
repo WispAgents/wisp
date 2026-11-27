@@ -22,21 +22,30 @@ function greenNow(s: ShipSession, st: Steward): boolean {
 
 /** The line under the PR row while the Steward is on (or just stopped); undefined without one. */
 export function stewardLine(t: T, s: ShipSession): string | undefined {
+  return say(t, s, 'wisp.ship.steward.');
+}
+
+/** The same, for the Steward's own row whose title already says Steward ("Watching checks…", "Stopped: …"). */
+export function stewardStatus(t: T, s: ShipSession): string | undefined {
+  return say(t, s, 'wisp.ship.steward.s.');
+}
+
+function say(t: T, s: ShipSession, k: 'wisp.ship.steward.' | 'wisp.ship.steward.s.'): string | undefined {
   const st = s.steward;
-  if (!st || s.pr?.state !== 'OPEN') return st?.step === 'stopped' && st.why ? t('wisp.ship.steward.stopped', { why: st.why }) : undefined;
+  if (!st || s.pr?.state !== 'OPEN') return st?.step === 'stopped' && st.why ? t(`${k}stopped`, { why: st.why }) : undefined;
   switch (st.step) {
     case 'fixing':
-      return t('wisp.ship.steward.fixing', { what: causes(t, st), n: passes(st) });
+      return t(`${k}fixing`, { what: causes(t, st), n: passes(st) });
     case 'pushing':
-      return t('wisp.ship.steward.pushing');
+      return t(`${k}pushing`);
     case 'green':
       // green is for the head it judged, once its checks ran: a new push, or checks running again, is watching
-      if (!greenNow(s, st)) return t(st.mode === 'review' ? 'wisp.ship.steward.watchingReview' : 'wisp.ship.steward.watching');
-      return st.reviewer ? t('wisp.ship.steward.greenBy', { who: st.reviewer }) : t('wisp.ship.steward.green');
+      if (!greenNow(s, st)) return t(st.mode === 'review' ? `${k}watchingReview` : `${k}watching`);
+      return st.reviewer ? t(`${k}greenBy`, { who: st.reviewer }) : t(`${k}green`);
     case 'stopped':
-      return t('wisp.ship.steward.stopped', { why: st.why || t('wisp.ship.steward.stoppedWhy') });
+      return t(`${k}stopped`, { why: st.why || t('wisp.ship.steward.stoppedWhy') });
     default:
-      return st.why ? t('wisp.ship.steward.waiting', { why: st.why }) : t(st.mode === 'review' ? 'wisp.ship.steward.watchingReview' : 'wisp.ship.steward.watching');
+      return st.why ? t(`${k}waiting`, { why: st.why }) : t(st.mode === 'review' ? `${k}watchingReview` : `${k}watching`);
   }
 }
 

@@ -15,7 +15,7 @@ import { fixing, openPrs, prChipTitle, prsOf, prTone, worstTone, type PrTone } f
 import { prStripSub, prStripTitle } from './model/strip.ts';
 import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
 import { stepsOfLive, track } from './model/ship.ts';
-import { stewardLine, stewardSwitch } from './model/steward.ts';
+import { stewardLine, stewardStatus, stewardSwitch } from './model/steward.ts';
 import { ShipRun } from './ShipRun.tsx';
 import { TONE, TONE_ICON } from './tones.ts';
 import { useBusy } from './busy.ts';
@@ -90,6 +90,11 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
   const [expanded, setExpanded] = createSignal(false);
   // Settings → Ship's Steward mode: what the PR row's switch starts with on a PR that never had one
   const stewardSetting = useSignal(props.client.entities.row<{ value?: unknown }>('setting', entityKey(props.client.home, 'ship.steward')));
+  const keep = createMemo(() => stewardSwitch(props.s, stewardSetting()?.value));
+  const flipSteward = (): void => {
+    const k = keep();
+    if (k) quiet(props.client.run(setSteward, { key: props.k, mode: k.next }));
+  };
   const prs = createMemo(() => prsOf(props.s));
   const several = (): boolean => prs().length > 1;
   // When every PR belongs to the task's own repo (already named above the card), chips show "#853" cleanly
@@ -165,22 +170,6 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           ),
       });
     }
-    // the Steward (ADR-0132) as a switch on the bar: on a shipped PR and on one the agent attached (`wisp_pr`), so
-    // it's one click to start or stop; it outlasts the other actions as the bar narrows (label first, then the switch)
-    const keep = stewardSwitch(props.s, stewardSetting()?.value);
-    if (keep) {
-      const flip = (): void => quiet(props.client.run(setSteward, { key: props.k, mode: keep.next }));
-      const label = t('wisp.ship.steward.switch');
-      out.push({
-        id: 'steward',
-        icon: 'judge',
-        label,
-        pressed: keep.on,
-        priority: 5,
-        onSelect: flip,
-        render: (form) => <OnOff checked={keep.on} onChange={flip} title={t(keep.on ? 'wisp.ship.steward.switchOff' : 'wisp.ship.steward.switchOn')} {...(form === 'full' ? { label } : { 'aria-label': label })} part="pr.strip.steward.switch" />,
-      });
-    }
     // Pinned primary action (Fix conflicts or Merge) always sits last so Toolbar pushes it cleanly to the end.
     if (props.s.pr?.state === 'OPEN' && props.s.pr.conflict && !fixing(props.s.conflictFix) && props.s.state !== 'running') {
       out.push({ id: 'fix', icon: 'merge', label: t('wisp.ship.action.fix'), priority: 'pin', onSelect: () => quiet(props.client.run(fixConflicts, { key: props.k })) });
@@ -222,11 +211,18 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           }
           onOpen={() => ship.openPane()}
         />
-        <Show when={stewardLine(t, props.s)}>
-          {(line) => (
-            <Text as="p" size="sm" tone={props.s.steward?.step === 'stopped' ? 'warn' : 'muted'} part="pr.strip.steward">
-              {line()}
-            </Text>
+        {/* the Steward (ADR-0132) on its own row: what it is, what it's doing (or what it would do), and its switch;
+            on a shipped PR and on one the agent attached (`wisp_pr`). Without an open PR, only a stop's reason stays. */}
+        <Show when={keep()} fallback={<StewardNote s={props.s} />}>
+          {(k) => (
+            <ListRow
+              part="pr.strip.keep"
+              lead={<Icon name="judge" size="sm" tone={k().on ? 'accent' : 'faint'} />}
+              title={t('wisp.ship.steward.title')}
+              sub={stewardStatus(t, props.s) ?? t('wisp.ship.steward.off')}
+              subTitle={t(k().on ? 'wisp.ship.steward.switchOff' : 'wisp.ship.steward.switchOn')}
+              actions={<OnOff checked={k().on} onChange={flipSteward} aria-label={t('wisp.ship.steward.title')} title={t(k().on ? 'wisp.ship.steward.switchOff' : 'wisp.ship.steward.switchOn')} part="pr.strip.steward.switch" />}
+            />
           )}
         </Show>
         {/* every attached PR as a wrapping chip row under the summary (never ListRow's nowrap pills column, which
@@ -271,6 +267,19 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
         </Show>
       </Stack>
     </Card>
+  );
+}
+
+/** A stopped Steward's reason after its PR merged or closed (no switch: nothing left to keep green). */
+function StewardNote(props: { readonly s: ShipSession }): JSX.Element {
+  return (
+    <Show when={stewardLine(t, props.s)}>
+      {(line) => (
+        <Text as="p" size="sm" tone={props.s.steward?.step === 'stopped' ? 'warn' : 'muted'} part="pr.strip.steward">
+          {line()}
+        </Text>
+      )}
+    </Show>
   );
 }
 
