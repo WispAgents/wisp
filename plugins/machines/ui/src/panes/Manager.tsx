@@ -1,12 +1,12 @@
-// Machines (v1 machines.js openMachines): your other computers, one card each, and how to add one. The first time:
-// the three steps up front and the form open; later the steps behind How it works and the form behind Add a machine.
-// Computers wisp found here (~/.ssh/config, Tailscale, known_hosts) are one click from a filled-in form. Every write
+// Machines (v1 machines.js openMachines), as a list and the picked one beside it (owner's pick B, 2026-11-27): This
+// computer (the grid's part), each machine with its state, and Add a machine; on a phone the list, then the pick with
+// Back. Add: the first time the three steps up front, later behind How it works. Computers wisp found here (~/.ssh/config, Tailscale, known_hosts) are one click from a filled-in form. Every write
 // shows at once on the card (the row's optimistic state) or on the pressed button; Remove, Stop and a restart that
 // stops working agents ask first.
-import { createMemo, createResource, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
+import { createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { Slot, useShell } from '@wisp/shell';
-import { Button, Checkbox, Dialog, Field, Inline, Input, Link, Stack, Steps, Text, useSignal, Wrap } from '@wisp/ui';
+import { Button, Checkbox, Dialog, Field, Inline, Input, Link, SettingsMasterDetail, Stack, Steps, Text, useSignal, Wrap, type SettingsMasterItem } from '@wisp/ui';
 import {
   addMachine,
   connect,
@@ -27,11 +27,13 @@ import {
 } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { DEFAULT_PORT, foundOf, foundTitle, nameFor, portOf, removeAsk, stopAsk, type Found } from '../view.ts';
-import { MachineCard, type CardAct } from './Card.tsx';
+import { iconOf, listLine, MachineDetail, type CardAct } from './Card.tsx';
 import '../i18n/lazy.ts';
 
 type Doc<T> = { readonly id: string; readonly body: T };
 type Ask = { readonly title: string; readonly body: string; readonly ok: string; readonly danger: boolean; readonly run: () => void };
+const HERE = 'machines:here';
+const ADD = 'machines:add';
 const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
 const quiet = (p: Promise<unknown>): void => {
   p.catch(() => {}); // the shell's onError shows the rollback toast
@@ -149,7 +151,10 @@ export function MachinesDialog(props: { readonly client: PluginClient; readonly 
   // what the rows don't carry (Update to X, working tasks, the log): read again when a card's state moves
   const sig = createMemo(() => (statuses() as readonly Doc<StatusBody>[]).map((s) => `${s.id}:${s.body.state}`).join('|'));
   const [views, { refetch }] = createResource(sig, () => c.run(listMachines, { peer }).catch((): PeerView[] => []));
-  const [editing, setEditing] = createSignal<string | null>(props.focusAdd ? '' : null);
+  const [editing, setEditing] = createSignal<string | null>(null);
+  const [sel, setSel] = createSignal<string | undefined>(props.focusAdd ? ADD : undefined);
+  const [want, setWant] = createSignal<string | undefined>();
+  const [formKey, setFormKey] = createSignal(1);
   const [picked, setPicked] = createSignal<Found | undefined>();
   const [howto, setHowto] = createSignal(false);
   const [ask, setAsk] = createSignal<Ask | undefined>();
@@ -189,10 +194,12 @@ export function MachinesDialog(props: { readonly client: PluginClient; readonly 
       if (!r.ok) throw new Error(t('machines.letin.failed'));
       shell.toast.show(t('machines.letin.done'));
     });
+  // added: its detail opens as soon as its row syncs in, and the form starts again empty
   const add = (f: MachineForm): Promise<unknown> =>
     c.run(addMachine, { peer, ...f }).then(() => {
-      setEditing(null);
+      setWant(f.address);
       setPicked(undefined);
+      setFormKey((n) => n + 1);
     }, () => undefined);
   const save = (id: string, f: MachineForm): Promise<unknown> =>
     c.run(updateMachine, { peer, id, ...f }).then(
@@ -204,85 +211,111 @@ export function MachinesDialog(props: { readonly client: PluginClient; readonly 
     );
   const pick = (h: Found): void => {
     setPicked(h);
-    setEditing(null);
-    queueMicrotask(() => setEditing('')); // a fresh form, filled in; connecting still waits for the button
+    setFormKey((n) => n + 1); // a fresh form, filled in; connecting still waits for the button
   };
-  const addOpen = (): boolean => list().length === 0 || editing() === '';
-  const body = (): JSX.Element => (
-        <Stack gap="4">
-          <Show when={props.withGrid}>
-            <Slot input="shell.settings:machines" layout="contents" />
-          </Show>
-          <Show when={list().length === 0} fallback={<Inline><Button size="sm" variant="ghost" icon="info" onClick={() => setHowto(!howto())} part="machines.howto.open">{t('machines.howto')}</Button></Inline>}>
-            <HowTo />
-          </Show>
-          <Show when={list().length > 0 && howto()}>
-            <HowTo />
-          </Show>
-          <For each={list()}>
-            {(m) => (
-              <MachineCard
-                m={m}
-                s={stateOf(m.id)}
-                view={viewOf(m.id)}
-                onAct={(a) => act(m, a)}
-                onLetIn={(p) => doLetIn(m, p)}
-                onCopy={copy}
-                editing={
-                  <Show when={editing() === m.id}>
-                    <MachineFormView m={m} hosts={hosts() ?? []} defaultCommand={defaultCommand()} cancel onSave={(f) => save(m.id, f)} onCancel={() => setEditing(null)} />
-                  </Show>
-                }
-              />
-            )}
-          </For>
-          <Show when={found().length > 0}>
-            <Stack gap="2" part="machines.found">
-              <Text weight="semibold" size="sm">
-                {t('machines.found')}
-              </Text>
-              <Wrap gap="2">
-                <For each={found()}>
-                  {(h) => (
-                    <Button size="sm" variant="ghost" icon="server" title={foundTitle(h, say)} onClick={() => pick(h)} part="machines.found.host">
-                      {h.name}
-                    </Button>
-                  )}
-                </For>
-              </Wrap>
-            </Stack>
-          </Show>
-          <Show
-            when={addOpen()}
-            fallback={
-              <Inline>
-                <Button size="sm" variant="ghost" icon="plus" onClick={() => setEditing('')} part="machines.add.open">
-                  {t('machines.add.new')}
+  // what the detail shows: this computer, a machine (its id) or Add; a pick that went away (removed) falls back
+  const ids = (): string[] => [...(props.withGrid ? [HERE] : []), ...list().map((m) => m.id), ADD];
+  const selected = createMemo((): string => {
+    const w = want();
+    const added = w ? list().find((m) => m.address === w) : undefined;
+    if (added) return added.id;
+    const s = sel();
+    if (s && ids().includes(s)) return s;
+    return list()[0]?.id ?? ADD;
+  });
+  const choose = (id: string): void => {
+    setWant(undefined);
+    setSel(id);
+    setEditing(null);
+  };
+  const items = (): SettingsMasterItem[] => [
+    ...(props.withGrid ? [{ id: HERE, label: t('machines.here'), icon: 'laptop' as const, sub: t('machines.here.sub'), group: t('machines.group.here') }] : []),
+    ...list().map((m) => {
+      const l = listLine(m, stateOf(m.id), viewOf(m.id));
+      return { id: m.id, label: m.name, icon: iconOf(m), sub: l.sub, dot: l.dot, group: t('machines.group.machines') };
+    }),
+    { id: ADD, label: t('machines.add.new'), icon: 'plus' as const, group: list().length ? t('machines.group.machines') : t('machines.group.add') },
+  ];
+  const addPane = (): JSX.Element => (
+    <Stack gap="4" part="machines.add">
+      <Inline gap="2" justify="between">
+        <Text weight="semibold">{list().length ? t('machines.add.another') : t('machines.add.first')}</Text>
+        <Show when={list().length > 0}>
+          <Button size="sm" variant="ghost" icon="info" onClick={() => setHowto(!howto())} part="machines.howto.open">
+            {t('machines.howto')}
+          </Button>
+        </Show>
+      </Inline>
+      <Show when={list().length === 0 || howto()}>
+        <HowTo />
+      </Show>
+      <Show when={found().length > 0}>
+        <Stack gap="2" part="machines.found">
+          <Text size="sm" tone="muted">
+            {t('machines.found')}
+          </Text>
+          <Wrap gap="2">
+            <For each={found()}>
+              {(h) => (
+                <Button size="sm" variant="secondary" icon="server" title={foundTitle(h, say)} onClick={() => pick(h)} part="machines.found.host">
+                  {h.name}
                 </Button>
-              </Inline>
-            }
-          >
-            <Stack gap="2" part="machines.add">
-              <Text weight="semibold">{list().length ? t('machines.add.another') : t('machines.add.first')}</Text>
-              <MachineFormView hosts={hosts() ?? []} picked={picked()} defaultCommand={defaultCommand()} cancel={list().length > 0} onSave={add} onCancel={() => setEditing(null)} />
-            </Stack>
-          </Show>
+              )}
+            </For>
+          </Wrap>
         </Stack>
+      </Show>
+      <Show when={formKey()} keyed>
+        {(_k) => <MachineFormView hosts={hosts() ?? []} picked={picked()} defaultCommand={defaultCommand()} cancel={false} onSave={add} onCancel={() => setPicked(undefined)} />}
+      </Show>
+    </Stack>
+  );
+  const detail = (): JSX.Element => (
+    <Switch>
+      <Match when={selected() === HERE}>
+        <Slot input="shell.settings:machines" layout="contents" />
+      </Match>
+      <Match when={selected() === ADD}>{addPane()}</Match>
+      <Match when={list().find((m) => m.id === selected())} keyed>
+        {(m) => (
+          <MachineDetail
+            m={m}
+            s={stateOf(m.id)}
+            view={viewOf(m.id)}
+            onAct={(a) => act(m, a)}
+            onLetIn={(p) => doLetIn(m, p)}
+            onCopy={copy}
+            editing={editing() === m.id}
+            form={() => <MachineFormView m={m} hosts={hosts() ?? []} defaultCommand={defaultCommand()} cancel onSave={(f) => save(m.id, f)} onCancel={() => setEditing(null)} />}
+          />
+        )}
+      </Match>
+    </Switch>
+  );
+  const body = (): JSX.Element => (
+    <SettingsMasterDetail
+      label={t('machines.title')}
+      items={items()}
+      selected={selected()}
+      onSelect={choose}
+      empty=""
+      stack={{ back: t('machines.title') }}
+      part="machines.md"
+    >
+      {detail()}
+    </SettingsMasterDetail>
   );
   return (
     <>
       <Show
         when={props.inOverlay}
         fallback={
-          <Dialog open onOpenChange={(o) => !o && props.onClose()} title={t('machines.title')} description={t('machines.manage.description')} size="lg" part="machines.manage.dialog">
+          <Dialog open onOpenChange={(o) => !o && props.onClose()} title={t('machines.title')} size="lg" part="machines.manage.dialog">
             {body()}
           </Dialog>
         }
       >
-        <Stack gap="4">
-          <Text tone="muted">{t('machines.manage.description')}</Text>
-          {body()}
-        </Stack>
+        {body()}
       </Show>
       <Show when={ask()}>
         {(q) => (

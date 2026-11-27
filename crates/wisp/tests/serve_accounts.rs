@@ -600,3 +600,30 @@ async fn a_sign_in_cut_by_a_restart_is_not_left_waiting() {
     assert_eq!(acc.as_ref().map(|a| a["state"].clone()), Some(json!("signedOut")), "{list}");
     drop(serve);
 }
+
+/// PostHog, alpha.15 (27 Nov): three extra Claude accounts were added and removed at once, and the removes reported
+/// 2, 3 and 1 accounts left, not 3, 2, 1. Each remove read the list, waited on its sign-in's cancel and the CLI's
+/// logout (seconds on a real CLI), then saved the list it read before: a remove that finished later put back the
+/// accounts the others had just removed. Removes at once leave the list as if they ran one after another.
+#[tokio::test(flavor = "multi_thread")]
+async fn accounts_removed_at_once_all_go() {
+    let dir = temp("serve-accounts-remove-at-once");
+    let (serve, port) = start_with(&dir, &[("FAKE_LOGIN_MS", "60000")]);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    for id in ["b1", "b2", "b3"] {
+        api.cmd("accounts.add", json!({ "agent": "claude", "id": id, "label": id, "kind": "personal" })).await;
+    }
+    let added = api.cmd("accounts.list", json!({ "agent": "claude" })).await;
+    assert_eq!(added["accounts"].as_array().unwrap().len(), 4, "{added}");
+    let gone = ["b1", "b2", "b3"].map(|id| {
+        let api = api.clone();
+        tokio::spawn(async move { api.cmd("accounts.remove", json!({ "agent": "claude", "account": id })).await })
+    });
+    for g in gone {
+        g.await.unwrap();
+    }
+    let left = api.cmd("accounts.list", json!({ "agent": "claude" })).await;
+    let ids: Vec<&str> = left["accounts"].as_array().unwrap().iter().filter_map(|a| a["id"].as_str()).collect();
+    assert_eq!(ids, ["default"], "a remove put back an account another had removed: {left}");
+    drop(serve);
+}

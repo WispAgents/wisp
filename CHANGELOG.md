@@ -30,6 +30,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Machines is a list and a detail.** The dialog lists This computer, each machine with its state (or how many
+  tasks run there) and Add a machine; the one you pick shows beside it: its button and ⋯, an update as a note with its
+  button, then what is running, where it is, its wisp version, its agents as chips and when it connects. On a phone the
+  list comes first and a machine opens on its own with Back. Fixes the phone layout that broke a machine's version
+  and agents one letter a line.
+
 - **Add to your crew has a new look.** Your new member's spirit glows at the top in its colour, and you type their
   name in large text under it, with the role and @handle. The fields are now on four tabs: Who, Their job, When,
   and Where & how. Each tab shows a tick once it's filled in. Skip any you like: Add stays in view at the bottom
@@ -51,6 +57,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A left-over worktree no longer fills the disk unseen.** "Can go" counted only left-over folders with no changes, so one with 580 changed screenshots and a 120 GB `target/` counted for nothing. Their build output counts now, and a low disk removes it (ADR-0144).
 - **Remove on This computer shows what it does.** A row says Removing… until it's gone, one harness's Remove no longer puts every row in waiting, the page updates the moment a cleanup ends instead of up to a minute later, and its toasts show (they went to a toaster that was never on screen).
 - **wisp.db grows ~6× slower while This computer is open or a task runs.** The page's 24 h history was rewritten into the change log every 10 s (7 days of it was 1.5 GB). It's written once a minute, when a point is added.
+- `wisp serve` with this home's wisp already running attaches to it and prints its address (exit 0), on its port or any `--port`; it said "port 4477 is in use: is wisp already running?" and exited 1.
 - **Sandbox: a project with a huge new folder says which folder, instead of a screen of git output.** Starting a
   sandbox from a checkout with a big untracked build folder (an 87 GB `target-agents/`) and nested agent worktrees
   ran `git add -A` until it timed out, then showed hundreds of lines of git's embedded-repository hints as the error.

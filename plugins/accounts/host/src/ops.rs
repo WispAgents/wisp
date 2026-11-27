@@ -123,13 +123,23 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
     });
     on!(s, slot, c::Remove, |st, ctx, a| {
         let h = many(&ctx, &a.agent)?;
+        // refused before anything is undone: an account that isn't there, the default
         let list = lock(&st.accounts).get(&a.agent).cloned().unwrap_or_default();
-        let next = accounts::remove(&list, &a.account).map_err(refused)?;
+        accounts::remove(&list, &a.account).map_err(refused)?;
         signin::cancel(&ctx, &st, &a.agent, &a.account).await;
         // its login goes with it
         let _ = signin::logout(&ctx, &st, h.as_ref(), &a.account).await;
         signin::forget(&st, &a.agent, &a.account);
-        save(&st, &a.agent, next).await?;
+        // the list as it is now, not as it was before the logout's wait: another remove (several at once, from the
+        // page or a formula's rollback) saved in between, and the list read above would put its account back,
+        // signed out and with no folder (PostHog alpha.15, 27 Nov: removes reported 2, 3, 1 accounts left)
+        let now_list = lock(&st.accounts).get(&a.agent).cloned().unwrap_or_default();
+        match accounts::remove(&now_list, &a.account) {
+            Ok(next) => save(&st, &a.agent, next).await?,
+            // a remove of the same account at once already took it out
+            Err(accounts::Refused::NotFound) => {}
+            Err(e) => return Err(refused(e)),
+        }
         if let Some(spec) = h.accounts() {
             folders::remove(&st.home, &a.agent, spec, &a.account).await;
         }

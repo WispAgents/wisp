@@ -1,9 +1,9 @@
-// One machine in Machines (v1 machines.js card): what it is and where, its state and one button (Connect, Try again,
-// Wake, Disconnect, Cancel), ⋯ (Edit, Restart / Stop wisp there, Remove); online: its wisp version, Update to X and its
-// coding agents; connecting or failed: the steps; failed: what to do, with Let me in (the password once) when the key
-// isn't allowed in yet.
-import { createSignal, Show, type JSX } from 'solid-js';
-import { Button, Callout, CopyCommand, Inline, Input, Link, Menu, Pill, SettingsRow, Stack, Steps, Text } from '@wisp/ui';
+// One machine in Machines, the detail beside the list (owner's pick B, 2026-11-27; v1 machines.js card): what it is and
+// where, its state and one button (Connect, Try again, Wake, Disconnect, Cancel), ⋯ (Edit, Restart / Stop wisp there,
+// Remove); online: an update as a note, then what's running, its wisp version and its coding agents; connecting or
+// failed: the steps; failed: what to do, with Let me in (the password once) when the key isn't allowed in yet.
+import { createSignal, For, Show, type JSX } from 'solid-js';
+import { Button, Callout, CopyCommand, Facts, Inline, Input, Link, Menu, Pill, SettingsRow, Stack, Steps, Text, Wrap, type Fact } from '@wisp/ui';
 import type { PeerBody, PeerView, StatusBody } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { agentsOf, kindOf, menuOf, offersLetIn, primaryOf, removeLabel, stepsOf, troubleLog, troubleTitle, updateLine, versionLine, whereOf } from '../view.ts';
@@ -24,8 +24,9 @@ export interface CardProps {
   /** the password: resolves when it went in, rejects with what to do */
   readonly onLetIn: (password: string) => Promise<void>;
   readonly onCopy: (command: string) => void;
-  /** the edit form, while it's open on this card */
-  readonly editing?: JSX.Element;
+  /** the edit form takes the place of the facts while it's open */
+  readonly editing: boolean;
+  readonly form: () => JSX.Element;
 }
 
 function LetIn(props: { readonly host: string; readonly command?: string; readonly onLetIn: (p: string) => Promise<void>; readonly onCopy: (c: string) => void }): JSX.Element {
@@ -115,35 +116,79 @@ function Trouble(props: { readonly m: PeerBody; readonly s: StatusBody; readonly
   );
 }
 
-export function MachineCard(props: CardProps): JSX.Element {
+/** What the list beside the detail says of a machine: its state, or how many tasks run there while online. */
+export function listLine(m: PeerBody, s: StatusBody | undefined, view: PeerView | undefined): { readonly sub: string; readonly dot: 'good' | 'warn' | 'bad' | 'muted' } {
+  const st = s?.state ?? 'off';
+  const tone = TONE[st] ?? 'neutral';
+  const dot = tone === 'neutral' ? 'muted' : tone;
+  const working = view?.working ?? 0;
+  if (st === 'online' && working > 0) return { sub: t('machines.working', { count: working }), dot };
+  return { sub: kindOf(m) === 'grid' && st === 'asleep' ? t('machines.state.offline') : say(`machines.state.${st}`), dot };
+}
+
+export const iconOf = (m: PeerBody): 'server' | 'laptop' | 'cloud' => ICON[kindOf(m)];
+
+/** The picked machine, beside the list (Machines, option B): its name, state and where with its one button and ⋯; an
+ *  update as a note with its button; connecting or failed: the steps and what to do; then what it is, a line each. */
+export function MachineDetail(props: CardProps): JSX.Element {
   const st = (): string => props.s?.state ?? 'off';
   const k = () => kindOf(props.m);
   const p = () => primaryOf(props.m, st());
   const stateText = (): string => (k() === 'grid' && st() === 'asleep' ? t('machines.state.offline') : say(`machines.state.${st()}`));
   const ready = () => (props.s?.remote?.agents ?? []).filter((a) => a.available);
   const busy = (): boolean => st() === 'connecting' || st() === 'reconnecting';
+  const version = (): string => props.s?.remote?.version ?? '';
+  const facts = (): Fact[] => [
+    ...(st() === 'online'
+      ? [
+          {
+            label: t('machines.fact.working'),
+            value: <Text>{(props.view?.working ?? 0) > 0 ? t('machines.tasks', { count: props.view?.working ?? 0 }) : t('machines.working.none')}</Text>,
+            part: 'machines.fact.working' as const,
+          },
+        ]
+      : []),
+    { label: t('machines.fact.where'), value: <Text>{whereOf(props.m, say)}</Text>, part: 'machines.fact.where' as const },
+    ...(st() === 'online' && version() ? [{ label: t('machines.fact.version'), value: <Text>{versionLine(version(), say)}</Text>, part: 'machines.fact.version' as const }] : []),
+    ...(st() === 'online' && agentsOf(props.s).kind !== 'unknown'
+      ? [
+          {
+            label: t('machines.fact.agents'),
+            value: (
+              <Show when={ready().length > 0} fallback={<Text tone="bad">{t('machines.noAgents')}</Text>}>
+                <Wrap gap="1">
+                  <For each={ready()}>{(a) => <Pill size="sm">{a.name || a.id}</Pill>}</For>
+                </Wrap>
+              </Show>
+            ),
+            part: 'machines.agents' as const,
+          },
+        ]
+      : []),
+    ...(k() === 'ssh'
+      ? [{ label: t('machines.fact.connects'), value: <Text>{props.m.autoConnect === false ? t('machines.connects.manual') : t('machines.connects.auto')}</Text>, part: 'machines.fact.connects' as const }]
+      : []),
+  ];
   return (
-    <Stack gap="2" part="machines.card">
+    <Stack gap="4" part="machines.detail">
       <SettingsRow
         part="machines.row"
-        wideControl
+        big
         tile={ICON[k()]}
         title={props.m.name}
         description={
-          <>
-            <Pill size="sm" variant="outline">
-              {say(`machines.kind.${k()}`)}
-            </Pill>{' '}
-            {whereOf(props.m, say)}
-          </>
-        }
-        control={
-          // the state and its button apart (owner: "Asleep" ran into Wake)
-          <Inline gap="4">
+          <Inline gap="2">
             <Pill tone={TONE[st()] ?? 'neutral'} dot live={busy()} variant="plain">
               {stateText()}
             </Pill>
-            <Button size="sm" variant={p().primary ? 'primary' : 'ghost'} onClick={() => props.onAct(p().act)} part="machines.row.go">
+            <Text size="sm" tone="muted">
+              {`· ${say(`machines.kind.${k()}`)}`}
+            </Text>
+          </Inline>
+        }
+        control={
+          <Inline gap="2">
+            <Button size="sm" variant={p().primary ? 'primary' : 'secondary'} onClick={() => props.onAct(p().act)} part="machines.row.go">
               {say(p().label)}
             </Button>
             <Menu
@@ -161,45 +206,31 @@ export function MachineCard(props: CardProps): JSX.Element {
             />
           </Inline>
         }
-        // its version, update and agents under its name, from the words' edge (QA desktop r3 #8: it sat at the dialog's edge)
-        below={
-          st() === 'online' ? (
-            <Inline gap="2" part="machines.meta">
-              <Text size="sm" tone="muted">
-                {versionLine(props.s?.remote?.version ?? '', say)}
-              </Text>
-              <Show when={props.view?.outdated}>
-                {(v) => (
-                  <Button size="sm" variant="ghost" icon="replay" title={t('machines.update.title', { name: props.m.name, version: v() })} onClick={() => props.onAct('update')} part="machines.update">
-                    {updateLine(props.s?.remote?.version ?? '', v(), say)}
-                  </Button>
-                )}
-              </Show>
-              <Show when={agentsOf(props.s).kind !== 'unknown'}>
-                <Show when={ready().length > 0} fallback={<Text size="sm" tone="bad">{t('machines.noAgents')}</Text>}>
-                  <Text size="sm" tone="muted" part="machines.agents">
-                    {ready()
-                      .map((a) => a.name || a.id)
-                      .join(' · ')}
-                  </Text>
-                </Show>
-              </Show>
-              <Show when={(props.view?.working ?? 0) > 0}>
-                <Text size="sm" tone="muted">
-                  {t('machines.working', { count: props.view?.working ?? 0 })}
-                </Text>
-              </Show>
-            </Inline>
-          ) : undefined
-        }
       />
+      <Show when={st() === 'online' && props.view?.outdated}>
+        {(v) => (
+          // the button under the words, not beside them: beside, a phone squeezed the words one a line (QA, 390 px)
+          <Callout tone="warn" icon="replay" part="machines.update">
+            <Stack gap="2">
+              <Text size="sm">{t('machines.update.note', { version: v(), current: version() || '?' })}</Text>
+              <Inline>
+                <Button size="sm" variant="secondary" title={t('machines.update.title', { name: props.m.name, version: v() })} onClick={() => props.onAct('update')} part="machines.update.go">
+                  {updateLine(version(), v(), say)}
+                </Button>
+              </Inline>
+            </Stack>
+          </Callout>
+        )}
+      </Show>
       <Show when={(busy() || st() === 'error') && (props.s?.steps?.length ?? 0) > 0}>
         <Steps items={stepsOf(props.s?.steps)} part="machines.steps" />
       </Show>
       <Show when={(st() === 'error' || st() === 'reconnecting') && props.s?.error ? props.s : undefined}>
         {(s) => <Trouble m={props.m} s={s()} view={props.view} onAct={props.onAct} onLetIn={props.onLetIn} onCopy={props.onCopy} />}
       </Show>
-      {props.editing}
+      <Show when={props.editing} fallback={<Facts items={facts()} part="machines.facts" />}>
+        {props.form()}
+      </Show>
     </Stack>
   );
 }
