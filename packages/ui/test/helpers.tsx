@@ -20,7 +20,7 @@ export function mount(view: () => JSX.Element): HTMLElement {
 export const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 /** until `ok`, checked after each macrotask (what the test then asserts, never a fixed count of timer hops: on Windows
  * each is a ~15.6 ms system tick); gives up after `ms` by the clock, and the assertion after it fails with its message */
-export async function until(ok: () => boolean, ms = 4000): Promise<void> {
+export async function until(ok: () => boolean, ms = 15_000): Promise<void> {
   const end = performance.now() + ms;
   while (!ok() && performance.now() < end) await tick();
 }

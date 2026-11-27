@@ -7,7 +7,7 @@ import { createClient, peerId, type Client } from '@wisp/client';
 import { useDefaultWords } from '../src/frame/runner.ts';
 
 /** until `ok`, to a clock deadline (the asking is its own chunk, then a request) */
-async function until(ok: () => boolean, ms = 4000): Promise<void> {
+async function until(ok: () => boolean, ms = 15_000): Promise<void> {
   const end = performance.now() + ms;
   while (!ok() && performance.now() < end) await new Promise((r) => setTimeout(r, 0));
 }

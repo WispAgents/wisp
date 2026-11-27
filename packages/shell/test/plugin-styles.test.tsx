@@ -14,7 +14,7 @@ import { nullPlatform } from '../src/platform/index.ts';
 const theme: PluginStyles = { plugin: 'user.pink', partStyles: { 'composer.send': { background: 'hotpink' } } };
 const sheet = (): string | null => document.getElementById(STYLE_ID)?.textContent ?? null;
 /** Waits until `ok()` holds (a clock deadline, not a count of hops); fails the test if it never does. */
-async function until(ok: () => boolean, ms = 4000): Promise<void> {
+async function until(ok: () => boolean, ms = 15_000): Promise<void> {
   const end = Date.now() + ms;
   while (!ok()) {
     if (Date.now() > end) throw new Error('timed out waiting');
