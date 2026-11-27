@@ -1,4 +1,4 @@
-/* /btw side questions (v1 feed.css .btw-list, .btw, .btw-q, .btw-tag, .btw-a, .btw-wait, .btw-dots, .btw-err, .btw-x). */
+/* /btw side questions (v1 feed.css .btw-list, .btw, .btw-q, .btw-tag, .btw-a, .btw-wait, .btw-err, .btw-x). */
 @layer kit {
   [data-kit='btw-list'] {
     display: grid;
@@ -56,23 +56,8 @@
     font-size: 12.5px;
     color: var(--muted);
   }
-  [data-kit='btw-dots'] {
-    display: inline-flex;
-    gap: 3px;
-  }
-  [data-kit='btw-dots'] > i {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent);
-    animation: btw-pulse 1.2s ease-in-out infinite;
-  }
-  [data-kit='btw-dots'] > i:nth-child(2) {
-    animation-delay: 0.2s;
-  }
-  [data-kit='btw-dots'] > i:nth-child(3) {
-    animation-delay: 0.4s;
-  }
+  /* answering: the kit's Liquid (ADR-0140; v1 drew three pulsing dots) */
+  [data-kit='btw-wait'] > [data-kit='liquid'] { width: var(--size-icon-md); height: var(--size-icon-md); }
   [data-kit='btw-err'] {
     display: flex;
     align-items: baseline;
@@ -119,16 +104,6 @@
   @media (hover: none) {
     [data-kit='btw-x'] {
       opacity: 1;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    [data-kit='btw-dots'] > i {
-      animation: none;
-    }
-  }
-  @keyframes btw-pulse {
-    50% {
-      opacity: 0.35;
     }
   }
 }

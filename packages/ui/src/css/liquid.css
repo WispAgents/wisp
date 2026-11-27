@@ -1,0 +1,17 @@
+/* Liquid (ADR-0140): three drops orbit the centre of a 24 grid (translations in % of that grid: transform-box is the view box), each on its own period (2.4 s, 2.9 s, 3.4 s), so they
+   meet, merge and part and the shape never repeats in a glance. Only transforms move (the shared filter melts them).
+   Waiting on you: amber and slower. Still (or reduced motion): the drops rest where they start, one soft blob. */
+@layer kit {
+  [data-kit='liquid'] { display: block; flex: none; width: var(--size-icon-md); height: var(--size-icon-md); overflow: visible; color: var(--accent); }
+  [data-kit='liquid'][data-waiting] { color: var(--warn); }
+  [data-kit='liquid-drop'] { fill: currentColor; transform-box: view-box; transform-origin: 50% 50%; }
+  [data-kit='liquid-drop']:nth-child(1) { transform: rotate(0deg) translateX(6.7%); animation: kit-liquid-a 2.4s ease-in-out infinite; }
+  [data-kit='liquid-drop']:nth-child(2) { transform: rotate(120deg) translateX(22%); animation: kit-liquid-b 2.9s ease-in-out infinite; }
+  [data-kit='liquid-drop']:nth-child(3) { transform: rotate(240deg) translateX(10.8%); animation: kit-liquid-c 3.4s ease-in-out infinite; }
+  [data-kit='liquid'][data-waiting] [data-kit='liquid-drop'] { animation-duration: 4.2s; }
+  [data-kit='liquid'][data-still] [data-kit='liquid-drop'] { animation: none; }
+  @keyframes kit-liquid-a { 0%, 100% { transform: rotate(0deg) translateX(6.7%); } 50% { transform: rotate(180deg) translateX(22%); } }
+  @keyframes kit-liquid-b { 0%, 100% { transform: rotate(120deg) translateX(22%); } 50% { transform: rotate(420deg) translateX(4.2%); } }
+  @keyframes kit-liquid-c { 0%, 100% { transform: rotate(240deg) translateX(10.8%); } 50% { transform: rotate(-60deg) translateX(22%); } }
+  @media (prefers-reduced-motion: reduce) { [data-kit='liquid-drop'] { animation: none; } }
+}

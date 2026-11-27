@@ -41,7 +41,8 @@
   [data-kit='step'][data-status='done'] [data-kit='step-mark'] { border-color: var(--good); color: var(--good); }
   [data-kit='step'][data-status='failed'] [data-kit='step-mark'] { border-color: var(--bad); color: var(--bad); }
   [data-kit='step'][data-status='current'] [data-kit='step-mark'] { border-color: var(--accent); color: var(--accent); }
-  [data-kit='step-live'] { width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-pill); background: var(--accent); animation: kit-shimmer 1.6s ease-in-out infinite; }
+  /* the current step: the kit's Liquid (ADR-0140) */
+  [data-kit='step-mark'] > [data-kit='liquid'] { width: var(--size-icon-sm); height: var(--size-icon-sm); }
   [data-kit='step-text'] { min-width: 0; }
   [data-kit='step-title'] { display: block; font-weight: var(--fw-semibold); line-height: var(--size-pill); color: var(--ink); }
   [data-kit='step'][data-status='skipped'] [data-kit='step-title'], [data-kit='step'][data-status='pending'] [data-kit='step-title'] { color: var(--muted); font-weight: var(--fw-medium); }

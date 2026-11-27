@@ -34,7 +34,8 @@
   [data-kit='file-chip-name'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   [data-kit='file-chip-size'] { flex: none; white-space: nowrap; color: var(--faint); font-variant-numeric: tabular-nums; }
   [data-kit='file-chip'][data-status='uploading'] { color: var(--muted); }
-  [data-kit='file-chip'][data-status='uploading'] > [data-kit='icon'] { animation: kit-pulse var(--dur-slower) var(--ease) infinite alternate; }
+  /* uploading: the kit's Liquid where the file's icon goes (ADR-0140) */
+  [data-kit='file-chip'] > [data-kit='liquid'] { width: var(--size-icon-sm); height: var(--size-icon-sm); }
   [data-kit='file-chip'][data-status='failed'] { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); color: var(--bad); }
   /* the @ and / menus of a prompt box: over the reply box, under New task's (v1 .mention-menu) */
   [data-kit='mn-wrap'], [data-kit='prompt-wrap'] { position: relative; }

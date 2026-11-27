@@ -182,24 +182,10 @@
   }
   [data-kit='timeline-msg-body'] { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 
-  /* ---- live: the orb (3×3 dots, a ripple from the centre) and the working panel ---- */
-  [data-kit='orb'] { display: inline-grid; grid-template-columns: repeat(3, var(--space-3)); gap: var(--space-1); flex: none; }
-  [data-kit='orb-dot'] { width: var(--space-3); height: var(--space-3); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--ink) 22%, transparent); }
-  /* the ripple fades an accent layer over each grey dot: opacity runs on the compositor, where animating the dot's
-     background restyled and repainted the dots every frame for as long as a task was live (perf-ui-r2 #4). The same
-     look: an opacity crossfade over the grey is the premultiplied mix the background's own interpolation made. */
-  [data-kit='orb'][data-live] [data-kit='orb-dot'] { position: relative; }
-  [data-kit='orb'][data-live] [data-kit='orb-dot']::after {
-    content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--accent); opacity: 0;
-    animation: kit-orb 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-  [data-kit='orb'][data-live] [data-ring='1']::after { animation-delay: 0.18s; }
-  [data-kit='orb'][data-live] [data-ring='2']::after { animation-delay: 0.36s; }
-  [data-kit='orb'][data-waiting] { grid-template-columns: var(--size-dot-lg); }
-  [data-kit='orb'][data-waiting] [data-kit='orb-dot'] { display: none; }
-  [data-kit='orb'][data-waiting] [data-kit='orb-dot']::after { content: none; }
-  [data-kit='orb'][data-waiting] [data-kit='orb-dot']:first-child { display: block; width: var(--size-dot-lg); height: var(--size-dot-lg); background: var(--warn); animation: kit-pulse 1.6s ease-in-out infinite; }
-  @keyframes kit-orb { 0%, 100% { opacity: 0; } 30% { opacity: 1; } }
+  /* ---- live: the orb (the kit's Liquid, ADR-0140) and the working panel ---- */
+  [data-kit='orb'] { display: inline-flex; flex: none; }
+  [data-kit='orb'] > [data-kit='liquid'] { width: var(--size-avatar-sm); height: var(--size-avatar-sm); }
+  [data-kit='orb']:not([data-live]) > [data-kit='liquid'] { color: var(--muted); }
 
   [data-kit='working'] {
     position: relative; display: flex; gap: var(--space-7); min-width: 0; padding: var(--space-7) var(--space-7); overflow: clip;
@@ -211,10 +197,9 @@
   [data-kit='working'][data-inline] [data-kit='working-body'] { flex-direction: row; align-items: center; gap: var(--space-6); }
   [data-kit='working'][data-inline] [data-kit='working-status'] { flex: 1 1 0; }
   [data-kit='working'][data-inline] [data-kit='working-actions'] { flex: none; }
-  /* the orb at the timeline's icon size (14 px: 3 × 4 px dots, hairline gaps), centred in the icon column */
+  /* the orb at the timeline's icon size, centred in the icon column */
   [data-kit='working'][data-inline] [data-kit='working-orb'] { justify-content: center; width: var(--size-avatar-sm); }
-  [data-kit='working'][data-inline] [data-kit='orb']:not([data-waiting]) { grid-template-columns: repeat(3, var(--space-2)); gap: var(--size-hairline); }
-  [data-kit='working'][data-inline] [data-kit='orb-dot'] { width: var(--space-2); height: var(--space-2); }
+  [data-kit='working'][data-inline] [data-kit='orb'] > [data-kit='liquid'] { width: var(--size-icon-md); height: var(--size-icon-md); }
   [data-kit='working'][data-inline] [data-kit='working-title'] { font-weight: var(--fw-medium); }
   [data-kit='working'][data-waiting] { border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
   /* the orb sits on the status line (v1 .tx-panel .w-orb): both are one line box tall, the orb centred in it */
