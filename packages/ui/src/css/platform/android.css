@@ -349,6 +349,7 @@
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] { grid-template-columns: var(--size-avatar-sm) minmax(0, 1fr) auto var(--k-feed-done,); }
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='dot'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='face'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='build-box-mark'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='icon'][data-part~='list.row.mark'] { grid-column: 1; grid-row: 1; justify-self: center; }
   /* audit E #11: a task's time ahead (Scheduled: "18:37") is a Text with the time's part, not a Time: the same column,
      right-aligned with every other time (it sat 25 px left, drawn at its box's start) */

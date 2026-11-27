@@ -36,7 +36,7 @@ without touching the user's computer or their cloud computer. Three ways in:
   (`peer`, `task`: the page opens the task; the row goes a minute later). A wisp that stopped mid-launch marks its
   `preparing` rows failed at the next start.
 - The task list shows the launches on top (`shell.list:top`, only while there is one): a task row whose mark is the
-  live dot of a working task, *Preparing the sandbox…*, or why it didn't start.
+  same box at icon size (kit `BuildBoxMark`: building, amber waiting on you, cracked once it failed), *Preparing the sandbox…*, or why it didn't start.
 - The launch's page: the title and the Sandbox pill, a `BuildBox` (kit; it replaced the glowing grid on
   2026-11-27, mock in `design/mockups/sandbox-working.html` option B): a box whose edges draw in, faces fill and lid
   lifts and settles while working; built and breathing in warn while it waits for you; grey with its lid knocked off

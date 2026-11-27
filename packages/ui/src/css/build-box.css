@@ -1,4 +1,4 @@
-/* BuildBox: an isometric box that builds itself (edges draw in, faces fill, the lid lifts and settles, then again),
+/* BuildBox (and BuildBoxMark, the same box at icon size): an isometric box that builds itself (edges draw in, faces fill, the lid lifts and settles, then again),
    with what's happening under it. Waiting: the whole box, breathing in warn. Failed: grey, lid off, a crack in bad.
    Reduced motion: the finished box, still. */
 @layer kit {
@@ -15,6 +15,18 @@
     text-align: center;
   }
   [data-kit='build-box-art'] { width: 120px; height: 120px; overflow: visible; }
+  /* the mark: the box at icon size; its strokes are thicker in its own units so they draw ~1.4 px at 16 */
+  [data-kit='build-box-mark'] { display: inline-flex; flex: none; width: var(--size-icon); height: var(--size-icon); }
+  [data-kit='build-box-mark'] [data-kit='build-box-art'] { width: 100%; height: 100%; }
+  [data-kit='build-box-mark'] [data-kit='build-box-edge'],
+  [data-kit='build-box-mark'] [data-kit='build-box-crack'] { stroke-width: 6.5; }
+  /* in a feed row it takes the dot's place: its box stays the dot's column, centred on it (as a crew face does) */
+  [data-kit='list-row'][data-layout='feed'] > [data-kit='build-box-mark'] {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+    margin-inline: calc((var(--size-v1-tight) - var(--size-icon)) / 2);
+  }
   [data-kit='build-box-shadow'] { fill: var(--ink); opacity: 0.06; transform-box: fill-box; transform-origin: center; }
   [data-kit='build-box-face'] { fill: var(--accent); opacity: var(--k-o); }
   [data-kit='build-box-edge'] {
@@ -36,20 +48,32 @@
   }
 
   /* working: one 4.8 s build, looped */
-  [data-kit='build-box'][data-state='working'] [data-kit='build-box-edge'] { animation: kit-box-draw 4.8s ease-in-out infinite; animation-delay: var(--k-d, 0s); }
-  [data-kit='build-box'][data-state='working'] [data-kit='build-box-face'] { animation: kit-box-fill 4.8s ease-in-out infinite; }
-  [data-kit='build-box'][data-state='working'] [data-kit='build-box-lid'] { animation: kit-box-lid 4.8s ease-in-out infinite; }
-  [data-kit='build-box'][data-state='working'] [data-kit='build-box-shadow'] { animation: kit-box-shadow 4.8s ease-in-out infinite; }
+  [data-kit='build-box'][data-state='working'] [data-kit='build-box-edge'],
+  [data-kit='build-box-mark'][data-state='working'] [data-kit='build-box-edge'] { animation: kit-box-draw 4.8s ease-in-out infinite; animation-delay: var(--k-d, 0s); }
+  [data-kit='build-box'][data-state='working'] [data-kit='build-box-face'],
+  [data-kit='build-box-mark'][data-state='working'] [data-kit='build-box-face'] { animation: kit-box-fill 4.8s ease-in-out infinite; }
+  [data-kit='build-box'][data-state='working'] [data-kit='build-box-lid'],
+  [data-kit='build-box-mark'][data-state='working'] [data-kit='build-box-lid'] { animation: kit-box-lid 4.8s ease-in-out infinite; }
+  [data-kit='build-box'][data-state='working'] [data-kit='build-box-shadow'],
+  [data-kit='build-box-mark'][data-state='working'] [data-kit='build-box-shadow'] { animation: kit-box-shadow 4.8s ease-in-out infinite; }
 
   /* waiting: built, breathing in warn */
-  [data-kit='build-box'][data-state='waiting'] [data-kit='build-box-edge'] { stroke: var(--warn); }
-  [data-kit='build-box'][data-state='waiting'] [data-kit='build-box-face'] { fill: var(--warn); animation: kit-box-breathe 3.2s ease-in-out infinite; }
+  [data-kit='build-box'][data-state='waiting'] [data-kit='build-box-edge'],
+  [data-kit='build-box-mark'][data-state='waiting'] [data-kit='build-box-edge'] { stroke: var(--warn); }
+  [data-kit='build-box'][data-state='waiting'] [data-kit='build-box-face'],
+  [data-kit='build-box-mark'][data-state='waiting'] [data-kit='build-box-face'] { fill: var(--warn); animation: kit-box-breathe 3.2s ease-in-out infinite; }
 
   /* failed: still, grey, the lid knocked off, cracked */
-  [data-kit='build-box'][data-state='failed'] [data-kit='build-box-edge'] { stroke: var(--line-2); }
-  [data-kit='build-box'][data-state='failed'] [data-kit='build-box-face'] { fill: var(--faint); opacity: calc(var(--k-o) * 0.35); }
-  [data-kit='build-box'][data-state='failed'] [data-kit='build-box-lid'] { transform-box: fill-box; transform-origin: right bottom; transform: translate(4px, -5px) rotate(8deg); }
-  [data-kit='build-box'][data-state='failed'] [data-kit='build-box-crack'] { display: inline; }
+  [data-kit='build-box'][data-state='failed'] [data-kit='build-box-edge'],
+  [data-kit='build-box-mark'][data-state='failed'] [data-kit='build-box-edge'] { stroke: var(--line-2); }
+  [data-kit='build-box'][data-state='failed'] [data-kit='build-box-face'],
+  [data-kit='build-box-mark'][data-state='failed'] [data-kit='build-box-face'] { fill: var(--faint); opacity: calc(var(--k-o) * 0.35); }
+  [data-kit='build-box'][data-state='failed'] [data-kit='build-box-lid'],
+  [data-kit='build-box-mark'][data-state='failed'] [data-kit='build-box-lid'] { transform-box: fill-box; transform-origin: right bottom; transform: translate(4px, -5px) rotate(8deg); }
+  [data-kit='build-box'][data-state='failed'] [data-kit='build-box-crack'],
+  [data-kit='build-box-mark'][data-state='failed'] [data-kit='build-box-crack'] { display: inline; }
+  /* at icon size the hairline grey vanishes on a light row: the mark's edges take the faint ink */
+  [data-kit='build-box-mark'][data-state='failed'] [data-kit='build-box-edge'] { stroke: var(--faint); }
 
   @keyframes kit-box-draw {
     0% { stroke-dashoffset: 60; opacity: 1; }
@@ -76,9 +100,9 @@
     50% { opacity: var(--k-o); }
   }
   @media (prefers-reduced-motion: reduce) {
-    [data-kit='build-box'] [data-kit='build-box-edge'],
-    [data-kit='build-box'] [data-kit='build-box-face'],
-    [data-kit='build-box'] [data-kit='build-box-lid'],
-    [data-kit='build-box'] [data-kit='build-box-shadow'] { animation: none; }
+    [data-kit='build-box-art'] [data-kit='build-box-edge'],
+    [data-kit='build-box-art'] [data-kit='build-box-face'],
+    [data-kit='build-box-art'] [data-kit='build-box-lid'],
+    [data-kit='build-box-art'] [data-kit='build-box-shadow'] { animation: none; }
   }
 }
