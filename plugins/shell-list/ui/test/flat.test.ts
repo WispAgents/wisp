@@ -14,7 +14,7 @@ test('Needs you and Working start open, Done and Archived folded, and a toggle f
 
 test('the_crews_section_goes_right_after_needs_you_on_the_phone_and_first_when_nothing_needs_you', async () => {
   const task = (k: string) => ({ kind: 'task' as const, key: k as never, s: {} as never });
-  const none = { pinned: [], needs: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
+  const none = { pinned: [], needs: [], shipping: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
   const sec = { ...none, needs: [task('a')], working: [task('b')] };
   const keys = (o: { crew?: boolean }, s = sec): string[] => flatten(s, { toggled: new Set(), split: false, ...o }).map(itemKey);
   expect(keys({ crew: true })).toEqual(['h:needs', 'a', 'x:shell.list:crew', 'h:working', 'b']);
@@ -28,7 +28,7 @@ test('a compare task is one card: its head and a row per run, inside its section
   const task = (k: string) => ({ kind: 'task' as const, key: k as never, s: {} as never });
   const run = (k: string) => ({ key: k as never, s: {} as never });
   const group = { kind: 'group' as const, key: 'g:1', runs: [run('r1'), run('r2')], state: 'running' as const, updatedAt: 1 };
-  const none = { pinned: [], needs: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
+  const none = { pinned: [], needs: [], shipping: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
   const items = flatten({ ...none, working: [task('a'), group as never, task('b')] }, { toggled: new Set(), split: false });
   // h:working, a, g:1, r1, r2, b
   expect(sectionGroups(items)).toEqual([
@@ -50,7 +50,7 @@ test('done_counts_every_task_and_lists_the_older_ones_past_60_v1_0_24', async ()
   // F-task-5 (v1 0.24.0: the heading said 60 and older tasks never showed). v2 keeps every row in one VirtualList (only
   // the rows on screen are in the DOM), so the count is the real total and scrolling reaches the oldest.
   const task = (k: string) => ({ kind: 'task' as const, key: k as never, s: {} as never });
-  const none = { pinned: [], needs: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
+  const none = { pinned: [], needs: [], shipping: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
   const done = Array.from({ length: 250 }, (_, i) => task(`d${i}`));
   const items = flatten({ ...none, done, archived: done.slice(0, 70) }, { toggled: new Set(['done', 'archived']), split: false });
   expect(items.find((i) => i.t === 'head' && i.id === 'done')).toMatchObject({ count: 250, open: true });
@@ -70,7 +70,7 @@ test('pick_several_the_list_holds_their_tasks_grouped_by_project_in_the_picks_or
   expect(inProject({ projectId: 'c' }, 'b,a')).toBe(false);
   expect(inProject({ projectId: 'c', also: [{ projectId: 'a', project: 'api', color: 'teal' as never }] }, 'b,a')).toBe(true);
   expect(inProject({ projectId: 'c' }, 'all')).toBe(true);
-  const none = { pinned: [], needs: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
+  const none = { pinned: [], needs: [], shipping: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
   const sec = { ...none, needs: [task('1', 'a'), task('2', 'b'), task('3', 'a')], working: [task('4', 'c', ['b'])] };
   const keys = (byProject?: string[]): string[] => flatten(sec, { toggled: new Set(), split: false, byProject }).map(itemKey);
   expect(keys(['b', 'a'])).toEqual(['h:needs', 'j:needs:b', '2', 'j:needs:a', '1', '3', 'h:working', 'j:working:b', '4']);
@@ -85,7 +85,7 @@ test('the_open_task_changes_the_flat_list_only_where_a_folded_section_holds_it_p
   const task = (k: string) => ({ kind: 'task' as const, key: k as never, s: {} as never });
   const run = (k: string) => ({ key: k as never, s: {} as never });
   const group = { kind: 'group' as const, key: 'g:1', runs: [run('r1'), run('r2')], state: 'done' as const, updatedAt: 1 };
-  const sec = { pinned: [], needs: [task('n1'), task('n2')], working: [task('w1')], scheduled: [], drafts: [], forLater: [task('l1')], done: [task('d1'), group as never, task('d2')], archived: [task('a1')] };
+  const sec = { pinned: [], needs: [task('n1'), task('n2')], shipping: [], working: [task('w1')], scheduled: [], drafts: [], forLater: [task('l1')], done: [task('d1'), group as never, task('d2')], archived: [task('a1')] };
   const ids = ['needs', 'working', 'forLater', 'done', 'archived'] as const;
   const keys = ['n1', 'n2', 'w1', 'l1', 'd1', 'd2', 'r1', 'r2', 'a1', 'gone'];
   for (let mask = 0; mask < 1 << ids.length; mask++) {

@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **The task list has a Shipping section**, under Needs you and before Working. A task you clicked Ship on moves there while wisp commits, pushes and opens its PR, and stays while that PR is open. Once the PR merges or closes it comes back to Needs you. If the task runs again (a fix for its checks), asks you something or is marked done, it shows in that section instead. Home's Needs you leaves these tasks out too.
+
 ### Fixed
 
 - **A PR you just shipped no longer shows green before its checks start.** Read the moment it opened, GitHub listed no checks yet, so the PR row said passed in green and the Steward said "green"; the checks only showed later (or after a reload). Now the row says *Waiting for checks* in amber, wisp asks GitHub every 5 s until they show, and the Steward says green only once checks have run on the head it judged.
