@@ -100,7 +100,7 @@ is a row in the list; the rail's pick (below) turns the list into that member's 
   under the cursor; a single quiet member never folds alone.
 - **Opening a member** is opening a task: its thread takes the main pane (any open task closes), or
   stacked, a page with Back. Its row looks selected; on the rail its tile is, once it's picked.
-- **The member's page** (ADR-0140, owner 2026-11-27, mock B in `design/mockups/crew-premium-B-*.png`): a profile,
+- **The member's page** (ADR-0142, owner 2026-11-27, mock B in `design/mockups/crew-premium-B-*.png`): a profile,
   not a task page. Only the buttons sit in the head (Back when stacked, Pause, ⋯, close), over the **hero**: the face
   at 82 px on a disc in the member's colour's glow, the name (28 px), the role, then chips: what it's doing (the
   status line; a pulsing dot while a job runs, amber while it asks you), its harness, what wakes it (only while

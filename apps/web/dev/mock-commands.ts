@@ -1225,6 +1225,14 @@ export const COMMANDS: Record<string, CommandFn> = {
     const n = 800 + (Math.floor(ctx.now() / 1000) % 100);
     return { ops: sessionPatch(ctx, id, [{ op: 'add', path: '/summary/pr', value: { number: n, state: 'OPEN', url: `https://github.com/example/repo/pull/${n}` } }]), result: { number: n } };
   },
+  // the PR row's Steward switch (ADR-0132): on watches the PR, off drops it
+  'ship.steward': (a, ctx) => {
+    const id = str(obj(a), 'session');
+    const mode = str(obj(a), 'mode');
+    const key = id.includes(':') ? id : `${ctx.peer}:${id}`;
+    const value = mode === 'off' ? null : { mode, step: 'watching', why: '' };
+    return { ops: sessionPatch(ctx, key, [{ op: 'add', path: '/summary/steward', value }]), result: value };
+  },
   // wisp.terminal's list for this computer, as a Mac answers it (v1's reference: In wisp first)
   'terminal.apps': () => ({
     ops: [],

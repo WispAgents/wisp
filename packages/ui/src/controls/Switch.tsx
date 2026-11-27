@@ -20,6 +20,8 @@ interface ToggleBase extends KitProps {
 
 export interface SwitchProps extends ToggleBase {
   readonly checked: boolean;
+  /** The tooltip: what switching it does, when the label alone doesn't say (a bare switch on a bar). */
+  readonly title?: string;
   readonly onChange: (checked: boolean) => void;
 }
 
@@ -40,6 +42,7 @@ export function Switch(props: SwitchProps): JSX.Element {
       role="switch"
       aria-checked={props.checked}
       aria-label={props.label ? undefined : props['aria-label']}
+      title={props.title}
       disabled={props.disabled === true}
       data-kit="switch"
       data-part={part()}

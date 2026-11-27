@@ -1,4 +1,4 @@
-/* A crew member's page (src/crew/CrewView.tsx, ADR-0140): the hero in the member's colour, tabs under it in the
+/* A crew member's page (src/crew/CrewView.tsx, ADR-0142): the hero in the member's colour, tabs under it in the
    reading column, the job box pinned at the foot. */
 @layer kit {
   [data-kit='crew-view'] { container: crewview / inline-size; --cv-pad: max(var(--space-8), calc((100% - var(--size-read-w)) / 2)); position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); overflow: hidden; }

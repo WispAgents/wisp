@@ -1,4 +1,4 @@
-// The top of a crew member's page (ADR-0140): the face in its colour's glow, the name, the role, the chips (what
+// The top of a crew member's page (ADR-0142): the face in its colour's glow, the name, the role, the chips (what
 // it's doing, how it runs) and the numbers its jobs back up. The page (CrewView) sets the colour (`data-color`).
 import { For, Show, type JSX } from 'solid-js';
 import { Icon } from '../content/Icon.tsx';

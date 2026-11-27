@@ -188,7 +188,7 @@ export interface RailMember {
   readonly avatar: string;
   /** the member's colour (v1 c-<colour>) */
   readonly color: string;
-  /** a job of theirs is running: a ring of the spirit's colour round the face (ADR-0140) */
+  /** a job of theirs is running: a ring of the spirit's colour round the face (ADR-0142) */
   readonly live?: boolean;
 }
 

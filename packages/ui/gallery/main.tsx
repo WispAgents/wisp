@@ -16,6 +16,7 @@ import { PhoneRowsGallery } from './sections/phone-rows.tsx';
 import { PhoneOverlaysGallery } from './sections/phone-overlays.tsx';
 import { PhoneControlsGallery } from './sections/phone-controls.tsx';
 import { TerminalGallery } from './sections/terminal.tsx';
+import { LoadersGallery } from './sections/loaders.tsx';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -71,6 +72,7 @@ function Gallery(): JSX.Element {
             </Button>
           </Wrap>
         </Wrap>
+        <LoadersGallery />
         <ContentGallery />
         <RichGallery />
         <ControlsGallery />

@@ -1,4 +1,4 @@
-# ADR-0140: a crew member's page is a profile, a hero and tabs
+# ADR-0142: a crew member's page is a profile, a hero and tabs
 
 - Status: accepted
 - Date: 2026-11-27

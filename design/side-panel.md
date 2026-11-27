@@ -294,7 +294,7 @@ Its head says **PR #412** (**PRs** with several), **PR** before there's one. Top
 8. **Files:** path, `+n` / `−n` in `--add`/`--del`, sorted by path. Show the first 8, then
    *and 14 more*. A file links to its diff on GitHub.
 9. Foot: **Open on GitHub** (`i-github`), *Updated 12s ago* (`--faint`), refresh (`i-replay`, the
-   ring spinner while it loads).
+   kit's Liquid while it loads, ADR-0140).
 
 **Noise, folded and never deleted** (a single row each, `--faint`, which expands on click):
 - Top-level comments by bots (`[bot]` logins or `type: Bot`): *4 bot comments*. This includes

@@ -61,7 +61,7 @@ export function pillOf(s: SessionRow, t: T): { label: string; tone: string } | u
 /** The thread: the newest `show` items, how many earlier ones there are. */
 export const thread = (jobs: readonly SessionRow[], show: number): { items: ThreadItem[]; earlier: number } => threadItems(jobs, show);
 
-// ---------- the hero (ADR-0140) ----------
+// ---------- the hero (ADR-0142) ----------
 
 const DAY = 86_400_000;
 

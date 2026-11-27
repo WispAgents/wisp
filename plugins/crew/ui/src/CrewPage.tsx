@@ -1,4 +1,4 @@
-// A crew member's page (ADR-0140): the area `shell.screen:crew` fills when a face on the rail is picked. The
+// A crew member's page (ADR-0142): the area `shell.screen:crew` fills when a face on the rail is picked. The
 // hero (face, name, role, chips for what it's doing and how it runs, its numbers), tabs (Activity: the thread of its
 // jobs, oldest first, quiet check-ins folded; Kit; Notebook; How they work), and the box that gives it a job, with
 // your earlier prompts above it. Every write shows at once (crew.update, crew.assign) and rolls back with the shell's

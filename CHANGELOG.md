@@ -11,7 +11,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   and role, chips for what they're doing, their harness, what wakes them and their folder, and their numbers (jobs
   done, this week, how long a job takes, who they hand work to). Tabs replace the side column: Activity, Kit,
   Notebook, How they work. The jobs you gave them before sit above the job box, one click away, and a member's face on
-  the rail gets a ring of their colour while they work (ADR-0140).
+  the rail gets a ring of their colour while they work (ADR-0142).
+- **A Steward row on the PR card.** Every open PR of a task's branch, whether Ship it opened it or the agent attached it with `wisp_pr`, has a Steward row under it: its status ("Watching checks and reviews", "Fixing failing checks (2/6)", "Green"), or what it would do when off, and a switch. On, the task fixes failing checks, merge conflicts and new review comments, and wisp pushes; off stops it in one click. The switch's tooltip says what it does. It replaces the Keep green / Stop Steward button that hid in More.
+- **A new loader: Liquid.** Everything that loads now shows the same mark: three drops that orbit, merge and split
+  like mercury. It replaces the dot grid on a working task, the ring on a busy button, and the pulsing dots and spinning icons elsewhere. It turns amber while a task waits on you and
+  holds still when something failed or with reduced motion on (ADR-0140).
 - **Usage in the profile menu.** The menu under your profile now has Usage, just above Settings: it opens
   Settings on its Usage pane.
 - **A crew member works in several folders, and carries on with fallbacks at a usage limit.** Beside their own folder
@@ -23,6 +27,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Add to your crew has a new look.** Your new member's spirit glows at the top in its colour, and you type their
+  name in large text under it, with the role and @handle. The fields are now on four tabs: Who, Their job, When,
+  and Where & how. Each tab shows a tick once it's filled in. Skip any you like: Add stays in view at the bottom
+  and works from every tab. Editing a crew member uses the same dialog (ADR-0141).
+
+- **A sandbox being prepared shows a box building itself** instead of the glowing grid: its edges draw in, its faces
+  fill and its lid lifts and settles. Waiting for your sign-in, the built box breathes in amber; if the sandbox
+  didn't start, the box is grey, its lid knocked off and cracked. Its row in the task list has the same box,
+  tiny, in place of the dot.
 - **Where a task runs sits beside its project.** New task reads "in wisp on This computer · Worktree": the computer
   and Worktree / In place moved from the footer's menu to a selector next to the project's, and it opens the same
   searchable list as the project picker (your computers, Add a computer…, then Worktree or In place).

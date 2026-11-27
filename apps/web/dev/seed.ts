@@ -767,7 +767,21 @@ function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Ro
   });
 }
 
-export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean; factory?: boolean }): Seeded {
+/** The `sandbox.launch` rows of ?seed=sandbox, one per state the list and the launch page draw. */
+function sandboxLaunches(now: number): Row[] {
+  const launch = (id: string, title: string, state: string, step: string, ago: number, error: string | null = null): Row => ({
+    e: 'sandbox.launch',
+    id,
+    v: { id, title, state, step, error, at: now - ago, agent: 'claude', peer: null, task: null, setup: null },
+  });
+  return [
+    launch('sbx-1', 'Fix the login rate limit', 'preparing', 'copy', 20_000),
+    launch('sbx-2', 'Profile the list query', 'signin', 'start', 2 * MIN),
+    launch('sbx-3', 'Bump the Android SDK', 'failed', 'copy', 6 * MIN, 'the box ran out of disk while copying'),
+  ];
+}
+
+export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean; factory?: boolean; sandbox?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -808,6 +822,8 @@ export function seed(o: { peer: string; now: number; extra: number; harnesses?: 
   if (o.farJob) withFarJob(o.peer, o.now, list, topics);
   if (o.factory) withFactory(o.peer, o.now, list, topics, TASKS.length + o.extra + 12);
   topics.set('list', list);
+  // three `/sandbox` launches on top of the list (?seed=sandbox): one comes up, one waits for Claude's sign-in, one failed
+  if (o.sandbox) topics.set('plugin:wisp.sandbox:launches', sandboxLaunches(o.now));
   topics.set('config', [
     { e: 'setting', id: 'shell.theme', v: { key: 'shell.theme', value: 'system', locked_by: null } },
     { e: 'setting', id: 'defaults.agent', v: { key: 'defaults.agent', value: 'claude', locked_by: null } },

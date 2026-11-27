@@ -3,6 +3,7 @@
 import { For, Match, Show, Switch, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
+import { Liquid } from '../content/Liquid.tsx';
 import '../css/blocks.css';
 
 export type StepStatus = 'done' | 'current' | 'pending' | 'skipped' | 'failed';
@@ -24,7 +25,7 @@ function StepMark(props: { readonly status: StepStatus }): JSX.Element {
         <Match when={props.status === 'done'}><Icon name="check" size="sm" /></Match>
         <Match when={props.status === 'failed'}><Icon name="x" size="sm" /></Match>
         <Match when={props.status === 'skipped'}><Icon name="skip" size="sm" /></Match>
-        <Match when={props.status === 'current'}><span data-kit="step-live" /></Match>
+        <Match when={props.status === 'current'}><Liquid /></Match>
       </Switch>
     </span>
   );

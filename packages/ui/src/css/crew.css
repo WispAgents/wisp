@@ -57,7 +57,7 @@
   [data-kit='face'][data-size='card'] { --k-face: 36px; font-size: calc(var(--k-face) * 0.55); border-radius: 50%; } /* v1 .org-card .cr-av: its emoji 0.55 of the disc */
   [data-kit='face'][data-size='lg'] { --k-face: var(--size-touch); }
   [data-kit='face'][data-size='xl'] { --k-face: calc(var(--size-avatar-lg) * 2); }
-  [data-kit='face'][data-size='hero'] { --k-face: 82px; } /* the member page's hero (ADR-0140) */
+  [data-kit='face'][data-size='hero'] { --k-face: 82px; } /* the member page's hero (ADR-0142) */
   [data-kit='face'] > [data-kit='spirit'] { width: 112%; height: 112%; margin-top: -8%; }
   [data-kit='face-emoji'] { font-size: calc(var(--k-face) * 0.55); }
   [data-kit='face'][data-dim] { opacity: 0.5; }

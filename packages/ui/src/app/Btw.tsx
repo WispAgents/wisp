@@ -3,6 +3,7 @@
 // wrong; × dismisses (or cancels one still answering). Value for value; the owner gives the words.
 import { For, Show, type JSX } from 'solid-js';
 import { Icon } from '../content/Icon.tsx';
+import { Liquid } from '../content/Liquid.tsx';
 import { Markdown } from '../content/markdown/Markdown.tsx';
 import '../css/btw.css';
 
@@ -39,11 +40,7 @@ export function BtwList(props: {
                 when={!b.pending}
                 fallback={
                   <div data-kit="btw-wait">
-                    <span data-kit="btw-dots">
-                      <i />
-                      <i />
-                      <i />
-                    </span>
+                    <Liquid />
                     {props.waiting}
                   </div>
                 }

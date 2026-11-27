@@ -1,5 +1,5 @@
 // size-ok: the page and the parts drawn inside it (job cards, facts, sections) are one kit area, read together
-// A crew member's page (design/crew.md "The member's page", ADR-0140): a profile, not a log. A hero at the top
+// A crew member's page (design/crew.md "The member's page", ADR-0142): a profile, not a log. A hero at the top
 // (the face in its colour's glow, the name, the role, chips for what it's doing and how it runs, a line of
 // numbers), tabs under it (Activity is the thread of jobs; the plugin adds Kit, Notebook, How they work), and the
 // box that gives it a job, with the jobs you gave it before as one-click starts. Data and words come from the

@@ -44,7 +44,7 @@ export function Rail(): JSX.Element {
   const shell = useShell();
   const crew = useSignal(shell.client.entities.list<CrewRow>('crew_member'));
   const sessions = useSessions();
-  // who has a job running: their face gets a ring (ADR-0140)
+  // who has a job running: their face gets a ring (ADR-0142)
   const busy = createMemo(() => new Set(sessions().flatMap((s) => (s.state === 'running' ? [crewOf(s)] : []))));
   // the crew host keeps a member in its row's body
   const members = createMemo<RailMember[]>(() =>

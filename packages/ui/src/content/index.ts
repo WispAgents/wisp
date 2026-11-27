@@ -7,6 +7,7 @@ export { Time, type TimeProps } from './Time.tsx';
 export { timeLabel, timeTitle, futureLabel } from './time-format.ts';
 export { untilLabel } from './until-label.ts';
 export { Avatar, initials, type AvatarProps } from './Avatar.tsx';
+export { Liquid, type LiquidProps } from './Liquid.tsx';
 export { Skeleton, type SkeletonProps, type SkeletonWidth } from './Skeleton.tsx';
 export { Divider, type DividerProps } from './Divider.tsx';
 export { LabelDivider, type LabelDividerProps } from './LabelDivider.tsx';

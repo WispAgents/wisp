@@ -128,7 +128,7 @@
     background: color-mix(in srgb, var(--pc) 13%, var(--surface)); font-size: calc(var(--size) * 0.55); line-height: 1;
   }
   [data-kit='cr-av'] > [data-kit='spirit'] { width: 112%; height: 112%; max-width: none; margin-top: -8%; }
-  /* working: a ring of the spirit's colour round the face (ADR-0140) */
+  /* working: a ring of the spirit's colour round the face (ADR-0142) */
   [data-kit='cl-face'][data-live] [data-kit='cr-av'] { box-shadow: 0 0 0 2px var(--rail), 0 0 0 4px var(--k-ring); }
   [data-ring='violet'] { --k-ring: var(--pc-violet); } [data-ring='teal'] { --k-ring: var(--pc-teal); } [data-ring='amber'] { --k-ring: var(--pc-amber); }
   [data-ring='rose'] { --k-ring: var(--pc-rose); } [data-ring='sky'] { --k-ring: var(--pc-sky); } [data-ring='lime'] { --k-ring: var(--pc-lime); }
