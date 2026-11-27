@@ -35,10 +35,12 @@ without touching the user's computer or their cloud computer. Three ways in:
   missing), `failed` (`error`, kept until **Try again** `sandbox.retry` or **Dismiss** `sandbox.dismiss`), or `started`
   (`peer`, `task`: the page opens the task; the row goes a minute later). A wisp that stopped mid-launch marks its
   `preparing` rows failed at the next start.
-- The task list shows the launches on top (`shell.list:top`, only while there is one): a task row whose mark is a
-  small glowing grid (kit `GlowGrid`), *Preparing the sandbox…*, or why it didn't start.
-- The launch's page: the title and the Sandbox pill, a large `GlowGrid` (accent wave while working, a slow warn breath
-  while it waits for you, still with a few cells in the bad tone once it failed), the steps, and the error with Try
+- The task list shows the launches on top (`shell.list:top`, only while there is one): a task row whose mark is the
+  live dot of a working task, *Preparing the sandbox…*, or why it didn't start.
+- The launch's page: the title and the Sandbox pill, a `BuildBox` (kit; it replaced the glowing grid on
+  2026-11-27, mock in `design/mockups/sandbox-working.html` option B): a box whose edges draw in, faces fill and lid
+  lifts and settles while working; built and breathing in warn while it waits for you; grey with its lid knocked off
+  and a crack in the bad tone once it failed, the steps, and the error with Try
   again. Missing Claude sign-in: **Sign in to Claude** right there (no trip to Settings). `claude setup-token` opens
   the browser itself and finishes through its own localhost callback, so no code is pasted: the token is read as it's
   printed and sent to the grid, and every launch waiting on it goes on by itself. The code box stays as the fallback.
