@@ -106,6 +106,15 @@ pub fn feed_override(v: Option<&str>) -> Option<String> {
     (port_ok && matches!(name, "127.0.0.1" | "localhost" | "[::1]")).then(|| v.to_owned())
 }
 
+/// The port in this wisp's own address (`http://127.0.0.1:4891`, `http://[::1]:4891/`): what the relaunch reuses.
+/// `WISP_PORT` alone missed `wisp --port 4891`, so the update came back on 4477 and the open tab never found it.
+pub fn port_of(url: &str) -> Option<u16> {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let authority = rest.split('/').next().unwrap_or("");
+    let (_, port) = authority.rsplit_once(':')?;
+    port.parse().ok().filter(|p| *p != 0)
+}
+
 /// The fetch a check makes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckRequest {

@@ -37,7 +37,7 @@ const ROW: &str = "update";
 pub mod app;
 mod hand_off;
 pub use hand_off::read_hand_off;
-use hand_off::{files, pending_of, relaunch, write_pending};
+use hand_off::{bound_port, files, pending_of, relaunch, write_pending};
 
 const MIGRATIONS: &[Migration] = &[Migration::sql(1, "CREATE TABLE update_state (id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;")];
 
@@ -347,6 +347,9 @@ impl Plugin for UpdatePlugin {
             store.migrate(OWNER, MIGRATIONS).map_err(|e| WireError::internal(e.to_string()))?;
             store.define_entity(STATE).map_err(|e| WireError::internal(e.to_string()))?;
             let clock = ctx.clock()?;
+            if let Some(port) = bound_port(&ctx) {
+                lock(&st.up).port = port;
+            }
             let c2 = ctx.clone();
             let dir = wisp_kernel::services::paths(&ctx).ok().map(|p| p.plugin_dir(ctx.plugin()));
             ctx.spawn(async move {

@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.18] - 2026-11-27
+
 ### Added
 
 - **MCP Events, both ways.** A remote connector that serves MCP Events (SEP-3415) can start a task or wake a crew
@@ -65,6 +67,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A left-over worktree no longer fills the disk unseen.** "Can go" counted only left-over folders with no changes, so one with 580 changed screenshots and a 120 GB `target/` counted for nothing. Their build output counts now, and a low disk removes it (ADR-0144).
 - **Remove on This computer shows what it does.** A row says Removing… until it's gone, one harness's Remove no longer puts every row in waiting, the page updates the moment a cleanup ends instead of up to a minute later, and its toasts show (they went to a toaster that was never on screen).
 - **wisp.db grows ~6× slower while This computer is open or a task runs.** The page's 24 h history was rewritten into the change log every 10 s (7 days of it was 1.5 GB). It's written once a minute, when a point is added.
+- **Update and restart keeps the port wisp was started on.** With `wisp --port N` (or `npx wisp-agents --port N`), clicking Update installed the new version and then started it on 4477, so the open tab never came back (or, with another wisp on 4477, the new one quit); it now restarts on the same port.
 - `wisp serve` with this home's wisp already running attaches to it and prints its address (exit 0), on its port or any `--port`; it said "port 4477 is in use: is wisp already running?" and exited 1.
 - **Sandbox: a project with a huge new folder says which folder, instead of a screen of git output.** Starting a
   sandbox from a checkout with a big untracked build folder (an 87 GB `target-agents/`) and nested agent worktrees
@@ -78,11 +81,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   grid, but wisp Cloud already ran the new grid, which didn't have them. The new grid now signs these links
   (`POST /_grid/media`) and accepts them, at a cloud wisp's address and at a computer's. A link opens only its own
   file, for an hour, and stops working when you remove the phone from your account.
-
-## [1.0.0-alpha.18] - 2026-11-27
-
-### Fixed
-
 - **The Update pill shows up on its own each morning.** wisp looked for a new version at start and then only a full
   day after that look, so a release out a few hours after you opened wisp stayed hidden until the next day (or until
   you had already updated with npm and restarted). It now also looks every morning at 9 on your computer's clock (or
@@ -161,6 +159,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (with **Open PR**) after a reload, ⋯ → **Push to repo** toasts the branch and its PR, and pushing again after the
   files went out answers the earlier push instead of "Save to repo again". Saving again after a push offers **Push**
   again instead of the old "Pushed to …".
+
 ## [1.0.0-alpha.17] - 2026-11-27
 
 ### Changed
