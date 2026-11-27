@@ -137,7 +137,43 @@ test('a_question_quoting_a_long_path_breaks_inside_its_card_audit_g_tasks_5', ()
   );
   const text = host.querySelector('[data-part="task.ask.question"]');
   expect(text?.textContent).toBe(q);
-  expect(text?.getAttribute('data-break')).not.toBeNull();
+  // the kit's markdown (overflow-wrap: anywhere)
+  expect(text?.getAttribute('data-kit')).toBe('markdown');
+  dispose();
+  host.remove();
+});
+
+// Owner 2026-11-27 ("so ugly"): a long ask_user question showed its markdown marks (`**`, backticks) in one blob, and
+// its answers were buttons cut off with "…". The question renders as markdown; each answer is v1's numbered .opt with
+// its whole text.
+test('a_question_renders_its_markdown_and_each_answer_whole_ask_card_markdown', () => {
+  const answers: string[] = [];
+  const host = document.createElement('div');
+  document.body.append(host);
+  const q = 'After Save to repo, what should **Push** do?\n\n- **Task merged**: files go into the `main` checkout.\n- Not in question.';
+  const long = 'Open a PR: commit on a new wisp/history-<id> branch from origin\'s base (never touching your checkout), push it';
+  const a = askOf({ body: { ext: { 'wisp.runtime': { ask: { id: 'm', question: q, options: [long, 'Commit only'] } } } } });
+  if (!a) throw new Error('no ask');
+  const dispose = render(
+    () => (
+      <KitProvider t={(k) => k}>
+        <AskCard ask={a} t={t} onAnswer={(x) => answers.push(x)} />
+      </KitProvider>
+    ),
+    host,
+  );
+  // the call is the headline, the explanation under it is context: both markdown, never its marks
+  const head = host.querySelector('[data-part="task.ask.question"]') as HTMLElement;
+  const more = host.querySelector('[data-part="task.ask.context"]') as HTMLElement;
+  expect(head.textContent).toBe('After Save to repo, what should Push do?');
+  expect(head.querySelector('strong')?.textContent).toBe('Push');
+  expect(more.textContent).not.toContain('**');
+  expect(more.textContent).not.toContain('`');
+  expect(more.querySelectorAll('li')).toHaveLength(2);
+  const opts = [...host.querySelectorAll<HTMLButtonElement>('[data-part="task.ask.option"]')];
+  expect(opts.map((o) => o.textContent)).toEqual([`1${long}`, '2Commit only']);
+  opts[0]?.click();
+  expect(answers).toEqual([long]);
   dispose();
   host.remove();
 });
