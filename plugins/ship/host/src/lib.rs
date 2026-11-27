@@ -10,6 +10,7 @@ pub mod flow;
 pub mod follow;
 pub mod gh;
 pub mod ops;
+pub mod pasted;
 pub mod ship;
 pub mod steward;
 pub mod tasks;

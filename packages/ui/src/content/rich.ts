@@ -1,5 +1,6 @@
 // Markdown, Diff and Code.
 export { Markdown, type MarkdownProps } from './markdown/Markdown.tsx';
+export { LinkRenderer, LinkedText, textRuns, useLinkRenderer, type RenderLink } from './markdown/links.tsx';
 export { parseMarkdown } from './markdown/block.ts';
 export { parseInline } from './markdown/inline.ts';
 // Renamed on the way out: the kit already has an `Inline` (the row layout).

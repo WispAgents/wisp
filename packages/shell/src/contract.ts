@@ -89,6 +89,9 @@ export const INPUTS = {
   // added 2026-11-25 (additive): what takes the task body's place, under its head, in place of the turns, details and
   // reply box (v1 term.css .tui-term: a terminal task's CLI); shown while one of its extensions' `if` holds for the task
   'shell.task:screen': 'task.screen',
+  // added 2026-11-27 (additive, ADR-0145): a link in the open task's turns (its prompts, its answers), drawn by the
+  // first extension whose `if` holds for its `href` (wisp.ship: a GitHub PR as a live chip); none: the link as it was
+  'shell.task:link': 'task.link',
   // added 2026-11-10 (additive): under each turn (its key as the id), what plugins say of it (why it stopped, held, the receipt)
   'shell.turn:foot': 'turn.foot',
   // added 2026-11-25 (additive, ADR-0125): over each turn (its key as the id), a line before it (shell-task's harness
@@ -177,6 +180,8 @@ export interface ExtensionProps<C = Record<string, unknown>> {
   pickAgent?: (agent: string) => void;
   /** added 2026-11-18 (additive): on Home's inputs, the harness in Home's prompt box now ('' before one is picked) */
   agent?: () => string;
+  /** added 2026-11-27 (additive, ADR-0145): on `shell.task:link`, the link's URL */
+  href?: string;
 }
 
 /** A task's menu in sections, from the task itself to Delete (v1 #786, design/ux.md → Task menus): what the bar

@@ -3,3 +3,4 @@ export { ToneChip, type ToneChipProps } from './ToneChip.tsx';
 export { CheckList, CheckRow, type CheckListProps, type CheckRowProps, type CheckState } from './CheckRow.tsx';
 export { DockBar, type DockBarProps } from './DockBar.tsx';
 export { FileStatList, FileStatRow, FoldRow, PaneHead, type FileStatRowProps, type FoldRowProps, type PaneHeadProps } from './PaneParts.tsx';
+export { PrPeek, type PrPeekProps } from './PrPeek.tsx';

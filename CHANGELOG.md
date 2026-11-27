@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Paste a PR link, and the task follows that PR.** A GitHub pull request link in a prompt or a follow-up (from the composer, `wisp task`, an MCP `wisp_task`, Telegram, Slack…) attaches that PR to the task, the way `wisp_pr` does: it shows on the row, the PR card and the panel with its checks and reviews, kept current, with Merge. A PR's link in the task's turns, yours or the agent's, now reads as its live chip in the PR's colour; hovering it shows the title, state, branch → base and checks, and a click opens the PR beside the task. Switch it off with Settings → General → Follow PRs I link (ADR-0145).
+
+## [1.0.0-alpha.18] - 2026-11-27
+
+### Added
+
 - **This computer, in three tabs.** Overview opens on one line that says whether the computer is fine and why (memory short, disk almost full, automations waiting, a process left running, or *Room to spare*), then memory, CPU and disk as bars with a mark where automations start to wait, what needs you, what runs now, and the last 24 hours as a chart and one sentence. A process left running is named by what it runs (`python3 -m http.server`), not its interpreter's path. Space has the disk as one bar (build output, wisp's folders, everything else, free), each folder's build output with Remove and Remove all, Free up space and the harnesses' folders. Limits has automations. A warning on top says when the disk runs short, with one button that frees the build output, or when memory is under the floor (ADR-0144).
 - **Build output goes first.** `target/`, `node_modules/` and other folders the next build makes again can be removed on their own, from Space or with `wisp worktrees clean --build`. The folder, its branch and its uncommitted changes stay. Under 10 GB free, the hourly cleanup removes the build output of left-over folders, then of idle tasks', before it removes any folder (ADR-0144).
 - **Merge risk.** Turn on Settings → General → Merge risk, and another harness than the one that wrote a task reads each of its open pull requests (the ones Ship it opened and the ones its agent attached) and says how risky merging is: low, medium or high, a score and why. The PR card gets a Merge risk row under the Steward with the riskiest PR's verdict, each PR's chip says its own, the PR panel lists the reasons with Judge again, and Merge turns red for a PR judged high. A push judges that PR again. Off by default (ADR-0143).
@@ -71,11 +77,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   grid, but wisp Cloud already ran the new grid, which didn't have them. The new grid now signs these links
   (`POST /_grid/media`) and accepts them, at a cloud wisp's address and at a computer's. A link opens only its own
   file, for an hour, and stops working when you remove the phone from your account.
-
-## [1.0.0-alpha.18] - 2026-11-27
-
-### Fixed
-
 - **The Update pill shows up on its own each morning.** wisp looked for a new version at start and then only a full
   day after that look, so a release out a few hours after you opened wisp stayed hidden until the next day (or until
   you had already updated with npm and restarted). It now also looks every morning at 9 on your computer's clock (or
@@ -154,6 +155,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (with **Open PR**) after a reload, ⋯ → **Push to repo** toasts the branch and its PR, and pushing again after the
   files went out answers the earlier push instead of "Save to repo again". Saving again after a push offers **Push**
   again instead of the old "Pushed to …".
+
 ## [1.0.0-alpha.17] - 2026-11-27
 
 ### Changed

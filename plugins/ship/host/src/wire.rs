@@ -291,11 +291,14 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) -> Arc<Known> {
         }
     });
     let sl = slot.clone();
-    s.on::<TurnStarted, _, _>(move |_ctx, e| {
+    s.on::<TurnStarted, _, _>(move |ctx, e| {
         let sl = sl.clone();
         async move {
             if let Some(ship) = sl.get() {
                 ship.tasks.set_live(e.session_id.as_str(), true);
+                // a PR link in the prompt attaches that PR (ADR-0145): off the event's way, gh takes a while
+                let c = ctx.clone();
+                ctx.spawn(async move { crate::pasted::turn_started(&c, &ship, &e).await });
             }
         }
     });
