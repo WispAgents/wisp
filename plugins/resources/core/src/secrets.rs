@@ -62,15 +62,35 @@ fn suggest_masked(s: &str, key: &str) -> String {
     suggest(what, key)
 }
 
+/// `s` without its `${secret:NAME}` references: they are the fix, never a secret, though `secret:NAME_OF_IT` reads as
+/// `secret: <a long value>` to the scanner's generic pattern (the docs' own Linear trigger was refused).
+fn without_secret_refs(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(at) = rest.find("${secret:") {
+        out.push_str(&rest[..at]);
+        match rest[at..].find('}') {
+            Some(end) => rest = &rest[at + end + 1..],
+            None => {
+                out.push_str(&rest[at..]);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 fn walk(v: &Value, path: &str, key: &str, secret: bool, out: &mut Vec<String>) {
     match v {
         Value::String(s) => {
+            let scanned = without_secret_refs(s);
             // `wisp export` masked it (a token stored before plans checked for them): applying it as it is would put
             // the mask's text in place of the real token, and no pattern matches it any more (AAC-4)
             if s.contains(MASK) {
                 let name = suggest_masked(s, key);
                 out.push(format!("{path} is a masked value from wisp export: wisp secret set {name} and write ${{secret:{name}}}"));
-            } else if let Some(hit) = secret_scan::scan_secrets(s).first() {
+            } else if let Some(hit) = secret_scan::scan_secrets(&scanned).first() {
                 let name = suggest(hit.what, key);
                 out.push(format!("{path} looks like {}: wisp secret set {name} and write ${{secret:{name}}}", hit.what));
             } else if secret {
@@ -133,6 +153,21 @@ mod tests {
 
     fn connector() -> KindInfo {
         KindInfo::new("connector", "connectors", "x", json!({})).secret_field("headers").secret_field("env")
+    }
+
+    /// A `${secret:NAME}` reference is the fix the plan asks for, never a problem, wherever it sits (a trigger's
+    /// `secret: "${secret:LINEAR_WEBHOOK_SECRET}"` was refused as "a secret value"); a real value beside one still is.
+    #[test]
+    fn a_secret_reference_is_never_a_secret() {
+        let trigger = KindInfo::new("trigger", "triggers", "x", json!({}));
+        let r =
+            Resource::new("trigger", "from-linear", json!({ "secret": "${secret:LINEAR_WEBHOOK_SECRET}", "header": "Linear-Signature" }));
+        assert_eq!(problems(&trigger, &r), Vec::<String>::new());
+        let r = Resource::new("connector", "x", json!({ "headers": { "Authorization": "Bearer ${secret:GH_TOKEN}" } }));
+        assert_eq!(problems(&connector(), &r), Vec::<String>::new());
+        let r = Resource::new("trigger", "x", json!({ "note": "${secret:A} api_key=abcdefghijklmnop1234" }));
+        assert_eq!(problems(&trigger, &r).len(), 1, "a real value beside a reference is still caught");
+        assert_eq!(without_secret_refs("a ${secret:B} c ${secret:unclosed"), "a  c ${secret:unclosed");
     }
 
     /// AAC-4: a literal token in a connector's headers or env was stored as it was, and exported to anyone.
