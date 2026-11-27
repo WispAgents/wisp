@@ -7,13 +7,19 @@
 //! - **The topic:** a durable subscription (`feed`) keeps the last 5 000 events as `events_view` rows, each
 //!   on `events:*`, `events:<area>.*` and `events:<type>`, so a client subscribes and resumes from its
 //!   cursor like any topic (no second protocol). The row and the cursor are one write.
-//! - **MCP:** `wisp_events` (read).
+//! - **MCP:** `wisp_events` (read), and MCP Events (`mcp.rs`, ADR-0146): `events/list` and `events/poll` for any
+//!   MCP client, over `events.poll`.
 //! - **Sinks** (`sinks.rs`): `events.sink@1`, and a signed webhook.
 //!
 //! resources: data-only (the view is a copy of the log for the topic; a sink's row is how it's doing. The
 //! sinks themselves are the `events.sinks` setting, wisp.settings' `setting` kind).
 
+mod delivery;
+mod mcp;
+mod schema;
 mod sinks;
+mod stream;
+mod webhook;
 
 use std::sync::Arc;
 
@@ -189,9 +195,15 @@ fn catalogue(ctx: &Ctx) -> Value {
 
 /// The view rows for a batch of events (and, each time one's seq is a multiple of 500, the old rows trimmed), in the
 /// handler's one write: a turn's end logs its events together, and a write each was a commit each (ADR-0088).
-async fn feed(ctx: &Ctx, envs: &[Arc<wisp_kernel::EventEnvelope>]) -> Result<()> {
+async fn feed(ctx: &Ctx, envs: &[Arc<wisp_kernel::EventEnvelope>], newest_seq: &tokio::sync::watch::Sender<u64>) -> Result<()> {
     let rows: Vec<(u64, Row)> = envs.iter().filter(|e| e.ty != wisp_kernel::durable::GAP).map(|e| view_row(e)).collect();
     let Some(newest) = rows.iter().map(|(seq, _)| *seq).max() else { return Ok(()) };
+    // the open `events/stream`s read the log past their cursor (`mcp.rs`): no stream polls it
+    newest_seq.send_if_modified(|n| {
+        let more = newest > *n;
+        *n = (*n).max(newest);
+        more
+    });
     let trim = rows.iter().any(|(seq, _)| seq.is_multiple_of(500)) && newest > VIEW_KEEP;
     store(ctx)?
         .write(move |w| {
@@ -271,9 +283,16 @@ impl Plugin for EventsPlugin {
             Ok(serde_json::to_value(log(&ctx)?.parked().await?).unwrap_or_default())
         });
         s.command::<api::Ls, _, _>(|ctx, _call, _a| async move { Ok(catalogue(&ctx)) });
+        s.command::<api::Poll, _, _>(|ctx, call, a| async move { mcp::poll(&ctx, &call, a).await });
+        let (newest_seq, _) = tokio::sync::watch::channel(0u64);
+        let newest_seq = Arc::new(newest_seq);
+        mcp::register(s, &newest_seq);
         sinks::register(s);
         s.contribute(&wisp_mcp_api::TOOL_POINT, Arc::new(mcp_tool()));
-        s.on_durable_batch("feed", "*", |ctx, _call, envs| async move { feed(&ctx, &envs).await });
+        s.on_durable_batch("feed", "*", move |ctx, _call, envs| {
+            let newest_seq = newest_seq.clone();
+            async move { feed(&ctx, &envs, &newest_seq).await }
+        });
         s.on_start(|ctx| async move {
             let st = store(&ctx)?;
             st.migrate(OWNER, MIGRATIONS).map_err(|e| WireError::internal(e.to_string()))?;

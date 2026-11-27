@@ -18,6 +18,6 @@ pub mod telemetry;
 pub mod user;
 pub mod words;
 
-pub use dispatch::{Call, Extra, Outcome, Plan, Step, Who, assemble, finish, plan, tools_list};
+pub use dispatch::{Call, Extra, Outcome, Plan, Served, Step, Who, assemble, finish, plan, plan_served, tools_list};
 pub use error::McpError;
 pub use plan::{AgentAction, agent_action, owner_text};

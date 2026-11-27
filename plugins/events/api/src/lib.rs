@@ -31,6 +31,29 @@ pub struct TailArgs {
     pub limit: Option<u32>,
 }
 
+/// `events.poll` (ADR-0146): MCP Events' `events/poll` (SEP-3415) over the durable log, one subscription a call.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "events/")]
+pub struct PollArgs {
+    /// a durable event type (`task.finished`, `pr.opened`; `events.ls` lists them)
+    pub name: String,
+    /// `{ subject }`: only what's about this task
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    #[ts(type = "Record<string, unknown>")]
+    pub arguments: Value,
+    /// where the last poll ended; none (or null): start from now, with no events
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    /// at most this many events (50 by default, 500 at most); `hasMore` says when more are waiting
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_events: Option<u32>,
+    /// leave out events older than this (ms)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number")]
+    pub max_age_ms: Option<u64>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "events/")]
 pub struct SeqArgs {
@@ -106,5 +129,7 @@ command!(Why = "events.why" read yes : SeqArgs => Value);
 command!(Retry = "events.retry" : SeqArgs => Value);
 command!(ParkedCmd = "events.parked" read yes : NoArgs => Value);
 command!(Ls = "events.ls" read yes : NoArgs => Value);
+command!(Poll = "events.poll" read yes : PollArgs => Value);
+command!(Webhooks = "events.webhooks" read yes : NoArgs => Value);
 command!(Sinks = "events.sinksStatus" read yes : NoArgs => Value);
 command!(Resume = "events.resume" : NameArgs => Value);

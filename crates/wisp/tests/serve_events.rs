@@ -118,9 +118,197 @@ async fn capped_agent_sees_only_its_task_events_over_mcp() {
     // asking for another task's is refused
     let refused = mcp(&api.http, port, &agent, json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "wisp_events", "arguments": { "subject": other } } })).await;
     assert!(refused.to_string().contains("its own task"), "{refused}");
+    // MCP Events (ADR-0146): its poll is scoped the same way, in SEP-3415's Forbidden
+    let poll = json!({ "jsonrpc": "2.0", "id": 3, "method": "events/poll", "params": { "name": "turn.finished", "arguments": { "subject": other }, "cursor": "0" } });
+    let refused = mcp(&api.http, port, &agent, poll).await;
+    assert_eq!(refused["error"]["code"], -32024, "{refused}");
+    assert!(refused["error"]["message"].as_str().is_some_and(|m| m.contains("its own task")), "the scope refused it: {refused}");
+    // its own task's: answered
+    let own = json!({ "jsonrpc": "2.0", "id": 4, "method": "events/poll", "params": { "name": "turn.finished", "cursor": "0" } });
+    let mine = mcp(&api.http, port, &agent, own).await;
+    assert!(mine["result"]["events"].is_array(), "{mine}");
+    assert!(!mine.to_string().contains(&other), "{mine}");
     // the user sees both
     let all = api.cmd("events.tail", json!({})).await;
     assert!(all.to_string().contains(&other));
+    drop(serve);
+}
+
+/// MCP Events (SEP-3415, ADR-0146) on wisp's own MCP endpoint: the extension declared, the durable types listed, a
+/// poll with no cursor starting from now, the next one bringing what happened since (once), a modern request's
+/// `resultType`, and the codes for an unknown type and a subscribe without its delivery.
+#[tokio::test(flavor = "multi_thread")]
+async fn mcp_events_poll_brings_what_happened_after_the_cursor_once() {
+    let dir = temp("serve-events-mcp-events");
+    let (serve, port) = start_with(&dir, &[]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let rpc = |id: u32, method: &str, params: Value| json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
+    let d = mcp(&api.http, port, &[], rpc(1, "server/discover", json!({}))).await;
+    assert!(d["result"]["capabilities"]["extensions"]["io.modelcontextprotocol/events"].is_object(), "{d}");
+    let init = mcp(&api.http, port, &[], rpc(2, "initialize", json!({ "protocolVersion": "2025-06-18" }))).await;
+    assert!(init["result"]["capabilities"]["extensions"]["io.modelcontextprotocol/events"].is_object(), "{init}");
+    let list = mcp(&api.http, port, &[], rpc(3, "events/list", json!({}))).await;
+    let names: Vec<&str> =
+        list["result"]["events"].as_array().unwrap_or_else(|| panic!("{list}")).iter().filter_map(|e| e["name"].as_str()).collect();
+    assert!(names.contains(&"turn.finished") && !names.contains(&"turn.activity"), "durable types only: {names:?}");
+    // no cursor: from now on, nothing yet
+    let first = mcp(&api.http, port, &[], rpc(4, "events/poll", json!({ "name": "turn.finished", "cursor": null }))).await;
+    assert_eq!(first["result"]["events"], json!([]), "{first}");
+    let c0 = first["result"]["cursor"].as_str().unwrap().to_owned();
+    let id = task(&api, &dir, "fix the add bug").await;
+    until_tail(&api, json!({ "type": "turn.finished", "subject": id }), "the turn's end", |l| !l.is_empty()).await;
+    let modern = json!({ "name": "turn.finished", "cursor": c0, "_meta": { "io.modelcontextprotocol/protocolVersion": "2026-07-28" } });
+    let next = mcp(&api.http, port, &[], rpc(5, "events/poll", modern)).await;
+    assert_eq!(next["result"]["resultType"], "complete", "{next}");
+    let got = next["result"]["events"].as_array().unwrap();
+    assert!(got.iter().any(|e| e["_meta"]["dev.trywisp/subject"] == json!(id)), "{next}");
+    assert!(
+        got.iter()
+            .all(|e| e["name"] == "turn.finished" && e["eventId"].is_string() && e["timestamp"].as_str().is_some_and(|t| t.ends_with('Z')))
+    );
+    let c1 = next["result"]["cursor"].as_str().unwrap().to_owned();
+    // its payload schema, read from what's kept: the fields a turn.finished has, every sample's required
+    let list = mcp(&api.http, port, &[], rpc(9, "events/list", json!({}))).await;
+    let tf = list["result"]["events"].as_array().unwrap().iter().find(|e| e["name"] == "turn.finished").cloned().unwrap();
+    let schema = &tf["payloadSchema"];
+    assert_eq!(schema["type"], "object", "{schema}");
+    assert!(
+        schema["properties"]["sessionId"]["type"] == "string"
+            && schema["required"].as_array().is_some_and(|r| r.contains(&json!("sessionId"))),
+        "{schema}"
+    );
+    assert!(schema["description"].as_str().is_some_and(|d| d.contains("inferred")), "{schema}");
+    assert_ne!(c1, c0);
+    let again = mcp(&api.http, port, &[], rpc(6, "events/poll", json!({ "name": "turn.finished", "cursor": c1 }))).await;
+    assert!(!again["result"]["events"].as_array().unwrap().iter().any(|e| e["_meta"]["dev.trywisp/subject"] == json!(id)), "once: {again}");
+    let unknown = mcp(&api.http, port, &[], rpc(7, "events/poll", json!({ "name": "nope.never", "cursor": null }))).await;
+    assert_eq!(unknown["error"]["code"], -32023, "{unknown}");
+    let hook = mcp(&api.http, port, &[], rpc(8, "events/subscribe", json!({ "name": "turn.finished" }))).await;
+    assert_eq!(hook["error"]["code"], -32602, "a webhook needs its delivery: {hook}");
+    drop(serve);
+}
+
+/// `events/stream` (push, ADR-0146): one POST answered with SSE. `active` first (with the subscription id and the
+/// granted heartbeat), then the turn's `turn.finished` as it happens, with the cursor past it; a type that isn't kept is
+/// refused before any stream, and a stream inside a batch is refused (it can't be sent there).
+#[tokio::test(flavor = "multi_thread")]
+async fn mcp_events_stream_pushes_each_event_as_it_happens() {
+    let dir = temp("serve-events-mcp-stream");
+    let (serve, port) = start_with(&dir, &[]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let open = |body: Value| {
+        api.http.post(format!("http://127.0.0.1:{port}/api/mcp")).header("content-type", "application/json").body(body.to_string()).send()
+    };
+    let req = json!({ "jsonrpc": "2.0", "id": "s1", "method": "events/stream", "params": { "name": "turn.finished", "cursor": null, "heartbeatMs": 5000 } });
+    let mut r = open(req).await.unwrap();
+    assert_eq!(r.headers().get("content-type").and_then(|v| v.to_str().ok()), Some("text/event-stream"));
+    let mut text = String::new();
+    let mut next = async |text: &mut String, until: &dyn Fn(&str) -> bool| {
+        let at = Instant::now();
+        while !until(text) {
+            assert!(at.elapsed() < Duration::from_secs(30), "the stream said: {text}");
+            if let Ok(Ok(Some(c))) = tokio::time::timeout(Duration::from_secs(1), r.chunk()).await {
+                text.push_str(&String::from_utf8_lossy(&c));
+            }
+        }
+    };
+    next(&mut text, &|t| t.contains("notifications/events/active")).await;
+    let frames = |t: &str| -> Vec<Value> {
+        t.lines().filter_map(|l| l.strip_prefix("data: ")).filter_map(|d| serde_json::from_str(d).ok()).collect()
+    };
+    let active = frames(&text).into_iter().find(|f| f["method"] == "notifications/events/active").unwrap();
+    assert_eq!(active["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"], "s1");
+    assert_eq!(active["params"]["heartbeatMs"], 5000);
+    let id = task(&api, &dir, "fix the add bug").await;
+    next(&mut text, &|t| t.contains("notifications/events/event") && t.contains(id.as_str())).await;
+    let ev = frames(&text).into_iter().find(|f| f["method"] == "notifications/events/event").unwrap();
+    assert_eq!(ev["params"]["name"], "turn.finished");
+    assert_eq!(ev["params"]["cursor"], ev["params"]["eventId"]);
+    assert_eq!(ev["params"]["_meta"]["dev.trywisp/subject"], json!(id));
+    // quiet: a heartbeat carries the cursor
+    next(&mut text, &|t| t.contains("notifications/events/heartbeat")).await;
+    drop(r);
+    let bad =
+        mcp(&api.http, port, &[], json!({ "jsonrpc": "2.0", "id": 2, "method": "events/stream", "params": { "name": "turn.activity" } }))
+            .await;
+    assert_eq!(bad["error"]["code"], -32023, "{bad}");
+    let batch =
+        mcp(&api.http, port, &[], json!([{ "jsonrpc": "2.0", "id": 3, "method": "events/stream", "params": { "name": "turn.finished" } }]))
+            .await;
+    assert_eq!(batch[0]["error"]["code"], -32026, "{batch}");
+    // wisp's own client reads wisp's own server: a connector to this /api/mcp lists its events, push offered
+    api.cmd("connectors.add", json!({ "name": "self", "transport": "remote", "url": format!("http://127.0.0.1:{port}/api/mcp") })).await;
+    let listed = api.cmd("connectors.events", json!({ "id": "self" })).await;
+    assert_eq!(listed["served"], true, "{listed}");
+    let found = listed["events"].as_array().and_then(|l| l.iter().find(|e| e["name"] == "turn.finished").cloned());
+    let finished = found.unwrap_or_else(|| panic!("{listed}"));
+    assert_eq!(finished["delivery"], json!(["webhook", "push", "poll"]));
+    drop(serve);
+}
+
+/// Webhook delivery (ADR-0146), both ways on one `wisp serve`: a callback that doesn't echo the challenge is refused
+/// (`-32027 challenge_failed`), a bad secret or an `http` URL without `events.webhooks.allowPrivate` is
+/// `InvalidParams`, and wisp's own client, given its own address as the public one, subscribes to wisp's own
+/// `task.finished` and fires an `mcp.event` trigger from the delivery.
+#[tokio::test(flavor = "multi_thread")]
+async fn mcp_events_webhook_from_wisp_to_itself_fires_a_trigger() {
+    let dir = temp("serve-events-mcp-webhook");
+    let (serve, port) = start_with(&dir, &[]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+    let sub = |url: &str, secret: &str| json!({ "jsonrpc": "2.0", "id": 1, "method": "events/subscribe", "params": { "name": "task.finished", "delivery": { "mode": "webhook", "url": url, "secret": secret } } });
+    let plain = mcp(&api.http, port, &[], sub("http://127.0.0.1:9/hook", secret)).await;
+    assert_eq!(plain["error"]["code"], -32602, "http without allowPrivate: {plain}");
+    api.cmd("settings.set", json!({ "key": "events.webhooks.allowPrivate", "value": true })).await;
+    let bad = mcp(&api.http, port, &[], sub("http://127.0.0.1:9/hook", "nope")).await;
+    assert_eq!(bad["error"]["code"], -32602, "{bad}");
+    let (rport, _, _) = receiver(0).await;
+    let deaf = mcp(&api.http, port, &[], sub(&format!("http://127.0.0.1:{rport}/hook"), secret)).await;
+    assert_eq!(
+        (deaf["error"]["code"].clone(), deaf["error"]["data"]["reason"].clone()),
+        (json!(-32027), json!("challenge_failed")),
+        "{deaf}"
+    );
+    // wisp to itself: its address is the public one
+    api.cmd("settings.set", json!({ "key": "connectors.events.callback", "value": format!("http://127.0.0.1:{port}") })).await;
+    api.cmd("connectors.add", json!({ "name": "self", "transport": "remote", "url": format!("http://127.0.0.1:{port}/api/mcp") })).await;
+    let proj = dir.join("proj").to_string_lossy().into_owned();
+    let spec = json!({ "on": "mcp.event", "match": { "connector": "self", "event": "task.finished", "delivery": "webhook" }, "prompt": "Seen: {event.summary}", "project": proj, "rate": "1/h" });
+    api.cmd("resources.apply", json!({ "resources": [{ "kind": "trigger", "name": "hooked", "spec": spec }] })).await;
+    // the engine's first poll subscribes; each task until then ends unseen, the next one fires the trigger
+    let at = Instant::now();
+    loop {
+        task(&api, &dir, "fix the add bug").await;
+        let fired = api.cmd("events.tail", json!({ "type": "trigger.fired" })).await;
+        if fired.as_array().is_some_and(|l| l.iter().any(|e| e["data"]["trigger"] == "hooked" && e["data"]["on"] == "mcp.event")) {
+            // by webhook: wisp's server holds the subscription to wisp's own route, and has delivered to it
+            let hooks = api.cmd("events.webhooks", json!({})).await;
+            let h = hooks
+                .as_array()
+                .and_then(|l| l.iter().find(|h| h["name"] == "task.finished").cloned())
+                .unwrap_or_else(|| panic!("{hooks}"));
+            assert!(h["url"].as_str().is_some_and(|u| u.starts_with(&format!("http://127.0.0.1:{port}/api/connectors/events/"))), "{h}");
+            assert!(h["lastDeliveryAt"].is_string() && h["active"] == true && h["lastError"].is_null(), "{h}");
+            assert!(!hooks.to_string().contains("whsec_"), "secrets stay out");
+            break;
+        }
+        if at.elapsed() > Duration::from_secs(90) {
+            let ls = api.cmd("automations.trigger.ls", json!({})).await;
+            let log = std::fs::read_to_string(dir.join("serve.log")).unwrap_or_default();
+            let tail: String = log.lines().filter(|l| l.contains("WARN") || l.contains("ERROR")).collect::<Vec<_>>().join("\n");
+            let kinds: Vec<String> = api
+                .cmd("events.tail", json!({ "limit": 1000 }))
+                .await
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .iter()
+                .map(|e| e["type"].as_str().unwrap_or_default().to_owned())
+                .collect();
+            panic!("the trigger never fired: {fired}\ntriggers: {ls}\nlog: {tail}\nevents: {kinds:?}");
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
     drop(serve);
 }
 

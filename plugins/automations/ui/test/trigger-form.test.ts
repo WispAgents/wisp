@@ -1,6 +1,6 @@
 // v1's trigger form on v2's trigger spec (src/trigger-form.ts, v1 automations.js triggerForm).
 import { expect, test } from 'vitest';
-import { DEFAULT_PROMPTS, emptyForm, pick, readBack, specOfForm, warning } from '../src/trigger-form.ts';
+import { argFields, DEFAULT_PROMPTS, describeSpec, emptyForm, formOfSpec, keyOfSpec, pick, readBack, specOfForm, typedArg, warning } from '../src/trigger-form.ts';
 
 test('each kind saves the spec its v2 source reads; a kind v2 has no source for says so_v1_trigger_form', () => {
   const f = { ...emptyForm('/code/web'), name: 'Morning tidy', when: 'every weekday at 9am', prompt: 'Tidy the repo' };
@@ -64,4 +64,30 @@ test('a preset fills the header and prompt that are still empty; the warning whi
   expect(readBack('every hour', () => 'Every hour')).toEqual({ text: 'Understood', bad: false });
   expect(readBack('every weekday at 9am', () => 'Every weekday at 9:00')).toEqual({ text: '= Every weekday at 9:00', bad: false });
   expect(readBack('whenever', () => null)?.bad).toBe(true);
+});
+
+test('an MCP server event saves a connector, its event and typed arguments_adr_0145', () => {
+  const f = pick({ ...emptyForm('/code/api'), name: 'Incidents', prompt: '' }, 'mcp');
+  expect(f.mode).toBe('plan'); // what an outside server sends steers the agent: it starts in Plan
+  expect(specOfForm(f)).toEqual({ missing: 'connector' });
+  expect(specOfForm({ ...f, connector: 'pd' })).toEqual({ missing: 'event' });
+  const full = { ...f, connector: 'pd', event: 'incident.created', args: { severity: 'P1', urgent: 'true', count: '3', note: ' ' }, delivery: 'push' };
+  const match = { connector: 'pd', event: 'incident.created', arguments: { severity: 'P1', urgent: true, count: 3 }, delivery: 'push' };
+  expect(specOfForm(full)).toEqual({ name: 'incidents', spec: { on: 'mcp.event', prompt: DEFAULT_PROMPTS['mcp'], project: '/code/api', mode: 'plan', match } });
+  // no arguments, automatic delivery: neither is written
+  expect((specOfForm({ ...f, connector: 'pd', event: 'x' }) as unknown as { spec: { match: object } }).spec.match).toEqual({ connector: 'pd', event: 'x' });
+  expect(warning({ ...full, mode: 'auto' })).toContain('from this MCP server');
+  expect([typedArg('false'), typedArg('-2.5'), typedArg('P1')]).toEqual([false, -2.5, 'P1']);
+});
+
+test('Edit reads an MCP server event back, and its arguments come from the event type’s inputSchema_adr_0145', () => {
+  const saved = { on: 'mcp.event', project: '/code/api', match: { connector: 'pd', event: 'incident.created', arguments: { severity: 'P1', urgent: true, count: 3 }, delivery: 'push' } };
+  expect(keyOfSpec(saved)).toBe('mcp');
+  expect(formOfSpec('incidents', saved)).toMatchObject({ key: 'mcp', connector: 'pd', event: 'incident.created', delivery: 'push', args: { severity: 'P1', urgent: 'true', count: '3' } });
+  expect(describeSpec(saved, { place: () => 'api', member: () => undefined, words: () => null })).toBe('When pd sends incident.created, in api');
+  const fields = argFields({ type: 'object', properties: { severity: { type: 'string', enum: ['P1', 'P2'] }, redact: { type: 'boolean', description: 'Strip PII' }, from: { type: 'string' } } });
+  expect(fields.map((x) => [x.key, x.kind])).toEqual([['severity', 'enum'], ['redact', 'boolean'], ['from', 'text']]);
+  expect(fields[0]?.options).toEqual(['P1', 'P2']);
+  expect(fields[1]?.hint).toBe('Strip PII');
+  expect(argFields(undefined)).toEqual([]);
 });

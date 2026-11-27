@@ -1,6 +1,11 @@
-//! The dispatcher: one parsed message and who sent it in, what to answer out. `initialize`, `tools/list`,
-//! `ping`, refusals and unknown methods are answered here at once; a tool call comes back as a `Call` for
-//! the host to run (it waits on the kernel), and `finish` turns its outcome into v1's answer.
+//! The dispatcher: one parsed message and who sent it in, what to answer out. `initialize`, `server/discover`,
+//! `tools/list`, `ping`, refusals and unknown methods are answered here at once; a tool call comes back as a `Call`
+//! for the host to run (it waits on the kernel), and `finish` turns its outcome into v1's answer. A method another
+//! plugin serves (`mcp.method@1`, ADR-0146: `events/poll`) comes back as `Step::Method`.
+//!
+//! Dual-era (ADR-0146): a legacy client opens with `initialize`; a modern (`2026-07-28`) one declares its version in
+//! each request's `_meta` and gets `"resultType":"complete"` on every result. Every request is served statelessly
+//! either way, as it always was.
 
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
@@ -55,6 +60,23 @@ impl Extra {
     }
 }
 
+/// The protocol versions wisp answers: the modern one first, then the legacy ones (`initialize`).
+pub const SUPPORTED_VERSIONS: &[&str] = &["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"];
+/// `UnsupportedProtocolVersionError` (`2026-07-28`).
+pub const UNSUPPORTED_VERSION: i64 = -32022;
+
+/// The methods other plugins serve (`mcp.method@1`) and the extensions they declare, by identifier.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Served {
+    pub methods: Vec<String>,
+    pub extensions: Map<String, Value>,
+}
+
+/// The methods a contribution can't take: the core protocol's, answered here.
+pub fn core_method(m: &str) -> bool {
+    matches!(m, "initialize" | "ping" | "server/discover") || m.starts_with("tools/") || m.starts_with("notifications/")
+}
+
 /// A tool call for the host to run.
 #[derive(Debug)]
 pub struct Call {
@@ -72,6 +94,12 @@ pub enum Step {
     /// a notification: no answer
     Silent,
     Call(Call),
+    /// a method a plugin serves, for the host to run as the caller
+    Method {
+        id: Box<RawValue>,
+        method: String,
+        params: Value,
+    },
 }
 
 /// What one line or body asks for: its steps, and whether they answer as a batch.
@@ -79,16 +107,32 @@ pub enum Step {
 pub struct Plan {
     pub steps: Vec<Step>,
     pub batch: bool,
+    /// a modern request (`_meta` names its version): each result gets `"resultType":"complete"` (`rpc::completed`)
+    pub modern: bool,
 }
 
 pub fn plan(text: &str, who: &Who, extras: &[Extra]) -> Plan {
+    plan_served(text, who, extras, &Served::default())
+}
+
+/// `plan`, with the methods and extensions other plugins serve.
+pub fn plan_served(text: &str, who: &Who, extras: &[Extra], served: &Served) -> Plan {
     match rpc::parse(text) {
-        Incoming::Nothing => Plan { steps: Vec::new(), batch: false },
-        Incoming::One(m) => Plan { steps: vec![step(m, who, extras)], batch: false },
-        Incoming::Batch(items) if items.is_empty() => Plan { steps: vec![Step::Reply(rpc::invalid_request())], batch: false },
+        Incoming::Nothing => Plan { steps: Vec::new(), batch: false, modern: false },
+        Incoming::One(m) => {
+            let modern = m.modern_version().is_some();
+            Plan { steps: vec![step_served(m, who, extras, served)], batch: false, modern }
+        }
+        Incoming::Batch(items) if items.is_empty() => {
+            Plan { steps: vec![Step::Reply(rpc::invalid_request())], batch: false, modern: false }
+        }
         Incoming::Batch(items) => Plan {
-            steps: items.into_iter().map(|m| m.map_or_else(|| Step::Reply(rpc::invalid_request()), |m| step(m, who, extras))).collect(),
+            steps: items
+                .into_iter()
+                .map(|m| m.map_or_else(|| Step::Reply(rpc::invalid_request()), |m| step_served(m, who, extras, served)))
+                .collect(),
             batch: true,
+            modern: false,
         },
     }
 }
@@ -99,13 +143,26 @@ pub fn assemble(replies: Vec<Option<String>>, batch: bool) -> Option<String> {
     if batch { rpc::batch(&replies) } else { replies.pop() }
 }
 
-pub fn step(mut m: Message, who: &Who, extras: &[Extra]) -> Step {
+pub fn step(m: Message, who: &Who, extras: &[Extra]) -> Step {
+    step_served(m, who, extras, &Served::default())
+}
+
+pub fn step_served(mut m: Message, who: &Who, extras: &[Extra], served: &Served) -> Step {
     let Some(id) = m.id.take() else { return Step::Silent };
+    if let Some(v) = m.modern_version().filter(|v| !SUPPORTED_VERSIONS.contains(v)) {
+        let data = serde_json::json!({ "supported": SUPPORTED_VERSIONS, "requested": v });
+        return Step::Reply(rpc::error_data(&id, UNSUPPORTED_VERSION, "Unsupported protocol version", Some(&data)));
+    }
     match m.method() {
-        Some("initialize") => Step::Reply(rpc::result(&id, &initialize(&m, who))),
+        Some("initialize") => Step::Reply(rpc::result(&id, &initialize(&m, who, &served.extensions))),
+        Some("server/discover") => Step::Reply(rpc::result(&id, &discover(who, &served.extensions))),
         Some("tools/list") => Step::Reply(rpc::result(&id, &tools_list(who, extras))),
         Some("ping") => Step::Reply(rpc::result(&id, "{}")),
         Some("tools/call") => call(id, m, who, extras),
+        Some(x) if !core_method(x) && served.methods.iter().any(|s| s == x) => {
+            let method = x.to_owned();
+            Step::Method { id, method, params: m.take_params() }
+        }
         _ => Step::Reply(not_found(&id, &m.method_text())),
     }
 }
@@ -114,18 +171,48 @@ fn not_found(id: &RawValue, method: &str) -> String {
     rpc::error(id, rpc::METHOD_NOT_FOUND, &format!("Method not found: {method}"))
 }
 
-fn initialize(m: &Message, who: &Who) -> String {
+/// `{"tools":{}}`, with `"extensions":{…}` when plugins declare any (ADR-0146).
+fn capabilities(extensions: &Map<String, Value>) -> String {
+    if extensions.is_empty() {
+        return "{\"tools\":{}}".into();
+    }
+    format!("{{\"tools\":{{}},\"extensions\":{}}}", Value::Object(extensions.clone()))
+}
+
+fn initialize(m: &Message, who: &Who, extensions: &Map<String, Value>) -> String {
     let pv = m.protocol_version();
+    let caps = capabilities(extensions);
     match who {
         Who::Agent { .. } => format!(
-            "{{\"protocolVersion\":{pv},\"capabilities\":{{\"tools\":{{}}}},\"serverInfo\":{{\"name\":\"wisp\",\"version\":\"{AGENT_SERVER_VERSION}\"}}}}"
+            "{{\"protocolVersion\":{pv},\"capabilities\":{caps},\"serverInfo\":{{\"name\":\"wisp\",\"version\":\"{AGENT_SERVER_VERSION}\"}}}}"
         ),
         Who::User { version } => format!(
-            "{{\"protocolVersion\":{pv},\"capabilities\":{{\"tools\":{{}}}},\"serverInfo\":{{\"name\":\"wisp\",\"version\":{}}},\"instructions\":{}}}",
+            "{{\"protocolVersion\":{pv},\"capabilities\":{caps},\"serverInfo\":{{\"name\":\"wisp\",\"version\":{}}},\"instructions\":{}}}",
             rpc::quote(version),
             rpc::quote(USER_INSTRUCTIONS)
         ),
     }
+}
+
+/// `server/discover` (`2026-07-28`, which every server must answer): the versions, the capabilities (extensions
+/// included) and who it is. Never cached across callers: what a task's agent is offered differs from the user's.
+fn discover(who: &Who, extensions: &Map<String, Value>) -> String {
+    let version = match who {
+        Who::Agent { .. } => AGENT_SERVER_VERSION,
+        Who::User { version } => version.as_str(),
+    };
+    let caps: Value = serde_json::from_str(&capabilities(extensions)).unwrap_or_default();
+    let mut v = serde_json::json!({
+        "resultType": "complete",
+        "supportedVersions": SUPPORTED_VERSIONS,
+        "capabilities": caps,
+        "_meta": { "io.modelcontextprotocol/serverInfo": { "name": "wisp", "version": version } },
+        "cacheScope": "private",
+    });
+    if matches!(who, Who::User { .. }) {
+        v["instructions"] = Value::String(USER_INSTRUCTIONS.into());
+    }
+    v.to_string()
 }
 
 /// `{"tools":[…]}`: the built-ins first, in v1's order, then what plugins contributed.
@@ -213,5 +300,93 @@ pub fn finish(id: &RawValue, name: &str, who: &Who, outcome: Outcome) -> String 
             };
             rpc::result(id, &body)
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn user() -> Who {
+        Who::User { version: "2.0.0".into() }
+    }
+
+    fn served() -> Served {
+        let mut extensions = Map::new();
+        extensions.insert("io.modelcontextprotocol/events".into(), serde_json::json!({}));
+        Served { methods: vec!["events/list".into(), "events/poll".into(), "tools/sneaky".into()], extensions }
+    }
+
+    fn reply(text: &str, s: &Served) -> Value {
+        match plan_served(text, &user(), &[], s).steps.pop() {
+            Some(Step::Reply(r)) => serde_json::from_str(&r).unwrap(),
+            other => panic!("not a reply: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_extension_a_plugin_serves_is_declared_in_initialize_and_discover() {
+        let init = reply(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#, &served());
+        assert_eq!(init["result"]["capabilities"]["extensions"]["io.modelcontextprotocol/events"], serde_json::json!({}));
+        let d = reply(r#"{"jsonrpc":"2.0","id":2,"method":"server/discover","params":{}}"#, &served());
+        assert_eq!(d["result"]["resultType"], "complete");
+        assert_eq!(d["result"]["supportedVersions"][0], "2026-07-28");
+        assert_eq!(d["result"]["capabilities"]["tools"], serde_json::json!({}));
+        assert!(d["result"]["capabilities"]["extensions"]["io.modelcontextprotocol/events"].is_object());
+        assert_eq!(d["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"], "wisp");
+    }
+
+    #[test]
+    fn without_contributions_initialize_is_v1s_answer() {
+        let init = reply(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#, &Served::default());
+        assert_eq!(init["result"]["capabilities"], serde_json::json!({ "tools": {} }));
+    }
+
+    #[test]
+    fn a_served_method_goes_to_the_host_with_its_params_and_a_core_one_never_does() {
+        let p = plan_served(
+            r#"{"jsonrpc":"2.0","id":7,"method":"events/poll","params":{"name":"task.finished","cursor":null}}"#,
+            &user(),
+            &[],
+            &served(),
+        );
+        match p.steps.as_slice() {
+            [Step::Method { id, method, params }] => {
+                assert_eq!(id.get(), "7");
+                assert_eq!(method, "events/poll");
+                assert_eq!(params["name"], "task.finished");
+            }
+            other => panic!("{other:?}"),
+        }
+        // a contribution naming a core method's prefix is never handed over
+        let r = reply(r#"{"jsonrpc":"2.0","id":8,"method":"tools/sneaky"}"#, &served());
+        assert_eq!(r["error"]["code"], rpc::METHOD_NOT_FOUND);
+        // nor is a method nobody serves
+        let r = reply(r#"{"jsonrpc":"2.0","id":9,"method":"events/stream"}"#, &served());
+        assert_eq!(r["error"]["code"], rpc::METHOD_NOT_FOUND);
+    }
+
+    #[test]
+    fn a_modern_request_is_marked_and_an_unknown_version_is_refused_with_the_supported_ones() {
+        let m =
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}"#;
+        let p = plan_served(m, &user(), &[], &served());
+        assert!(p.modern);
+        let Some(Step::Reply(r)) = p.steps.into_iter().next() else { panic!() };
+        let done: Value = serde_json::from_str(&rpc::completed(&r)).unwrap();
+        assert_eq!(done["result"]["resultType"], "complete");
+        assert!(done["result"]["tools"].is_array());
+        let old =
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"1900-01-01"}}}"#;
+        let e = reply(old, &served());
+        assert_eq!(e["error"]["code"], UNSUPPORTED_VERSION);
+        assert_eq!(e["error"]["data"]["requested"], "1900-01-01");
+        assert_eq!(e["error"]["data"]["supported"][0], "2026-07-28");
+        // an error is left as it was
+        assert_eq!(
+            rpc::completed(r#"{"jsonrpc":"2.0","id":1,"error":{"code":1,"message":"x"}}"#),
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":1,"message":"x"}}"#
+        );
     }
 }

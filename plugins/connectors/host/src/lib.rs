@@ -5,8 +5,11 @@
 mod agent;
 mod auth;
 mod call;
+mod events;
+mod hook;
 mod kinds;
 mod pane;
+mod stream;
 
 use wisp_kernel::{Manifest, Plugin, Result, Setup};
 

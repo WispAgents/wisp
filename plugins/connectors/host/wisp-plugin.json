@@ -10,6 +10,7 @@
   },
   "permissions": [
     "runtime:get",
+    "automations:run",
     "secrets:read",
     "secrets:write",
     "net:fetch{host:*}",
@@ -21,6 +22,10 @@
     "onStartup"
   ],
   "contributes": {
+    "triggerSources": ["mcp.event"],
+    "settings": [
+      { "key": "connectors.events.callback", "type": "string", "default": "", "title": "This wisp's public https address, for MCP Events webhooks (empty: connectors' events come by push or poll)" }
+    ],
     "events": [
       "connectors.agent_added",
       "connectors.changed",
@@ -87,6 +92,11 @@
       {
         "id": "connectors.call",
         "title": "Call one tool of a remote connector, with its own sign-in (the issue picker lists Linear and Jira through them)"
+      },
+      {
+        "id": "connectors.events",
+        "title": "A remote connector's event types (MCP Events), what an mcp.event trigger waits on",
+        "readOnly": true
       }
     ],
     "topics": [

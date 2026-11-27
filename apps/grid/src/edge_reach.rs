@@ -177,6 +177,8 @@ impl Grid {
             (None, None, Some(u)) => (Credential::Cookie, Some(u.id)),
             // the phone's <img> of a link its device asked for (edge_media.rs): checked after every other way in
             (None, None, None) if self.signed_media(&mut req, handle, &user) => (Credential::Device, Some(user.id.clone())),
+            // an MCP server's webhook delivery (ADR-0146): the box's wisp checks its signature; the box sees it as no one
+            (None, None, None) if events_hook(req.method(), req.uri().path()) => (Credential::Hook, Some(user.id.clone())),
             (None, None, None) => {
                 let pq = req.uri().path_and_query().map_or("/", |p| p.as_str()).to_owned();
                 return Ok(self.sign_in_at(req.method(), req.headers(), &pq, "/go"));
@@ -202,9 +204,10 @@ impl Grid {
         }
         let mut req = req;
         bearer_has_no_origin(cred, &mut req);
-        if key.is_some() {
-            // the box's wisp speaks for a key with the `apikey` set (wisp-api auth.rs): never key management
-            req.extensions_mut().insert(Via("key"));
+        // the box's wisp speaks for a key with the `apikey` set (never key management), for a hook with `public` (open
+        // routes only, never the owner's): wisp-api auth.rs
+        if let Some(v) = if key.is_some() { Some("key") } else { (cred == Credential::Hook).then_some("hook") } {
+            req.extensions_mut().insert(Via(v));
         }
         self.proxy(req, &BoxUser::user(&user), handle).await
     }
@@ -326,6 +329,16 @@ impl Grid {
     }
 }
 
+/// The one way into a box without signing in: an MCP server's webhook delivery to a connector's subscription
+/// (`POST /api/connectors/events/<token>`, wisp.connectors, ADR-0146). The token is random and the body is signed
+/// (Standard Webhooks), both checked by the box's wisp; anything else here still asks for a sign-in.
+pub fn events_hook(method: &Method, path: &str) -> bool {
+    *method == Method::POST
+        && path
+            .strip_prefix("/api/connectors/events/")
+            .is_some_and(|t| (8..=64).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_alphanumeric()))
+}
+
 /// A device token or an API key was checked here, and a bearer token is never sent by a browser on its own, so the
 /// request can't be a forged cross-site one: it goes on without the caller's Origin. The phone app's webview says
 /// `Origin: https://localhost`, which the box's wisp refuses on every write (`forbidden origin`, 403): its sync POSTs
@@ -334,5 +347,23 @@ impl Grid {
 fn bearer_has_no_origin<B>(cred: Credential, req: &mut http::Request<B>) {
     if matches!(cred, Credential::Device | Credential::Key) {
         req.headers_mut().remove(http::header::ORIGIN);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_connectors_event_delivery_comes_in_unsigned_in() {
+        let token = "AbCdEf0123456789xyzXYZ01";
+        assert!(events_hook(&Method::POST, &format!("/api/connectors/events/{token}")));
+        assert!(!events_hook(&Method::GET, &format!("/api/connectors/events/{token}")), "a POST only");
+        assert!(!events_hook(&Method::POST, "/api/connectors/events/"), "no token");
+        assert!(!events_hook(&Method::POST, "/api/connectors/events/short"), "too short to be one");
+        assert!(!events_hook(&Method::POST, &format!("/api/connectors/events/{token}/more")), "nothing under it");
+        assert!(!events_hook(&Method::POST, "/api/connectors/events/../../cmd"));
+        assert!(!events_hook(&Method::POST, &format!("/api/connectors/list/{token}")));
+        assert!(!events_hook(&Method::POST, "/api/cmd"));
     }
 }

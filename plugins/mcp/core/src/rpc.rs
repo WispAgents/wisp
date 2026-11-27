@@ -104,6 +104,19 @@ impl Message {
         }
     }
 
+    /// The params as sent (`{}` when there were none or they weren't an object).
+    pub fn take_params(&mut self) -> Value {
+        match self.params.take() {
+            Some(Value::Object(m)) => Value::Object(m),
+            _ => Value::Object(Map::new()),
+        }
+    }
+
+    /// The version a modern (`2026-07-28`) request declares in `params._meta`; `None` for a legacy one.
+    pub fn modern_version(&self) -> Option<&str> {
+        self.param("_meta")?.get("io.modelcontextprotocol/protocolVersion")?.as_str()
+    }
+
     /// `params.protocolVersion || '2025-06-18'`, as JSON text.
     pub fn protocol_version(&self) -> String {
         match self.param("protocolVersion") {
@@ -138,6 +151,29 @@ pub fn result(id: &RawValue, result: &str) -> String {
 /// `{"jsonrpc":"2.0","id":…,"error":{"code":…,"message":…}}`.
 pub fn error(id: &RawValue, code: i64, message: &str) -> String {
     format!("{{\"jsonrpc\":\"2.0\",\"id\":{},\"error\":{{\"code\":{code},\"message\":{}}}}}", id.get(), quote(message))
+}
+
+/// An error with a typed `data` (MCP extensions' codes carry their specifics there).
+pub fn error_data(id: &RawValue, code: i64, message: &str, data: Option<&Value>) -> String {
+    match data {
+        None => error(id, code, message),
+        Some(d) => {
+            format!("{{\"jsonrpc\":\"2.0\",\"id\":{},\"error\":{{\"code\":{code},\"message\":{},\"data\":{d}}}}}", id.get(), quote(message))
+        }
+    }
+}
+
+/// A modern (`2026-07-28`) answer's result: `"resultType":"complete"` added to a reply's result object that has none.
+/// Anything else (an error, a batch, a result that isn't an object) comes back as it was.
+pub fn completed(reply: &str) -> String {
+    let Ok(mut v) = serde_json::from_str::<Value>(reply) else { return reply.to_owned() };
+    match v.get_mut("result") {
+        Some(Value::Object(r)) if !r.contains_key("resultType") => {
+            r.insert("resultType".into(), Value::String("complete".into()));
+            v.to_string()
+        }
+        _ => reply.to_owned(),
+    }
 }
 
 /// The answer to a batch element that isn't a message, or to an empty batch.
