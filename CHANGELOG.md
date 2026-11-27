@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.18] - 2026-11-27
+
 ### Fixed
 
 - **The Update pill shows up on its own each morning.** wisp looked for a new version at start and then only a full

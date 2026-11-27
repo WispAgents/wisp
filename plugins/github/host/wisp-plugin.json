@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.github",
   "name": "GitHub",
-  "version": "1.0.0-alpha.17",
+  "version": "1.0.0-alpha.18",
   "api": "^1",
   "description": "wisp.github: CI as a trigger source (gh run list), and the GitHub transport for wisp.channels",
   "server": {
