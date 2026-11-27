@@ -197,7 +197,7 @@ mod tests {
     /// The sandbox image installs the version the runtime pins (one constant; ADR-0128).
     #[test]
     fn the_sandbox_image_pins_the_same_playwright_mcp() {
-        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../grid/deploy/image/Dockerfile");
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../apps/grid/deploy/image/Dockerfile");
         let docker = std::fs::read_to_string(file).unwrap();
         let line = docker.lines().find(|l| l.contains("npm install -g @playwright/mcp")).unwrap();
         assert!(line.contains(&format!("npm install -g {PLAYWRIGHT_MCP} ")), "{line}");

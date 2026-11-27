@@ -14,16 +14,16 @@ Thanks for helping. Bug reports, harness adapters, spells and fixes are all welc
 ```sh
 git clone https://github.com/WispAgents/wisp && cd wisp
 npm install
-npm run dev:web     # the server with the page, restarts on server changes
-npm test            # everything
+npm run dev         # wisp serve from this checkout + Vite HMR; Rust edits rebuild and restart it
+npm run check       # structure rules; PR CI runs the full suites
 ```
 
 [AGENTS.md](AGENTS.md) explains how the code is laid out and the rules a change has to follow
 (it's written for coding agents, and for people). In short:
 
-- No new runtime dependencies. The server is plain Node, the page is vanilla JS with no build step.
-- Every piece of UI you add must be reachable from a spell (`web/js/spell-schema.js`).
-- New test files go in `test/`, named `*.test.js`: `npm test` finds them.
+- Rust for everything but the UI; TypeScript + Solid for the UI, built only from the kit (`packages/ui`).
+- Everything is a plugin (`plugins/<name>/{api,host,ui}`); a plugin reaches another only through its `api`.
+- Tests sit next to the code (`<package>/test/`, a crate's `tests/`).
 - User-facing changes get a line under *Unreleased* in [CHANGELOG.md](CHANGELOG.md).
 
 ## Agent tooling
@@ -44,7 +44,7 @@ To record a decision (a convention, a constraint, a choice future code must foll
 
 ```sh
 decisions add --propose "Settings panes use container queries, not fixed widths." \
-  --reason "they must work at phone widths" --scope "web/css/**"
+  --reason "they must work at phone widths" --scope "packages/ui/src/settings/**"
 decisions review                   # accept, edit or reject; then commit decisions/
 ```
 

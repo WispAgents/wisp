@@ -10,7 +10,8 @@ owner already called out (wrapping bars, `design/layout.md`).
 
 ## 1. The reference
 
-- **`design/v1-reference/`** is captured from v1 before v1 is deleted. `qa/v1-reference.mjs` starts v1 with
+- **`design/v1-reference/`** is captured from v1 before v1 is deleted (v1 left the repo on 2026-11-27; the reference is
+  frozen, and the capture run below is `qa/v1-reference.mjs` at a7c98f73). `qa/v1-reference.mjs` starts v1 with
   `qa/views.mjs`'s `seededWisp`, plus the stress data, and for every view in `qa/views.mjs` (the list, a task,
   its menus and panels, New task, crew, My Stuff, the palette, every Settings pane, Home) it saves:
   - screenshots at 1440, 1024, 900, 600, 390 and 320 px, in light and dark, at rest and with each

@@ -6,13 +6,15 @@ after a change that touches more than one surface.
 
 | Surface | Scenarios | Script | What it drives |
 |---|---|---|---|
-| Web (browser mode) | [scenarios/web.md](scenarios/web.md) (`WEB-*`) | `node qa/web.mjs` | `wisp --no-open` in Chrome: launcher, cards, questions, approvals, settings, spells, recipes, CLI, MCP, docs site |
-| wisp Grid | [scenarios/grid.md](scenarios/grid.md) (`GRID-*`) | `node qa/grid.mjs` | `wisp grid dev --fake-agents`: sign-in, account, `/go`, cloud wisp, isolation, device flow, idle stop, a channel waking a box, admin commands |
-| Desktop app (macOS) | [scenarios/desktop.md](scenarios/desktop.md) (`TAURI-*`) | `node qa/desktop-tauri.mjs` | builds `desktop/src-tauri --features qa` (needs Rust) and drives it through a local socket (`src/qa.rs`): WKWebView has no WebDriver |
-| Desktop app (Windows) | [scenarios/desktop.md](scenarios/desktop.md) (`TAURI-W*`) | `node qa/desktop-tauri-win.mjs` | the installer built with `--features qa` on windows-latest (`tauri-windows.yml`, CI only: it replaces the machine's wisp): the page through WebView2's CDP, the rest by real mouse, keys and Win32 (`qa/win32.ps1`); `--web` runs `qa/web.mjs` in its WebView2 |
-| Desktop app (Linux) | [scenarios/desktop.md](scenarios/desktop.md) (`TAURI-L*`) | `xvfb-run -a dbus-run-session -- node qa/desktop-tauri-linux.mjs` | builds `desktop/src-tauri --features qa` and drives it through a local socket (`src/qa_linux.rs`): Preview frames and the page's way out on WebKitGTK; ubuntu-latest in `tauri.yml` |
-| Install paths | [scenarios/install.md](scenarios/install.md) (`INST-*`) | `node qa/install.mjs` | npm, npx, `install.sh`, the Homebrew steps, and the Tauri downloads from `desktop/scripts/package.mjs`: every way in, from real artefacts, published nowhere |
+| Desktop app (every OS) | [scenarios/desktop.md](scenarios/desktop.md) | `node qa/desktop-v2.mjs` | the Tauri shell (`desktop/src-tauri`) on a v2 `wisp serve`: `tauri.yml`, `tauri-package.yml`, `tauri-windows.yml` |
 | Android app | [scenarios/mobile.md](scenarios/mobile.md) (`MOB-*`) | `node qa/platform.mjs` | the phone app (mobile/web) as the app's WebView sees it (qa/phone.mjs); APK, Gradle and emulator steps are in the scenarios |
+| Looks like v1 | `design/v1-reference/` | `node qa/parity.mjs` | every view, width, theme and state of v2 against v1's frozen shots and metrics (`qa/views.mjs` openers, `qa/v1-parts.mjs`) |
+| Nothing wraps | `design/layout.md` | `node qa/layout.mjs` | every bar and row at 320–1440 px |
+| Answers within a frame | `design/feedback.md` | `node qa/feedback.mjs` | every interactive element: a visible change within 100 ms |
+
+`scenarios/web.md`, `grid.md` and `install.md` are v1's scenarios, kept as the list of what v2's surfaces must do;
+their scripts (`web.mjs`, `grid.mjs`, `install.mjs`, `desktop-tauri*.mjs`, `buttons.mjs`, `ui-audit.mjs`, the perf
+runs) drove v1 and left the repo with it on 2026-11-27 (they are at a7c98f73).
 
 Each scenario says how it's covered: **Automated** (the script), **Suite** (`npm test`),
 **Gradle** / **Emulator** (Android steps in the scenario), or **Manual**.
@@ -25,50 +27,16 @@ mkdir -p /tmp/wisp-qa-pw && npm i --prefix /tmp/wisp-qa-pw playwright-core
 ```
 
 Playwright stays out of the repo (wisp has no dependencies): the scripts load it from `PW_DIR`
-(default `/tmp/wisp-qa-pw`) and drive the system Chrome (`CHROME` to use another). The grid needs
-Node 22.13+.
+(default `/tmp/wisp-qa-pw`) and drive the system Chrome (`CHROME` to use another).
 
-`QA_ENGINE=webkit` runs `qa/web.mjs`, `qa/ui-audit.mjs` and `qa/buttons.mjs` on Playwright's WebKit instead, the engine
-of the Tauri app on a Mac (`cd /tmp/wisp-qa-pw && npx playwright-core install webkit`). What's
+`QA_ENGINE=webkit` runs the gates on Playwright's WebKit instead, the engine of the Tauri app on a Mac (`cd /tmp/wisp-qa-pw && npx playwright-core install webkit`). What's
 known to differ, and the lowest version, is in [scenarios/desktop.md](scenarios/desktop.md).
 
 ## Isolation
 
-Nothing touches your own wisp. Every script starts its own wisp with a temp `WISP_HOME`, its own
-port and a temp git repo, with wisp's fake agents (`test/fixtures/fake-agent.mjs`) on PATH, so no
-account is needed and nothing is billed. `qa/lib.mjs` drops `WISP_DEV`, `WISP_PORT` and
-`WISP_DEBUG_PORT` from the environment, and refuses a port that's already taken (a wisp left from
-an earlier run would answer with its own state). The desktop app gets its own `--user-data-dir`,
-so a wisp.app you have open keeps its single-instance lock.
-
-| Script | Ports |
-|---|---|
-| web | 4493 (`QA_WEB_PORT`) |
-| buttons | 4497 (`QA_BUTTONS_PORT`) |
-| ui-audit | 4498 (`QA_AUDIT_PORT`) |
-| views | 4499 (`QA_VIEWS_PORT`) |
-| desktop | 4520–4529 (`QA_DESKTOP_PORT` for the first app, 4521) |
-| desktop-tauri | 4761–4765 (`QA_TAURI_PORT`) |
-| desktop-tauri-win | 4781–4784 (`QA_TAURI_PORT`) |
-| desktop-tauri-linux | 4791–4794 (`QA_TAURI_PORT`) |
-| install | 4771–4800 (`QA_INSTALL_PORT`) |
-| mobile | 4540–4549 |
-| mobile-perf | 4550 (`PERF_PORT`) |
-| desktop-perf | 4551 (`PERF_PORT`) |
-| grid | 8090 (`QA_GRID_PORT`) |
-
-They can run at the same time.
-
-## Every button, every state
-
-`node qa/buttons.mjs` opens 36 views of the page (New task and its menus, a task with its goal,
-composer, transcript, Changes and More, crew, My Stuff, the palette, every Settings pane) at 1440,
-1000 and 390px, light and dark, plus the phone app's page, and measures each visible button at
-rest, hovered and keyboard-focused. It fails on an icon-only button that isn't square or whose icon
-is off-centre, a centred label with uneven padding, buttons in one bar with boxes of different
-heights, a label clipped without `…`, and buttons that overlap. Every measurement goes to
-`qa/out/buttons.json`, and a contact sheet per view (each button at rest, hovered, focused) to
-`qa/out/buttons/`. `QUICK=1` measures at rest only; `WIDTHS=390 THEMES=dark` narrows it.
+Nothing touches your own wisp. The gates drive apps/web's mock or a dev wisp you start on its own port and home
+(`docs/dev.md`); `qa/desktop-v2.mjs` starts its own `wisp serve` with a temp `WISP_HOME`. A wisp left on a port from
+an earlier run would answer with its own state: `lsof -ti tcp:PORT -sTCP:LISTEN | xargs kill`.
 
 ## Nothing appears and goes
 
@@ -79,48 +47,8 @@ within 1 s fails (a node made again: hover, focus and entry animation lost; or s
 so does an action that changed nothing (no DOM change, no focus move). Results in `qa/out/flicker/summary.json`.
 `--widths=390 --only=follow-up` narrows it.
 
-## Every view, every size: the scorecard's numbers
-
-`node qa/views.mjs` opens every view at 1440 and 390px, light and dark, in one engine, and fails on
-a view that won't open or logs an error (shots in `qa/out/views-<engine>/`).
-
-`node qa/ui-audit.mjs` opens the same views as `buttons.mjs` (`qa/views.mjs`: New task and its menus
-and pickers, a task with its goal, panels, dialogs and menus, crew and Org, My Stuff, the palette,
-every Settings pane) at 1440, 1000 and 390px, at 390px on a touch screen and in the phone app,
-light and dark, each in a fresh browser. In each it fails on an axe-core `wcag2a`/`wcag2aa`
-violation, more than five font sizes (design/ui.md → Type), sideways overflow, a short label (≤ 24
-characters) cut with `…`, and in the app a control under 44px. With a dialog open it measures the
-dialog. Needs axe-core beside Playwright (`npm i --prefix /tmp/wisp-qa-pw playwright-core axe-core`).
-Results go to `qa/out/ui-audit.json`, with a screenshot of each view that has an issue in
-`qa/out/ui-audit/`. `WIDTHS=1440,app THEMES=dark VIEWS=home,task` narrows it. This is what
-`design/scorecard.md` rows 3, 9, 13 and 14 are measured with.
-
-## Speed in the phone app
-
-`node qa/mobile-perf.mjs` times page changes as the app's WebView sees them (Done unfolded, tasks
-opened and left with Back, New task) on a laptop, a slowed CPU (`pixel`) and a far-away tunnel
-(`remote`: 250 ms per request, 5 Mbit/s; `bad`: 600 ms, 1 Mbit/s; `3g`: Chrome's 3G preset, 2 s, 400 kbit/s): tap to painted frame, the slow frames and the scripts in
-them, the requests, the buttons in a task and the top bar, how soon a touched button or row looks
-pressed, and a CPU profile's top functions, in `qa/out/mobile-perf.json`.
-`PERF_SESSIONS=~/.wisp/sessions` runs it on a copy of real tasks (and that wisp's projects).
-`PERF_STRESS=4000` with it clones them into 4,000 tasks plus a task of 400 turns and one with a
-huge prompt and answer (`qa/stress-data.mjs`), and adds the stress steps: those opened and read,
-the list flung, search typed into, a 130 KB prompt pasted, the connection lost and back. The `bad`
-profile is 600 ms per request at 1 Mbit/s. Chrome's throttling applies to the page, not its service
-worker, so the phone's first open (whose modules the worker fetches) looks faster there than it is.
-
 ## Results
 
 Each script prints a line per scenario id and exits non-zero on a failure. Screenshots,
 logs and `<surface>.json` (id, pass/fail, error, time) go to `qa/out/` (`QA_OUT` to move it;
-gitignored). A failing web check leaves `web-fail-<id>.png`. Look at the screenshots, not just the
-exit code: layout regressions at phone width or in dark mode don't throw.
-
-## Speed in a desktop browser
-
-As `qa/mobile-perf.mjs` does for the phone app, `node qa/desktop-perf.mjs` times the page at
-1440×900 (the desktop app shows the same page): wisp's start, the cold load (first paint, the list, requests and bytes) and a reload, then
-Done unfolded, tasks opened and opened again, New task, typing in the prompt box, the avatar menu,
-Settings, search and a launch, each from the click or key to the frame that shows it, with a CPU
-profile's top functions, in `qa/out/desktop-perf.json`. `PERF_SESSIONS=~/.wisp/sessions` runs it on
-a copy of real tasks, `PERF_CPU=4` on a slowed CPU.
+gitignored). Look at the screenshots, not just the exit code: layout regressions at phone width or in dark mode don't throw.

@@ -53,7 +53,7 @@ RUN apt-get update \
     matchbox-window-manager dbus-x11 at-spi2-core \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
-RUN npm install -g @playwright/mcp && npm cache clean --force && command -v playwright-mcp
+RUN npm install -g @playwright/mcp@0.0.86 && npm cache clean --force && command -v playwright-mcp
 # Computer use (wisp.computer, ADR-0127): Cua Driver (MIT, trycua/cua), the version wisp is tested with, checked
 # against the release's SHA256SUMS; wisp-computer starts the screen (wisp-desktop: its window manager and the
 # accessibility bus too) and the driver on it. The box is the sandbox, so computer use is on here (the browser server
