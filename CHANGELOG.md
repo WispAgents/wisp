@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Ship it after Push to repo with transcripts in Git LFS.** The history push adds its LFS line to the
+  `.gitattributes` beside `.wisp/`, and Ship refused that commit as "has commits this branch doesn't". Now that file
+  merges in with the save it came with; someone else's `.gitattributes` change, or one both sides changed, is still
+  left to you.
+- **A newer save set aside during Ship's catch-up survives a quit or crash.** It was held in memory while the merge
+  ran, so quitting mid-merge lost it; now it's moved to a folder in the repo's git dir and moved back after, and the
+  next Ship puts back anything an interrupted one left there.
+- **⌘K and ⌘L work from the first moment.** Pressed while the rest of the keys were still loading, they did
+  nothing; now they open the palette and New task at once, and an early ⌃` runs once the keys are in.
+
 - **Ship it merges in only wisp's own history, and never loses a newer save.** It merged any commit on the task's
   remote branch that stayed in `.wisp/`, so someone else's `.wisp/worktree.json`, `sandbox.sh` or `wisp.yml` went
   out under your name; now only Push to repo's own commits (its message, the task files and transcripts) are merged,

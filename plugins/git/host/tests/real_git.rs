@@ -619,6 +619,7 @@ fn catch_up_ask() -> wisp_git_api::CatchUpRequest {
         branch: "wisp/task".into(),
         only: ".wisp".into(),
         within: vec!["tasks".into(), "history".into()],
+        also: vec![".gitattributes".into()],
         subject_start: "wisp: save task \"".into(),
         subject_end: "\" to the repo's history".into(),
     }
@@ -714,4 +715,85 @@ async fn catch_up_refuses_a_wisp_folder_commit_that_isnt_the_history() {
     assert_eq!(caught, CaughtUp::Diverged { files: vec![".wisp/sandbox.sh".into(), ".wisp/worktree.json".into()] });
     assert_eq!(git(&dir, &["rev-parse", "HEAD"]), head);
     assert_eq!(git(&dir, &["status", "--porcelain"]), "");
+}
+
+/// The LFS line a history save writes, as wisp-history's lfs store adds it.
+const LFS_LINE: &str = ".wisp/history/*.zst filter=lfs diff=lfs merge=lfs -text\n";
+
+/// final6 F1: the LFS store's save commit adds its line to `.gitattributes` beside `.wisp/`: merged in with the save,
+/// so Ship's push isn't refused over wisp's own file.
+#[tokio::test]
+async fn catch_up_merges_a_save_s_gitattributes() {
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-lfs");
+    let (dir, other) = task_and_elsewhere(&t);
+    write(&other, ".gitattributes", LFS_LINE);
+    write(&other, ".wisp/history/x.jsonl.zst", "zst\n");
+    git(&other, &["add", "-f", ".gitattributes", ".wisp"]);
+    git(&other, &["commit", "-q", "-m", SAVE_MESSAGE]);
+    git(&other, &["push", "-q", "origin", "wisp/task"]);
+    write(&dir, "a.txt", "agent\n");
+    git(&dir, &["commit", "-q", "-am", "agent"]);
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Merged);
+    assert_eq!(std::fs::read_to_string(dir.join(".gitattributes")).unwrap(), LFS_LINE);
+    assert_eq!(git(&dir, &["status", "--porcelain"]), "");
+    git(&dir, &["push", "-q", "origin", "HEAD:refs/heads/wisp/task"]);
+}
+
+/// final6 F1: a `.gitattributes` both sides changed is the user's to merge, never resolved to HEAD's side like a
+/// history file: Diverged, the merge undone, HEAD where it was.
+#[tokio::test]
+async fn catch_up_never_takes_ours_on_a_conflicting_gitattributes() {
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-lfs-conflict");
+    let (dir, other) = task_and_elsewhere(&t);
+    write(&other, ".gitattributes", &format!("*.png binary\n{LFS_LINE}"));
+    write(&other, ".wisp/history/x.jsonl.zst", "zst\n");
+    git(&other, &["add", "-f", ".gitattributes", ".wisp"]);
+    git(&other, &["commit", "-q", "-m", SAVE_MESSAGE]);
+    git(&other, &["push", "-q", "origin", "wisp/task"]);
+    write(&dir, ".gitattributes", "*.txt text eol=lf\n");
+    git(&dir, &["add", ".gitattributes"]);
+    git(&dir, &["commit", "-q", "-m", "agent attrs"]);
+    let head = git(&dir, &["rev-parse", "HEAD"]);
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Diverged { files: vec![".gitattributes".into()] });
+    assert_eq!(git(&dir, &["rev-parse", "HEAD"]), head);
+    assert!(!dir.join(".git/MERGE_HEAD").exists(), "the merge is undone");
+    assert_eq!(git(&dir, &["status", "--porcelain"]), "");
+}
+
+/// final6 F3: a catch_up cut off mid-merge (wisp quit) leaves the set-aside saves in the git dir: the next one puts
+/// them back first (the local save wins) and removes the folder.
+#[tokio::test]
+async fn catch_up_puts_back_saves_an_interrupted_run_set_aside() {
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-leftover");
+    let (dir, other) = task_and_elsewhere(&t);
+    let aside = dir.join(".git/wisp-aside");
+    write(&aside.join("1-2"), ".wisp/tasks/x.task.yml", "LEFT-OVER\n");
+    pushed_from(&other, ".wisp/tasks/y.task.yml", "pushed\n", SAVE_MESSAGE);
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Merged);
+    assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x.task.yml")).unwrap(), "LEFT-OVER\n");
+    assert!(!aside.exists(), "the leftover folder is gone");
+}
+
+/// final6 F3: an untracked newer save is set aside on disk, under the git dir, and put back: no folder stays.
+#[tokio::test]
+async fn catch_up_sets_an_untracked_save_aside_on_disk_and_cleans_up() {
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-aside");
+    let (dir, other) = task_and_elsewhere(&t);
+    pushed_from(&other, ".wisp/tasks/x/r.md", "pushed\n", SAVE_MESSAGE);
+    write(&dir, ".wisp/tasks/x/r.md", "NEWER-LOCAL\n");
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Merged);
+    assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x/r.md")).unwrap(), "NEWER-LOCAL\n");
+    assert!(!dir.join(".git/wisp-aside").exists(), "nothing left in the git dir");
 }

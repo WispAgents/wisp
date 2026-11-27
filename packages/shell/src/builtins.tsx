@@ -2,7 +2,8 @@
 // (the frame draws the brand and Search itself: a plugin overrides them on shell.topbar:brand/search) the command palette, the shortcuts sheet and the
 // diagnostics inspector as overlay views, the Diagnostics settings pane (the theme is General's, as v1's), and, as its
 // later part (builtins-later.ts, loaded once the first screen is drawn), the palette's app commands and task list and
-// the keys the shell answers itself (v1 keys.js: ⌘K, ⌘L, N, Esc, ?, [, ⌃Tab). Any plugin can override one by id or
+// the keys the shell answers itself (v1 keys.js: N, Esc, ?, [, ⌃Tab); ⌘K and ⌘L are here, so the first press of
+// either opens what it opens at once, never kept waiting for that part. Any plugin can override one by id or
 // switch it off through `tree`.
 
 import { lazy } from 'solid-js';
@@ -12,6 +13,7 @@ import { defineView } from './define.ts';
 import { parseCompare } from './frame/runs-small.ts';
 import { openFeedback, parseFeedback } from './frame/feedback.ts';
 import { rowMenuItems } from './frame/row-menu.ts';
+import { firstKeys } from './frame/launcher.ts';
 
 const Palette = lazy(() => import('./palette/Palette.tsx'));
 const Shortcuts = lazy(() => import('./frame/Shortcuts.tsx'));
@@ -133,6 +135,8 @@ export function shellUi(ctx: ShellContext): PluginUiDef {
       }),
       defineView({ kind: 'shell.devtools', slot: 'overlay', overlay: 'viewer', parse: none, component: Inspector, title: () => ctx.t('shell.diag.title') }),
     ],
+    // the two keys a first press reaches for before anything else (the palette, New task): never waiting for `later`
+    shortcuts: firstKeys(ctx),
     settings: [
       { id: 'shell.diagnostics', group: 'advanced', title: 'shell.diag.title', icon: 'bug', component: Inspector, order: 100 },
     ],

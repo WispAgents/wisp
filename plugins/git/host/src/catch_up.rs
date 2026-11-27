@@ -1,6 +1,6 @@
 //! `Repo::catch_up`: before Ship's push, the commits wisp's history push put on the task's branch (a save's `.wisp/`
 //! files, built on the branch's remote tip) merged into HEAD, so the push is a fast-forward and never needs a force.
-//! Only those: each commit has the history push's subject and touches nothing but what a save writes (`within`).
+//! Only those: each commit has the history push's subject and touches nothing but what a save writes (`within`, and `also` beside the folder).
 //! Anything else only the remote has (someone else's push, a `.wisp/worktree.json` whose `setup` would run here) is
 //! left for the user: nothing is merged or moved.
 
@@ -31,6 +31,22 @@ pub(crate) fn is_history_subject(subject: &str, start: &str, end: &str) -> bool 
     subject.len() >= start.len() + end.len() && subject.starts_with(start) && subject.ends_with(end)
 }
 
+/// Whether `path` is one of the files a save writes beside its folder (`req.also`: `.gitattributes`, `app/.gitattributes`),
+/// and `paths` (the same commit's) write inside that very folder: a `src/.gitattributes` with no `src/.wisp/` beside it,
+/// or one inside `.wisp/`, is not the save's.
+fn beside_the_folder(path: &str, req: &CatchUpRequest, paths: &[&str]) -> bool {
+    let only = req.only.trim_matches('/');
+    req.also.iter().map(|n| n.trim_matches('/')).filter(|n| !n.is_empty() && !only.is_empty()).any(|name| {
+        let prefix = match path.strip_suffix(name) {
+            Some("") => "",
+            Some(p) if p.ends_with('/') => p,
+            _ => return false,
+        };
+        let root = format!("{prefix}{only}/");
+        paths.iter().any(|q| q.starts_with(&root) && in_folder(q, only, &req.within))
+    })
+}
+
 /// The paths `HEAD..theirs` touches, and what makes it more than the history: every path of a commit that isn't a
 /// history push (its subject when it has none, a merge), and any path outside what a save writes. `log` is
 /// `log --format=%x00%s --name-only`.
@@ -44,7 +60,9 @@ pub(crate) fn sort_out(log: &str, req: &CatchUpRequest) -> (Vec<String>, Vec<Str
         if !saved && paths.is_empty() {
             outside.push(subject.to_owned());
         }
-        outside.extend(paths.iter().filter(|p| !saved || !in_folder(p, &req.only, &req.within)).map(|p| (*p).to_owned()));
+        // a save's `.gitattributes` (the LFS line) goes with it, never on its own: a conflict on it stays the user's
+        let theirs = |p: &&&str| !saved || !(in_folder(p, &req.only, &req.within) || beside_the_folder(p, req, &paths));
+        outside.extend(paths.iter().filter(theirs).map(|p| (*p).to_owned()));
         touched.extend(paths.into_iter().map(str::to_owned));
     }
     for v in [&mut touched, &mut outside] {
@@ -61,6 +79,11 @@ fn literal(paths: &[String]) -> Vec<String> {
 
 impl Inner {
     pub async fn catch_up(&self, req: CatchUpRequest) -> Result<CaughtUp> {
+        let top = PathBuf::from(&self.info.top);
+        let aside = self.aside_dir().await;
+        if let Some(aside) = &aside {
+            self.put_back_leftovers(aside, &top).await;
+        }
         let theirs = format!("refs/remotes/{}/{}", req.remote, req.branch);
         // the tracking ref named outright: a worktree's remote may have no fetch refspec that would move it
         let spec = format!("+refs/heads/{}:{theirs}", req.branch);
@@ -84,38 +107,68 @@ impl Inner {
         if !outside.is_empty() {
             return Ok(CaughtUp::Diverged { files: outside });
         }
-        let top = PathBuf::from(&self.info.top);
         // a newer save not committed here (`.wisp/` untracked, or ignored: git overwrites those in a merge without a
         // word) is set aside and put back after, whatever the merge did: it stays the pending change the next
         // history push sends, never replaced by the older copy the remote has
-        let kept = self.set_aside(&top, &touched).await;
+        let kept = self.set_aside(aside.as_deref(), &top, &touched).await;
+        // `merge_history`'s own errors come back as `out`, so the saves go back whatever it did; a quit or a dropped
+        // future in between leaves them in the git dir, put back by the next `catch_up` above
         let out = self.merge_history(&req, &theirs, &top).await;
-        for (path, bytes) in &kept {
-            put_back(&top.join(path), bytes).await;
+        if let Some(batch) = &kept {
+            put_back(batch, &top).await;
+            if let Some(aside) = &aside {
+                // only when empty: a batch that couldn't all go back stays for the next `catch_up`
+                let _ = tokio::fs::remove_dir(aside).await;
+            }
         }
         out
     }
 
-    /// The untracked or ignored files among `paths` (from git's top), read and taken off disk, so the merge neither
-    /// refuses ("would be overwritten") nor silently replaces them.
-    async fn set_aside(&self, top: &Path, paths: &[String]) -> Vec<(String, Vec<u8>)> {
+    /// Where saves are set aside during a merge: `<git dir>/wisp-aside/` (this worktree's own, so another worktree's
+    /// leftovers never land here); None when git can't say.
+    async fn aside_dir(&self) -> Option<PathBuf> {
+        let git_dir = self.git.quiet(&self.dir, &["rev-parse", "--absolute-git-dir"]).await;
+        let git_dir = git_dir.trim();
+        (!git_dir.is_empty()).then(|| Path::new(git_dir).join("wisp-aside"))
+    }
+
+    /// The untracked or ignored files among `paths` (from git's top), moved into a new folder in `aside` at the same
+    /// paths, so the merge neither refuses ("would be overwritten") nor silently replaces them, and a crash mid-merge
+    /// still leaves them on disk. The folder, when anything moved.
+    async fn set_aside(&self, aside: Option<&Path>, top: &Path, paths: &[String]) -> Option<PathBuf> {
+        let aside = aside?;
         if paths.is_empty() {
-            return Vec::new();
+            return None;
         }
         let specs = literal(paths);
         let mut a = vec!["ls-files", "-o", "-z", "--"];
         a.extend(specs.iter().map(String::as_str));
         let listed = self.git.quiet(top, &a).await;
-        let mut kept = Vec::new();
-        for path in listed.split('\0').filter(|p| !p.is_empty()) {
-            let file = top.join(path);
-            if let Ok(bytes) = tokio::fs::read(&file).await
-                && tokio::fs::remove_file(&file).await.is_ok()
-            {
-                kept.push((path.to_owned(), bytes));
+        let listed: Vec<&str> = listed.split('\0').filter(|p| !p.is_empty()).collect();
+        if listed.is_empty() {
+            return None;
+        }
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        let batch = aside.join(format!("{}-{nanos}", std::process::id()));
+        for path in listed {
+            // one that won't move stays where it is: the merge refuses over it, as it would have before
+            if let Err(e) = move_file(&top.join(path), &batch.join(path)).await {
+                tracing::warn!(path, "catch_up: a local save couldn't be set aside: {e}");
             }
         }
-        kept
+        Some(batch)
+    }
+
+    /// Saves an earlier `catch_up` set aside and never put back (wisp quit or crashed mid-merge): back in the worktree,
+    /// over whatever the merge wrote, since they are the newer local save.
+    async fn put_back_leftovers(&self, aside: &Path, top: &Path) {
+        let Ok(mut entries) = tokio::fs::read_dir(aside).await else { return };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if entry.file_type().await.is_ok_and(|t| t.is_dir()) {
+                put_back(&entry.path(), top).await;
+            }
+        }
+        let _ = tokio::fs::remove_dir(aside).await;
     }
 
     /// The merge itself: done, done with HEAD's side of the history files both changed, or undone.
@@ -161,13 +214,45 @@ impl Inner {
     }
 }
 
-/// A file set aside before the merge, written back (its folder made again if the merge took it).
-async fn put_back(file: &Path, bytes: &[u8]) {
-    if let Some(dir) = file.parent() {
-        let _ = tokio::fs::create_dir_all(dir).await;
+/// `from` moved to `to` (its folder made, `to` replaced): a rename, or a copy and a remove when the two are on
+/// different devices. `from` stays until its copy is whole.
+async fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    if let Some(dir) = to.parent() {
+        tokio::fs::create_dir_all(dir).await?;
     }
-    if let Err(e) = tokio::fs::write(file, bytes).await {
-        tracing::warn!(file = %file.display(), "catch_up: a local save couldn't be put back: {e}");
+    if tokio::fs::rename(from, to).await.is_ok() {
+        return Ok(());
+    }
+    tokio::fs::copy(from, to).await?;
+    tokio::fs::remove_file(from).await
+}
+
+/// Every file in `batch` (set aside before a merge, at its path from git's top) moved back under `top`, over what the
+/// merge wrote (its folder made again if the merge took it), and `batch` removed. A file that won't go back keeps
+/// the batch, so the next `catch_up` tries again and nothing is lost.
+async fn put_back(batch: &Path, top: &Path) {
+    let mut whole = true;
+    let mut dirs = vec![batch.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
+            whole = false;
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if entry.file_type().await.is_ok_and(|t| t.is_dir()) {
+                dirs.push(path);
+                continue;
+            }
+            let Ok(rel) = path.strip_prefix(batch) else { continue };
+            if let Err(e) = move_file(&path, &top.join(rel)).await {
+                whole = false;
+                tracing::warn!(file = %rel.display(), "catch_up: a local save couldn't be put back: {e}");
+            }
+        }
+    }
+    if whole {
+        let _ = tokio::fs::remove_dir_all(batch).await;
     }
 }
 
@@ -232,5 +317,33 @@ mod tests {
         assert_eq!(outside, [".wisp/tasks/y.task.yml", "Merge branch x"]);
         assert_eq!(sort_out(&format!("\0{save}\n\n.wisp/worktree.json\n"), &req).1, [".wisp/worktree.json"]);
         assert_eq!(sort_out(&format!("\0{save}\n\n.wisp/history/x.jsonl.zst\n"), &req).1, Vec::<String>::new());
+    }
+
+    /// final6 F1: the LFS store adds its line to the `.gitattributes` beside `.wisp/` in the same save commit: that
+    /// file goes with the save, only where the commit writes inside the folder next to it, and only in a save.
+    #[test]
+    fn a_save_s_gitattributes_beside_its_folder_is_the_save_s() {
+        let req = CatchUpRequest {
+            only: ".wisp".into(),
+            within: within(),
+            also: vec![".gitattributes".into()],
+            subject_start: START.into(),
+            subject_end: END.into(),
+            ..CatchUpRequest::default()
+        };
+        let save = format!("{START}t{END}");
+        let none = Vec::<String>::new();
+        assert_eq!(sort_out(&format!("\0{save}\n\n.gitattributes\n.wisp/history/x.zst\n"), &req).1, none);
+        assert_eq!(sort_out(&format!("\0{save}\n\napp/.gitattributes\napp/.wisp/history/x.zst\n"), &req).1, none);
+        assert_eq!(sort_out(&format!("\0{save}\n\nsrc/.gitattributes\n.wisp/history/x.zst\n"), &req).1, ["src/.gitattributes"]);
+        assert_eq!(sort_out(&format!("\0{save}\n\n.wisp/.gitattributes\n.wisp/history/x.zst\n"), &req).1, [".wisp/.gitattributes"]);
+        assert_eq!(
+            sort_out(&format!("\0{save}\n\n.gitattributes\n.wisp/worktree.json\n"), &req).1,
+            [".gitattributes", ".wisp/worktree.json"]
+        );
+        assert_eq!(sort_out(&format!("\0{save}\n\n.gitattributes\n"), &req).1, [".gitattributes"], "never on its own");
+        assert_eq!(sort_out("\0lfs\n\n.gitattributes\n.wisp/history/x.zst\n", &req).1, [".gitattributes", ".wisp/history/x.zst"]);
+        let without = CatchUpRequest { also: Vec::new(), ..req };
+        assert_eq!(sort_out(&format!("\0{save}\n\n.gitattributes\n.wisp/history/x.zst\n"), &without).1, [".gitattributes"]);
     }
 }
