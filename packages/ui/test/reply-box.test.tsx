@@ -1,4 +1,4 @@
-// The reply box's fold (app/Task.tsx ReplyBox, v1 composer.js): a press outside folds it once it's let go.
+// The reply box's fold (app/ReplyBox.tsx, v1 composer.js): a press outside folds it once it's let go.
 import { afterEach, expect, test } from 'vitest';
 import { render } from 'solid-js/web';
 import { ReplyBox } from '../src/app/Task.tsx';

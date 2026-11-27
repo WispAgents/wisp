@@ -3,7 +3,14 @@
 // turn's tools hold Copy turn as Markdown, the task's menu holds Find in task (a phone has no ⌘F), and one open store
 // per turn goes to both of its transcripts.
 import { expect, test } from 'vitest';
-import task from '../src/frame/TaskView.tsx?raw';
+import view from '../src/frame/TaskView.tsx?raw';
+import turn from '../src/frame/TaskTurn.tsx?raw';
+import actions from '../src/frame/task-actions.ts?raw';
+import find from '../src/frame/task-find-view.ts?raw';
+import turnList from '../src/frame/TaskTurns.tsx?raw';
+
+// the task page and the modules it's split into: its turns, its actions (More, the keys), Find's wiring and the turn list that holds Find
+const task = [view, turn, actions, find, turnList].join('\n');
 
 test('find_and_the_markdown_copy_load_when_used_not_with_the_task_page', () => {
   expect(task).toMatch(/lazy\(\(\) => import\('\.\/TaskFind\.tsx'\)\)/);
