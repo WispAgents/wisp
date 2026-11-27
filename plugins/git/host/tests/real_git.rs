@@ -812,8 +812,9 @@ fn nanos_now() -> u128 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
 }
 
-/// final7 F1: a leftover batch from an interrupted run is older than a save written since (history re-saves `.wisp/`
-/// after every turn): the newer one stays in the worktree and the old one stays in the batch, neither lost.
+/// final7 F1, final8 F1: a leftover batch from an interrupted run is older than a save written since (history re-saves
+/// `.wisp/` after every turn): the newer one stays in the worktree, and the old one, an earlier save of it, goes with
+/// its batch (kept, it would refuse the worktree's removal forever).
 #[tokio::test]
 async fn catch_up_never_puts_a_leftover_over_a_newer_save() {
     let t = tmp("catchup-leftover-newer");
@@ -826,7 +827,7 @@ async fn catch_up_never_puts_a_leftover_over_a_newer_save() {
     let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
     r.catch_up(&user(), catch_up_ask()).await.unwrap();
     assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x.task.yml")).unwrap(), "V3\n");
-    assert_eq!(std::fs::read_to_string(batch.join(".wisp/tasks/x.task.yml")).unwrap(), "V2\n", "the older copy kept aside");
+    assert!(!dir.join(".git/wisp-aside").exists(), "the older copy and its batch are gone");
 }
 
 /// final7 F1: `.wisp/` tracked, and the save committed after the batch was set aside (HEAD's copy is the newer one):
@@ -845,7 +846,7 @@ async fn catch_up_never_puts_a_leftover_over_a_save_committed_since() {
     r.catch_up(&user(), catch_up_ask()).await.unwrap();
     assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x.task.yml")).unwrap(), "V3\n");
     assert_eq!(git(&dir, &["status", "--porcelain"]), "", "no older v2 left uncommitted");
-    assert_eq!(std::fs::read_to_string(batch.join(".wisp/tasks/x.task.yml")).unwrap(), "V2\n");
+    assert!(!batch.exists(), "the older copy is dropped");
 }
 
 /// final7 F1: cut off after the merge: the worktree holds just what the merge wrote (the remote's older copy), so
@@ -896,10 +897,11 @@ async fn opening_a_worktree_puts_back_what_an_interrupted_ship_set_aside() {
     assert!(!aside.exists(), "nothing left in the worktree's git dir");
 }
 
-/// final7 F2: removing a worktree deletes its git dir: a set-aside save that can't go back (a newer copy is in the
-/// folder) keeps the worktree, refused in words. One with nothing aside goes as before.
+/// final7 F2, final8 F1: removing a worktree deletes its git dir. A set-aside save older than the folder's copy is
+/// dropped and the worktree goes (Ship's post-merge tidy too); only one that won't move keeps it, refused in words that
+/// name the folder to delete. One with nothing aside goes as before.
 #[tokio::test]
-async fn worktree_remove_keeps_a_worktree_with_saves_still_set_aside() {
+async fn worktree_remove_drops_an_older_set_aside_save_and_keeps_only_what_wont_move() {
     let t = tmp("aside-remove");
     let dir = repo(&t);
     let wt = t.0.join("wts/a");
@@ -908,14 +910,31 @@ async fn worktree_remove_keeps_a_worktree_with_saves_still_set_aside() {
     write(&wt, ".wisp/tasks/x.task.yml", "V3\n");
     let (_, s) = service();
     let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
-    let e = r.worktree_remove(&user(), wt.to_str().unwrap()).await.unwrap_err();
-    assert!(e.message.contains("set aside by an interrupted Ship"), "{}", e.message);
-    assert!(wt.is_dir() && git_dir.is_dir(), "the folder and its git dir stay");
-    assert_eq!(std::fs::read_to_string(wt.join(".wisp/tasks/x.task.yml")).unwrap(), "V3\n");
-    assert_eq!(std::fs::read_to_string(git_dir.join("wisp-aside/1-2/.wisp/tasks/x.task.yml")).unwrap(), "V2\n");
+    r.worktree_remove(&user(), wt.to_str().unwrap()).await.unwrap();
+    assert!(!wt.exists() && !git_dir.exists(), "the folder and its git dir are gone");
 
     let plain = t.0.join("wts/b");
     let plain_git = linked_worktree(&dir, &plain, "wisp/b");
     r.worktree_remove(&user(), plain.to_str().unwrap()).await.unwrap();
     assert!(!plain.exists() && !plain_git.exists());
+
+    // a batch folder that can't be read (root reads anything: nothing to check there)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let stuck = t.0.join("wts/c");
+        let stuck_git = linked_worktree(&dir, &stuck, "wisp/c");
+        let sub = stuck_git.join("wisp-aside/1-2/.wisp");
+        write(&sub, "tasks/x.task.yml", "V2\n");
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read_dir(&sub).is_err() {
+            let e = r.worktree_remove(&user(), stuck.to_str().unwrap()).await.unwrap_err();
+            assert!(e.message.contains(&stuck_git.join("wisp-aside").display().to_string()), "{}", e.message);
+            assert!(e.message.contains("delete that folder") && !e.message.contains("ship again"), "{}", e.message);
+            assert!(stuck.is_dir(), "the folder stays");
+        }
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        r.worktree_remove(&user(), stuck.to_str().unwrap()).await.unwrap();
+        assert!(!stuck.exists(), "tried again, it goes");
+    }
 }

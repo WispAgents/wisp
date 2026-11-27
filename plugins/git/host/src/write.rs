@@ -77,14 +77,15 @@ impl Inner {
             return Err(GitError::Refused(format!("{path} is a repository's own checkout, not a worktree: it is never removed.")));
         }
         // saves an interrupted Ship set aside live in the worktree's own git dir, which the removal deletes: put back
-        // first, and what can't go back (a newer copy is in the folder) keeps the worktree. Only the worktree's own
-        // (its top is the folder): a stray folder inside another checkout would find that checkout's
+        // first (an older copy of a save the folder has newer is dropped), and only what wouldn't move keeps the
+        // worktree: another try or deleting the folder clears that. Only the worktree's own (its top is the folder): a
+        // stray folder inside another checkout would find that checkout's
         if let Some(real) = &real {
             let top = self.git.quiet(real, &["rev-parse", "--show-toplevel"]).await;
             let own = !top.trim().is_empty() && wisp_proc::canonical(top.trim()).await.is_ok_and(|t| &t == real);
             if own && let Some(aside) = crate::catch_up::restore_aside(&self.git, real, false).await {
                 return Err(GitError::Refused(format!(
-                    "{path} has history saves set aside by an interrupted Ship ({}); open it and ship again, or remove them.",
+                    "{path} has history saves an interrupted Ship set aside that couldn't be put back: they are in {}. Try again, or delete that folder to drop them.",
                     aside.display()
                 )));
             }

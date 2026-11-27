@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A worktree with an old set-aside save can be removed again, and Ship's catch-up keeps a save made mid-merge.** A
+  leftover kept back because the folder had a newer copy stayed in the git dir forever, so removing the worktree (and
+  Ship's tidy after a merge) was refused every time; that older copy is now dropped with a warning in the log, and
+  only a save that couldn't be moved keeps the worktree, with a note naming the folder to delete or a retry. Ship's
+  own put back after its merge no longer replaces a save history wrote while the fetch and merge ran.
 - **A save set aside by an interrupted Ship never replaces a newer one, and never vanishes with its worktree.** The
   next Ship put every leftover back over the file in the folder, even a save written or committed since; now a leftover
   goes back only where the folder holds nothing newer (missing, or just what the merge brought), and otherwise both
