@@ -1,17 +1,25 @@
 // Merge's confirm (v1 ship.js mergePr → ask()): the question names what merges and what happens
 // after; warnings are lines under it, never a hold. Red, and *Merge anyway*, only for what's wrong
-// with the PR. Driven by the task's merge flow: confirming → merging → idle.
+// with the PR. Driven by the task's merge flow: confirming → merging → idle. When the base branch's rules hold the
+// merge (merging → blocked), a second confirm: Bypass and merge (`gh pr merge --admin`) or Wait for requirements (closes).
 
-import { createSignal, For, Show, type Accessor, type JSX } from 'solid-js';
-import { Button, Dialog, Inline, Stack, Text, useSignal } from '@wisp/ui';
-import type { TaskFlows } from './flows.ts';
-import { t } from './i18n.ts';
-import { useUnsent, withUnsent } from './unsent.ts';
-import { mergePlan } from './model/merge.ts';
-import type { ReviewContext } from './model/review.ts';
-import type { ShipShell } from './shell.ts';
-import type { ShipSession } from './types.ts';
-import './i18n/lazy.ts';
+import {
+  createEffect,
+  createSignal,
+  For,
+  Show,
+  type Accessor,
+  type JSX,
+} from "solid-js";
+import { Button, Dialog, Inline, Stack, Text, useSignal } from "@wisp/ui";
+import type { TaskFlows } from "./flows.ts";
+import { t } from "./i18n.ts";
+import { useUnsent, withUnsent } from "./unsent.ts";
+import { mergePlan } from "./model/merge.ts";
+import type { ReviewContext } from "./model/review.ts";
+import type { ShipShell } from "./shell.ts";
+import type { ShipSession } from "./types.ts";
+import "./i18n/lazy.ts";
 
 export interface MergeAsk {
   /** Asks (opens the confirm here). */
@@ -21,65 +29,123 @@ export interface MergeAsk {
   readonly Confirm: () => JSX.Element;
 }
 
-export function useMerge(flows: TaskFlows, s: Accessor<ShipSession | undefined>, ctx: Accessor<ReviewContext>, shell: ShipShell): MergeAsk {
+export function useMerge(
+  flows: TaskFlows,
+  s: Accessor<ShipSession | undefined>,
+  ctx: Accessor<ReviewContext>,
+  shell: ShipShell,
+): MergeAsk {
   const state = useSignal(flows.merge.state);
+  const why = useSignal(flows.blocked);
   // Two places can ask (the row and the pane): the confirm opens by the one that did.
   const [asked, setAsked] = createSignal(false);
   const unsent = useUnsent();
   const plan = () => mergePlan(t, withUnsent(s(), unsent), ctx());
   const close = (): void => {
     setAsked(false);
-    flows.merge.send('cancel');
+    flows.merge.send("cancel");
   };
+  // the one that asked keeps the ask until the merge ends, so only its strip shows the bypass confirm
+  createEffect(() => state() === "idle" && setAsked(false));
   const go = (): void => {
     const p = plan();
     // confirm first: closing the dialog may report a close, which must not cancel the merge
-    const went = flows.merge.send('confirm');
-    setAsked(false);
+    const went = flows.merge.send("confirm");
     if (went && p) shell.toast.show(p.merging);
   };
+  const bypass = (): void => {
+    const p = plan();
+    if (flows.merge.send("bypass", "admin") && p) shell.toast.show(p.merging);
+  };
+  const wait = (): void => {
+    flows.merge.send("cancel");
+  };
   const Confirm = (): JSX.Element => (
-    <Show when={plan()}>
-      {(p) => (
-        <Dialog
-          open={asked() && state() === 'confirming'}
-          onOpenChange={(open) => !open && close()}
-          role="alertdialog"
-          size="sm"
-          title={p().ok}
-          part="ship.merge.confirm"
-          footer={
-            <Inline gap="3" justify="end">
-              <Button variant="secondary" size="sm" onClick={close}>
-                {t('wisp.ship.cancel')}
-              </Button>
-              <Button variant={p().danger ? 'danger' : 'primary'} size="sm" icon="check" onClick={go} part="ship.merge.go">
-                {p().danger ? t('wisp.ship.merge.anyway') : p().ok}
-              </Button>
-            </Inline>
-          }
-        >
-          <Stack gap="3">
-            <Text as="p">{p().question}</Text>
-            <For each={p().lines}>
-              {(line) => (
-                <Text as="p" size="sm" tone="warn">
-                  {line}
-                </Text>
-              )}
-            </For>
-          </Stack>
-        </Dialog>
-      )}
-    </Show>
+    <>
+      <Dialog
+        open={asked() && state() === "blocked"}
+        onOpenChange={(open) => !open && wait()}
+        role="alertdialog"
+        size="sm"
+        title={t("wisp.ship.merge.blockedTitle")}
+        part="ship.merge.blocked"
+        footer={
+          <Inline gap="3" justify="end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={wait}
+              part="ship.merge.wait"
+            >
+              {t("wisp.ship.merge.wait")}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              icon="check"
+              onClick={bypass}
+              part="ship.merge.bypass"
+            >
+              {t("wisp.ship.merge.bypass")}
+            </Button>
+          </Inline>
+        }
+      >
+        <Stack gap="3">
+          <Text as="p">{why()}</Text>
+          <Text as="p" size="sm" tone="warn">
+            {t("wisp.ship.merge.bypassWhy")}
+          </Text>
+        </Stack>
+      </Dialog>
+      <Show when={plan()}>
+        {(p) => (
+          <Dialog
+            open={asked() && state() === "confirming"}
+            onOpenChange={(open) => !open && close()}
+            role="alertdialog"
+            size="sm"
+            title={p().ok}
+            part="ship.merge.confirm"
+            footer={
+              <Inline gap="3" justify="end">
+                <Button variant="secondary" size="sm" onClick={close}>
+                  {t("wisp.ship.cancel")}
+                </Button>
+                <Button
+                  variant={p().danger ? "danger" : "primary"}
+                  size="sm"
+                  icon="check"
+                  onClick={go}
+                  part="ship.merge.go"
+                >
+                  {p().danger ? t("wisp.ship.merge.anyway") : p().ok}
+                </Button>
+              </Inline>
+            }
+          >
+            <Stack gap="3">
+              <Text as="p">{p().question}</Text>
+              <For each={p().lines}>
+                {(line) => (
+                  <Text as="p" size="sm" tone="warn">
+                    {line}
+                  </Text>
+                )}
+              </For>
+            </Stack>
+          </Dialog>
+        )}
+      </Show>
+    </>
   );
   return {
     ask() {
       if (!plan()) return;
       setAsked(true);
-      flows.merge.send('ask');
+      flows.merge.send("ask");
     },
-    merging: () => state() === 'merging',
+    merging: () => state() === "merging",
     Confirm,
   };
 }

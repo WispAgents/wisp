@@ -3,17 +3,25 @@
 //   ship   idle → sending → idle | failed; a failure stays on the row with Retry (the dialog again,
 //          with what was typed) and × (dismiss). v1 kept this in a module Map (`ships`).
 //   merge  idle → confirming → merging → idle. The confirm sits by the button; while merging the
-//          button holds its width with a ring.
+//          button holds its width with a ring. When the base branch's rules hold it (required checks or reviews,
+//          the server's `merge_blocked`): merging → blocked, a second confirm to bypass them (`--admin`) or wait.
 // A late answer for a state already left is dropped by the machine runtime (#435, #492).
 
-import { signal, type EntityKey, type Machine, type PluginClient, type Readable } from '@wisp/client';
-import { merge as mergeCmd, ship as shipCmd } from './commands.ts';
-import { t as tr } from './i18n.ts';
-import { mergedToast } from './model/merge.ts';
-import { shippedToast } from './model/ship.ts';
-import type { ShipShell } from './shell.ts';
-import type { ShipStep, ShipValues } from './types.ts';
-import './i18n/lazy.ts';
+import {
+  CommandError,
+  signal,
+  type EntityKey,
+  type Machine,
+  type PluginClient,
+  type Readable,
+} from "@wisp/client";
+import { merge as mergeCmd, ship as shipCmd } from "./commands.ts";
+import { t as tr } from "./i18n.ts";
+import { mergedToast } from "./model/merge.ts";
+import { shippedToast } from "./model/ship.ts";
+import type { ShipShell } from "./shell.ts";
+import type { ShipStep, ShipValues } from "./types.ts";
+import "./i18n/lazy.ts";
 
 export interface ShipRun {
   readonly steps: readonly ShipStep[];
@@ -22,47 +30,71 @@ export interface ShipRun {
   readonly error?: string;
 }
 
-export type ShipState = 'idle' | 'sending' | 'failed';
-export type MergeState = 'idle' | 'confirming' | 'merging';
-export type MergeEvent = 'ask' | 'cancel' | 'confirm' | 'done';
+export type ShipState = "idle" | "sending" | "failed";
+export type MergeState = "idle" | "confirming" | "merging" | "blocked";
+export type MergeEvent =
+  "ask" | "cancel" | "confirm" | "done" | "blocked" | "bypass";
+
+/** ship.merge's refusal reason when the base branch's rules hold the merge (wisp_ship_api::MERGE_BLOCKED) */
+export const MERGE_BLOCKED = "merge_blocked";
 
 export interface TaskFlows {
-  readonly ship: Machine<ShipState, 'send' | 'dismiss'>;
+  readonly ship: Machine<ShipState, "send" | "dismiss">;
   /** the run in flight or the one that failed; undefined when idle */
   readonly run: Readable<ShipRun | undefined>;
-  start(run: Omit<ShipRun, 'error'>): void;
+  start(run: Omit<ShipRun, "error">): void;
   dismiss(): void;
   readonly merge: Machine<MergeState, MergeEvent>;
+  /** why the merge is held while `blocked` (the server's words) */
+  readonly blocked: Readable<string | undefined>;
 }
 
-const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+const errorText = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
 
-function shipFlow(client: PluginClient, shell: () => ShipShell, key: EntityKey): Pick<TaskFlows, 'ship' | 'run' | 'start' | 'dismiss'> {
+function shipFlow(
+  client: PluginClient,
+  shell: () => ShipShell,
+  key: EntityKey,
+): Pick<TaskFlows, "ship" | "run" | "start" | "dismiss"> {
   const run = signal<ShipRun | undefined>(undefined);
-  const ship = client.machine<ShipState, 'send' | 'dismiss', void>(
+  const ship = client.machine<ShipState, "send" | "dismiss", void>(
     {
       id: `wisp.ship.ship:${key}`,
-      initial: 'idle',
+      initial: "idle",
       states: {
-        idle: { on: { send: 'sending' } },
+        idle: { on: { send: "sending" } },
         sending: {
           async invoke() {
             const r = run();
             if (!r) return;
             try {
-              const out = await client.run(shipCmd, { key, ...r.values, update: r.update, first: r.steps[0] ?? 'push' });
+              const out = await client.run(shipCmd, {
+                key,
+                ...r.values,
+                update: r.update,
+                first: r.steps[0] ?? "push",
+              });
               run(undefined);
               const url = out.url;
-              shell().toast.success(shippedToast(tr, out, r.update), { duration: 8000, ...(url && { action: { label: tr('wisp.ship.toast.open'), onClick: () => shell().platform.openExternal(url) } }) });
+              shell().toast.success(shippedToast(tr, out, r.update), {
+                duration: 8000,
+                ...(url && {
+                  action: {
+                    label: tr("wisp.ship.toast.open"),
+                    onClick: () => shell().platform.openExternal(url),
+                  },
+                }),
+              });
             } catch (err) {
               // the shell's toast already says why (the command's reject); the row keeps it too
               run({ ...r, error: errorText(err) });
               throw err;
             }
           },
-          onError: 'failed',
+          onError: "failed",
         },
-        failed: { on: { send: 'sending', dismiss: 'idle' } },
+        failed: { on: { send: "sending", dismiss: "idle" } },
       },
     },
     undefined,
@@ -72,50 +104,86 @@ function shipFlow(client: PluginClient, shell: () => ShipShell, key: EntityKey):
     run,
     start(r) {
       run({ ...r });
-      ship.send('send');
+      ship.send("send");
     },
     dismiss() {
       run(undefined);
-      ship.send('dismiss');
+      ship.send("dismiss");
     },
   };
 }
 
-function mergeFlow(client: PluginClient, shell: () => ShipShell, key: EntityKey): TaskFlows['merge'] {
-  return client.machine<MergeState, MergeEvent, void>(
+function mergeFlow(
+  client: PluginClient,
+  shell: () => ShipShell,
+  key: EntityKey,
+): Pick<TaskFlows, "merge" | "blocked"> {
+  const blocked = signal<string | undefined>(undefined);
+  const merge: Machine<MergeState, MergeEvent> = client.machine<
+    MergeState,
+    MergeEvent,
+    void
+  >(
     {
       id: `wisp.ship.merge:${key}`,
-      initial: 'idle',
+      initial: "idle",
       states: {
-        idle: { on: { ask: 'confirming' } },
-        confirming: { on: { cancel: 'idle', confirm: 'merging' } },
+        idle: { on: { ask: "confirming" } },
+        confirming: { on: { cancel: "idle", confirm: "merging" } },
         merging: {
           async invoke() {
-            const r = await client.run(mergeCmd, { key });
-            const done = mergedToast(tr, r);
-            if (done.ok) shell().toast.success(done.text, { duration: 10_000 });
-            else shell().toast.error(done.text);
-            return 'done' as const;
+            // `bypass` carries the admin ask; `confirm` never does
+            const admin = merge.data === "admin";
+            try {
+              const r = await client.run(mergeCmd, { key, admin });
+              const done = mergedToast(tr, r);
+              if (done.ok)
+                shell().toast.success(done.text, { duration: 10_000 });
+              else shell().toast.error(done.text);
+              return "done" as const;
+            } catch (err) {
+              // the branch's rules hold it: ask to bypass or wait rather than toasting gh's advice about flags
+              if (
+                !admin &&
+                err instanceof CommandError &&
+                err.reason === MERGE_BLOCKED
+              ) {
+                blocked(err.message);
+                return "blocked" as const;
+              }
+              shell().toast.error(errorText(err));
+              throw err;
+            }
           },
-          on: { done: 'idle' },
-          // a refusal: the shell's toast says why, and Merge is back
-          onError: 'idle',
+          on: { done: "idle", blocked: "blocked" },
+          // a refusal: the toast says why, and Merge is back
+          onError: "idle",
         },
+        // Wait for requirements: nothing to do, the PR merges later by hand (or GitHub's auto-merge)
+        blocked: { on: { cancel: "idle", bypass: "merging" } },
       },
     },
     undefined,
   );
+  return { merge, blocked };
 }
 
 const registry = new WeakMap<PluginClient, Map<EntityKey, TaskFlows>>();
 
 /** The flows of one task, made on first use and kept while the plugin is on. */
-export function flowsFor(client: PluginClient, shell: () => ShipShell, key: EntityKey): TaskFlows {
+export function flowsFor(
+  client: PluginClient,
+  shell: () => ShipShell,
+  key: EntityKey,
+): TaskFlows {
   let byKey = registry.get(client);
   if (!byKey) registry.set(client, (byKey = new Map()));
   const have = byKey.get(key);
   if (have) return have;
-  const made: TaskFlows = { ...shipFlow(client, shell, key), merge: mergeFlow(client, shell, key) };
+  const made: TaskFlows = {
+    ...shipFlow(client, shell, key),
+    ...mergeFlow(client, shell, key),
+  };
   byKey.set(key, made);
   return made;
 }

@@ -16,6 +16,8 @@ pub struct GhState {
     pub checks: Option<Value>,
     pub review: Option<String>,
     pub mergeable: Option<String>,
+    /// the base branch's rules hold every merge but an `--admin` one
+    pub protected: bool,
     pub review_comments: Value,
     pub run_log: Option<String>,
     /// `gh api graphql`'s answer (review threads); null: none
@@ -140,6 +142,11 @@ impl FakeGh {
                 }
                 if p["isDraft"] == json!(true) {
                     return fail("error: Pull request is still a draft");
+                }
+                if st.protected && !args.iter().any(|x| x == "--admin") {
+                    return fail(&format!(
+                        "X Pull request o/r#{n} is not mergeable: the base branch policy prohibits the merge. To have the pull request merged after all the requirements have been met, add the `--auto` flag. To use administrator privileges to immediately merge the pull request, add the `--admin` flag."
+                    ));
                 }
                 if let Some(p) = st.prs.get_mut(&n) {
                     p["state"] = json!("MERGED");

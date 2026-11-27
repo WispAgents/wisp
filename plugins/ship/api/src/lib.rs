@@ -144,20 +144,34 @@ impl Command for Details {
     type Out = Vec<PrPanel>;
 }
 
-/// Squash-merges each open PR of the task, syncs the user's base, cleans up wisp's worktrees.
+/// Squash-merges each open PR of the task, syncs the user's base, cleans up wisp's worktrees. Refused with
+/// [`MERGE_BLOCKED`] when the base branch's rules (required checks or reviews) hold the merge; `admin` bypasses them.
 #[derive(Debug)]
 pub struct Merge;
 impl Command for Merge {
     const ID: &'static str = "ship.merge";
-    type Args = SessionArgs;
+    type Args = MergeArgs;
     fn args_ts() -> Option<String> {
         Some(format!(
             "{}{}",
-            <SessionArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
-            <SessionArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+            <MergeArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <MergeArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
         ))
     }
     type Out = Merged;
+}
+
+/// `ship.merge`'s refusal reason (the wire reject's `reason`) when the base branch's rules hold the merge: the
+/// UI asks to bypass them (`admin`) or wait.
+pub const MERGE_BLOCKED: &str = "merge_blocked";
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
+pub struct MergeArgs {
+    pub session: String,
+    /// `gh pr merge --admin`: merge even though the base branch's rules (required checks, reviews) aren't met.
+    /// Added 2026-11-28 (additive).
+    #[serde(default)]
+    pub admin: bool,
 }
 
 /// `wisp_pr`: attach (or detach) a PR by URL or number.

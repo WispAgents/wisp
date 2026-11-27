@@ -12,7 +12,7 @@ use wisp_ship_core::decide::{
     push_target, repo_status, reuse_pr, tidy_note, unpushed_from,
 };
 
-use crate::error::Result;
+use crate::error::{Result, ShipError};
 use crate::gh::Gh;
 
 /// A merged task's folder removed through the worktrees plugin (`worktrees.remove`, strict, the branch left to ship):
@@ -151,15 +151,22 @@ impl Shipper {
 
     /// Squash-merge the exact head that was reviewed (a draft readied first), fast-forward the user's
     /// base, then tidy wisp's own worktree and branch (edge cases Git 7, 8) for task `session`.
-    pub async fn merge(&self, call: &Call, session: &str, wt: &Worktree, number: u64) -> Result<(PrSummary, Synced, Option<String>)> {
+    pub async fn merge(
+        &self,
+        call: &Call,
+        session: &str,
+        wt: &Worktree,
+        number: u64,
+        admin: bool,
+    ) -> Result<(PrSummary, Synced, Option<String>)> {
         let dir = Self::dir_of(wt).await;
         let n = number.to_string();
         let pr = self.gh.pr_view(&dir, &n, self.now()).await?;
-        let plan = merge_plan(&pr, &n)?;
+        let plan = merge_plan(&pr, &n, admin)?;
         if let Some(ready) = plan.ready {
             self.gh.run(&dir, &ready, None).await?;
         }
-        self.gh.run(&dir, &plan.merge, None).await?;
+        self.gh.run(&dir, &plan.merge, None).await.map_err(|e| held(e, pr.number))?;
         let pr = self.gh.pr_view(&dir, &n, self.now()).await?;
         let root = self.repo(call, &wt.root).await?;
         let mut sync = root.sync_base(call, &wt.base).await.map_or_else(
@@ -210,13 +217,13 @@ impl Shipper {
     }
 
     /// Squash-merge a PR attached by URL: no worktree of wisp's to sync or tidy.
-    pub async fn merge_url(&self, dir: &str, url: &str) -> Result<PrSummary> {
+    pub async fn merge_url(&self, dir: &str, url: &str, admin: bool) -> Result<PrSummary> {
         let pr = self.gh.pr_view(dir, url, self.now()).await?;
-        let plan = merge_plan(&pr, url)?;
+        let plan = merge_plan(&pr, url, admin)?;
         if let Some(ready) = plan.ready {
             self.gh.run(dir, &ready, None).await?;
         }
-        self.gh.run(dir, &plan.merge, None).await?;
+        self.gh.run(dir, &plan.merge, None).await.map_err(|e| held(e, pr.number))?;
         self.gh.pr_view(dir, url, self.now()).await
     }
 
@@ -244,6 +251,14 @@ impl Shipper {
         let base = format!("refs/remotes/{}/{}", wt.remote.as_deref().unwrap_or("origin"), wt.base);
         let m = repo.base_merged(call, &base).await?;
         Ok(if m.ok { Ok(()) } else { Err(m.why.unwrap_or_else(|| "The base is not merged in.".into())) })
+    }
+}
+
+/// gh's branch-rules refusal of a merge, typed so the UI asks to bypass or wait; any other failure as it was.
+fn held(e: ShipError, number: u64) -> ShipError {
+    match e {
+        ShipError::Gh(m) if wisp_ship_core::decide::merge_blocked(&m) => ShipError::Blocked(wisp_ship_core::decide::blocked_text(number)),
+        e => e,
     }
 }
 
