@@ -146,6 +146,26 @@ async fn prune_removes_only_what_this_source_applied_aac_1() {
     assert_eq!(sources(&k).await.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(), ["agent/helper", "agent/legacy"]);
 }
 
+/// A row from before sources (or a resource already as declared) gets no op, so apply never wrote its source and
+/// `--prune` kept it forever once the formula dropped it: an apply that declares it stamps this source on it.
+#[tokio::test]
+async fn an_apply_claims_what_it_declares_that_names_no_source_aac_1() {
+    let k = start(false).await;
+    k.call(Caller::user(), "resources.apply", json!({ "resources": [agent("critic"), agent("other")] })).await.unwrap();
+    assert_eq!(sources(&k).await, [("agent/critic".to_owned(), Value::Null), ("agent/other".to_owned(), Value::Null)]);
+    // repo A declares critic as it already is: no op, but the row is A's now; other stays unknown
+    let done = k.call(Caller::user(), "resources.apply", json!({ "resources": [agent("critic")], "source": "repo-a" })).await.unwrap();
+    assert_eq!(done["applied"], 0, "{done}");
+    assert_eq!(sources(&k).await, [("agent/critic".to_owned(), json!("repo-a")), ("agent/other".to_owned(), Value::Null)]);
+    // so dropping it from the formula lets --prune remove it, and only it
+    let p = plan(&k, json!({ "resources": [], "kinds": ["agent"], "prune": true, "source": "repo-a" })).await;
+    let ops: Vec<&str> = p["ops"].as_array().unwrap().iter().map(|o| o["name"].as_str().unwrap()).collect();
+    assert_eq!(ops, ["critic"], "{p}");
+    // a row another source owns isn't taken over
+    k.call(Caller::user(), "resources.apply", json!({ "resources": [agent("critic")], "source": "repo-b" })).await.unwrap();
+    assert_eq!(sources(&k).await[0], ("agent/critic".to_owned(), json!("repo-a")));
+}
+
 #[tokio::test]
 async fn an_unchanged_resource_naming_nothing_is_a_problem_aac_2() {
     let k = start(true).await;

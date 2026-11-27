@@ -41,10 +41,36 @@ fn env_refs(s: &str) -> Vec<&str> {
     out
 }
 
+/// What [`secret_scan::mask_secrets`] leaves in place of a token (`ghp_…(masked)`).
+const MASK: &str = "…(masked)";
+
+/// The secret's name the fix suggests for a masked value, from the head the mask kept (`ghp_` → `GH_TOKEN`).
+fn suggest_masked(s: &str, key: &str) -> String {
+    let head = s.split(MASK).next().unwrap_or_default();
+    let head = head.rsplit(|c: char| c.is_whitespace() || matches!(c, '=' | ':' | '"' | '\'')).next().unwrap_or_default();
+    let what = match head {
+        h if h.starts_with("gh") || h.starts_with("gith") => "a GitHub token",
+        h if h.starts_with("sk-a") => "an Anthropic API key",
+        h if h.starts_with("sk-") => "an OpenAI API key",
+        h if h.starts_with("AKIA") || h.starts_with("ASIA") => "an AWS access key",
+        h if h.starts_with("AIza") => "a Google API key",
+        h if h.starts_with("xox") => "a Slack token",
+        h if h.starts_with("sk_l") || h.starts_with("rk_l") => "a Stripe key",
+        h if h.starts_with("npm_") => "an npm token",
+        _ => "",
+    };
+    suggest(what, key)
+}
+
 fn walk(v: &Value, path: &str, key: &str, secret: bool, out: &mut Vec<String>) {
     match v {
         Value::String(s) => {
-            if let Some(hit) = secret_scan::scan_secrets(s).first() {
+            // `wisp export` masked it (a token stored before plans checked for them): applying it as it is would put
+            // the mask's text in place of the real token, and no pattern matches it any more (AAC-4)
+            if s.contains(MASK) {
+                let name = suggest_masked(s, key);
+                out.push(format!("{path} is a masked value from wisp export: wisp secret set {name} and write ${{secret:{name}}}"));
+            } else if let Some(hit) = secret_scan::scan_secrets(s).first() {
                 let name = suggest(hit.what, key);
                 out.push(format!("{path} looks like {}: wisp secret set {name} and write ${{secret:{name}}}", hit.what));
             } else if secret {
@@ -143,5 +169,24 @@ mod tests {
         let mut v = json!({ "headers": { "Authorization": format!("Bearer ghp_{}", "a".repeat(36)), "X": "${secret:K}" }, "n": 3 });
         mask(&mut v);
         assert_eq!(v, json!({ "headers": { "Authorization": "Bearer ghp_…(masked)", "X": "${secret:K}" }, "n": 3 }));
+    }
+
+    /// AAC-4: an export masks a token stored before plans checked for them; applying that export put the mask's text in
+    /// place of the real token, since no pattern matches `ghp_…(masked)`.
+    #[test]
+    fn a_masked_value_from_an_export_is_a_problem_aac_4() {
+        let mut spec = json!({
+            "headers": { "Authorization": format!("Bearer ghp_{}", "a".repeat(36)) },
+            "env": { "KEY": format!("sk-proj-{}", "b".repeat(40)) },
+        });
+        mask(&mut spec);
+        let r = Resource::new("connector", "gh", spec);
+        assert_eq!(
+            problems(&connector(), &r),
+            [
+                "connectors.gh.env.KEY is a masked value from wisp export: wisp secret set OPENAI_API_KEY and write ${secret:OPENAI_API_KEY}",
+                "connectors.gh.headers.Authorization is a masked value from wisp export: wisp secret set GH_TOKEN and write ${secret:GH_TOKEN}",
+            ]
+        );
     }
 }

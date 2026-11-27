@@ -21,6 +21,7 @@ mod overlay;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use serde_json::Value;
 use wisp_kernel::{Call, Ctx, Manifest, Plugin, Result, Setup, WireError};
 use wisp_resources_api::{
     Applied, Apply, Export, ExportArgs, KindInfo, Kinds, Op, OpKind, Plan, PlanArgs, PlanCmd, RESOURCE_KIND, Read, ReadOut, Refresh,
@@ -317,8 +318,39 @@ fn plan_kind(
     pruned.ops
 }
 
+/// The declared resources of one kind the plan leaves as they are whose baseline names no source: `kind/name` and the
+/// baseline spec to keep (the row's, or wisp's copy when there's no row).
+fn unclaimed_of(
+    info: &KindInfo,
+    (current, desired, ops): (&[Resource], &[Resource], &[Op]),
+    base: &std::collections::HashMap<String, applied::Baseline>,
+) -> Vec<(String, Value)> {
+    let mut out = Vec::new();
+    for d in desired.iter().filter(|d| !ops.iter().any(|o| o.name == d.name)) {
+        let id = applied::key(&info.kind, &d.name);
+        match base.get(&id) {
+            Some(b) if b.source.is_none() => out.push((id, b.spec.clone())),
+            None => {
+                if let Some(c) = current.iter().find(|c| c.name == d.name) {
+                    out.push((id, c.spec.clone()));
+                }
+            }
+            Some(_) => {}
+        }
+    }
+    out
+}
+
 async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
+    Ok(plan_and_unclaimed(ctx, call, a).await?.0)
+}
+
+/// The plan, and the declared resources it leaves as they are whose baseline names no source (a row from before
+/// sources, or none at all): `kind/name` and the baseline to give them, so an apply stamps this source on them and a
+/// later `--prune` removes them once the formula drops them (AAC-1). Empty when the call names no source.
+async fn plan_and_unclaimed(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<(Plan, Vec<(String, Value)>)> {
     let ks = kinds(ctx);
+    let mut unclaimed: Vec<(String, Value)> = Vec::new();
     let mode = prune_mode(a);
     let base = applied::all(ctx).await.unwrap_or_default();
     let mut refs: Vec<(String, wisp_resources_api::Ref)> = Vec::new();
@@ -380,6 +412,9 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
         }
         let ops = plan_kind(k.as_ref(), &info, (&current, &desired), a, &base, &mut out);
         check_declared(k.as_ref(), &info, (&current, &desired, &ops), &mut out.problems, &mut refs);
+        if a.source.is_some() {
+            unclaimed.extend(unclaimed_of(&info, (&current, &desired, &ops), &base));
+        }
         for o in ops.iter().filter(|o| o.op != OpKind::Delete) {
             let r = Resource::new(info.kind.clone(), o.name.clone(), o.spec.clone());
             // a map-form kind's schema is the whole map's: its own check validates each value
@@ -416,11 +451,11 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
     out.problems.extend(dangling(&ks, call, refs, names_after).await);
     plan::order(&mut out.ops, &infos);
     drift_and_secrets(ctx, &mut out).await?;
-    Ok(out)
+    Ok((out, unclaimed))
 }
 
 async fn apply(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Applied> {
-    let p = make_plan(ctx, call, a).await?;
+    let (p, unclaimed) = plan_and_unclaimed(ctx, call, a).await?;
     if !p.problems.is_empty() {
         return Err(WireError::invalid(format!("the formula has problems: {}", p.problems.join("; "))));
     }
@@ -449,13 +484,15 @@ async fn apply(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Applied> {
         }
         done.push(op);
     }
-    // each row says where it came from, so a later `--prune` from elsewhere leaves it (AAC-1)
+    // each row says where it came from, so a later `--prune` from elsewhere leaves it (AAC-1); a declared resource
+    // already so whose row names no source (one from before sources) is this source's from now on
     let base: Vec<(String, Option<applied::Baseline>)> = done
         .iter()
         .map(|o| {
             let row = (o.op != OpKind::Delete).then(|| applied::Baseline { spec: o.spec.clone(), source: a.source.clone() });
             (applied::key(&o.kind, &o.name), row)
         })
+        .chain(unclaimed.into_iter().map(|(id, spec)| (id, Some(applied::Baseline { spec, source: a.source.clone() }))))
         .collect();
     if let Err(e) = applied::set(ctx, base).await {
         tracing::warn!("resources: the applied baseline wasn't kept: {}", e.message);
