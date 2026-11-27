@@ -27,7 +27,12 @@ async fn fake(seen: Arc<Mutex<Vec<(String, String)>>>, answer: fn(&str, &str) ->
                     let seen = seen.clone();
                     async move {
                         let path = req.uri().path().to_owned();
-                        let body = req.into_body().collect().await.map(|b| String::from_utf8_lossy(&b.to_bytes()).into_owned()).unwrap_or_default();
+                        let body = req
+                            .into_body()
+                            .collect()
+                            .await
+                            .map(|b| String::from_utf8_lossy(&b.to_bytes()).into_owned())
+                            .unwrap_or_default();
                         let v = answer(&path, &body);
                         seen.lock().unwrap().push((path, body));
                         Ok::<_, std::convert::Infallible>(http::Response::new(Full::new(Bytes::from(v.to_string()))))
@@ -105,7 +110,10 @@ async fn grid(domain: &str, telemetry: Option<bool>, tag: &str) -> Run {
 
 /// The page's own `PostHog` cookie, as posthog-js writes it (URL-encoded JSON).
 fn visitor_cookie(id: &str) -> String {
-    format!("ph_{KEY}_posthog={}", url::form_urlencoded::byte_serialize(json!({ "distinct_id": id }).to_string().as_bytes()).collect::<String>())
+    format!(
+        "ph_{KEY}_posthog={}",
+        url::form_urlencoded::byte_serialize(json!({ "distinct_id": id }).to_string().as_bytes()).collect::<String>()
+    )
 }
 
 /// Out to GitHub as `visitor`: the flow's cookie and state.
@@ -140,7 +148,7 @@ fn events(r: &Run) -> Vec<Value> {
         .lock()
         .unwrap()
         .iter()
-        .flat_map(|(_, b)| serde_json::from_str::<Value>(b).ok()?.get("batch")?.as_array().cloned())
+        .filter_map(|(_, b)| serde_json::from_str::<Value>(b).ok()?.get("batch")?.as_array().cloned())
         .flatten()
         .collect();
     out.extend(r.grid.telemetry.take());
