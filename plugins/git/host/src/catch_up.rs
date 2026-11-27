@@ -77,10 +77,28 @@ fn literal(paths: &[String]) -> Vec<String> {
     paths.iter().map(|p| format!(":(literal){p}")).collect()
 }
 
+/// One turn at a worktree's aside folder at a time in this process: a `catch_up` (from its leftovers' restore to its
+/// own put back) and the restore a repo's open or a worktree's removal runs (`restore_aside`). Without it, an open's
+/// background restore could check a leftover while a `catch_up` had the worktree's copy set aside, put the older
+/// leftover back mid-merge, and the merge's own put back then replaced it (final7 review).
+async fn turn(aside: &Path) -> tokio::sync::OwnedMutexGuard<()> {
+    static TURNS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<tokio::sync::Mutex<()>>>>> =
+        std::sync::OnceLock::new();
+    let lock = {
+        let mut map = TURNS.get_or_init(Default::default).lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        std::sync::Arc::clone(map.entry(aside.to_path_buf()).or_default())
+    };
+    lock.lock_owned().await
+}
+
 impl Inner {
     pub async fn catch_up(&self, req: CatchUpRequest) -> Result<CaughtUp> {
         let top = PathBuf::from(&self.info.top);
         let aside = self.aside_dir().await;
+        let _turn = match &aside {
+            Some(aside) => Some(turn(aside).await),
+            None => None,
+        };
         if let Some(aside) = &aside {
             restore_leftovers(&self.git, aside, &top, false).await;
         }
@@ -216,6 +234,7 @@ pub(crate) async fn restore_aside(git: &Git, dir: &Path, skip_own: bool) -> Opti
     if !tokio::fs::try_exists(&aside).await.unwrap_or(false) {
         return None;
     }
+    let _turn = turn(&aside).await;
     restore_leftovers(git, &aside, Path::new(top), skip_own).await.then_some(aside)
 }
 
@@ -321,7 +340,18 @@ async fn put_back(batch: &Path, top: &Path, leftover: Option<(&Git, u128)>) {
 mod tests {
     use wisp_git_api::CatchUpRequest;
 
-    use super::{in_folder, is_history_subject, sort_out};
+    use super::{in_folder, is_history_subject, sort_out, turn};
+
+    #[tokio::test]
+    async fn one_turn_at_an_aside_folder_at_a_time() {
+        let (a, b) = (std::path::Path::new("/tmp/wisp-aside-a"), std::path::Path::new("/tmp/wisp-aside-b"));
+        let held = turn(a).await;
+        // another folder's turn goes at once; the same folder's waits for the first to end
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(50), turn(b)).await.is_ok());
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(50), turn(a)).await.is_err());
+        drop(held);
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(500), turn(a)).await.is_ok());
+    }
 
     const START: &str = "wisp: save task \"";
     const END: &str = "\" to the repo's history";
