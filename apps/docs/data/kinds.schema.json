@@ -337,8 +337,22 @@
           "description": "the folder they work in",
           "type": "string"
         },
+        "dirs": {
+          "description": "more folders their jobs may work in, beside `cwd`",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "effort": {
           "type": "string"
+        },
+        "fallbacks": {
+          "description": "where a job carries on, in order, when its run stops at a usage limit: `[{ agent, model?, effort? }]`",
+          "items": {
+            "$ref": "#/$defs/crew.Fallback"
+          },
+          "type": "array"
         },
         "kit": {
           "description": "their kit: `[{ name, description?, body }]` skills and notes",
@@ -423,6 +437,25 @@
             "number",
             "null"
           ]
+        }
+      },
+      "type": "object"
+    },
+    "crew.Fallback": {
+      "additionalProperties": false,
+      "description": "A harness and model a member's job carries on with when its run stops at a limit (`Member.fallbacks`).",
+      "properties": {
+        "agent": {
+          "description": "a harness (claude, codex …); '' keeps the member's",
+          "type": "string"
+        },
+        "effort": {
+          "description": "its thinking level; '' for the default",
+          "type": "string"
+        },
+        "model": {
+          "description": "its model; '' for the harness's default",
+          "type": "string"
         }
       },
       "type": "object"
