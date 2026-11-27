@@ -7,6 +7,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **A new loader: Liquid.** Everything that loads now shows the same mark: three drops that orbit, merge and split
+  like mercury. It replaces the dot grid on a working task, the ring on a busy button, and the pulsing dots and spinning icons elsewhere. It turns amber while a task waits on you and
+  holds still when something failed or with reduced motion on (ADR-0140).
 - **Usage in the profile menu.** The menu under your profile now has Usage, just above Settings: it opens
   Settings on its Usage pane.
 - **A crew member works in several folders, and carries on with fallbacks at a usage limit.** Beside their own folder

@@ -6,6 +6,7 @@
 import { For, Match, Show, Switch, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
+import { Liquid } from '../content/Liquid.tsx';
 import { Tooltip } from '../controls/Tooltip.tsx';
 import { Menu } from '../controls/Menu.tsx';
 import { ForKeyed } from '../core/keyed.tsx';
@@ -105,7 +106,7 @@ function Mark(props: { readonly state: RunStepState }): JSX.Element {
           <Icon name="skip" size="sm" />
         </Match>
         <Match when={props.state === 'running'}>
-          <span data-kit="run-live" />
+          <Liquid />
         </Match>
       </Switch>
     </span>

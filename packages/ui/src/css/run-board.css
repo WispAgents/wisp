@@ -103,10 +103,8 @@
   [data-kit='run-mark'][data-state='failed'] { border-color: var(--bad); background: var(--bad); color: var(--on-accent); }
   [data-kit='run-mark'][data-state='running'] { border-color: var(--accent); }
   [data-kit='run-mark'][data-state='skipped'] { border-style: dashed; }
-  [data-kit='run-live'] {
-    width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-pill); background: var(--accent);
-    animation: kit-pulse 1.2s ease-in-out infinite;
-  }
+  /* running: the kit's Liquid in the mark (ADR-0140) */
+  [data-kit='run-mark'] > [data-kit='liquid'] { width: var(--size-icon-sm); height: var(--size-icon-sm); }
 
   /* a fan-out: one dot per item, in a grid that fills the card */
   [data-kit='run-dots'] {
@@ -162,6 +160,6 @@
 
   @media (prefers-reduced-motion: reduce) {
     [data-kit='run-card'][data-state='running']::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
-    [data-kit='run-dot'][data-state='running'], [data-kit='run-live'], [data-kit='run-chip-seg'], [data-kit='run-chip-mark'] { animation: none; }
+    [data-kit='run-dot'][data-state='running'], [data-kit='run-chip-seg'], [data-kit='run-chip-mark'] { animation: none; }
   }
 }

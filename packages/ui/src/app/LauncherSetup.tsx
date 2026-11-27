@@ -3,6 +3,7 @@
 import { Show, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Button } from '../controls/Button.tsx';
+import { Liquid } from '../content/Liquid.tsx';
 import { Icon } from '../content/Icon.tsx';
 
 export interface LauncherSetupProps {
@@ -35,7 +36,9 @@ export function LauncherSetup(props: LauncherSetupProps): JSX.Element {
         aria-label={props.recheck.label}
         onClick={() => props.recheck.onClick()}
       >
-        <Icon name="replay" />
+        <Show when={props.recheck.busy} fallback={<Icon name="replay" />}>
+          <Liquid />
+        </Show>
       </button>
       <Button variant="primary" size="sm" part="launcher.setup.install" loading={props.busy} disabled={props.busy} onClick={() => props.install.onClick()}>
         {props.install.label}

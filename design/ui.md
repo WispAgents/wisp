@@ -106,10 +106,11 @@ component split across files on purpose goes on its list with why.
   animations). See [ux.md](ux.md#stable-layouts).
 - `prefers-reduced-motion` is handled page-wide in `responsive.css`; a looping animation of your own
   (spinners, shimmer) also needs a reduced-motion rule if it's more than a small spinner.
-- Live work is a 3×3 dot grid with a ripple running out from its centre (`.orb.live`), and the
-  working panel's "… is working" has a soft light passing over it; waiting on you is the amber
-  pulse. Don't invent another "busy" signal. (Small spinners inside buttons, like Send or Recheck,
-  stay rings.)
+- **Every loader is the kit's `Liquid`** (ADR-0140, owner 2026-11-27): three accent drops orbit one centre and
+  run together like mercury. Live work (`Orb`), a button's loading and a pending act (`Spinner`), a running step, an upload, a re-check: all draw it, at the size of what they replace. Waiting on you is
+  the same mark in amber, slower; failed or idle is the still frame. Don't invent another "busy" signal: no rings, dot
+  grids, pulsing dots or spinning icons. Skeletons (a placeholder in the real thing's shape) are layout, not a loader,
+  and stay; so does the sandbox's `BuildBox` (and `BuildBoxMark`), which has its own design (ADR-0140 §4).
 
 ## Dark mode
 
