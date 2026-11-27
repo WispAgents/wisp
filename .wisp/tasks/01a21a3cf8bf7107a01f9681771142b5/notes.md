@@ -1,6 +1,6 @@
 # Notes
 
-<!-- wisp keeps this file: the task's Notes (rev 6). Edit them in wisp, `wisp notes 01a21a3cf8bf7107a01f9681771142b5` or with wisp_notes. -->
+<!-- wisp keeps this file: the task's Notes (rev 7). Edit them in wisp, `wisp notes 01a21a3cf8bf7107a01f9681771142b5` or with wisp_notes. -->
 
 ## Goal
 After Save to repo, offer Push so a task's saved .wisp/ files reach the remote instead of staying local. PR #996.
@@ -21,7 +21,7 @@ After Save to repo, offer Push so a task's saved .wisp/ files reach the remote i
 - Test servers fail to start unless every WISP_* env var is unset
 
 ## Where it stands
-Done and merged with origin/main twice; the only conflicts were CHANGELOG.md Unreleased sections (both sides kept). Checks pass: npm run check, typecheck, history vitest, clippy, the serve_history push e2e test. Not covered: an e2e test for the worktree-branch path.
+Done and merged with origin/main three times; each time the only conflict was CHANGELOG.md Unreleased (both sides kept: Added from this task, Changed/Fixed from main). Checks pass on the last merge: npm run check, typecheck, history vitest, clippy, the serve_history push e2e test. Not covered: an e2e test for the worktree-branch path.
 
 ## Key files
 - plugins/history/host/src/push.rs
