@@ -86,3 +86,35 @@ test('the reply box with plus: one + for what is off, chips for what is on, the 
   // the harness: its logo and the model it runs on
   expect(part('composer.harness')?.textContent).toContain('opus');
 });
+
+// the reply's Done when line sets the goal on its own: Enter and a small Set (it said "Enter sets it" and Enter did
+// nothing; a goal needed a follow-up to go with); Escape closes the line
+test('the reply goal line: Enter and Set set it, Escape closes it', () => {
+  const entered = vi.fn();
+  const escaped = vi.fn();
+  const set = vi.fn();
+  mount(() => (
+    <ReplyBox
+      placeholder="Follow up"
+      value=""
+      onInput={() => undefined}
+      onSend={() => undefined}
+      attach="Attach"
+      mode={{ label: 'Full auto', title: 'Mode' }}
+      team="Delegate"
+      goal="Goal"
+      later="Send later"
+      send="Send"
+      goalLine={{ label: 'Done when', placeholder: 'tests pass', keys: 'Enter sets it', value: 'tests pass', onInput: () => undefined, onEnter: entered, onEscape: escaped, set: { label: 'Set', title: 'Set this goal now', onClick: set } }}
+    />
+  ));
+  const input = document.querySelector<HTMLInputElement>('[data-kit="l-goal-input"]');
+  input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  expect(entered).toHaveBeenCalledOnce();
+  input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  expect(escaped).toHaveBeenCalledOnce();
+  const btn = part('composer.goalSet') as HTMLButtonElement;
+  expect(btn.textContent).toBe('Set');
+  btn.click();
+  expect(set).toHaveBeenCalledOnce();
+});

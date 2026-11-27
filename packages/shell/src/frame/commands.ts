@@ -389,7 +389,7 @@ export const setAgent = defineCommand<{ id: string; agent: string }>({
   optimistic: (_b, a) => patch(a.id, '/agent', a.agent),
 });
 
-export const setGoal = defineCommand<{ id: string; text: string; name?: string }>({
+export const setGoal = defineCommand<{ id: string; text: string; name?: string; kick?: boolean }>({
   id: 'goal.set',
   owner: (a) => a.id,
   wire: (a) => ({ ...a, id: bare(a.id) }),
