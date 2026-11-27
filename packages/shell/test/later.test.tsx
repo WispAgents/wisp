@@ -11,7 +11,7 @@ import { nullPlatform } from '../src/platform/index.ts';
 const C = (() => null) as unknown as ExtensionDef['component'];
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 /** until `ok`, to a clock deadline (the first screen is two frames after the home list is here) */
-async function until(ok: () => boolean, ms = 2000): Promise<void> {
+async function until(ok: () => boolean, ms = 15_000): Promise<void> {
   const end = performance.now() + ms;
   while (!ok() && performance.now() < end) await tick(5);
 }

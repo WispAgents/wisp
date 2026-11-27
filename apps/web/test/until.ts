@@ -3,9 +3,10 @@
 // vitest's 5 s under CI load). Plain code only (test-imports: no .tsx through here).
 
 /** until `ok`, checked after each macrotask; gives up after `ms` by the clock (the assertion after it then fails with
- * its own message). 4 s by default: a cold lazy chunk (the frame, a phone screen, a pane) lands a beat after the
- * navigation. */
-export async function until(ok: () => boolean, ms = 4000): Promise<void> {
+ * its own message). 15 s by default, under vitest's 20 s CI timeout: a cold lazy chunk (the frame, a phone screen, a
+ * pane) lands a beat after the navigation, and on a loaded Windows runner (imports 1100 s in one 830 s run) past 4 s.
+ * A check that holds returns at once, so only a failing test waits longer. */
+export async function until(ok: () => boolean, ms = 15_000): Promise<void> {
   const end = performance.now() + ms;
   while (!ok() && performance.now() < end) await new Promise((r) => setTimeout(r, 0));
 }
