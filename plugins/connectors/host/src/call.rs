@@ -12,7 +12,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use wisp_connectors_api::{CallArgs, CallOut, secrets_ns};
 use wisp_connectors_core::rpc::{Sse, initialize};
-use wisp_kernel::services::{NetRequest, NetResponse, net, secrets};
+use wisp_kernel::services::{NetRequest, NetResponse, NetStream, net, secrets};
 use wisp_kernel::{BoxFuture, Call, Code, Ctx, Result, Setup, WireError};
 use wisp_resources_api::StoredKind;
 
@@ -89,10 +89,28 @@ pub async fn call(ctx: &Ctx, pane: &Pane, a: &CallArgs) -> Result<CallOut> {
     Ok(CallOut { result: v.get("result").cloned().unwrap_or(Value::Null) })
 }
 
+/// What a request got: the answer, or (a stream asked for, and the server answered with SSE) the open stream.
+pub enum Got {
+    Answer(Value),
+    Stream(NetStream),
+}
+
 /// One JSON-RPC request to a remote connector, with its headers and sign-in: the whole answer (`result` or `error`),
 /// for the caller to read. `modern`: a server that refuses `initialize` is asked again the `2026-07-28` way, the
 /// version in `_meta` and the `MCP-Protocol-Version` header (MCP Events, ADR-0145).
 pub async fn request(ctx: &Ctx, pane: &Pane, id: &str, method: &str, params: Value, modern: bool) -> Result<Value> {
+    match send(ctx, pane, id, method, params, modern, false).await? {
+        Got::Answer(v) => Ok(v),
+        Got::Stream(_) => Err(WireError::unavailable(format!("{id} answered {method} with a stream"))),
+    }
+}
+
+/// A long-lived request (`events/stream`): the open SSE stream, or the answer when the server refused it at once.
+pub async fn open_stream(ctx: &Ctx, pane: &Pane, id: &str, method: &str, params: Value) -> Result<Got> {
+    send(ctx, pane, id, method, params, true, true).await
+}
+
+async fn send(ctx: &Ctx, pane: &Pane, id: &str, method: &str, params: Value, modern: bool, stream: bool) -> Result<Got> {
     let Some((_, mut c)) = pane.specs().await.into_iter().find(|(n, _)| *n == id) else {
         return Err(WireError::not_found(format!("No connector called {id}")));
     };
@@ -105,7 +123,7 @@ pub async fn request(ctx: &Ctx, pane: &Pane, id: &str, method: &str, params: Val
     let mut headers: Vec<(String, String)> = c.headers.into_iter().collect();
     headers.push(("content-type".into(), "application/json".into()));
     headers.push(("accept".into(), "application/json, text/event-stream".into()));
-    let ask = Ask { id, method, params: &params, modern };
+    let ask = Ask { id, method, params: &params, modern, stream };
     // a sign-in's token goes only over https or to this computer (`bearer_ok`): elsewhere the call goes without it
     if c.oauth != Some(true) || !crate::kinds::bearer_ok(&c.url) {
         return exchange(ctx, &c.url, &headers, &ask).await;
@@ -136,11 +154,44 @@ struct Ask<'a> {
     method: &'a str,
     params: &'a Value,
     modern: bool,
+    /// the last request is held open (SSE)
+    stream: bool,
+}
+
+/// How long one stream may stay open before it's opened again with its cursor (a proxy's or a server's own limit
+/// comes first; the heartbeat says when it died).
+pub const STREAM_MS: u64 = 30 * 60_000;
+
+/// The request itself, once the handshake is done: answered, or held open.
+async fn last(ctx: &Ctx, url: &str, headers: &[(String, String)], session: Option<&str>, a: &Ask<'_>, params: &Value) -> Result<Got> {
+    let body = json!({ "jsonrpc": "2.0", "id": 2, "method": a.method, "params": params });
+    if !a.stream {
+        let r = post(ctx, url, headers, session, &body).await?;
+        return answer(&r).map(Got::Answer).ok_or_else(|| WireError::unavailable(format!("{} didn't answer {}", a.id, a.method)));
+    }
+    let mut h = headers.to_vec();
+    if let Some(s) = session {
+        h.push(("mcp-session-id".into(), s.to_owned()));
+    }
+    let req =
+        NetRequest { method: "POST".into(), url: url.to_owned(), headers: h, body: body.to_string().into_bytes(), timeout_ms: STREAM_MS };
+    let r = net(ctx)?.stream(req).await?;
+    match r.status {
+        401 | 403 => return Err(WireError::forbidden(format!("needs sign-in (HTTP {})", r.status))),
+        st if st >= 400 => return Err(WireError::unavailable(format!("HTTP {st}"))),
+        _ => {}
+    }
+    if r.header("content-type").is_some_and(|t| t.contains("text/event-stream")) {
+        return Ok(Got::Stream(r));
+    }
+    // refused at once (a JSON-RPC error as a plain answer): read it
+    let bytes: Vec<u8> = futures::StreamExt::collect::<Vec<_>>(r.body).await.into_iter().filter_map(Result::ok).flatten().collect();
+    serde_json::from_slice(&bytes).map(Got::Answer).map_err(|_| WireError::unavailable(format!("{} didn't answer {}", a.id, a.method)))
 }
 
 /// One request over streamable HTTP: `initialize`, `notifications/initialized`, then the method (in the server's
 /// session).
-async fn exchange(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &Ask<'_>) -> Result<Value> {
+async fn exchange(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &Ask<'_>) -> Result<Got> {
     let init: Value = serde_json::from_str(&initialize(env!("CARGO_PKG_VERSION"))).unwrap_or_default();
     let r = match post(ctx, url, headers, None, &init).await {
         Ok(r) => r,
@@ -156,13 +207,11 @@ async fn exchange(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &Ask<'_
         return Err(WireError::unavailable(why));
     }
     let _ = post(ctx, url, headers, session.as_deref(), &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).await;
-    let r =
-        post(ctx, url, headers, session.as_deref(), &json!({ "jsonrpc": "2.0", "id": 2, "method": a.method, "params": a.params })).await?;
-    answer(&r).ok_or_else(|| WireError::unavailable(format!("{} didn't answer {}", a.id, a.method)))
+    last(ctx, url, headers, session.as_deref(), a, a.params).await
 }
 
 /// The `2026-07-28` way: no handshake, the version in the request's `_meta` and in `MCP-Protocol-Version`.
-async fn modern(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &Ask<'_>) -> Result<Value> {
+async fn modern(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &Ask<'_>) -> Result<Got> {
     let mut h = headers.to_vec();
     h.push(("mcp-protocol-version".into(), wisp_connectors_core::events::MODERN.into()));
     let mut params = a.params.clone();
@@ -173,8 +222,7 @@ async fn modern(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &Ask<'_>)
             m.extend(extra);
         }
     }
-    let r = post(ctx, url, &h, None, &json!({ "jsonrpc": "2.0", "id": 2, "method": a.method, "params": params })).await?;
-    answer(&r).ok_or_else(|| WireError::unavailable(format!("{} didn't answer {}", a.id, a.method)))
+    last(ctx, url, &h, None, a, &params).await
 }
 
 /// The connectors as the issue picker reads them.

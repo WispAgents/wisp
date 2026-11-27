@@ -12,6 +12,7 @@ pub mod model;
 pub mod oauth;
 pub mod page;
 pub mod probe;
+pub mod push;
 pub mod rpc;
 pub mod text;
 

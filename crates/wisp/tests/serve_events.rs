@@ -136,7 +136,7 @@ async fn capped_agent_sees_only_its_task_events_over_mcp() {
 
 /// MCP Events (SEP-3415, ADR-0145) on wisp's own MCP endpoint: the extension declared, the durable types listed, a
 /// poll with no cursor starting from now, the next one bringing what happened since (once), a modern request's
-/// `resultType`, and the codes for an unknown type and an unserved delivery mode.
+/// `resultType`, and the codes for an unknown type and an unserved delivery mode (webhook).
 #[tokio::test(flavor = "multi_thread")]
 async fn mcp_events_poll_brings_what_happened_after_the_cursor_once() {
     let dir = temp("serve-events-mcp-events");
@@ -172,8 +172,66 @@ async fn mcp_events_poll_brings_what_happened_after_the_cursor_once() {
     assert!(!again["result"]["events"].as_array().unwrap().iter().any(|e| e["_meta"]["dev.trywisp/subject"] == json!(id)), "once: {again}");
     let unknown = mcp(&api.http, port, &[], rpc(7, "events/poll", json!({ "name": "nope.never", "cursor": null }))).await;
     assert_eq!(unknown["error"]["code"], -32023, "{unknown}");
-    let push = mcp(&api.http, port, &[], rpc(8, "events/stream", json!({ "name": "turn.finished" }))).await;
-    assert_eq!((push["error"]["code"].clone(), push["error"]["data"]["value"].clone()), (json!(-32026), json!("push")), "{push}");
+    let hook = mcp(&api.http, port, &[], rpc(8, "events/subscribe", json!({ "name": "turn.finished" }))).await;
+    assert_eq!((hook["error"]["code"].clone(), hook["error"]["data"]["value"].clone()), (json!(-32026), json!("webhook")), "{hook}");
+    drop(serve);
+}
+
+/// `events/stream` (push, ADR-0145): one POST answered with SSE. `active` first (with the subscription id and the
+/// granted heartbeat), then the turn's `turn.finished` as it happens, with the cursor past it; a type that isn't kept is
+/// refused before any stream, and a stream inside a batch is refused (it can't be sent there).
+#[tokio::test(flavor = "multi_thread")]
+async fn mcp_events_stream_pushes_each_event_as_it_happens() {
+    let dir = temp("serve-events-mcp-stream");
+    let (serve, port) = start_with(&dir, &[]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let open = |body: Value| {
+        api.http.post(format!("http://127.0.0.1:{port}/api/mcp")).header("content-type", "application/json").body(body.to_string()).send()
+    };
+    let req = json!({ "jsonrpc": "2.0", "id": "s1", "method": "events/stream", "params": { "name": "turn.finished", "cursor": null, "heartbeatMs": 5000 } });
+    let mut r = open(req).await.unwrap();
+    assert_eq!(r.headers().get("content-type").and_then(|v| v.to_str().ok()), Some("text/event-stream"));
+    let mut text = String::new();
+    let mut next = async |text: &mut String, until: &dyn Fn(&str) -> bool| {
+        let at = Instant::now();
+        while !until(text) {
+            assert!(at.elapsed() < Duration::from_secs(30), "the stream said: {text}");
+            if let Ok(Ok(Some(c))) = tokio::time::timeout(Duration::from_secs(1), r.chunk()).await {
+                text.push_str(&String::from_utf8_lossy(&c));
+            }
+        }
+    };
+    next(&mut text, &|t| t.contains("notifications/events/active")).await;
+    let frames = |t: &str| -> Vec<Value> {
+        t.lines().filter_map(|l| l.strip_prefix("data: ")).filter_map(|d| serde_json::from_str(d).ok()).collect()
+    };
+    let active = frames(&text).into_iter().find(|f| f["method"] == "notifications/events/active").unwrap();
+    assert_eq!(active["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"], "s1");
+    assert_eq!(active["params"]["heartbeatMs"], 5000);
+    let id = task(&api, &dir, "fix the add bug").await;
+    next(&mut text, &|t| t.contains("notifications/events/event") && t.contains(id.as_str())).await;
+    let ev = frames(&text).into_iter().find(|f| f["method"] == "notifications/events/event").unwrap();
+    assert_eq!(ev["params"]["name"], "turn.finished");
+    assert_eq!(ev["params"]["cursor"], ev["params"]["eventId"]);
+    assert_eq!(ev["params"]["_meta"]["dev.trywisp/subject"], json!(id));
+    // quiet: a heartbeat carries the cursor
+    next(&mut text, &|t| t.contains("notifications/events/heartbeat")).await;
+    drop(r);
+    let bad =
+        mcp(&api.http, port, &[], json!({ "jsonrpc": "2.0", "id": 2, "method": "events/stream", "params": { "name": "turn.activity" } }))
+            .await;
+    assert_eq!(bad["error"]["code"], -32023, "{bad}");
+    let batch =
+        mcp(&api.http, port, &[], json!([{ "jsonrpc": "2.0", "id": 3, "method": "events/stream", "params": { "name": "turn.finished" } }]))
+            .await;
+    assert_eq!(batch[0]["error"]["code"], -32026, "{batch}");
+    // wisp's own client reads wisp's own server: a connector to this /api/mcp lists its events, push offered
+    api.cmd("connectors.add", json!({ "name": "self", "transport": "remote", "url": format!("http://127.0.0.1:{port}/api/mcp") })).await;
+    let listed = api.cmd("connectors.events", json!({ "id": "self" })).await;
+    assert_eq!(listed["served"], true, "{listed}");
+    let found = listed["events"].as_array().and_then(|l| l.iter().find(|e| e["name"] == "turn.finished").cloned());
+    let finished = found.unwrap_or_else(|| panic!("{listed}"));
+    assert_eq!(finished["delivery"], json!(["push", "poll"]));
     drop(serve);
 }
 

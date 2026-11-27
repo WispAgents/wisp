@@ -12,7 +12,7 @@ hmac.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["time", "sync", "macros"] }
 tracing.workspace = true
 wisp-events-api = { path = "../api" }
 wisp-kernel.workspace = true

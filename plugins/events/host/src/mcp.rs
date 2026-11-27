@@ -2,12 +2,13 @@
 //! an SDK agent, a chat app or another harness can react to `task.finished`, `pr.opened` or `goal.failed` without
 //! `wisp_events` in a loop of its own.
 //!
-//! - `events/list`: the durable types of the catalogue (`events.ls`), each `delivery: ["poll"]`, with one argument
+//! - `events/list`: the durable types of the catalogue (`events.ls`), each `delivery: ["push", "poll"]`, with one argument
 //!   (`subject`, a task id).
 //! - `events/poll`: `events.poll`, run as the caller, so a task's agent sees its own task's events only. The cursor
 //!   is the log's seq; a cursor past retention answers `truncated: true` and goes on from the oldest kept.
-//! - `events/stream` and `events/subscribe` answer `Unsupported` (`-32026`): push and webhook delivery are the
-//!   `events:<glob>` topic and `events.sink@1` today, not yet these methods.
+//! - `events/stream` (push, ADR-0145): opened with `events.poll`'s checks, then `active`, the backlog and each new event
+//!   as the feed writes it, a heartbeat with the cursor in quiet stretches, over Streamable HTTP's SSE.
+//! - `events/subscribe` answers `Unsupported` (`-32026`): webhook delivery is `events.sink@1` today.
 
 use std::sync::Arc;
 
@@ -70,7 +71,7 @@ pub fn list(catalogue: &Value) -> Value {
             json!({
                 "name": ty,
                 "description": format!("wisp's {ty} (from {plugin}), as its durable event log keeps it"),
-                "delivery": ["poll"],
+                "delivery": ["push", "poll"],
                 "inputSchema": { "type": "object", "properties": {
                     "subject": { "type": "string", "description": "only what's about this task (its id)" }
                 } },
@@ -154,45 +155,154 @@ fn method(name: &str, run: wisp_mcp_api::MethodFn) -> Arc<MethodContribution> {
     Arc::new(MethodContribution { method: name.into(), extension: Some((EXTENSION.into(), json!({}))), run })
 }
 
+/// A method's params as the command takes them (`_meta` is the protocol's).
+fn args_of(params: Value, method: &str) -> std::result::Result<api::PollArgs, MethodError> {
+    let mut p = params;
+    if let Some(o) = p.as_object_mut() {
+        o.remove("_meta");
+        o.remove("heartbeatMs");
+    }
+    serde_json::from_value(p).map_err(|e| MethodError::new(INVALID_PARAMS, format!("{method}: {e}")))
+}
+
+/// The heartbeat a stream gets: the client's suggestion within 5 s to 60 s, 30 s without one (SEP-3415's default;
+/// under the 60 s idle timeout proxies commonly have).
+pub fn heartbeat_ms(params: &Value) -> u64 {
+    params.get("heartbeatMs").and_then(Value::as_u64).map_or(DEFAULT_HEARTBEAT_MS, |h| h.clamp(5_000, 60_000))
+}
+pub const DEFAULT_HEARTBEAT_MS: u64 = 30_000;
+
+/// A `notifications/events/*` message of the stream whose request id is `sub`.
+pub fn note(kind: &str, mut params: Value, sub: &Value) -> Value {
+    if let Some(o) = params.as_object_mut() {
+        let meta = o.entry("_meta").or_insert_with(|| json!({}));
+        meta["io.modelcontextprotocol/subscriptionId"] = sub.clone();
+    }
+    json!({ "jsonrpc": "2.0", "method": format!("notifications/events/{kind}"), "params": params })
+}
+
+/// A poll's events as stream notifications, each with the cursor just past it (its seq).
+fn events_of(poll: &Value, sub: &Value) -> Vec<Value> {
+    poll.get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|e| {
+            let mut e = e.clone();
+            e["cursor"] = e.get("eventId").cloned().unwrap_or(Value::Null);
+            note("event", e, sub)
+        })
+        .collect()
+}
+
+/// `events/stream`: opened with `events.poll` run as the caller (so the type, the cursor, the capability and the
+/// task scope are checked once, before any stream), then `active`, the backlog, and every new event as the feed
+/// writes it (`newest_seq` wakes it: no stream polls the log). A heartbeat carries the cursor whenever `heartbeatMs`
+/// passes without a message. The client gone ends it at the next send.
+async fn stream(
+    ctx: Ctx,
+    call: Call,
+    req: wisp_mcp_api::MethodRequest,
+    newest_seq: &tokio::sync::watch::Sender<u64>,
+) -> std::result::Result<wisp_mcp_api::MethodAnswer, MethodError> {
+    let hb = heartbeat_ms(&req.params);
+    let mut a = args_of(req.params, "events/stream")?;
+    a.max_events = Some(MAX);
+    let first = ctx.run::<api::Poll>(&call, a.clone()).await.map_err(|e| refusal(&e))?;
+    let sub = req.id;
+    let (tx, rx) = tokio::sync::mpsc::channel::<Value>(64);
+    let mut woken = newest_seq.subscribe();
+    ctx.clone().spawn(async move {
+        let gap = first.get("truncated").cloned().unwrap_or(json!(false));
+        let mut cursor = first.get("cursor").cloned().unwrap_or(Value::Null);
+        let active = note("active", json!({ "cursor": cursor, "truncated": gap, "heartbeatMs": hb }), &sub);
+        let mut out: Vec<Value> = std::iter::once(active).chain(events_of(&first, &sub)).collect();
+        let mut more = first.get("hasMore") == Some(&Value::Bool(true));
+        let quiet = std::time::Duration::from_millis(hb);
+        // the heartbeat counts from the last message sent, not the last wake: other types' events wake the stream too
+        let mut sent = tokio::time::Instant::now();
+        loop {
+            for m in out.drain(..) {
+                if tx.send(m).await.is_err() {
+                    return;
+                }
+                sent = tokio::time::Instant::now();
+            }
+            if !more {
+                tokio::select! {
+                    changed = woken.changed() => if changed.is_err() { return },
+                    () = tokio::time::sleep_until(sent + quiet) => {
+                        out.push(note("heartbeat", json!({ "cursor": cursor }), &sub));
+                        continue;
+                    }
+                }
+            }
+            a.cursor = cursor.as_str().map(str::to_owned);
+            match poll(&ctx, &call, a.clone()).await {
+                Ok(p) => {
+                    out.extend(events_of(&p, &sub));
+                    cursor = p.get("cursor").cloned().unwrap_or(cursor);
+                    more = p.get("hasMore") == Some(&Value::Bool(true));
+                    if p.get("truncated") == Some(&Value::Bool(true)) {
+                        out.push(note("active", json!({ "cursor": cursor, "truncated": true, "heartbeatMs": hb }), &sub));
+                    }
+                }
+                Err(e) => {
+                    // a failed read is recoverable: said, and tried again at the next wake
+                    more = false;
+                    out.push(note("error", json!({ "error": { "code": INTERNAL, "message": e.message } }), &sub));
+                }
+            }
+        }
+    });
+    Ok(wisp_mcp_api::MethodAnswer::Stream(rx))
+}
+
 fn unsupported(mode: &'static str) -> wisp_mcp_api::MethodFn {
-    Arc::new(move |_ctx, _call, _params| {
+    Arc::new(move |_ctx, _call, _req| {
         Box::pin(async move {
-            Err(MethodError::new(UNSUPPORTED, format!("wisp's events come by poll (events/poll); {mode} isn't served yet"))
-                .with_data(json!({ "feature": "deliveryMode", "value": mode })))
+            Err(MethodError::new(
+                UNSUPPORTED,
+                format!("wisp's events come by poll or push (events/poll, events/stream); {mode} isn't served yet"),
+            )
+            .with_data(json!({ "feature": "deliveryMode", "value": mode })))
         })
     })
 }
 
 /// The methods, on `mcp.method@1`. Each runs this plugin's own command from its own context (wisp.mcp's would need
 /// this plugin's permissions), as the caller, so the caller's capability set and scoping apply.
-pub fn register(s: &mut wisp_kernel::Setup) {
+pub fn register(s: &mut wisp_kernel::Setup, newest_seq: Arc<tokio::sync::watch::Sender<u64>>) {
     let own = s.ctx();
-    let list_fn: wisp_mcp_api::MethodFn = Arc::new(move |_mcp: Ctx, call: Call, _params| {
-        let ctx = own.clone();
-        Box::pin(async move { ctx.run::<api::Ls>(&call, api::NoArgs {}).await.map(|c| list(&c)).map_err(|e| refusal(&e)) })
-    });
-    let own = s.ctx();
-    let poll_fn: wisp_mcp_api::MethodFn = Arc::new(move |_mcp: Ctx, call: Call, params: Value| {
+    let list_fn: wisp_mcp_api::MethodFn = Arc::new(move |_mcp: Ctx, call: Call, _req| {
         let ctx = own.clone();
         Box::pin(async move {
-            let mut p = params;
-            if let Some(o) = p.as_object_mut() {
-                o.remove("_meta");
-            }
-            let a: api::PollArgs = serde_json::from_value(p).map_err(|e| MethodError::new(INVALID_PARAMS, format!("events/poll: {e}")))?;
-            ctx.run::<api::Poll>(&call, a).await.map_err(|e| refusal(&e))
+            ctx.run::<api::Ls>(&call, api::NoArgs {}).await.map(|c| wisp_mcp_api::MethodAnswer::Result(list(&c))).map_err(|e| refusal(&e))
         })
     });
-    let none: wisp_mcp_api::MethodFn = Arc::new(|_ctx, _call, _params| {
+    let own = s.ctx();
+    let poll_fn: wisp_mcp_api::MethodFn = Arc::new(move |_mcp: Ctx, call: Call, req: wisp_mcp_api::MethodRequest| {
+        let ctx = own.clone();
+        Box::pin(async move {
+            let a = args_of(req.params, "events/poll")?;
+            ctx.run::<api::Poll>(&call, a).await.map(wisp_mcp_api::MethodAnswer::Result).map_err(|e| refusal(&e))
+        })
+    });
+    let own = s.ctx();
+    let stream_fn: wisp_mcp_api::MethodFn = Arc::new(move |_mcp: Ctx, call: Call, req: wisp_mcp_api::MethodRequest| {
+        let (ctx, seq) = (own.clone(), newest_seq.clone());
+        Box::pin(async move { stream(ctx, call, req, &seq).await })
+    });
+    let none: wisp_mcp_api::MethodFn = Arc::new(|_ctx, _call, _req| {
         Box::pin(async {
-            Err(MethodError::new(NOT_FOUND, "No such subscription: wisp's events come by poll")
+            Err(MethodError::new(NOT_FOUND, "No such subscription: wisp has no webhook subscriptions")
                 .with_data(json!({ "kind": "subscription" })))
         })
     });
     for m in [
         method("events/list", list_fn),
         method("events/poll", poll_fn),
-        method("events/stream", unsupported("push")),
+        method("events/stream", stream_fn),
         method("events/subscribe", unsupported("webhook")),
         method("events/unsubscribe", none),
     ] {
@@ -222,7 +332,7 @@ mod tests {
         let l = list(&cat);
         let names: Vec<&str> = l["events"].as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap()).collect();
         assert_eq!(names, ["goal.met", "task.finished"]);
-        assert_eq!(l["events"][0]["delivery"], json!(["poll"]));
+        assert_eq!(l["events"][0]["delivery"], json!(["push", "poll"]));
         assert_eq!(l["resultType"], "complete");
     }
 
@@ -232,5 +342,19 @@ mod tests {
         assert_eq!(refusal(&WireError::forbidden("x")).code, FORBIDDEN);
         assert_eq!(refusal(&WireError::invalid("x")).code, INVALID_PARAMS);
         assert_eq!(refusal(&WireError::unavailable("x")).code, INTERNAL);
+    }
+
+    #[test]
+    fn stream_notes_carry_the_subscription_id_and_events_their_cursor() {
+        let poll = json!({ "events": [{ "eventId": "41", "name": "task.finished", "data": {} }] });
+        let ev = events_of(&poll, &json!(7));
+        assert_eq!(ev[0]["method"], "notifications/events/event");
+        assert_eq!(ev[0]["params"]["cursor"], "41");
+        assert_eq!(ev[0]["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"], 7);
+        let hb = note("heartbeat", json!({ "cursor": "41" }), &json!("s"));
+        assert_eq!(hb["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"], "s");
+        assert_eq!(heartbeat_ms(&json!({})), DEFAULT_HEARTBEAT_MS);
+        assert_eq!(heartbeat_ms(&json!({ "heartbeatMs": 10 })), 5_000);
+        assert_eq!(heartbeat_ms(&json!({ "heartbeatMs": 600_000 })), 60_000);
     }
 }

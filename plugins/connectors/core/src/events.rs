@@ -29,6 +29,8 @@ pub struct Subscription {
     pub connector: String,
     pub event: String,
     pub arguments: Value,
+    /// `match.delivery` (`poll` keeps it on polling), echoed in each payload so the engine's `match` passes it
+    pub delivery: Option<String>,
 }
 
 /// The subscription in a trigger's spec (`match.connector`, `match.event`, `match.arguments`).
@@ -43,7 +45,7 @@ pub fn subscription(spec: &Value) -> Result<Subscription, String> {
         Some(Value::Object(o)) => Value::Object(o.clone()),
         Some(_) => return Err("mcp.event: match.arguments is an object (the event type's inputSchema)".into()),
     };
-    Ok(Subscription { connector, event, arguments })
+    Ok(Subscription { connector, event, arguments, delivery: text("delivery") })
 }
 
 /// The `_meta` every events request carries: the client says it speaks the extension; a modern request names its
@@ -106,6 +108,10 @@ pub fn page(s: &Subscription, result: &Value) -> Option<Page> {
             let data = e.get("data").cloned().unwrap_or_else(|| Value::Object(Map::new()));
             let payload =
                 json!({ "connector": s.connector, "event": s.event, "arguments": s.arguments, "eventId": id, "name": name, "data": data });
+            let mut payload = payload;
+            if let Some(d) = &s.delivery {
+                payload["delivery"] = json!(d);
+            }
             Some(Occurrence {
                 key: format!("{}:{}:{id}", s.connector, s.event),
                 at: e.get("timestamp").and_then(Value::as_str).and_then(iso_ms),
@@ -140,6 +146,12 @@ pub fn refusal(connector: &str, event: &str, error: &Value) -> String {
         Some(-32026) => format!("{connector} doesn't offer {event} by poll ({message})"),
         _ => format!("{connector}: {message}"),
     }
+}
+
+/// The subscription as one key: its connector, event and arguments (a trigger's stream, shared by every trigger that
+/// names the same three).
+pub fn sub_key(s: &Subscription) -> String {
+    format!("{}\u{1f}{}\u{1f}{}", s.connector, s.event, s.arguments)
 }
 
 /// An RFC 3339 time (`2026-02-19T15:30:00Z`, `…+02:00`, with or without fractions) in ms.

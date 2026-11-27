@@ -333,10 +333,11 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
       recheck opencode (a JS plugin via `OPENCODE_CONFIG_CONTENT`) with a recorded run
 
 - [x] MCP Events both ways (owner, 2026-11-27; ADR-0145): `mcp.method@1` (a plugin serves a JSON-RPC method on the
-  MCP endpoint), a dual-era server (`server/discover`, `resultType`, `-32022`), `wisp.events` serving `events/list`
-  and `events/poll` (`events.poll`), and `wisp.connectors`' `connectors.events` plus the `mcp.event` trigger source
-  (poll, modern fallback). **To do:** push (`events/stream`) and webhook (`events/subscribe`) both ways, `mcp.event`
-  in the trigger editor, payload schemas in the catalogue
+  MCP endpoint, a result or an SSE stream), a dual-era server (`server/discover`, `resultType`, `-32022`),
+  `wisp.events` serving `events/list`, `events/poll` (`events.poll`) and `events/stream` (push, woken by the feed),
+  and `wisp.connectors`' `connectors.events` plus the `mcp.event` trigger source (push when offered, poll otherwise
+  or while the stream is down; modern fallback). **To do:** webhook (`events/subscribe`) both ways, `events/*` through
+  `wisp mcp` stdio, a per-caller stream limit, `mcp.event` in the trigger editor, payload schemas in the catalogue
 
 ### 4.2 GUI (browser and desktop), v1 parity
 

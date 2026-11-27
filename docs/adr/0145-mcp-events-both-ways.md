@@ -1,11 +1,11 @@
-# ADR-0145: MCP Events both ways, poll first: an `mcp.event` trigger source and wisp's log on `events/poll`
+# ADR-0145: MCP Events both ways, poll and push: an `mcp.event` trigger source, and wisp's log on `events/poll` and `events/stream`
 
 - Status: accepted
 - Date: 2026-11-27
 - Source: the owner asked what MCP events are and how wisp can use them, then said "do 1 and 2": (1) wisp as an
   Events client (any MCP server's events start a task or wake a crew member) and (2) wisp as an Events server (any MCP
   client reacts to wisp's durable events). The extension is SEP-3415, `io.modelcontextprotocol/events`, merged as
-  Final on 2026-11-19. Builds on ADR-0043 (one trigger engine, `trigger.source@1`), ADR-0044 (the durable log and
+  Final on 2026-11-19. A follow-up the same day: "Add push delivery (events/stream) both ways". Builds on ADR-0043 (one trigger engine, `trigger.source@1`), ADR-0044 (the durable log and
   its catalogue) and ADR-0040 (meet users where they work).
 
 ## Context
@@ -33,9 +33,15 @@
 ### 1. `mcp.method@1`: a plugin serves a JSON-RPC method on wisp's MCP endpoint
 
 - **A new point in `wisp-mcp-api`:** a `MethodContribution` has a `method`, an optional
-  `extension: (identifier, settings)` and a `run(ctx, call, params) -> Result<Value, MethodError>`.
+  `extension: (identifier, settings)` and a
+  `run(ctx, call, MethodRequest { id, params }) -> Result<MethodAnswer, MethodError>`.
+  - `MethodAnswer` is a `Result(Value)`, or a `Stream` of whole JSON-RPC messages for a long-lived method. wisp.mcp
+    sends a stream as the SSE response of Streamable HTTP: one `data:` frame per message, ended when the method
+    ends it or the client goes away (the dropped receiver ends the method at its next send). A stream can only answer
+    one message sent alone over HTTP. In a batch, or through `mcp.rpc`, it is refused with `-32026`.
   - `MethodError` carries `code`, `message` and a typed `data`, the way SEP-3415's codes do.
-  - The call runs as the caller, so a task's agent's capability set and scoping apply.
+  - `run` gets wisp.mcp's context and the caller's `Call`. A contribution runs its own commands from its own context
+    (so its manifest's permissions hold) with that `Call`, so a task's agent's capability set and scoping apply.
   - A contribution can't take a core method (`initialize`, `ping`, `server/discover`, `tools/*`,
     `notifications/*`). The first plugin to name a method has it.
 - **The extensions** contributed methods declare are listed under `capabilities.extensions` in `initialize` (for
@@ -58,7 +64,7 @@
 
 ### 3. wisp as an Events server (`wisp.events`)
 
-- **`events/list`** lists the catalogue's **durable** types only, each with `delivery: ["poll"]`. Ephemeral
+- **`events/list`** lists the catalogue's **durable** types only, each with `delivery: ["push", "poll"]`. Ephemeral
   events never reach the log, so a poll couldn't serve them.
   - Each type takes one argument, `subject` (a task id).
   - Its `payloadSchema` is `{type: object}`: the catalogue has no schemas yet.
@@ -75,19 +81,32 @@
 - **Scoping and errors:** a task's agent may run `events.ls` and `events.poll` (`agent:session` gets `events:ls` and
   `events:poll` beside `events:tail`), and it polls its own task's events only. Another subject is `Forbidden`
   (`-32024`), an unknown or ephemeral type is `NotFound` (`-32023`), and a bad cursor is `InvalidParams`.
+- **`events/stream`** (push) opens by running `events.poll` as the caller, so the type, the cursor, the capability
+  and the task scope are checked once, before any stream. A refusal is a plain JSON-RPC error, and no stream opens.
+  Then the stream sends:
+  - `notifications/events/active {cursor, truncated, heartbeatMs}`, then the backlog after the cursor (500 events a
+    read, read again while `hasMore`);
+  - each new event as `notifications/events/event`, with `cursor` set to its own seq;
+  - `notifications/events/heartbeat {cursor}` whenever `heartbeatMs` passes with no message sent. The client
+    suggests the interval, clamped to 5 s to 60 s, 30 s by default. The timer counts from the last message sent,
+    because other types' events wake the stream too;
+  - `notifications/events/error` for a failed read (the stream stays open), and another `active` with
+    `truncated: true` if the cursor fell out of retention.
+  - Every message carries `_meta["io.modelcontextprotocol/subscriptionId"]`, the request's id.
+  - **No stream polls the log.** The plugin's durable feed handler (`feed`, which already writes the
+    `events_view` rows) bumps a `watch` of the newest seq. Each open stream waits on it, then reads the log past its
+    cursor.
 - **Not yet:**
-  - `events/stream` and `events/subscribe` answer `Unsupported` (`-32026`, `data: {feature: "deliveryMode",
-    value}`).
+  - `events/subscribe` answers `Unsupported` (`-32026`, `data: {feature: "deliveryMode", value: "webhook"}`).
   - `events/unsubscribe` answers `NotFound` (`data.kind: "subscription"`).
-  - Push already exists as the `events:<glob>` topic, and webhook as `events.sink@1`. Moving them onto the SEP's
-    methods is later work (below).
+  - Webhook delivery exists as `events.sink@1`. Moving it onto the SEP's method is later work (below).
 
 ### 4. wisp as an Events client (`wisp.connectors`)
 
 - **`connectors.events {id}`** lists a remote connector's event types: every `events/list` page, ten at most.
   A server that answers `-32601` returns `{served: false}`. It is also the MCP tool `connectors_events`.
-- **The `mcp.event` trigger source** is a `trigger.source@1` in poll mode, every minute by default. Its fields go in
-  `match`, the source-fields convention of ADR-0043:
+- **The `mcp.event` trigger source** is a `trigger.source@1` that the engine polls every minute by default. Its
+  fields go in `match`, the source-fields convention of ADR-0043:
 
   ```yaml
   on: mcp.event
@@ -113,12 +132,36 @@
   flow.
 - **Refusals in words:** "pd serves no MCP events", "pd has no event x", and so on.
 
+#### Push from a connector (`events/stream`)
+
+- **Push is taken when it's offered and wanted:** the connector's listing (cached 10 minutes) has `push` in the
+  event's `delivery`, and the trigger doesn't say `match.delivery: poll`. `delivery` is echoed in the payload, so
+  the engine's `match` filter still passes the trigger's events.
+- **The engine's poll stays the lifecycle.** The first poll of a subscription opens one `events/stream`, shared by
+  every trigger that names the same connector, event and arguments. The stream sends each event to the engine the
+  moment it comes (`automations.trigger.push`, so `wisp.connectors` gets `automations:run`). Each event has the same
+  key as a polled one, so the engine still fires once.
+  - While the stream is open, a poll asks the server nothing. It keeps the stream alive and returns the stream's
+    cursor, which lands in the trigger's row, so a restart opens the stream where it was.
+  - A stream that no poll touched for three intervals (at least 5 minutes) closes: the trigger was switched off or
+    removed.
+- **The stream connects through `call::open_stream`**, the same path as every other request (headers, sign-in and
+  refresh, the modern fallback). The last request uses `Net::stream` instead of `fetch`.
+  - A JSON answer instead of SSE is a refusal, read as one.
+  - A stream may stay open for 30 minutes, then it is opened again with its cursor.
+- **Liveness:** no message for three heartbeats (as granted in `active`, 25 s asked for) means the stream is dead.
+  It is opened again from its cursor after a backoff of 1 s doubling to 30 s, plus a jitter of up to half of it. A
+  stream that said something resets the count.
+- **When it stops, polling takes over from the stream's cursor**, which is newer than the engine's:
+  - five failed opens in a row: polls for 10 minutes, then push is tried again;
+  - `terminated`, or a refusal of `events/stream`: polls for an hour.
+
 ### Places it reaches (ADR-0040)
 
 - **Inside wisp:** triggers (a `trigger` in `wisp.yml`, or `wisp trigger add <name> mcp.event`) and crew wakes (a
   member's `wakes:` is a trigger).
 - **From a harness:**
-  - wisp's MCP endpoint (`events/list`, `events/poll`) for any Events-capable client;
+  - wisp's MCP endpoint (`events/list`, `events/poll`, `events/stream`) for any Events-capable client;
   - the MCP tools `events_poll` and `connectors_events`;
   - `wisp_events`, as before.
 - **CLI:** the generated verbs of `events.poll` and `connectors.events` (ADR-0022).
@@ -130,7 +173,14 @@
 - **A user plugin can serve an MCP extension method** without touching wisp.mcp.
 - **Any events-capable MCP server** (PagerDuty, Gmail, a CI) can start a task or wake a crew member with no wisp
   plugin of its own. `linear.issue` and similar sources can move onto this once those servers serve events.
-- **ChatGPT, SDK agents and other harnesses** can follow `task.finished`, `pr.opened` or `goal.failed` by poll.
+- **ChatGPT, SDK agents and other harnesses** can follow `task.finished`, `pr.opened` or `goal.failed` by poll, or as
+  they happen by push.
+- **One open stream holds one HTTP connection** on both sides. On the server, a quiet stream costs a task that wakes
+  on each durable batch and does one indexed read. There is no cap on concurrent streams yet; per-caller limits
+  would answer `ResourceExhausted` (`-32025`).
+- **A wisp that subscribes to its own events** (a connector to its own `/api/mcp`, an `mcp.event` trigger on
+  `turn.finished`) would start a task on each task's end, its own included. The `depth` and lineage guards of
+  ADR-0043 don't cross the MCP boundary, so the trigger's `rate`, `concurrency` and `budget` are the brakes.
 - **wisp declares `2026-07-28`** while serving it statelessly. Only `resultType` is added, and no modern-only field
   is required of clients. A modern client that needs more (`subscriptions/listen`, caching hints) gets what a legacy
   one gets.
@@ -145,8 +195,20 @@
 - A modern request gets `resultType`. An unknown modern version gets `-32022` with the supported list
   (`dispatch::tests`).
 - Polling from `null` returns nothing. The next poll returns the turn's `turn.finished`, and a third returns it no
-  more. An unknown type is `-32023` and `events/stream` is `-32026`
+  more. An unknown type is `-32023` and `events/subscribe` is `-32026`
   (`serve_events.rs mcp_events_poll_brings_what_happened_after_the_cursor_once`).
+- **A stream on `wisp serve`** sends `active` with the subscription id and the granted heartbeat, then the turn's
+  `turn.finished` as it happens (its cursor equals its `eventId`), then a heartbeat. A type that isn't kept is
+  refused before any stream (`-32023`), and a stream inside a batch is `-32026`. wisp's own client lists wisp's own
+  events, with push offered (`serve_events.rs mcp_events_stream_pushes_each_event_as_it_happens`).
+- **Stream messages** carry the subscription id, and events carry their cursor. The heartbeat is clamped
+  (`mcp::tests`).
+- **A connector's stream** opens at the first poll (from now). Each event reaches the engine at once, and a poll
+  meanwhile asks nothing and returns the stream's cursor. A dropped stream is opened again from its cursor. After
+  `terminated`, polling carries on from the stream's cursor, not the engine's older one. `match.delivery: poll`
+  never streams (`connectors/host/tests/events.rs`).
+- **Pure parts of push:** offers and `wants_push`, `delivery` echoed, every frame kind read, a stream's error
+  answer read as terminated, backoff (`connectors/core/src/events.rs`).
 - A capped agent polling another task's events gets `-32024` (`serve_events.rs capped_agent_sees_only…`).
 - Only durable types are listed, each once (`mcp::tests`).
 - A connector's first poll starts from now, later polls key each event once and echo the match, and an unchanged
@@ -159,8 +221,9 @@
 
 ### Later
 
-- **Push (`events/stream`):** wisp's `Net` is request/response, so it needs a streaming fetch on the client. On the
-  server it is the `events:<glob>` topic behind SSE.
+- **`wisp mcp` (stdio)** forwards only tools to the server today. It could forward `events/*`, a stream as
+  notifications on stdout, cancelled with `notifications/cancelled`.
+- **A limit on concurrent streams per caller** (`-32025`).
 - **Webhook (`events/subscribe`):**
   - As a server: `events.sink@1` with Standard Webhooks signing, the challenge, TTL and `deliveryStatus`.
   - As a client: the grid's public URL as the callback.

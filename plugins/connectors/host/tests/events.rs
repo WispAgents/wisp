@@ -2,14 +2,25 @@
 //! and the `mcp.event` trigger source polls it: the first poll starts from now, later ones bring what happened since
 //! (each event keyed once, the cursor kept), `hasMore` drained at once, a server with no events said in words, and a
 //! modern-only server (it refuses `initialize`) asked the `2026-07-28` way. The server is a fake `Net`.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::many_single_char_names)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::many_single_char_names,
+    clippy::assert_is_empty
+)]
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
-use wisp_kernel::services::{NetRequest, NetResponse};
-use wisp_kernel::{BoxFuture, Caller, Kernel, Result};
+use std::time::Duration;
+
+use wisp_automations_api::TriggerEvent;
+use wisp_automations_api::commands::{Count, TriggerPush};
+use wisp_kernel::services::{NetRequest, NetResponse, NetStream};
+use wisp_kernel::{BoxFuture, Caller, Kernel, Manifest, Plugin, Result, Setup};
 use wisp_store::{Location, Store, SystemClock};
 use wisp_testkit::{FakeClock, TestApp};
 
@@ -46,6 +57,9 @@ struct Server {
 struct St {
     no_events: bool,
     modern: bool,
+    /// its listing offers push, and `events/stream` answers with SSE fed by `stream`
+    push: bool,
+    stream: Option<futures::channel::mpsc::UnboundedSender<Vec<u8>>>,
     page: usize,
     happened: Vec<(String, String)>,
     /// every request: (method, the MCP-Protocol-Version header, params)
@@ -80,7 +94,8 @@ impl Server {
             _ if s.no_events => err(-32601, "Method not found"),
             _ if s.modern && version.as_deref() != Some("2026-07-28") => reply(400, &json!({})),
             "events/list" => {
-                ok(json!({ "events": [{ "name": "incident.created", "delivery": ["poll"], "inputSchema": { "type": "object" } }] }))
+                let delivery = if s.push { json!(["push", "poll"]) } else { json!(["poll"]) };
+                ok(json!({ "events": [{ "name": "incident.created", "delivery": delivery, "inputSchema": { "type": "object" } }] }))
             }
             "events/poll" => {
                 let p = &m["params"];
@@ -110,11 +125,46 @@ impl wisp_kernel::services::Net for Server {
         let r = self.answer(&req);
         Box::pin(async move { Ok(r) })
     }
+    fn stream(&self, req: NetRequest) -> BoxFuture<'static, Result<NetStream>> {
+        let m: Value = serde_json::from_slice(&req.body).unwrap_or_default();
+        let mut s = self.st.lock().unwrap();
+        if m["method"] != "events/stream" || !s.push {
+            drop(s);
+            let r = self.answer(&req);
+            return Box::pin(async move {
+                Ok(NetStream { status: r.status, headers: r.headers, body: Box::pin(futures::stream::once(async move { Ok(r.body) })) })
+            });
+        }
+        s.log.push(("events/stream".into(), None, m["params"].clone()));
+        let (tx, rx) = futures::channel::mpsc::unbounded::<Vec<u8>>();
+        s.stream = Some(tx);
+        let body = futures::StreamExt::boxed(futures::StreamExt::map(rx, Ok));
+        Box::pin(async move { Ok(NetStream { status: 200, headers: vec![("content-type".into(), "text/event-stream".into())], body }) })
+    }
+}
+
+/// wisp.automations as far as the source calls it: `automations.trigger.push` keeps what it got.
+#[derive(Clone, Default)]
+struct Pushed(Arc<Mutex<Vec<TriggerEvent>>>);
+struct Automations(Pushed);
+impl Plugin for Automations {
+    fn manifest(&self) -> Manifest {
+        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.automations", "version": "1.0.0-alpha.1", "api": "^1" })).unwrap()
+    }
+    fn setup(&self, s: &mut Setup) -> Result<()> {
+        let got = self.0.clone();
+        s.command::<TriggerPush, _, _>(move |_, _, ev: TriggerEvent| {
+            got.0.lock().unwrap().push(ev);
+            async move { Ok(Count { n: 1 }) }
+        });
+        Ok(())
+    }
 }
 
 struct App {
     k: Kernel,
     server: Arc<Server>,
+    pushed: Pushed,
     dir: std::path::PathBuf,
 }
 impl Drop for App {
@@ -128,6 +178,7 @@ async fn app(name: &str, server: Server) -> App {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let server = Arc::new(server);
+    let pushed = Pushed::default();
     let store = Store::open(Location::Path(dir.join("wisp.db")), Arc::new(SystemClock)).unwrap();
     let (sec, net): (wisp_kernel::services::SecretsService, wisp_kernel::services::NetService) =
         (Arc::new(Secrets::default()), server.clone());
@@ -137,6 +188,7 @@ async fn app(name: &str, server: Server) -> App {
         .service(sec)
         .service(net)
         .with(wisp_connectors::ConnectorsPlugin)
+        .with(Automations(pushed.clone()))
         .start()
         .await;
     k.call(
@@ -146,7 +198,7 @@ async fn app(name: &str, server: Server) -> App {
     )
     .await
     .unwrap();
-    App { k, server, dir }
+    App { k, server, pushed, dir }
 }
 
 impl App {
@@ -163,6 +215,13 @@ impl App {
     }
     fn happen(&self, id: &str, title: &str) {
         self.server.with(|s| s.happened.push((id.into(), title.into())));
+    }
+    /// One SSE frame down the open stream.
+    fn say(&self, msg: &Value) {
+        self.server.with(|s| s.stream.as_ref().unwrap().unbounded_send(format!("data: {msg}\n\n").into_bytes()).unwrap());
+    }
+    fn pushed(&self) -> Vec<String> {
+        self.pushed.0.lock().unwrap().iter().map(|e| e.key.clone()).collect()
     }
     fn sent(&self, method: &str) -> Vec<(Option<String>, Value)> {
         self.server.with(|s| s.log.iter().filter(|(m, _, _)| m == method).map(|(_, v, p)| (v.clone(), p.clone())).collect())
@@ -237,4 +296,60 @@ async fn a_modern_only_server_is_asked_the_2026_07_28_way() {
     assert_eq!(version.as_deref(), Some("2026-07-28"));
     assert_eq!(params["_meta"]["io.modelcontextprotocol/protocolVersion"], "2026-07-28");
     assert!(params["_meta"]["io.modelcontextprotocol/clientCapabilities"]["extensions"]["io.modelcontextprotocol/events"].is_object());
+}
+
+async fn eventually(what: &str, f: impl Fn() -> bool) {
+    for _ in 0..600 {
+        if f() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("never: {what}");
+}
+
+/// Push (ADR-0145): offered, the first poll opens `events/stream`; each event reaches the engine as it comes
+/// (`automations.trigger.push`), and a poll meanwhile asks nothing and hands back the stream's cursor. A stream that
+/// drops opens again from its cursor; one the server ends hands back to polling, from that same cursor.
+#[tokio::test(flavor = "multi_thread")]
+async fn push_brings_each_event_at_once_and_polls_take_over_when_it_ends() {
+    let a = app("push", Server { st: Mutex::new(St { push: true, ..St::default() }) }).await;
+    let first = a.poll(Value::Null).await.unwrap();
+    assert_eq!(first.events, []);
+    eventually("the stream is open", || a.server.with(|s| s.stream.is_some())).await;
+    assert_eq!(a.sent("events/stream")[0].1["cursor"], Value::Null, "from now");
+    assert_eq!(a.sent("events/stream")[0].1["arguments"], json!({ "severity": "P1" }));
+    a.say(&json!({ "jsonrpc": "2.0", "method": "notifications/events/active", "params": { "cursor": "0", "heartbeatMs": 15000 } }));
+    let event = json!({ "jsonrpc": "2.0", "method": "notifications/events/event", "params": { "eventId": "e1", "name": "incident.created", "timestamp": "2026-11-27T10:00:00Z", "data": { "title": "Database down" }, "cursor": "1" } });
+    a.say(&event);
+    eventually("the event reached the triggers", || a.pushed() == ["pd:incident.created:e1"]).await;
+    // a poll while it streams: no request, the stream's cursor for the trigger's row
+    let polls = a.sent("events/poll").len();
+    let p = a.poll(first.cursor.clone()).await.unwrap();
+    assert_eq!(p.events, []);
+    assert_eq!(p.cursor, json!({ "c": "1" }));
+    assert_eq!(a.sent("events/poll").len(), polls, "no poll while it streams");
+    // it drops: opened again, from its cursor
+    a.server.with(|s| s.stream = None);
+    eventually("opened again", || a.sent("events/stream").len() == 2).await;
+    assert_eq!(a.sent("events/stream")[1].1["cursor"], "1");
+    eventually("the new stream is there", || a.server.with(|s| s.stream.is_some())).await;
+    // the server ends it: polling carries on from the stream's cursor
+    a.say(&json!({ "jsonrpc": "2.0", "method": "notifications/events/terminated", "params": { "error": { "code": -32024, "message": "Forbidden" } } }));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    a.happen("e0", "seen by the server before");
+    a.happen("e2", "after");
+    let p = a.poll(json!({ "c": "0" })).await.unwrap();
+    assert_eq!(a.sent("events/poll").last().unwrap().1["cursor"], "1", "the stream's cursor, not the engine's older one");
+    assert_eq!(p.events.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(), ["pd:incident.created:e2"]);
+}
+
+/// A trigger that says `match.delivery: poll` is polled even when the server offers push.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_trigger_can_keep_to_polling() {
+    let a = app("keep-poll", Server { st: Mutex::new(St { push: true, ..St::default() }) }).await;
+    let spec = json!({ "on": "mcp.event", "match": { "connector": "pd", "event": "incident.created", "delivery": "poll" } });
+    a.source().poll("mcp.event", &spec, Value::Null).await.unwrap();
+    assert!(a.sent("events/stream").is_empty());
+    assert_eq!(a.sent("events/poll").len(), 1);
 }

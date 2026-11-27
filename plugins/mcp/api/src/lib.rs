@@ -226,13 +226,31 @@ impl MethodError {
     }
 }
 
-pub type MethodFn = Arc<dyn Fn(Ctx, Call, Value) -> BoxFuture<'static, std::result::Result<Value, MethodError>> + Send + Sync>;
+/// One call of a contributed method: the JSON-RPC `id` it came with (a stream's subscription id) and its `params`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MethodRequest {
+    pub id: Value,
+    pub params: Value,
+}
+
+/// What a contributed method answers: its result, or a stream of whole JSON-RPC messages (notifications, and a last
+/// response if the method ends it), sent as SSE frames on Streamable HTTP. The stream's end, or the receiver dropped
+/// because the client went away, ends it.
+#[derive(Debug)]
+pub enum MethodAnswer {
+    Result(Value),
+    Stream(tokio::sync::mpsc::Receiver<Value>),
+}
+
+pub type MethodFn =
+    Arc<dyn Fn(Ctx, Call, MethodRequest) -> BoxFuture<'static, std::result::Result<MethodAnswer, MethodError>> + Send + Sync>;
 
 /// `mcp.method@1` (ADR-0145): a plugin serves a JSON-RPC method of its own on wisp's MCP endpoint, beyond tools: an
 /// MCP extension's (`events/list`, `events/poll`), declared under `capabilities.extensions` by its identifier. `run` gets
 /// wisp.mcp's context and the caller's `Call`: a contribution runs its own commands from its own context (`s.ctx()`,
 /// so its manifest's permissions hold) with that `Call` (the caller's capability set and scoping apply). Its `params`
-/// arrive as sent.
+/// arrive as sent. A long-lived method (`events/stream`) answers `MethodAnswer::Stream`; where no stream can be sent
+/// (a batch, `mcp.rpc`) it is refused with `-32026`.
 pub struct MethodContribution {
     /// `events/poll`; a core method (`initialize`, `tools/*`, `server/discover`, `ping`) can't be taken
     pub method: String,
