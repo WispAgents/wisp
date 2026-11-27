@@ -152,6 +152,8 @@ test('the_story_reply_goes_to_the_running_job_and_an_idle_member_is_not_on_the_t
   };
   // Linus works: "Message Linus…" is a follow-up on his running job
   await openStory(root, 'Linus');
+  // the reply box comes with the story's lazy foot
+  await until(() => q('[data-part~="crew.story.reply"] textarea')?.getAttribute('placeholder') === 'Message Linus…');
   expect(q('[data-part~="crew.story.reply"] textarea')?.getAttribute('placeholder')).toBe('Message Linus…');
   await type('Check the iOS bar too');
   await until(() => sent.some((s) => s.cmd === 'runtime.followUp'));

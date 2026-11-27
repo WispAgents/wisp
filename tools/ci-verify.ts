@@ -291,10 +291,11 @@ if (import.meta.main) {
     try {
       // 42 packages share one worker pool here, beside the cargo builds: a UI test that takes 0.3 s alone took over 5 s
       // (vitest's default) on a busy Windows runner and failed main, which holds the release (2026-11-26). The flag
-      // reaches every project, unlike a testTimeout in the root config; a test that really hangs still fails.
+      // reaches every project, unlike a testTimeout in the root config; a test that really hangs still fails. Windows
+      // gets 60 s: there one run spends ~1100 s importing, and a test of a few waits (until(), 15 s each) ran past 20 s.
       const r = await run(
         process.execPath,
-        [join(ROOT, 'node_modules', 'vitest', 'vitest.mjs'), 'run', '--config', join(ROOT, 'tools', 'vitest.ci.config.ts'), '--testTimeout=20000', '--reporter=dot', '--reporter=json', `--outputFile.json=${file}`],
+        [join(ROOT, 'node_modules', 'vitest', 'vitest.mjs'), 'run', '--config', join(ROOT, 'tools', 'vitest.ci.config.ts'), `--testTimeout=${process.platform === 'win32' ? 60_000 : 20_000}`, '--reporter=dot', '--reporter=json', `--outputFile.json=${file}`],
         { ...process.env, WISP_VITEST_PROJECTS: JSON.stringify(vitestDirs) },
         false,
       );
