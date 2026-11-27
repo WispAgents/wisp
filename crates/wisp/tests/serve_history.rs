@@ -429,3 +429,78 @@ async fn offers_the_mark_resume_requests_and_injection() {
     assert!(argv().contains("Earlier tasks on these files") && argv().contains("Fix add"), "{}", &argv()[..argv().len().min(300)]);
     drop(serve);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_saved_task_is_pushed_as_a_pr_without_touching_the_checkout() {
+    let dir = temp("serve-history-push");
+    let origin = dir.join("origin.git");
+    std::fs::create_dir_all(&origin).unwrap();
+    git(&origin, &["init", "-q", "--bare", "-b", "main"]);
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    // the server's own git (commit-tree) needs a name, as a user's machine has one
+    git(&repo, &["config", "user.name", "t"]);
+    git(&repo, &["config", "user.email", "t@t"]);
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+    git(&repo, &["remote", "add", "origin", origin.to_str().unwrap()]);
+    let bin = dir.join("ghbin");
+    common::install_fakes(&bin, &["gh"]);
+    let state = dir.join("gh-state.json");
+    let (serve, port) = start_with(&dir, &[("WISP_GH_BIN", bin.join("gh").to_str().unwrap()), ("FAKE_GH_STATE", state.to_str().unwrap())]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    assert_eq!(wisp(&dir, &repo, port, &["init"], None).0, 0);
+    git(&repo, &["add", ".wisp"]);
+    git(&repo, &["commit", "-qm", "wisp init"]);
+    git(&repo, &["push", "-q", "origin", "main"]);
+
+    let made = api.cmd("runtime.create", json!({ "prompt": "fix math.js", "cwd": repo, "agent": "claude", "worktree": false })).await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    api.until(&id, "the turn ends", |t| t.last().is_some_and(ended)).await;
+
+    // push_refuses_a_task_not_saved_yet
+    let early = api.try_cmd("history.push", json!({ "id": id })).await;
+    assert!(early["ok"] == false && early.to_string().contains("Save to repo first"), "{early}");
+
+    let saved = api.cmd("history.track", json!({ "id": id })).await;
+    let files: Vec<String> = saved["files"].as_array().unwrap().iter().map(|f| f.as_str().unwrap().to_owned()).collect();
+    assert!(files.iter().any(|f| f.ends_with(".task.yml")), "{saved}");
+    // the user's own work in the checkout: never committed, never touched
+    std::fs::write(repo.join("mine.txt"), "wip").unwrap();
+    let head = git(&repo, &["rev-parse", "HEAD"]);
+
+    // the_main_checkout_save_goes_out_as_a_pr_on_its_own_branch
+    let pushed = api.cmd("history.push", json!({ "id": id })).await;
+    let branch = format!("wisp/history-{}", &id[..12]);
+    assert_eq!(pushed["branch"], branch.as_str(), "{pushed}");
+    assert!(pushed["pr"].as_str().is_some_and(|u| u.contains("/pull/")), "{pushed}");
+    let on_origin = git(&origin, &["ls-tree", "-r", "--name-only", &branch]);
+    for f in &files {
+        assert!(on_origin.lines().any(|l| l == f), "{f} on {branch}: {on_origin}");
+    }
+    assert_eq!(git(&origin, &["rev-parse", &format!("{branch}^")]), head, "built on origin's main");
+    // the_checkout_is_untouched: same branch and HEAD, the user's file still uncommitted, nothing staged
+    assert_eq!(git(&repo, &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(&repo, &["rev-parse", "--abbrev-ref", "HEAD"]), "main");
+    assert_eq!(git(&repo, &["diff", "--cached", "--name-only"]), "");
+    assert!(repo.join("mine.txt").exists());
+    // the_local_copies_go_so_the_next_pull_works
+    assert!(files.iter().all(|f| !repo.join(f).exists()), "{:?}", task_files(&repo));
+    let mark = api.cmd("runtime.get", json!({ "id": id })).await["ext"]["wisp.history"].clone();
+    assert_eq!(mark["pushed"]["branch"], branch.as_str(), "{mark}");
+    // the PR merges, the user pulls: no "untracked files would be overwritten"
+    git(&origin, &["update-ref", "refs/heads/main", &format!("refs/heads/{branch}")]);
+    git(&repo, &["pull", "-q", "--ff-only", "origin", "main"]);
+    assert!(files.iter().all(|f| repo.join(f).exists()), "back with the pull");
+
+    // saved_again_over_committed_files: pushed on today's main, the tracked copies back to HEAD (a clean checkout)
+    api.cmd("history.track", json!({ "id": id })).await;
+    let main = git(&origin, &["rev-parse", "main"]);
+    let again = api.cmd("history.push", json!({ "id": id })).await;
+    if again["pr"].is_string() {
+        assert_eq!(git(&origin, &["rev-parse", &format!("{branch}^")]), main, "{again}");
+    }
+    assert_eq!(git(&repo, &["status", "--porcelain", "--", ".wisp"]), "", "{again}");
+    assert!(files.iter().all(|f| repo.join(f).exists()), "tracked copies stay, as HEAD has them");
+    drop(serve);
+}

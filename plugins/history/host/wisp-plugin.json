@@ -14,6 +14,7 @@
     "commands": [
       { "id": "history.track", "title": "Save a task into its repo's .wisp/" },
       { "id": "history.save", "title": "Save to repo (an offered task)" },
+      { "id": "history.push", "title": "Commit and push a saved task's .wisp/ files (onto its branch, or as a PR)" },
       { "id": "history.untrack", "title": "Take a task out of the repo's history" },
       { "id": "history.blame", "title": "Which task made this", "readOnly": true },
       { "id": "history.resumeRequest", "title": "Ask to resume an earlier task" },

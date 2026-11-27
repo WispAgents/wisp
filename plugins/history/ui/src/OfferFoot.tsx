@@ -10,6 +10,7 @@ import { Button, Icon, Inline, Text, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
 import { historyOf, lastTurnOf, offerView, runSave, saveCmd, saveStates, type TaskRow } from './save.ts';
+import SavedLine, { type SavedView } from './SavedLine.tsx';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 const toasted = new Set<string>();
@@ -50,17 +51,7 @@ export default function OfferFoot(props: ExtensionProps): JSX.Element {
             </Button>
           </Match>
           <Match when={view().v === 'saved'}>
-            {(() => {
-              const v = view() as { files: number; scrubbed: number };
-              return (
-                <>
-                  <Icon name="check" size="sm" tone="faint" />
-                  <Text size="sm" tone="muted" truncate part="history.offer.saved">
-                    {v.scrubbed > 0 ? t('history.saved.scrubbed', { count: v.files, scrubbed: v.scrubbed }) : t('history.saved', { count: v.files })}
-                  </Text>
-                </>
-              );
-            })()}
+            <SavedLine view={view() as SavedView} taskKey={taskKey()} client={c} />
           </Match>
         </Switch>
       </Inline>

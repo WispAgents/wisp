@@ -169,7 +169,28 @@ pub struct AnswerArgs {
     pub approve: bool,
 }
 
+/// `history.push`: the task whose saved `.wisp/` files go to the remote.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct PushArgs {
+    pub id: String,
+}
+
+/// What `history.push` did: the branch it pushed, its PR, and the local copies it took out of the checkout.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pushed {
+    pub branch: String,
+    pub commit: String,
+    pub files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr: Option<String>,
+    /// local copies taken out of the main checkout (they come back with the next pull, once the PR merges)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+}
+
 command!(Track, "history.track", TrackArgs, Tracked);
+command!(Push, "history.push", PushArgs, Pushed);
 command!(Save, "history.save", TrackArgs, Tracked);
 command!(Untrack, "history.untrack", UntrackArgs, Gone);
 command!(BlameCmd, "history.blame", BlameArgs, Value, read_only = true);

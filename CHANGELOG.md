@@ -36,6 +36,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A connector's notes wrap.** "Codex uses its own …" and "can't reach an SSE server" show whole on narrow screens instead of being cut with "…".
 - **Settings rows:** a meter as a row's control keeps its width (it drew 0px wide), and an empty notes band under a row no longer draws a stray line.
 
+### Added
+
+- **Push a saved task from Save to repo.** Once saved, the line under its answer has **Push** (and ⋯ has **Push to
+  repo**), so its `.wisp/` files don't stay on your computer. While the task's work isn't shipped they're committed on
+  its branch and pushed (its PR gets them). Once its work is merged, they go out as a pull request from
+  `wisp/history-<id>`, built on the remote's main without touching your checkout, branch or staged files; the local
+  copies are taken out so your next `git pull` doesn't stop on "untracked files would be overwritten", and they come
+  back with it. The line then says where they went, with **Open PR**. Agents can do the same with the `history_push`
+  tool.
+
 ## [1.0.0-alpha.17] - 2026-11-26
 
 ### Changed

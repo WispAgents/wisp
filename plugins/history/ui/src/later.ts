@@ -3,7 +3,7 @@
 import { lazy } from 'solid-js';
 import type { EntityKey } from '@wisp/client';
 import { defineExtension, type PluginUiLater } from '@wisp/shell';
-import { historyOf, runSave, saveable, trackCmd, type TaskRow } from './save.ts';
+import { historyOf, pushable, pushCmd, runPush, runSave, saveable, trackCmd, type TaskRow } from './save.ts';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
 
@@ -29,6 +29,26 @@ const later: PluginUiLater = {
           if (!key) return;
           void runSave((k) => p.client.run(trackCmd, { key: k }), key);
           // the task opens on its answer, which says Saving…, then what was saved (a refusal toasts)
+          p.client.navigate({ t: 'openTask', id: key as never });
+        },
+      },
+    }),
+    // saved: its files committed and pushed (onto its branch, or as a PR), so they don't stay on this computer
+    defineExtension({
+      id: 'wisp.history.rowPush',
+      attachTo: { id: 'shell.row:menu' },
+      component: () => null,
+      order: 96,
+      if: (p) => pushable(p.session?.() as TaskRow | undefined),
+      bar: {
+        icon: 'arrow-up',
+        label: 'history.pushToRepo',
+        priority: 96,
+        section: 'keep',
+        select: (p) => {
+          const key = String(p.session?.()?.id ?? '') as EntityKey;
+          if (!key) return;
+          void runPush((k) => p.client.run(pushCmd, { key: k }), key);
           p.client.navigate({ t: 'openTask', id: key as never });
         },
       },

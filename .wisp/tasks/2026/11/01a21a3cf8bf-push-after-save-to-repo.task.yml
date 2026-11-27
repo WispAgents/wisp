@@ -1,0 +1,27 @@
+commits: []
+createdAt: 1795738021485
+files:
+- plugins/history/api/src/lib.rs
+- plugins/history/host/src/push.rs
+formula: {}
+id: 01a21a3cf8bf7107a01f9681771142b5
+level: full
+session:
+  harness: claude
+  id: 3bd1b764-bb06-44df-a87d-4f5c687de1be
+spec:
+  agent: claude
+  base:
+    branch: main
+    repo: https://github.com/WispAgents/wisp.git
+    sha: 3350069e92c9ccc6f2c92d5f6c87afe0a0b05c80
+  cwd: <project>
+  formula: 6e46dd10defc9b56
+  mode: auto
+  prompt: >-
+    when task is done and user click on save to repo, we need to add the option to
+    push the code or something like that so it does not just stay local
+  worktree: true
+title: Push after Save to repo
+trackedBy: M0xoo
+wispTask: 1
