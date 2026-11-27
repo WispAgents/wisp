@@ -632,6 +632,22 @@ async fn a_save_after_a_push_forgets_that_push() {
     assert!(e.message.contains("Save to repo again"), "{e:?}");
 }
 
+/// final5 F3: Ship's catch-up knows a history push's commit by its subject and the folders a save writes: both come
+/// from the one place (wisp-history-api) the push builds them from.
+#[test]
+fn a_history_push_commit_is_what_ship_merges_in() {
+    let msg = super::push::message("Fix it", PUSHED_ID);
+    let subject = msg.lines().next().unwrap();
+    assert_eq!(subject, "wisp: save task \"Fix it\" to the repo's history");
+    assert!(subject.starts_with(wisp_history_api::SAVE_SUBJECT_START) && subject.ends_with(wisp_history_api::SAVE_SUBJECT_END));
+    let (report, history) = (Some(json!({ "answers": [] })), Some(json!([{ "turn": { "prompt": "x" } }])));
+    let b = wisp_share_api::Bundle { id: PUSHED_ID.into(), title: "Fix it".into(), report, history, ..Default::default() };
+    for (rel, _) in wisp_history_core::repo::files_for(&b, &[], None, "me") {
+        let top = rel.split('/').next().unwrap();
+        assert!(wisp_history_api::SAVED_DIRS.contains(&top), "{rel}");
+    }
+}
+
 #[test]
 fn the_new_pr_page_is_in_the_hosts_own_format() {
     let page = super::push::new_pr_page;

@@ -13,6 +13,20 @@ pub const PLUGIN: &str = "wisp.history";
 /// The task ext slot this plugin owns: `{ tracked: { repo, files, store }, offer: bool }`.
 pub const EXT: &str = "wisp.history";
 
+/// The subfolders of `.wisp/` a save writes (`tasks/YYYY/MM/<id>-<slug>.*`, `history/<id>.*.jsonl.zst`): the only
+/// paths a history push's commit touches. Ship merges a remote commit in on its own only when it stays inside them;
+/// `.wisp/worktree.json`, `sandbox.sh` and `wisp.yml` run code or steer wisp, and are never the history.
+pub const SAVED_DIRS: &[&str] = &["tasks", "history"];
+/// A history push's commit subject is `wisp: save task "<title>" to the repo's history` ([`save_subject`]): what
+/// tells it from someone else's commit that happens to touch the same files.
+pub const SAVE_SUBJECT_START: &str = "wisp: save task \"";
+pub const SAVE_SUBJECT_END: &str = "\" to the repo's history";
+
+/// The subject of a history push's commit (and of its PR) for a task titled `title`.
+pub fn save_subject(title: &str) -> String {
+    format!("{SAVE_SUBJECT_START}{title}{SAVE_SUBJECT_END}")
+}
+
 /// Where a tracked task's files go. `rel` paths are relative to the repo's `.wisp/`.
 pub trait HistoryStore: Send + Sync + 'static {
     /// `files`, `notes`, `lfs`, or a plugin's own

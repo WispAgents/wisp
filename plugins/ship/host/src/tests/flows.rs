@@ -36,7 +36,7 @@ async fn ship_catches_up_with_the_history_and_refuses_anything_else_on_the_remot
     h.dirty(&wts[0], 1);
     h.git.lock().catch_up = Some(wisp_git_api::CaughtUp::Merged);
     h.ship.ship_all(&h.call, "t1", "fix: one", "", false).await.unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(h.git.logged("catch-up"), [format!("catch-up origin {} .wisp", wts[0].branch)]);
+    assert_eq!(h.git.logged("catch-up"), [format!("catch-up origin {} .wisp tasks,history", wts[0].branch)]);
     assert_eq!(h.git.logged("push"), [format!("push origin HEAD:refs/heads/{}", wts[0].branch)]);
     h.dirty(&wts[0], 1);
     h.git.lock().catch_up = Some(wisp_git_api::CaughtUp::Diverged { files: vec!["src/app.rs".into()] });

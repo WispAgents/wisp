@@ -558,11 +558,11 @@ async fn a_subdir_checkout_lists_stages_reverts_and_undoes_in_one_path_frame() {
 /// and refuses, changing nothing, when the remote has anything else.
 #[tokio::test]
 async fn catch_up_merges_only_the_history_the_remote_branch_has() {
-    use wisp_git_api::{CatchUpRequest, CaughtUp};
+    use wisp_git_api::CaughtUp;
     let t = tmp("catchup");
     let dir = repo(&t);
     let origin = t.0.join("origin.git");
-    let ask = || CatchUpRequest { remote: "origin".into(), branch: "wisp/task".into(), only: ".wisp".into() };
+    let ask = catch_up_ask;
     git(&dir, &["checkout", "-q", "-b", "wisp/task"]);
     let (_, s) = service();
     let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
@@ -580,7 +580,7 @@ async fn catch_up_merges_only_the_history_the_remote_branch_has() {
     }
     write(&other, ".wisp/tasks/x.task.yml", "saved\n");
     git(&other, &["add", "-f", ".wisp"]);
-    git(&other, &["commit", "-q", "-m", "history"]);
+    git(&other, &["commit", "-q", "-m", SAVE_MESSAGE]);
     git(&other, &["push", "-q", "origin", "wisp/task"]);
     let history = git(&other, &["rev-parse", "HEAD"]);
     // the agent's commit, not pushed
@@ -607,4 +607,111 @@ async fn catch_up_merges_only_the_history_the_remote_branch_has() {
     let push =
         std::process::Command::new("git").args(["push", "-q", "origin", "HEAD:refs/heads/wisp/task"]).current_dir(&dir).output().unwrap();
     assert!(!push.status.success(), "a non-fast-forward, never forced");
+}
+
+/// A history push's commit message, as wisp-history's push writes it.
+const SAVE_MESSAGE: &str = "wisp: save task \"Fix it\" to the repo's history\n\nIts spec, report and transcript in .wisp/ (task x).";
+
+/// Ship's ask: only the history push's own commits, only the folders a save writes.
+fn catch_up_ask() -> wisp_git_api::CatchUpRequest {
+    wisp_git_api::CatchUpRequest {
+        remote: "origin".into(),
+        branch: "wisp/task".into(),
+        only: ".wisp".into(),
+        within: vec!["tasks".into(), "history".into()],
+        subject_start: "wisp: save task \"".into(),
+        subject_end: "\" to the repo's history".into(),
+    }
+}
+
+/// A repo on `wisp/task`, pushed, and a second clone of it (elsewhere: where the history push came from).
+fn task_and_elsewhere(t: &Tmp) -> (std::path::PathBuf, std::path::PathBuf) {
+    let dir = repo(t);
+    git(&dir, &["checkout", "-q", "-b", "wisp/task"]);
+    git(&dir, &["push", "-q", "origin", "HEAD:refs/heads/wisp/task"]);
+    let other = t.0.join("other");
+    git(&t.0, &["clone", "-q", "-b", "wisp/task", t.0.join("origin.git").to_str().unwrap(), other.to_str().unwrap()]);
+    for (k, v) in [("user.email", "qa@wisp.test"), ("user.name", "QA"), ("commit.gpgsign", "false"), ("core.autocrlf", "false")] {
+        git(&other, &["config", k, v]);
+    }
+    (dir, other)
+}
+
+/// `f` = `text` committed with `message` in `other` and pushed to the task branch: its sha.
+fn pushed_from(other: &std::path::Path, f: &str, text: &str, message: &str) -> String {
+    write(other, f, text);
+    git(other, &["add", "-f", f]);
+    git(other, &["commit", "-q", "-m", message]);
+    git(other, &["push", "-q", "origin", "wisp/task"]);
+    git(other, &["rev-parse", "HEAD"])
+}
+
+/// final5 F2: the same history file saved here (newer) and pushed from an earlier save: a conflict on wisp's own files
+/// only, so HEAD's copy wins and the merge lands (no "Pull or merge them in"); the next push is a fast-forward.
+#[tokio::test]
+async fn catch_up_keeps_the_newer_local_save_when_the_history_conflicts() {
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-conflict");
+    let (dir, other) = task_and_elsewhere(&t);
+    let theirs = pushed_from(&other, ".wisp/tasks/x/r.md", "pushed\n", SAVE_MESSAGE);
+    write(&dir, ".wisp/tasks/x/r.md", "NEWER-LOCAL\n");
+    git(&dir, &["add", ".wisp/tasks/x/r.md"]);
+    git(&dir, &["commit", "-q", "-m", "agent, with its save"]);
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Merged);
+    assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x/r.md")).unwrap(), "NEWER-LOCAL\n");
+    assert_eq!(git(&dir, &["show", "HEAD:.wisp/tasks/x/r.md"]), "NEWER-LOCAL");
+    git(&dir, &["merge-base", "--is-ancestor", &theirs, "HEAD"]);
+    assert!(!dir.join(".git/MERGE_HEAD").exists(), "never left mid-merge");
+    assert_eq!(git(&dir, &["status", "--porcelain"]), "");
+    git(&dir, &["push", "-q", "origin", "HEAD:refs/heads/wisp/task"]);
+}
+
+/// final5 F1: `.wisp/` gitignored, a newer save on disk only: git would overwrite an ignored file in the merge without
+/// a word. It's put back, a pending change for the next history push, and the merge still lands.
+#[tokio::test]
+async fn catch_up_never_overwrites_an_ignored_newer_save() {
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-ignored");
+    let (dir, other) = task_and_elsewhere(&t);
+    write(&dir, ".gitignore", ".wisp/\n");
+    git(&dir, &["add", ".gitignore"]);
+    git(&dir, &["commit", "-q", "-m", "ignore .wisp"]);
+    git(&dir, &["push", "-q", "origin", "HEAD:refs/heads/wisp/task"]);
+    git(&other, &["pull", "-q", "--no-rebase", "origin", "wisp/task"]);
+    let theirs = pushed_from(&other, ".wisp/tasks/x/r.md", "pushed\n", SAVE_MESSAGE);
+    write(&dir, ".wisp/tasks/x/r.md", "NEWER-LOCAL\n");
+    write(&dir, "a.txt", "agent\n");
+    git(&dir, &["commit", "-q", "-am", "agent"]);
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Merged);
+    assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x/r.md")).unwrap(), "NEWER-LOCAL\n");
+    git(&dir, &["merge-base", "--is-ancestor", &theirs, "HEAD"]);
+    assert_eq!(git(&dir, &["status", "--porcelain"]), "M .wisp/tasks/x/r.md", "the newer save, still to push");
+}
+
+/// final5 F3: a commit that only touches `.wisp/` but isn't the history push (a `worktree.json` whose `setup` runs
+/// here) is never merged in on the user's behalf: Diverged, naming it, and HEAD where it was.
+#[tokio::test]
+async fn catch_up_refuses_a_wisp_folder_commit_that_isnt_the_history() {
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-setup");
+    let (dir, other) = task_and_elsewhere(&t);
+    pushed_from(&other, ".wisp/worktree.json", "{\"setup\":[\"make\"]}\n", "tweak setup");
+    write(&dir, "a.txt", "agent\n");
+    git(&dir, &["commit", "-q", "-am", "agent"]);
+    let head = git(&dir, &["rev-parse", "HEAD"]);
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Diverged { files: vec![".wisp/worktree.json".into()] });
+    assert_eq!(git(&dir, &["rev-parse", "HEAD"]), head);
+    // the history push's subject on a file a save never writes: refused all the same
+    git(&other, &["pull", "-q", "--no-rebase", "origin", "wisp/task"]);
+    pushed_from(&other, ".wisp/sandbox.sh", "echo hi\n", SAVE_MESSAGE);
+    let caught = r.catch_up(&user(), catch_up_ask()).await.unwrap();
+    assert_eq!(caught, CaughtUp::Diverged { files: vec![".wisp/sandbox.sh".into(), ".wisp/worktree.json".into()] });
+    assert_eq!(git(&dir, &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(&dir, &["status", "--porcelain"]), "");
 }
