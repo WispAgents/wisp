@@ -24,6 +24,7 @@ export const KEYS = {
   blocks: 'runtime.blocks', // on unless 'off'
   worktree: 'worktrees.worktree', // on unless 'off'
   review: 'review.harness', // off | other | a harness id (wisp.review's setting; B53: was review.review, which nothing declares)
+  risk: 'risk.harness', // off | other | a harness id (wisp.risk's merge risk, ADR-0143): off by default
   fixConflicts: 'ship.fixConflicts', // off unless 'on'
   readTimes: 'settings.readTimes', // on unless 'off'
   watch: 'runtime.watch', // on unless 'off'

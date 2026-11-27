@@ -14,6 +14,7 @@ wisp-git-api.workspace = true
 wisp-history-api.workspace = true
 wisp-runtime-api.workspace = true
 wisp-review-api.workspace = true
+wisp-risk-api.workspace = true
 wisp-ship-api.workspace = true
 wisp-worktrees-api.workspace = true
 wisp-ship-core.workspace = true

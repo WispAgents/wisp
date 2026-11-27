@@ -63,6 +63,22 @@ pub fn new_head(was: Option<&Value>, now: &Value) -> bool {
     head(now).is_some_and(|h| was.and_then(head).as_deref() != Some(h.as_str()))
 }
 
+/// Some open PR of the slot's (its repos' or an attached one) has a head the slot before didn't have for it: time to
+/// ask for merge risk (wisp.risk decides whether that head is judged already).
+pub fn new_open_heads(was: Option<&Value>, now: &Value) -> bool {
+    fn heads(v: &Value) -> Vec<(String, String)> {
+        let repos = v["repos"].as_array().into_iter().flatten().map(|r| &r["pr"]);
+        let attached = v["prs"].as_array().into_iter().flatten().map(|x| &x["pr"]);
+        repos
+            .chain(attached)
+            .filter(|p| p["state"] == "OPEN")
+            .filter_map(|p| Some((p["url"].as_str()?.to_owned(), p["head"].as_str().filter(|h| !h.is_empty())?.to_owned())))
+            .collect()
+    }
+    let before = was.map(heads).unwrap_or_default();
+    heads(now).iter().any(|h| !before.contains(h))
+}
+
 /// The task kept in a session's slot (after a restart), or None when the slot is empty or unreadable.
 pub fn restore(session: &str, slot: &Value) -> Option<ShipTask> {
     let mut o = slot.as_object()?.clone();

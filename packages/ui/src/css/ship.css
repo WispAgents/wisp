@@ -110,6 +110,13 @@
   [data-part='pr.strip.keep'] { min-height: 0; padding: var(--space-2) var(--space-3); border-radius: 0; border-top: 1px solid color-mix(in srgb, var(--k-tone, var(--line)) 18%, var(--line)); }
   [data-part='pr.strip.keep'] > [data-kit='list-row-lead'] { margin-inline-end: var(--space-4); }
   [data-kit='list-row'][data-part='pr.strip.keep'] > [data-kit='list-row-actions'] { opacity: 1; pointer-events: auto; padding-inline-start: var(--space-3); }
+  /* merge risk's row under the Steward's (ADR-0143), built the same way: its level always shown on the right; the whole
+     row opens the PR pane, so the level never takes the click */
+  [data-part='pr.strip.risk'] { min-height: 0; padding: var(--space-2) var(--space-3); border-radius: 0; }
+  [data-part='pr.strip.risk'] > [data-kit='list-row-lead'] { margin-inline-end: var(--space-4); }
+  [data-kit='list-row'][data-part='pr.strip.risk'] > [data-kit='list-row-actions'],
+  [data-kit='list-row'][data-part='pr.strip.risk']:hover > [data-kit='list-row-actions'],
+  [data-kit='list-row'][data-part='pr.strip.risk']:focus-within > [data-kit='list-row-actions'] { opacity: 1; pointer-events: none; padding-inline-start: var(--space-3); }
 
   /* The docked bar: the phone's merge bar, where the reply box sits on the task. */
   [data-kit='dock-bar'] {

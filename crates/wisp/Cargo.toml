@@ -17,7 +17,7 @@ path = "src/main.rs"
 # scripts that name it.
 default = ["proc", "all-plugins"]
 full = ["default"]
-all-plugins = ["cli", "events", "threads", "resources", "workflows", "factory", "share", "history", "settings", "runtime", "claude", "codex", "cursor", "opencode", "copilot", "grok", "antigravity", "accounts", "git", "worktrees", "ship", "review", "issues", "terminal", "lsp", "machine", "machines", "grid-client", "crew", "goal", "later", "budget", "router", "automations", "learn", "channels", "telegram", "slack", "discord", "github", "email", "ntfy", "push", "mcp", "connectors", "stuff", "plugins", "telemetry", "posthog", "update", "termctx", "sandbox", "computer"]
+all-plugins = ["cli", "events", "threads", "resources", "workflows", "factory", "share", "history", "settings", "runtime", "claude", "codex", "cursor", "opencode", "copilot", "grok", "antigravity", "accounts", "git", "worktrees", "ship", "review", "risk", "issues", "terminal", "lsp", "machine", "machines", "grid-client", "crew", "goal", "later", "budget", "router", "automations", "learn", "channels", "telegram", "slack", "discord", "github", "email", "ntfy", "push", "mcp", "connectors", "stuff", "plugins", "telemetry", "posthog", "update", "termctx", "sandbox", "computer"]
 proc = ["dep:wisp-proc"]
 cli = ["dep:wisp-cli"]
 resources = ["dep:wisp-resources"]
@@ -40,6 +40,7 @@ git = ["dep:wisp-git"]
 worktrees = ["dep:wisp-worktrees"]
 ship = ["dep:wisp-ship"]
 review = ["dep:wisp-review"]
+risk = ["dep:wisp-risk"]
 issues = ["dep:wisp-issues"]
 terminal = ["dep:wisp-terminal"]
 lsp = ["dep:wisp-lsp"]
@@ -117,6 +118,7 @@ wisp-git = { path = "../../plugins/git/host", optional = true }
 wisp-worktrees = { path = "../../plugins/worktrees/host", optional = true }
 wisp-ship = { path = "../../plugins/ship/host", optional = true }
 wisp-review = { path = "../../plugins/review/host", optional = true }
+wisp-risk = { path = "../../plugins/risk/host", optional = true }
 wisp-issues = { path = "../../plugins/issues/host", optional = true }
 wisp-terminal = { path = "../../plugins/terminal/host", optional = true }
 wisp-lsp = { path = "../../plugins/lsp/host", optional = true }

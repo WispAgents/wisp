@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Merge risk.** Turn on Settings → General → Merge risk, and another harness than the one that wrote a task reads each of its open pull requests (the ones Ship it opened and the ones its agent attached) and says how risky merging is: low, medium or high, a score and why. The PR card gets a Merge risk row under the Steward with the riskiest PR's verdict, each PR's chip says its own, the PR panel lists the reasons with Judge again, and Merge turns red for a PR judged high. A push judges that PR again. Off by default (ADR-0143).
 - **A crew member's page is now a profile.** It opens on the member: their face in a glow of their colour, the name
   and role, chips for what they're doing, their harness, what wakes them and their folder, and their numbers (jobs
   done, this week, how long a job takes, who they hand work to). Tabs replace the side column: Activity, Kit,

@@ -106,6 +106,9 @@ wisp-issues-api = { path = "plugins/issues/api" }
 wisp-issues-core = { path = "plugins/issues/core" }
 wisp-review-api = { path = "plugins/review/api" }
 wisp-review-core = { path = "plugins/review/core" }
+# merge risk: another harness judges each open PR (ADR-0143)
+wisp-risk-api = { path = "plugins/risk/api" }
+wisp-risk-core = { path = "plugins/risk/core" }
 # terminal, lsp, machine (owned by the proc/terminal agent)
 wisp-terminal-api = { path = "plugins/terminal/api" }
 wisp-terminal-core = { path = "plugins/terminal/core" }

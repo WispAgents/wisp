@@ -588,6 +588,25 @@ function withAsk(topics: Map<Topic, Row[]>, list: Row[]): void {
   }
 }
 
+/** `risk`: on top of `ask`'s PR #812, the task has PR #44 attached in another repo; Settings → Merge risk is on and
+ *  Codex judged both heads: #812 low, #44 high (the PR row's worst-of button, each chip's word, the PR pane, Merge's
+ *  red confirm; ADR-0143). */
+function withRisk(topics: Map<Topic, Row[]>, list: Row[], now: number): void {
+  withAsk(topics, list);
+  const own = { number: 812, url: 'https://github.com/WispAgents/wisp/pull/812', head: 'a1b2c3', title: 'Keep the retry in the stream scope', state: 'OPEN', checks: { pass: 3, fail: 0, pending: 0 } };
+  const lib = { number: 44, url: 'https://github.com/WispAgents/sync-lib/pull/44', head: 'd4e5f6', title: 'Drop the legacy cursor column', state: 'OPEN', checks: { pass: 2, fail: 0, pending: 0 } };
+  const by = { agent: 'codex', model: '' };
+  const risk = [
+    { url: own.url, repo: 'wisp', number: 812, head: own.head, status: 'done', level: 'low', score: 18, summary: 'A scoped retry in one client file, covered by its test.', reasons: ['packages/client/src/peers.ts: the timer moves into the peer scope, nothing else changes', 'packages/client/test/peers.test.ts covers the reconnect'], by, at: now - 4 * MIN, current: true },
+    { url: lib.url, repo: 'sync-lib', number: 44, head: lib.head, status: 'done', level: 'high', score: 81, summary: 'A migration drops a column old clients still read.', reasons: ['migrations/0042_drop_cursor.sql drops sessions.cursor with no backfill', 'clients before 1.4 read cursor on resume: they lose their place', 'no down migration: hard to revert'], by, at: now - 3 * MIN, current: true },
+  ];
+  for (const r of [...list.filter((x) => x.e === 'session'), ...[...topics.values()].flat().filter((x) => x.e === 'session')]) {
+    const sv = r.v as { summary?: Record<string, unknown> };
+    if (!sv.summary?.['pr']) continue;
+    sv.summary = { ...sv.summary, pr: own, prs: [{ repo: 'sync-lib', pr: lib }], riskOn: true, risk };
+  }
+}
+
 /** `firstRun`: no tasks yet (New task's first-run launcher, F-comp-35); the rest of the seed as it is. */
 /**
  * `computers`: a second computer, Studio (its own mock peer at /api/peer/studio), listed on this one's machines, and one
@@ -781,7 +800,7 @@ function sandboxLaunches(now: number): Row[] {
   ];
 }
 
-export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean; factory?: boolean; sandbox?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; risk?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean; factory?: boolean; sandbox?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -814,6 +833,7 @@ export function seed(o: { peer: string; now: number; extra: number; harnesses?: 
   topics.get(`session:${THREAD_TASK}`)?.push(...threadRows(o.now));
   if (o.media) withMedia(topics);
   if (o.ask) withAsk(topics, list);
+  if (o.risk) withRisk(topics, list, o.now);
   if (o.env) withEnv(topics);
   if (o.usage) withUsage(list);
   if (o.trial) withTrial(o.peer, o.now, list, topics, TASKS.length + o.extra);
