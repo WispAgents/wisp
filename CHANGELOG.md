@@ -18,6 +18,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **A sandbox being prepared shows a box building itself** instead of the glowing grid: its edges draw in, its faces
+  fill and its lid lifts and settles. Waiting for your sign-in, the built box breathes in amber; if the sandbox
+  didn't start, the box is grey, its lid knocked off and cracked. Its row in the task list has the same box,
+  tiny, in place of the dot.
 - **Where a task runs sits beside its project.** New task reads "in wisp on This computer · Worktree": the computer
   and Worktree / In place moved from the footer's menu to a selector next to the project's, and it opens the same
   searchable list as the project picker (your computers, Add a computer…, then Worktree or In place).

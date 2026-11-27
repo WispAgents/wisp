@@ -1,12 +1,12 @@
 // A `/sandbox` launch's page (ADR-0047; the owner's 2026-11-25 report): the task's first line with the Sandbox pill
-// from the first frame, and its launch row as it goes: a glowing grid while the sandbox is made, started and gets the
+// from the first frame, and its launch row as it goes: a box that builds itself while the sandbox is made, started and gets the
 // project, step by step; Claude's sign-in for sandboxes right here when it's missing (Sign in → the browser → this
 // task goes on by itself, no trip to Settings); or why it didn't start, with Try again. Started: the task opens (after
 // what the project's `.wisp/sandbox.sh` said, when it failed: the task runs without what it sets up).
 import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
 import { entityKey, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Callout, Code, GlowGrid, Icon, Inline, Input, Pill, Stack, Steps, Text, useSignal } from '@wisp/ui';
+import { BuildBox, Button, Callout, Code, Icon, Inline, Input, Pill, Stack, Steps, Text, useSignal } from '@wisp/ui';
 import { claudeBegin, claudeCode, dismiss, retry, type SigninRow } from './commands.ts';
 import { t } from './i18n.ts';
 import { LAUNCH, LAUNCHES_TOPIC, setupFailed, stepsOf, type LaunchRow } from './launches.ts';
@@ -70,7 +70,7 @@ export default function Launching(props: { readonly client: PluginClient; readon
     c.navigate({ t: 'home' });
   };
 
-  const glow = (): 'working' | 'waiting' | 'failed' => (state() === 'failed' ? 'failed' : state() === 'signin' ? 'waiting' : 'working');
+  const look = (): 'working' | 'waiting' | 'failed' => (state() === 'failed' ? 'failed' : state() === 'signin' ? 'waiting' : 'working');
   return (
     <Stack gap="5" pad="6" part="sandbox.launching">
       <Inline gap="2">
@@ -116,9 +116,8 @@ export default function Launching(props: { readonly client: PluginClient; readon
           </span>
         </Show>
         <Show when={state() !== 'setup'}>
-          <GlowGrid state={glow()} part="sandbox.launching.grid">
+          <BuildBox state={look()} part="sandbox.launching.box">
             <Show when={state() === 'preparing' || state() === 'started'}>
-              <Icon name="box" size="lg" />
               <Text weight="semibold" size="md">
                 {t('sandbox.preparing')}
               </Text>
@@ -158,12 +157,11 @@ export default function Launching(props: { readonly client: PluginClient; readon
               </Show>
             </Show>
             <Show when={state() === 'failed'}>
-              <Icon name="warn" size="lg" />
               <Text weight="semibold" size="md">
                 {t('sandbox.failed')}
               </Text>
             </Show>
-          </GlowGrid>
+          </BuildBox>
         </Show>
         <Show when={state() === 'signin' && signin()?.state === 'link'}>
           <Inline gap="2" part="sandbox.launching.code">
