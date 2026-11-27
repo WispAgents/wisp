@@ -173,6 +173,18 @@ pub async fn pr_of_with(proc: &Proc, gh: &str, root: &std::path::Path, commits: 
     pick(run(proc, gh, root, &["pr", "list", "--state", "all", "--search", sha, "--json", "number,url,headRefName,headRefOid"]).await)
 }
 
+/// Whether the newest PR whose head is exactly `branch` is merged or closed (gh lists newest first). False with no
+/// such PR, and when gh is missing or fails: a lookup never stands in the way of a push.
+pub async fn pr_closed(proc: &Proc, gh: &str, root: &std::path::Path, branch: &str) -> bool {
+    let Some(out) = run(proc, gh, root, &["pr", "list", "--head", branch, "--state", "all", "--json", "state,url,headRefName"]).await
+    else {
+        return false;
+    };
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap_or_default();
+    let newest = v.as_array().and_then(|l| l.iter().find(|p| p["headRefName"] == branch));
+    newest.and_then(|p| p["state"].as_str()).is_some_and(|s| s.eq_ignore_ascii_case("MERGED") || s.eq_ignore_ascii_case("CLOSED"))
+}
+
 /// `git`, with the proc service looked up at each call (it's there once the kernel runs).
 pub struct LazyGit(pub wisp_kernel::Ctx);
 

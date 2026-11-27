@@ -552,3 +552,59 @@ async fn a_subdir_checkout_lists_stages_reverts_and_undoes_in_one_path_frame() {
     assert!(out.is_err(), "nothing outside the checkout's folder");
     assert_eq!(std::fs::read_to_string(dir.join("packages/api/b.ts")).unwrap(), "b changed\n");
 }
+
+/// final4 F1: wisp's history push puts a commit of `.wisp/` files on the task branch's remote tip. Before Ship's push,
+/// `catch_up` merges exactly those in (the agent's unpushed commit stays, and both reach the remote with no force),
+/// and refuses, changing nothing, when the remote has anything else.
+#[tokio::test]
+async fn catch_up_merges_only_the_history_the_remote_branch_has() {
+    use wisp_git_api::{CatchUpRequest, CaughtUp};
+    let t = tmp("catchup");
+    let dir = repo(&t);
+    let origin = t.0.join("origin.git");
+    let ask = || CatchUpRequest { remote: "origin".into(), branch: "wisp/task".into(), only: ".wisp".into() };
+    git(&dir, &["checkout", "-q", "-b", "wisp/task"]);
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), ask()).await.unwrap(), CaughtUp::Even, "not on the remote yet");
+    write(&dir, "b.txt", "shipped\n");
+    git(&dir, &["add", "b.txt"]);
+    git(&dir, &["commit", "-q", "-m", "shipped"]);
+    git(&dir, &["push", "-q", "origin", "HEAD:refs/heads/wisp/task"]);
+    assert_eq!(r.catch_up(&user(), ask()).await.unwrap(), CaughtUp::Even);
+    // the history push, from elsewhere: a commit of just .wisp/ files on the remote tip
+    let other = t.0.join("other");
+    git(&t.0, &["clone", "-q", "-b", "wisp/task", origin.to_str().unwrap(), other.to_str().unwrap()]);
+    for (k, v) in [("user.email", "qa@wisp.test"), ("user.name", "QA"), ("commit.gpgsign", "false")] {
+        git(&other, &["config", k, v]);
+    }
+    write(&other, ".wisp/tasks/x.task.yml", "saved\n");
+    git(&other, &["add", "-f", ".wisp"]);
+    git(&other, &["commit", "-q", "-m", "history"]);
+    git(&other, &["push", "-q", "origin", "wisp/task"]);
+    let history = git(&other, &["rev-parse", "HEAD"]);
+    // the agent's commit, not pushed
+    write(&dir, "a.txt", "agent\n");
+    git(&dir, &["commit", "-q", "-am", "agent"]);
+    let agent = git(&dir, &["rev-parse", "HEAD"]);
+    assert_eq!(r.catch_up(&user(), ask()).await.unwrap(), CaughtUp::Merged);
+    git(&dir, &["push", "-q", "origin", "HEAD:refs/heads/wisp/task"]);
+    let on_remote = git(&origin, &["rev-list", "wisp/task"]);
+    assert!(on_remote.lines().any(|l| l == history) && on_remote.lines().any(|l| l == agent), "{on_remote}");
+    assert_eq!(git(&dir, &["status", "--porcelain"]), "");
+    // someone else's code on the remote branch: refused, nothing merged, and the push is still refused
+    git(&other, &["pull", "-q", "--no-rebase", "origin", "wisp/task"]);
+    write(&other, "src/c.txt", "theirs\n");
+    git(&other, &["add", "src/c.txt"]);
+    git(&other, &["commit", "-q", "-m", "theirs"]);
+    git(&other, &["push", "-q", "origin", "wisp/task"]);
+    write(&dir, "a.txt", "agent again\n");
+    git(&dir, &["commit", "-q", "-am", "agent again"]);
+    let head = git(&dir, &["rev-parse", "HEAD"]);
+    assert_eq!(r.catch_up(&user(), ask()).await.unwrap(), CaughtUp::Diverged { files: vec!["src/c.txt".into()] });
+    assert_eq!(git(&dir, &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(&dir, &["status", "--porcelain"]), "");
+    let push =
+        std::process::Command::new("git").args(["push", "-q", "origin", "HEAD:refs/heads/wisp/task"]).current_dir(&dir).output().unwrap();
+    assert!(!push.status.success(), "a non-fast-forward, never forced");
+}

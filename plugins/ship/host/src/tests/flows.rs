@@ -27,6 +27,24 @@ async fn ship_commits_pushes_and_opens_a_pr_with_each_step_seen() {
     assert_eq!(h.task("t1").repos[0].pr.as_ref().map(|p| p.number), Some(1));
 }
 
+/// final4 F1: before the push, the branch's remote tip is caught up with (wisp's history commits merged in); someone
+/// else's commits there are refused in words, with no push and never a force.
+#[tokio::test]
+async fn ship_catches_up_with_the_history_and_refuses_anything_else_on_the_remote() {
+    let h = h();
+    let wts = h.track("t1", &[("repo", None)]);
+    h.dirty(&wts[0], 1);
+    h.git.lock().catch_up = Some(wisp_git_api::CaughtUp::Merged);
+    h.ship.ship_all(&h.call, "t1", "fix: one", "", false).await.unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(h.git.logged("catch-up"), [format!("catch-up origin {} .wisp", wts[0].branch)]);
+    assert_eq!(h.git.logged("push"), [format!("push origin HEAD:refs/heads/{}", wts[0].branch)]);
+    h.dirty(&wts[0], 1);
+    h.git.lock().catch_up = Some(wisp_git_api::CaughtUp::Diverged { files: vec!["src/app.rs".into()] });
+    let e = h.ship.ship_all(&h.call, "t1", "fix: two", "", false).await.map(|_| ()).unwrap_err().to_string();
+    assert!(e.contains("has commits this branch doesn't (they change src/app.rs)") && e.contains("never force-pushes"), "{e}");
+    assert_eq!(h.git.logged("push").len(), 1, "no second push");
+}
+
 #[tokio::test]
 async fn ship_refuses_with_v1_words() {
     let h = h();

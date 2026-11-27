@@ -11,7 +11,7 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-function fake() {
+function fake(apple = true) {
   const overlays: unknown[] = [];
   let pending: Promise<void> | undefined;
   let land: () => void = () => {};
@@ -21,7 +21,7 @@ function fake() {
   const ctx = {
     nav: () => ({ main: { kind: 'task', id: 'laptop:a' }, side: { kind: 'none' }, overlays, layout: 'split' }),
     selection: { get: () => undefined },
-    platform: { apple: true },
+    platform: { apple },
     laterReady: () => (readyCalls++, pending),
     laterPending: () => pending,
   } as unknown as ShellContext;
@@ -38,6 +38,8 @@ function fake() {
     lands: async () => {
       // the later part's keys register, then its load settles
       shortcuts.push({ id: 'shell.task.fork', keys: 'shift+f', label: 'x', group: 'task', plugin: 'wisp.shell', run: () => void ran.push('fork') } as never);
+      shortcuts.push({ id: 'shell.open', keys: 'mod+p', label: 'x', group: 'nav', plugin: 'wisp.shell', run: () => void ran.push('open') } as never);
+      shortcuts.push({ id: 'shell.next', keys: 'j', label: 'x', group: 'nav', plugin: 'wisp.shell', run: () => void ran.push('next') } as never);
       land();
       pending = undefined;
       await new Promise((r) => setTimeout(r, 0));
@@ -86,5 +88,54 @@ test('an_enter_on_a_button_is_the_buttons_and_never_kept', async () => {
   b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   await f.lands();
   expect(f.ran).toEqual([]);
+  f.stop();
+});
+
+const press = (init: KeyboardEventInit, target: EventTarget = document.body): KeyboardEvent => {
+  const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+  target.dispatchEvent(e);
+  return e;
+};
+
+// final4 F3: a modified early key (⌘P, Ctrl+P) ran the browser's print or tab switch, then wisp's replay too
+test('an_early_modified_key_is_wisps_in_place_of_the_browsers', async () => {
+  for (const apple of [true, false]) {
+    const f = fake(apple);
+    f.loading();
+    const e = press({ key: 'p', code: 'KeyP', metaKey: apple, ctrlKey: !apple });
+    expect(e.defaultPrevented).toBe(true);
+    expect(f.ran).toEqual([]);
+    await f.lands();
+    expect(f.ran).toEqual(['open']);
+    f.stop();
+  }
+});
+
+test('an_early_plain_key_keeps_its_default_and_still_runs', async () => {
+  const f = fake();
+  f.loading();
+  const e = press({ key: 'j', code: 'KeyJ' });
+  expect(e.defaultPrevented).toBe(false);
+  await f.lands();
+  expect(f.ran).toEqual(['next']);
+  f.stop();
+});
+
+test('an_early_modified_key_typed_into_a_box_is_neither_kept_nor_prevented', async () => {
+  const f = fake();
+  f.loading();
+  const input = document.createElement('input');
+  document.body.append(input);
+  const e = press({ key: 'p', code: 'KeyP', metaKey: true }, input);
+  expect(e.defaultPrevented).toBe(false);
+  await f.lands();
+  expect(f.ran).toEqual([]);
+  f.stop();
+});
+
+test('with_nothing_on_its_way_an_unhandled_modified_key_keeps_its_default', () => {
+  const f = fake();
+  const e = press({ key: 'p', code: 'KeyP', metaKey: true });
+  expect(e.defaultPrevented).toBe(false);
   f.stop();
 });

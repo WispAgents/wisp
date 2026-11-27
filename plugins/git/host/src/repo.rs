@@ -6,9 +6,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use wisp_git_api::{
-    Applied, ApplyRequest, BaseMerged, BaseRef, Blobs, Body, Branch, ChangeFn, Changes, CommitRequest, DiffRequest, FetchRequest, Fut,
-    MergeTree, PushRequest, Repo, RepoChange, RepoInfo, StageRequest, Status, Subscription, Synced, Touched, WorktreeAdd, WorktreeEntry,
-    permission,
+    Applied, ApplyRequest, BaseMerged, BaseRef, Blobs, Body, Branch, CatchUpRequest, CaughtUp, ChangeFn, Changes, CommitRequest,
+    DiffRequest, FetchRequest, Fut, MergeTree, PushRequest, Repo, RepoChange, RepoInfo, StageRequest, Status, Subscription, Synced,
+    Touched, WorktreeAdd, WorktreeEntry, permission,
 };
 use wisp_kernel::{Call, CancellationToken, Result, WireError};
 
@@ -152,6 +152,9 @@ impl Repo for RepoImpl {
     }
     fn push(&self, call: &Call, req: PushRequest) -> Fut<()> {
         guarded!(self, call, "push", |me| me.push(req))
+    }
+    fn catch_up(&self, call: &Call, req: CatchUpRequest) -> Fut<CaughtUp> {
+        guarded!(self, call, "catch_up", |me| me.catch_up(req))
     }
     fn branch_delete(&self, call: &Call, name: &str) -> Fut<bool> {
         let name = name.to_owned();

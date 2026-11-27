@@ -7,6 +7,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Ship it and the agent's own push work after Push to repo from a worktree.** The history commit landed on the
+  remote branch while the worktree's branch stayed behind, so the next push was refused as a non-fast-forward. A
+  branch still at that tip now moves up with it (`git status` stays clean, the files untouched), and Ship it first
+  merges in history commits the remote has (when the agent had committed more meanwhile). Anything else on the
+  remote branch is refused in words, naming the files; wisp never force-pushes.
+- **Push to repo after a task's pull request merged or closed opens a history pull request on the base.** It pushed
+  to the dead branch and said a pull request was open.
+- **A token inside a malformed `${secret:…}` or `${env:…}` is masked and refused.** Everything up to the next `}`
+  counted as a reference, across spaces and lines, so `${env: x token=sk-ant-…}` (or `${secret:ghp_…}`) went out
+  as written. Only a real `${secret:NAME}` or `${env:NAME}` is skipped now.
+- **⌘P, ⌘F, ⌘1–9 and the other modified keys pressed as the page opens no longer run twice.** The browser's print,
+  find or tab switch ran, then wisp's action once its keys arrived; now only wisp's runs.
+
 - **Push to repo from a task's worktree pushes only its history.** It used to push the worktree's whole branch,
   so commits the agent hadn't shipped went out with it, and with the saved files gone it pushed the branch with no
   history at all. It now adds just the `.wisp/` files on top of what's already on the remote branch, leaving the

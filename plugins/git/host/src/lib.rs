@@ -2,6 +2,7 @@
 //! and the `git.*` commands. Every git and gh call runs async through the kernel's proc service
 //! (`wisp_proc::Proc`): nothing blocks a runtime thread, and the pure logic lives in wisp-git-core.
 
+mod catch_up;
 mod changes;
 mod checkpoint;
 pub mod commands;

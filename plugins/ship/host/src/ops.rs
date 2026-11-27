@@ -3,13 +3,13 @@
 
 use std::sync::Arc;
 
-use wisp_git_api::{CommitRequest, FetchRequest, MergeTree, PushRequest, Repo, WorktreeAdd};
+use wisp_git_api::{CatchUpRequest, CaughtUp, CommitRequest, FetchRequest, MergeTree, PushRequest, Repo, WorktreeAdd};
 use wisp_kernel::{Call, CancellationToken, Clock};
 use wisp_ship_api::{PrSummary, RepoStatus, Synced, Worktree};
 use wisp_ship_core::Refusal;
 use wisp_ship_core::decide::{
-    Tidied, cleans_up, commit_message, created_url, merge_plan, merged_head, pr_create_args, push_refspec, push_target, repo_status,
-    reuse_pr, tidy_note, unpushed_from,
+    HISTORY_DIR, Tidied, cleans_up, commit_message, created_url, diverged, merge_plan, merged_head, pr_create_args, push_refspec,
+    push_target, repo_status, reuse_pr, tidy_note, unpushed_from,
 };
 
 use crate::error::Result;
@@ -107,6 +107,13 @@ impl Shipper {
         let ahead = repo.count(call, &format!("{}..HEAD", wt.base_ref)).await?.unwrap_or(0);
         let remote = push_target(ahead, wt)?;
         on_step("push");
+        // a history push from the worktree (Push to repo) put a commit of .wisp/ files on the branch's remote tip:
+        // merged in first, so this push stays a fast-forward. Anything else there is refused, never forced over.
+        // git failing to tell leaves it to the push, as before
+        let caught = CatchUpRequest { remote: remote.clone(), branch: wt.branch.clone(), only: HISTORY_DIR.into() };
+        if let Ok(CaughtUp::Diverged { files }) = repo.catch_up(call, caught).await {
+            return Err(diverged(&remote, &wt.branch, &files).into());
+        }
         repo.push(call, PushRequest { remote, refspec: push_refspec(wt), set_upstream: true, delete: false }).await?;
         on_step("pr");
         let now = self.now();

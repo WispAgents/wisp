@@ -45,8 +45,11 @@ export function installKeys(w: ShellWindow, ctx: ShellContext, registry: Registr
     // kept; nothing starts early or loads again for it (laterPending), and once the parts are in it's never kept.
     if (e.repeat || isTyping(e.target) || onControl(e) || ![...BUILT_IN_KEYS].some((k) => matches(k, e, ctx.platform.apple))) return;
     const wait = ctx.laterPending?.();
-    // its default is left alone
+    // nothing on its way: its default is left alone
     if (!wait) return;
+    // a modified one (⌘F, ⌘P, ⌘1…) is wisp's in place of the browser's: left alone, find, print or a tab switch ran
+    // and then the replay too. A plain key's default (a scroll, a letter) stays, since the replay may not run
+    if (e.metaKey || e.ctrlKey || e.altKey) e.preventDefault();
     const where = (): string => {
       const nav = ctx.nav();
       return JSON.stringify([nav.main, nav.overlays.length, ctx.selection.get() ?? null]);

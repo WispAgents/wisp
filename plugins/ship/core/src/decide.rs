@@ -62,6 +62,25 @@ pub fn push_refspec(wt: &Worktree) -> String {
     format!("HEAD:refs/heads/{}", wt.branch)
 }
 
+/// The folder whose commits on the task's branch Ship merges in before its push: wisp's own history push puts a save's
+/// files there, on the branch's remote tip, and that must never make the next ship a non-fast-forward.
+pub const HISTORY_DIR: &str = ".wisp";
+
+/// The remote branch has commits that aren't wisp's history (someone else pushed code to it): Ship never force-pushes
+/// over them, it says which files they change and what to do.
+pub fn diverged(remote: &str, branch: &str, files: &[String]) -> Refusal {
+    let shown: Vec<&str> = files.iter().take(3).map(String::as_str).collect();
+    let more = files.len().saturating_sub(shown.len());
+    let what = match (shown.is_empty(), more) {
+        (true, _) => String::new(),
+        (false, 0) => format!(" (they change {})", shown.join(", ")),
+        (false, n) => format!(" (they change {} and {n} more)", shown.join(", ")),
+    };
+    Refusal::Conflict(format!(
+        "{remote}/{branch} has commits this branch doesn't{what}. Pull or merge them in, then ship again: wisp never force-pushes."
+    ))
+}
+
 /// An open PR is updated by the push alone: its number to view. Otherwise a new PR is created.
 pub fn reuse_pr(pr: Option<&PrSummary>) -> Option<u64> {
     pr.filter(|p| p.is_open()).map(|p| p.number)
