@@ -7,7 +7,8 @@
 //!   scratch index, so the user's checkout, branch and index are never touched, pushed to `wisp/history-<id>`
 //!   with a PR opened by `gh`. The local copies are then taken out (restored to HEAD when tracked): left in place
 //!   they'd make the next `git pull` refuse ("untracked working tree files would be overwritten"); they come
-//!   back with that pull once the PR merges.
+//!   back with that pull once the PR merges. Without a PR (no `gh`, or it failed) they stay: nothing would bring
+//!   them back, and the answer names where to open the PR by hand (`compare`).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -45,10 +46,6 @@ async fn exec(p: &Proc, bin: &str, cwd: &Path, env: &[(&str, &str)], args: &[&st
 
 async fn git_ok(p: &Proc, cwd: &Path, env: &[(&str, &str)], args: &[&str], what: &str) -> Result<String> {
     exec(p, "git", cwd, env, args).await.map_err(|e| WireError::invalid(format!("{what}: {e}")))
-}
-
-fn gh_bin() -> String {
-    std::env::var("WISP_GH_BIN").ok().filter(|b| !b.is_empty()).unwrap_or_else(|| "gh".into())
 }
 
 /// The branch a history PR goes on: one per task, so pushing again updates it.
@@ -107,11 +104,27 @@ pub(crate) async fn push(ctx: &Ctx, call: &Call, a: &api::PushArgs) -> Result<Pu
     let out = if let Some(branch) = in_worktree(&root, task.ext_of("wisp.worktrees")).await {
         onto_branch(&p, &root, &branch, &files, &msg).await?
     } else {
-        as_pr(&p, &root, &id, &task.title, &files, &msg).await?
+        let earlier = earlier(task.ext_of(api::EXT), &files);
+        as_pr(&p, &git::gh_bin(), &root, (&id, &task.title), &files, earlier).await?
     };
-    let mark = json!({ "pushed": { "branch": out.branch, "commit": out.commit, "pr": out.pr } });
+    let mark = json!({ "pushed": { "branch": out.branch, "commit": out.commit, "pr": out.pr, "compare": out.compare } });
     calls::warn("marking the task pushed (setExt)", calls::update_ext(ctx, call, &id, |slot| Some(calls::merged(slot, &mark))).await);
     Ok(out)
+}
+
+/// What the last push did, from the task's slot (`pushed`): what a second push answers once that one took the files out.
+pub(crate) fn earlier(slot: &Value, files: &[String]) -> Option<Pushed> {
+    let p = slot.get("pushed")?;
+    let text = |k: &str| p.get(k).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned);
+    Some(Pushed {
+        // '' when the base had them already (nothing pushed, the files taken out all the same)
+        branch: p.get("branch").and_then(Value::as_str)?.to_owned(),
+        commit: text("commit")?,
+        files: files.to_vec(),
+        pr: text("pr"),
+        removed: Vec::new(),
+        compare: text("compare"),
+    })
 }
 
 /// The files that are still there (a later untrack or a hand edit may have taken some).
@@ -148,22 +161,32 @@ async fn onto_branch(p: &Proc, root: &Path, branch: &str, files: &[String], msg:
     git_ok(p, root, &[], &["push", REMOTE, &format!("HEAD:refs/heads/{branch}")], "git push").await?;
     let commit = git_ok(p, root, &[], &["rev-parse", "HEAD"], "git rev-parse").await?;
     let pr = git::pr_of(p, root, std::slice::from_ref(&commit), branch).await;
-    Ok(Pushed { branch: branch.to_owned(), commit, files, pr, removed: Vec::new() })
+    Ok(Pushed { branch: branch.to_owned(), commit, files, pr, removed: Vec::new(), compare: None })
 }
 
 /// The main checkout: a commit on the remote's base made in a scratch index, pushed to its own branch, a PR.
-async fn as_pr(p: &Proc, root: &Path, id: &str, title: &str, files: &[String], msg: &str) -> Result<Pushed> {
+/// `earlier` is what the last push did: it took the files out, so pushing again answers that, not "Save again".
+pub(crate) async fn as_pr(
+    p: &Proc,
+    gh: &str,
+    root: &Path,
+    (id, title): (&str, &str),
+    files: &[String],
+    earlier: Option<Pushed>,
+) -> Result<Pushed> {
     let files = present(root, files).await;
     if files.is_empty() {
-        return Err(WireError::invalid("the files it saved aren't in the repo any more: Save to repo again"));
+        return earlier.ok_or_else(|| WireError::invalid("the files it saved aren't in the repo any more: Save to repo again"));
     }
+    let msg = &message(title, id);
     let base =
         base_branch(p, root).await.ok_or_else(|| WireError::invalid(format!("no base branch on {REMOTE} (main or {REMOTE}/HEAD)")))?;
     git_ok(p, root, &[], &["fetch", "--quiet", REMOTE, &base], "git fetch").await?;
     let base_sha = git_ok(p, root, &[], &["rev-parse", &format!("refs/remotes/{REMOTE}/{base}^{{commit}}")], "git rev-parse").await?;
     // paths in the index are from git's top; the repo's `.wisp/` may sit in a subfolder of it
     let prefix = git_ok(p, root, &[], &["rev-parse", "--show-prefix"], "git rev-parse").await?;
-    let index = std::env::temp_dir().join(format!("wisp-history-{}-{}.index", repo::short(id), std::process::id()));
+    // one per push, not per process: two pushes of one task at once shared it, and one's read-tree emptied the other's
+    let index = std::env::temp_dir().join(format!("wisp-history-{}-{}.index", repo::short(id), wisp_kernel::ids::uuid7()));
     let index_s = index.display().to_string();
     let env = [("GIT_INDEX_FILE", index_s.as_str())];
     let built = async {
@@ -188,27 +211,54 @@ async fn as_pr(p: &Proc, root: &Path, id: &str, title: &str, files: &[String], m
         let commit = git_ok(p, root, &[], &["commit-tree", &tree, "-p", &base_sha, "-m", msg], "git commit-tree").await?;
         // the task's own branch: pushing again (after a save again) replaces what it pushed before
         git_ok(p, root, &[], &["push", "--force", REMOTE, &format!("{commit}:refs/heads/{branch}")], "git push").await?;
-        let pr = open_pr(p, root, &branch, &base, title, id).await;
+        let pr = open_pr(p, gh, root, &branch, &base, title, id).await;
         (commit, pr, branch)
     };
+    // taken out only when a pull brings them back: a PR to merge, or the base has them already. A branch with no PR
+    // would leave them nowhere but on a remote branch nobody merges
+    if pr.is_none() && !pushed_to.is_empty() {
+        let remote = exec(p, "git", root, &[], &["remote", "get-url", REMOTE]).await.unwrap_or_default();
+        let compare = web_of(&remote).map(|w| format!("{w}/compare/{base}...{pushed_to}?expand=1"));
+        return Ok(Pushed { branch: pushed_to, commit, files, pr, removed: Vec::new(), compare });
+    }
     let removed = take_out(p, root, &files).await;
-    Ok(Pushed { branch: pushed_to, commit, files, pr, removed })
+    Ok(Pushed { branch: pushed_to, commit, files, pr, removed, compare: None })
+}
+
+/// The remote's web page (`https://github.com/o/r`) from its URL: https, `git@host:o/r.git` or `ssh://git@host/o/r`.
+/// None for a path or anything else (no page to open a PR on).
+pub(crate) fn web_of(remote: &str) -> Option<String> {
+    let r = remote.trim();
+    let (host, path) = if let Some(rest) = r.strip_prefix("https://").or_else(|| r.strip_prefix("http://")) {
+        rest.split_once('/')?
+    } else if let Some(rest) = r.strip_prefix("ssh://") {
+        let (host, path) = rest.split_once('/')?;
+        (host.split_once(':').map_or(host, |(h, _)| h), path)
+    } else if !r.contains("://") && !r.starts_with('/') && !r.starts_with('.') {
+        r.split_once(':')?
+    } else {
+        return None;
+    };
+    // no user (`git@`, `x-access-token:…@`): never a credential in a link
+    let host = host.rsplit('@').next().unwrap_or(host);
+    let path = path.trim_matches('/').trim_end_matches(".git");
+    // a host has a dot (`C:/repo` is a Windows path, not host `C`)
+    (host.contains('.') && !path.is_empty() && !r.contains('\\')).then(|| format!("https://{host}/{path}"))
 }
 
 /// `gh pr create`, or the PR already open on that branch.
-async fn open_pr(p: &Proc, root: &Path, branch: &str, base: &str, title: &str, id: &str) -> Option<String> {
+async fn open_pr(p: &Proc, gh: &str, root: &Path, branch: &str, base: &str, title: &str, id: &str) -> Option<String> {
     let t = if title.trim().is_empty() { repo::short(id) } else { title.trim() };
     let pr_title = format!("wisp: save task \"{t}\" to the repo's history");
     let body = format!(
         "Its spec, report and transcript in `.wisp/`, scrubbed of keys and private paths (task `{id}`).\n\nPushed from wisp's Save to repo."
     );
-    let made =
-        exec(p, &gh_bin(), root, &[], &["pr", "create", "--head", branch, "--base", base, "--title", &pr_title, "--body", &body]).await;
+    let made = exec(p, gh, root, &[], &["pr", "create", "--head", branch, "--base", base, "--title", &pr_title, "--body", &body]).await;
     match made {
         Ok(out) => out.lines().rev().find(|l| l.starts_with("http")).map(str::to_owned),
         Err(e) => {
             tracing::info!(branch, "history: gh pr create: {e}");
-            git::pr_of(p, root, &[], branch).await
+            git::pr_of_with(p, gh, root, &[], branch).await
         }
     }
 }

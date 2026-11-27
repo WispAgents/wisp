@@ -143,7 +143,16 @@ pub fn messages_of(text: &str) -> Vec<(String, String)> {
 /// `gh` on PATH): the PR whose head is the task's branch, or whose head commit is one of its commits. None
 /// without gh, without a remote, or when nothing matches: never a guess.
 pub async fn pr_of(proc: &Proc, root: &std::path::Path, commits: &[String], branch: &str) -> Option<String> {
-    let gh = std::env::var("WISP_GH_BIN").ok().filter(|b| !b.is_empty()).unwrap_or_else(|| "gh".into());
+    pr_of_with(proc, &gh_bin(), root, commits, branch).await
+}
+
+/// `gh`: `WISP_GH_BIN`, else `gh` on PATH.
+pub fn gh_bin() -> String {
+    std::env::var("WISP_GH_BIN").ok().filter(|b| !b.is_empty()).unwrap_or_else(|| "gh".into())
+}
+
+/// [`pr_of`] through this `gh` (a test's stand-in: the environment is the whole process's).
+pub async fn pr_of_with(proc: &Proc, gh: &str, root: &std::path::Path, commits: &[String], branch: &str) -> Option<String> {
     let pick = |out: Option<String>| -> Option<String> {
         let v: serde_json::Value = serde_json::from_str(&out?).ok()?;
         let list = v.as_array()?;
@@ -155,13 +164,13 @@ pub async fn pr_of(proc: &Proc, root: &std::path::Path, commits: &[String], bran
     };
     if !branch.is_empty()
         && let Some(u) = pick(
-            run(proc, &gh, root, &["pr", "list", "--state", "all", "--head", branch, "--json", "number,url,headRefName,headRefOid"]).await,
+            run(proc, gh, root, &["pr", "list", "--state", "all", "--head", branch, "--json", "number,url,headRefName,headRefOid"]).await,
         )
     {
         return Some(u);
     }
     let sha = commits.first()?;
-    pick(run(proc, &gh, root, &["pr", "list", "--state", "all", "--search", sha, "--json", "number,url,headRefName,headRefOid"]).await)
+    pick(run(proc, gh, root, &["pr", "list", "--state", "all", "--search", sha, "--json", "number,url,headRefName,headRefOid"]).await)
 }
 
 /// `git`, with the proc service looked up at each call (it's there once the kernel runs).

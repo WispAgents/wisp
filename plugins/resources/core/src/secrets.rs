@@ -205,6 +205,30 @@ mod tests {
         assert_eq!(v, json!({ "headers": { "Authorization": "Bearer ghp_…(masked)", "X": "${secret:K}" }, "n": 3 }));
     }
 
+    /// A reference of 16+ chars (`secret:ANTHROPIC_API_KEY`) read as `secret: <a value>` and was masked, so a re-applied
+    /// export was refused; a real token beside one is still masked.
+    #[test]
+    fn a_mask_leaves_every_reference_as_written() {
+        let refs = json!({ "secret": "${secret:ANTHROPIC_API_KEY}", "hook": "${secret:LINEAR_WEBHOOK_SECRET}" });
+        let mut v = refs.clone();
+        mask(&mut v);
+        assert_eq!(v, refs);
+        let mut v = json!(format!("${{secret:ANTHROPIC_API_KEY}} token=ghp_{}", "a".repeat(36)));
+        mask(&mut v);
+        assert_eq!(v, json!("${secret:ANTHROPIC_API_KEY} token=ghp_…(masked)"));
+    }
+
+    /// An export's masking, then the apply's plan: a spec holding only references round-trips with no refusal.
+    #[test]
+    fn an_exported_reference_applies_again() {
+        let trigger = KindInfo::new("trigger", "triggers", "x", json!({}));
+        let mut spec = json!({ "secret": "${secret:LINEAR_WEBHOOK_SECRET}", "header": "Linear-Signature" });
+        mask(&mut spec);
+        assert_eq!(spec["secret"], "${secret:LINEAR_WEBHOOK_SECRET}");
+        let r = Resource::new("trigger", "from-linear", spec);
+        assert_eq!(problems(&trigger, &r), Vec::<String>::new());
+    }
+
     /// AAC-4: an export masks a token stored before plans checked for them; applying that export put the mask's text in
     /// place of the real token, since no pattern matches `ghp_…(masked)`.
     #[test]

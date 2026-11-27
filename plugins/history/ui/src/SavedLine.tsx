@@ -7,28 +7,23 @@ import type { ExtensionProps } from '@wisp/shell/contract';
 import { Button, Icon, Text, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
-import { pushCmd, pushStates, runPush, type PushState } from './save.ts';
+import { pushCmd, pushedLink, pushedText, pushStates, runPush, type PushState } from './save.ts';
 
 export interface SavedView {
   readonly files: number;
   readonly scrubbed: number;
 }
 
-/** What the line says once pushed: the branch and its PR, or that the remote had it already. */
-export function pushedText(p: PushState | undefined): string {
-  if (p?.s !== 'pushed') return '';
-  if (!p.branch) return t('history.pushed.none');
-  return p.pr ? t('history.pushed.pr', { branch: p.branch }) : t('history.pushed', { branch: p.branch });
-}
-
-export default function SavedLine(props: { readonly view: SavedView; readonly taskKey: EntityKey; readonly client: ExtensionProps['client'] }): JSX.Element {
+/** `earlier`: what the task's slot says the last push did (a save from before this window); this window's push wins. */
+export default function SavedLine(props: {
+  readonly view: SavedView;
+  readonly taskKey: EntityKey;
+  readonly client: ExtensionProps['client'];
+  readonly earlier?: PushState | undefined;
+}): JSX.Element {
   const shell = useShell();
   const pushes = useSignal(pushStates);
-  const state = (): PushState | undefined => pushes()[props.taskKey];
-  const pr = (): string | undefined => {
-    const s = state();
-    return s?.s === 'pushed' ? s.pr : undefined;
-  };
+  const state = (): PushState | undefined => pushes()[props.taskKey] ?? props.earlier;
   const push = (): void => void runPush((key) => props.client.run(pushCmd, { key }), props.taskKey);
   const saved = (): string =>
     props.view.scrubbed > 0 ? t('history.saved.scrubbed', { count: props.view.files, scrubbed: props.view.scrubbed }) : t('history.saved', { count: props.view.files });
@@ -51,10 +46,10 @@ export default function SavedLine(props: { readonly view: SavedView; readonly ta
         <Text size="sm" tone="muted" truncate part="history.offer.pushed">
           {pushedText(state())}
         </Text>
-        <Show when={pr()}>
-          {(url) => (
-            <Button size="sm" variant="ghost" icon="external" part="history.offer.openPr" onClick={() => shell.platform.openExternal(url())}>
-              {t('history.openPr')}
+        <Show when={pushedLink(state())}>
+          {(link) => (
+            <Button size="sm" variant="ghost" icon="external" part="history.offer.openPr" onClick={() => shell.platform.openExternal(link().url)}>
+              {link().label}
             </Button>
           )}
         </Show>

@@ -187,6 +187,10 @@ pub struct Pushed {
     /// local copies taken out of the main checkout (they come back with the next pull, once the PR merges)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub removed: Vec<String>,
+    /// the branch went out but no PR opened (no `gh`, or it failed): where to open one by hand. The local copies
+    /// stay, as nothing would bring them back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compare: Option<String>,
 }
 
 command!(Track, "history.track", TrackArgs, Tracked);

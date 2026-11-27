@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { EntityKey } from '@wisp/client';
-import { historyOf, lastTurnOf, offerView, pushable, pushStateOf, runPush, runSave, saveable, saveStateOf, type Pushed, type Tracked } from '../src/save.ts';
+import { historyOf, lastTurnOf, offerView, pushable, pushedLink, pushedOf, pushedText, pushStateOf, runPush, runSave, saveable, saveStateOf, type Pushed, type Tracked } from '../src/save.ts';
 import { t } from '../src/i18n.ts';
 import '../src/i18n/lazy.ts';
 
@@ -99,4 +99,41 @@ test('only_a_saved_task_can_be_pushed_from_the_menu', () => {
   expect(pushable({ id: 'a', parent_id: 'p', ext: { 'wisp.history': { tracked: { files: ['x'] } } } })).toBe(false);
   expect(t('history.pushed.pr', { branch: 'wisp/history-abc' })).toBe('Pushed to wisp/history-abc, pull request open');
   expect(t('history.push')).toBe('Push');
+});
+
+test('a_save_after_a_push_offers_push_again_and_a_failed_one_keeps_the_push', async () => {
+  // final audit F2: the line kept saying "Pushed to …" (and hid Push) for the newer save
+  const key = 'local:r1' as EntityKey;
+  await runSave(() => Promise.resolve(tracked(2)), key);
+  await runPush(() => Promise.resolve({ branch: 'wisp/history-r1', commit: 'c', files: [], pr: 'https://x/pull/1' }), key);
+  expect(pushStateOf(key)).toMatchObject({ s: 'pushed', pr: 'https://x/pull/1' });
+  await runSave(() => Promise.reject(new Error('no')), key);
+  expect(pushStateOf(key), 'a refused save changed nothing on disk').toMatchObject({ s: 'pushed', branch: 'wisp/history-r1' });
+  await runSave(() => Promise.resolve(tracked(3)), key);
+  expect(pushStateOf(key)).toBeUndefined();
+  // the slot still holds the earlier push: this window's newer save wins over it
+  const ext = { pushed: { branch: 'wisp/history-r1', commit: 'c', pr: 'https://x/pull/1' }, tracked: { files: ['a', 'b', 'c'] } };
+  expect(offerView(ext, saveStateOf(key), pushStateOf(key))).toMatchObject({ v: 'saved', files: 3 });
+});
+
+test('a_push_from_before_this_window_shows_from_the_tasks_slot', () => {
+  // final audit F3: after a reload nothing said where the files went
+  const ext = { tracked: { files: ['a', 'b'] }, pushed: { branch: 'wisp/history-x', commit: 'c', pr: 'https://github.com/a/b/pull/1' } };
+  const v = offerView(ext, undefined);
+  expect(v).toEqual({ v: 'kept', files: 2, pushed: { s: 'pushed', branch: 'wisp/history-x', pr: 'https://github.com/a/b/pull/1' } });
+  expect(pushedText(v.v === 'kept' ? v.pushed : undefined)).toBe('Pushed to wisp/history-x, pull request open');
+  // saved before, never pushed: nothing new, until a push from the menu runs
+  expect(offerView({ tracked: { files: ['a'] } }, undefined)).toEqual({ v: 'none' });
+  expect(offerView({ tracked: { files: ['a'] } }, undefined, { s: 'pushing' })).toEqual({ v: 'kept', files: 1 });
+  expect(pushedOf({ pushed: { branch: '', commit: 'c', pr: null } })).toEqual({ s: 'pushed', branch: '' });
+});
+
+test('a_branch_pushed_with_no_pr_says_to_open_one', () => {
+  // final audit F4: no gh, the files stay and the line links the page to open the PR on
+  const p = { s: 'pushed', branch: 'wisp/history-x', compare: 'https://github.com/a/b/compare/main...wisp/history-x?expand=1' } as const;
+  expect(pushedText(p)).toBe('Branch pushed to wisp/history-x: open the pull request');
+  expect(pushedLink(p)).toEqual({ label: 'Open pull request', url: p.compare });
+  expect(pushedText({ s: 'pushed', branch: 'wisp/x' })).toBe('Pushed to wisp/x');
+  expect(pushedLink({ s: 'pushed', branch: 'wisp/x' })).toBeUndefined();
+  expect(pushedLink({ s: 'pushed', branch: 'wisp/x', pr: 'https://x/pull/2' })).toEqual({ label: 'Open PR', url: 'https://x/pull/2' });
 });

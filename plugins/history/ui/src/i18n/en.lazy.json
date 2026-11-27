@@ -32,5 +32,7 @@
   "history.pushed": "Pushed to {branch}",
   "history.pushed.pr": "Pushed to {branch}, pull request open",
   "history.pushed.none": "Already on the remote: nothing to push",
-  "history.openPr": "Open PR"
+  "history.pushed.noPr": "Branch pushed to {branch}: open the pull request",
+  "history.openPr": "Open PR",
+  "history.newPr": "Open pull request"
 }
