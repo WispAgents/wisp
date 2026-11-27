@@ -1,6 +1,8 @@
 // The open task's reply (TaskView.tsx): what's being written (a draft, kept per task), the caret it takes when the
 // page opens, its files, team, goal, time and harness, the @ and / menus, ↑ and Shift+Tab, and Send with what an
 // answer's chips send or put in the box.
+import '../i18n/lazy.ts';
+import '../i18n/home.ts';
 import { createEffect, createMemo, createSignal, on, onCleanup, untrack, type Accessor } from 'solid-js';
 import { entityKey, newRowId, ownerOf, type EntityKey, type PeerId } from '@wisp/client';
 import { useSignal } from '@wisp/ui';

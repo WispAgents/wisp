@@ -1,6 +1,7 @@
 // The open task's details as v1's .it-bar holds them (TaskView.tsx): the harness and model it runs on, its project
 // and folders, its status, where it runs, its branch (a click copies the worktree's path) and its usage. Beside the
 // turns on a computer, in a sheet from the menu on a phone (TaskTop.tsx).
+import '../i18n/lazy.ts';
 import { createMemo, type JSX } from 'solid-js';
 import { worktreePath } from './change-where.ts';
 import { TaskDetails } from '@wisp/ui';

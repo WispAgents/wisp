@@ -1,6 +1,8 @@
 // The open task's head (TaskView.tsx): in the browser and on a computer, v1's .split-head with its title, its slot
 // and its one bar (TaskHead); on a phone's page, the platform's app bar with the task's menu, its status chips, the
 // details sheet and the swipe to the next or previous task (ADR-0065 step 13).
+import '../i18n/lazy.ts';
+import '../i18n/home.ts';
 import { Show, lazy, on, type JSX } from 'solid-js';
 import { TaskHead } from '@wisp/ui';
 import { prBadge } from './side-newest.ts';
