@@ -29,3 +29,12 @@ test('the_pr_row_says_what_the_steward_does_and_offers_one_control', () => {
   expect(stewardLine(t, row({ mode: 'fix', step: 'stopped', why: 'The PR merged.' }, 'MERGED'))).toBe('wisp.ship.steward.stopped{"why":"The PR merged."}');
   expect([stewardAction(row()), stewardAction(row({ mode: 'fix', step: 'fixing' })), stewardAction(row({ mode: 'fix', step: 'stopped' })), stewardAction(row(undefined, 'MERGED'))]).toEqual(['start', 'stop', 'again', undefined]);
 });
+
+test('the_steward_says_green_only_for_the_head_it_judged_once_its_checks_ran', () => {
+  // PR #996: green from a look at a PR with no checks listed yet, shown under "5 checks running"
+  const at = (p: Partial<PrSummary>): ShipSession => ({ id: 't', agent: 'claude', pr: { ...pr(), head: 'h1', ...p }, steward: { mode: 'fix', step: 'green', head: 'h1' } });
+  expect(stewardLine(t, at({ checks: { pass: 3, fail: 0, pending: 0 } }))).toBe('wisp.ship.steward.green');
+  expect(stewardLine(t, at({ checks: { pass: 1, fail: 0, pending: 5 } }))).toBe('wisp.ship.steward.watching');
+  expect(stewardLine(t, at({ checks: { pass: 0, fail: 0, pending: 0 }, waitingChecks: true }))).toBe('wisp.ship.steward.watching');
+  expect(stewardLine(t, at({ head: 'h2', checks: { pass: 3, fail: 0, pending: 0 } })), 'a newer push').toBe('wisp.ship.steward.watching');
+});

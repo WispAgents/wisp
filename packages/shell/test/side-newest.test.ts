@@ -18,6 +18,7 @@ test('the_panel_opens_on_the_pr_else_changes_with_a_diff_else_shell', () => {
 test('the_pr_pill_names_the_pr_and_its_checks', () => {
   expect(prBadge({ summary: { pr: { number: 806, checks: { pass: 3, fail: 0, pending: 0 } } } })).toBe('#806 ✓');
   expect(prBadge({ summary: { pr: { number: 806, checks: { pass: 1, fail: 1, pending: 0 } } } })).toBe('#806 ✕');
+  expect(prBadge({ summary: { pr: { number: 996, checks: { pass: 0, fail: 0, pending: 0 }, waitingChecks: true } } }), 'checks not listed yet').toBe('#996 ●');
   expect(prBadge({ summary: { pr: { number: 806, checks: { pass: 1, fail: 0, pending: 2 } } } })).toBe('#806 ●');
   expect(prBadge({ summary: { pr: { number: 806 } } })).toBe('#806');
   expect(prBadge({ summary: { prs: [{ repo: 'a', pr: { number: 3 } }, { repo: 'b', pr: { number: 4 } }] } })).toBe('#3');

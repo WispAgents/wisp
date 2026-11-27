@@ -126,7 +126,9 @@ impl Ship {
         self.tasks.get(session).ok_or_else(|| ShipError::NotFound(format!("no such session: {session}")))
     }
 
-    pub(crate) fn save(&self, task: ShipTask) {
+    /// Writes the task, its own PR marked waiting for checks while they're still to show after a push.
+    pub(crate) fn save(&self, mut task: ShipTask) {
+        wisp_ship_core::follow::mark_task(&mut task, self.shipper.now());
         self.tasks.put(task);
     }
 

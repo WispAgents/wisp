@@ -6,12 +6,12 @@ type Row = { readonly summary?: Record<string, unknown> } | undefined;
 /** The PR's number and its checks (✕ one failed, ● some running, ✓ all passed), for a pill or a tab: `#806 ✓`. The
  *  first of a compare run's or a multi-repo task's PRs; none: undefined. */
 export function prBadge(row: Row): string | undefined {
-  type Pr = { number?: number; checks?: { pass?: number; fail?: number; pending?: number } } | null | undefined;
+  type Pr = { number?: number; checks?: { pass?: number; fail?: number; pending?: number }; waitingChecks?: boolean } | null | undefined;
   const s = (row?.summary ?? {}) as { pr?: Pr; prs?: readonly { pr?: Pr }[]; also?: readonly { pr?: Pr }[] };
   const pr = s.pr ?? s.prs?.find((x) => x?.pr)?.pr ?? s.also?.find((x) => x?.pr)?.pr;
   if (!pr?.number) return undefined;
   const c = pr.checks;
-  const mark = !c ? '' : (c.fail ?? 0) > 0 ? ' ✕' : (c.pending ?? 0) > 0 ? ' ●' : (c.pass ?? 0) > 0 ? ' ✓' : '';
+  const mark = !c ? '' : (c.fail ?? 0) > 0 ? ' ✕' : (c.pending ?? 0) > 0 || pr.waitingChecks ? ' ●' : (c.pass ?? 0) > 0 ? ' ✓' : '';
   return `#${pr.number}${mark}`;
 }
 

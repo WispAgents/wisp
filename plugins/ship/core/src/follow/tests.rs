@@ -135,3 +135,39 @@ fn only_a_clean_merge_tree_overrules_github() {
     assert!(!conflict_free(Some(true)));
     assert!(!conflict_free(None));
 }
+
+#[test]
+fn a_pr_read_the_moment_it_opens_waits_for_its_checks_instead_of_passing() {
+    // PR #996: read 3 s after the push, GitHub listed no checks yet; the card went green and the Steward said green
+    let mut p = open("h1", false);
+    mark_waiting(&mut p, 1_000, 4_000);
+    assert!(p.waiting_checks, "no checks yet, just pushed: waiting");
+    assert_eq!(settled(&p), "pending");
+    let mut listed = PrSummary { checks: Checks { pass: 1, fail: 0, pending: 5 }, ..p.clone() };
+    mark_waiting(&mut listed, 1_000, 15_000);
+    assert!(!listed.waiting_checks, "checks listed: they speak for themselves");
+    assert!(!is_news(&p, &listed), "waiting → running is not CI finishing");
+    let mut no_ci = open("h1", false);
+    mark_waiting(&mut no_ci, 1_000, 1_000 + CHECKS_GRACE_MS);
+    assert!(!no_ci.waiting_checks, "past the grace, no checks means a repo without CI");
+    let mut never_pushed = open("h1", false);
+    mark_waiting(&mut never_pushed, 0, 5_000);
+    assert!(!never_pushed.waiting_checks, "an attached PR wisp never pushed");
+    let mut merged = PrSummary { state: "MERGED".into(), ..open("h1", false) };
+    mark_waiting(&mut merged, 1_000, 2_000);
+    assert!(!merged.waiting_checks);
+}
+
+#[test]
+fn a_pr_waiting_for_its_checks_is_asked_about_every_tick() {
+    let mut p = open("h1", false);
+    p.checked_at = 10_000;
+    let mut t = task(p.clone());
+    t.pushed_at = 9_000;
+    assert!(!due(&t, 10_000 + PR_FAST_POLL_MS - 1), "just pushed, checks known: every 10 s");
+    p.waiting_checks = true;
+    t.repos[0].pr = Some(p);
+    assert!(due(&t, 10_000 + PR_TICK_MS.cast_signed()), "checks still to show: every tick");
+    mark_task(&mut t, 9_000 + CHECKS_GRACE_MS);
+    assert!(t.pr().is_some_and(|p| !p.waiting_checks), "mark_task clears it on the task's own PR once the grace runs out");
+}

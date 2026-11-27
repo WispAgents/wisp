@@ -36,6 +36,11 @@ pub struct PrSummary {
     pub base: String,
     pub merged_at: Option<String>,
     pub checks: Checks,
+    /// just pushed and GitHub lists no checks for this head yet: they're on their way, not passed (a PR read
+    /// the second it opens has none). Set by wisp from when it pushed; false again once checks show or the
+    /// grace runs out (a repo without CI)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub waiting_checks: bool,
     /// ms since the epoch: when wisp last asked GitHub
     pub checked_at: i64,
 }

@@ -12,6 +12,24 @@ pub const PR_TICK_MS: u64 = 5_000;
 pub const PUSHED_FAST_MS: i64 = 5 * 60_000;
 /// Per task, so a base that keeps moving can't run up the bill.
 pub const MAX_CONFLICT_FIXES: u32 = 3;
+/// How long after a push a PR with no checks counts as waiting for them (GitHub lists a head's checks a few
+/// seconds after it lands); past it, no checks means the repo has no CI.
+pub const CHECKS_GRACE_MS: i64 = 90_000;
+
+/// Marks the task's own PR as waiting for its checks: open, just pushed, and GitHub lists none yet. Read the
+/// moment it opens, a PR has no checks, and that isn't "passed" (the card went green, the Steward said green).
+pub fn mark_waiting(pr: &mut PrSummary, pushed_at: i64, now: i64) {
+    let none = pr.checks.pass == 0 && pr.checks.fail == 0 && pr.checks.pending == 0;
+    pr.waiting_checks = pr.is_open() && none && pushed_at > 0 && now - pushed_at < CHECKS_GRACE_MS;
+}
+
+/// `mark_waiting` on the task's own PR (the one wisp pushes), from when it last pushed.
+pub fn mark_task(task: &mut ShipTask, now: i64) {
+    let pushed_at = task.pushed_at;
+    if let Some(pr) = task.repos.first_mut().and_then(|r| r.pr.as_mut()) {
+        mark_waiting(pr, pushed_at, now);
+    }
+}
 
 /// The PR a task's poll is led by: its own when open, else the first open one of its other repos or attached.
 pub fn lead(task: &ShipTask) -> Option<&PrSummary> {
@@ -25,16 +43,26 @@ pub fn lead(task: &ShipTask) -> Option<&PrSummary> {
 /// Still settling: checks running, mergeability unknown, a fix being pushed, or a push just landed.
 pub fn settling(task: &ShipTask, pr: &PrSummary, now: i64) -> bool {
     let fix = task.conflict_fix.as_ref().is_some_and(|f| matches!(f.step.as_str(), "pushing" | "done"));
-    pr.checks.pending > 0 || pr.merge_state == "UNKNOWN" || fix || now - task.pushed_at < PUSHED_FAST_MS
+    pr.checks.pending > 0 || pr.waiting_checks || pr.merge_state == "UNKNOWN" || fix || now - task.pushed_at < PUSHED_FAST_MS
 }
 
-/// Is the task's PR due for a look at `now`?
+/// Is the task's PR due for a look at `now`? Every tick while its checks are still to show, so they appear as
+/// soon as GitHub lists them.
 pub fn due(task: &ShipTask, now: i64) -> bool {
-    lead(task).is_some_and(|p| now - p.checked_at >= if settling(task, p, now) { PR_FAST_POLL_MS } else { PR_POLL_MS })
+    lead(task).is_some_and(|p| {
+        let every = if p.waiting_checks {
+            0
+        } else if settling(task, p, now) {
+            PR_FAST_POLL_MS
+        } else {
+            PR_POLL_MS
+        };
+        now - p.checked_at >= every
+    })
 }
 
 fn settled(p: &PrSummary) -> &'static str {
-    if p.checks.pending > 0 {
+    if p.checks.pending > 0 || p.waiting_checks {
         "pending"
     } else if p.checks.fail > 0 {
         "fail"

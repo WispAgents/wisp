@@ -24,6 +24,12 @@ conflict: boolean,
  */
 head: string, branch: string, base: string, mergedAt: string | null, checks: Checks, 
 /**
+ * just pushed and GitHub lists no checks for this head yet: they're on their way, not passed (a PR read
+ * the second it opens has none). Set by wisp from when it pushed; false again once checks show or the
+ * grace runs out (a repo without CI)
+ */
+waitingChecks?: boolean, 
+/**
  * ms since the epoch: when wisp last asked GitHub
  */
 checkedAt: bigint, };
