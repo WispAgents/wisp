@@ -5,8 +5,10 @@
 /** until `ok`, checked after each macrotask; gives up after `ms` by the clock (the assertion after it then fails with
  * its own message). 15 s by default, under vitest's 20 s CI timeout: a cold lazy chunk (the frame, a phone screen, a
  * pane) lands a beat after the navigation, and on a loaded Windows runner (imports 1100 s in one 830 s run) past 4 s.
- * A check that holds returns at once, so only a failing test waits longer. */
-export async function until(ok: () => boolean, ms = 15_000): Promise<void> {
+ * A check that holds returns at once, so only a failing test waits longer. Windows gets 45 s (under its 120 s CI
+ * timeout): one 1090 s run there (transform 2868 s, import 1379 s) left a phone pane and a rename dialog unlanded at 15 s. */
+const WINDOWS = (globalThis as { process?: { platform?: string } }).process?.platform === 'win32';
+export async function until(ok: () => boolean, ms = WINDOWS ? 45_000 : 15_000): Promise<void> {
   const end = performance.now() + ms;
   while (!ok() && performance.now() < end) await new Promise((r) => setTimeout(r, 0));
 }
