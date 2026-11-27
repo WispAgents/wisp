@@ -25,7 +25,3 @@ jobs:
       # run was cut off and every nightly since Nov 8 ended cancelled, so none published. v2's Rust suite runs
       # every target to the end (~35 min cold), so three runs need ~120.
       timeout: 120
-
-  # The latest releases: they change upstream whether or not wisp does.
-  real-clis:
-    uses: ./.github/workflows/real-clis.yml

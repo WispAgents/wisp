@@ -89,7 +89,8 @@
   [data-kit='ls-text'] { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   [data-kit='ls-text'][data-bad] { color: var(--bad); }
   [data-kit='l-setup'] > [data-kit='icon-btn'] { width: 28px; height: 28px; min-width: 28px; color: var(--muted); }
-  [data-kit='l-setup'] > [data-kit='icon-btn'][data-busy] svg { animation: kit-spin 0.8s linear infinite reverse; }
+  /* re-checking: the kit's Liquid where the icon was (ADR-0140) */
+  [data-kit='l-setup'] > [data-kit='icon-btn'] > [data-kit='liquid'] { width: var(--size-icon-md); height: var(--size-icon-md); }
   [data-kit='l-setup'] > button:last-child { flex: none; }
   [data-kit='l-projects'] {
     display: flex;

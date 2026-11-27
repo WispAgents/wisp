@@ -260,6 +260,14 @@ impl Accounts {
         Ok(Some((u, d)))
     }
 
+    /// Whether device `id` of `user_id` is still allowed: a media link it asked for (`media.rs`) dies with it.
+    pub fn live_device(&self, user_id: &str, id: &str) -> Result<bool> {
+        let revoked: Option<Option<i64>> = self.db.with(|c| {
+            c.query_row("SELECT revoked_at FROM devices WHERE id = ?1 AND user_id = ?2", params![id, user_id], |r| r.get(0)).optional()
+        })?;
+        Ok(matches!(revoked, Some(None)))
+    }
+
     /// The account page's Remove: the device `id` of `user_id`, revoked. A revoked device's computer goes with it:
     /// it can't hold its tunnel any more (the ids returned, for the edge to close their tunnels).
     pub fn revoke_device(&self, user_id: &str, id: &str) -> Result<Revoked> {

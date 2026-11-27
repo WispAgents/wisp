@@ -216,8 +216,8 @@ Rules for gestures:
   `--state-pressed`) and a slight scale on cards. Never only on lift.
 - Haptics through the platform module's `haptic` (`Haptic` in `packages/shell/src/platform/types.ts`): `select` on a swipe crossing its line and on picker changes, `success` on Send,
   `warning` on an undoable destructive action, `tap` on long-press opening a menu. Off with the system's setting.
-- A pending control shows its spinner in place (`design/feedback.md` §4): M3 circular indicator / the iOS activity
-  indicator, same size as the icon.
+- A pending control shows its spinner in place (`design/feedback.md` §4): the kit's Liquid (ADR-0140) on both
+  platforms, same size as the icon. Pull to refresh keeps the platform's own indicator (it is the gesture's feedback).
 - Toasts: Android an M3 snackbar above the FAB and the navigation bar, with *Undo*; iOS a compact capsule banner above
   the tab bar with *Undo* (HIG has no toasts; this is the least surprising equivalent).
 

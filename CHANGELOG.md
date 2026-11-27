@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **A Steward row on the PR card.** Every open PR of a task's branch, whether Ship it opened it or the agent attached it with `wisp_pr`, has a Steward row under it: its status ("Watching checks and reviews", "Fixing failing checks (2/6)", "Green"), or what it would do when off, and a switch. On, the task fixes failing checks, merge conflicts and new review comments, and wisp pushes; off stops it in one click. The switch's tooltip says what it does. It replaces the Keep green / Stop Steward button that hid in More.
+- **A new loader: Liquid.** Everything that loads now shows the same mark: three drops that orbit, merge and split
+  like mercury. It replaces the dot grid on a working task, the ring on a busy button, and the pulsing dots and spinning icons elsewhere. It turns amber while a task waits on you and
+  holds still when something failed or with reduced motion on (ADR-0140).
 - **Usage in the profile menu.** The menu under your profile now has Usage, just above Settings: it opens
   Settings on its Usage pane.
 - **A crew member works in several folders, and carries on with fallbacks at a usage limit.** Beside their own folder
@@ -19,11 +22,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **A sandbox being prepared shows a box building itself** instead of the glowing grid: its edges draw in, its faces
+  fill and its lid lifts and settles. Waiting for your sign-in, the built box breathes in amber; if the sandbox
+  didn't start, the box is grey, its lid knocked off and cracked. Its row in the task list has the same box,
+  tiny, in place of the dot.
 - **Where a task runs sits beside its project.** New task reads "in wisp on This computer · Worktree": the computer
   and Worktree / In place moved from the footer's menu to a selector next to the project's, and it opens the same
   searchable list as the project picker (your computers, Add a computer…, then Worktree or In place).
 - **Filter the task list by computer.** With more than one computer, the list's head has a computer selector beside
   the project's: All computers, or one computer's tasks, picked from the same kind of list.
+
+### Fixed
+
+- **Phone app: pictures and videos show again on wisp Cloud and on computers reached through the grid.** Each one
+  said "This picture can't be shown here." (or video). alpha.15's fix added the one-hour signed links to the old
+  grid, but wisp Cloud already ran the new grid, which didn't have them. The new grid now signs these links
+  (`POST /_grid/media`) and accepts them, at a cloud wisp's address and at a computer's. A link opens only its own
+  file, for an hour, and stops working when you remove the phone from your account.
 
 ## [1.0.0-alpha.18] - 2026-11-27
 

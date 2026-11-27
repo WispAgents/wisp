@@ -132,6 +132,15 @@ impl Secrets {
         Ok(Self { db, master, sign_key })
     }
 
+    /// The key that signs the phone app's media links (`media.rs`), derived from the master for that one job, so a
+    /// link still opens after the grid restarts.
+    pub fn media_key(&self) -> Result<[u8; 32]> {
+        let kek = self.kek(&self.master.current)?;
+        let mut k = [0u8; 32];
+        hkdf::Hkdf::<Sha256>::new(Some(&[]), &kek).expand(b"wisp-grid media", &mut k).map_err(|_| GridError::Crypto("hkdf".into()))?;
+        Ok(k)
+    }
+
     /// The current master key's id.
     pub fn kid(&self) -> &str {
         &self.master.current

@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sandbox working: replacing GlowGrid</title>
+<style>
+:root {
+  --bg: #ffffff; --bg-2: #f3f3f2; --surface: #ffffff;
+  --ink: #171717; --ink-2: #3d3d3d; --muted: #6e6e6e; --faint: #959595; --line: #ebebea; --line-2: #dcdcda;
+  --accent: #2f5bea; --accent-soft: rgba(47, 91, 234, 0.08);
+  --good: #18794e; --warn: #a35c00; --bad: #cd2b31;
+  --spirit: #7c6cff; --spirit-eye: #1b1530;
+  --radius: 10px;
+  --sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+[data-theme='dark'] {
+  --bg: #111111; --bg-2: #1e1e1e; --surface: #171717;
+  --ink: #ededed; --ink-2: #c7c7c7; --muted: #8f8f8f; --faint: #6e6e6e; --line: #262626; --line-2: #333333;
+  --accent: #6d8dff; --accent-soft: rgba(109, 141, 255, 0.12);
+  --good: #4cc38a; --warn: #f0a33a; --bad: #ff6369;
+  --spirit: #8f82ff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 var(--sans); }
+header { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 2; }
+header h1 { font-size: 15px; margin: 0; font-weight: 600; flex: 1; white-space: nowrap; }
+.seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; border: 0; background: transparent; color: var(--muted); padding: 5px 11px; cursor: pointer; white-space: nowrap; }
+.seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent); }
+main { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 20px; padding: 24px; }
+.opt { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: var(--surface); display: grid; gap: 12px; }
+.opt h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.opt h2 span { color: var(--faint); font-weight: 500; margin-right: 6px; }
+.opt p { margin: 0; color: var(--muted); }
+.stage { position: relative; height: 250px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--bg-2); overflow: hidden; display: grid; place-items: center; }
+.mid { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; position: relative; }
+.mid b { font-size: 14px; font-weight: 600; }
+.mid small { color: var(--muted); font-size: 12px; }
+.row { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); }
+.row .t { font-weight: 500; white-space: nowrap; }
+.row .s { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mark { width: 16px; height: 16px; flex: none; display: grid; place-items: center; }
+.steps { display: flex; gap: 14px; font-size: 11px; color: var(--faint); margin-top: 10px; }
+.steps i { font-style: normal; white-space: nowrap; }
+.steps i.on { color: var(--accent); }
+.steps i.done { color: var(--muted); }
+[data-state='waiting'] .steps i.on { color: var(--warn); }
+[data-state='failed'] .steps i.on { color: var(--bad); }
+
+/* ── A. Relay ─────────────────────────────────────────────── */
+.relay { display: grid; gap: 18px; justify-items: center; }
+.relay svg { width: 300px; height: 64px; overflow: visible; }
+.relay .node { fill: var(--surface); stroke: var(--line-2); stroke-width: 1.2; }
+.relay .glyph { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.relay .far .glyph { stroke: var(--accent); }
+.relay .track { stroke: var(--line-2); stroke-width: 1.5; stroke-dasharray: 2 5; stroke-linecap: round; fill: none; }
+.relay .pkt { fill: var(--accent); offset-path: path('M58 32 C 120 4, 180 60, 242 32'); offset-rotate: 0deg; animation: relay-go 2.4s cubic-bezier(.45,.05,.35,1) infinite; opacity: 0; }
+.relay .pkt:nth-of-type(2) { animation-delay: .8s; } .relay .pkt:nth-of-type(3) { animation-delay: 1.6s; }
+@keyframes relay-go { 0% { offset-distance: 0%; opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
+.relay .far .ring { fill: none; stroke: var(--accent); stroke-width: 1.2; transform-box: fill-box; transform-origin: center; animation: relay-ring 2.4s ease-out infinite; animation-delay: 2.1s; opacity: 0; }
+@keyframes relay-ring { 0% { transform: scale(1); opacity: .6; } 70%,100% { transform: scale(1.7); opacity: 0; } }
+[data-state='waiting'] .relay .pkt { animation: relay-hold 2s ease-in-out infinite; offset-distance: 50%; opacity: 1; fill: var(--warn); }
+[data-state='waiting'] .relay .pkt:nth-of-type(n+2) { display: none; }
+@keyframes relay-hold { 0%,100% { transform: scale(1); } 50% { transform: scale(1.6); } }
+[data-state='waiting'] .relay .far .ring { display: none; }
+[data-state='waiting'] .relay .far .glyph { stroke: var(--warn); }
+[data-state='failed'] .relay .pkt, [data-state='failed'] .relay .far .ring { display: none; }
+[data-state='failed'] .relay .track { stroke-dasharray: 2 5; }
+[data-state='failed'] .relay .far .glyph { stroke: var(--bad); }
+.relay .cut { display: none; stroke: var(--bad); stroke-width: 1.6; stroke-linecap: round; }
+[data-state='failed'] .relay .cut { display: inline; }
+.relay-mini { display: flex; gap: 2px; }
+.relay-mini i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); animation: mini-dot 1.2s ease-in-out infinite; opacity: .25; }
+.relay-mini i:nth-child(2) { animation-delay: .2s; } .relay-mini i:nth-child(3) { animation-delay: .4s; }
+@keyframes mini-dot { 0%,100% { opacity: .2; transform: translateX(0); } 40% { opacity: 1; transform: translateX(1px); } }
+[data-state='waiting'] .relay-mini i { background: var(--warn); animation: none; opacity: .9; }
+[data-state='waiting'] .relay-mini i:nth-child(n+2) { opacity: .25; }
+[data-state='failed'] .relay-mini i { background: var(--bad); animation: none; opacity: .8; }
+
+/* ── B. Build ─────────────────────────────────────────────── */
+.build svg { width: 120px; height: 120px; overflow: visible; }
+.build .edge { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 60; stroke-dashoffset: 60; animation: build-draw 4.8s ease-in-out infinite; }
+.build .face { fill: var(--accent); opacity: 0; animation: build-fill 4.8s ease-in-out infinite; }
+.build .lid { animation: build-lid 4.8s ease-in-out infinite; }
+.build .shadow { fill: var(--ink); opacity: .06; transform-box: fill-box; transform-origin: center; animation: build-shadow 4.8s ease-in-out infinite; }
+@keyframes build-draw { 0% { stroke-dashoffset: 60; opacity: 1; } 40%,82% { stroke-dashoffset: 0; opacity: 1; } 95%,100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes build-fill { 0%,38% { opacity: 0; } 55%,82% { opacity: var(--o); } 95%,100% { opacity: 0; } }
+@keyframes build-lid { 0%,55% { transform: translateY(0); } 66% { transform: translateY(-7px); } 78%,100% { transform: translateY(0); } }
+@keyframes build-shadow { 0%,55% { transform: scale(1); } 66% { transform: scale(.85); } 78%,100% { transform: scale(1); } }
+[data-state='waiting'] .build .edge { animation: none; stroke-dashoffset: 0; stroke: var(--warn); }
+[data-state='waiting'] .build .face { animation: build-breathe 3.2s ease-in-out infinite; fill: var(--warn); }
+[data-state='waiting'] .build .lid { animation: none; }
+@keyframes build-breathe { 0%,100% { opacity: calc(var(--o) * .4); } 50% { opacity: var(--o); } }
+[data-state='failed'] .build .edge { animation: none; stroke-dashoffset: 0; stroke: var(--line-2); }
+[data-state='failed'] .build .face { animation: none; opacity: calc(var(--o) * .35); fill: var(--faint); }
+[data-state='failed'] .build .lid { animation: none; transform: translate(4px, -5px) rotate(8deg); transform-box: fill-box; transform-origin: right bottom; }
+[data-state='failed'] .build .crack { display: inline; }
+.build .crack { display: none; fill: none; stroke: var(--bad); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── C. Ticker ────────────────────────────────────────────── */
+.ticker { width: 340px; display: grid; gap: 14px; }
+.ticker .line { font: 12px/1.5 var(--mono); color: var(--muted); height: 72px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; mask-image: linear-gradient(to bottom, transparent, #000 60%); }
+.ticker .line div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: tick-in .35s ease-out both; }
+.ticker .line div:last-child { color: var(--ink); }
+.ticker .line div:last-child::after { content: ''; display: inline-block; width: 7px; height: 13px; margin-left: 3px; vertical-align: -2px; background: var(--accent); animation: caret 1s steps(1) infinite; }
+@keyframes tick-in { from { transform: translateY(6px); opacity: 0; } }
+@keyframes caret { 50% { opacity: 0; } }
+.ticker .bar { position: relative; height: 2px; border-radius: 2px; background: var(--line-2); overflow: hidden; }
+.ticker .bar::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 30%; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: sweep 1.6s cubic-bezier(.6,0,.4,1) infinite; }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+[data-state='waiting'] .ticker .bar::before { animation: none; width: 100%; background: var(--warn); opacity: .6; }
+[data-state='waiting'] .ticker .line div:last-child::after { background: var(--warn); }
+[data-state='failed'] .ticker .bar::before { animation: none; width: 100%; background: var(--bad); opacity: .7; }
+[data-state='failed'] .ticker .line div:last-child { color: var(--bad); }
+[data-state='failed'] .ticker .line div:last-child::after { display: none; }
+.ticker-mini { width: 14px; height: 14px; border-radius: 50%; border: 1.6px solid var(--line-2); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+[data-state='waiting'] .ticker-mini { animation: none; border-color: var(--warn); border-style: dotted; }
+[data-state='failed'] .ticker-mini { animation: none; border-color: var(--bad); }
+
+/* ── D. Spirit at work ───────────────────────────────────── */
+.spirit-wrap { position: relative; width: 160px; height: 130px; }
+.spirit-wrap svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.sp-body { animation: sp-float 2.6s ease-in-out infinite; }
+@keyframes sp-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+.sp-fill { fill: var(--spirit); }
+.sp-eye { fill: var(--spirit-eye); transform-box: fill-box; transform-origin: center; animation: sp-blink 4s infinite; }
+@keyframes sp-blink { 0%,92%,100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+.sp-box { fill: var(--surface); stroke: var(--accent); stroke-width: 1.4; stroke-linejoin: round; }
+.sp-box-line { stroke: var(--accent); stroke-width: 1.4; stroke-linecap: round; fill: none; }
+.sp-spark { fill: var(--accent); opacity: 0; transform-box: fill-box; transform-origin: center; animation: sp-spark 2.6s ease-out infinite; }
+.sp-spark:nth-of-type(2) { animation-delay: .9s; } .sp-spark:nth-of-type(3) { animation-delay: 1.7s; }
+@keyframes sp-spark { 0% { opacity: 0; transform: translate(0,0) scale(.4); } 20% { opacity: .9; } 100% { opacity: 0; transform: translate(-26px, 18px) scale(1); } }
+.sp-shadow { fill: var(--ink); opacity: .07; transform-box: fill-box; transform-origin: center; animation: sp-shadow 2.6s ease-in-out infinite; }
+@keyframes sp-shadow { 0%,100% { transform: scaleX(1); } 50% { transform: scaleX(.8); } }
+.sp-lock { display: none; }
+[data-state='waiting'] .sp-body { animation-duration: 4s; }
+[data-state='waiting'] .sp-spark { display: none; }
+[data-state='waiting'] .sp-box, [data-state='waiting'] .sp-box-line { stroke: var(--warn); }
+[data-state='waiting'] .sp-lock { display: inline; animation: sp-ask 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center bottom; }
+@keyframes sp-ask { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.sp-lock path, .sp-lock rect { fill: none; stroke: var(--warn); stroke-width: 1.6; stroke-linecap: round; }
+[data-state='failed'] .sp-body { animation: none; transform: translateY(8px); }
+[data-state='failed'] .sp-fill { fill: var(--faint); }
+[data-state='failed'] .sp-eye { display: none; }
+[data-state='failed'] .sp-sad { display: inline; }
+.sp-sad { display: none; fill: none; stroke: var(--spirit-eye); stroke-width: 2; stroke-linecap: round; }
+[data-state='failed'] .sp-spark { display: none; }
+[data-state='failed'] .sp-box, [data-state='failed'] .sp-box-line { stroke: var(--bad); }
+[data-state='failed'] .sp-box-g { transform: translate(14px, 18px) rotate(14deg); transform-box: fill-box; transform-origin: center; }
+.sp-mini { width: 16px; height: 16px; animation: sp-float 2.6s ease-in-out infinite; }
+.sp-mini path { fill: var(--spirit); }
+[data-state='waiting'] .sp-mini path { fill: var(--warn); }
+[data-state='failed'] .sp-mini { animation: none; } [data-state='failed'] .sp-mini path { fill: var(--faint); }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sandbox working: four replacements for the glowing grid</h1>
+  <div class="seg" id="state">
+    <button data-v="working" aria-pressed="true">Working</button>
+    <button data-v="waiting" aria-pressed="false">Waiting on you</button>
+    <button data-v="failed" aria-pressed="false">Failed</button>
+  </div>
+  <div class="seg" id="theme">
+    <button data-v="light" aria-pressed="true">Light</button>
+    <button data-v="dark" aria-pressed="false">Dark</button>
+  </div>
+</header>
+<main data-state="working" id="root">
+
+  <!-- A -->
+  <section class="opt">
+    <h2><span>A</span>Relay</h2>
+    <p>Your project travels from this machine to the sandbox: packets move along the path, the box pings as each lands. Tells the actual story (copy to a remote box).</p>
+    <div class="stage">
+      <div class="relay">
+        <svg viewBox="0 0 300 64">
+          <path class="track" d="M58 32 C 120 4, 180 60, 242 32" />
+          <path class="cut" d="M146 22 l8 20 M154 22 l-8 20" />
+          <circle class="pkt" r="3.5" /><circle class="pkt" r="3.5" /><circle class="pkt" r="3.5" />
+          <g><rect class="node" x="6" y="8" width="48" height="48" rx="12" />
+            <path class="glyph" d="M19 24h22v13H19zM15 41h30" /></g>
+          <g class="far"><rect class="ring" x="246" y="8" width="48" height="48" rx="12" />
+            <rect class="node" x="246" y="8" width="48" height="48" rx="12" />
+            <path class="glyph" d="M270 20l11 6v12l-11 6-11-6V26zM259 26l11 6 11-6M270 32v12" /></g>
+        </svg>
+        <div class="mid"><b class="title"></b><small class="hint"></small>
+          <div class="steps"></div></div>
+      </div>
+    </div>
+    <div class="row"><span class="mark"><span class="relay-mini"><i></i><i></i><i></i></span></span><span class="t">Fix login rate limit</span><span class="s row-s"></span></div>
+  </section>
+
+  <!-- B -->
+  <section class="opt">
+    <h2><span>B</span>Build</h2>
+    <p>The box assembles itself: edges draw in, faces fill, the lid lifts and settles, then it loops. Waiting: the finished box breathes in warn. Failed: lid knocked off, a crack.</p>
+    <div class="stage">
+      <div class="mid build">
+        <svg viewBox="0 0 120 120">
+          <ellipse class="shadow" cx="60" cy="108" rx="34" ry="5" />
+          <path class="face" style="--o:.10" d="M28 52l32 16v34L28 86z" />
+          <path class="face" style="--o:.22" d="M92 52L60 68v34l32-16z" />
+          <path class="edge" d="M28 52v34l32 16 32-16V52" />
+          <path class="edge" d="M60 68v34" style="animation-delay:.25s" />
+          <g class="lid">
+            <path class="face" style="--o:.35" d="M60 36l32 16-32 16-32-16z" />
+            <path class="edge" d="M60 36l32 16-32 16-32-16z" style="animation-delay:.5s" />
+          </g>
+          <path class="crack" d="M76 62l-4 9 5 6-4 10" />
+        </svg>
+        <b class="title"></b><small class="hint"></small><div class="steps"></div>
+      </div>
+    </div>
+    <div class="row"><span class="mark"><svg class="build" viewBox="0 0 120 120" width="16" height="16"><path class="edge" stroke-width="10" d="M28 52v34l32 16 32-16V52M60 36l32 16-32 16-32-16z" /></svg></span><span class="t">Fix login rate limit</span><span class="s row-s"></span></div>
+  </section>
+
+  <!-- C -->
+  <section class="opt">
+    <h2><span>C</span>Live log</h2>
+    <p>No decoration at all: the real lines from the box roll in like a terminal, with a caret and one hairline sweep. Calm, honest, Linear/Vercel-deploy feel.</p>
+    <div class="stage">
+      <div class="ticker">
+        <div class="mid" style="align-items:flex-start;text-align:left"><b class="title"></b><small class="hint"></small></div>
+        <div class="line" id="log"></div>
+        <div class="bar"></div>
+      </div>
+    </div>
+    <div class="row"><span class="mark"><span class="ticker-mini"></span></span><span class="t">Fix login rate limit</span><span class="s row-s"></span></div>
+  </section>
+
+  <!-- D -->
+  <section class="opt">
+    <h2><span>D</span>Spirit at work</h2>
+    <p>wisp's own spirit floats over, carrying the box, little sparks trailing. Waiting: it holds up a lock and looks at you. Failed: it slumps, the box tumbles.</p>
+    <div class="stage">
+      <div class="mid">
+        <div class="spirit-wrap">
+          <svg viewBox="0 0 160 130">
+            <ellipse class="sp-shadow" cx="80" cy="122" rx="30" ry="4" />
+            <g class="sp-body">
+              <circle class="sp-spark" cx="60" cy="40" r="2.5" /><circle class="sp-spark" cx="56" cy="52" r="2" /><circle class="sp-spark" cx="64" cy="30" r="1.8" />
+              <path class="sp-fill" d="M80 10c18 0 29 12 29 30s-12 30-29 30-29-12-29-30 11-30 29-30z" />
+              <circle class="sp-eye" cx="71" cy="40" r="3.6" /><circle class="sp-eye" cx="89" cy="40" r="3.6" />
+              <path class="sp-sad" d="M66 42q5-4 10 0M84 42q5-4 10 0M74 54q6-4 12 0" />
+              <g class="sp-lock"><rect x="110" y="20" width="14" height="11" rx="2" /><path d="M113 20v-4a4 4 0 0 1 8 0v4" /></g>
+              <g class="sp-box-g">
+                <path class="sp-box" d="M80 74l16 8v16l-16 8-16-8V82z" />
+                <path class="sp-box-line" d="M64 82l16 8 16-8M80 90v16" />
+              </g>
+            </g>
+          </svg>
+        </div>
+        <b class="title"></b><small class="hint"></small><div class="steps"></div>
+      </div>
+    </div>
+    <div class="row"><span class="mark"><svg class="sp-mini" viewBox="0 0 64 64"><path d="M32 6c14 0 23 10 23 25S45 58 32 58 9 47 9 31 18 6 32 6z" /></svg></span><span class="t">Fix login rate limit</span><span class="s row-s"></span></div>
+  </section>
+</main>
+<script>
+const STEPS = ['Make', 'Wake', 'Copy', 'Start'];
+const COPY = {
+  working: { title: 'Preparing the sandbox…', hint: 'Copying your project to the box', row: 'Preparing the sandbox…', at: 2 },
+  waiting: { title: 'Sign in to Claude', hint: 'The sandbox waits for your sign-in', row: 'Waiting for your sign-in', at: 3 },
+  failed: { title: "The sandbox didn't start", hint: 'The box ran out of disk while copying', row: "Didn't start: out of disk", at: 2 },
+};
+const LOG = ['› make box sbx-4f2a (eu-central)', '› wake: box up in 1.8 s', '› copy: 1 204 files, 18.2 MB', '  src/auth/limiter.ts', '  src/auth/login.ts', '  package-lock.json', '› copy done', '› start claude in /work'];
+const root = document.getElementById('root');
+let state = 'working', logTimer, li = 0;
+function paint() {
+  root.dataset.state = state;
+  const c = COPY[state];
+  document.querySelectorAll('.title').forEach((e) => (e.textContent = c.title));
+  document.querySelectorAll('.hint').forEach((e) => (e.textContent = c.hint));
+  document.querySelectorAll('.row-s').forEach((e) => (e.textContent = c.row));
+  document.querySelectorAll('.steps').forEach((e) => (e.innerHTML = STEPS.map((s, i) => `<i class="${i < c.at ? 'done' : i === c.at ? 'on' : ''}">${i < c.at ? '✓ ' : ''}${s}</i>`).join('')));
+  const log = document.getElementById('log');
+  clearInterval(logTimer);
+  if (state === 'working') {
+    log.innerHTML = ''; li = 0;
+    const step = () => { const d = document.createElement('div'); d.textContent = LOG[li++ % LOG.length]; log.append(d); while (log.children.length > 4) log.firstChild.remove(); };
+    step(); logTimer = setInterval(step, 900);
+  } else if (state === 'waiting') {
+    log.innerHTML = LOG.slice(5, 8).map((l) => `<div>${l}</div>`).join('') + '<div>› waiting for Claude sign-in</div>';
+  } else {
+    log.innerHTML = LOG.slice(1, 4).map((l) => `<div>${l}</div>`).join('') + '<div>✕ no space left on device</div>';
+  }
+}
+function seg(id, on) { document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener('click', () => { document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); on(b.dataset.v); })); }
+seg('state', (v) => { state = v; paint(); });
+seg('theme', (v) => (document.documentElement.dataset.theme = v));
+const q = new URLSearchParams(location.search);
+if (q.get('theme')) { document.documentElement.dataset.theme = q.get('theme'); document.querySelectorAll('#theme button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.v === q.get('theme')))); }
+if (q.get('state')) { state = q.get('state'); document.querySelectorAll('#state button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.v === state))); }
+paint();
+</script>
+</body>
+</html>
