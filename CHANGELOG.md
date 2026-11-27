@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **MCP Events, both ways.** Any MCP server that sends events (SEP-3415) can start a task or wake a crew member:
   in Automations → Triggers pick **MCP server event**, a connector, one of its events and its arguments (or write
   `on: mcp.event` with `match: { connector, event, arguments }`). wisp takes the events by webhook when the server
-  offers it and this wisp has a public address (`connectors.events.callback`), else holds a stream open, else polls
+  offers it and this wisp has a public address (a cloud box's own, or `connectors.events.callback`), else holds a stream open, else polls
   every minute; each event fires once, from the moment the trigger is on. In the other direction, wisp's own MCP
   endpoint, over HTTP or through `wisp mcp`, serves its durable events: an MCP client lists them with `events/list`
   (each with its payload's shape), and follows `task.finished`, `pr.opened`, `goal.failed` and the rest by poll,

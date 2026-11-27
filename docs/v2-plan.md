@@ -337,7 +337,8 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   `resultType`, `-32022`), `wisp.events` serving `events/list` (inferred payload schemas), `events/poll`,
   `events/stream` (16 a caller) and `events/subscribe`/`unsubscribe` (Standard Webhooks, verification,
   `Net::fetch_untrusted`), `events.webhooks`; `events/*` through `wisp mcp` stdio; `wisp.connectors`'
-  `connectors.events` and the `mcp.event` source (webhook with `connectors.events.callback`, push, poll; modern
+  `connectors.events` and the `mcp.event` source (webhook at the box's own address on the grid, which lets
+  `POST /api/connectors/events/<token>` in as `public`, or `connectors.events.callback`; push, poll; modern
   fallback); the trigger editor's MCP server event tile. Fixed on the way: an `mcp.event` trigger's project filtered
   its events away. **To do:** a stdio connector's events, schemars payload schemas, dual-signing on secret
   rotation

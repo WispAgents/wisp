@@ -27,7 +27,8 @@ pub enum Credential {
     Box,
     /// a sandbox's own bearer, for that sandbox's address
     Sandbox,
-    /// a trigger's secret URL (POST /api/hooks/<token>): the wisp checks it
+    /// an unguessable delivery path into a box (`POST /api/connectors/events/<token>`, an MCP server's webhook,
+    /// ADR-0145): the box's wisp checks its signature, and sees the caller as `public`
     Hook,
     /// an unguessable webhook path (/_in/<token>, /_route/<token>) or a provider's signature (/_mail/)
     Webhook,

@@ -53,11 +53,21 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// This wisp's public address, when one is set.
+/// This wisp's public address: the setting, else a grid box's own (`WISP_PUBLIC_URL`, which the grid lets
+/// `POST /api/connectors/events/<token>` reach unsigned-in). A sandbox's address opens no such path.
 pub fn base(ctx: &Ctx) -> Option<String> {
-    let v = ctx.setting(CALLBACK)?;
-    let s = v.as_str()?.trim().trim_end_matches('/');
-    (!s.is_empty()).then(|| s.to_owned())
+    base_of(ctx.setting(CALLBACK).as_ref().and_then(|v| v.as_str()), &|k| std::env::var(k).ok())
+}
+
+pub fn base_of(setting: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    let trim = |s: &str| Some(s.trim().trim_end_matches('/').to_owned()).filter(|s| !s.is_empty());
+    if let Some(s) = setting.and_then(trim) {
+        return Some(s);
+    }
+    if env("WISP_SANDBOX").as_deref() == Some("1") || env("WISP_TRUSTED_PROXY_SECRET").is_none_or(|s| s.is_empty()) {
+        return None;
+    }
+    env("WISP_PUBLIC_URL").as_deref().and_then(trim).filter(|u| u.starts_with("https://"))
 }
 
 fn random(n: usize) -> String {
@@ -213,4 +223,26 @@ pub async fn receive(ctx: Ctx, hooks: Arc<Hooks>, req: Request) -> Result<Respon
         }
     }
     Ok(answer(200, json!({})))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |k| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| (*v).to_owned())
+    }
+
+    #[test]
+    fn the_setting_else_a_grid_boxs_own_address() {
+        let on_box = env(&[("WISP_PUBLIC_URL", "https://ada.grid.trywisp.dev/"), ("WISP_TRUSTED_PROXY_SECRET", "s")]);
+        assert_eq!(base_of(Some("https://me.example/ "), &on_box).as_deref(), Some("https://me.example"));
+        assert_eq!(base_of(Some(""), &on_box).as_deref(), Some("https://ada.grid.trywisp.dev"));
+        assert_eq!(base_of(None, &on_box).as_deref(), Some("https://ada.grid.trywisp.dev"));
+        let sandbox = env(&[("WISP_PUBLIC_URL", "https://sb.grid.trywisp.dev"), ("WISP_TRUSTED_PROXY_SECRET", "s"), ("WISP_SANDBOX", "1")]);
+        assert_eq!(base_of(None, &sandbox), None, "a sandbox's address opens no hook");
+        assert_eq!(base_of(None, &env(&[("WISP_PUBLIC_URL", "https://x.example")])), None, "not behind the grid's proxy");
+        assert_eq!(base_of(None, &env(&[("WISP_PUBLIC_URL", "http://x.example"), ("WISP_TRUSTED_PROXY_SECRET", "s")])), None, "https only");
+        assert_eq!(base_of(None, &env(&[])), None);
+    }
 }

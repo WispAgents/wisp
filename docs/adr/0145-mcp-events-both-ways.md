@@ -220,8 +220,16 @@
 
 #### Webhook from a connector (`events/subscribe`)
 
-- **Only with a public address:** this wisp's public `https` address must be set (`connectors.events.callback`,
-  empty by default). Without one, a webhook offer is ignored.
+- **Only with a public address:** the setting `connectors.events.callback`, or else, on a grid box, the box's own
+  `WISP_PUBLIC_URL`. A box is told that address at spawn, and it must have the proxy secret and not be a sandbox.
+  Without either, a webhook offer is ignored. Every box gets webhook delivery with nothing to set.
+- **The grid lets the delivery in** (`apps/grid` `edge_reach.rs` `events_hook`): an unsigned-in request to a box is
+  sent to sign in, except `POST /api/connectors/events/<token>` with a token of 8 to 64 letters and digits and nothing
+  under it. That request goes through as `Credential::Hook`, without the caller's cookie, bearer or marks, and
+  marked `x-wisp-proxy-via: hook`.
+  - **The box's wisp resolves that mark to the `public` set** (`wisp-api` `auth.rs`), never its owner's. It reaches
+    open routes only, and every other route refuses it.
+  - **Rollout order is safe:** a box on an older wisp has no such route, so the request is a 404 there.
 - **Subscribing:** the first poll subscribes with a secret made here (32 random bytes) and a callback URL with a
   random route token: `<address>/api/connectors/events/<token>`.
   - Both are kept before `events/subscribe` is sent, because the server's verification arrives while the request
@@ -294,8 +302,9 @@
 - **wisp declares `2026-07-28`** while serving it statelessly. Only `resultType` is added, and no modern-only field
   is required of clients. A modern client that needs more (`subscriptions/listen`, caching hints) gets what a legacy
   one gets.
-- **A connector that wants webhook deliveries needs this wisp reachable at a public `https` address.** On the grid
-  that is the box's own address; on a laptop it needs a tunnel, or it uses push or poll.
+- **A connector that wants webhook deliveries needs this wisp reachable at a public `https` address.** A grid box
+  has one, and the grid opens exactly the delivery path to it. A laptop needs a tunnel and the setting, or it uses
+  push or poll.
 - **Webhook state is in memory on the server**, which is fine for TTLs of an hour. Granting no expiry would require
   durable storage (SEP-3415), so wisp never grants it.
 - **The SEP's error numbers are provisional.** If they change before the core schema records them, `mcp.rs` and
@@ -327,6 +336,11 @@
   - wisp's own client, given its own address, subscribes to wisp's own `task.finished`. A delivery fires an
     `mcp.event` trigger, and `events.webhooks` shows the subscription delivered with no error, and no secret
     (`serve_events.rs mcp_events_webhook_from_wisp_to_itself_fires_a_trigger`).
+- **The grid's door:** an unsigned-in `POST /api/connectors/events/<token>` reaches the box marked `hook`, without
+  cookie, bearer or client marks. A GET there, a short token, a deeper path or `/api/cmd` still asks for a sign-in
+  (`apps/grid/tests/box_marks.rs an_mcp_event_delivery…`, `edge_reach.rs` tests). On the box, `via: hook` is
+  `public` (`wisp-api` `auth.rs`). The address falls back to a box's own, never a sandbox's, and is `https` only
+  (`connectors/host/src/hook.rs`).
 - **A refused webhook** falls back to polling at once and isn't asked again on the next poll. Without a public
   address, no webhook is asked for (`connectors/host/tests/events.rs`).
 - **Webhook pure parts:**

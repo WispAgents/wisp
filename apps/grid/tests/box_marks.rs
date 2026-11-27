@@ -332,3 +332,31 @@ async fn the_sandbox_list_says_the_most_the_grid_keeps() {
     assert!(g.grid.sandboxes.per_user > 0);
     g.done();
 }
+
+/// An MCP server's webhook delivery (ADR-0145) is the one request that reaches a box without a sign-in: `POST
+/// /api/connectors/events/<token>`, marked `x-wisp-proxy-via: hook` (the box's wisp sees it as `public`), with no
+/// cookie or bearer and none of the client's marks. A GET there, another path, or a token that can't be one still
+/// asks for a sign-in.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_mcp_event_delivery_reaches_the_box_as_no_one_and_nothing_else_does() {
+    let g = rig("hook").await;
+    let ada = g.uid("ada");
+    let hook = format!("{}/api/connectors/events/AbCdEf0123456789xyzXYZ01", g.at("ada"));
+    let send =
+        g.web.post(&hook).header("cookie", "wisp_grid=forged").header("authorization", "Bearer nope").json(&json!({ "eventId": "e1" }));
+    let (got, _) = through(with_marks(send, "22")).await;
+    assert_eq!(got["x-wisp-proxy-via"], json!("hook"), "{got:?}");
+    assert!(!got.contains_key("cookie") && !got.contains_key("authorization"), "{got:?}");
+    assert!(!got.contains_key("x-wisp-preview"));
+    assert_eq!(got["x-wisp-proxy-secret"], json!(g.grid.boxes.secret(&ada).unwrap()));
+    for (method, url) in [
+        ("GET", hook.clone()),
+        ("POST", format!("{}/api/connectors/events/short", g.at("ada"))),
+        ("POST", format!("{}/api/connectors/events/AbCdEf0123456789xyzXYZ01/more", g.at("ada"))),
+        ("POST", format!("{}/api/cmd", g.at("ada"))),
+    ] {
+        let r = g.web.request(method.parse().unwrap(), &url).json(&json!({})).send().await.unwrap();
+        assert_ne!(r.status(), 200, "{method} {url} got in");
+    }
+    g.done();
+}

@@ -8,6 +8,7 @@
 //! | `x-wisp-token` = HMAC(master, `connectors`)       | `connector`                                  |
 //! | `x-wisp-token` = anything else                    | 403 `bad token`, whatever the route          |
 //! | via the proxy with `x-wisp-proxy-via: key`        | `apikey` (a grid API key, checked at the grid) |
+//! | via the proxy with `x-wisp-proxy-via: hook`       | `public`: a webhook delivery the grid let in unsigned-in (open routes only) |
 //! | via the proxy, otherwise                          | the user set                                 |
 //! | the local page (Host and Origin checked)          | the user set                                 |
 //! | either of those two with `x-wisp-plugin: user.<x>` | `plugin:user.<x>`: an untrusted plugin's UI (ADR-0048), never more than the user |
@@ -143,6 +144,10 @@ pub fn resolve(h: &HeaderMap, params: &BTreeMap<String, String>, body: &[u8], o:
     if o.via_proxy && header(h, "x-wisp-proxy-via") == Some("key") {
         return Ok(Caller { set: sets::APIKEY.into(), session: None, plugin: None });
     }
+    // a webhook delivery the grid let in without a sign-in (ADR-0145): no one, whatever route it reaches
+    if o.via_proxy && header(h, "x-wisp-proxy-via") == Some("hook") {
+        return Ok(Caller { set: sets::PUBLIC.into(), session: None, plugin: None });
+    }
     if o.public {
         return Ok(Caller { set: sets::PUBLIC.into(), session: None, plugin: None });
     }
@@ -264,5 +269,7 @@ mod tests {
         assert!(!edge_denies(&k, "runtime:create"));
         // not through the proxy, the header means nothing
         assert_eq!(resolve(&hm(&[("x-wisp-proxy-via", "key")]), &BTreeMap::new(), b"", &opts(false)).unwrap().set, "user:full");
+        // a webhook the grid let in unsigned-in is no one, never the box's owner
+        assert_eq!(resolve(&hm(&[("x-wisp-proxy-via", "hook")]), &BTreeMap::new(), b"", &opts(true)).unwrap().set, "public");
     }
 }
