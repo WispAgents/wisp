@@ -129,11 +129,12 @@ impl Inner {
         // word) is set aside and put back after, whatever the merge did: it stays the pending change the next
         // history push sends, never replaced by the older copy the remote has
         let kept = self.set_aside(aside.as_deref(), &top, &touched).await;
-        // `merge_history`'s own errors come back as `out`, so the saves go back whatever it did; a quit or a dropped
+        // `merge_history`'s own errors come back as `out`, so the saves go back whatever it did (but never over one
+        // history wrote meanwhile: its `on_done` takes no turn here, and a fetch and merge can take minutes); a quit or a dropped
         // future in between leaves them in the git dir, put back by the next `catch_up` above
         let out = self.merge_history(&req, &theirs, &top).await;
         if let Some(batch) = &kept {
-            put_back(batch, &top, None).await;
+            put_back(&self.git, batch, &top, Back::AfterMerge).await;
             if let Some(aside) = &aside {
                 // only when empty: a batch that couldn't all go back stays for the next `catch_up`
                 let _ = tokio::fs::remove_dir(aside).await;
@@ -221,7 +222,8 @@ impl Inner {
 }
 
 /// The saves an interrupted `catch_up` left set aside in `dir`'s worktree put back (`restore_leftovers`), when it has
-/// any. Some(the aside folder) when something is still there (a newer copy in the worktree kept it back), else None.
+/// any. Some(the aside folder) when something is still there (a file that wouldn't move or a folder that couldn't be
+/// read: only deleting it or another try clears it), else None.
 /// One `rev-parse` and one `stat` when nothing is aside, so opening a repo can afford it.
 pub(crate) async fn restore_aside(git: &Git, dir: &Path, skip_own: bool) -> Option<PathBuf> {
     let found = git.quiet(dir, &["rev-parse", "--absolute-git-dir", "--show-toplevel"]).await;
@@ -239,9 +241,9 @@ pub(crate) async fn restore_aside(git: &Git, dir: &Path, skip_own: bool) -> Opti
 }
 
 /// Saves an earlier `catch_up` set aside and never put back (wisp quit or crashed mid-merge), each back in the worktree
-/// only where that can't write over a newer save made since (`newer_here`). A file kept back stays in its batch, with a
-/// warning, so neither copy is lost. `skip_own`: this process's batches are left alone (a `catch_up` here may be
-/// mid-merge with them). True when anything is still aside.
+/// only where that can't write over a newer save made since (`newer_here`): there the leftover is an older save of the
+/// same file, dropped with a warning (`put_back`). `skip_own`: this process's batches are left alone (a `catch_up` here
+/// may be mid-merge with them). True when anything is still aside (only what wouldn't move).
 async fn restore_leftovers(git: &Git, aside: &Path, top: &Path, skip_own: bool) -> bool {
     let own = format!("{}-", std::process::id());
     if let Ok(mut entries) = tokio::fs::read_dir(aside).await {
@@ -250,34 +252,50 @@ async fn restore_leftovers(git: &Git, aside: &Path, top: &Path, skip_own: bool) 
             if !entry.file_type().await.is_ok_and(|t| t.is_dir()) || (skip_own && name.starts_with(&own)) {
                 continue;
             }
-            // `<pid>-<nanos>`: when it was set aside. A name that doesn't say is the epoch: only a missing file goes back
-            let since = name.split_once('-').and_then(|(_, n)| n.parse::<u128>().ok()).unwrap_or(0);
-            put_back(&entry.path(), top, Some((git, since))).await;
+            put_back(git, &entry.path(), top, Back::Leftover).await;
         }
     }
-    // only when empty: a batch with a file kept back stays
+    // only when empty: a batch with a file that wouldn't move stays
     let _ = tokio::fs::remove_dir(aside).await;
     tokio::fs::try_exists(aside).await.unwrap_or(true)
 }
 
+/// When `batch` was set aside: its name is `<pid>-<nanos>`. A name that doesn't say is the epoch: only a missing file
+/// goes back.
+fn set_aside_at(batch: &Path) -> u128 {
+    let name = batch.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    name.split_once('-').and_then(|(_, n)| n.parse::<u128>().ok()).unwrap_or(0)
+}
+
+/// Which batch goes back: one an interrupted run left, or a `catch_up`'s own right after its merge.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Back {
+    Leftover,
+    AfterMerge,
+}
+
 /// Whether the worktree's `rel` (from git's top) is newer than a copy set aside at `since` (ns since the epoch), so the
-/// copy must not replace it. Missing: no. The same as HEAD's: the merge's copy (no), unless the last commit that wrote
-/// it is from after the batch (a save committed since: yes). Untracked or ignored (history's `track:auto` re-saves
-/// `.wisp/` after every turn) and different: only when written at or after `since`. Tracked and edited: yes.
-async fn newer_here(git: &Git, top: &Path, rel: &str, since: u128) -> bool {
+/// copy must not replace it. Missing, or not a file (the move fails and the batch stays, the user's to clear): no. The
+/// same as HEAD's: the merge's copy, so no; for a leftover, unless the last commit that wrote it is from after the
+/// batch (a save committed since: yes). Anything else is a save only when written at or after `since` (history's
+/// `track:auto` re-saves `.wisp/` after every turn, mid-merge too); a leftover's tracked and edited copy always is.
+async fn newer_here(git: &Git, top: &Path, rel: &str, since: u128, back: Back) -> bool {
     let Ok(meta) = tokio::fs::metadata(top.join(rel)).await else { return false };
     if !meta.is_file() {
-        return true;
+        return false;
     }
     let spec = format!(":(literal){rel}");
     let at_head = git.quiet(top, &["rev-parse", "-q", "--verify", &format!("HEAD:{rel}")]).await;
     let at_head = at_head.trim();
     if !at_head.is_empty() && git.quiet(top, &["hash-object", "--", rel]).await.trim() == at_head {
+        if back == Back::AfterMerge {
+            return false;
+        }
         // seconds against the batch's own second: the merge commits after the set-aside, but what it brought is older
         let when = git.quiet(top, &["log", "-1", "--format=%ct", "HEAD", "--", &spec]).await;
         return when.trim().parse::<u128>().map_or(true, |s| s > since / 1_000_000_000);
     }
-    if !git.quiet(top, &["ls-files", "-z", "--", &spec]).await.is_empty() {
+    if back == Back::Leftover && !git.quiet(top, &["ls-files", "-z", "--", &spec]).await.is_empty() {
         return true;
     }
     let written = meta.modified().ok().and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()).map_or(u128::MAX, |d| d.as_nanos());
@@ -298,11 +316,12 @@ async fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Every file in `batch` (set aside before a merge, at its path from git's top) moved back under `top`, over what the
-/// merge wrote (its folder made again if the merge took it), and `batch` removed. A file that won't go back keeps
-/// the batch, so the next `catch_up` tries again and nothing is lost. `leftover` (a batch an interrupted run left, and
-/// when it was set aside): a file the worktree has a newer copy of (`newer_here`) stays in the batch too, with a
-/// warning; the same run's own batch always goes back over what its merge wrote.
-async fn put_back(batch: &Path, top: &Path, leftover: Option<(&Git, u128)>) {
+/// merge wrote (its folder made again if the merge took it), and `batch` removed. Where the worktree has a newer copy
+/// (`newer_here`: a save written since), the batch's is an older save of the same file: dropped, with one warning, so
+/// the batch still empties and nothing is left to keep the worktree from being removed. Only a file that won't move
+/// (or a folder that can't be read) keeps the batch, so the next `catch_up` tries again and nothing is lost.
+async fn put_back(git: &Git, batch: &Path, top: &Path, back: Back) {
+    let since = set_aside_at(batch);
     let mut whole = true;
     let mut dirs = vec![batch.to_path_buf()];
     while let Some(dir) = dirs.pop() {
@@ -318,11 +337,12 @@ async fn put_back(batch: &Path, top: &Path, leftover: Option<(&Git, u128)>) {
             }
             let Ok(rel) = path.strip_prefix(batch) else { continue };
             let rel = rel.to_string_lossy().replace('\\', "/");
-            if let Some((git, since)) = leftover
-                && newer_here(git, top, &rel, since).await
-            {
-                whole = false;
-                tracing::warn!(file = %rel, batch = %batch.display(), "catch_up: a set-aside save is older than the worktree's copy: both kept");
+            if newer_here(git, top, &rel, since, back).await {
+                tracing::warn!(file = %rel, batch = %batch.display(), "catch_up: a set-aside save is older than the worktree's copy: the worktree's kept");
+                if let Err(e) = tokio::fs::remove_file(&path).await {
+                    whole = false;
+                    tracing::warn!(file = %rel, "catch_up: an older set-aside save couldn't be removed: {e}");
+                }
                 continue;
             }
             if let Err(e) = move_file(&path, &top.join(&rel)).await {
@@ -340,7 +360,101 @@ async fn put_back(batch: &Path, top: &Path, leftover: Option<(&Git, u128)>) {
 mod tests {
     use wisp_git_api::CatchUpRequest;
 
-    use super::{in_folder, is_history_subject, sort_out, turn};
+    use std::path::{Path, PathBuf};
+
+    use super::{Back, in_folder, is_history_subject, put_back, restore_aside, sort_out, turn};
+
+    /// A fresh repo with one commit, removed when dropped: its top (canonical) and its git dir.
+    struct Repo(PathBuf);
+
+    impl Drop for Repo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn git(dir: &Path, a: &[&str]) -> String {
+        let out = std::process::Command::new("git").args(a).current_dir(dir).env("GIT_CONFIG_NOSYSTEM", "1").output().unwrap();
+        assert!(out.status.success(), "git {a:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    fn write(dir: &Path, f: &str, text: &str) {
+        let p = dir.join(f);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+
+    fn repo(name: &str) -> (Repo, PathBuf) {
+        let d = std::env::temp_dir().join(format!("wisp-catch-up-{name}-{}-{}", std::process::id(), now()));
+        std::fs::create_dir_all(&d).unwrap();
+        let d = wisp_proc::canonical_blocking(&d).unwrap();
+        git(&d, &["init", "-q", "-b", "main"]);
+        for (k, v) in [("user.email", "qa@wisp.test"), ("user.name", "QA"), ("commit.gpgsign", "false"), ("core.autocrlf", "false")] {
+            git(&d, &["config", k, v]);
+        }
+        write(&d, "a.txt", "a\n");
+        git(&d, &["add", "a.txt"]);
+        git(&d, &["commit", "-q", "-m", "init"]);
+        let git_dir = PathBuf::from(git(&d, &["rev-parse", "--absolute-git-dir"]));
+        (Repo(d), git_dir)
+    }
+
+    fn now() -> u128 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    }
+
+    fn runner() -> std::sync::Arc<crate::run::Git> {
+        crate::run::Git::new(wisp_proc::local(), None)
+    }
+
+    /// final8 F1: a leftover kept back because the worktree's copy is newer is an older save of that file: it's
+    /// dropped, the batch empties and goes, and nothing is left aside to refuse the worktree's removal over.
+    #[tokio::test]
+    async fn a_leftover_older_than_the_worktree_s_copy_is_dropped_and_its_batch_goes() {
+        let (r, git_dir) = repo("leftover-older");
+        let aside = git_dir.join("wisp-aside");
+        write(&aside.join(format!("{}-2", std::process::id())), ".wisp/x.json", "OLD\n");
+        write(&r.0, ".wisp/x.json", "NEWER\n");
+        write(&aside.join("1-2"), ".wisp/gone.json", "BACK\n");
+        assert_eq!(restore_aside(&runner(), &r.0, false).await, None);
+        assert_eq!(std::fs::read_to_string(r.0.join(".wisp/x.json")).unwrap(), "NEWER\n");
+        assert_eq!(std::fs::read_to_string(r.0.join(".wisp/gone.json")).unwrap(), "BACK\n", "a missing file still goes back");
+        assert!(!aside.exists(), "nothing left aside");
+        assert_eq!(restore_aside(&runner(), &r.0, false).await, None, "and nothing to warn about again");
+    }
+
+    /// final8 F2: history saves `.wisp/` with no turn shared with `catch_up`, so a save can land while the merge runs:
+    /// the same run's put back keeps that newer save, drops its older set-aside copy, and leaves no batch.
+    #[tokio::test]
+    async fn the_same_run_s_put_back_keeps_a_save_written_during_the_merge() {
+        let (r, git_dir) = repo("after-merge-newer");
+        let batch = git_dir.join(format!("wisp-aside/{}-{}", std::process::id(), now()));
+        write(&batch, ".wisp/x.json", "SET-ASIDE\n");
+        write(&batch, ".wisp/missing.json", "BACK\n");
+        // past the clock's coarse tick, so the save's mtime is after the set-aside on every file system
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        write(&r.0, ".wisp/x.json", "SAVED-MID-MERGE\n");
+        put_back(&runner(), &batch, &r.0, Back::AfterMerge).await;
+        assert_eq!(std::fs::read_to_string(r.0.join(".wisp/x.json")).unwrap(), "SAVED-MID-MERGE\n");
+        assert_eq!(std::fs::read_to_string(r.0.join(".wisp/missing.json")).unwrap(), "BACK\n");
+        assert!(!batch.exists(), "the batch is gone");
+    }
+
+    /// final8 F2: what the merge itself wrote (HEAD's blob) is still replaced by the set-aside save, the newer local one.
+    #[tokio::test]
+    async fn the_same_run_s_put_back_still_goes_over_what_the_merge_wrote() {
+        let (r, git_dir) = repo("after-merge-merged");
+        let batch = git_dir.join(format!("wisp-aside/{}-{}", std::process::id(), now()));
+        write(&batch, ".wisp/x.json", "LOCAL\n");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        write(&r.0, ".wisp/x.json", "MERGED\n");
+        git(&r.0, &["add", "-f", ".wisp/x.json"]);
+        git(&r.0, &["commit", "-q", "-m", "the merge"]);
+        put_back(&runner(), &batch, &r.0, Back::AfterMerge).await;
+        assert_eq!(std::fs::read_to_string(r.0.join(".wisp/x.json")).unwrap(), "LOCAL\n");
+        assert!(!batch.exists());
+    }
 
     #[tokio::test]
     async fn one_turn_at_an_aside_folder_at_a_time() {

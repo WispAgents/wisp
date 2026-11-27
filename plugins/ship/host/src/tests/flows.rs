@@ -140,8 +140,8 @@ async fn a_merge_keeps_the_folder_and_its_branch_unless_its_removal_went() {
         (Tidied::Failed("it is locked".into()), "couldn't be removed (it is locked)"),
         // final7 F2: git's refusal over saves an interrupted Ship set aside in the worktree's git dir
         (
-            Tidied::Failed("x has history saves set aside by an interrupted Ship (y); open it and ship again, or remove them.".into()),
-            "couldn't be removed (x has history saves set aside by an interrupted Ship",
+            Tidied::Failed("x has history saves an interrupted Ship set aside that couldn't be put back: they are in y. Try again, or delete that folder to drop them.".into()),
+            "couldn't be removed (x has history saves an interrupted Ship set aside",
         ),
     ] {
         let h = crate::tests::h();
