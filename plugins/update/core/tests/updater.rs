@@ -6,6 +6,7 @@ use wisp_update_core::app::sha256_hex;
 use wisp_update_core::deferred::Files;
 use wisp_update_core::{
     Env, Install, InstallStep, Method, Platform, Refusal, Status, Swap, Updater, asset_name, cargo_clone, detect, installed_version,
+    last_morning,
 };
 
 const CURRENT: &str = "2.0.0";
@@ -160,14 +161,60 @@ fn opt_outs_turn_the_check_off() {
     assert!(updater(global(), Env { update_check: Some("1".into()), ci: Some(String::new()), ..Env::default() }).enabled);
 }
 
+const H: i64 = 3_600_000;
+/// 2026-11-27 00:00 UTC
+const DAY0: i64 = 1_795_737_600_000;
+
+/// An answered check at `at`.
+fn checked(u: &mut Updater, at: i64) {
+    let req = u.begin_check(at, "stable");
+    u.end_check(&req, Some(&json!({ "latest": CURRENT })));
+}
+
 #[test]
-fn due_at_most_once_a_day_on_the_wall_clock() {
+fn due_at_start_then_each_morning_on_the_users_clock() {
     let mut u = updater(global(), Env::default());
-    let t = 1_000_000;
-    assert!(u.due(t));
-    u.begin_check(t, "stable");
-    assert!(!u.due(t + 23 * 3_600_000));
-    assert!(u.due(t + 24 * 3_600_000));
+    // started at 10:00, before the evening's release: the next look is tomorrow at 9, not 10 (nor never)
+    assert!(u.due(DAY0 + 10 * H, 0), "never checked");
+    checked(&mut u, DAY0 + 10 * H);
+    assert!(!u.due(DAY0 + 22 * H, 0), "not again the same day");
+    assert!(!u.due(DAY0 + 33 * H - 1, 0), "08:59 the next day");
+    assert!(u.due(DAY0 + 33 * H, 0), "09:00 the next day");
+    // started at 7:00: its start check doesn't stand in for this morning's
+    let mut early = updater(global(), Env::default());
+    checked(&mut early, DAY0 + 7 * H);
+    assert!(!early.due(DAY0 + 8 * H, 0));
+    assert!(early.due(DAY0 + 9 * H, 0));
+    // asleep through the morning: the first tick after waking checks
+    checked(&mut early, DAY0 + 9 * H);
+    assert!(early.due(DAY0 + 2 * 24 * H + 14 * H, 0));
+}
+
+#[test]
+fn the_morning_is_the_users_not_utcs() {
+    let mut u = updater(global(), Env::default());
+    // UTC+2 (Lausanne in summer): 9:00 there is 7:00 UTC
+    checked(&mut u, DAY0 - 2 * H);
+    assert!(!u.due(DAY0 + 7 * H - 1, 2 * H));
+    assert!(u.due(DAY0 + 7 * H, 2 * H));
+    // UTC−8: 9:00 there is 17:00 UTC; 16:00 UTC is still before it
+    let mut west = updater(global(), Env::default());
+    checked(&mut west, DAY0 + 2 * H);
+    assert!(!west.due(DAY0 + 16 * H, -8 * H));
+    assert!(west.due(DAY0 + 17 * H, -8 * H));
+    assert_eq!(last_morning(DAY0 + 3 * H, -8 * H), DAY0 - 7 * H, "before dawn there: yesterday's morning");
+}
+
+#[test]
+fn an_unanswered_check_is_tried_again_not_counted() {
+    let mut u = updater(global(), Env::default());
+    let req = u.begin_check(DAY0 + 10 * H, "stable");
+    assert!(!u.end_check(&req, None), "offline");
+    assert!(u.due(DAY0 + 10 * H + 30 * 60_000, 0), "the next tick looks again");
+    let req = u.begin_check(DAY0 + 11 * H, "stable");
+    u.end_check(&req, Some(&json!({ "latest": "99.0.0" })));
+    assert!(!u.due(DAY0 + 12 * H, 0));
+    assert!(u.view("stable").available, "the pill shows");
 }
 
 #[test]
@@ -558,10 +605,10 @@ fn the_release_feed_can_be_a_local_one_only() {
     assert_eq!(feed_override(None), None);
     let p = Platform::new("darwin", "arm64");
     let env = Env { feed: feed_override(Some("http://127.0.0.1:8123/releases")), ..Env::default() };
-    let mut u = Updater::new(detect("/Applications/wisp.app/Contents/Resources/app/wisp", &p, None, true, None), p, CURRENT, 1, env);
+    let u = Updater::new(detect("/Applications/wisp.app/Contents/Resources/app/wisp", &p, None, true, None), p, CURRENT, 1, env);
     assert_eq!(u.begin_check(0, "stable").url, "http://127.0.0.1:8123/releases/latest");
     assert_eq!(u.begin_check(0, "beta").url, "http://127.0.0.1:8123/releases?per_page=30");
-    let mut npm = updater(global(), Env { feed: Some("http://127.0.0.1:1/r".into()), ..Env::default() });
+    let npm = updater(global(), Env { feed: Some("http://127.0.0.1:1/r".into()), ..Env::default() });
     assert_eq!(npm.begin_check(0, "stable").url, "https://registry.npmjs.org/-/package/wisp-agents/dist-tags", "the app's feed only");
 }
 

@@ -4,7 +4,7 @@
   "name": "Updates",
   "version": "1.0.0-alpha.17",
   "api": "^1",
-  "description": "wisp.update: a newer wisp, checked daily (npm dist-tags or GitHub Releases), and installed with npm or Homebrew",
+  "description": "wisp.update: a newer wisp, checked at start and every morning (npm dist-tags or GitHub Releases), and installed with npm or Homebrew",
   "server": {
     "builtin": "wisp-update"
   },

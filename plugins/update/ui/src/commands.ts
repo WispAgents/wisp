@@ -13,7 +13,7 @@ const patchRow = (base: EntityReader, peer: PeerId, fields: Partial<UpdateState>
   return [{ e: KIND, id, op: 'upsert', v: row.body ? { ...row, body: { ...row.body, ...fields } } : { ...row, ...fields } }];
 };
 
-/** Check now (v1 Updater.check, also run daily by the server). */
+/** Check now (v1 Updater.check, also run by the server at start and every morning). */
 export const checkNow = defineCommand<CheckArgs>({
   id: 'update.check',
   owner: (a) => a.peer,
