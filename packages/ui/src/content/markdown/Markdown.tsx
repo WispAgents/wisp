@@ -8,6 +8,7 @@ import { Code } from '../Code.tsx';
 import { Mermaid } from '../Mermaid.tsx';
 import type { Block, Inline, ListItem } from './ast.ts';
 import { parseMarkdown } from './block.ts';
+import { useLinkRenderer, type RenderLink } from './links.tsx';
 import '../../css/markdown-blocks.css';
 
 export interface MarkdownProps extends KitProps {
@@ -22,6 +23,8 @@ interface Ctx {
   readonly part: PartName;
   readonly base: number;
   readonly onLink: (href: string, event: MouseEvent) => void;
+  /** a screen's link renderer (ADR-0145): asked first, the anchor its fallback */
+  readonly renderLink: RenderLink | undefined;
 }
 
 function inlines(nodes: readonly Inline[], ctx: Ctx): JSX.Element[] {
@@ -35,7 +38,7 @@ function inlines(nodes: readonly Inline[], ctx: Ctx): JSX.Element[] {
       case 'br': return <br />;
       case 'link': {
         const local = n.href.startsWith('#');
-        return (
+        const anchor = (): JSX.Element => (
           <a
             href={n.href}
             title={n.title ?? undefined}
@@ -48,6 +51,7 @@ function inlines(nodes: readonly Inline[], ctx: Ctx): JSX.Element[] {
             {inlines(n.c, ctx)}
           </a>
         );
+        return ctx.renderLink && !local ? ctx.renderLink(n.href, anchor) : anchor();
       }
       default: {
         const never: never = n;
@@ -246,6 +250,7 @@ export function Markdown(props: MarkdownProps): JSX.Element {
       return props.headingBase ?? 3;
     },
     onLink: (href, e) => props.onLink?.(href, e),
+    renderLink: useLinkRenderer(),
   };
   return (
     <div id={props.id} data-kit="markdown" data-part={props.part ?? 'ui.markdown'}>

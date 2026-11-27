@@ -198,6 +198,22 @@ async fn attach_and_detach_a_pr_by_url() {
 }
 
 #[tokio::test]
+async fn pr_links_pasted_in_a_prompt_attach_once_and_one_gh_cannot_read_stays_text() {
+    // ADR-0145: the composer, a follow-up, the CLI or a channel all land here through turn.started
+    let h = h();
+    h.track("t", &[("repo", None)]);
+    h.gh.add_pr(serde_json::json!({"number": 9, "url": "https://github.com/acme/docs/pull/9", "title": "Docs", "state": "OPEN", "isDraft": false, "headRefName": "docs-x", "baseRefName": "main", "headRefOid": "abc", "statusCheckRollup": []}));
+    let prompt = "review https://github.com/acme/docs/pull/9/files against [this](https://github.com/acme/docs/pull/404)";
+    assert_eq!(crate::pasted::attach_links(&h.ship, &h.call, "t", prompt).await, 1);
+    assert_eq!(h.task("t").prs.iter().map(|x| x.pr.number).collect::<Vec<_>>(), [9]);
+    // the same link again (a follow-up quoting it) asks gh nothing and adds nothing
+    let reads = h.gh.calls("view").len();
+    assert_eq!(crate::pasted::attach_links(&h.ship, &h.call, "t", "still https://github.com/acme/docs/pull/9").await, 0);
+    assert_eq!(h.gh.calls("view").len(), reads);
+    assert_eq!(h.task("t").prs.len(), 1);
+}
+
+#[tokio::test]
 async fn the_panel_reads_each_pr_in_full_and_says_why_when_gh_cannot() {
     let h = h();
     let wts = h.track("t", &[("repo", None)]);

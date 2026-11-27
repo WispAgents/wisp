@@ -7,6 +7,7 @@ import { useT } from '../core/i18n.tsx';
 import { Menu } from '../controls/Menu.tsx';
 import { useTurnMenu, type TurnPhoneMenu, type TurnTool } from './turn-menu.ts';
 import { Icon } from '../content/Icon.tsx';
+import { LinkedText } from '../content/markdown/links.tsx';
 import { Wrap } from '../layout/Stack.tsx';
 import type { IconName } from '../content/icons.ts';
 
@@ -162,7 +163,7 @@ export function TurnView(props: TurnViewProps): JSX.Element {
           </ol>
         </Show>
         <Show when={props.prompt}>
-          <div data-kit="ask-text">{props.prompt}</div>
+          <div data-kit="ask-text"><LinkedText text={props.prompt ?? ''} /></div>
         </Show>
         <Show when={(props.attachments ?? []).length > 0}>
           <AskAttachments items={props.attachments ?? []} />

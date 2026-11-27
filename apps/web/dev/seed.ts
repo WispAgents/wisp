@@ -530,8 +530,8 @@ function withAsk(topics: Map<Topic, Row[]>, list: Row[]): void {
  *  red confirm; ADR-0143). */
 function withRisk(topics: Map<Topic, Row[]>, list: Row[], now: number): void {
   withAsk(topics, list);
-  const own = { number: 812, url: 'https://github.com/WispAgents/wisp/pull/812', head: 'a1b2c3', title: 'Keep the retry in the stream scope', state: 'OPEN', checks: { pass: 3, fail: 0, pending: 0 } };
-  const lib = { number: 44, url: 'https://github.com/WispAgents/sync-lib/pull/44', head: 'd4e5f6', title: 'Drop the legacy cursor column', state: 'OPEN', checks: { pass: 2, fail: 0, pending: 0 } };
+  const own = { number: 812, url: 'https://github.com/WispAgents/wisp/pull/812', head: 'a1b2c3', branch: 'feat/login-limit', base: 'main', title: 'Keep the retry in the stream scope', state: 'OPEN', checks: { pass: 3, fail: 0, pending: 0 } };
+  const lib = { number: 44, url: 'https://github.com/WispAgents/sync-lib/pull/44', head: 'd4e5f6', branch: 'drop-cursor', base: 'main', title: 'Drop the legacy cursor column', state: 'OPEN', checks: { pass: 2, fail: 0, pending: 0 } };
   const by = { agent: 'codex', model: '' };
   const risk = [
     { url: own.url, repo: 'wisp', number: 812, head: own.head, status: 'done', level: 'low', score: 18, summary: 'A scoped retry in one client file, covered by its test.', reasons: ['packages/client/src/peers.ts: the timer moves into the peer scope, nothing else changes', 'packages/client/test/peers.test.ts covers the reconnect'], by, at: now - 4 * MIN, current: true },
@@ -541,6 +541,32 @@ function withRisk(topics: Map<Topic, Row[]>, list: Row[], now: number): void {
     const sv = r.v as { summary?: Record<string, unknown> };
     if (!sv.summary?.['pr']) continue;
     sv.summary = { ...sv.summary, pr: own, prs: [{ repo: 'sync-lib', pr: lib }], riskOn: true, risk };
+  }
+}
+
+/** `prlink` (ADR-0145): `risk`'s task without the risk row, whose latest prompt pasted its two PRs' links (and one the
+ *  task doesn't have), and whose answer names them: the prompt's and the answer's PR links read as live chips. */
+function withPrLink(topics: Map<Topic, Row[]>, list: Row[], now: number): void {
+  withRisk(topics, list, now);
+  const own = 'https://github.com/WispAgents/wisp/pull/812';
+  const lib = 'https://github.com/WispAgents/sync-lib/pull/44/files';
+  for (const r of [...list.filter((x) => x.e === 'session'), ...[...topics.values()].flat().filter((x) => x.e === 'session')]) {
+    const sv = r.v as { summary?: Record<string, unknown> };
+    if (!sv.summary?.['riskOn']) continue;
+    const prs = (sv.summary['prs'] as { repo: string; pr: Record<string, unknown> }[]).map((x) => ({ ...x, pr: { ...x.pr, checks: { pass: 5, fail: 1, pending: 1 } } }));
+    sv.summary = { ...sv.summary, riskOn: false, risk: [], prs };
+  }
+  for (const rows of topics.values()) {
+    const turn = rows.filter((r) => r.e === 'turn').at(-1);
+    const v = turn?.v as { prompt?: string; body?: Record<string, unknown> } | undefined;
+    const pres = v?.body?.['presentation'] as { blocks?: unknown[] } | undefined;
+    if (!v?.body || !pres?.blocks?.some((b) => (b as { type?: string }).type === 'question')) continue;
+    const prompt = `Check ${own} against ${lib} before we merge, and see if https://github.com/WispAgents/wisp/pull/799 already fixed it.`;
+    v.prompt = prompt;
+    v.body = { ...v.body, prompt };
+    const md = { type: 'markdown', text: `[#812](${own}) keeps the retry in the stream scope. It needs ${lib.replace('/files', '')} first: that PR drops the cursor column the retry reads. https://github.com/WispAgents/wisp/pull/799 touched another path.` };
+    v.body = { ...v.body, presentation: { ...pres, blocks: [pres.blocks[0], md, ...pres.blocks.slice(1)] } };
+    return;
   }
 }
 
@@ -737,7 +763,7 @@ function sandboxLaunches(now: number): Row[] {
   ];
 }
 
-export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; risk?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean; factory?: boolean; sandbox?: boolean; machines?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; risk?: boolean; prlink?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean; factory?: boolean; sandbox?: boolean; machines?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -771,6 +797,7 @@ export function seed(o: { peer: string; now: number; extra: number; harnesses?: 
   if (o.media) withMedia(topics);
   if (o.ask) withAsk(topics, list);
   if (o.risk) withRisk(topics, list, o.now);
+  if (o.prlink) withPrLink(topics, list, o.now);
   if (o.env) withEnv(topics);
   if (o.usage) withUsage(list);
   if (o.trial) withTrial(o.peer, o.now, list, topics, TASKS.length + o.extra);

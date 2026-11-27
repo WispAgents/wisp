@@ -765,6 +765,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [x] F-ship-7: a task's PR merged, when more changes are made, then Ship it comes back
 - [x] F-ship-8: *Review by another harness* on, when a PR is open, then another harness reviews before Merge (sees what I ruled out, says if partial)
 - [x] F-ship-9: a PR conflict, when I see the PR row, then Fix conflicts is last, in the same place
+- [x] F-ship-10: a PR link pasted in a prompt or follow-up, when the turn starts, then the PR attaches to the task, and a PR's link in the turns reads as its live chip with a card on hover (ADR-0145)
 
 ### My Stuff, apps and panes (`STUFF`)
 
@@ -1161,11 +1162,13 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - 0119: an agent runs a workflow under its own task, on any harness, and is told when it ends
 - 0127: computer use for every harness is Cua Driver behind wisp's own computer MCP server
 - 0143: merge risk, another harness judges each open PR (plugin wisp.risk, off by default)
+- 0145: a PR link in a prompt attaches the PR, and a PR's link reads as its live chip (`shell.task:link`, kit `LinkRenderer` + `PrPeek`, `ship.attachPasted` on)
 
 ## 11. Work log (recent rounds)
 
 | Round | What | State |
 |---|---|---|
+| prlink | PR links (ADR-0145): `ship.attachPasted` (on) attaches PRs pasted in prompts on `turn.started` (`ship_core::links`, `pasted.rs`); new input `shell.task:link` + `ExtensionProps.href`, kit `LinkRenderer`/`LinkedText`/`PrPeek`, Tooltip `card`; wisp.ship's `PrLink` chip + Settings row; tests core/host/ui. Left: real-app screenshots in the PR | built, PR |
 | risk | Merge risk (ADR-0143): plugin wisp.risk (api/core/host, `risk.harness` off by default), `ship.pr_diff`, ship asks on any open PR's new head; PR card row under the Steward, chip words, PR pane section, Merge confirm, Settings row, mock `?seed=risk`; tests core/host/ship slot + UI. Left: the row opens the pane on the riskiest PR | built, PR |
 | cu | Computer use for every harness (ADR-0127): plugin wisp.computer (Cua Driver 0.62.1 behind `POST /api/computer/mcp`, policy, off by default), grid image (driver pinned, window manager, AT-SPI; the browser server stays ADR-0128's); tests core/host + serve_computer.rs. Left: per-action approvals locally, recordings into the task, own Settings pane | built, PR |
 | fac | Software factories (row 65, ADR-0114): plugin wisp.factory, CLI/MCP/picker/band/TUI, docs, e2e serve_factory.rs | built, uncommitted |

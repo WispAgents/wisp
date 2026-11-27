@@ -56,19 +56,7 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
             let agent = own.agent.clone();
             let t = lead.unwrap_or(own);
             let id = t.id.to_string();
-            if ship.tasks.get(&id).is_none() {
-                // not followed yet (just restarted, or no worktree): what its slot kept, else a task whose PRs are
-                // the attached ones, gh running in its folder; never a blank one over the slot
-                let kept =
-                    wisp_ship_core::slot::sync(wisp_ship_core::slot::restore(&id, t.ext_of(api::PLUGIN)), &crate::wire::facts_of(&t));
-                let child = t.parent_id.is_some();
-                ship.tasks.put(kept.unwrap_or_else(|| api::ShipTask {
-                    session: id.clone(),
-                    cwd: t.cwd.clone(),
-                    child,
-                    ..api::ShipTask::default()
-                }));
-            }
+            crate::pasted::ensure_followed(&ship, &t);
             let out = match ship.attach(&root, &id, &pr, a.remove).await {
                 Ok(x) => said(x.text),
                 Err(e) => refused(WireError::from(e).message),
