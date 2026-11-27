@@ -89,5 +89,21 @@
   "automations.page.formulaOnly": "Declared in a formula with fields this form doesn’t have: edit it there (wisp apply).",
   "automations.form.save": "Save",
   "automations.form.secretKept": "Kept: type a new one to change it",
-  "automations.form.anyProjectShort": "Any project"
+  "automations.form.anyProjectShort": "Any project",
+  "automations.form.mcp.server": "MCP server",
+  "automations.form.mcp.pickServer": "Pick a connector",
+  "automations.form.mcp.reading": "Reading…",
+  "automations.form.mcp.noServers": "No remote connector yet: add one in Settings → Connectors.",
+  "automations.form.mcp.noEvents": "This server sends no MCP events.",
+  "automations.form.mcp.event": "Event",
+  "automations.form.mcp.pickEvent": "Pick one of its events",
+  "automations.form.mcp.any": "Any",
+  "automations.form.mcp.optional": "Optional",
+  "automations.form.mcp.delivery": "Delivery",
+  "automations.form.mcp.delivery.auto": "Automatic",
+  "automations.form.mcp.delivery.webhook": "Webhook",
+  "automations.form.mcp.delivery.push": "Push",
+  "automations.form.mcp.delivery.poll": "Poll every minute",
+  "automations.form.mcp.yes": "Yes",
+  "automations.form.mcp.no": "No"
 }

@@ -94,3 +94,36 @@ export const removeTrigger = defineCommand<{ peer: PeerId; name: string }>({
   optimistic: 'none',
   pending: 'the trigger’s Delete',
 });
+
+/** A connector as the MCP event picker reads it (`connectors.list`): only remote ones are called by wisp itself. */
+export interface McpConnector {
+  readonly id: string;
+  readonly name: string;
+  readonly transport: string;
+  readonly url: string;
+  readonly enabled: boolean;
+}
+
+/** An MCP server's event type (`connectors.events`, SEP-3415's `events/list`). */
+export interface McpEventType {
+  readonly name: string;
+  readonly description?: string;
+  readonly delivery?: readonly string[];
+  readonly inputSchema?: unknown;
+}
+
+export const connectorsList = defineCommand<{ peer: PeerId }, { connectors: McpConnector[] }>({
+  id: 'connectors.list',
+  owner: (a) => a.peer,
+  wire: () => ({}),
+  optimistic: 'none',
+  pending: 'the MCP server picker, which says it is reading',
+});
+
+export const connectorEvents = defineCommand<{ peer: PeerId; id: string }, { served: boolean; events: McpEventType[] }>({
+  id: 'connectors.events',
+  owner: (a) => a.peer,
+  wire: (a) => ({ id: a.id }),
+  optimistic: 'none',
+  pending: 'the event picker, which says it is reading',
+});

@@ -30,6 +30,7 @@ import {
   useSignal,
 } from '@wisp/ui';
 import { lastRunWords } from './panes/summary.ts';
+import { McpEventFields } from './McpEventFields.tsx';
 import { fireTrigger, recipes, removeRecipe, removeTrigger, saveTrigger, switchTrigger, triggers, type Recipe, type Trigger } from './commands.ts';
 import { fieldsOf } from './recipe.ts';
 import { t } from './i18n.ts';
@@ -368,6 +369,9 @@ function TriggerForm(props: {
         <AutoRow label={say('automations.form.label')}>
           <Input value={f().label} onInput={(v) => set({ label: v })} spellcheck={false} placeholder="wisp" aria-label={say('automations.form.label')} />
         </AutoRow>
+      </Show>
+      <Show when={kind() === 'mcp'}>
+        <McpEventFields client={c} f={f()} set={set} />
       </Show>
       <Show when={hook()}>
         <Show when={kind() !== 'slack'}>
