@@ -1185,9 +1185,12 @@ export const COMMANDS: Record<string, CommandFn> = {
   },
   'goal.set': (a, ctx) => {
     const x = obj(a);
-    const text = str(x, 'text');
-    const name = str(x, 'name');
-    return { ops: sessionPatch(ctx, str(x, 'id'), [{ op: 'replace', path: '/summary/goal', value: { text, ...(name && { name, setAt: ctx.now() }), status: 'running', round: 0, checks: [] } }]) };
+    // as wisp.goal's goal.set: `name` is optional (a typed Done when has none) and an empty text clears the goal;
+    // a new goal is `working` (the status the band and the reply's Goal chip read)
+    const text = typeof x['text'] === 'string' ? x['text'].trim() : '';
+    const name = typeof x['name'] === 'string' ? x['name'] : '';
+    const value = text ? { text, ...(name && { name, setAt: ctx.now() }), status: 'working', round: 0, checks: [] } : null;
+    return { ops: sessionPatch(ctx, str(x, 'id'), [{ op: 'replace', path: '/summary/goal', value }]) };
   },
   // the goals a formula declares by name (`goals:`, ADR-0110), as wisp.goal's `goal.declared` answers: each as
   // stored, with its name (a long one shows how Goal…'s menu fits it)

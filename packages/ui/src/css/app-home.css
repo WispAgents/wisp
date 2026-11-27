@@ -351,7 +351,10 @@
     background: transparent;
     color: inherit;
   }
-  [data-kit='l-chip'] > [data-kit='tog-btn'] > [data-text='control'] {
+  [data-kit='l-chip'] > [data-kit='tog-btn'] > [data-text='control'],
+  /* an on tool without its own ✕ (the reply's Goal while the task's goal is going: "Goal: <its condition>") is cut
+     as the chip is, or a long condition folds the bar */
+  [data-kit='c-bar'] [data-kit='tog-btn'][data-on] > [data-text='control'] {
     max-width: var(--size-pick-max);
     overflow: hidden;
     text-overflow: ellipsis;

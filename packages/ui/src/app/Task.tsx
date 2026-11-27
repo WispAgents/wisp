@@ -20,7 +20,7 @@ import { Tool } from './launcher-tool.tsx';
 import { foldOrder, foldTail, type LauncherTool } from './launcher-fold.ts';
 import { useTailFold } from './launcher-fold-measure.ts';
 import { Icon } from '../content/Icon.tsx';
-import { IconButton } from '../controls/Button.tsx';
+import { Button, IconButton } from '../controls/Button.tsx';
 import { Wrap } from '../layout/Stack.tsx';
 import { growTextarea } from '../core/autosize.ts';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
@@ -813,6 +813,12 @@ export interface ReplyBoxProps {
     readonly ref?: (el: HTMLInputElement) => void;
     /** v1 .lg-keys "Enter sets it", at the line's end (not on touch). Additive (2026-11-16). */
     readonly keys?: string;
+    /** Enter in the line (v1 goal.js: the goal set, with the message if one is typed). Additive (2026-11-27). */
+    readonly onEnter?: () => void;
+    /** Escape closes the line, the focus back in the box (v1 goal.js). Additive (2026-11-27). */
+    readonly onEscape?: () => void;
+    /** a small Set at the line's end: sets the goal now, no message needed. Additive (2026-11-27). */
+    readonly set?: { readonly label: string; readonly title: string; readonly onClick: () => void };
   };
   readonly later: string;
   readonly laterAct?: Act;
@@ -998,9 +1004,33 @@ function ReplyBoxIn(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Element {
               <Icon name="target" />
               <span data-text="control">{g().label}</span>
             </span>
-            <input data-kit="l-goal-input" ref={(el) => g().ref?.(el)} aria-label={g().label} placeholder={g().placeholder} value={g().value} onInput={(e) => g().onInput(e.currentTarget.value)} />
+            <input
+              data-kit="l-goal-input"
+              ref={(el) => g().ref?.(el)}
+              aria-label={g().label}
+              placeholder={g().placeholder}
+              value={g().value}
+              onInput={(e) => g().onInput(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && g().onEscape) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  g().onEscape?.();
+                } else if (e.key === 'Enter' && !e.isComposing && g().onEnter) {
+                  e.preventDefault();
+                  g().onEnter?.();
+                }
+              }}
+            />
             <Show when={g().keys}>
               <span data-kit="lg-keys">{g().keys}</span>
+            </Show>
+            <Show when={g().set}>
+              {(s) => (
+                <Button variant="accent" size="xs" part="composer.goalSet" title={s().title} onClick={() => s().onClick()}>
+                  {s().label}
+                </Button>
+              )}
             </Show>
           </div>
         )}
