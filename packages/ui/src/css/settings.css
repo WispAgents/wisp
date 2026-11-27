@@ -80,6 +80,16 @@
   [data-kit='meter-fill'] { position: absolute; inset: 0 auto 0 0; width: var(--k-v); border-radius: inherit; background: var(--k-tone); transition: width var(--dur-base) var(--ease); }
   [data-kit='meter-mark'] { position: absolute; top: calc(-1 * var(--space-1)); bottom: calc(-1 * var(--space-1)); left: var(--k-m); width: var(--size-ring); background: var(--ink-2); border-radius: var(--radius-pill); }
 
+  /* StackedMeter: one bar of parts on the track (the track is what's left: a disk's free space), its legend under it */
+  [data-kit='stacked-meter'] { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  [data-kit='stacked-meter-bar'] { display: flex; height: var(--space-3); border-radius: var(--radius-sm); background: var(--sunk); overflow: hidden; }
+  [data-kit='stacked-meter-seg'] { flex: 0 0 auto; width: var(--k-v); background: var(--k-tone); transition: width var(--dur-base) var(--ease); }
+  [data-kit='stacked-meter-seg'][data-tone='faint'], [data-kit='stacked-meter-key'][data-tone='faint'] { --k-tone: var(--faint); }
+  [data-kit='stacked-meter-legend'] { --k-gap: var(--space-4); --k-row-gap: var(--space-1); margin: 0; padding: 0; list-style: none; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+  [data-kit='stacked-meter-key'] { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+  [data-kit='stacked-meter-key']::before { content: ''; width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-xs); background: var(--k-tone); }
+  [data-kit='stacked-meter-key'][data-rest]::before { background: var(--sunk); box-shadow: inset 0 0 0 var(--size-hairline) var(--line); }
+
   /* a choice in a settings row (v1 .sx-seg): the picked one in the accent */
   [data-kit='settings-row'] [data-kit='tabs'][data-variant='pill'] [data-kit='tab'][data-selected] { color: var(--accent-ink); }
   /* v1 .theme-seg / .us-stop buttons in a row: the row's line height, an icon 6px from its label */

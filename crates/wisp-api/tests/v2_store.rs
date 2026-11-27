@@ -404,3 +404,50 @@ async fn a_paged_kind_not_defined_yet_reads_one_empty_page_that_closes_the_snaps
     let pages = pages_of(&snaps, "config", None).await;
     assert_eq!(pages.iter().map(|p| (p.1.len(), p.2)).collect::<Vec<_>>(), [(0, false)]);
 }
+
+/// A plugin's table on a topic of its own, the way This computer's snapshot is (`plugin:wisp.machine:snapshot`, one row
+/// rewritten every sample), with a kind that names its rows' own topics beside it.
+fn plugin_kinds(s: &Store) {
+    use wisp_store::{Col, EntityDef, Migration, Row};
+    fn own(_: &Row) -> Vec<String> {
+        vec!["plugin:t:snap".into()]
+    }
+    fn per_row(r: &Row) -> Vec<String> {
+        vec![format!("session:{}", r.get("id").and_then(serde_json::Value::as_str).unwrap_or(""))]
+    }
+    s.migrate("t", &[Migration::sql(1, "CREATE TABLE t_snap (id TEXT PRIMARY KEY, at INTEGER NOT NULL) STRICT; CREATE TABLE t_note (id TEXT PRIMARY KEY, at INTEGER NOT NULL) STRICT;")])
+        .unwrap();
+    let cols: &'static [(&'static str, Col)] = &[("id", Col::Text), ("at", Col::Int)];
+    for (kind, table, topics) in [("t.snap", "t_snap", own as fn(&Row) -> Vec<String>), ("t.note", "t_note", per_row)] {
+        s.define_entity(EntityDef { kind, table, key: "id", columns: cols, json_columns: &[], parent: None, seq: None, topics }).unwrap();
+    }
+}
+
+/// The disk that filled, and the page that stayed on "Reading…" (2026-11-27): a first look at such a topic replayed
+/// its feed (10–12 s for 21k rewrites of a 30 KB row), and once retention pruned the feed's start it read empty for
+/// good, while each patch after it failed to apply and asked again. It reads the table now.
+#[tokio::test]
+async fn a_plugins_own_topic_reads_its_table_even_after_retention_pruned_the_feed() {
+    let clock = Arc::new(ManualClock::new(1_000));
+    let s = Store::open(Location::Memory, clock.clone()).unwrap();
+    plugin_kinds(&s);
+    for at in 0..5 {
+        s.write(move |w| {
+            w.upsert("t.snap", row!({"id": "this", "at": at})).and_then(|_| w.upsert("t.note", row!({"id": "n", "at": at}))).map(|_| ())
+        })
+        .await
+        .unwrap();
+    }
+    clock.advance(8 * 24 * 60 * 60 * 1000);
+    s.write(|w| w.upsert("t.snap", row!({"id": "this", "at": 99})).map(|_| ())).await.unwrap();
+    assert!(s.prune().await.unwrap().changes > 0);
+    assert!(s.changed_since("plugin:t:snap", 0).unwrap().is_none(), "the feed's start is gone");
+    let snaps = StoreSnapshots::new(s.clone(), Vec::new(), Vec::new());
+    let read = snaps.snapshot(&Topic::parse("plugin:t:snap").unwrap(), None).await;
+    assert!(read.full);
+    assert_eq!(read.rows.len(), 1, "the table's one row, not the feed: {:?}", read.rows);
+    assert_eq!(read.rows[0].v["at"], 99);
+    // a kind whose rows name their own topic isn't a table on one topic: no `session:` read gets its rows
+    assert_eq!(s.read(|r| Ok(r.whole_kinds("session:n"))).unwrap(), Vec::<(&str, &str)>::new());
+    assert_eq!(s.read(|r| Ok(r.whole_kinds("plugin:t:snap"))).unwrap(), vec![("t.snap", "id")]);
+}

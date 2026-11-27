@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use serde_json::Map;
+use serde_json::{Map, Value};
 use wisp_machine_api::this_mac::{
     BatteryState, CpuInfo, CrewUse, DiskInfo, Facts, Guard, HistoryPoint, Hold, Leftover, LeftoverGroup, LoadReading, MachineView, MemInfo,
     MemoryPer, ReclaimGroup, Res, TaskUse, WispUse,
@@ -40,6 +40,10 @@ pub struct WtItem {
     /// nothing keeps it (Settings → Worktrees' `idle`)
     pub idle: bool,
     pub size: Option<u64>,
+    /// a task is working in it (its build output stays too)
+    pub busy: bool,
+    /// of `size`, the build output (ADR-0144)
+    pub build: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -48,6 +52,8 @@ pub struct WtLeftover {
     pub size: Option<u64>,
     /// files of its own nobody else has; `None`: unread
     pub only: Option<u32>,
+    /// of `size`, the build output (ADR-0144)
+    pub build: Option<u64>,
 }
 
 /// One running task's tree, summed.
@@ -108,12 +114,33 @@ pub fn settle_res<S: std::hash::BuildHasher>(rows: &BTreeMap<String, Usage>, res
     changed
 }
 
-/// Groups of folders Clean up can take, each a list for `POST /worktrees/clean`: merged or closed PRs,
-/// Done tasks, finished crew jobs, and leftover folders that hold nothing of their own. Only idle ones.
+/// Groups of folders Clean up can take, each a list for `POST /worktrees/clean`: the build output of every folder no
+/// task is working in (ADR-0144: `target/`, `node_modules/`, … go, the folders and their changes stay; its `leftovers`
+/// are the left-over folders' names), then merged or closed PRs, Done tasks, finished crew jobs, and leftover folders
+/// that hold nothing of their own (only idle ones). The groups' bytes don't overlap: a folder's build output counts in
+/// the first group only, so their sum is what all of them free.
 pub fn reclaim(wt: Option<&WtView>, task: &dyn Fn(&str) -> Option<TaskInfo>) -> Vec<ReclaimGroup> {
+    let Some(wt) = wt else { return Vec::new() };
+    let mut build = (Vec::new(), Vec::new(), 0u64);
+    // each folder on its own line of the Space tab, biggest first: the task's title, else the folder's name
+    let mut folders: Vec<(u64, Value)> = Vec::new();
+    for it in wt.items.iter().filter(|it| !it.busy && it.build.unwrap_or(0) > 0) {
+        let bytes = it.build.unwrap_or(0);
+        build.0.push(it.id.clone());
+        build.2 += bytes;
+        let title = task(&it.id).map(|s| s.title).filter(|t| !t.is_empty()).unwrap_or_else(|| it.id.clone());
+        folders.push((bytes, serde_json::json!({ "id": it.id, "title": title, "bytes": bytes, "leftover": false })));
+    }
+    for l in wt.leftovers.iter().filter(|l| l.build.unwrap_or(0) > 0) {
+        let bytes = l.build.unwrap_or(0);
+        build.1.push(l.name.clone());
+        build.2 += bytes;
+        folders.push((bytes, serde_json::json!({ "id": l.name, "title": l.name, "bytes": bytes, "leftover": true, "only": l.only })));
+    }
+    folders.sort_by_key(|f| std::cmp::Reverse(f.0));
+    let rest_item = |it: &WtItem| it.size.unwrap_or(0).saturating_sub(if it.busy { 0 } else { it.build.unwrap_or(0) });
     let mut groups: [(&str, Vec<String>, u64); 4] =
         [("merged", vec![], 0), ("done", vec![], 0), ("crew", vec![], 0), ("leftover", vec![], 0)];
-    let Some(wt) = wt else { return Vec::new() };
     for it in wt.items.iter().filter(|it| it.idle) {
         let Some(s) = task(&it.id) else { continue };
         let i = if s.facts.pr_closed {
@@ -126,23 +153,30 @@ pub fn reclaim(wt: Option<&WtView>, task: &dyn Fn(&str) -> Option<TaskInfo>) -> 
             continue;
         };
         groups[i].1.push(it.id.clone());
-        groups[i].2 += it.size.unwrap_or(0);
+        groups[i].2 += rest_item(it);
     }
     // a leftover that holds work of its own, or wasn't read, is for Settings → Worktrees, by hand
     for l in wt.leftovers.iter().filter(|l| l.only == Some(0)) {
         groups[3].1.push(l.name.clone());
-        groups[3].2 += l.size.unwrap_or(0);
+        groups[3].2 += l.size.unwrap_or(0).saturating_sub(l.build.unwrap_or(0));
     }
-    groups
+    let (ids, lefts, bytes) = build;
+    let first = (!ids.is_empty() || !lefts.is_empty()).then(|| {
+        let count = u32::try_from(ids.len() + lefts.len()).unwrap_or(u32::MAX);
+        let mut extra = Map::new();
+        extra.insert("leftovers".into(), Value::from(lefts));
+        extra.insert("folders".into(), Value::Array(folders.into_iter().map(|(_, v)| v).collect()));
+        ReclaimGroup { kind: "build".to_owned(), count, bytes, ids, extra }
+    });
+    first
         .into_iter()
-        .filter(|g| !g.1.is_empty())
-        .map(|(kind, ids, bytes)| ReclaimGroup {
+        .chain(groups.into_iter().filter(|g| !g.1.is_empty()).map(|(kind, ids, bytes)| ReclaimGroup {
             kind: kind.to_owned(),
             count: u32::try_from(ids.len()).unwrap_or(u32::MAX),
             bytes,
             ids,
             extra: Map::new(),
-        })
+        }))
         .collect()
 }
 
@@ -281,5 +315,53 @@ pub fn build(v: ViewInput<'_>, mut reclaim: Vec<ReclaimGroup>) -> MachineView {
         leftover_groups: v.groups,
         history: v.history,
         reclaim,
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod reclaim_tests {
+    use super::*;
+
+    const GB: u64 = 1024 * 1024 * 1024;
+
+    fn done(id: &str) -> TaskInfo {
+        TaskInfo { id: id.into(), title: "Fix the list".into(), state: "done".into(), ..TaskInfo::default() }
+    }
+
+    /// The disk that filled (2026-11-27): a left-over folder with 580 changed files and a 120 GB `target/` counted for
+    /// nothing, since the leftover group takes only folders with no work of their own. Its build output counts now.
+    #[test]
+    fn a_leftover_with_work_counts_its_build_output() {
+        let wt = WtView {
+            leftovers: vec![WtLeftover { name: "wisp-8fb6".into(), size: Some(127 * GB), only: Some(580), build: Some(120 * GB) }],
+            ..WtView::default()
+        };
+        let g = reclaim(Some(&wt), &|_| None);
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].kind, "build");
+        assert_eq!(g[0].bytes, 120 * GB);
+        assert_eq!(g[0].ids, Vec::<String>::new());
+        assert_eq!(g[0].extra["leftovers"], serde_json::json!(["wisp-8fb6"]));
+    }
+
+    #[test]
+    fn groups_dont_count_a_folders_build_output_twice_and_a_busy_one_keeps_its() {
+        let wt = WtView {
+            items: vec![
+                WtItem { id: "d".into(), idle: true, size: Some(10 * GB), busy: false, build: Some(8 * GB) },
+                WtItem { id: "run".into(), idle: false, size: Some(5 * GB), busy: true, build: Some(4 * GB) },
+            ],
+            leftovers: vec![WtLeftover { name: "clean".into(), size: Some(3 * GB), only: Some(0), build: Some(GB) }],
+            ..WtView::default()
+        };
+        let g = reclaim(Some(&wt), &|id| (id == "d").then(|| done(id)));
+        let kinds: Vec<(&str, u64)> = g.iter().map(|x| (x.kind.as_str(), x.bytes / GB)).collect();
+        assert_eq!(kinds, vec![("build", 9), ("done", 2), ("leftover", 2)]);
+        assert_eq!(g[0].ids, vec!["d"]);
+        assert_eq!(g[0].extra["folders"][0]["title"], "Fix the list");
+        assert_eq!(g[0].extra["folders"][1]["leftover"], true, "biggest first: the task's 8 GB, then the leftover's 1 GB");
+        let total: u64 = g.iter().map(|x| x.bytes).sum();
+        assert_eq!(total, 13 * GB, "everything but the running task's folder");
     }
 }

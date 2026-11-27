@@ -196,7 +196,7 @@ async fn a_leftover_that_is_a_full_clone_is_skipped() {
     std::fs::write(clone.join("work.txt"), "mine\n").unwrap();
     let c = Cleanup::new(e, MemPort::new(Vec::new(), WtSettings::default()), user());
     c.scan().await;
-    let args = CleanArgs { ids: Some(Vec::new()), leftovers: vec!["a-clone".into()], force: true };
+    let args = CleanArgs { ids: Some(Vec::new()), leftovers: vec!["a-clone".into()], force: true, ..CleanArgs::default() };
     assert_eq!(c.clean(args).await.unwrap().queued, 1);
     tokio::time::timeout(Duration::from_secs(20), async {
         while c.view(false).await.cleaning.is_some() {

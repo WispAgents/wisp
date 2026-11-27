@@ -13,6 +13,7 @@ use wisp_proc::ExecOpts;
 use wisp_worktrees_api::{
     CleanArgs, CleanOut, CleanedRecord, Disk, ItemRow, LeftoverRow, Progress, RemoveOpts, Standing, SweepOut, Worktree, WorktreesView,
 };
+use wisp_worktrees_core::build;
 use wisp_worktrees_core::sweep::{self, DiskLimits, Policy, TaskSnap, TreeSnap};
 
 use crate::engine::Engine;
@@ -32,6 +33,8 @@ struct Seen {
     at: i64,
     trees: HashMap<String, Look>,
     sizes: HashMap<String, u64>,
+    /// each worktree's build output (path, bytes), from the same du (ADR-0144)
+    builds: build::Builds,
     sized: i64,
     leftovers: Vec<String>,
     disk: Option<Disk>,
@@ -44,6 +47,8 @@ struct Seen {
 enum Job {
     Task(String, bool),
     Leftover(String),
+    /// a worktree's build output (its path): the folder stays
+    Build(String),
 }
 
 pub struct Cleanup {
@@ -61,6 +66,9 @@ pub struct Cleanup {
     look_max: std::sync::atomic::AtomicU64,
     /// a look started or ended, or a clean-up moved: the pane's rows are republished (`pane::publish`)
     pub changed: tokio::sync::Notify,
+    /// a clean-up that ended and wasn't told yet: the publish loop emits it (`worktrees.cleaned`), and This computer
+    /// samples again at once instead of showing the folders for up to a minute
+    cleaned: std::sync::Mutex<Option<CleanedRecord>>,
 }
 
 impl std::fmt::Debug for Cleanup {
@@ -71,6 +79,11 @@ impl std::fmt::Debug for Cleanup {
 
 fn dir_of(e: &Engine) -> String {
     format!("{}/worktrees", e.home.trim_end_matches('/'))
+}
+
+/// A worktree's build output in bytes (0: none found).
+fn build_bytes(b: &build::Builds, tree: &str) -> u64 {
+    b.get(tree).map_or(0, |v| v.iter().map(|(_, n)| n).sum())
 }
 
 /// A task's folders that are wisp's (foreign ones are never counted or touched).
@@ -93,12 +106,18 @@ impl Cleanup {
             sizing: Mutex::new(()),
             look_max: sweep::LOOK_MAX_MS.into(),
             changed: tokio::sync::Notify::new(),
+            cleaned: std::sync::Mutex::new(None),
         })
     }
 
     /// The longest a look may run from now on (a test's).
     pub fn set_look_max(&self, ms: u64) {
         self.look_max.store(ms, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The clean-up that ended since the last ask, once.
+    pub fn take_cleaned(&self) -> Option<CleanedRecord> {
+        self.cleaned.lock().ok().and_then(|mut c| c.take())
     }
 
     fn cleaning(&self) -> Option<Progress> {
@@ -127,9 +146,10 @@ impl Cleanup {
             tokio::select! {
                 () = owner.cancelled() => {}
                 z = me.du(&dir) => {
-                    if let Some(z) = z {
+                    if let Some((z, b)) = z {
                         let mut s = me.seen.lock().await;
                         s.sizes = z;
+                        s.builds = b;
                         s.sized = now;
                         s.changed = false;
                     }
@@ -139,18 +159,19 @@ impl Cleanup {
         })
     }
 
-    async fn du(&self, dir: &str) -> Option<HashMap<String, u64>> {
+    /// Each worktree's size and its build output, in one `du` a few levels deep (it reads every file either way).
+    async fn du(&self, dir: &str) -> Option<(HashMap<String, u64>, build::Builds)> {
         let r = self
             .engine
             .proc
             .exec(
                 "du",
-                &["-k".into(), "-d".into(), "1".into(), dir.into()],
+                &["-k".into(), "-d".into(), build::DEPTH.to_string(), dir.into()],
                 ExecOpts { timeout: Some(std::time::Duration::from_secs(120)), ..ExecOpts::default() },
             )
             .await
             .ok()?;
-        Some(sweep::parse_du(&r.stdout_text(), dir).into_iter().collect())
+        Some(build::parse_du(&r.stdout_text(), dir))
     }
 
     /// The free and total of the disk `dir` is on: read on the nearest folder that's there (a fresh home has no
@@ -200,9 +221,16 @@ impl Cleanup {
     async fn look(self: &Arc<Self>) {
         let now = self.engine.clock.now_ms();
         let dir = dir_of(&self.engine);
+        // a folder with no size yet (a leftover that came since the last du) makes one due too: else it showed no size and
+        // no build output for up to 6 h, the hours a disk fills in
+        let here = fsx::entries(&dir).await;
+        let new_folder = {
+            let s = self.seen.lock().await;
+            here.iter().any(|(n, d)| *d && !s.sizes.contains_key(&fsx::join(&dir, n)))
+        };
         let (prev_trees, sized, changed) = {
             let s = self.seen.lock().await;
-            (s.trees.clone(), s.sized, s.changed)
+            (s.trees.clone(), s.sized, s.changed || new_folder)
         };
         // the sizes on their own (audit E6: `du` over ~60 worktrees, given 120 s, came before every other part of a look
         // cut at 90 s, so no look ever ended): they land when du does; the look waits for them at most half its time
@@ -367,11 +395,19 @@ impl Cleanup {
         let tasks = self.port.tasks().await;
         let snaps = self.snaps(&tasks).await;
         let (p, st) = self.policy().await;
+        let builds = {
+            let seen = self.seen.lock().await;
+            (seen.sized != 0).then(|| seen.builds.clone())
+        };
         let items: Vec<ItemRow> = snaps
             .iter()
             .filter(|s| s.held_count() > 0)
             .map(|s| {
                 let status = sweep::standing(s);
+                let build = builds
+                    .as_ref()
+                    .filter(|_| s.size().is_some())
+                    .map(|b| s.trees.iter().filter(|t| t.on_disk).map(|t| build_bytes(b, &t.path)).sum());
                 ItemRow {
                     id: s.id.clone(),
                     title: s.title.clone(),
@@ -382,6 +418,7 @@ impl Cleanup {
                     size: s.size(),
                     used_at: s.used_at(),
                     clean_at: (status == Standing::Idle).then(|| sweep::clean_at(s, &p)).flatten(),
+                    build,
                 }
             })
             .collect();
@@ -397,6 +434,7 @@ impl Cleanup {
                     size: seen.sizes.get(&path).copied(),
                     only: l.and_then(|l| l.only),
                     used_at: l.map_or(0, |l| l.touched),
+                    build: builds.as_ref().filter(|_| seen.sizes.contains_key(&path)).map(|b| build_bytes(b, &path)),
                 });
             }
         }
@@ -421,6 +459,9 @@ impl Cleanup {
         if self.seen.lock().await.at == 0 {
             self.scan().await; // what it finds stale, the removal reads again
         }
+        if args.build {
+            return self.clean_build(args).await;
+        }
         let tasks = self.port.tasks().await;
         let snaps = self.snaps(&tasks).await;
         let known = self.seen.lock().await.leftovers.clone();
@@ -440,6 +481,85 @@ impl Cleanup {
             tokio::spawn(async move { me.work(false).await });
         }
         Ok(CleanOut { queued: u32::try_from(queued).unwrap_or(u32::MAX), skipped: picked.skipped })
+    }
+
+    /// Clean up's build-output-only form: the named tasks' folders (None: every one not in use) and leftovers lose their
+    /// build output; the folders, branches and changes stay (ADR-0144).
+    async fn clean_build(self: &Arc<Self>, args: CleanArgs) -> Result<CleanOut> {
+        let tasks = self.port.tasks().await;
+        let dir = dir_of(&self.engine);
+        let known = self.seen.lock().await.leftovers.clone();
+        let mut trees = Vec::new();
+        let mut skipped = Vec::new();
+        // no ids: every task's, but only when no leftovers are named (as `pick_clean`): one leftover's Remove took the
+        // build output of every task folder on the machine before this
+        let every = args.ids.is_none() && args.leftovers.is_empty();
+        for t in tasks.iter().filter(|t| if every { true } else { args.ids.as_ref().is_some_and(|ids| ids.contains(&t.id)) }) {
+            if t.busy {
+                skipped.push(t.id.clone());
+                continue;
+            }
+            trees.extend(own_trees(&self.engine, t).into_iter().map(|w| w.path.clone()));
+        }
+        for name in &args.leftovers {
+            if !sweep::valid_leftover(name) || !known.contains(name) {
+                return Err(WtError::Invalid(format!("Not a leftover worktree: {name}")));
+            }
+            trees.push(fsx::join(&dir, name));
+        }
+        let builds = self.seen.lock().await.builds.clone();
+        trees.retain(|t| build_bytes(&builds, t) > 0);
+        let queued = trees.len();
+        self.queue.lock().await.extend(trees.into_iter().map(Job::Build));
+        if queued > 0 && self.cleaning().is_none() {
+            let me = self.clone();
+            tokio::spawn(async move { me.work(false).await });
+        }
+        Ok(CleanOut { queued: u32::try_from(queued).unwrap_or(u32::MAX), skipped })
+    }
+
+    /// A worktree's build output, each folder checked again right before it goes: still inside the worktree, named as
+    /// build output, ignored by git there, a `target` cargo's (its `CACHEDIR.TAG`), and no task working in it.
+    async fn trim(&self, tree: &str) -> (bool, u64) {
+        let busy = self.port.tasks().await.iter().any(|t| t.busy && own_trees(&self.engine, t).iter().any(|w| w.path == tree))
+            || self.port.extra_in_use(tree.to_owned()).await;
+        if busy || Self::a_clone(tree).await {
+            return (false, 0);
+        }
+        let list = self.seen.lock().await.builds.get(tree).cloned().unwrap_or_default();
+        let mut freed = 0;
+        for (path, bytes) in list {
+            let Some(rel) = path.strip_prefix(tree).and_then(|r| r.strip_prefix('/')) else { continue };
+            if !build::removable(rel) || !fsx::exists(&path).await {
+                continue;
+            }
+            if rel.rsplit('/').next() == Some("target") && !fsx::exists(fsx::join(&path, "CACHEDIR.TAG")).await {
+                continue;
+            }
+            let ignored = self
+                .engine
+                .proc
+                .exec(
+                    "git",
+                    &["-C".into(), tree.into(), "check-ignore".into(), "-q".into(), rel.into()],
+                    ExecOpts { timeout: Some(std::time::Duration::from_secs(10)), ..ExecOpts::default() },
+                )
+                .await
+                .is_ok_and(|r| r.exit.success());
+            if !ignored {
+                continue;
+            }
+            fsx::rm_rf(&path).await;
+            if !fsx::exists(&path).await {
+                freed += bytes;
+            }
+        }
+        let mut s = self.seen.lock().await;
+        s.builds.remove(tree);
+        if let Some(z) = s.sizes.get_mut(tree) {
+            *z = z.saturating_sub(freed);
+        }
+        (freed > 0, freed)
     }
 
     async fn work(&self, auto: bool) -> Option<CleanedRecord> {
@@ -476,6 +596,10 @@ impl Cleanup {
         seen.changed = true;
         drop(seen);
         let rec = CleanedRecord { at: self.engine.clock.now_ms(), count, freed, auto };
+        if let Ok(mut c) = self.cleaned.lock() {
+            *c = Some(rec);
+        }
+        self.changed.notify_one();
         let mut st = self.port.settings().await;
         st.last = Some(rec);
         self.port.save_settings(st).await;
@@ -486,6 +610,7 @@ impl Cleanup {
     async fn run_job(&self, job: Job) -> (bool, u64) {
         let dir = dir_of(&self.engine);
         match job {
+            Job::Build(tree) => self.trim(&tree).await,
             Job::Leftover(name) => {
                 let path = fsx::join(&dir, &name);
                 let size = self.seen.lock().await.sizes.get(&path).copied().unwrap_or(0);
@@ -556,15 +681,57 @@ impl Cleanup {
         let tasks = self.port.tasks().await;
         let snaps = self.snaps(&tasks).await;
         let (p, _) = self.policy().await;
+        // a low disk takes build output first: nothing of anyone's work goes, and it's often most of the space (ADR-0144)
+        let trimmed = self.trim_low(&snaps, limits).await;
         let disk = self.seen.lock().await.disk;
         let ids = sweep::plan_sweep(&snaps, &p, disk, limits, self.engine.clock.now_ms());
         if ids.is_empty() {
-            return SweepOut::default();
+            return SweepOut { removed: trimmed, skipped: None };
         }
         let n = u32::try_from(ids.len()).unwrap_or(u32::MAX);
         self.queue.lock().await.extend(ids.into_iter().map(|id| Job::Task(id, false)));
         self.work(true).await;
-        SweepOut { removed: n, skipped: None }
+        SweepOut { removed: n + trimmed, skipped: None }
+    }
+
+    /// Under `limits.low` free: the build output of left-over folders, then of idle tasks', oldest first, until
+    /// `limits.enough` (`build::plan`). How many folders lost theirs.
+    async fn trim_low(&self, snaps: &[TaskSnap], limits: DiskLimits) -> u32 {
+        let now = self.engine.clock.now_ms();
+        let dir = dir_of(&self.engine);
+        let (cands, disk) = {
+            let s = self.seen.lock().await;
+            let mut c: Vec<build::Trim> = s
+                .leftovers
+                .iter()
+                .map(|n| fsx::join(&dir, n))
+                .map(|p| build::Trim {
+                    bytes: build_bytes(&s.builds, &p),
+                    used_at: s.trees.get(&p).map_or(0, |l| l.touched),
+                    leftover: true,
+                    tree: p,
+                })
+                .collect();
+            for t in snaps.iter().filter(|t| !t.busy) {
+                for tr in t.trees.iter().filter(|x| x.on_disk) {
+                    c.push(build::Trim {
+                        tree: tr.path.clone(),
+                        bytes: build_bytes(&s.builds, &tr.path),
+                        used_at: t.used_at(),
+                        leftover: false,
+                    });
+                }
+            }
+            (c, s.disk)
+        };
+        let trees = build::plan(&cands, disk, limits.low, limits.enough, now);
+        if trees.is_empty() {
+            return 0;
+        }
+        let n = u32::try_from(trees.len()).unwrap_or(u32::MAX);
+        self.queue.lock().await.extend(trees.into_iter().map(Job::Build));
+        self.work(true).await;
+        n
     }
 
     /// Is the count of task folders past the cap (a sweep comes a few minutes on)?

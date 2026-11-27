@@ -32,6 +32,33 @@ fn sample_row(def: &EntityDef) -> Row {
     def.columns.iter().map(|(c, t)| ((*c).to_owned(), value(c, *t))).collect()
 }
 
+/// The topics every row of a kind is on, whatever it holds: a plugin's table on one topic of its own
+/// (`plugin:wisp.machine:snapshot`). Asked of the kind's `topics` with three rows that differ in every column (nulls,
+/// then two sets of values): the same non-empty answer each time is a whole-table topic, and a first look at it reads
+/// the table. Without this a first look rebuilt it from the change feed: a 30 KB row rewritten every 10 s took 10–12 s
+/// to replay, and once retention had pruned the feed's start it read empty for good (the page stayed on "Reading…").
+fn fixed_topics(def: &EntityDef) -> Vec<Topic> {
+    let row = |n: u8| -> Row {
+        def.columns
+            .iter()
+            .map(|(c, t)| {
+                let v = match (n, t) {
+                    (0, _) => Value::Null,
+                    _ if def.json_columns.contains(c) => serde_json::json!({ "probe": n }),
+                    (_, Col::Text) => Value::from(format!("\u{0}probe{n}")),
+                    (_, Col::Int) => Value::from(i64::from(n) * 7_919),
+                    (_, Col::Real) => Value::from(f64::from(n) * 0.5),
+                    (_, Col::Bool) => Value::Bool(n == 1),
+                };
+                ((*c).to_owned(), v)
+            })
+            .collect()
+    };
+    let first = (def.topics)(&row(0));
+    let fixed = !first.is_empty() && (1..=2).all(|n| (def.topics)(&row(n)) == first);
+    if fixed { first } else { Vec::new() }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Col {
     Text,
@@ -112,6 +139,8 @@ pub(crate) struct Kind {
     pub select_list: String,
     pub get_sql: String,
     pub del_sql: String,
+    /// the topics every row is on ([`fixed_topics`]): a first look at one reads the whole table
+    pub whole: Vec<Topic>,
     /// INSERT/UPSERT/UPDATE … RETURNING per set of present columns (a bit mask)
     sql_cache: Mutex<HashMap<(Shape, u64), Arc<str>>>,
 }
@@ -171,7 +200,8 @@ impl Kind {
         let select_list = def.columns.iter().map(|(c, _)| format!("\"{c}\"")).collect::<Vec<_>>().join(", ");
         let get_sql = format!("SELECT {select_list} FROM \"{}\" WHERE \"{}\" = ?", def.table, def.key);
         let del_sql = format!("DELETE FROM \"{}\" WHERE \"{}\" = ?", def.table, def.key);
-        Ok(Self { def, how, key_pos, parent_pos, select_list, get_sql, del_sql, sql_cache: Mutex::new(HashMap::new()) })
+        let whole = fixed_topics(&def);
+        Ok(Self { def, how, key_pos, parent_pos, select_list, get_sql, del_sql, whole, sql_cache: Mutex::new(HashMap::new()) })
     }
 
     pub fn name(&self) -> &'static str {

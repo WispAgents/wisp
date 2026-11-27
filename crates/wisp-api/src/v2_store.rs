@@ -242,6 +242,19 @@ fn read_topic(r: &Reader<'_>, s: TopicReads<'_>, topic: &str, since: Option<u64>
     if let Some(rows) = full_rows(r, sources, topic)? {
         return Ok(Read { seq: seq(head), rows, full: true, deleted: Vec::new() });
     }
+    // a plugin's table on a topic of its own (every row on it, `Reader::whole_kinds`): the table as it is, never the feed
+    // replayed (slow for a big row rewritten often, and empty for good once retention pruned the feed's start)
+    let whole = r.whole_kinds(topic);
+    if !whole.is_empty() {
+        let mut rows = Vec::new();
+        for (kind, key) in whole {
+            let text = r.query_json(kind, &wisp_store::Query::new())?;
+            let found: Vec<Map<String, Value>> =
+                serde_json::from_str(&text).map_err(|e| wisp_store::StoreError::Internal(format!("{kind}: {e}")))?;
+            rows.extend(found.into_iter().map(|v| Row { e: kind.to_owned(), id: id_text(v.get(key)), v: Value::Object(v) }));
+        }
+        return Ok(Read { seq: seq(head), rows, full: true, deleted: Vec::new() });
+    }
     if let Some(d) = r.changed_since(topic, 0)? {
         return Ok(delta_read(d, true, key_of));
     }

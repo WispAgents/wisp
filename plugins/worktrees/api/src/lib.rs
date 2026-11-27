@@ -187,6 +187,10 @@ pub struct CleanArgs {
     #[serde(default)]
     #[ts(as = "Option<bool>", optional)]
     pub force: bool,
+    /// only their build output (`target/`, `node_modules/`, …): the folders, their branches and their changes stay (ADR-0144)
+    #[serde(default)]
+    #[ts(as = "Option<bool>", optional)]
+    pub build: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

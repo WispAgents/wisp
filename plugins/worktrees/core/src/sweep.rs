@@ -3,7 +3,8 @@
 //! Done one after a day; the rest after `worktreeCleanup` days (counted from the upgrade for those who
 //! never chose); past `worktreeMax` folders the oldest until it fits; under 10 GB free the oldest until
 //! 15 GB. Only what can come back goes (the branch stays). In use, kept, parked, on an open PR, or
-//! holding anything only its folder has: skipped. Leftovers are only ever removed by hand.
+//! holding anything only its folder has: skipped. Leftovers are only ever removed by hand; a low disk takes their
+//! build output first (`build`).
 //! Pure: the host gathers `TaskSnap`s (from runtime) and the last look, then does what this decides.
 
 use wisp_worktrees_api::{Disk, Standing};

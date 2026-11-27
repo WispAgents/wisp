@@ -57,9 +57,15 @@ export interface MachineCommands {
   readonly stopPid: CommandDef<{ pid: number }>;
   readonly pause: CommandDef<{ until: number }>;
   readonly clean: CommandDef<{ ids?: readonly string[]; leftovers?: readonly string[] }>;
+  /** build output only (ADR-0144): it runs in the background, a big `target/` for a minute, so each row shows
+   * Removing… until it leaves the snapshot, which the peer samples again the moment the clean-up ends */
+  readonly cleanBuild: CommandDef<{ ids: readonly string[]; leftovers?: readonly string[]; build: true }>;
   readonly harnessClean: CommandDef<{ ids?: readonly string[] }, { removed: number; freed: number }>;
   readonly fix: CommandDef<{ group: string }, { crew?: string; session?: string; queued?: boolean }>;
   readonly later: CommandDef<{ sessionId: string; text: string; at: number }>;
+  /** a reading now: the page opening, or a removal sent (the peer samples every 10 s for the next 30 s, then once a
+   * minute again; the kernel has no hook yet that tells it someone watches) */
+  readonly read: CommandDef<Record<string, never>>;
 }
 
 /** The commands for one peer's machine: their owner is that peer, whatever the args. */
@@ -71,10 +77,12 @@ export function machineCommands(peer: PeerId): MachineCommands {
       id: 'worktrees.clean',
       owner: () => peer,
       // the group these ids make up goes (worktrees.clean takes task ids, or folder names for leftovers)
-      optimistic: (base, a) => dropFrom(base, peer, 'reclaim', (x) => (a.leftovers ? x.kind === 'leftover' : x.kind !== 'leftover' && x.kind !== 'harness' && covers(a.ids, x))),
+      optimistic: (base, a) => dropFrom(base, peer, 'reclaim', (x) => (a.leftovers ? x.kind === 'leftover' : x.kind !== 'leftover' && x.kind !== 'harness' && x.kind !== 'build' && covers(a.ids, x))),
     }),
+    cleanBuild: defineCommand({ id: 'worktrees.clean', owner: () => peer, optimistic: 'none', pending: 'the build output row, which says Removing…' }),
     harnessClean: defineCommand({ id: 'machine.harness.clean', owner: () => peer, optimistic: 'none', pending: 'the machine.harness.clean control' }),
     fix: defineCommand({ id: 'machine.fix', owner: () => peer, optimistic: 'none', pending: 'the machine.fix control' }),
+    read: defineCommand({ id: 'machine.read', owner: () => peer, optimistic: 'none', pending: 'the This computer pane, which shows its skeleton' }),
     later: defineCommand({ id: 'later.add', owner: (a) => entityKey(peer, a.sessionId), optimistic: 'none', pending: 'the later.add control' }),
   };
 }

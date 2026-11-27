@@ -1,7 +1,7 @@
 // This Mac's words and sums (design/machine-page.md), DOM-free: v1 web/js/machine-view.js, with the
 // copy moved to the catalogue. Everything takes `now` and a `t`, so tests pin both.
 
-import type { HistoryPoint, MachineLoad, MachineSnapshot, ReclaimGroup, ReclaimKind } from './types.ts';
+import type { BuildGroup, HistoryPoint, MachineLoad, MachineSnapshot, ReclaimGroup, ReclaimKind } from './types.ts';
 import './i18n/lazy.ts';
 import { STATIC_NAME_KEY } from './names.ts';
 
@@ -113,8 +113,52 @@ export function usingRows(m: MachineSnapshot | undefined, t: T): UsingRow[] {
 /** wisp's own server: the last row, no actions. */
 export const wispRow = (m: MachineSnapshot): UsingRow => ({ key: 'wisp', kind: 'wisp', id: 'wisp', title: 'wisp', rss: m.wisp.rss, cpu: m.wisp.cpu, procs: 1, bytes: null, ids: [] });
 
-/** Free up space, safest first; `safe` ones go without asking. */
+/** Free up space's groups, safest first; `build` has its own section (Build output), folder by folder. */
 export const RECLAIM_ORDER: readonly ReclaimKind[] = ['merged', 'done', 'crew', 'leftover'];
+
+/** The build group, when there's build output to take. */
+export function buildGroup(m: MachineSnapshot | undefined): BuildGroup | undefined {
+  return m?.reclaim.find((g): g is BuildGroup => g.kind === 'build' && g.bytes > 0);
+}
+
+/** A part of the disk bar. */
+export interface DiskPart {
+  readonly key: string;
+  readonly label: string;
+  readonly value: number;
+  readonly tone: 'warn' | 'accent' | 'faint';
+}
+
+/** The disk bar: build output, the rest of wisp's folders, everything else, then free (the track). */
+export function diskParts(m: MachineSnapshot | undefined, t: T): DiskPart[] {
+  if (!m || !m.disk.total) return [];
+  const total = m.disk.total;
+  const used = Math.max(0, total - m.disk.free);
+  const build = Math.min(buildGroup(m)?.bytes ?? 0, used);
+  const wisp = Math.max(0, Math.min((m.disk.worktrees ?? 0) - build, used - build));
+  const other = Math.max(0, used - build - wisp);
+  const parts: DiskPart[] = [
+    { key: 'build', label: t('machine.space.part.build', { size: size(build) }), value: build / total, tone: 'warn' },
+    { key: 'wisp', label: t('machine.space.part.wisp', { size: size(wisp) }), value: wisp / total, tone: 'accent' },
+    { key: 'other', label: t('machine.space.part.other', { size: size(other) }), value: other / total, tone: 'faint' },
+  ];
+  return parts.filter((p) => p.value > 0);
+}
+
+/** Under this much free, the disk is short: the sweep takes build output, then idle folders (worktrees' LOW_DISK). */
+const LOW_DISK = 10 * GB;
+
+/** What the top of the page warns about, the worst first: a disk running out, then memory under the floor. */
+export type Alert = { readonly kind: 'disk'; readonly free: number; readonly build: number } | { readonly kind: 'memory'; readonly free: number };
+
+export function alertOf(m: MachineSnapshot | undefined): Alert | undefined {
+  if (!m) return undefined;
+  const { free, total } = m.disk;
+  if (total > 0 && (free < LOW_DISK || free / total < 0.05)) return { kind: 'disk', free, build: buildGroup(m)?.bytes ?? 0 };
+  const mem = m.mem.freePct;
+  if (mem !== null && m.guard.floor !== null && mem < m.guard.floor) return { kind: 'memory', free: mem };
+  return undefined;
+}
 
 export interface ReclaimRow extends ReclaimGroup {
   readonly kind: ReclaimKind;
@@ -248,4 +292,132 @@ export function stopAsk(x: Pick<UsingRow, 'kind' | 'title' | 'ids'>, t: T, carry
   return carryOn === undefined
     ? { title: t('machine.stop.title', { what }), body: t('machine.stop.body') }
     : { title: t('machine.stop.nowTitle', { what }), body: t('machine.stop.nowBody', { at: carryOn }) };
+}
+
+// ---------- Overview (ADR-0144: status first) ----------
+
+/** The line on top: is this computer OK, in one sentence, and the facts behind it. */
+export interface Status {
+  readonly tone: 'good' | 'warn' | 'bad';
+  readonly title: string;
+  readonly detail: string;
+}
+
+export function statusOf(m: MachineSnapshot, now: number, t: T): Status {
+  const g = m.guard;
+  const runs = m.tasks.length;
+  const facts = [
+    automationsLine(m, 0, now, t),
+    runs ? t('machine.status.runs', { count: runs }) : t('machine.status.noRuns'),
+    batteryLine(m, t),
+  ].filter(Boolean);
+  const detail = facts.join(' · ');
+  const free = m.mem.freePct;
+  if (free !== null && g.floor !== null && free < g.floor) return { tone: 'bad', title: t('machine.status.memoryShort'), detail };
+  if (m.disk.total > 0 && m.disk.free < 10 * GB) return { tone: 'bad', title: t('machine.status.diskShort'), detail };
+  if (g.pausedUntil > now) return { tone: 'warn', title: t('machine.status.paused'), detail: facts.slice(1).join(' · ') };
+  // the reason already says what it waits on (the battery, the CPU): the battery line would say it twice
+  if (g.held && g.held !== 'paused') return { tone: 'warn', title: t('machine.status.waiting'), detail: facts.slice(0, 2).join(' · ') };
+  if (m.leftovers.length) return { tone: 'warn', title: t('machine.status.leftovers', { count: m.leftovers.length }), detail };
+  return { tone: 'good', title: t('machine.status.ok'), detail };
+}
+
+/** One bar of the Overview: used share, where automations start to wait, the numbers. */
+export interface Load {
+  readonly key: 'memory' | 'cpu' | 'disk';
+  readonly name: string;
+  readonly share: number | undefined;
+  readonly mark: number | null;
+  readonly value: string;
+  readonly sub: string;
+  readonly tone: 'accent' | 'warn' | 'bad' | 'neutral';
+}
+
+export function loads(m: MachineSnapshot | undefined, t: T): Load[] {
+  const names = { memory: t('machine.gauge.memory'), cpu: t('machine.gauge.cpu'), disk: t('machine.gauge.disk') };
+  if (!m) return (['memory', 'cpu', 'disk'] as const).map((key) => ({ key, name: names[key], share: undefined, mark: null, value: '', sub: '', tone: 'accent' }));
+  const g = m.guard;
+  const free = m.mem.freePct;
+  const used = m.mem.total && free !== null ? m.mem.total * (1 - free / 100) : null;
+  const memTo = memTone(free, g.floor);
+  const all = Math.max(1, m.cpu.cores) * 100;
+  const cpu = m.cpu.pct;
+  const diskUsed = m.disk.total ? 1 - m.disk.free / m.disk.total : undefined;
+  return [
+    {
+      key: 'memory',
+      name: names.memory,
+      share: free === null ? 0 : 1 - free / 100,
+      mark: g.floor === null ? null : 1 - g.floor / 100,
+      value: used === null ? pctText(free) : t('machine.load.memory', { used: size(used), total: size(m.mem.total) }),
+      sub: g.floor === null ? t('machine.gauge.noFloor') : t('machine.load.memoryWait', { n: 100 - g.floor }),
+      tone: memTo === 'neutral' ? 'accent' : memTo,
+    },
+    {
+      key: 'cpu',
+      name: names.cpu,
+      share: cpu === null ? 0 : cpu / all,
+      mark: g.ceiling === null ? null : g.ceiling / all,
+      value: t('machine.load.cpu', { pct: pctText(cpu), count: m.cpu.cores }),
+      sub: g.ceiling === null ? t('machine.gauge.noCeiling') : t('machine.load.cpuWait', { n: g.ceiling }),
+      tone: g.ceiling !== null && (cpu ?? 0) > g.ceiling ? 'warn' : 'accent',
+    },
+    {
+      key: 'disk',
+      name: names.disk,
+      share: diskUsed,
+      mark: null,
+      value: t('machine.gauge.diskValue', { free: size(m.disk.free) || '—' }),
+      sub: m.disk.worktrees !== null ? t('machine.gauge.worktrees', { size: size(m.disk.worktrees) }) : '',
+      tone: m.disk.free < 10 * GB ? 'bad' : m.disk.free < 30 * GB ? 'warn' : 'neutral',
+    },
+  ];
+}
+
+const RUNNERS = /^(python[\d.]*|node|bun|deno|ruby|perl|php|java|sh|bash|zsh|npx|npm|pnpm|yarn|uv|uvx)$/;
+
+/** "python3 qa/parity.mjs", not "/opt/homebrew/Cellar/python@3.14/…/Python qa/parity.mjs": the program's own name,
+ *  and for an interpreter the script it runs. The whole line stays in the row's tooltip. */
+export function shortCommand(command: string): string {
+  const words = command.trim().split(/\s+/);
+  const base = (w: string): string => w.slice(w.lastIndexOf('/') + 1);
+  const exe = base(words[0] ?? '');
+  // macOS's framework Python runs as …/Python.app/Contents/MacOS/Python
+  const name = /^Python$/.test(exe) ? 'python3' : exe;
+  if (!RUNNERS.test(name)) return [name, ...words.slice(1, 2)].join(' ').slice(0, 80);
+  // `python3 -m http.server`: a module run is the module's name
+  const m = words.indexOf('-m');
+  if (m > 0 && words[m + 1]) return `${name} -m ${words[m + 1]}`;
+  const script = words.slice(1).find((w) => !w.startsWith('-'));
+  return script ? `${name} ${script.length > 40 ? base(script) : script}` : name;
+}
+
+/** The last 24 hours as two lines: memory in use and the CPU, each over its own scale (a limit sits inside it). */
+export function dayLines(m: MachineSnapshot, now: number): { from: number; memory: [number, number][]; cpu: [number, number][] } {
+  // across what the history covers (a fresh install has minutes of it, not a day squeezed into the right edge)
+  const h = m.history.filter((p) => p.at > now - 24 * HOUR);
+  const from = Math.min(now - HOUR, h[0]?.at ?? now - HOUR);
+  const x = (at: number): number => (at - from) / Math.max(1, now - from);
+  const top = Math.max(1, m.guard.ceiling ?? 0, ...h.map((p) => p.cpu ?? 0)) * 1.1;
+  return {
+    from,
+    memory: h.filter((p) => p.freePct !== null).map((p) => [x(p.at), 1 - (p.freePct ?? 0) / 100]),
+    cpu: h.filter((p) => p.cpu !== null).map((p) => [x(p.at), (p.cpu ?? 0) / top]),
+  };
+}
+
+/** The day in one sentence: the low, the peak, the busiest moment and whether anything waited. */
+export function dayLine(m: MachineSnapshot, now: number, t: T): string {
+  const d = dayStats(m.history, now);
+  if (!d) return t('machine.day.empty');
+  const peak = Math.max(0, ...m.history.filter((p) => p.at > now - 24 * HOUR).map((p) => p.cpu ?? 0));
+  return [
+    d.lowFree === null ? '' : t('machine.day.lowLine', { pct: pctText(d.lowFree) }),
+    t('machine.day.peakLine', { pct: pctText(peak) }),
+    t('machine.day.runsLine', { count: d.peakRuns }),
+    d.waited ? t('machine.day.waitedLine', { span: span(d.waited, t) }) : t('machine.day.neverWaited'),
+    d.freed ? t('machine.day.freedLine', { size: size(d.freed) }) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }

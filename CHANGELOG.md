@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **This computer, in three tabs.** Overview opens on one line that says whether the computer is fine and why (memory short, disk almost full, automations waiting, a process left running, or *Room to spare*), then memory, CPU and disk as bars with a mark where automations start to wait, what needs you, what runs now, and the last 24 hours as a chart and one sentence. A process left running is named by what it runs (`python3 -m http.server`), not its interpreter's path. Space has the disk as one bar (build output, wisp's folders, everything else, free), each folder's build output with Remove and Remove all, Free up space and the harnesses' folders. Limits has automations. A warning on top says when the disk runs short, with one button that frees the build output, or when memory is under the floor (ADR-0144).
+- **Build output goes first.** `target/`, `node_modules/` and other folders the next build makes again can be removed on their own, from Space or with `wisp worktrees clean --build`. The folder, its branch and its uncommitted changes stay. Under 10 GB free, the hourly cleanup removes the build output of left-over folders, then of idle tasks', before it removes any folder (ADR-0144).
 - **Merge risk.** Turn on Settings → General → Merge risk, and another harness than the one that wrote a task reads each of its open pull requests (the ones Ship it opened and the ones its agent attached) and says how risky merging is: low, medium or high, a score and why. The PR card gets a Merge risk row under the Steward with the riskiest PR's verdict, each PR's chip says its own, the PR panel lists the reasons with Judge again, and Merge turns red for a PR judged high. A push judges that PR again. Off by default (ADR-0143).
 - **A crew member's page is now a profile.** It opens on the member: their face in a glow of their colour, the name
   and role, chips for what they're doing, their harness, what wakes them and their folder, and their numbers (jobs
@@ -51,6 +53,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **This computer no longer stays on "Reading…".** A first look rebuilt the page's data from a week of saved changes (10–12 s), and once older ones were pruned it found nothing, for good. It reads the data as it is now. The same fix applies to every plugin pane whose data sits on a topic of its own (ADR-0144).
+- **A left-over worktree no longer fills the disk unseen.** "Can go" counted only left-over folders with no changes, so one with 580 changed screenshots and a 120 GB `target/` counted for nothing. Their build output counts now, and a low disk removes it (ADR-0144).
+- **Remove on This computer shows what it does.** A row says Removing… until it's gone, one harness's Remove no longer puts every row in waiting, the page updates the moment a cleanup ends instead of up to a minute later, and its toasts show (they went to a toaster that was never on screen).
+- **wisp.db grows ~6× slower while This computer is open or a task runs.** The page's 24 h history was rewritten into the change log every 10 s (7 days of it was 1.5 GB). It's written once a minute, when a point is added.
 - `wisp serve` with this home's wisp already running attaches to it and prints its address (exit 0), on its port or any `--port`; it said "port 4477 is in use: is wisp already running?" and exited 1.
 - **Sandbox: a project with a huge new folder says which folder, instead of a screen of git output.** Starting a
   sandbox from a checkout with a big untracked build folder (an 87 GB `target-agents/`) and nested agent worktrees

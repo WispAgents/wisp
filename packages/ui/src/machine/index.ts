@@ -2,3 +2,4 @@
 // fixed columns.
 export { Gauge, Gauges, Sparkline, sparkPath, type GaugeProps, type GaugesProps, type SparklineProps, type SparkPoint } from './Gauge.tsx';
 export { UsageHead, UsageList, UsageRow, UsageSkeleton, type UsageCell, type UsageHeadProps, type UsageRowProps } from './UsageRow.tsx';
+export { DayLines, LoadRow, type DayLine, type DayLinesProps, type LoadRowProps } from './Load.tsx';

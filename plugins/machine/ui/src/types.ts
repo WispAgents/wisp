@@ -73,7 +73,17 @@ export interface HistoryPoint {
   readonly worktreeBytes: number | null;
 }
 
-export type ReclaimKind = 'merged' | 'done' | 'crew' | 'leftover';
+export type ReclaimKind = 'build' | 'merged' | 'done' | 'crew' | 'leftover';
+
+/** One folder of the build group: a task's (`id` is the task) or a left-over folder's (`id` is its name). */
+export interface BuildFolder {
+  readonly id: string;
+  readonly title: string;
+  readonly bytes: number;
+  readonly leftover: boolean;
+  /** a leftover's files of its own (uncommitted work), which stay */
+  readonly only?: number | null;
+}
 
 export interface ReclaimGroup {
   readonly kind: ReclaimKind | 'harness';
@@ -89,6 +99,13 @@ export interface HarnessDisk {
   readonly parts: readonly { readonly label: string; readonly path: string; readonly bytes: number }[];
   readonly removable: { readonly count: number; readonly bytes: number };
   readonly how: string;
+}
+
+/** The build output of every folder no task is working in (ADR-0144): `ids` are tasks, `leftovers` folder names. */
+export interface BuildGroup extends ReclaimGroup {
+  readonly kind: 'build';
+  readonly leftovers: readonly string[];
+  readonly folders: readonly BuildFolder[];
 }
 
 export interface HarnessGroup extends ReclaimGroup {
@@ -113,7 +130,7 @@ export interface MachineSnapshot {
   /** the store's column names: snake case where two words */
   readonly leftover_groups: readonly LeftoverGroup[];
   readonly history: readonly HistoryPoint[];
-  readonly reclaim: readonly (ReclaimGroup | HarnessGroup)[];
+  readonly reclaim: readonly (ReclaimGroup | BuildGroup | HarnessGroup)[];
   /** Settings → Worktrees' automatic cleanup, in idle days, or 'off' */
   readonly cleanup?: string;
 }

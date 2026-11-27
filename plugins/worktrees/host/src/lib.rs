@@ -307,6 +307,9 @@ impl Plugin for WorktreesPlugin {
                 loop {
                     changed.changed.notified().await;
                     pub_st.refresh(&pub_ctx).await;
+                    if let Some(rec) = changed.take_cleaned() {
+                        pub_ctx.emit(&pub_ctx.root_call(), &api::WorktreesCleaned(rec));
+                    }
                 }
             });
             let mut set = port.settings().await;

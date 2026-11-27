@@ -1,63 +1,21 @@
 // This Mac (This PC, This computer): what agents cost the computer, and acting on it
-// (design/machine-page.md). Top to bottom: gauges with their last hour, what's using it, what was
-// left behind, space to free, the harnesses' folders, automations, the last 24 hours. Painted
-// from the cached row first (first paint comes from IndexedDB), then kept live by the topic.
+// (design/machine-page.md). A warning on top when the disk or memory runs short, then three tabs: Overview (a status
+// line, memory/CPU/disk bars with their wait marks, what needs you, what runs now, the last 24 hours), Space (the disk as one bar, build
+// output folder by folder, space to free, the harnesses' folders) and Limits (automations, and where their limits are).
+// Painted from the cached row first (first paint comes from IndexedDB), then kept live by the topic.
 
 import type { PeerId, PluginClient } from '@wisp/client';
-import { Button, Dialog, ExtensionSlot, Gauges, Inline, Stack, Text, type GaugeProps } from '@wisp/ui';
-import { createMemo, createSignal, Show, type JSX } from 'solid-js';
-import { Automations, Day } from './Automations.tsx';
-import { useMachineData, type MachineData } from './data.ts';
+import { Button, Callout, Dialog, ExtensionSlot, Inline, Stack, Tabs, Text } from '@wisp/ui';
+import { createMemo, createSignal, onMount, Show, type JSX } from 'solid-js';
+import { Automations } from './Automations.tsx';
+import { DayChart, Loads, StatusLine } from './Overview.tsx';
+import { useMachineData } from './data.ts';
 import { openSettings, useHost } from './host.ts';
-import { FreeUp, HarnessData } from './Space.tsx';
+import { machineCommands } from './commands.ts';
+import { BuildOutput, DiskSpace, FreeUp, HarnessData } from './Space.tsx';
 import { LeftBehind, Using } from './Using.tsx';
-import { memTone, pctText, size, sparkPoints, updatedLine, type T } from './view.ts';
+import { alertOf, buildGroup, pctText, size, updatedLine } from './view.ts';
 import './i18n/lazy.ts';
-
-/** wisp's default CPU ceiling, shown when none is set (v1 server/load.js) */
-const FALLBACK_CEILING = 200;
-
-export function gaugesOf(data: MachineData, t: T): GaugeProps[] {
-  const m = data.snap();
-  const now = data.now();
-  if (!m) return [t('machine.gauge.memory'), t('machine.gauge.cpu'), t('machine.gauge.disk')].map((name) => ({ name, value: undefined }));
-  const g = m.guard;
-  const free = m.mem.freePct;
-  const used = m.mem.total && free !== null ? m.mem.total * (1 - free / 100) : null;
-  const mem = sparkPoints(m.history, 'freePct', now, g.floor);
-  const cpu = sparkPoints(m.history, 'cpu', now, g.ceiling);
-  const disk = sparkPoints(m.history, 'worktreeBytes', now);
-  return [
-    {
-      name: t('machine.gauge.memory'),
-      value: t('machine.gauge.memoryValue', { pct: pctText(free) }),
-      sub: used !== null ? t('machine.gauge.memoryUsed', { used: size(used), total: size(m.mem.total) }) : '',
-      foot: g.floor !== null ? t('machine.gauge.floor', { n: g.floor }) : t('machine.gauge.noFloor'),
-      tone: memTone(free, g.floor),
-      points: mem?.points ?? [],
-      mark: mem?.mark ?? null,
-      part: 'machine.gauge.memory',
-    },
-    {
-      name: t('machine.gauge.cpu'),
-      value: pctText(m.cpu.pct),
-      sub: m.cpu.cores ? t('machine.gauge.cores', { count: m.cpu.cores }) : '',
-      foot: g.ceiling !== null ? t('machine.gauge.ceiling', { n: g.ceiling ?? FALLBACK_CEILING }) : t('machine.gauge.noCeiling'),
-      tone: g.ceiling !== null && (m.cpu.pct ?? 0) > g.ceiling ? 'warn' : 'neutral',
-      points: cpu?.points ?? [],
-      mark: cpu?.mark ?? null,
-      part: 'machine.gauge.cpu',
-    },
-    {
-      name: t('machine.gauge.disk'),
-      value: t('machine.gauge.diskValue', { free: size(m.disk.free) || '—' }),
-      sub: m.disk.worktrees !== null ? t('machine.gauge.worktrees', { size: size(m.disk.worktrees) }) : '',
-      foot: m.disk.reclaimable ? t('machine.gauge.canGo', { size: size(m.disk.reclaimable) }) : '',
-      points: disk?.points ?? [],
-      part: 'machine.gauge.disk',
-    },
-  ];
-}
 
 interface Ask {
   readonly title: string;
@@ -71,9 +29,27 @@ export function MachinePane(props: { readonly client: PluginClient; readonly pee
   const host = useHost(props.client);
   const data = useMachineData(props.client, props.peer ?? props.client.home, host.now);
   const [ask, setAsk] = createSignal<Ask | undefined>();
-  const gauges = createMemo(() => gaugesOf(data, t));
+  const [tab, setTab] = createSignal('overview');
+  const alert = createMemo(() => alertOf(data.snap()));
   const failed = (): boolean => data.status().kind === 'unreachable';
   const shared = { client: props.client, host, data, confirm: setAsk };
+  const review = (filter: 'all' | 'left'): void => openSettings(host.navigate, 'worktrees', filter);
+  // a reading as the page opens, never the last one a minute old (and the peer samples faster while it's read)
+  const fresh = (): void => void props.client.run(machineCommands(data.peer).read, {}).catch(() => {});
+  onMount(fresh);
+  // the warning's one action: all the build output goes (nothing of anyone's work), and the Space tab shows it going
+  const freeBuild = (): void => {
+    const g = buildGroup(data.snap());
+    setTab('space');
+    if (!g) return;
+    void props.client
+      .run(machineCommands(data.peer).cleanBuild, { build: true, ids: g.ids, ...(g.leftovers.length && { leftovers: g.leftovers }) })
+      .then(() => {
+        host.toast.success(t('machine.build.going', { size: size(g.bytes) }));
+        fresh();
+      })
+      .catch(() => {});
+  };
   return (
     <Stack gap="8" part="machine.pane">
       <Inline gap="4" justify="between" part="machine.top">
@@ -82,13 +58,69 @@ export function MachinePane(props: { readonly client: PluginClient; readonly pee
         </Text>
         <ExtensionSlot input="machine.head" part="machine.head" extensions={[]} />
       </Inline>
-      <Gauges items={gauges()} part="machine.gauges" />
-      <Using {...shared} />
-      <LeftBehind {...shared} />
-      <FreeUp {...shared} review={(filter) => openSettings(host.navigate, 'worktrees', filter)} />
-      <HarnessData {...shared} review={(filter) => openSettings(host.navigate, 'worktrees', filter)} />
-      <Automations client={props.client} host={host} data={data} limits={() => openSettings(host.navigate, 'usage', 'machine')} />
-      <Day client={props.client} data={data} />
+      <Show when={alert()}>
+        {(a) => {
+          const x = a();
+          return x.kind === 'disk' ? (
+            <Callout
+              tone={x.free < 2 * 1024 ** 3 ? 'bad' : 'warn'}
+              title={t('machine.alert.disk', { free: size(x.free) })}
+              part="machine.alert"
+              action={
+                <Button variant="primary" size="sm" onClick={freeBuild}>
+                  {x.build > 0 ? t('machine.alert.freeBuild', { size: size(x.build) }) : t('machine.alert.space')}
+                </Button>
+              }
+            >
+              {x.build > 0 ? t('machine.alert.diskBuild', { size: size(x.build) }) : t('machine.alert.diskNone')}
+            </Callout>
+          ) : (
+            <Callout tone="warn" title={t('machine.alert.memory', { pct: pctText(x.free) })} part="machine.alert">
+              {t('machine.alert.memoryBody')}
+            </Callout>
+          );
+        }}
+      </Show>
+      <Tabs
+        value={tab()}
+        onChange={setTab}
+        aria-label={t('machine.tabs')}
+        part="machine.tabs"
+        items={[
+          {
+            value: 'overview',
+            label: t('machine.tab.overview'),
+            content: (
+              <Stack gap="8">
+                <Stack gap="4">
+                  <StatusLine client={props.client} data={data} />
+                  <Loads client={props.client} data={data} />
+                </Stack>
+                <LeftBehind {...shared} />
+                <Using {...shared} />
+                <DayChart client={props.client} data={data} />
+              </Stack>
+            ),
+          },
+          {
+            value: 'space',
+            label: t('machine.tab.space'),
+            content: (
+              <Stack gap="8">
+                <DiskSpace client={props.client} data={data} />
+                <BuildOutput {...shared} review={review} />
+                <FreeUp {...shared} review={review} />
+                <HarnessData {...shared} review={review} />
+              </Stack>
+            ),
+          },
+          {
+            value: 'limits',
+            label: t('machine.tab.limits'),
+            content: <Automations client={props.client} host={host} data={data} limits={() => openSettings(host.navigate, 'usage', 'machine')} />,
+          },
+        ]}
+      />
       <Show when={ask()}>
         {(a) => (
           <Dialog
