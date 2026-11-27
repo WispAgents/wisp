@@ -3,7 +3,7 @@
   "shell-task.files.all": "Files",
   "shell-task.files.inFiles": "In files",
   "shell-task.ask.label": "The agent's question",
-  "shell-task.ask.needs": "Needs you",
+  "shell-task.ask.needs": "Needs your call",
   "shell-task.ask.approval": "A tool asks to run",
   "shell-task.ask.allow": "Allow",
   "shell-task.ask.always": "Always allow",

@@ -264,10 +264,14 @@ async fn a_formula_applied_exported_and_its_workflow_run() {
         .await;
     assert_eq!(refused["ok"], false, "the server refuses it too: {refused}");
 
-    // pruning removes what the file doesn't declare, never a task's history
+    // pruning removes what the file doesn't declare, never a task's history; --prune keeps what another formula applied
+    // (AAC-1: exfil came from the URL), --prune-all takes it too
     let before = api.cmd("runtime.list", json!({})).await.as_array().unwrap().len();
     std::fs::write(dir.join("small.yml"), "wisp: 1\ntasks:\n  - name: nightly-deps\n    prompt: Update dependencies\n").unwrap();
     let (code, out, _) = wisp(&dir, port, &["apply", "-f", "small.yml", "--prune", "--yes"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("= task/exfil  (not from this formula: kept)") && !out.contains("- task/exfil"), "{out}");
+    let (code, out, _) = wisp(&dir, port, &["apply", "-f", "small.yml", "--prune-all", "--yes"]);
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("- task/exfil"), "{out}");
     assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), before, "no task went");

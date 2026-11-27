@@ -3,9 +3,9 @@
 // number key while the reply box is empty (UX 2026-11-18 #1). The reply box is the other way to answer: it says "Or
 // answer in your own words…" (no second control for it here). On an earlier answer it reads "Agent asked", greyed,
 // its options inert.
-import { For, Show, onCleanup, onMount, type JSX } from 'solid-js';
+import { onCleanup, onMount, type JSX } from 'solid-js';
 import { Icon } from '../content/Icon.tsx';
-import { Wrap } from '../layout/Stack.tsx';
+import { AskOptions } from './AskOptions.tsx';
 import { InlineMd } from './content-parts.tsx';
 import { useBlockT, useBlocks } from './context.tsx';
 import { items, opt, str } from './read.ts';
@@ -55,19 +55,10 @@ export function QuestionBlock(props: BlockProps): JSX.Element {
       <p data-kit="rb-q-text">
         <InlineMd source={str(props.block['question'])} part="block.question.text" />
       </p>
-      <Wrap gap="4" part="block.question.options">
-        <For each={options()}>
-          {(o, i) => (
-            <button type="button" data-kit="rb-opt" data-part="block.question.option" disabled={!live()} onClick={() => ctx.reply?.(o.reply)}>
-              <span data-kit="rb-opt-k">{i() + 1}</span>
-              <span>
-                {o.label}
-                <Show when={o.detail}>{(d) => <small>{d()}</small>}</Show>
-              </span>
-            </button>
-          )}
-        </For>
-      </Wrap>
+      <AskOptions options={options()} disabled={!live()} part="block.question.options" optionPart="block.question.option" onPick={(i) => {
+        const o = options()[i];
+        if (o) ctx.reply?.(o.reply);
+      }} />
     </div>
   );
 }

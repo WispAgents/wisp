@@ -133,6 +133,11 @@ pub struct KindInfo {
     /// ADR-0111).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<Names>,
+    /// The top-level fields of its specs that hold secrets (a connector's `headers` and `env`): a formula's
+    /// `${env:NAME}` there isn't filled in (its value would sit in the store's row), and the plan asks for
+    /// `${secret:NAME}` instead. Additive (2026-11-27, AAC-4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secret_fields: Vec<String>,
 }
 
 /// A field that names another kind's resource ([`KindInfo::names`]). `field` is a path into the spec: `agent`,
@@ -209,6 +214,34 @@ pub fn names_in(spec: &Value, n: &Names) -> Vec<String> {
     out
 }
 
+/// `spec` with every name `n` finds ([`names_in`]'s path rules) that is `from` made `to` (`wisp mv`); whether one was.
+pub fn rename_in(spec: &mut Value, n: &Names, from: &str, to: &str) -> bool {
+    fn walk(v: &mut Value, path: &[&str], from: &str, to: &str) -> bool {
+        let Some((head, rest)) = path.split_first() else {
+            if v.as_str().is_some_and(|s| s.trim() == from) {
+                *v = Value::String(to.to_owned());
+                return true;
+            }
+            return false;
+        };
+        if *head == "*" {
+            return v.as_object_mut().into_iter().flat_map(|m| m.values_mut()).fold(false, |c, x| walk(x, rest, from, to) | c);
+        }
+        let (key, each) = head.strip_suffix("[]").map_or((*head, false), |k| (k, true));
+        let Some(x) = (if key.is_empty() { Some(v) } else { v.get_mut(key) }) else { return false };
+        if each {
+            x.as_array_mut().into_iter().flatten().fold(false, |c, item| walk(item, rest, from, to) | c)
+        } else {
+            walk(x, rest, from, to)
+        }
+    }
+    if !is_name(from) || n.skip.iter().any(|w| w == from) {
+        return false;
+    }
+    let parts: Vec<&str> = n.field.split('.').collect();
+    walk(spec, &parts, from, to)
+}
+
 impl KindInfo {
     pub fn new(kind: &str, section: &str, owner: &str, schema: Value) -> Self {
         let doc = schema.get("description").and_then(Value::as_str).unwrap_or_default().to_owned();
@@ -227,7 +260,14 @@ impl KindInfo {
             doc,
             away: None,
             names: Vec::new(),
+            secret_fields: Vec::new(),
         }
+    }
+    /// A top-level field of its specs that holds secrets ([`KindInfo::secret_fields`]).
+    #[must_use]
+    pub fn secret_field(mut self, field: &str) -> Self {
+        self.secret_fields.push(field.to_owned());
+        self
     }
     /// A field of its specs that names `kind`'s resources ([`KindInfo::names`]).
     #[must_use]
@@ -407,6 +447,15 @@ pub struct Plan {
     /// by a command), not the files. Additive (2026-11-09).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drift: Vec<String>,
+    /// `kind/name` of what `--prune` leaves although the formula doesn't declare it: another formula, repo or the app
+    /// put it there (its last apply came from another [`PlanArgs::source`], or from none recorded). Additive
+    /// (2026-11-27).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kept: Vec<String>,
+    /// `kind/name` of what this source applied before and no longer declares (without `--prune`): what `--prune` would
+    /// remove. Additive (2026-11-27).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stale: Vec<String>,
 }
 
 /// `resources.rename`: one resource renamed in place (`wisp mv`).
@@ -427,6 +476,7 @@ pub struct RefreshArgs {
 /// `resources.plan` / `resources.apply`: resources already read from a formula (the CLI does the
 /// files, includes, profiles and `${env:…}`; secrets stay references).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)] // each is a flag of the wire's, which a caller sets by name
 pub struct PlanArgs {
     pub resources: Vec<Resource>,
     /// also delete what the formula doesn't declare, in the kinds it mentions
@@ -446,6 +496,15 @@ pub struct PlanArgs {
     /// Additive (2026-11-18).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kinds: Vec<String>,
+    /// where the formula comes from (a `.wisp/` folder and its workspace, or its `-f` files): each apply records it with
+    /// what it applied, and `prune` removes only what this source applied before. None (an API caller that names no
+    /// source): `prune` is `prune_all`, as before. Additive (2026-11-27).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// `prune` whatever applied it (`--prune-all`): every undeclared resource of the kinds the formula names goes.
+    /// Additive (2026-11-27).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub prune_all: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -501,7 +560,7 @@ impl Command for PlanCmd {
 }
 
 /// [`PlanCmd`]'s argument for the generated CLI and the MCP tools.
-pub const PLAN_TS: &str = "/** What applying these resources would change (wisp diff): each one to add, change or remove, and the problems apply would refuse; nothing changes. */ { /** the resources, as a formula declares them: { kind, name, spec } each (wisp resources kinds lists the kinds) */ resources: Array<Record<string, unknown>>, /** also remove what they don't declare, in the kinds they name */ prune?: boolean, /** they came from somewhere else (a link, a gist, a teammate): what changes who may act needs trust */ foreign?: boolean, /** yes to what changes who may act */ trust?: boolean, /** kind.name addresses to remove (wisp destroy) */ destroy?: Array<string>, /** the sections they name, an empty one too: with prune, a kind named here with nothing in it is emptied */ kinds?: Array<string> }";
+pub const PLAN_TS: &str = "/** What applying these resources would change (wisp diff): each one to add, change or remove, and the problems apply would refuse; nothing changes. */ { /** the resources, as a formula declares them: { kind, name, spec } each (wisp resources kinds lists the kinds) */ resources: Array<Record<string, unknown>>, /** also remove what they don't declare, in the kinds they name, of what this source applied before */ prune?: boolean, /** where they come from (a folder and workspace, or files): prune removes only what this source applied */ source?: string, /** prune whatever applied it */ prune_all?: boolean, /** they came from somewhere else (a link, a gist, a teammate): what changes who may act needs trust */ foreign?: boolean, /** yes to what changes who may act */ trust?: boolean, /** kind.name addresses to remove (wisp destroy) */ destroy?: Array<string>, /** the sections they name, an empty one too: with prune, a kind named here with nothing in it is emptied */ kinds?: Array<string> }";
 command!(Apply = "resources.apply" ["resources:apply"] : PlanArgs => Applied);
 command!(Export = "resources.export" ["resources:read"] read yes : ExportArgs => Vec<Resource>; typed);
 command!(Rename = "resources.rename" ["resources:apply"] : RenameArgs => Value);

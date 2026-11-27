@@ -7,6 +7,8 @@
 //! One fix over v1: a CRLF file's line (`K=v\r`) kept its value in v1 (JavaScript's `.` stops at `\r`); here the
 //! value goes and the `\r` stays.
 
+pub mod secret_scan;
+
 use std::collections::HashSet;
 use std::sync::LazyLock;
 

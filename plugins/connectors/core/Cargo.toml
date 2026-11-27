@@ -16,6 +16,7 @@ sha2.workspace = true
 thiserror.workspace = true
 url.workspace = true
 wisp-connectors-api.workspace = true
+wisp-envmask.workspace = true
 wisp-kernel.workspace = true
 
 [lints]

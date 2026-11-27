@@ -123,6 +123,20 @@ pub fn fill_env(v: &mut Value, src: &dyn Source, missing: &mut BTreeSet<String>)
     }
 }
 
+/// `${env:NAME}` filled in `r`'s spec but in the fields its kind holds secrets in ([`KindInfo::secret_fields`]): there it
+/// stays as written, never expanded into the row the store keeps, and the plan asks for `${secret:NAME}` (AAC-4).
+pub fn fill_env_spec(r: &mut Resource, kinds: &[KindInfo], src: &dyn Source, missing: &mut BTreeSet<String>) {
+    let secret: &[String] = kinds.iter().find(|k| k.named(&r.kind)).map_or(&[], |k| k.secret_fields.as_slice());
+    match &mut r.spec {
+        Value::Object(m) if !secret.is_empty() => {
+            for (_, x) in m.iter_mut().filter(|(k, _)| !secret.contains(k)) {
+                fill_env(x, src, missing);
+            }
+        }
+        other => fill_env(other, src, missing),
+    }
+}
+
 /// Every `${secret:NAME}` in `v`.
 pub fn secrets_in(v: &Value, out: &mut BTreeSet<String>) {
     match v {
@@ -263,7 +277,7 @@ pub fn load(root: &str, src: &mut dyn Source, kinds: &[KindInfo], profiles: &[St
     let mut out = r.out;
     let mut missing = BTreeSet::new();
     for res in &mut out.resources {
-        fill_env(&mut res.spec, &*r.src, &mut missing);
+        fill_env_spec(res, kinds, &*r.src, &mut missing);
     }
     if !missing.is_empty() {
         return Err(format!("unset environment variables: {}", missing.into_iter().collect::<Vec<_>>().join(", ")));
@@ -397,6 +411,20 @@ mod tests {
         assert!(err.contains("no plugin in this wisp owns `spells:`") && !err.contains("router"), "{err}");
         // a formula without it reads as before
         assert_eq!(load("x.yml", &mut files(&[("x.yml", "wisp: 1\ncrew: [{name: Ada}]\n")]), &ks, &[]).unwrap().resources.len(), 1);
+    }
+
+    /// AAC-4: `${env:GH_TOKEN}` in a connector's headers was filled in on the client, so the token went into the row
+    /// the store keeps (and every export). There it stays as written; the rest of the spec is filled as before.
+    #[test]
+    fn env_in_a_secret_field_is_not_filled_in_aac_4() {
+        let mut ks = kinds();
+        ks.push(KindInfo::new("connector", "connectors", "wisp.connectors", json!({})).secret_field("headers").secret_field("env"));
+        let text = "wisp: 1\nconnectors:\n  gh:\n    url: \"https://${env:HOME_DIR}\"\n    headers: { Authorization: \"Bearer ${env:HOME_DIR}\" }\n    env: { T: \"${env:HOME_DIR}\" }\n";
+        let got = load("x.yml", &mut files(&[("x.yml", text)]), &ks, &[]).unwrap();
+        let gh = &got.resources[0].spec;
+        assert_eq!(gh["headers"]["Authorization"], "Bearer ${env:HOME_DIR}");
+        assert_eq!(gh["env"]["T"], "${env:HOME_DIR}");
+        assert_eq!(gh["url"], "https:///home/me");
     }
 
     #[test]
