@@ -30,6 +30,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Sandbox: a project with a huge new folder says which folder, instead of a screen of git output.** Starting a
+  sandbox from a checkout with a big untracked build folder (an 87 GB `target-agents/`) and nested agent worktrees
+  ran `git add -A` until it timed out, then showed hundreds of lines of git's embedded-repository hints as the error.
+  wisp now measures new folders before copying and refuses at 16 MB, naming the three biggest (*"Too much in files git
+  doesn't track to copy: target-agents/ (over 16 MB); at most 16 MB goes. Add them to .gitignore …"*); a timeout says so; git's hints are dropped; and
+  the error shows in three lines with Show all.
+
 - **Phone app: pictures and videos show again on wisp Cloud and on computers reached through the grid.** Each one
   said "This picture can't be shown here." (or video). alpha.15's fix added the one-hour signed links to the old
   grid, but wisp Cloud already ran the new grid, which didn't have them. The new grid now signs these links
