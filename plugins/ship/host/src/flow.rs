@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use wisp_kernel::Call;
 use wisp_ship_api::{Attached, Draft, Merged, PrMore, PrPanel, PrSummary, RepoView, ShipTask, Shipped, Synced};
 use wisp_ship_core::decide::{self, NO_TREE, Refusal, prs_of, ship_todo, shipping_start};
+use wisp_ship_core::follow;
 use wisp_ship_core::text::{LOG_LINES, across_note, attach_text, check_log_job, detach_text, log_tail, repo_of_url};
 
 use crate::error::{Result, ShipError};
@@ -88,7 +89,13 @@ impl Ship {
             let pr = self.shipper.ship(call, &r.worktree, &req, &on_step).await.map_err(|e| e.in_repo(&r.name, task.repos.len()))?;
             // kept at once: a later repo's failure leaves the PRs already opened in place
             let opened = r.pr.as_ref().is_none_or(|p| p.number != pr.number || !p.is_open());
-            self.tasks.update(&task.session, |t| t.repos[i].pr = Some(pr.clone()));
+            // pushed now: its checks aren't listed yet, so the PR waits for them rather than reading as passed
+            let now = self.shipper.now();
+            self.tasks.update(&task.session, |t| {
+                t.repos[i].pr = Some(pr.clone());
+                t.pushed_at = now;
+                follow::mark_task(t, now);
+            });
             if opened {
                 self.emit(Out::PrOpened { session: task.session.clone(), repo: r.name.clone(), pr: pr.clone() });
             }

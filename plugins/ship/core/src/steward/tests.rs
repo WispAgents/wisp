@@ -69,6 +69,12 @@ fn steward_is_off_unless_its_mode_is_known() {
 #[test]
 fn steward_skips_pending_checks_busy_tasks_conflicts_and_a_running_pass() {
     assert_eq!(gate(&task(pr("h1", 1, 1), "fix"), Busy::default()), Gate::Skip, "a check still running: wait for all of them");
+    let just_opened = PrSummary { checks: Checks::default(), waiting_checks: true, ..pr("h1", 0, 0) };
+    assert_eq!(
+        gate(&task(just_opened, "fix"), Busy::default()),
+        Gate::Skip,
+        "checks not listed yet after a push: not green, wait (PR #996)"
+    );
     let t = task(pr("h1", 1, 0), "fix");
     for b in [Busy { live: true, ..Busy::default() }, Busy { ask: true, ..Busy::default() }, Busy { shipping: true, ..Busy::default() }] {
         assert_eq!(gate(&t, b), Gate::Skip);

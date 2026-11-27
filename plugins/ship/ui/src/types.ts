@@ -22,6 +22,8 @@ export interface PrSummary {
   readonly base?: string;
   readonly mergedAt?: string | null;
   readonly checks?: { readonly pass: number; readonly fail: number; readonly pending: number };
+  /** just pushed and GitHub lists no checks yet: they're coming, not passed (ship-api `waitingChecks`) */
+  readonly waitingChecks?: boolean;
   readonly checkedAt?: number;
 }
 

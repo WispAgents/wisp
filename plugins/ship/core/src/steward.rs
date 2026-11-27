@@ -122,8 +122,9 @@ pub fn gate(task: &ShipTask, busy: Busy) -> Gate {
     if busy.live || busy.ask || busy.shipping || busy.archived || busy.starting || fixing || pr.conflict {
         return Gate::Skip;
     }
-    // checks still running, or GitHub still working out the merge: one pass carries everything once they settle
-    if pr.checks.pending > 0 || pr.merge_state == "UNKNOWN" {
+    // checks still running or not listed yet after a push, or GitHub still working out the merge: one pass carries
+    // everything once they settle
+    if pr.checks.pending > 0 || pr.waiting_checks || pr.merge_state == "UNKNOWN" {
         return Gate::Skip;
     }
     Gate::Look

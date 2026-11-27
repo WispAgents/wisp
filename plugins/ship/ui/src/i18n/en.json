@@ -33,6 +33,7 @@
   "wisp.ship.pr.fixing": "Fixing merge conflicts",
   "wisp.ship.pr.merged": "Merged",
   "wisp.ship.pr.noChecks": "No checks",
+  "wisp.ship.pr.waitingChecks": "Waiting for checks",
   "wisp.ship.pr.notFixed": "Conflicts not fixed: {why}",
   "wisp.ship.pr.open": "Open",
   "wisp.ship.pr.passed.one": "{count} check passed",
