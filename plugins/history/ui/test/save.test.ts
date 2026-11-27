@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { EntityKey } from '@wisp/client';
-import { historyOf, lastTurnOf, offerView, runSave, saveable, saveStateOf, type Tracked } from '../src/save.ts';
+import { historyOf, lastTurnOf, offerView, pushable, pushStateOf, runPush, runSave, saveable, saveStateOf, type Pushed, type Tracked } from '../src/save.ts';
 import { t } from '../src/i18n.ts';
 import '../src/i18n/lazy.ts';
 
@@ -71,4 +71,32 @@ test('the_saved_line_says_how_many_files_and_secrets', () => {
   expect(t('history.saved', { count: 1 })).toBe('Saved to the repo: 1 file in .wisp/, to commit with the code');
   expect(t('history.saved.scrubbed', { count: 3, scrubbed: 2 })).toBe('Saved to the repo: 3 files in .wisp/ (2 scrubbed: keys, tokens, private paths)');
   expect(t('history.save')).toBe('Save to repo');
+});
+
+test('a_push_keeps_its_state_and_a_second_press_while_pushing_does_nothing', async () => {
+  const key = 'local:p1' as EntityKey;
+  let calls = 0;
+  let finish: (v: Pushed) => void = () => {};
+  const run = (): Promise<Pushed> => {
+    calls++;
+    return new Promise((r) => (finish = r));
+  };
+  const first = runPush(run, key);
+  expect(pushStateOf(key)).toEqual({ s: 'pushing' });
+  await runPush(run, key);
+  expect(calls).toBe(1);
+  finish({ branch: 'wisp/history-abc', commit: 'c', files: ['.wisp/a'], pr: 'https://x/pull/1' });
+  await first;
+  expect(pushStateOf(key)).toEqual({ s: 'pushed', branch: 'wisp/history-abc', pr: 'https://x/pull/1' });
+  await runPush(() => Promise.reject(new Error('no remote')), 'local:p2' as EntityKey);
+  expect(pushStateOf('local:p2')).toEqual({ s: 'failed' });
+});
+
+test('only_a_saved_task_can_be_pushed_from_the_menu', () => {
+  expect(pushable({ id: 'a', ext: { 'wisp.history': { tracked: { files: ['.wisp/x'] } } } })).toBe(true);
+  expect(pushable({ id: 'a', ext: { 'wisp.history': { tracked: { files: [] } } } })).toBe(false);
+  expect(pushable({ id: 'a' })).toBe(false);
+  expect(pushable({ id: 'a', parent_id: 'p', ext: { 'wisp.history': { tracked: { files: ['x'] } } } })).toBe(false);
+  expect(t('history.pushed.pr', { branch: 'wisp/history-abc' })).toBe('Pushed to wisp/history-abc, pull request open');
+  expect(t('history.push')).toBe('Push');
 });

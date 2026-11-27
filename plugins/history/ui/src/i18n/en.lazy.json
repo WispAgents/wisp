@@ -25,5 +25,12 @@
   "history.saved.scrubbed.one": "Saved to the repo: 1 file in .wisp/ ({scrubbed} scrubbed: keys, tokens, private paths)",
   "history.saved.scrubbed.other": "Saved to the repo: {count} files in .wisp/ ({scrubbed} scrubbed: keys, tokens, private paths)",
   "history.save": "Save to repo",
-  "history.saveAgain": "Save to repo again"
+  "history.saveAgain": "Save to repo again",
+  "history.push": "Push",
+  "history.push.tip": "Commit these files and push them: onto the task's branch while its work is open, or as a pull request (your checkout isn't touched; the local copies come back with your next pull)",
+  "history.pushToRepo": "Push to repo",
+  "history.pushed": "Pushed to {branch}",
+  "history.pushed.pr": "Pushed to {branch}, pull request open",
+  "history.pushed.none": "Already on the remote: nothing to push",
+  "history.openPr": "Open PR"
 }

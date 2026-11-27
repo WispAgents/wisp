@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Push a saved task from Save to repo.** Once saved, the line under its answer has **Push** (and ⋯ has **Push to
+  repo**), so its `.wisp/` files don't stay on your computer. While the task's work isn't shipped they're committed on
+  its branch and pushed (its PR gets them). Once its work is merged, they go out as a pull request from
+  `wisp/history-<id>`, built on the remote's main without touching your checkout, branch or staged files; the local
+  copies are taken out so your next `git pull` doesn't stop on "untracked files would be overwritten", and they come
+  back with it. The line then says where they went, with **Open PR**. Agents can do the same with the `history_push`
+  tool.
+
 ### Changed
 
 - **The task list has a Shipping section**, under Needs you and before Working. A task you clicked Ship on moves there while wisp commits, pushes and opens its PR, and stays while that PR is open. Once the PR merges or closes it comes back to Needs you. If the task runs again (a fix for its checks), asks you something or is marked done, it shows in that section instead. Home's Needs you leaves these tasks out too.

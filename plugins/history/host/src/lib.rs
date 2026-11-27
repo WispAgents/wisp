@@ -11,6 +11,7 @@
 mod calls;
 mod config;
 mod git;
+mod push;
 mod stores;
 
 use std::collections::HashMap;
@@ -52,7 +53,7 @@ fn blame_for(ctx: &Ctx, id: &str) -> Result<Arc<dyn BlameSource>> {
         .ok_or_else(|| WireError::unavailable("no blame source (history.blame@1)"))
 }
 
-fn proc(ctx: &Ctx) -> Result<Arc<Proc>> {
+pub(crate) fn proc(ctx: &Ctx) -> Result<Arc<Proc>> {
     ctx.service::<Proc>()
 }
 
@@ -342,6 +343,7 @@ impl Plugin for HistoryPlugin {
         s.contribute(&BLAME, Arc::new(git::LazyGit(ctx)) as Arc<dyn BlameSource>);
         s.command::<api::Track, _, _>(|ctx, call, a| async move { track(&ctx, &call, &a).await });
         s.command::<api::Save, _, _>(|ctx, call, a| async move { track(&ctx, &call, &a).await });
+        s.command::<api::Push, _, _>(|ctx, call, a| async move { push::push(&ctx, &call, &a).await });
         s.command::<api::Untrack, _, _>(|ctx, call, a| async move { untrack(&ctx, &call, &a).await });
         s.command::<api::BlameCmd, _, _>(|ctx, _call, a| async move { blame::answer(&ctx, &a).await });
         // the Repo tab (ADR-0033): the repo's committed agent history, and one task's read-only report

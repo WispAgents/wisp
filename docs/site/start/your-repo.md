@@ -34,7 +34,10 @@ history: { track: ask }   # auto | ask | manual
 - `auto`: every such task is saved.
 - `manual`: nothing is saved unless you save it, with **Save to repo** or `wisp track <id>`.
 
-A saved task is written to `.wisp/tasks/` for you to commit, scrubbed of secrets and private paths. Commits that
+A saved task is written to `.wisp/tasks/` for you to commit, scrubbed of secrets and private paths. Or press
+**Push** beside what was saved (⋯ → **Push to repo** later): on a task whose work isn't shipped yet, the files are
+committed on its branch and pushed; on one already merged, they go out as a pull request from `wisp/history-<id>`,
+without touching your checkout. Commits that
 Ship it makes carry a `Wisp-Task:` trailer, so the code and the task point at each other.
 
 ## Use it

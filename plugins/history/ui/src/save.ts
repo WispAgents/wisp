@@ -9,6 +9,16 @@ export interface HistoryExt {
   readonly offer?: boolean;
   readonly repo?: string;
   readonly tracked?: { readonly repo?: string; readonly files?: readonly string[]; readonly store?: string };
+  readonly pushed?: { readonly branch?: string; readonly commit?: string; readonly pr?: string | null };
+}
+
+/** What `history.push` answers (wisp_history_api::Pushed): the branch pushed ('' when already on the base), its PR. */
+export interface Pushed {
+  readonly branch: string;
+  readonly commit: string;
+  readonly files: readonly string[];
+  readonly pr?: string;
+  readonly removed?: readonly string[];
 }
 
 /** What `history.track` / `history.save` answer (wisp_history_api::Tracked). */
@@ -133,3 +143,45 @@ export const saveCmd = defineCommand<{ key: EntityKey }, Tracked>({
   optimistic: 'none',
   pending: 'Save to repo, then the line under the answer',
 });
+
+/** Push a saved task's `.wisp/` files: onto its branch while its work is open, else as a PR (`history.push`). */
+export const pushCmd = defineCommand<{ key: EntityKey }, Pushed>({
+  id: 'history.push',
+  owner: (a) => a.key,
+  wire: (a) => ({ id: bare(a.key) }),
+  optimistic: 'none',
+  pending: 'Pushing… on the saved line under the answer',
+});
+
+/** Where a task's push stands in this window. */
+export type PushState =
+  | { readonly s: 'pushing' }
+  | { readonly s: 'pushed'; readonly branch: string; readonly pr?: string }
+  | { readonly s: 'failed' };
+
+const pushes = signal<Readonly<Record<string, PushState>>>({});
+
+/** Every task's push state in this window. */
+export const pushStates = readonly(pushes);
+
+/** The push state of a task (by its entity key). */
+export const pushStateOf = (key: string): PushState | undefined => pushes()[key];
+
+/** Runs a push and keeps its state; a second press while one runs does nothing. A refusal leaves the button. */
+export async function runPush(run: (key: EntityKey) => Promise<Pushed>, key: EntityKey): Promise<Pushed | undefined> {
+  if (pushStateOf(key)?.s === 'pushing') return undefined;
+  pushes({ ...pushes(), [key]: { s: 'pushing' } });
+  try {
+    const p = await run(key);
+    pushes({ ...pushes(), [key]: { s: 'pushed', branch: p.branch, ...(p.pr ? { pr: p.pr } : {}) } });
+    return p;
+  } catch {
+    pushes({ ...pushes(), [key]: { s: 'failed' } });
+    return undefined;
+  }
+}
+
+/** A task the ⋯ menu can push: saved to its repo (its slot names the files). */
+export function pushable(row: TaskRow | undefined): boolean {
+  return saveable(row) && (historyOf(row).tracked?.files?.length ?? 0) > 0;
+}
