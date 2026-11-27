@@ -45,6 +45,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- `wisp serve` with this home's wisp already running attaches to it and prints its address (exit 0), on its port or any `--port`; it said "port 4477 is in use: is wisp already running?" and exited 1.
 - **Sandbox: a project with a huge new folder says which folder, instead of a screen of git output.** Starting a
   sandbox from a checkout with a big untracked build folder (an 87 GB `target-agents/`) and nested agent worktrees
   ran `git add -A` until it timed out, then showed hundreds of lines of git's embedded-repository hints as the error.
