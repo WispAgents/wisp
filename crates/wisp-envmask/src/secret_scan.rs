@@ -81,7 +81,9 @@ pub fn reference_spans(text: &str) -> Vec<std::ops::Range<usize>> {
         while let Some(at) = text[from..].find(open) {
             let start = from + at;
             let name_at = start + open.len();
-            let len = text[name_at..].bytes().take_while(|b| b.is_ascii_alphanumeric() || *b == b'_').count();
+            // a secret's name as wisp writes them: `channels/telegram/token`, `my-webhook`, `connector-linear-KEY`,
+            // `hook.secret`; never a space, a quote or a `}` (a token or a line inside a malformed span still counts)
+            let len = text[name_at..].bytes().take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b'/')).count();
             let name = &text[name_at..name_at + len];
             let well_formed = name.bytes().next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
                 && text[name_at + len..].starts_with('}')
@@ -179,6 +181,11 @@ mod tests {
         assert_eq!(mask_secrets(&format!("${{secret:A\n{token}\n}}")), "${secret:A\nghp_…(masked)\n}");
         assert_eq!(mask_secrets("${secret:LINEAR_WEBHOOK_SECRET}"), "${secret:LINEAR_WEBHOOK_SECRET}");
         assert_eq!(mask_secrets("${env:HOME_DIR}"), "${env:HOME_DIR}");
+        // names as wisp writes them: a channel's (`channels/<transport>/<field>`), a v1 webhook's, a connector's
+        for name in ["channels/telegram/token", "channels/kept/slack/hook.secret", "my-webhook", "connector-linear-LINEAR_KEY"] {
+            let r = format!("token: ${{secret:{name}}}");
+            assert_eq!(mask_secrets(&r), r, "{name}");
+        }
         assert_eq!(reference_spans("a ${secret:B} ${env:_C1} ${secret:1x} ${env:}"), vec![2..13, 14..24]);
     }
 }
