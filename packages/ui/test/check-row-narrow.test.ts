@@ -14,7 +14,11 @@ test('a_narrow_check_row_keeps_its_actions_on_its_line', () => {
   const n = narrow();
   const actions = n.match(/\[data-kit='check-row-actions'\]\s*\{([^}]*)\}/)?.[1] ?? '';
   expect(actions).not.toMatch(/grid-row\s*:\s*2/);
-  const row = n.match(/\[data-kit='check-row'\]\s*\{([^}]*)\}/)?.[1] ?? '';
-  // icon, name, time, actions: four columns on one line
-  expect(row).toMatch(/grid-template-columns:\s*auto minmax\(0, 1fr\) var\(--size-time-col\) auto/);
+  // the row is one line of columns at every width (#1003: v1's .pn-pr check row, actions in its last column), and the
+  // narrow layout never gives it a second row
+  expect(n).not.toMatch(/grid-template-rows|grid-row\s*:/);
+  const row = CSS.match(/\[data-kit='check-row'\]\s*\{([^}]*)\}/)?.[1] ?? '';
+  expect(row).toMatch(/grid-template-columns:\s*auto minmax\(0, 1fr\)( auto){3}/);
+  const own = CSS.match(/\[data-kit='check-row-actions'\]\s*\{([^}]*)\}/)?.[1] ?? '';
+  expect(own).toMatch(/grid-column:\s*5/);
 });

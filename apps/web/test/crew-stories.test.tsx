@@ -124,7 +124,8 @@ test('a_story_shows_what_waits_with_the_task_pages_own_answer_controls_and_steps
   // only the question and its answers: none of the foot's other extensions (the comments tray, Terminal, Watch)
   expect(waiting?.querySelectorAll('[data-kit="extension"]').length ?? 0).toBeLessThanOrEqual(1);
   expect(waiting?.textContent).toContain('Merge #812 and tag 0.61.0?');
-  const yes = [...(waiting?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent?.trim() === 'Yes');
+  // the answers are the ask card's numbered options (#995: v1's .q-opts), "1 Yes", not bare buttons
+  const yes = [...(waiting?.querySelectorAll<HTMLButtonElement>('[data-part~="task.ask.option"]') ?? [])].find((b) => b.lastElementChild?.textContent?.trim() === 'Yes');
   expect(yes, 'its answer').toBeDefined();
   yes?.click();
   await until(() => sent.some((s) => s.cmd === 'runtime.answer'));
