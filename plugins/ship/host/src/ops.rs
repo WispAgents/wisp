@@ -116,6 +116,7 @@ impl Shipper {
             branch: wt.branch.clone(),
             only: HISTORY_DIR.into(),
             within: wisp_history_api::SAVED_DIRS.iter().map(|d| (*d).to_owned()).collect(),
+            also: wisp_history_api::SAVED_FILES.iter().map(|f| (*f).to_owned()).collect(),
             subject_start: wisp_history_api::SAVE_SUBJECT_START.into(),
             subject_end: wisp_history_api::SAVE_SUBJECT_END.into(),
         };

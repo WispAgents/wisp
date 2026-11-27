@@ -12,6 +12,9 @@ import type { ShellWindow } from './shell.tsx';
 // a title renamed in place is `plaintext-only` (audit A review: ⌫ there opened Delete, E marked the task done)
 const TYPING = 'input, textarea, select, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]';
 
+/** wisp's modified keys with no browser default worth keeping: pressed early, kept for the later part (see dispatch) */
+const KEPT_MODIFIED: readonly string[] = ['mod+k', 'mod+l', 'ctrl+`'];
+
 export function isTyping(target: EventTarget | null): boolean {
   const el = target as Element | null;
   return typeof el?.closest === 'function' && el.closest(TYPING) !== null;
@@ -45,11 +48,15 @@ export function installKeys(w: ShellWindow, ctx: ShellContext, registry: Registr
     // and a modified one (⌘F, ⌘P, ⌘1…): the browser's own find, print or tab switch runs instead, as before the keys
     // were wisp's (kept, it ran twice; kept and prevented, an early ⌘F with no task open did nothing at all). Nothing
     // starts early or loads again for a kept key (laterPending), and once the parts are in nothing is kept.
-    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target) || onControl(e)) return;
-    if (![...BUILT_IN_KEYS].some((k) => matches(k, e, ctx.platform.apple))) return;
+    // Except the modified keys whose browser default nobody wants here (⌘K, ⌘L: the address bar; ⌃`): kept and
+    // prevented, as they would be once the parts are in (final6 F2: an early ⌘K did nothing at all).
+    const ours = KEPT_MODIFIED.some((k) => matches(k, e, ctx.platform.apple));
+    if (e.repeat || (!ours && (e.metaKey || e.ctrlKey || e.altKey)) || isTyping(e.target) || onControl(e)) return;
+    if (!ours && ![...BUILT_IN_KEYS].some((k) => matches(k, e, ctx.platform.apple))) return;
     const wait = ctx.laterPending?.();
     // nothing on its way: its default is left alone, as a kept key's is (the replay may not run)
     if (!wait) return;
+    if (ours) e.preventDefault();
     const where = (): string => {
       const nav = ctx.nav();
       return JSON.stringify([nav.main, nav.overlays.length, ctx.selection.get() ?? null]);

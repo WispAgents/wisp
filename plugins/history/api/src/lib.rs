@@ -17,6 +17,9 @@ pub const EXT: &str = "wisp.history";
 /// paths a history push's commit touches. Ship merges a remote commit in on its own only when it stays inside them;
 /// `.wisp/worktree.json`, `sandbox.sh` and `wisp.yml` run code or steer wisp, and are never the history.
 pub const SAVED_DIRS: &[&str] = &["tasks", "history"];
+/// The files a save writes beside `.wisp/` (the LFS store adds its line to `.gitattributes` next to it): a history
+/// push's commit may touch these too, and nothing else outside [`SAVED_DIRS`].
+pub const SAVED_FILES: &[&str] = &[".gitattributes"];
 /// A history push's commit subject is `wisp: save task "<title>" to the repo's history` ([`save_subject`]): what
 /// tells it from someone else's commit that happens to touch the same files.
 pub const SAVE_SUBJECT_START: &str = "wisp: save task \"";

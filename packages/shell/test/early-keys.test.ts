@@ -4,6 +4,8 @@
 import { afterEach, expect, test } from 'vitest';
 import type { ShellContext, ShortcutDef } from '../src/contract.ts';
 import { installKeys } from '../src/keyboard.ts';
+import { firstKeys } from '../src/frame/launcher.ts';
+import { shellLater } from '../src/builtins-later.ts';
 import type { Registry } from '../src/registry.ts';
 import type { ShellWindow } from '../src/shell.tsx';
 
@@ -11,11 +13,11 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-function fake(apple = true) {
+function fake(apple = true, eager: readonly ShortcutDef[] = []) {
   const overlays: unknown[] = [];
   let pending: Promise<void> | undefined;
   let land: () => void = () => {};
-  const shortcuts: (ShortcutDef & { plugin: string })[] = [];
+  const shortcuts: (ShortcutDef & { plugin: string })[] = eager.map((s) => ({ ...s, plugin: 'wisp.shell' }));
   const ran: string[] = [];
   let readyCalls = 0;
   const ctx = {
@@ -40,6 +42,8 @@ function fake(apple = true) {
       shortcuts.push({ id: 'shell.task.fork', keys: 'shift+f', label: 'x', group: 'task', plugin: 'wisp.shell', run: () => void ran.push('fork') } as never);
       shortcuts.push({ id: 'shell.open', keys: 'mod+p', label: 'x', group: 'nav', plugin: 'wisp.shell', run: () => void ran.push('open') } as never);
       shortcuts.push({ id: 'shell.next', keys: 'j', label: 'x', group: 'nav', plugin: 'wisp.shell', run: () => void ran.push('next') } as never);
+      shortcuts.push({ id: 'shell.task.shell', keys: 'ctrl+`', label: 'x', group: 'task', plugin: 'wisp.shell', run: () => void ran.push('shell') } as never);
+      shortcuts.push({ id: 'shell.task.find', keys: 'mod+f', label: 'x', group: 'task', when: 'always', plugin: 'wisp.shell', run: () => void ran.push('find') } as never);
       land();
       pending = undefined;
       await new Promise((r) => setTimeout(r, 0));
@@ -137,5 +141,51 @@ test('with_nothing_on_its_way_an_unhandled_modified_key_keeps_its_default', () =
   const f = fake();
   const e = press({ key: 'p', code: 'KeyP', metaKey: true });
   expect(e.defaultPrevented).toBe(false);
+  f.stop();
+});
+
+// final6 F2: ⌘K and ⌘L are registered at start (builtins.tsx), so the first press opens the palette or New task at
+// once, and only once: the later part doesn't register them again
+test('an_early_mod_k_opens_the_palette_at_once_and_once', async () => {
+  const opened: string[] = [];
+  const ctx = {
+    t: (k: string) => k,
+    palette: { open: () => void opened.push('palette') },
+    nav: () => ({ main: { kind: 'home' }, side: { kind: 'none' }, overlays: [], layout: 'split' }),
+    navigate: () => {},
+    focusTargets: { focus: () => (opened.push('launcher'), true) },
+    selection: { get: () => undefined },
+  } as unknown as ShellContext;
+  const eager = firstKeys(ctx);
+  const later = shellLater(ctx).shortcuts ?? [];
+  expect(eager.map((s) => s.keys)).toEqual(['mod+k', 'mod+l']);
+  expect(later.filter((s) => s.keys === 'mod+k' || s.keys === 'mod+l')).toEqual([]);
+  const f = fake(true, eager);
+  f.loading();
+  const k = press({ key: 'k', code: 'KeyK', metaKey: true });
+  expect(k.defaultPrevented).toBe(true);
+  expect(opened).toEqual(['palette']);
+  press({ key: 'l', code: 'KeyL', metaKey: true });
+  expect(opened).toEqual(['palette', 'launcher']);
+  await f.lands();
+  expect(opened, 'never replayed over the first run').toEqual(['palette', 'launcher']);
+  press({ key: 'k', code: 'KeyK', metaKey: true });
+  expect(opened).toEqual(['palette', 'launcher', 'palette']);
+  f.stop();
+});
+
+// final6 F2: ⌃` (the task's shell) has no browser default worth keeping: pressed early it's kept, prevented, and runs
+// once the later part lands; ⌘F and ⌘1 stay the browser's (#1019)
+test('an_early_ctrl_backtick_is_kept_and_prevented_but_mod_f_and_mod_1_are_the_browsers', async () => {
+  const f = fake();
+  f.loading();
+  const tick = press({ key: '`', code: 'Backquote', ctrlKey: true });
+  expect(tick.defaultPrevented).toBe(true);
+  const find = press({ key: 'f', code: 'KeyF', metaKey: true });
+  const one = press({ key: '1', code: 'Digit1', metaKey: true });
+  expect(find.defaultPrevented).toBe(false);
+  expect(one.defaultPrevented).toBe(false);
+  await f.lands();
+  expect(f.ran).toEqual(['shell']);
   f.stop();
 });

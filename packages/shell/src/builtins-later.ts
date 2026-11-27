@@ -13,6 +13,7 @@ import { openFeedback } from './frame/feedback.ts';
 import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, PROJECT_TAIL, placeItems, projectItems, projectShortcuts, projectTail } from './frame/project-switch.ts';
 import { doneRefused, flatRow, isSaved, undoneState } from './frame/rows-view.ts';
 import { markStepped } from './frame/stepped.ts';
+import { launcher } from './frame/launcher.ts';
 
 const overlay = (id: string): { t: 'openOverlay'; overlay: { kind: 'dialog'; id: ExtensionId; params: null } } => ({
   t: 'openOverlay',
@@ -148,11 +149,6 @@ function open(ctx: ShellContext): boolean {
   void ctx.client.commands.run(markRead, { id, unread: false }).catch(() => undefined);
   ctx.navigate({ t: 'openTask', id: id as never });
   return true;
-}
-
-function launcher(ctx: ShellContext): void {
-  if (ctx.nav().overlays.length > 0) ctx.navigate({ t: 'closeOverlay', id: ctx.nav().overlays[0]?.id as ExtensionId });
-  if (!ctx.focusTargets.focus('launcher')) ctx.navigate({ t: 'home' });
 }
 
 /** The list's rows in their order on screen (the list and Home's feed draw a `card` per task with its key). */
@@ -292,8 +288,7 @@ function shortcuts(ctx: ShellContext): ShortcutDef[] {
     k('panel', ']', 'shell.key.panel', 'panel', 'general'),
     ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => k(`answer${n}`, String(n), 'shell.key.answer', `answer:${n}` as TaskKey)),
 
-    { id: 'shell.palette', keys: 'mod+k', label: 'shell.key.palette', group: 'general', when: 'always', run: () => ctx.palette.open() },
-    { id: 'shell.launcher', keys: 'mod+l', label: 'shell.key.launcher', group: 'general', when: 'always', run: () => launcher(ctx) },
+    // ⌘K and ⌘L are builtins.tsx's: registered at start, they never wait for this part
     { id: 'shell.new', keys: 'n', label: 'shell.key.launcher', group: 'general', run: () => launcher(ctx) },
     { id: 'shell.escape', keys: 'escape', label: 'shell.key.back', group: 'general', when: 'always', run: ({ event }) => escape(ctx, event) },
     { id: 'shell.help', keys: '?', label: 'shell.key.shortcuts', group: 'general', run: () => ctx.navigate(overlay('shell.shortcuts')) },

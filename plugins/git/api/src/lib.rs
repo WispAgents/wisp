@@ -294,6 +294,11 @@ pub struct CatchUpRequest {
     /// anywhere in it. Additive (2026-11-27)
     #[serde(default)]
     pub within: Vec<String>,
+    /// file names those commits may also touch beside the folder (`.gitattributes`: the LFS line a save adds), at
+    /// `<prefix>/<name>` only where the same commit writes inside `<prefix>/<only>/`. Never resolved to HEAD's side
+    /// in a conflict: only the folder's own files are. Additive (2026-11-27)
+    #[serde(default)]
+    pub also: Vec<String>,
     /// what each of those commits' subject starts and ends with (the history push's own); empty: any subject.
     /// Someone else's commit to the same files is theirs to merge, never wisp's (it would go out --no-verify)
     #[serde(default)]
