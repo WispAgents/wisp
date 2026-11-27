@@ -14,7 +14,7 @@ pub mod version;
 pub use channel::{CHANNELS, Channel};
 pub use install::{Install, Method, Platform, asset_name, cargo_clone, detect, installed_version};
 pub use updater::{
-    Asset, CheckRequest, Env, HandOff, InstallStep, Refusal, Status, Swap, Updater, View, encode_ps, last_morning, release_version,
-    run_failed,
+    Asset, CheckRequest, Env, HandOff, InstallStep, Refusal, Status, Swap, Updater, View, encode_ps, last_morning, port_of,
+    release_version, run_failed,
 };
 pub use version::{compare, newer, newest};
