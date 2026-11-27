@@ -917,9 +917,9 @@
   :root[data-platform='android'] [data-kit='icon-button']:disabled { opacity: var(--state-disabled); cursor: not-allowed; }
   :root[data-platform='android'] [data-kit='button'][data-loading]::after,
   :root[data-platform='android'] [data-kit='icon-button'][data-loading]::after { background-size: 0% 0%; }
-  /* the busy ring is M3's circular indicator, the icon's size, in the content colour */
+  /* the busy mark (the kit's Liquid, ADR-0140) at the icon's size, in the content colour */
   :root[data-platform='android'] [data-kit='button'] > [data-kit='spinner'],
-  :root[data-platform='android'] [data-kit='icon-button'] > [data-kit='spinner'] { width: var(--size-icon-lg); height: var(--size-icon-lg); border-width: var(--size-ring); }
+  :root[data-platform='android'] [data-kit='icon-button'] > [data-kit='spinner'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
 
   /* Switch: the M3 switch, 52 × 32. Off: the outline track, a 16 dp handle in outline; on: the primary track, a 24 dp
      handle in on-primary with its check icon; held: 28 dp. The 40 dp state layer rings the handle; 48 dp target. */

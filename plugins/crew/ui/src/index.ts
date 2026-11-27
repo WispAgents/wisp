@@ -48,6 +48,8 @@ export default definePluginUi({
       slot: 'overlay',
       overlay: 'dialog',
       size: 'v1',
+      // the editor draws its own hero, title and × (ADR-0141)
+      bare: true,
       parse: parseEditor,
       title: (p) => t(p.id ? 'wisp.crew.editor.edit' : p.task ? 'wisp.crew.editor.addTask' : 'wisp.crew.editor.add'),
       component: lazy(() => import('./CrewEditor.tsx')),

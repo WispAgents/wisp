@@ -3,6 +3,7 @@
 // wrap as a group); the chip itself is control text and never wraps.
 import { Show, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
+import { Liquid } from '../content/Liquid.tsx';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { IconButton } from '../controls/Button.tsx';
@@ -27,7 +28,7 @@ export function FileChip(props: FileChipProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.file-chip';
   return (
     <span data-kit="file-chip" data-part={part()} data-status={props.status ?? 'ready'} title={props.title ?? props.name} aria-busy={props.status === 'uploading' ? true : undefined}>
-      <Show when={props.thumb} fallback={<Icon name={props.status === 'uploading' ? 'clock' : (props.icon ?? 'file')} size="sm" />}>
+      <Show when={props.thumb} fallback={<Show when={props.status === 'uploading'} fallback={<Icon name={props.icon ?? 'file'} size="sm" />}><Liquid /></Show>}>
         {(src) => <img data-kit="file-chip-thumb" src={src()} alt="" />}
       </Show>
       <span data-kit="file-chip-name" data-text="control">{props.name}</span>

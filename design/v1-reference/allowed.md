@@ -86,6 +86,10 @@ shift every later index. Everything outside the part still has to match.
   `settings.spells` keeps those two buttons' widths (and a sub-pixel the box above leaves) as its known parts off.
 - **Pin and Mark read in a task's menu** (the owner, 2026-11-12, round 30): v2 keeps them, after every one of v1's
   entries (v1's taskMenu had neither), so the row menu is two items longer than v1's: masked in task.right-click.
+- **The crew editor is a hero with four tabs** (the owner, 2026-11-27, ADR-0141, mockup C): Add to your crew is a bare
+  dialog: the spirit in a glow, the name typed large, then Who, Their job, When, and Where & how, with a foot that
+  stays in view. v1's fields and values stay; their layout is new. The whole dialog (`x.dialog`, `crew.editor` and its parts) is
+  masked in crew.add. The rail and page behind it are still checked.
 
 ## 6. The list rows' glyph phase: found and fixed (2026-11-17)
 
@@ -184,6 +188,9 @@ settings.privacy  settings.maskEnvFiles  owner  390
 settings.spells  x.input  owner  900,1440
 task.right-click  list.menu  owner
 task.right-click  list.menu.*  owner
+crew.add  x.dialog  owner
+crew.add  crew.editor  owner
+crew.add  crew.editor.*  owner
 *   block.files.path   owner
 *   topbar.brand       owner
 task*  composer.ghost  owner
