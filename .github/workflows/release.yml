@@ -173,6 +173,12 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = push ]; then [ $changed = true ] && [ $npm = true ] && [ $published = false ] && go=true
           elif [ $npm = true ] || [ $published = false ]; then go=true; fi
           [ "$DRY" = true ] && go=true
+          # npm's environment deploys only from main: a run by hand from a tag or another branch that still has npm to
+          # publish would build everything and then be refused there (run 45924423403), so it stops here instead
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ] && [ "$DRY" != true ] && [ $npm = true ]; then
+            echo "::error::npm publishes only from main: run release from main (gh workflow run release.yml --ref main), or with -f dry_run=true"
+            exit 1
+          fi
           # a beta is a prerelease; a stable or alpha release isn't (the header, release.mjs releaseKind)
           prerelease=$(node npm/scripts/release.mjs prerelease "$version" stable)
           echo "version=$version changed=$changed npm-needed=$npm release-published=$published → go=$go"
