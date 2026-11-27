@@ -7,6 +7,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import type { EntityOp, Topic } from '@wisp/protocol';
+import { MACHINE_VIEWS } from './mock-machines.ts';
 
 interface Ctx {
   rows(topic: Topic): readonly { e: string; id: string; v: unknown }[];
@@ -173,8 +174,9 @@ export const READS: Record<string, Fn> = {
   // unanswered: a red toast on every archive in the dev app, found by qa/flicker.mjs)
   'worktrees.done.list': (a, ctx) => ({ ops: [], result: { folders: doneFolders(ctx, String((a as { sessionId?: unknown })?.sessionId ?? '')), onDone: 'ask' } }),
   // the Machines dialog reads its cards and the computers wisp found when it opens (wisp.machines' PeerView[] and
-  // Found[]): the mock has no other computer and finds none (they were unanswered: a red toast over the dialog)
-  'machines.list': () => ({ ops: [], result: [] }),
+  // Found[]): the mock finds none (they were unanswered: a red toast over the dialog); ?seed=machines' rows get their
+  // update and working tasks (a view for a row that isn't there is never read)
+  'machines.list': () => ({ ops: [], result: MACHINE_VIEWS }),
   // Settings → Worktrees asks for a look when it opens (audit E6); the mock's rows are what it seeded, none found anew
   'worktrees.view': () => ({
     ops: [],

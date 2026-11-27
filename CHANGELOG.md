@@ -28,6 +28,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Machines is a list and a detail.** The dialog lists This computer, each machine with its state (or how many
+  tasks run there) and Add a machine; the one you pick shows beside it: its button and ⋯, an update as a note with its
+  button, then what is running, where it is, its wisp version, its agents as chips and when it connects. On a phone the
+  list comes first and a machine opens on its own with Back. Fixes the phone layout that broke a machine's version
+  and agents one letter a line.
+
 - **Add to your crew has a new look.** Your new member's spirit glows at the top in its colour, and you type their
   name in large text under it, with the role and @handle. The fields are now on four tabs: Who, Their job, When,
   and Where & how. Each tab shows a tick once it's filled in. Skip any you like: Add stays in view at the bottom

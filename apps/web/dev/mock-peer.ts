@@ -60,6 +60,8 @@ export interface MockPeerOptions {
   cloud?: boolean;
   /** the crew at work: one asks you, one works, one has an unread report (MOCK_CREW=1, or POST /__mock/reset?seed=crew; the phone's stories) */
   crew?: boolean;
+  /** the Machines dialog's machines, one in each state (POST /__mock/reset?seed=machines) */
+  machines?: boolean;
   /** with `crew`: Ada's job asks to add a connector, a setup card (POST /__mock/reset?seed=setup, ADR-0113) */
   setup?: boolean;
   /** the flaky-test task leads three crew jobs, one on Studio (POST /__mock/reset?seed=team; implies `computers`) */
@@ -111,7 +113,7 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
   const epoch = o.epoch ?? `mock-${timers.now().toString(36)}`;
   const data: Seeded = o.v1
     ? fromV1(o.v1, peer)
-    : seed({ peer, now: timers.now(), extra: o.sessions ?? 0, ...(o.harnesses && { harnesses: true }), ...(o.firstRun && { firstRun: true }), ...(o.computers && { computers: true }), ...(o.media && { media: true }), ...(o.ask && { ask: true }), ...(o.risk && { risk: true }), ...(o.env && { env: true }), ...(o.usage && { usage: true }), ...(o.trial && { trial: true }), ...(o.cloud && { cloud: true }), ...(o.crew && { crew: true }), ...(o.setup && { setup: true }), ...(o.team && { team: true, computers: true }), ...(o.farJob && { farJob: true }), ...(o.factory && { factory: true }), ...(o.sandbox && { sandbox: true }) });
+    : seed({ peer, now: timers.now(), extra: o.sessions ?? 0, ...(o.harnesses && { harnesses: true }), ...(o.firstRun && { firstRun: true }), ...(o.computers && { computers: true }), ...(o.media && { media: true }), ...(o.ask && { ask: true }), ...(o.risk && { risk: true }), ...(o.env && { env: true }), ...(o.usage && { usage: true }), ...(o.trial && { trial: true }), ...(o.cloud && { cloud: true }), ...(o.crew && { crew: true }), ...(o.setup && { setup: true }), ...(o.team && { team: true, computers: true }), ...(o.farJob && { farJob: true }), ...(o.factory && { factory: true }), ...(o.sandbox && { sandbox: true }), ...(o.machines && { machines: true }) });
   const store = new Map<Topic, Map<string, Row>>();
   const conns = new Map<string, Conn>();
   const handlers = new Map<string, CommandFn>(Object.entries(COMMANDS));
