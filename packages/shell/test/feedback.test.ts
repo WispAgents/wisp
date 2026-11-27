@@ -5,7 +5,8 @@ import { expect, test } from 'vitest';
 import { isFeedback, parseFeedback } from '../src/frame/feedback.ts';
 import { canSend, feedbackOf, sendFeedback } from '../src/frame/feedback-send.ts';
 import home from '../src/frame/HomeView.tsx?raw';
-import task from '../src/frame/TaskView.tsx?raw';
+// the task page's Send (reply-send.ts, used by TaskView.tsx)
+import task from '../src/frame/reply-send.ts?raw';
 import { wireOf } from './command.ts';
 
 test('/feedback and /bug go to the team, not to a task; a bug needs words, an idea words or a thumb_v1_feedback_command', () => {

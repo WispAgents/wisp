@@ -6,7 +6,8 @@ import { expect, test } from 'vitest';
 import { createClient, peerId } from '@wisp/client';
 import { BLOCK_STRINGS } from '@wisp/ui';
 import shellSrc from '../src/shell.tsx?raw';
-import taskView from '../src/frame/TaskView.tsx?raw';
+// the task page's state (task-page.ts, used by TaskView.tsx)
+import taskView from '../src/frame/task-page.ts?raw';
 import compare from '../src/frame/Compare.tsx?raw';
 import { blockStrings } from '../src/block-strings.ts';
 

@@ -1,4 +1,4 @@
-// The overlap note's × (app/Task.tsx OverlapNote, v1 #787 .ov-x): last on the row, a restylable part, calls the host.
+// The overlap note's × (app/OverlapNote.tsx, v1 #787 .ov-x): last on the row, a restylable part, calls the host.
 import { afterEach, expect, test } from 'vitest';
 import { render } from 'solid-js/web';
 import { OverlapNote } from '../src/app/Task.tsx';
