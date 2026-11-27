@@ -26,6 +26,11 @@ fn red(h: &H) {
     h.gh.lock().run_log = Some("2026-11-26T10:00:00.0000000Z error: expected 3, got 4\n".into());
 }
 
+/// The PR's CI ran and passed (GitHub lists its checks a few seconds after a push; before that it waits).
+fn ci_passed(h: &H) {
+    h.gh.lock().checks = Some(json!([{ "__typename": "CheckRun", "name": "test", "conclusion": "SUCCESS" }]));
+}
+
 fn steward(h: &H) -> wisp_ship_api::Steward {
     h.task("t").steward.unwrap_or_default()
 }
@@ -83,6 +88,7 @@ async fn a_thread_is_sent_once_and_a_pass_with_no_change_stops() {
     h.gh.lock().threads = json!({ "data": { "repository": { "pullRequest": { "reviewThreads": { "nodes": [
         { "id": "T1", "isResolved": false, "isOutdated": false, "path": "src/a.rs", "line": 4, "comments": { "nodes": [
             { "author": { "login": "ana", "__typename": "User" }, "body": "This leaks the handle.", "createdAt": "t1" } ] } } ] } } } } });
+    ci_passed(&h);
     h.ship.set_steward("t", "fix").unwrap_or_else(|e| panic!("{e}"));
     h.ship.refresh(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}"));
     let ups = h.follow_ups("t");
@@ -123,6 +129,7 @@ async fn with_review_another_vendors_high_findings_go_back_and_medium_ones_dont(
         let s = s2.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         Box::pin(async move { s })
     }));
+    ci_passed(&h);
     h.ship.set_steward("t", "review").unwrap_or_else(|e| panic!("{e}"));
     h.ship.refresh(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(h.follow_ups("t").len(), 0, "a medium finding stays on the review card");
@@ -143,4 +150,25 @@ async fn an_unknown_mode_is_refused() {
     let h = h();
     shipped(&h).await;
     assert!(h.ship.set_steward("t", "sometimes").is_err());
+}
+
+#[tokio::test]
+async fn a_pr_just_opened_with_no_checks_listed_waits_and_the_steward_does_not_say_green() {
+    // PR #996: read the second it opened, GitHub listed no checks; the card showed passed and the Steward green
+    let h = h();
+    shipped(&h).await;
+    h.ship.set_steward("t", "fix").unwrap_or_else(|e| panic!("{e}"));
+    h.ship.refresh(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}"));
+    assert!(h.task("t").pr().is_some_and(|p| p.waiting_checks), "no checks yet after the push: waiting for them");
+    assert_eq!(steward(&h).step, "watching", "nothing ran yet: not green");
+    // GitHub lists them running: still not green
+    h.gh.lock().checks = Some(json!([{ "__typename": "CheckRun", "name": "test", "status": "IN_PROGRESS" }]));
+    h.ship.refresh(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}"));
+    let pr = h.task("t").pr().cloned().unwrap_or_default();
+    assert!(!pr.waiting_checks && pr.checks.pending == 1, "{pr:?}");
+    assert_eq!(steward(&h).step, "watching");
+    // they pass: now green
+    ci_passed(&h);
+    h.ship.refresh(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(steward(&h).step, "green");
 }

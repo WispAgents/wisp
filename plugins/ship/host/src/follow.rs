@@ -63,8 +63,11 @@ impl Ship {
             let other = task.repos.iter().find_map(|r| r.pr.clone()).or_else(|| task.prs.first().map(|x| x.pr.clone()));
             return Ok(other);
         };
-        let pr = self.shipper.gh.pr_view(&Shipper::dir_of(&wt).await, &prev.number.to_string(), self.shipper.now()).await?;
+        let now = self.shipper.now();
+        let mut pr = self.shipper.gh.pr_view(&Shipper::dir_of(&wt).await, &prev.number.to_string(), now).await?;
         let mut task = self.task(session)?;
+        // just pushed and no checks listed yet: waiting for them, not passed (news and the Steward read it so)
+        follow::mark_waiting(&mut pr, task.pushed_at, now);
         task.repos[0].pr = Some(pr.clone());
         clear_fix(&mut task);
         self.save(task);

@@ -1,7 +1,7 @@
 // Whether Ship it shows (src/model/pr.ts shippable, v1 ship.js shippable), on the row fields the server
 // now sends: `branch` (wisp.worktrees), `pr` and `toShip` (wisp.ship's slot, rechecked at each turn's end).
 import { expect, test } from 'vitest';
-import { prChipLabel, prChipTitle, prsOf, shippable } from '../src/model/pr.ts';
+import { prChipLabel, prChipTitle, prLine, prsOf, prTone, shippable } from '../src/model/pr.ts';
 import { prStripSub, prStripTitle } from '../src/model/strip.ts';
 import { dialogTitle } from '../src/model/ship.ts';
 import type { ShipSession } from '../src/types.ts';
@@ -104,4 +104,14 @@ test('prStripTitle and prStripSub handle single PR and every multi-PR combinatio
   ];
   expect(prStripTitle(t, mixed)).toBe('6 PRs');
   expect(prStripSub(t, mixed)).toBe('1 conflict · 1 failing · 1 running · 1 open · 1 merged · 1 closed');
+});
+
+test('a_pr_whose_checks_are_not_listed_yet_waits_amber_instead_of_passing_green', () => {
+  // PR #996: read the second it opened, it had no checks yet; the card said passed, in green
+  const opened = { number: 996, url: 'u', state: 'OPEN', checks: { pass: 0, fail: 0, pending: 0 } } as const;
+  expect(prTone({ ...opened, waitingChecks: true })).toBe('pending');
+  expect(prLine(t, { ...opened, waitingChecks: true })).toContain(t('wisp.ship.pr.waitingChecks'));
+  // past the grace, no checks is a repo without CI
+  expect(prTone(opened)).toBe('pass');
+  expect(prLine(t, opened)).toContain(t('wisp.ship.pr.noChecks'));
 });

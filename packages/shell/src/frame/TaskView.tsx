@@ -811,6 +811,33 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const g = row()?.summary['goal'] as { status?: unknown } | undefined;
     return g?.status === 'working' || g?.status === 'checking';
   };
+  // the going goal's condition: the lit Goal chip says it (it read a bare "Goal" and opened an empty line)
+  const liveGoalText = (): string => {
+    const g = row()?.summary['goal'] as { text?: unknown } | undefined;
+    return goalGoing() && typeof g?.text === 'string' ? g.text : '';
+  };
+  // the going goal edited where the band edits it (v1 goal.js: the lit Goal opens Edit goal…), its judges kept
+  const editLiveGoal = (): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'goal.edit' as never, params: { task: key } } });
+  // Done when set on its own (Enter with nothing typed in the box, or Set): no follow-up needed to start it. `kick`:
+  // a task whose last turn is done is judged on it now, so the goal starts working at once (v1 Goals#set)
+  const setReplyGoal = (): void => {
+    const g = goal();
+    if (g === undefined) return;
+    if (!g.trim()) {
+      goalInput?.focus();
+      shell.toast.show(t('shell.goal.empty'));
+      return;
+    }
+    const named = goalWire(g, pickedReplyGoal());
+    const back = { text: g, picked: pickedReplyGoal() };
+    setGoalText(undefined);
+    setPickedReplyGoal(undefined);
+    void run(setGoal, { id: key, text: g.trim(), kick: true, ...(typeof named === 'object' && { name: named.name }) }).catch(() => {
+      // refused: the line comes back as it was
+      if (goal() === undefined) (setGoalText(back.text), setPickedReplyGoal(back.picked));
+    });
+    queueMicrotask(() => replyBox.focus());
+  };
   // ↑ brings back what you sent, Shift+Tab cycles the task's mode (v1 prompt-history.js, F-task-31, F-comp-4)
   const replyKeys = promptKeys({
     sent: () => sentList() as readonly string[],
@@ -951,7 +978,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       return;
     }
     menu.reset();
-    if (!v && !extra && files().length === 0) return;
+    if (!v && !extra && files().length === 0) {
+      // nothing to send but Done when filled: the goal is set on its own (it did nothing before)
+      if (goal()?.trim() && sendAt === undefined) setReplyGoal();
+      return;
+    }
     // a plugin's prompt source may take it (@a crew member: their job, their answer under this turn)
     const pc = shell.client.plugin('shell');
     if (
@@ -1503,11 +1534,18 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     id: 'goal',
                     part: 'composer.goal',
                     icon: 'target' as const,
-                    label: typeof named === 'object' ? t('shell.home.goalChip', { text: named.name }) : text ? t('shell.home.goalChip', { text }) : t('shell.home.goal'),
-                    title: t('shell.task.goal'),
+                    label:
+                      typeof named === 'object'
+                        ? t('shell.home.goalChip', { text: named.name })
+                        : text
+                          ? t('shell.home.goalChip', { text })
+                          : goal() === undefined && liveGoalText()
+                            ? t('shell.home.goalChip', { text: liveGoalText() })
+                            : t('shell.home.goal'),
+                    title: goal() === undefined && liveGoalText() ? t('shell.goal.editLive', { text: liveGoalText() }) : t('shell.task.goal'),
                     text: true,
                     on: true,
-                    act: { onClick: () => (goal() === undefined ? setGoalText('') : undefined, queueMicrotask(() => goalInput?.focus())) },
+                    act: { onClick: () => (goal() === undefined && goalGoing() ? editLiveGoal() : (goal() === undefined && setGoalText(''), queueMicrotask(() => goalInput?.focus()))) },
                     ...(goal() !== undefined && { clear: { label: t('shell.home.goalOff'), act: { onClick: () => setGoalText(undefined) } } }),
                   },
                 ]
@@ -2076,14 +2114,22 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     teamAct={replyTeamAct()}
                     goal={t('shell.task.goal')}
                     goalOn={goal() !== undefined || goalGoing()}
-                    goalAct={{ onClick: () => setGoalText(goal() === undefined ? '' : undefined) }}
+                    goalAct={{
+                      onClick: () =>
+                        goal() === undefined && goalGoing() ? editLiveGoal() : (setGoalText(goal() === undefined ? '' : undefined), goal() !== undefined && queueMicrotask(() => goalInput?.focus())),
+                    }}
                     {...(goal() !== undefined && {
                       goalLine: {
                         label: t('shell.home.doneWhen'),
                         placeholder: t('shell.home.goalPlaceholder'),
-                        keys: t('shell.home.goalKeys'),
+                        // v1 .lg-keys: what Enter does, the message's or the goal's own
+                        keys: text().trim() ? t('shell.goal.withMessage') : t('shell.home.goalKeys'),
                         value: goal() ?? '',
                         onInput: setGoalText,
+                        // Enter: with the message if one is typed (v1 goal.js clicks Send), else the goal alone
+                        onEnter: () => (text().trim() || files().length > 0 ? send() : setReplyGoal()),
+                        onEscape: () => (setGoalText(undefined), setPickedReplyGoal(undefined), replyBox.focus()),
+                        set: { label: t('shell.goal.set'), title: t('shell.goal.setTitle'), onClick: setReplyGoal },
                         ref: (el: HTMLInputElement) => (goalInput = el),
                       },
                     })}

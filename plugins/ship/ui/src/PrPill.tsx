@@ -34,7 +34,7 @@ export default function PrPill(props: ExtensionProps): JSX.Element {
             part="card.pr"
             label={`#${pr().number}`}
             tone={TONE[prTone(pr(), s()?.pr ? s()?.conflictFix : undefined)]}
-            live={!!pr().checks?.pending && pr().state === 'OPEN'}
+            live={(!!pr().checks?.pending || !!pr().waitingChecks) && pr().state === 'OPEN'}
             title={pillTitle(t, pr(), s()?.pr ? s()?.conflictFix : undefined)}
             onClick={() => opener?.openPane()}
           />

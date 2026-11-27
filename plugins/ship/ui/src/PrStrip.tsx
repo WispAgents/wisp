@@ -234,7 +234,7 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
                   label={!sameRepo() && o.repo ? o.repo : `#${o.pr.number}`}
                   suffix={!sameRepo() && o.repo ? `#${o.pr.number}` : undefined}
                   tone={TONE[prTone(o.pr, fixFor(o))]}
-                  live={!!o.pr.checks?.pending && o.pr.state === 'OPEN'}
+                  live={(!!o.pr.checks?.pending || !!o.pr.waitingChecks) && o.pr.state === 'OPEN'}
                   title={prChipTitle(t, o, fixFor(o))}
                   onClick={() => ship.shell.platform.openExternal(o.pr.url)}
                 />

@@ -96,6 +96,7 @@ pub fn pr_summary(j: &Value, checked_at: i64) -> PrSummary {
         base: text_or(j, "baseRefName"),
         merged_at: text(j, "mergedAt").map(str::to_owned),
         checks: checks_of(j.get("statusCheckRollup")),
+        waiting_checks: false,
         checked_at,
     }
 }

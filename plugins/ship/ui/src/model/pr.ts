@@ -18,7 +18,7 @@ export function prTone(pr: PrSummary, fix?: ConflictFix | null): PrTone {
   if (pr.state === 'CLOSED') return 'closed';
   if (pr.conflict) return fixing(fix) ? 'pending' : 'fail';
   if (pr.checks?.fail) return 'fail';
-  if (pr.checks?.pending) return 'pending';
+  if (pr.checks?.pending || pr.waitingChecks) return 'pending';
   return pr.review === 'CHANGES_REQUESTED' ? 'fail' : 'pass';
 }
 
@@ -39,7 +39,7 @@ function conflictLine(t: T, fix: ConflictFix | null | undefined): string {
 export function prLine(t: T, pr: PrSummary, fix?: ConflictFix | null): string {
   if (pr.state === 'OPEN' && (pr.conflict || fixing(fix))) return conflictLine(t, fix);
   const c = pr.checks;
-  const checks = c?.fail ? t('wisp.ship.pr.failing', { count: c.fail }) : c?.pending ? t('wisp.ship.pr.running', { count: c.pending }) : c?.pass ? t('wisp.ship.pr.passed', { count: c.pass }) : t('wisp.ship.pr.noChecks');
+  const checks = c?.fail ? t('wisp.ship.pr.failing', { count: c.fail }) : c?.pending ? t('wisp.ship.pr.running', { count: c.pending }) : c?.pass ? t('wisp.ship.pr.passed', { count: c.pass }) : pr.waitingChecks ? t('wisp.ship.pr.waitingChecks') : t('wisp.ship.pr.noChecks');
   const state = pr.state === 'MERGED' ? t('wisp.ship.pr.merged') : pr.state === 'CLOSED' ? t('wisp.ship.pr.closed') : pr.draft ? t('wisp.ship.pr.draft') : t('wisp.ship.pr.open');
   const review = pr.state === 'OPEN' && pr.review ? t(REVIEW[pr.review]) : '';
   return [state, pr.state === 'OPEN' ? checks : '', review].filter(Boolean).join(' · ');

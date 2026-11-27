@@ -211,6 +211,7 @@ impl Ship {
                         r.pr = Some(pr.clone());
                     }
                     t.pushed_at = now;
+                    wisp_ship_core::follow::mark_task(t, now);
                     if let Some(s) = t.steward.as_mut() {
                         s.step = "watching".into();
                     }

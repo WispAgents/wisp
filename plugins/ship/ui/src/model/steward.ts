@@ -12,6 +12,14 @@ function causes(t: T, s: Steward): string {
   return words.length ? words.join(', ') : t('wisp.ship.steward.cause.pr');
 }
 
+/** The Steward's green still holds: the PR's head is the one it judged, and no check is running or still to show. */
+function greenNow(s: ShipSession, st: Steward): boolean {
+  const pr = s.pr;
+  if (!pr) return false;
+  if (st.head && pr.head && st.head !== pr.head) return false;
+  return !pr.checks?.pending && !pr.checks?.fail && !pr.waitingChecks;
+}
+
 /** The line under the PR row while the Steward is on (or just stopped); undefined without one. */
 export function stewardLine(t: T, s: ShipSession): string | undefined {
   const st = s.steward;
@@ -22,6 +30,8 @@ export function stewardLine(t: T, s: ShipSession): string | undefined {
     case 'pushing':
       return t('wisp.ship.steward.pushing');
     case 'green':
+      // green is for the head it judged, once its checks ran: a new push, or checks running again, is watching
+      if (!greenNow(s, st)) return t(st.mode === 'review' ? 'wisp.ship.steward.watchingReview' : 'wisp.ship.steward.watching');
       return st.reviewer ? t('wisp.ship.steward.greenBy', { who: st.reviewer }) : t('wisp.ship.steward.green');
     case 'stopped':
       return t('wisp.ship.steward.stopped', { why: st.why || t('wisp.ship.steward.stoppedWhy') });
