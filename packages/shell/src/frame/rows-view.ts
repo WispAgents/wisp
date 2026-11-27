@@ -6,27 +6,47 @@ import type { SessionRow } from '../rows.ts';
 import type { ShellContext } from '../contract.ts';
 import { isHeld } from '../task-held.ts';
 
-export type SectionId = 'needs' | 'working' | 'done';
-export const SECTIONS: readonly SectionId[] = ['needs', 'working', 'done'];
+export type SectionId = 'needs' | 'shipping' | 'working' | 'done';
+export const SECTIONS: readonly SectionId[] = ['needs', 'shipping', 'working', 'done'];
 
 /** Saved for later: the server's summary says `{at, by}`, an optimistic patch the same (or `true` from an older one). */
 export const isSaved = (v: unknown): boolean => v === true || (typeof v === 'object' && v !== null);
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined);
 
-/** Needs you, by the list's own rules (shell-list model/sections.ts, v1 feed.js groups): finished or asking, and not
+/** A shipped task's PR wants you back: you haven't read its report, a check fails, it conflicts with its base or a
+ *  reviewer asked for changes. Then it sits in Needs you, not Shipping (quiet until its PR lands). The one rule: the
+ *  shell's needsYou and sectionOf here, shell-list's isShipping and needsYou (model/sections.ts) through
+ *  `@wisp/shell/pure`. `pr` is wisp.ship's PrSummary (`checks` are counts). */
+export function shipNeedsYou(pr: unknown, unread: boolean): boolean {
+  if (unread) return true;
+  const p = obj(pr);
+  const fail = obj(p?.['checks'])?.['fail'];
+  return (typeof fail === 'number' && fail > 0) || p?.['conflict'] === true || p?.['review'] === 'CHANGES_REQUESTED';
+}
+
+/** Shipped (the list's isShipping): wisp.ship is shipping it, or its PR is still open. */
+const shipped = (s: SessionRow): boolean => {
+  const sum = s.summary as Record<string, unknown>;
+  return s.state === 'review' && (!!sum['shipping'] || obj(sum['pr'])?.['state'] === 'OPEN');
+};
+
+/** In Shipping: shipped and quiet. One that needs you (shipNeedsYou) is back in Needs you. */
+export const isShippingRow = (s: SessionRow): boolean => shipped(s) && !shipNeedsYou((s.summary as Record<string, unknown>)['pr'], s.unread);
+
+/** Needs you, by the list's own rules (shell-list model/sections.ts, v1 feed.js groups): finished, asking or failed, and not
  *  archived, saved for later, waiting on a follow-up (Scheduled), a subagent's run (under its lead) or a terminal task
  *  with its terminal open. Home's Needs you, the project chips and the switcher count this, so they agree with the list. */
 export function needsYou(s: SessionRow): boolean {
   if (s.archived || s.parent_id) return false;
-  if (s.state !== 'review' && s.state !== 'waiting') return false;
+  if (s.state !== 'review' && s.state !== 'waiting' && s.state !== 'error') return false;
   const sum = s.summary as Record<string, unknown>;
   // saved for later (the list's isForLater: not while a reminder came due or a turn waits to send)
   if (isSaved(sum['forLater']) && !sum['reminder'] && !sum['pending']) return false;
   // a terminal task with its terminal open, finished: being worked on (the list's inTerm)
   if (s.state === 'review' && sum['tui'] && sum['term']) return false;
-  // shipped (the list's isShipping): in Shipping until its PR lands
-  if (s.state === 'review' && (sum['shipping'] || obj(sum['pr'])?.['state'] === 'OPEN')) return false;
+  // shipped and quiet (the list's isShipping): in Shipping until its PR lands, unless the PR wants you back
+  if (isShippingRow(s)) return false;
   const later = obj(obj(obj(s.body?.['ext'])?.['wisp.later']))?.['later'];
   const followUp = Array.isArray(later) && later.some((l) => !obj(l)?.['remind']);
   const scheduled = s.state === 'review' && followUp && !sum['reminder'] && !sum['held'] && !sum['pending'];
@@ -61,6 +81,7 @@ export function homeNeeds(rows: readonly SessionRow[]): SessionRow[] {
 export function sectionOf(s: SessionRow): SectionId {
   if (s.state === 'running') return 'working';
   if (s.state === 'done') return 'done';
+  if (isShippingRow(s)) return 'shipping';
   return 'needs';
 }
 
@@ -330,13 +351,14 @@ export function movedOrder(current: readonly ProjectView[], id: string, to: stri
   return ids;
 }
 
-/** v1 #… (feed.js next): after Mark done, archive or delete, the task that needs you next (the newest in Needs you,
- *  not archived, not a subagent's, not the one just left), else none (New task). */
+/** v1 #… (feed.js next): after Mark done, archive or delete, the task that needs you next (the newest that needsYou:
+ *  not shipping quietly, saved for later or scheduled, not archived, not a subagent's, not the one just left), else
+ *  none (New task). */
 export function nextNeedsYou(rows: readonly SessionRow[], leaving: string): string | undefined {
   const bare = (id: string): string => id.slice(id.indexOf(':') + 1);
   const left = bare(leaving);
   return rows
-    .filter((s) => bare(s.id) !== left && !s.archived && !s.parent_id && sectionOf(s) === 'needs')
+    .filter((s) => bare(s.id) !== left && !s.archived && !s.parent_id && needsYou(s))
     .reduce<SessionRow | undefined>((best, s) => (!best || s.updated_at > best.updated_at ? s : best), undefined)?.id;
 }
 

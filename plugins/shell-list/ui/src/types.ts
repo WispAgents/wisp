@@ -20,7 +20,8 @@ export interface PrRef {
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   draft?: boolean;
   review?: string;
-  checks?: 'pass' | 'fail' | 'pending' | string;
+  /** wisp.ship's Checks: how many of the head's checks passed, failed, are still running */
+  checks?: { pass?: number; fail?: number; pending?: number };
   conflict?: boolean;
 }
 

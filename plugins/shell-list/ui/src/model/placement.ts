@@ -6,6 +6,7 @@
 // answer itself. The check is one reference compare per row, plus a signature for the rows that
 // changed: about 10 µs for 5k rows (spikes/shell-list-bench).
 
+import { shipNeedsYou } from '@wisp/shell/pure';
 import type { EntityKey, Plan, Row, SessionRow } from '../types.ts';
 import { sections, type Filter, type Keyed, type Sections } from './sections.ts';
 
@@ -25,6 +26,8 @@ export function signature(s: SessionRow): string {
     s.reminder ? 1 : 0,
     s.shipping ? 1 : 0,
     s.pr?.state ?? '',
+    // a failing check, a conflict or changes requested move a shipped task back to Needs you
+    shipNeedsYou(s.pr, false) ? 1 : 0,
     s.pending ? 1 : 0,
     s.tui ? 1 : 0,
     s.term ? 1 : 0,

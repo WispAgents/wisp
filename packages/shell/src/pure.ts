@@ -3,7 +3,7 @@
 // from here and its tests stay fast. Only modules that reach no component belong here.
 export { editorUrl, fileUrl } from './editor.ts';
 export { clock24, cronWords, midSentence, toCron, type ClockFormat } from './schedule.ts';
-export { PROJECT_ORDER, movedOrder, projectList, projectOf, projectOfRow, type ProjectView } from './frame/rows-view.ts';
+export { PROJECT_ORDER, movedOrder, shipNeedsYou, projectList, projectOf, projectOfRow, type ProjectView } from './frame/rows-view.ts';
 export { dirsOf, launchOf, parsePick, pickValue, placePick, taskPlaces, type TaskPlace } from './frame/project-pick.ts';
 // New task's command (its optimistic row, its wire): the dev mock's tests send it as New task does
 export { create, startingRow, type CreateArgs } from './frame/commands.ts';
