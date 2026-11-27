@@ -62,21 +62,18 @@ fn suggest_masked(s: &str, key: &str) -> String {
     suggest(what, key)
 }
 
-/// `s` without its `${secret:NAME}` references: they are the fix, never a secret, though `secret:NAME_OF_IT` reads as
-/// `secret: <a long value>` to the scanner's generic pattern (the docs' own Linear trigger was refused).
+/// `s` without its `${secret:NAME}` and `${env:NAME}` references: they are the fix, never a secret, though
+/// `secret:NAME_OF_IT` reads as `secret: <a long value>` to the scanner's generic pattern (the docs' own Linear trigger
+/// was refused). Only well-formed ones, as the mask skips them ([`secret_scan::reference_spans`]): anything up to the
+/// next `}` used to go, a token inside it too.
 fn without_secret_refs(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(at) = rest.find("${secret:") {
-        out.push_str(&rest[..at]);
-        if let Some(end) = rest[at..].find('}') {
-            rest = &rest[at + end + 1..];
-        } else {
-            out.push_str(&rest[at..]);
-            rest = "";
-        }
+    let mut at = 0;
+    for r in secret_scan::reference_spans(s) {
+        out.push_str(&s[at..r.start]);
+        at = r.end;
     }
-    out.push_str(rest);
+    out.push_str(&s[at..]);
     out
 }
 
@@ -167,6 +164,21 @@ mod tests {
         let r = Resource::new("trigger", "x", json!({ "note": "${secret:A} api_key=abcdefghijklmnop1234" }));
         assert_eq!(problems(&trigger, &r).len(), 1, "a real value beside a reference is still caught");
         assert_eq!(without_secret_refs("a ${secret:B} c ${secret:unclosed"), "a  c ${secret:unclosed");
+    }
+
+    /// final4 F4: a malformed `${env: …}` span was skipped whole up to its `}`, so a token inside it passed the check.
+    #[test]
+    fn a_token_inside_a_malformed_reference_is_still_a_problem() {
+        let trigger = KindInfo::new("trigger", "triggers", "x", json!({}));
+        let r = Resource::new("trigger", "x", json!({ "note": format!("${{env: x token=sk-ant-{}}} ", "b".repeat(40)) }));
+        let found = problems(&trigger, &r);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].contains("an Anthropic API key"), "{found:?}");
+        let r = Resource::new("trigger", "x", json!({ "note": format!("${{secret: x token=sk-ant-{}}} ", "b".repeat(40)) }));
+        assert_eq!(problems(&trigger, &r).len(), 1, "the same inside a malformed ${{secret: …}}");
+        let ok = Resource::new("trigger", "x", json!({ "secret": "${secret:LINEAR_WEBHOOK_SECRET}", "home": "${env:HOME_DIR}" }));
+        assert_eq!(problems(&trigger, &ok), Vec::<String>::new());
+        assert_eq!(without_secret_refs("a ${env:B} c"), "a  c");
     }
 
     /// AAC-4: a literal token in a connector's headers or env was stored as it was, and exported to anyone.

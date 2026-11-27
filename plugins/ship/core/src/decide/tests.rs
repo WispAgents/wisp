@@ -43,6 +43,20 @@ fn ship_refuses_what_it_cannot_ship() {
     assert_eq!(push_refspec(&wt("wisp/x")), "HEAD:refs/heads/wisp/x");
 }
 
+/// final4 F1: someone else's commits on the remote branch are refused in words, naming what they change.
+#[test]
+fn a_branch_the_remote_moved_past_is_refused_in_words() {
+    let files: Vec<String> = ["src/a.rs", "src/b.rs", "src/c.rs", "src/d.rs"].map(str::to_owned).to_vec();
+    let e = diverged("origin", "wisp/x", &files);
+    assert!(matches!(e, Refusal::Conflict(_)));
+    assert_eq!(
+        e.message(),
+        "origin/wisp/x has commits this branch doesn't (they change src/a.rs, src/b.rs, src/c.rs and 1 more). Pull or merge them in, then ship again: wisp never force-pushes."
+    );
+    assert!(diverged("origin", "wisp/x", &files[..1]).message().contains("(they change src/a.rs)."));
+    assert!(diverged("origin", "wisp/x", &[]).message().starts_with("origin/wisp/x has commits this branch doesn't. Pull"));
+}
+
 #[test]
 fn an_open_pr_is_updated_by_the_push_a_closed_one_gets_a_new_pr() {
     assert_eq!(reuse_pr(Some(&pr(3, "OPEN"))), Some(3));

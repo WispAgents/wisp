@@ -19,6 +19,8 @@ pub struct GitState {
     pub counts: HashMap<String, Option<u32>>,
     pub merge_tree: Option<MergeTree>,
     pub base_merged: Option<BaseMerged>,
+    /// what a catch-up before the push finds (None: Even)
+    pub catch_up: Option<CaughtUp>,
     pub log: Vec<String>,
     pub push_fails: Option<String>,
     /// `git status` fails with this
@@ -180,6 +182,10 @@ impl Repo for FakeRepo {
         *st.ahead.entry(p.clone()).or_default() += 1;
         st.log.push(format!("commit {p} {}|{}|all={}", req.message, req.body, req.all));
         done(Some(format!("sha-{p}-{}", st.ahead[&p])))
+    }
+    fn catch_up(&self, _call: &Call, req: CatchUpRequest) -> F<CaughtUp> {
+        self.log(format!("catch-up {} {} {}", req.remote, req.branch, req.only));
+        done(self.git.lock().catch_up.clone().unwrap_or(CaughtUp::Even))
     }
     fn push(&self, _call: &Call, req: PushRequest) -> F<()> {
         let p = self.p();

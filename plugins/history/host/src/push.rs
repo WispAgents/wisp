@@ -3,10 +3,11 @@
 //! Two places a save lands (`config::root_of_task`), two ways out:
 //! - the task's own worktree, its work not shipped yet. Once the task's branch is on its remote, a commit of just
 //!   these files is built on that branch's remote tip in a scratch index and pushed as a fast-forward (its PR, if
-//!   any, gets them). The worktree's HEAD, index and files are never touched, and the agent's own unpushed commits
-//!   never go out with it: shipping those is the user's call, not a side effect of saving history. With the
+//!   any, gets them). The worktree's files are never rewritten, and the agent's own unpushed commits
+//!   never go out with it: shipping those is the user's call, not a side effect of saving history. A local branch
+//!   still at that tip follows it (its index too), so the next push from there is a fast-forward. With the
 //!   branch not on the remote yet (nothing shipped), it goes out as the main checkout's does, below: no branch is
-//!   ever made under the task's name;
+//!   ever made under the task's name. Nor with its PR merged or closed: what lands there now nobody merges;
 //! - the main checkout (the work merged, or the worktree gone): a commit built on the remote's base branch in a
 //!   scratch index, so the user's checkout, branch and index are never touched, pushed to `wisp/history-<id>`
 //!   with a PR opened by `gh`. The local copies are then taken out (restored to HEAD when tracked): left in place
@@ -159,9 +160,9 @@ async fn present(root: &Path, files: &[String]) -> Vec<String> {
 }
 
 /// The task's worktree: a commit of just these files on the remote tip of its branch, pushed as a fast-forward.
-/// Built in a scratch index from blobs (`hash-object`), so the worktree is left as it was, `.wisp/` may be
-/// gitignored, and whatever the agent committed but didn't push stays unpushed. No branch on the remote yet: as
-/// the main checkout does ([`as_pr`]).
+/// Built in a scratch index from blobs (`hash-object`), so the worktree's files are left as they were, `.wisp/` may be
+/// gitignored, and whatever the agent committed but didn't push stays unpushed; a branch still at the tip follows it
+/// ([`follow`]). No branch on the remote yet, or its PR merged or closed: as the main checkout does ([`as_pr`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn onto_branch(
     p: &Proc,
@@ -177,30 +178,62 @@ pub(crate) async fn onto_branch(
     if have.is_empty() {
         return earlier.ok_or_else(|| WireError::invalid("the files it saved aren't in the repo any more: Save to repo again"));
     }
+    // its PR merged or closed: nobody merges what lands on that branch now, so the history goes out as its own PR
+    if git::pr_closed(p, gh, root, branch).await {
+        return as_pr(p, gh, root, remote, (id, title), files, earlier).await;
+    }
     let head = format!("refs/heads/{branch}");
     let listed = git_ok(p, root, &[], &["ls-remote", "--heads", remote, &head], "git ls-remote").await?;
     let Some(tip) = listed.lines().find_map(|l| l.split_once('\t').filter(|(_, r)| *r == head).map(|(sha, _)| sha.to_owned())) else {
         return as_pr(p, gh, root, remote, (id, title), files, earlier).await;
     };
     git_ok(p, root, &[], &["fetch", "--quiet", remote, &head], "git fetch").await?;
-    let tree = scratch_tree(p, root, id, &tip, &have).await?;
+    let (tree, entries) = scratch_tree(p, root, id, &tip, &have).await?;
     let tip_tree = git_ok(p, root, &[], &["rev-parse", &format!("{tip}^{{tree}}")], "git rev-parse").await?;
     let commit = if tree == tip_tree {
         // the branch has them already, as saved
-        tip
+        tip.clone()
     } else {
         let commit = git_ok(p, root, &[], &["commit-tree", &tree, "-p", &tip, "-m", &message(title, id)], "git commit-tree").await?;
         // no --force: a push that landed meanwhile is refused, never overwritten
         git_ok(p, root, &[], &["push", remote, &format!("{commit}:{head}")], "git push").await?;
         commit
     };
+    follow(p, root, &head, &tip, &commit, &entries).await;
     let pr = git::pr_of_with(p, gh, root, std::slice::from_ref(&commit), branch).await;
     Ok(Pushed { branch: branch.to_owned(), commit, files: have, pr, removed: Vec::new(), compare: None, no_pr: false })
 }
 
+/// The worktree's branch brought up to the history commit just pushed, when it still sat at the remote tip that commit
+/// was built on: else the next Ship (or the agent's own push) from it was refused as a non-fast-forward. A
+/// compare-and-swap (`update-ref new old`), and the same blobs added to the worktree's index, so `git status` there
+/// shows nothing new: the files on disk are those blobs, and are never rewritten. A branch that moved past the tip (the
+/// agent's commits, not pushed) is left alone: Ship merges the history in before its push. Best effort: the push landed.
+async fn follow(p: &Proc, root: &Path, head: &str, tip: &str, commit: &str, entries: &[String]) {
+    if commit == tip {
+        return;
+    }
+    // only the branch this worktree has out: its index is the one that comes along
+    let on = exec(p, "git", root, &[], &["symbolic-ref", "--quiet", "HEAD"]).await.unwrap_or_default();
+    let at = exec(p, "git", root, &[], &["rev-parse", "--verify", "--quiet", head]).await.unwrap_or_default();
+    if on != head || at != tip {
+        return;
+    }
+    if let Err(e) = exec(p, "git", root, &[], &["update-ref", head, commit, tip]).await {
+        tracing::info!(head, "history: the branch stays where it was: {e}");
+        return;
+    }
+    for at in entries {
+        if let Err(e) = exec(p, "git", root, &[], &["update-index", "--add", "--cacheinfo", at]).await {
+            tracing::info!(head, "history: the worktree's index left as it was for {at}: {e}");
+        }
+    }
+}
+
 /// The tree of `base` with these files over it, built in a scratch index so the checkout's own index, branch and
-/// files are never touched (and ignore rules don't apply: the blobs go in by hash).
-async fn scratch_tree(p: &Proc, root: &Path, id: &str, base: &str, files: &[String]) -> Result<String> {
+/// files are never touched (and ignore rules don't apply: the blobs go in by hash). With each file's index entry
+/// (`mode,blob,path`), for a worktree whose branch then follows ([`follow`]).
+async fn scratch_tree(p: &Proc, root: &Path, id: &str, base: &str, files: &[String]) -> Result<(String, Vec<String>)> {
     // paths in the index are from git's top; the repo's `.wisp/` may sit in a subfolder of it
     let prefix = git_ok(p, root, &[], &["rev-parse", "--show-prefix"], "git rev-parse").await?;
     // one per push, not per process: two pushes of one task at once shared it, and one's read-tree emptied the other's
@@ -209,13 +242,15 @@ async fn scratch_tree(p: &Proc, root: &Path, id: &str, base: &str, files: &[Stri
     let env = [("GIT_INDEX_FILE", index_s.as_str())];
     let built = async {
         git_ok(p, root, &env, &["read-tree", base], "git read-tree").await?;
+        let mut entries = Vec::new();
         for f in files {
             // through the repo's filters (an LFS store's transcripts go in as pointers)
             let blob = git_ok(p, root, &[], &["hash-object", "-w", "--", f], "git hash-object").await?;
             let at = format!("100644,{blob},{prefix}{f}");
             git_ok(p, root, &env, &["update-index", "--add", "--cacheinfo", &at], "git update-index").await?;
+            entries.push(at);
         }
-        git_ok(p, root, &env, &["write-tree"], "git write-tree").await
+        Ok((git_ok(p, root, &env, &["write-tree"], "git write-tree").await?, entries))
     }
     .await;
     let _ = tokio::fs::remove_file(&index).await;
@@ -243,7 +278,7 @@ pub(crate) async fn as_pr(
         .ok_or_else(|| WireError::invalid(format!("no base branch on {remote} (main or {remote}/HEAD)")))?;
     git_ok(p, root, &[], &["fetch", "--quiet", remote, &base], "git fetch").await?;
     let base_sha = git_ok(p, root, &[], &["rev-parse", &format!("refs/remotes/{remote}/{base}^{{commit}}")], "git rev-parse").await?;
-    let tree = scratch_tree(p, root, id, &base_sha, &files).await?;
+    let (tree, _) = scratch_tree(p, root, id, &base_sha, &files).await?;
     let branch = history_branch(id);
     let base_tree = git_ok(p, root, &[], &["rev-parse", &format!("{base_sha}^{{tree}}")], "git rev-parse").await?;
     let (commit, pr, pushed_to) = if tree == base_tree {

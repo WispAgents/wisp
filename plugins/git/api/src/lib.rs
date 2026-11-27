@@ -63,6 +63,7 @@ pub const PERMISSIONS: &[(&str, &str)] = &[
     ("apply", "git:apply"),
     ("commit", "git:commit"),
     ("push", "git:push"),
+    ("catch_up", "git:commit"),
     ("branch_delete", "git:branch.delete"),
     ("sync_base", "git:merge.ff"),
     ("snapshot", "git:snapshot"),
@@ -158,6 +159,14 @@ pub trait Repo: Send + Sync + std::fmt::Debug + 'static {
     /// Commits (everything first with `all`): the new sha, None when there was nothing to commit.
     fn commit(&self, call: &Call, req: CommitRequest) -> Fut<Option<String>>;
     fn push(&self, call: &Call, req: PushRequest) -> Fut<()>;
+    /// Before a push that must be a fast-forward: the branch's tip on its remote, fetched, and merged into HEAD when
+    /// every commit only the remote has touches nothing but paths in an `only` folder (`.wisp`: the history wisp
+    /// pushed to the branch from a save). Never a force, never anything else merged. Additive (2026-11-27): a repo
+    /// without it answers `Unknown`, and the push goes as before.
+    fn catch_up(&self, call: &Call, req: CatchUpRequest) -> Fut<CaughtUp> {
+        let _ = (call, req);
+        Box::pin(async { Ok(CaughtUp::Unknown) })
+    }
     /// Deletes a local branch: true when it went.
     fn branch_delete(&self, call: &Call, name: &str) -> Fut<bool>;
     /// Fast-forwards the user's `base` to origin's, never anything more invasive (edge case Git 8).
@@ -271,6 +280,31 @@ pub struct PushRequest {
     pub set_upstream: bool,
     #[serde(default)]
     pub delete: bool,
+}
+
+/// [`Repo::catch_up`]'s ask: the remote, the branch on it, and the folder whose commits may be merged in.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatchUpRequest {
+    pub remote: String,
+    pub branch: String,
+    /// a folder name (`.wisp`), at the repo's top or in any subfolder of it
+    pub only: String,
+}
+
+/// What [`Repo::catch_up`] found.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CaughtUp {
+    /// the remote has nothing HEAD doesn't (or no such branch): the push is a fast-forward as it is
+    Even,
+    /// the remote's commits, all in the `only` folder, merged into HEAD
+    Merged,
+    /// the remote has other commits (`files`: the paths they touch outside the folder, or the ones the merge
+    /// conflicted on); nothing was changed
+    Diverged { files: Vec<String> },
+    /// git couldn't tell (the fetch failed: offline, no access): the push decides
+    Unknown,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

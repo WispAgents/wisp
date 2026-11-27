@@ -720,12 +720,85 @@ async fn a_worktree_push_never_ships_the_agents_unpushed_commits() {
     let tree = git(&origin, &["ls-tree", "-r", "--name-only", TASK_BRANCH]);
     assert!(files.iter().all(|f| tree.lines().any(|l| l == f)), "{tree}");
     assert_eq!(git(&wt, &["rev-parse", "HEAD"]).trim(), local);
+    // final4 F1: past the tip, the branch isn't moved (Ship merges the history in before its push)
+    assert_eq!(git(&wt, &["rev-parse", &format!("refs/heads/{TASK_BRANCH}")]).trim(), local);
     assert_eq!(git(&wt, &["diff", "--cached"]), cached);
     assert!(files.iter().all(|f| wt.join(f).is_file()));
     // pushed again as saved: nothing new, the tip answered
     let again = super::push::onto_branch(&p, &no_gh(&d), &wt, "origin", TASK_BRANCH, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
     assert_eq!(again.commit, tip);
     assert_eq!(git(&origin, &["rev-parse", TASK_BRANCH]).trim(), tip);
+}
+
+/// final4 F1: a worktree whose branch sat at the remote tip follows the history commit it pushed (its index too), so
+/// `git status` there is clean and the next push from it, never forced, is a fast-forward.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_worktree_push_moves_its_branch_along_so_the_next_push_is_a_fast_forward() {
+    let (d, origin, wt, files) = saved_worktree("push-wt-follow", false);
+    git(&wt, &["push", "-q", "origin", TASK_BRANCH]);
+    let p = wisp_proc::local();
+    let out = super::push::onto_branch(&p, &no_gh(&d), &wt, "origin", TASK_BRANCH, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    assert_eq!(out.commit, git(&origin, &["rev-parse", TASK_BRANCH]).trim());
+    assert_eq!(git(&wt, &["rev-parse", &format!("refs/heads/{TASK_BRANCH}")]).trim(), out.commit);
+    assert_eq!(git(&wt, &["status", "--porcelain"]), "", "no staged deletions, nothing new");
+    assert!(files.iter().all(|f| wt.join(f).is_file()));
+    std::fs::write(wt.join("math.js"), "a * b\n").unwrap();
+    git(&wt, &["commit", "-qam", "more work"]);
+    git(&wt, &["push", "-q", "origin", &format!("HEAD:refs/heads/{TASK_BRANCH}")]);
+    assert_eq!(git(&origin, &["rev-parse", TASK_BRANCH]), git(&wt, &["rev-parse", "HEAD"]));
+}
+
+/// A stand-in gh answering `pr list` for the task's branch with a PR in `state`, and `pr create` with PR 8.
+#[cfg(unix)]
+fn gh_with_pr(d: &Path, state: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let gh = d.join("gh-state");
+    let list = format!(
+        r#"[{{"state":"{state}","url":"https://github.com/acme/app/pull/7","headRefName":"{TASK_BRANCH}","headRefOid":"x","number":7}}]"#
+    );
+    let script = format!(
+        "#!/bin/sh\ncase \"$*\" in\n  *'pr list'*) echo '{list}' ;;\n  *'pr create'*) echo https://github.com/acme/app/pull/8 ;;\nesac\n"
+    );
+    std::fs::write(&gh, script).unwrap();
+    std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    gh.display().to_string()
+}
+
+/// final4 F2: the task branch's PR merged, so nothing on that branch gets merged now: the history goes out as its own
+/// PR on the base, and the task branch on the remote is left as it was.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_worktree_push_after_its_pr_merged_opens_a_history_pr_on_the_base() {
+    let (d, origin, wt, files) = saved_worktree("push-wt-merged", false);
+    git(&wt, &["push", "-q", "origin", TASK_BRANCH]);
+    let shipped = git(&origin, &["rev-parse", TASK_BRANCH]);
+    let p = wisp_proc::local();
+    let out = super::push::onto_branch(&p, &gh_with_pr(&d, "MERGED"), &wt, "origin", TASK_BRANCH, (PUSHED_ID, "Fix"), &files, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        (out.branch.as_str(), out.pr.as_deref()),
+        ("wisp/history-01a1bc12ab34", Some("https://github.com/acme/app/pull/8")),
+        "{out:?}"
+    );
+    assert_eq!(git(&origin, &["rev-parse", TASK_BRANCH]), shipped, "the dead branch is left as it was");
+    assert_eq!(git(&origin, &["rev-parse", "wisp/history-01a1bc12ab34^1"]), git(&origin, &["rev-parse", "main"]), "built on the base");
+    let tree = git(&origin, &["ls-tree", "-r", "--name-only", "wisp/history-01a1bc12ab34"]);
+    assert!(files.iter().all(|f| tree.lines().any(|l| l == f)), "{tree}");
+}
+
+/// final4 F2: with its PR still open, the history goes onto the task's branch as before, and its PR is named.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_worktree_push_with_its_pr_open_goes_onto_its_branch() {
+    let (d, origin, wt, files) = saved_worktree("push-wt-open", false);
+    git(&wt, &["push", "-q", "origin", TASK_BRANCH]);
+    let p = wisp_proc::local();
+    let out =
+        super::push::onto_branch(&p, &gh_with_pr(&d, "OPEN"), &wt, "origin", TASK_BRANCH, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    assert_eq!((out.branch.as_str(), out.pr.as_deref()), (TASK_BRANCH, Some("https://github.com/acme/app/pull/7")), "{out:?}");
+    assert_eq!(out.commit, git(&origin, &["rev-parse", TASK_BRANCH]).trim());
+    assert!(!git(&origin, &["for-each-ref", "--format=%(refname)", "refs/heads"]).contains("wisp/history-"));
 }
 
 /// final3 doc5a: nothing shipped yet, so no branch goes up under the task's name: the history goes out as its own PR.
