@@ -49,7 +49,7 @@ async function openTask(o: { readonly page?: boolean } = {}) {
     client.nav.navigate({ t: 'openTask', id: task()?.id as EntityKey as never });
     await until(() => root.querySelector('[data-part~="split.more"]') !== null);
   }
-  return { client, root, sent, sessions, task: task() as { id: string; title: string } };
+  return { client, shell, root, sent, sessions, task: task() as { id: string; title: string } };
 }
 
 const item = (label: RegExp): HTMLElement | undefined => [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')].find((e) => label.test(e.textContent ?? ''));
@@ -81,11 +81,12 @@ test('fork_from_the_heads_menu_opens_v1s_fork_dialog_and_cancelling_it_makes_not
 });
 
 test('shift_f_opens_the_fork_dialog_too_and_makes_nothing_qa_r14_1', async () => {
-  const { sent, sessions } = await openTask();
+  const { sent, sessions, shell } = await openTask();
   const before = sessions().length;
-  // the page's keys come with a lazy chunk (builtins-later.ts): press until it's in, as a user would press again
-  const press = (): boolean => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'F', code: 'KeyF', shiftKey: true, bubbles: true }));
-  await until(() => (press(), dialog('fork.modal') !== null));
+  // the page's keys are the shell's later part (builtins-later.ts), in once the first screen is drawn
+  await shell.context.laterReady?.();
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'F', code: 'KeyF', shiftKey: true, bubbles: true }));
+  await until(() => dialog('fork.modal') !== null);
   expect(dialog('fork.modal'), 'Shift+F opens the fork dialog').not.toBeNull();
   expect(writes(sent)).toEqual([]);
   expect(sessions().length).toBe(before);
