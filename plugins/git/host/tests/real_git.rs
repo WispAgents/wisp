@@ -797,3 +797,125 @@ async fn catch_up_sets_an_untracked_save_aside_on_disk_and_cleans_up() {
     assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x/r.md")).unwrap(), "NEWER-LOCAL\n");
     assert!(!dir.join(".git/wisp-aside").exists(), "nothing left in the git dir");
 }
+
+/// `.wisp/` gitignored, as history's `track:auto` leaves it, so `catch_up` merges in nothing of it.
+fn ignore_wisp(dir: &std::path::Path, other: &std::path::Path) {
+    write(dir, ".gitignore", ".wisp/\n");
+    git(dir, &["add", ".gitignore"]);
+    git(dir, &["commit", "-q", "-m", "ignore .wisp"]);
+    git(dir, &["push", "-q", "origin", "HEAD:refs/heads/wisp/task"]);
+    git(other, &["pull", "-q", "--no-rebase", "origin", "wisp/task"]);
+}
+
+/// Now, in ns since the epoch: a batch set aside this moment is named `<pid>-<this>`.
+fn nanos_now() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+}
+
+/// final7 F1: a leftover batch from an interrupted run is older than a save written since (history re-saves `.wisp/`
+/// after every turn): the newer one stays in the worktree and the old one stays in the batch, neither lost.
+#[tokio::test]
+async fn catch_up_never_puts_a_leftover_over_a_newer_save() {
+    let t = tmp("catchup-leftover-newer");
+    let (dir, other) = task_and_elsewhere(&t);
+    ignore_wisp(&dir, &other);
+    let batch = dir.join(".git/wisp-aside/1-2");
+    write(&batch, ".wisp/tasks/x.task.yml", "V2\n");
+    write(&dir, ".wisp/tasks/x.task.yml", "V3\n");
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    r.catch_up(&user(), catch_up_ask()).await.unwrap();
+    assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x.task.yml")).unwrap(), "V3\n");
+    assert_eq!(std::fs::read_to_string(batch.join(".wisp/tasks/x.task.yml")).unwrap(), "V2\n", "the older copy kept aside");
+}
+
+/// final7 F1: `.wisp/` tracked, and the save committed after the batch was set aside (HEAD's copy is the newer one):
+/// the leftover never lands over it as an uncommitted older change.
+#[tokio::test]
+async fn catch_up_never_puts_a_leftover_over_a_save_committed_since() {
+    let t = tmp("catchup-leftover-committed");
+    let (dir, _other) = task_and_elsewhere(&t);
+    let batch = dir.join(".git/wisp-aside/1-2");
+    write(&batch, ".wisp/tasks/x.task.yml", "V2\n");
+    write(&dir, ".wisp/tasks/x.task.yml", "V3\n");
+    git(&dir, &["add", ".wisp/tasks/x.task.yml"]);
+    git(&dir, &["commit", "-q", "-m", "save v3"]);
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    r.catch_up(&user(), catch_up_ask()).await.unwrap();
+    assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x.task.yml")).unwrap(), "V3\n");
+    assert_eq!(git(&dir, &["status", "--porcelain"]), "", "no older v2 left uncommitted");
+    assert_eq!(std::fs::read_to_string(batch.join(".wisp/tasks/x.task.yml")).unwrap(), "V2\n");
+}
+
+/// final7 F1: cut off after the merge: the worktree holds just what the merge wrote (the remote's older copy), so
+/// the leftover, the newer local save, goes back over it and the folder goes.
+#[tokio::test]
+async fn catch_up_puts_a_leftover_back_over_what_its_merge_wrote() {
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-leftover-merged");
+    let (dir, other) = task_and_elsewhere(&t);
+    pushed_from(&other, ".wisp/tasks/x.task.yml", "pushed\n", SAVE_MESSAGE);
+    git(&dir, &["fetch", "-q", "origin", "+refs/heads/wisp/task:refs/remotes/origin/wisp/task"]);
+    git(&dir, &["merge", "-q", "--no-edit", "origin/wisp/task"]);
+    let aside = dir.join(".git/wisp-aside");
+    write(&aside.join(format!("1-{}", nanos_now())), ".wisp/tasks/x.task.yml", "LEFT-OVER\n");
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Even);
+    assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x.task.yml")).unwrap(), "LEFT-OVER\n");
+    assert!(!aside.exists(), "the leftover folder is gone");
+}
+
+/// A linked worktree of `dir` at `wt` on a new `branch`, and its own git dir (`.git/worktrees/<name>`).
+fn linked_worktree(dir: &std::path::Path, wt: &std::path::Path, branch: &str) -> std::path::PathBuf {
+    git(dir, &["worktree", "add", "-q", "-b", branch, wt.to_str().unwrap()]);
+    std::path::PathBuf::from(git(wt, &["rev-parse", "--absolute-git-dir"]))
+}
+
+/// final7 F2: saves an interrupted Ship set aside in a worktree's git dir go back when the folder is opened, not only
+/// at its next Ship.
+#[tokio::test]
+async fn opening_a_worktree_puts_back_what_an_interrupted_ship_set_aside() {
+    let t = tmp("aside-open");
+    let dir = repo(&t);
+    let wt = t.0.join("wts/a");
+    let aside = linked_worktree(&dir, &wt, "wisp/a").join("wisp-aside");
+    write(&aside.join("1-2"), ".wisp/tasks/x.task.yml", "LEFT-OVER\n");
+    let (_, s) = service();
+    let _r = s.repo(&user(), &owner(), wt.to_str().unwrap()).await.unwrap();
+    let back = wt.join(".wisp/tasks/x.task.yml");
+    // in the background, so the open itself never waits on it
+    for _ in 0..200 {
+        if back.is_file() && !aside.exists() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert_eq!(std::fs::read_to_string(&back).unwrap(), "LEFT-OVER\n");
+    assert!(!aside.exists(), "nothing left in the worktree's git dir");
+}
+
+/// final7 F2: removing a worktree deletes its git dir: a set-aside save that can't go back (a newer copy is in the
+/// folder) keeps the worktree, refused in words. One with nothing aside goes as before.
+#[tokio::test]
+async fn worktree_remove_keeps_a_worktree_with_saves_still_set_aside() {
+    let t = tmp("aside-remove");
+    let dir = repo(&t);
+    let wt = t.0.join("wts/a");
+    let git_dir = linked_worktree(&dir, &wt, "wisp/a");
+    write(&git_dir.join("wisp-aside/1-2"), ".wisp/tasks/x.task.yml", "V2\n");
+    write(&wt, ".wisp/tasks/x.task.yml", "V3\n");
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    let e = r.worktree_remove(&user(), wt.to_str().unwrap()).await.unwrap_err();
+    assert!(e.message.contains("set aside by an interrupted Ship"), "{}", e.message);
+    assert!(wt.is_dir() && git_dir.is_dir(), "the folder and its git dir stay");
+    assert_eq!(std::fs::read_to_string(wt.join(".wisp/tasks/x.task.yml")).unwrap(), "V3\n");
+    assert_eq!(std::fs::read_to_string(git_dir.join("wisp-aside/1-2/.wisp/tasks/x.task.yml")).unwrap(), "V2\n");
+
+    let plain = t.0.join("wts/b");
+    let plain_git = linked_worktree(&dir, &plain, "wisp/b");
+    r.worktree_remove(&user(), plain.to_str().unwrap()).await.unwrap();
+    assert!(!plain.exists() && !plain_git.exists());
+}
