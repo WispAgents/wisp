@@ -1455,6 +1455,21 @@
           ],
           "type": "string"
         },
+        "risk.harness": {
+          "description": "Merge risk: another harness judges each pull request",
+          "enum": [
+            "off",
+            "other",
+            "claude",
+            "codex",
+            "antigravity",
+            "copilot",
+            "opencode",
+            "cursor",
+            "grok"
+          ],
+          "type": "string"
+        },
         "runtime.apps": {
           "description": "Interactive answers: agents may answer with a small app",
           "type": "boolean"
