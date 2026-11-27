@@ -425,6 +425,13 @@ pub enum JsonNext {
     Apply,
 }
 
+/// An `apply` with nothing to change still applies, without asking: it changes no resource, and it records this
+/// formula as the source of the declared ones that name none yet (applied before sources were kept), so a later
+/// `--prune` removes them once the formula drops them (AAC-1).
+pub fn claims_only(verb: &str, o: &Opts, plan: &Plan) -> bool {
+    verb == "apply" && !o.dry_run && plan.ops.is_empty() && plan.problems.is_empty() && plan.missing_secrets.is_empty()
+}
+
 /// [`JsonNext`] for `verb` and its plan: validate, plan, diff and `--dry-run` print it; apply and destroy apply it through
 /// the same yes, trust and terminal gates as the text path. Every exit is 1 while there are problems or missing secrets.
 pub fn json_next(verb: &str, o: &Opts, plan: &Plan, foreign: bool, tty: bool) -> JsonNext {
@@ -459,6 +466,9 @@ async fn apply_json(c: &Client, verb: &str, o: &Opts, plan: &Plan, mut args: Val
     let tty = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
     let trust = match json_next(verb, o, plan, foreign, tty) {
         JsonNext::Plan(code) => {
+            if claims_only(verb, o, plan) {
+                c.cmd("resources.apply", args).await?;
+            }
             say(&serde_json::to_string_pretty(&plan_json(plan)).unwrap_or_default());
             return Ok(code);
         }
@@ -549,6 +559,9 @@ pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> 
         return Ok(0);
     }
     if matches!(verb, "diff" | "plan") || o.dry_run || plan.ops.is_empty() {
+        if claims_only(verb, o, &plan) {
+            c.cmd("resources.apply", args.clone()).await?;
+        }
         if plan.ops.is_empty() && !matches!(verb, "diff" | "plan") {
             say(&format!("  {} nothing to change", paint(&st, GREEN, "✓")));
         }
@@ -715,6 +728,10 @@ mod json_tests {
     fn json_applies_through_the_same_gates_and_counts_missing_secrets_aac_8() {
         let yes = Opts { yes: true, ..Opts::default() };
         let no = Opts::default();
+        assert!(claims_only("apply", &no, &plan_with(&[], 0)), "an apply with nothing to change still records its source (AAC-1)");
+        assert!(!claims_only("plan", &no, &plan_with(&[], 0)) && !claims_only("validate", &no, &plan_with(&[], 0)));
+        assert!(!claims_only("apply", &no, &plan_with(&[], 1)), "one with changes applies through the gates");
+        assert!(!claims_only("apply", &no, &plan_with(&["K"], 0)), "nor with a secret missing");
         assert_eq!(json_next("validate", &no, &plan_with(&["K"], 0), false, false), JsonNext::Plan(1), "a missing secret is 1");
         assert_eq!(json_next("validate", &no, &plan_with(&[], 1), false, false), JsonNext::Plan(0));
         assert_eq!(json_next("plan", &yes, &plan_with(&[], 1), false, true), JsonNext::Plan(0), "plan never applies");
