@@ -57,6 +57,8 @@ mod inbox;
 mod keys;
 #[path = "edge_mail.rs"]
 mod mail;
+#[path = "edge_media.rs"]
+mod media_route;
 #[path = "edge_pages.rs"]
 mod pages_route;
 #[path = "edge_preview.rs"]
@@ -125,6 +127,8 @@ pub struct Grid {
     pub push: crate::push::Relay,
     /// whose pages changed, for their open `/events` streams (`edge_events.rs`)
     notes: tokio::sync::broadcast::Sender<String>,
+    /// signs the phone app's media links (`media.rs`, `edge_media.rs`)
+    media: crate::media::MediaKey,
 }
 
 impl std::fmt::Debug for Grid {

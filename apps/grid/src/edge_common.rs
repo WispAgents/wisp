@@ -24,9 +24,11 @@ const API_CORS: [(&str, &str); 4] = [
     ("access-control-max-age", "600"),
 ];
 
-/// Whether a request gets [`API_CORS`]: `/api/` on the grid itself, a user's box or a computer (v1 had it on all three).
+/// Whether a request gets [`API_CORS`]: `/api/` (and the phone's `/_grid/media`) on the grid itself, a user's box or a
+/// computer (v1 had it on all three).
 pub(super) fn api_cors(kind: &HostKind, path: &str) -> bool {
-    path.starts_with("/api/") && matches!(kind, HostKind::Root | HostKind::Edge { .. } | HostKind::Computer(_))
+    (path.starts_with("/api/") || path == super::media_route::MEDIA)
+        && matches!(kind, HostKind::Root | HostKind::Edge { .. } | HostKind::Computer(_))
 }
 
 /// The preflight for [`api_cors`] requests: answered here, never routed (a stopped box isn't woken for it).

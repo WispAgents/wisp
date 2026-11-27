@@ -7,7 +7,7 @@ use http_body_util::BodyExt as _;
 use hyper::body::Incoming;
 use serde_json::json;
 
-use super::{Grid, PASSIVE, Via, Who, answer, handoff, incoming, no};
+use super::{Grid, PASSIVE, Via, Who, answer, handoff, incoming, media_route, no};
 use crate::boxhost::{BoxHost, BoxState};
 use crate::error::{Result, bad};
 use crate::http::{Resp, empty, header_str, json, json_with};
@@ -79,14 +79,18 @@ impl Grid {
                 handoff::Own::Next(r) => r,
             }
         };
+        let mut req = req;
         let who = self.who(req.headers());
         let here = match (&who, preview) {
             (Who::Nobody, None) => self.address_user(req.headers(), &c.label, &owner),
             _ => None,
         };
+        // the phone's <img> of a link its device asked for (edge_media.rs): checked after every other way in
+        let signed = matches!((&who, &here, preview), (Who::Nobody, None, None)) && self.signed_media(&mut req, &c.label, &owner);
         let cred = match (who.credential(), &here) {
             (Some(c), _) => c,
             (None, Some(_)) => Credential::Cookie,
+            (None, None) if signed => Credential::Device,
             (None, None) if preview.is_none() => {
                 let pq = req.uri().path_and_query().map_or("/", |p| p.as_str()).to_owned();
                 return Ok(self.sign_in_at(req.method(), req.headers(), &pq, &go));
@@ -98,8 +102,11 @@ impl Grid {
         {
             return Ok(r);
         }
-        if here.is_none() && who.user().is_none_or(|u| u.id != c.user_id) {
+        if !signed && here.is_none() && who.user().is_none_or(|u| u.id != c.user_id) {
             return Err(bad("That computer isn't yours.", 403));
+        }
+        if preview.is_none() && req.uri().path() == media_route::MEDIA && req.method() == Method::POST {
+            return self.sign_media(req, &who, &c.label).await;
         }
         if cred == Credential::Cookie && self.foreign_origin(req.method(), req.headers(), &c.label) {
             return Err(bad("forbidden origin", 403));
@@ -149,7 +156,7 @@ impl Grid {
         let Some(user) = self.accounts.user_by_handle(handle)?.filter(|u| u.disabled == 0) else {
             return Ok(self.not_found(&req, "Nobody here", "There's nobody with that handle here."));
         };
-        let req = match self.address_own(req, handle, &user, "/go", false) {
+        let mut req = match self.address_own(req, handle, &user, "/go", false) {
             handoff::Own::Done(r) => return Ok(r),
             handoff::Own::Next(r) => r,
         };
@@ -168,6 +175,8 @@ impl Grid {
             (Some((u, _)), _, _) => (Credential::Key, Some(u.id.clone())),
             (None, Some(c), _) => (c, who.user().map(|u| u.id.clone())),
             (None, None, Some(u)) => (Credential::Cookie, Some(u.id)),
+            // the phone's <img> of a link its device asked for (edge_media.rs): checked after every other way in
+            (None, None, None) if self.signed_media(&mut req, handle, &user) => (Credential::Device, Some(user.id.clone())),
             (None, None, None) => {
                 let pq = req.uri().path_and_query().map_or("/", |p| p.as_str()).to_owned();
                 return Ok(self.sign_in_at(req.method(), req.headers(), &pq, "/go"));
@@ -182,6 +191,9 @@ impl Grid {
         // another user's key is refused outright, like their device token
         if owner.is_none_or(|id| id != user.id) {
             return Err(bad("That wisp isn't yours.", 403));
+        }
+        if req.uri().path() == media_route::MEDIA && req.method() == Method::POST {
+            return self.sign_media(req, &who, handle).await;
         }
         // a page in the box at its own address: a one-time link there (edge_preview.rs)
         if req.uri().path() == "/_grid/preview" && req.method() == Method::GET {

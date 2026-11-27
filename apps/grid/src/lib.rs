@@ -27,6 +27,7 @@ pub mod handoff;
 pub mod keys;
 #[path = "keys_fresh.rs"]
 pub mod keys_fresh;
+pub mod media;
 pub mod previews;
 pub mod seats;
 pub mod waitlist;

@@ -24,6 +24,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Filter the task list by computer.** With more than one computer, the list's head has a computer selector beside
   the project's: All computers, or one computer's tasks, picked from the same kind of list.
 
+### Fixed
+
+- **Phone app: pictures and videos show again on wisp Cloud and on computers reached through the grid.** Each one
+  said "This picture can't be shown here." (or video). alpha.15's fix added the one-hour signed links to the old
+  grid, but wisp Cloud already ran the new grid, which didn't have them. The new grid now signs these links
+  (`POST /_grid/media`) and accepts them, at a cloud wisp's address and at a computer's. A link opens only its own
+  file, for an hour, and stops working when you remove the phone from your account.
+
 ## [1.0.0-alpha.18] - 2026-11-27
 
 ### Fixed
