@@ -798,6 +798,34 @@ async fn catch_up_sets_an_untracked_save_aside_on_disk_and_cleans_up() {
     assert!(!dir.join(".git/wisp-aside").exists(), "nothing left in the git dir");
 }
 
+/// final9 F1: while its merge runs, a catch_up's batch has the commit the merge brings beside it (seen from a
+/// reference-transaction hook, which git runs for the merge's own HEAD update even with --no-verify), so a kill there
+/// leaves the next restore able to tell theirs' copies from saves; a merge that lands leaves nothing in wisp-aside.
+#[cfg(unix)]
+#[tokio::test]
+async fn catch_up_keeps_the_merge_s_commit_beside_its_batch_and_cleans_both_up() {
+    use std::os::unix::fs::PermissionsExt;
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-theirs-record");
+    let (dir, other) = task_and_elsewhere(&t);
+    let theirs = pushed_from(&other, ".wisp/tasks/x/r.md", "pushed\n", SAVE_MESSAGE);
+    write(&dir, ".wisp/tasks/x/r.md", "NEWER-LOCAL\n");
+    let hook = dir.join(".git/hooks/reference-transaction");
+    write(
+        &dir,
+        ".git/hooks/reference-transaction",
+        "#!/bin/sh\ncat \"$(git rev-parse --git-dir)\"/wisp-aside/*.theirs >> \"$(git rev-parse --git-dir)\"/seen 2>/dev/null\nexit 0\n",
+    );
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Merged);
+    let seen = std::fs::read_to_string(dir.join(".git/seen")).unwrap_or_default();
+    assert!(seen.contains(&theirs), "the batch's record named theirs mid-merge: {seen:?}");
+    assert_eq!(std::fs::read_to_string(dir.join(".wisp/tasks/x/r.md")).unwrap(), "NEWER-LOCAL\n");
+    assert!(!dir.join(".git/wisp-aside").exists(), "neither the batch nor its record is left");
+}
+
 /// `.wisp/` gitignored, as history's `track:auto` leaves it, so `catch_up` merges in nothing of it.
 fn ignore_wisp(dir: &std::path::Path, other: &std::path::Path) {
     write(dir, ".gitignore", ".wisp/\n");

@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A save set aside by a Ship that was cut off mid-merge is no longer dropped for the remote's older copy.** A merge
+  killed after it wrote the remote's history files but before it committed left those files in the folder, newer on
+  disk than the set-aside save, so the next restore took them for a save made since and deleted yours. Ship now notes
+  the commit it merges beside what it sets aside, and a copy that is just that commit's goes under your save again; a
+  save really written since still wins.
 - **A worktree with an old set-aside save can be removed again, and Ship's catch-up keeps a save made mid-merge.** A
   leftover kept back because the folder had a newer copy stayed in the git dir forever, so removing the worktree (and
   Ship's tidy after a merge) was refused every time; that older copy is now dropped with a warning in the log, and
