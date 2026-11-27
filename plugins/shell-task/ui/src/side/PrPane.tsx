@@ -4,7 +4,7 @@
 // folded), the files, and Open on GitHub · Checked … · Check now. Skeleton rows while the first answer comes.
 import { For, Show, createEffect, createMemo, createResource, createSignal, on, type JSX } from 'solid-js';
 import { defineCommand, type EntityKey } from '@wisp/client';
-import { Banner, Button, CheckList, CheckRow, Dialog, EmptyState, Heading, IconButton, Inline, Link, Skeleton, Stack, Text, ToneChip, Wrap, timeLabel } from '@wisp/ui';
+import { Banner, Button, CheckList, CheckRow, Dialog, EmptyState, FileStatList, FileStatRow, FoldRow, IconButton, Inline, Link, PaneHead, Skeleton, Stack, Text, ToneChip, Wrap, timeLabel } from '@wisp/ui';
 import type { Tone as KitTone } from '@wisp/tokens';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
@@ -137,7 +137,7 @@ export function PrPane(): JSX.Element {
   );
 
   return (
-    <Stack gap="4" part="side.pr" grow>
+    <Stack gap="6" part="side.pr" grow>
       <Show
         when={known() ? list() : []}
         fallback={
@@ -209,8 +209,8 @@ export function PrPane(): JSX.Element {
                 />
                 <Show when={p().error}>{(e) => <Banner tone="warn" title={e()} part="side.pr.error" />}</Show>
                 <Show when={p().checkList}>
-                  <Stack gap="2" part="side.pr.checks">
-                    <Heading level={4}>{t('shell-task.pr.checks')}</Heading>
+                  <Stack gap="1" part="side.pr.checks">
+                    <PaneHead title={t('shell-task.pr.checks')} {...((p().checkList ?? []).length > 0 && { meta: String((p().checkList ?? []).length) })} />
                     <Show
                       when={(p().checkList ?? []).length > 0}
                       fallback={
@@ -245,24 +245,25 @@ export function PrPane(): JSX.Element {
                         </For>
                       </CheckList>
                       <Show when={g().ok.length > 0 && !g().okOpen}>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          icon={open().has('passed') ? 'chevron' : 'check'}
+                        <FoldRow
                           part="side.pr.fold"
+                          icon="check"
+                          tone="good"
+                          expanded={open().has('passed')}
                           onClick={() => (open().has('passed') ? fold('passed') : unfold('passed'))}
-                        >
-                          {open().has('passed')
-                            ? t('shell-task.pr.foldPassed', { count: g().ok.length })
-                            : [g().passed && t('shell-task.pr.passed', { count: g().passed }), g().skipped && t('shell-task.pr.skippedN', { count: g().skipped })].filter(Boolean).join(' · ')}
-                        </Button>
+                          label={
+                            open().has('passed')
+                              ? t('shell-task.pr.foldPassed', { count: g().ok.length })
+                              : [g().passed && t('shell-task.pr.passed', { count: g().passed }), g().skipped && t('shell-task.pr.skippedN', { count: g().skipped })].filter(Boolean).join(' · ')
+                          }
+                        />
                       </Show>
                     </Show>
                   </Stack>
                 </Show>
                 <Show when={(p().reviewers ?? []).length > 0}>
-                  <Stack gap="2" part="side.pr.reviews">
-                    <Heading level={4}>{t('shell-task.pr.reviews')}</Heading>
+                  <Stack gap="1" part="side.pr.reviews">
+                    <PaneHead title={t('shell-task.pr.reviews')} />
                     <For each={p().reviewers}>
                       {(r) => (
                         <Inline gap="2" justify="between">
@@ -277,7 +278,7 @@ export function PrPane(): JSX.Element {
                 </Show>
                 <Show when={said().live.length + said().outdated.length + said().people.length + said().bots.length > 0}>
                   <Stack gap="2" part="side.pr.talk">
-                    <Heading level={4}>{t('shell-task.pr.talk')}</Heading>
+                    <PaneHead title={t('shell-task.pr.talk')} />
                     <Stack gap="3" as="ul">
                       <For each={[...said().live, ...(open().has('outdated') ? said().outdated : [])]}>
                         {(th) => (
@@ -291,38 +292,22 @@ export function PrPane(): JSX.Element {
                     </Stack>
                     <Inline gap="2">
                       <Show when={said().outdated.length > 0 && !open().has('outdated')}>
-                        <Button size="xs" variant="ghost" onClick={() => unfold('outdated')}>
-                          {t('shell-task.pr.outdated', { count: said().outdated.length })}
-                        </Button>
+                        <FoldRow label={t('shell-task.pr.outdated', { count: said().outdated.length })} onClick={() => unfold('outdated')} />
                       </Show>
                       <Show when={said().bots.length > 0 && !open().has('bots')}>
-                        <Button size="xs" variant="ghost" onClick={() => unfold('bots')}>
-                          {t('shell-task.pr.bots', { count: said().bots.length })}
-                        </Button>
+                        <FoldRow label={t('shell-task.pr.bots', { count: said().bots.length })} onClick={() => unfold('bots')} />
                       </Show>
                     </Inline>
                   </Stack>
                 </Show>
                 <Show when={files().shown.length > 0}>
-                  <Stack gap="2" part="side.pr.files">
-                    <Inline gap="2">
-                      <Heading level={4}>{t('shell-task.pr.files')}</Heading>
-                      <Text size="sm" tone="muted" numeric>{`+${p().additions ?? 0} −${p().deletions ?? 0}`}</Text>
-                    </Inline>
-                    <For each={files().shown}>
-                      {(f) => (
-                        <Inline gap="2" justify="between">
-                          <Link href={`${p().url}/files`} external tone="ink" title={f.path}>
-                            {f.path}
-                          </Link>
-                          <Text size="sm" tone="muted" numeric nowrap>{`+${f.additions} −${f.deletions}`}</Text>
-                        </Inline>
-                      )}
-                    </For>
+                  <Stack gap="1" part="side.pr.files">
+                    <PaneHead title={t('shell-task.pr.files')} meta={`+${p().additions ?? 0} −${p().deletions ?? 0}`} />
+                    <FileStatList label={t('shell-task.pr.files')}>
+                      <For each={files().shown}>{(f) => <FileStatRow path={f.path} additions={f.additions} deletions={f.deletions} href={`${p().url}/files`} />}</For>
+                    </FileStatList>
                     <Show when={files().more > 0}>
-                      <Button size="xs" variant="ghost" onClick={() => unfold('files')}>
-                        {t('shell-task.pr.more', { count: files().more })}
-                      </Button>
+                      <FoldRow label={t('shell-task.pr.more', { count: files().more })} onClick={() => unfold('files')} />
                     </Show>
                   </Stack>
                 </Show>

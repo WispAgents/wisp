@@ -743,12 +743,28 @@ export const COMMANDS: Record<string, CommandFn> = {
     const key = id.includes(':') ? id : `${ctx.peer}:${id}`;
     const pr = obj((sum(ctx.row('list', 'session', key))['pr'] ?? sum(ctx.row(own(key), 'session', key))['pr']) as unknown);
     if (!pr['number']) return { ops: [], result: [] };
+    // a PR mid-CI (running, one failed, the rest folded) with more files than the pane shows, so every row kind paints
     const checkList = [
-      { name: 'suite (node 22)', workflow: 'suite', state: 'pass', ms: 412_000 },
-      { name: 'suite (node 24)', workflow: 'suite', state: 'pass', ms: 398_000 },
+      { name: 'quick / suite (ubuntu-latest, node 22)', workflow: 'quick', state: 'pending', ms: null, url: 'https://github.com/WispAgents/wisp/actions' },
+      { name: 'quick / suite (ubuntu-latest, node 24)', workflow: 'quick', state: 'pending', ms: null, url: 'https://github.com/WispAgents/wisp/actions' },
+      { name: 'check', workflow: 'check', state: 'fail', ms: 84_000, url: 'https://github.com/WispAgents/wisp/actions' },
+      { name: 'affected set (report-only, G14)', workflow: 'monoflow', state: 'pass', ms: 41_000 },
       { name: 'ledger', workflow: 'ledger', state: 'pass', ms: 21_000 },
+      { name: 'windows', workflow: 'suite', state: 'skip', ms: null },
     ];
-    return { ops: [], result: [{ ...pr, repo: 'WispAgents/wisp', branch: 'fix/retry-scope', base: 'main', author: 'you', additions: 2, deletions: 2, changedFiles: 2, review: 'REVIEW_REQUIRED', files: [{ path: 'packages/client/src/peers.ts', additions: 1, deletions: 1 }, { path: 'packages/client/test/peers.test.ts', additions: 1, deletions: 1 }], checkList, reviewers: [], notes: [], threads: [] }] };
+    const files = [
+      { path: '.wisp/history/01a21a3cf8bf7107a01f9681771142b5.native.jsonl.zst', additions: 0, deletions: 0 },
+      { path: '.wisp/tasks/2026/11/01a21a3cf8bf-push-after-save-to-repo.report.md', additions: 36, deletions: 0 },
+      { path: 'apps/web/dev/mock-reads.ts', additions: 1, deletions: 1 },
+      { path: 'CHANGELOG.md', additions: 10, deletions: 0 },
+      { path: 'crates/wisp/tests/serve_history.rs', additions: 75, deletions: 0 },
+      { path: 'docs/adr/0137-a-saved-tasks-history-is-pushed-as-a-pr-without-touching-the-checkout.md', additions: 44, deletions: 0 },
+      { path: 'packages/client/src/peers.ts', additions: 12, deletions: 9 },
+      { path: 'packages/client/test/peers.test.ts', additions: 31, deletions: 4 },
+      { path: 'plugins/ship/host/src/lib.rs', additions: 120, deletions: 3 },
+      { path: 'plugins/ship/ui/src/PrStrip.tsx', additions: 8, deletions: 0 },
+    ];
+    return { ops: [], result: [{ ...pr, repo: 'WispAgents/wisp', branch: 'fix/retry-scope', base: 'main', author: 'you', additions: 337, deletions: 17, changedFiles: files.length, checks: { pass: 2, fail: 1, pending: 2 }, review: 'REVIEW_REQUIRED', files, checkList, reviewers: [], notes: [], threads: [] }] };
   },
   // Find in task (R4-3): the mock sends every turn whole (no stubs), so the client finds everything itself
   'runtime.searchTask': () => ({ ops: [], result: { hits: [] } }),

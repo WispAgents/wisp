@@ -25,6 +25,8 @@ export function needsYou(s: SessionRow): boolean {
   if (isSaved(sum['forLater']) && !sum['reminder'] && !sum['pending']) return false;
   // a terminal task with its terminal open, finished: being worked on (the list's inTerm)
   if (s.state === 'review' && sum['tui'] && sum['term']) return false;
+  // shipped (the list's isShipping): in Shipping until its PR lands
+  if (s.state === 'review' && (sum['shipping'] || obj(sum['pr'])?.['state'] === 'OPEN')) return false;
   const later = obj(obj(obj(s.body?.['ext'])?.['wisp.later']))?.['later'];
   const followUp = Array.isArray(later) && later.some((l) => !obj(l)?.['remind']);
   const scheduled = s.state === 'review' && followUp && !sum['reminder'] && !sum['held'] && !sum['pending'];
