@@ -78,6 +78,12 @@ impl GitServiceImpl {
             r
         } else {
             let r = self.resolve(&dir).await?;
+            // saves an interrupted Ship set aside go back as soon as the folder is opened again, not only at its next
+            // Ship (they live in the worktree's git dir, which removing the worktree deletes). In the background: the
+            // first open is on the way to every read, and a folder with nothing aside costs a rev-parse and a stat.
+            // This process's own batches are a catch_up in flight here, left to it.
+            let (git, at) = (self.git.clone(), dir.clone());
+            tokio::spawn(async move { crate::catch_up::restore_aside(&git, &at, true).await });
             let mut m = self.repos.lock().map_err(|_| GitError::Io("repo cache".into()))?;
             let e = m.entry(dir.clone()).or_insert(Entry { repo: r, owners: 0 });
             e.owners += 1;

@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A save set aside by an interrupted Ship never replaces a newer one, and never vanishes with its worktree.** The
+  next Ship put every leftover back over the file in the folder, even a save written or committed since; now a leftover
+  goes back only where the folder holds nothing newer (missing, or just what the merge brought), and otherwise both
+  copies are kept. Leftovers also go back as soon as the worktree is opened again, and removing a worktree after a
+  merge, which deleted them with its git dir, now keeps it with a note saying why.
+
 - **Ship it after Push to repo with transcripts in Git LFS.** The history push adds its LFS line to the
   `.gitattributes` beside `.wisp/`, and Ship refused that commit as "has commits this branch doesn't". Now that file
   merges in with the save it came with; someone else's `.gitattributes` change, or one both sides changed, is still

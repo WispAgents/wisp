@@ -10,7 +10,7 @@ use wisp_git_api::{CatchUpRequest, CaughtUp};
 
 use crate::error::Result;
 use crate::repo::Inner;
-use crate::run::{Opts, args};
+use crate::run::{Git, Opts, args};
 
 /// Whether `path` (from git's top) is in a folder named `folder`, at the top or in a subfolder (a monorepo's
 /// `app/.wisp/`), and there inside one of its subfolders `within` (anywhere in it when `within` is empty).
@@ -82,7 +82,7 @@ impl Inner {
         let top = PathBuf::from(&self.info.top);
         let aside = self.aside_dir().await;
         if let Some(aside) = &aside {
-            self.put_back_leftovers(aside, &top).await;
+            restore_leftovers(&self.git, aside, &top, false).await;
         }
         let theirs = format!("refs/remotes/{}/{}", req.remote, req.branch);
         // the tracking ref named outright: a worktree's remote may have no fetch refspec that would move it
@@ -115,7 +115,7 @@ impl Inner {
         // future in between leaves them in the git dir, put back by the next `catch_up` above
         let out = self.merge_history(&req, &theirs, &top).await;
         if let Some(batch) = &kept {
-            put_back(batch, &top).await;
+            put_back(batch, &top, None).await;
             if let Some(aside) = &aside {
                 // only when empty: a batch that couldn't all go back stays for the next `catch_up`
                 let _ = tokio::fs::remove_dir(aside).await;
@@ -157,18 +157,6 @@ impl Inner {
             }
         }
         Some(batch)
-    }
-
-    /// Saves an earlier `catch_up` set aside and never put back (wisp quit or crashed mid-merge): back in the worktree,
-    /// over whatever the merge wrote, since they are the newer local save.
-    async fn put_back_leftovers(&self, aside: &Path, top: &Path) {
-        let Ok(mut entries) = tokio::fs::read_dir(aside).await else { return };
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            if entry.file_type().await.is_ok_and(|t| t.is_dir()) {
-                put_back(&entry.path(), top).await;
-            }
-        }
-        let _ = tokio::fs::remove_dir(aside).await;
     }
 
     /// The merge itself: done, done with HEAD's side of the history files both changed, or undone.
@@ -214,6 +202,69 @@ impl Inner {
     }
 }
 
+/// The saves an interrupted `catch_up` left set aside in `dir`'s worktree put back (`restore_leftovers`), when it has
+/// any. Some(the aside folder) when something is still there (a newer copy in the worktree kept it back), else None.
+/// One `rev-parse` and one `stat` when nothing is aside, so opening a repo can afford it.
+pub(crate) async fn restore_aside(git: &Git, dir: &Path, skip_own: bool) -> Option<PathBuf> {
+    let found = git.quiet(dir, &["rev-parse", "--absolute-git-dir", "--show-toplevel"]).await;
+    let mut lines = found.lines().map(str::trim);
+    let (git_dir, top) = (lines.next()?, lines.next()?);
+    if git_dir.is_empty() || top.is_empty() {
+        return None;
+    }
+    let aside = Path::new(git_dir).join("wisp-aside");
+    if !tokio::fs::try_exists(&aside).await.unwrap_or(false) {
+        return None;
+    }
+    restore_leftovers(git, &aside, Path::new(top), skip_own).await.then_some(aside)
+}
+
+/// Saves an earlier `catch_up` set aside and never put back (wisp quit or crashed mid-merge), each back in the worktree
+/// only where that can't write over a newer save made since (`newer_here`). A file kept back stays in its batch, with a
+/// warning, so neither copy is lost. `skip_own`: this process's batches are left alone (a `catch_up` here may be
+/// mid-merge with them). True when anything is still aside.
+async fn restore_leftovers(git: &Git, aside: &Path, top: &Path, skip_own: bool) -> bool {
+    let own = format!("{}-", std::process::id());
+    if let Ok(mut entries) = tokio::fs::read_dir(aside).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !entry.file_type().await.is_ok_and(|t| t.is_dir()) || (skip_own && name.starts_with(&own)) {
+                continue;
+            }
+            // `<pid>-<nanos>`: when it was set aside. A name that doesn't say is the epoch: only a missing file goes back
+            let since = name.split_once('-').and_then(|(_, n)| n.parse::<u128>().ok()).unwrap_or(0);
+            put_back(&entry.path(), top, Some((git, since))).await;
+        }
+    }
+    // only when empty: a batch with a file kept back stays
+    let _ = tokio::fs::remove_dir(aside).await;
+    tokio::fs::try_exists(aside).await.unwrap_or(true)
+}
+
+/// Whether the worktree's `rel` (from git's top) is newer than a copy set aside at `since` (ns since the epoch), so the
+/// copy must not replace it. Missing: no. The same as HEAD's: the merge's copy (no), unless the last commit that wrote
+/// it is from after the batch (a save committed since: yes). Untracked or ignored (history's `track:auto` re-saves
+/// `.wisp/` after every turn) and different: only when written at or after `since`. Tracked and edited: yes.
+async fn newer_here(git: &Git, top: &Path, rel: &str, since: u128) -> bool {
+    let Ok(meta) = tokio::fs::metadata(top.join(rel)).await else { return false };
+    if !meta.is_file() {
+        return true;
+    }
+    let spec = format!(":(literal){rel}");
+    let at_head = git.quiet(top, &["rev-parse", "-q", "--verify", &format!("HEAD:{rel}")]).await;
+    let at_head = at_head.trim();
+    if !at_head.is_empty() && git.quiet(top, &["hash-object", "--", rel]).await.trim() == at_head {
+        // seconds against the batch's own second: the merge commits after the set-aside, but what it brought is older
+        let when = git.quiet(top, &["log", "-1", "--format=%ct", "HEAD", "--", &spec]).await;
+        return when.trim().parse::<u128>().map_or(true, |s| s > since / 1_000_000_000);
+    }
+    if !git.quiet(top, &["ls-files", "-z", "--", &spec]).await.is_empty() {
+        return true;
+    }
+    let written = meta.modified().ok().and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()).map_or(u128::MAX, |d| d.as_nanos());
+    written >= since
+}
+
 /// `from` moved to `to` (its folder made, `to` replaced): a rename, or a copy and a remove when the two are on
 /// different devices. `from` stays until its copy is whole.
 async fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -229,8 +280,10 @@ async fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
 
 /// Every file in `batch` (set aside before a merge, at its path from git's top) moved back under `top`, over what the
 /// merge wrote (its folder made again if the merge took it), and `batch` removed. A file that won't go back keeps
-/// the batch, so the next `catch_up` tries again and nothing is lost.
-async fn put_back(batch: &Path, top: &Path) {
+/// the batch, so the next `catch_up` tries again and nothing is lost. `leftover` (a batch an interrupted run left, and
+/// when it was set aside): a file the worktree has a newer copy of (`newer_here`) stays in the batch too, with a
+/// warning; the same run's own batch always goes back over what its merge wrote.
+async fn put_back(batch: &Path, top: &Path, leftover: Option<(&Git, u128)>) {
     let mut whole = true;
     let mut dirs = vec![batch.to_path_buf()];
     while let Some(dir) = dirs.pop() {
@@ -245,9 +298,17 @@ async fn put_back(batch: &Path, top: &Path) {
                 continue;
             }
             let Ok(rel) = path.strip_prefix(batch) else { continue };
-            if let Err(e) = move_file(&path, &top.join(rel)).await {
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            if let Some((git, since)) = leftover
+                && newer_here(git, top, &rel, since).await
+            {
                 whole = false;
-                tracing::warn!(file = %rel.display(), "catch_up: a local save couldn't be put back: {e}");
+                tracing::warn!(file = %rel, batch = %batch.display(), "catch_up: a set-aside save is older than the worktree's copy: both kept");
+                continue;
+            }
+            if let Err(e) = move_file(&path, &top.join(&rel)).await {
+                whole = false;
+                tracing::warn!(file = %rel, "catch_up: a local save couldn't be put back: {e}");
             }
         }
     }
