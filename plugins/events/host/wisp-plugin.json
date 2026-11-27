@@ -18,11 +18,13 @@
       { "id": "events.parked", "title": "Events a subscription gave up on, and why", "readOnly": true },
       { "id": "events.ls", "title": "Every event type wisp emits", "readOnly": true },
       { "id": "events.poll", "title": "MCP Events' poll: a durable type's events after a cursor (events/poll)", "readOnly": true },
+      { "id": "events.webhooks", "title": "MCP Events' webhook subscriptions: where events go, and how delivery is doing", "readOnly": true },
       { "id": "events.sinksStatus", "title": "Where events are forwarded, and how each sink is doing", "readOnly": true },
       { "id": "events.resume", "title": "Resume a paused sink" }
     ],
     "settings": [
-      { "key": "events.sinks", "type": "json", "default": [], "title": "Event sinks" }
+      { "key": "events.sinks", "type": "json", "default": [], "title": "Event sinks" },
+      { "key": "events.webhooks.allowPrivate", "type": "bool", "default": false, "title": "Let MCP Events webhooks reach http and private addresses (a LAN, a test)" }
     ]
   }
 }

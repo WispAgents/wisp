@@ -130,5 +130,6 @@ command!(Retry = "events.retry" : SeqArgs => Value);
 command!(ParkedCmd = "events.parked" read yes : NoArgs => Value);
 command!(Ls = "events.ls" read yes : NoArgs => Value);
 command!(Poll = "events.poll" read yes : PollArgs => Value);
+command!(Webhooks = "events.webhooks" read yes : NoArgs => Value);
 command!(Sinks = "events.sinksStatus" read yes : NoArgs => Value);
 command!(Resume = "events.resume" : NameArgs => Value);

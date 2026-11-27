@@ -4510,6 +4510,7 @@ name = "wisp-connectors"
 version = "1.0.0-alpha.18"
 dependencies = [
  "futures",
+ "rand 0.9.5",
  "schemars",
  "serde",
  "serde_json",
@@ -4544,10 +4545,12 @@ name = "wisp-connectors-core"
 version = "1.0.0-alpha.18"
 dependencies = [
  "base64 0.22.1",
+ "hmac",
  "regex",
  "serde",
  "serde_json",
  "sha2",
+ "subtle",
  "thiserror 2.0.21",
  "url",
  "wisp-connectors-api",
@@ -4718,12 +4721,16 @@ dependencies = [
 name = "wisp-events"
 version = "1.0.0-alpha.18"
 dependencies = [
+ "base64 0.22.1",
  "hmac",
+ "rand 0.9.5",
  "serde",
  "serde_json",
  "sha2",
+ "subtle",
  "tokio",
  "tracing",
+ "url",
  "wisp-events-api",
  "wisp-kernel",
  "wisp-mcp-api",

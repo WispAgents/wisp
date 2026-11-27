@@ -8,6 +8,7 @@ pub mod codex_toml;
 pub mod error;
 pub mod events;
 pub mod harness;
+pub mod hook;
 pub mod model;
 pub mod oauth;
 pub mod page;

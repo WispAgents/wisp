@@ -4,16 +4,14 @@
 //! plugin of its own. Every request carries the connector's sign-in and headers (`call::request`); a server that
 //! refuses `initialize` is asked the `2026-07-28` way.
 //!
-//! Push first (ADR-0145): when the connector's listing offers `push` for the event (and the trigger doesn't say
+//! Webhook first when this wisp has a public address (`hook.rs`), then push (ADR-0145): when the connector's listing offers `push` for the event (and the trigger doesn't say
 //! `match.delivery: poll`), the first poll opens `events/stream` and every event reaches the engine as it happens
 //! (`automations.trigger.push`). Polls then only keep the stream alive and carry its cursor to the trigger's row; a
 //! stream that's down hands back to polling from its own cursor. Webhook delivery is later.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use serde_json::{Value, json};
-use wisp_automations_api::commands::TriggerPush;
 use wisp_automations_api::{Polled, SOURCE, SourceOn, TriggerEvent, TriggerSource};
 use wisp_connectors_api::{EventsArgs, EventsOut};
 use wisp_connectors_core::events::{self as ev, MAX_PAGES, Subscription};
@@ -22,9 +20,10 @@ use wisp_kernel::{BoxFuture, Ctx, Result, Setup, WireError};
 
 use crate::call::request;
 use crate::pane::Pane;
+use crate::stream::{Live, Streams, lock, run};
 
 /// `params` with the extension declared in `_meta`.
-fn with_meta(mut params: Value) -> Value {
+pub(crate) fn with_meta(mut params: Value) -> Value {
     if let Some(o) = params.as_object_mut() {
         o.insert("_meta".into(), ev::meta(None));
     }
@@ -65,33 +64,6 @@ async fn list(ctx: &Ctx, pane: &Pane, id: &str) -> Result<EventsOut> {
 
 /// How long a connector's listing (`events/list`) is trusted before it's asked again.
 const LISTING_MS: i64 = 10 * 60_000;
-/// A stream the server ended (terminated, refused) is opened again after this; polls carry on meanwhile.
-const ENDED_MS: i64 = 60 * 60_000;
-/// After this many failed opens in a row, polls carry on for `DOWN_MS` before a stream is tried again.
-const MAX_FAILURES: u32 = 5;
-const DOWN_MS: i64 = 10 * 60_000;
-
-/// A subscription's stream, shared by every trigger that names it. The engine's poll keeps it alive: a stream no
-/// trigger polled for `idle_ms` (a trigger switched off or removed) closes.
-struct Live {
-    /// the server's cursor, past the last event the stream gave
-    cursor: Value,
-    touched: i64,
-    idle_ms: i64,
-    /// polls carry on until then (the stream is down); `None`: it's open
-    down_until: Option<i64>,
-}
-
-#[derive(Default)]
-struct Streams {
-    live: Mutex<HashMap<String, Live>>,
-    listings: Mutex<HashMap<String, (i64, Vec<Value>)>>,
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 /// What `poll` does for a subscription.
 enum Plan {
     /// a stream is open: nothing to ask, here is its cursor
@@ -109,6 +81,7 @@ pub struct McpEvents {
     pane: Arc<Pane>,
     ctx: Ctx,
     streams: Arc<Streams>,
+    hooks: Arc<crate::hook::Hooks>,
 }
 
 impl McpEvents {
@@ -146,6 +119,10 @@ impl McpEvents {
         // three polls missed: no trigger wants it any more
         let every = spec.get("every").and_then(Value::as_i64).unwrap_or(1).max(1);
         let idle_ms = (every * 60_000 * 3).max(5 * 60_000);
+        // webhook first, when this wisp has a public address and the server offers it (SEP-3415's SDK guidance)
+        if let Some(c) = self.by_webhook(&s, spec, &key, &kept, idle_ms, now).await {
+            return Ok(Polled { events: Vec::new(), cursor: c, retry_at: None });
+        }
         let kept = match self.plan(&key, &kept, idle_ms, now) {
             Plan::Streaming(c) => return Ok(Polled { events: Vec::new(), cursor: c, retry_at: None }),
             Plan::Poll(c) => c,
@@ -168,6 +145,53 @@ impl McpEvents {
         Ok(polled)
     }
 
+    /// The webhook's watermark while it's subscribed (subscribing or refreshing first when due); `None`: not by
+    /// webhook (no public address, not offered, not wanted, or refused lately).
+    async fn by_webhook(&self, s: &Subscription, spec: &Value, key: &str, kept: &Value, idle_ms: i64, now: i64) -> Option<Value> {
+        for (sub, url) in self.hooks.idle(now) {
+            // best effort: the server's TTL ends it anyway
+            let _ = ask(
+                &self.ctx,
+                &self.pane,
+                &sub.connector,
+                &sub.event,
+                "events/unsubscribe",
+                wisp_connectors_core::hook::unsubscribe_params(&sub, &url),
+            )
+            .await;
+        }
+        if !push::wants(spec, "webhook") || self.hooks.refused(key, now) {
+            return None;
+        }
+        let base = crate::hook::base(&self.ctx)?;
+        match self.hooks.current(key, idle_ms, now) {
+            Some((c, false)) => return Some(ev::kept(&c)),
+            Some((_, true)) => {
+                let (url, secret, cursor) = self.hooks.refresh_of(key)?;
+                return self.subscribe(key, s, &url, &secret, &cursor, now).await;
+            }
+            None => {}
+        }
+        if !push::offers(&self.listing(&s.connector, now).await, &s.event, "webhook") {
+            return None;
+        }
+        let cursor = ev::server_cursor(kept);
+        let (url, secret) = self.hooks.open(key, s, &base, cursor.clone(), idle_ms, now);
+        self.subscribe(key, s, &url, &secret, &cursor, now).await
+    }
+
+    async fn subscribe(&self, key: &str, s: &Subscription, url: &str, secret: &str, cursor: &Value, now: i64) -> Option<Value> {
+        let params = wisp_connectors_core::hook::subscribe_params(s, url, secret, cursor);
+        match ask(&self.ctx, &self.pane, &s.connector, &s.event, "events/subscribe", params).await {
+            Ok(r) => Some(ev::kept(&self.hooks.granted(key, &r, now))),
+            Err(e) => {
+                tracing::warn!(connector = %s.connector, event = %s.event, "its webhook was refused, by push or poll for now: {}", e.message);
+                self.hooks.refuse(key, now);
+                None
+            }
+        }
+    }
+
     async fn poll_once(&self, s: &Subscription, kept: Value, now: i64) -> Result<Polled> {
         let mut kept = kept;
         let mut events = Vec::new();
@@ -188,7 +212,7 @@ impl McpEvents {
     }
 }
 
-fn trigger_event(o: ev::Occurrence, now: i64) -> TriggerEvent {
+pub(crate) fn trigger_event(o: ev::Occurrence, now: i64) -> TriggerEvent {
     TriggerEvent {
         on: ev::ON.into(),
         key: o.key,
@@ -196,120 +220,6 @@ fn trigger_event(o: ev::Occurrence, now: i64) -> TriggerEvent {
         payload: o.payload,
         summary: o.summary,
         ..TriggerEvent::default()
-    }
-}
-
-/// How a stream ended.
-enum Ended {
-    /// it dropped, timed out or the server closed it: open it again
-    Again { said_something: bool },
-    /// the server ended the subscription: poll for a while
-    Stop(String),
-    /// no trigger wants it
-    Idle,
-}
-
-/// One subscription's stream, opened again with its cursor until no trigger wants it, the server ends it, or it
-/// fails `MAX_FAILURES` times in a row (then polls carry on for a while).
-async fn run(ctx: Ctx, pane: Arc<Pane>, streams: Arc<Streams>, key: String, s: Subscription) {
-    let mut failures = 0u32;
-    loop {
-        let Ok(now) = ctx.clock().map(|c| c.now_ms()) else { return };
-        let cursor = {
-            let mut live = lock(&streams.live);
-            match live.get(&key) {
-                Some(l) if now - l.touched > l.idle_ms => {
-                    live.remove(&key);
-                    return;
-                }
-                Some(l) => l.cursor.clone(),
-                None => return,
-            }
-        };
-        let ended =
-            match crate::call::open_stream(&ctx, &pane, &s.connector, "events/stream", with_meta(push::stream_params(&s, &cursor))).await {
-                Ok(crate::call::Got::Stream(st)) => read(&ctx, &streams, &key, &s, st).await,
-                Ok(crate::call::Got::Answer(v)) => Ended::Stop(v.get("error").map_or_else(
-                    || format!("{} answered events/stream without a stream", s.connector),
-                    |e| ev::refusal(&s.connector, &s.event, e),
-                )),
-                Err(e) => Ended::Again { said_something: e.code == wisp_kernel::Code::Timeout },
-            };
-        match ended {
-            Ended::Idle => {
-                lock(&streams.live).remove(&key);
-                return;
-            }
-            Ended::Stop(why) => {
-                tracing::warn!(connector = %s.connector, event = %s.event, "its stream ended, polling for now: {why}");
-                return down(&ctx, &streams, &key, ENDED_MS);
-            }
-            Ended::Again { said_something: true } => failures = 0,
-            Ended::Again { said_something: false } => failures += 1,
-        }
-        if failures >= MAX_FAILURES {
-            tracing::warn!(connector = %s.connector, event = %s.event, "its stream keeps failing, polling for now");
-            return down(&ctx, &streams, &key, DOWN_MS);
-        }
-        let jitter = ctx.clock().map_or(0, |c| c.now_ms().rem_euclid(1000).unsigned_abs());
-        tokio::time::sleep(std::time::Duration::from_millis(push::backoff_ms(failures, jitter))).await;
-    }
-}
-
-fn down(ctx: &Ctx, streams: &Streams, key: &str, for_ms: i64) {
-    let now = ctx.clock().map_or(0, |c| c.now_ms());
-    if let Some(l) = lock(&streams.live).get_mut(key) {
-        l.down_until = Some(now + for_ms);
-    }
-}
-
-/// A stream's frames until it ends: each event pushed to the trigger engine at once, the cursor kept as it moves.
-/// No message for three heartbeats: it's dead (SEP-3415).
-async fn read(ctx: &Ctx, streams: &Streams, key: &str, s: &Subscription, st: wisp_kernel::services::NetStream) -> Ended {
-    use futures::StreamExt as _;
-    let mut body = st.body;
-    let mut sse = wisp_connectors_core::rpc::Sse::default();
-    let mut heartbeat = push::HEARTBEAT_MS;
-    let mut said = false;
-    loop {
-        let wait = std::time::Duration::from_millis(heartbeat.saturating_mul(3));
-        let Ok(Some(Ok(chunk))) = tokio::time::timeout(wait, body.next()).await else {
-            return Ended::Again { said_something: said };
-        };
-        for e in sse.push(&chunk) {
-            let Ok(msg) = serde_json::from_str::<Value>(&e.data) else { continue };
-            said = true;
-            let set = |c: Value| {
-                if let Some(l) = lock(&streams.live).get_mut(key) {
-                    l.cursor = c;
-                }
-            };
-            match push::frame(s, &msg) {
-                push::Frame::Active { cursor, heartbeat_ms, truncated } => {
-                    if truncated {
-                        tracing::warn!(connector = %s.connector, event = %s.event, "events were skipped: the cursor fell out of the server's retention");
-                    }
-                    heartbeat = heartbeat_ms.unwrap_or(heartbeat).max(1_000);
-                    set(cursor);
-                }
-                push::Frame::Event { occurrence, cursor } => {
-                    let now = ctx.clock().map_or(0, |c| c.now_ms());
-                    if let Err(e) = ctx.run::<TriggerPush>(&ctx.root_call(), trigger_event(occurrence, now)).await {
-                        tracing::warn!(connector = %s.connector, "an event didn't reach the triggers: {}", e.message);
-                    }
-                    set(cursor);
-                }
-                push::Frame::Heartbeat { cursor } => set(cursor),
-                push::Frame::Error(why) => tracing::warn!(connector = %s.connector, event = %s.event, "{why}"),
-                push::Frame::Terminated(why) => return Ended::Stop(why),
-                push::Frame::Closed => return Ended::Again { said_something: said },
-                push::Frame::Other => {}
-            }
-        }
-        let now = ctx.clock().map_or(0, |c| c.now_ms());
-        if lock(&streams.live).get(key).is_none_or(|l| now - l.touched > l.idle_ms) {
-            return Ended::Idle;
-        }
     }
 }
 
@@ -331,7 +241,7 @@ impl TriggerSource for McpEvents {
         }]
     }
     fn poll(&self, _on: &str, spec: &Value, cursor: Value) -> BoxFuture<'static, Result<Polled>> {
-        let me = Self { pane: self.pane.clone(), ctx: self.ctx.clone(), streams: self.streams.clone() };
+        let me = Self { pane: self.pane.clone(), ctx: self.ctx.clone(), streams: self.streams.clone(), hooks: self.hooks.clone() };
         let (sub, spec) = (ev::subscription(spec), spec.clone());
         Box::pin(async move { me.poll(sub.map_err(WireError::invalid)?, &spec, cursor).await })
     }
@@ -343,6 +253,21 @@ pub(crate) fn register(s: &mut Setup, pane: Arc<Pane>) {
         let pane = p.clone();
         async move { list(&ctx, &pane, &a.id).await }
     });
-    let src: Arc<dyn TriggerSource> = Arc::new(McpEvents { pane, ctx: s.ctx(), streams: Arc::default() });
+    let hooks = Arc::new(crate::hook::Hooks::default());
+    let h = hooks.clone();
+    s.route(wisp_kernel::http::Route {
+        method: "POST",
+        pattern: crate::hook::ROUTE,
+        permission: wisp_kernel::http::OPEN,
+        doc: true,
+        summary: "An MCP server's webhook delivery for an mcp.event trigger (Standard Webhooks signature; at most 256 KiB)",
+        raw: true,
+        max_body: Some(256 * 1024),
+        handler: Arc::new(move |ctx, _call, req| {
+            let h = h.clone();
+            Box::pin(async move { crate::hook::receive(ctx, h, req).await })
+        }),
+    });
+    let src: Arc<dyn TriggerSource> = Arc::new(McpEvents { pane, ctx: s.ctx(), streams: Arc::default(), hooks });
     s.contribute(&SOURCE, src);
 }

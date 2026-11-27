@@ -17,9 +17,14 @@ pub fn offers(listing: &[Value], event: &str, mode: &str) -> bool {
     })
 }
 
-/// How a trigger wants its events: `match.delivery: poll` keeps it on poll; anything else takes push when offered.
+/// Whether a trigger takes `mode` (`webhook`, `push`) when it's offered: `match.delivery` names the one mode it wants
+/// (`poll` keeps it on polling); without it, each is taken in turn, webhook first (SEP-3415's SDK guidance).
+pub fn wants(spec: &Value, mode: &str) -> bool {
+    spec.pointer("/match/delivery").and_then(Value::as_str).is_none_or(|d| d == mode)
+}
+
 pub fn wants_push(spec: &Value) -> bool {
-    spec.pointer("/match/delivery").and_then(Value::as_str) != Some("poll")
+    wants(spec, "push")
 }
 
 /// The heartbeat wisp asks for: under the 60 s idle limit of common proxies.
@@ -118,6 +123,8 @@ mod tests {
         assert!(!offers(&listing, "nope", "poll"));
         assert!(wants_push(&json!({ "match": { "connector": "pd" } })));
         assert!(!wants_push(&json!({ "match": { "delivery": "poll" } })));
+        assert!(!wants_push(&json!({ "match": { "delivery": "webhook" } })));
+        assert!(wants(&json!({ "match": {} }), "webhook") && wants(&json!({ "match": { "delivery": "webhook" } }), "webhook"));
         // the engine matches every `match` key on the payload: `delivery` is echoed, or the trigger would never fire
         let s = subscription(&json!({ "match": { "connector": "pd", "event": "x", "delivery": "poll" } })).unwrap();
         let p = page(&s, &json!({ "events": [{ "eventId": "1", "name": "x", "data": {} }] })).unwrap();

@@ -23,6 +23,9 @@
   ],
   "contributes": {
     "triggerSources": ["mcp.event"],
+    "settings": [
+      { "key": "connectors.events.callback", "type": "string", "default": "", "title": "This wisp's public https address, for MCP Events webhooks (empty: connectors' events come by push or poll)" }
+    ],
     "events": [
       "connectors.agent_added",
       "connectors.changed",

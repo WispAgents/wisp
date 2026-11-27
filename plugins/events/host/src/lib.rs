@@ -14,8 +14,11 @@
 //! resources: data-only (the view is a copy of the log for the topic; a sink's row is how it's doing. The
 //! sinks themselves are the `events.sinks` setting, wisp.settings' `setting` kind).
 
+mod delivery;
 mod mcp;
 mod sinks;
+mod stream;
+mod webhook;
 
 use std::sync::Arc;
 
@@ -282,7 +285,7 @@ impl Plugin for EventsPlugin {
         s.command::<api::Poll, _, _>(|ctx, call, a| async move { mcp::poll(&ctx, &call, a).await });
         let (newest_seq, _) = tokio::sync::watch::channel(0u64);
         let newest_seq = Arc::new(newest_seq);
-        mcp::register(s, newest_seq.clone());
+        mcp::register(s, &newest_seq);
         sinks::register(s);
         s.contribute(&wisp_mcp_api::TOOL_POINT, Arc::new(mcp_tool()));
         s.on_durable_batch("feed", "*", move |ctx, _call, envs| {

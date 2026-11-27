@@ -143,8 +143,8 @@ impl TriggerSpec {
         let mut f = self.filters.clone();
         // a schedule, a one-off, a webhook or a manual fire names no project: its `project` is only where the
         // task runs (as a filter it refused every event they send); so does a chat message, which comes from a
-        // channel, not a project (v1's Slack trigger ran in its folder)
-        let own = matches!(self.on.as_str(), "schedule" | "once" | "webhook" | "manual" | "chat.message");
+        // channel, not a project (v1's Slack trigger ran in its folder); nor does an MCP server's event (ADR-0145)
+        let own = matches!(self.on.as_str(), "schedule" | "once" | "webhook" | "manual" | "chat.message" | "mcp.event");
         for (k, v) in [("project", &self.project), ("branch", &self.branch), ("label", &self.label)] {
             if !v.is_empty() && !f.contains_key(k) && (!own || k != "project") {
                 f.insert(k.to_owned(), Value::String(v.clone()));
@@ -229,6 +229,15 @@ pub fn check(s: &TriggerSpec) -> Vec<String> {
     }
     if s.on == "webhook" && s.secret.trim().is_empty() {
         out.push("a webhook needs a secret (${secret:NAME})".into());
+    }
+    if s.on == "mcp.event" {
+        let named = |k: &str| s.filters.get(k).and_then(Value::as_str).is_some_and(|v| !v.trim().is_empty());
+        if !named("connector") || !named("event") {
+            out.push("mcp.event needs match.connector (a remote connector) and match.event (one of its event types)".into());
+        }
+        if let Some(d) = s.filters.get("delivery").and_then(Value::as_str).filter(|d| !matches!(*d, "webhook" | "push" | "poll")) {
+            out.push(format!("match.delivery: webhook, push or poll ({d})"));
+        }
     }
     if s.on == "chat.message" && s.users.is_empty() {
         out.push("chat.message needs users: the names that may start it, or anyone".into());

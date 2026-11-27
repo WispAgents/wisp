@@ -97,6 +97,15 @@ pub trait Net: Send + Sync + 'static {
     /// The same request with its body streamed: an SSE stream read while other requests go out. `timeout_ms` bounds
     /// the whole stream. The default reads the whole body with `fetch` and gives it as one chunk, so a `Net` that
     /// can't stream (a test's fake) still answers.
+    /// A request to an address nobody vouched for (an MCP Events webhook's callback, SEP-3415): never redirected, and
+    /// sent only to a globally routable address ([`is_global`]), resolved at send time and connected to directly, so
+    /// the name can't point elsewhere between the check and the connection (DNS rebinding). `allow_private` lets a
+    /// loopback or private address through (a LAN, a test). The default sends it with `fetch`: a `Net` that can't
+    /// pin an address (a test's fake) still answers.
+    fn fetch_untrusted(&self, req: NetRequest, allow_private: bool) -> BoxFuture<'static, Result<NetResponse>> {
+        let _ = allow_private;
+        self.fetch(req)
+    }
     fn stream(&self, req: NetRequest) -> BoxFuture<'static, Result<NetStream>> {
         let f = self.fetch(req);
         Box::pin(async move {
@@ -104,6 +113,43 @@ pub trait Net: Send + Sync + 'static {
             let body = r.body;
             Ok(NetStream { status: r.status, headers: r.headers, body: Box::pin(futures::stream::once(async move { Ok(body) })) })
         })
+    }
+}
+
+/// Whether `ip` is globally routable: not loopback, private, link-local, shared (CGNAT), documentation, benchmarking,
+/// unspecified, multicast or broadcast, by the IANA special-purpose registries (an IPv4-mapped IPv6 address as its
+/// IPv4). What an untrusted callback may be sent to ([`Net::fetch_untrusted`]).
+pub fn is_global(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, c, _] = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_multicast()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || a == 0
+                || (a == 100 && (64..128).contains(&b))
+                || (a == 192 && b == 0 && c == 0)
+                || (a == 198 && (b == 18 || b == 19))
+                || a >= 240)
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_global(IpAddr::V4(v4));
+            }
+            let first = v6.segments()[0];
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80
+                || first == 0x2001 && v6.segments()[1] == 0x0db8
+                || first == 0x0064 && v6.segments()[1] == 0xff9b)
+        }
     }
 }
 
@@ -154,4 +200,33 @@ pub type ClientAddrService = Arc<ClientAddr>;
 /// The proxied user's address, when this wisp has one (see [`ClientAddr`]).
 pub fn client_addr(ctx: &Ctx) -> Option<String> {
     ctx.service::<ClientAddrService>().ok().and_then(|c| c.get())
+}
+
+#[cfg(test)]
+mod untrusted_tests {
+    use super::is_global;
+
+    #[test]
+    fn only_globally_routable_addresses_are_global() {
+        for private in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.1.1",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::1",
+            "fc00::1",
+            "fe80::1",
+            "::ffff:10.0.0.1",
+            "192.0.2.1",
+            "240.0.0.1",
+        ] {
+            assert!(!is_global(private.parse().unwrap_or_else(|_| panic!("{private}"))), "{private}");
+        }
+        for public in ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111", "::ffff:8.8.8.8"] {
+            assert!(is_global(public.parse().unwrap_or_else(|_| panic!("{public}"))), "{public}");
+        }
+    }
 }

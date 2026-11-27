@@ -8,7 +8,8 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::many_single_char_names,
-    clippy::assert_is_empty
+    clippy::assert_is_empty,
+    clippy::struct_excessive_bools
 )]
 
 use std::collections::BTreeMap;
@@ -59,6 +60,8 @@ struct St {
     modern: bool,
     /// its listing offers push, and `events/stream` answers with SSE fed by `stream`
     push: bool,
+    /// its listing offers webhook; `events/subscribe` refuses (it can't reach the address)
+    webhook: bool,
     stream: Option<futures::channel::mpsc::UnboundedSender<Vec<u8>>>,
     page: usize,
     happened: Vec<(String, String)>,
@@ -94,9 +97,13 @@ impl Server {
             _ if s.no_events => err(-32601, "Method not found"),
             _ if s.modern && version.as_deref() != Some("2026-07-28") => reply(400, &json!({})),
             "events/list" => {
-                let delivery = if s.push { json!(["push", "poll"]) } else { json!(["poll"]) };
+                let mut delivery = if s.push { json!(["push", "poll"]) } else { json!(["poll"]) };
+                if s.webhook {
+                    delivery.as_array_mut().unwrap().insert(0, json!("webhook"));
+                }
                 ok(json!({ "events": [{ "name": "incident.created", "delivery": delivery, "inputSchema": { "type": "object" } }] }))
             }
+            "events/subscribe" => err(-32027, "CallbackEndpointError"),
             "events/poll" => {
                 let p = &m["params"];
                 if p["name"] != "incident.created" {
@@ -351,5 +358,33 @@ async fn a_trigger_can_keep_to_polling() {
     let spec = json!({ "on": "mcp.event", "match": { "connector": "pd", "event": "incident.created", "delivery": "poll" } });
     a.source().poll("mcp.event", &spec, Value::Null).await.unwrap();
     assert!(a.sent("events/stream").is_empty());
+    assert_eq!(a.sent("events/poll").len(), 1);
+}
+
+/// Webhook (ADR-0145): with a public address set and webhook offered, the first poll subscribes; a refused
+/// subscribe leaves the trigger to poll at once, and it isn't asked again on the next poll (an hour).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_webhook_falls_back_to_polling_and_isnt_asked_again_soon() {
+    let a = app("hook-refused", Server { st: Mutex::new(St { webhook: true, ..St::default() }) }).await;
+    a.k.set_setting("connectors.events.callback", Some(json!("https://me.example"))).unwrap();
+    let first = a.poll(Value::Null).await.unwrap();
+    let subscribed = a.sent("events/subscribe");
+    assert_eq!(subscribed.len(), 1);
+    let d = &subscribed[0].1["delivery"];
+    assert_eq!(d["mode"], "webhook");
+    assert!(d["url"].as_str().unwrap().starts_with("https://me.example/api/connectors/events/"), "{d}");
+    assert!(d["secret"].as_str().unwrap().starts_with("whsec_"));
+    assert_eq!(a.sent("events/poll").len(), 1, "polled at once instead");
+    a.poll(first.cursor).await.unwrap();
+    assert_eq!(a.sent("events/subscribe").len(), 1, "not asked again so soon");
+    assert_eq!(a.sent("events/poll").len(), 2);
+}
+
+/// Without a public address, a webhook offer is ignored: no subscribe, push or poll as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn without_a_public_address_no_webhook_is_asked_for() {
+    let a = app("hook-none", Server { st: Mutex::new(St { webhook: true, ..St::default() }) }).await;
+    a.poll(Value::Null).await.unwrap();
+    assert_eq!(a.sent("events/subscribe"), []);
     assert_eq!(a.sent("events/poll").len(), 1);
 }

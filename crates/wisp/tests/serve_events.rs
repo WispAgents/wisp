@@ -136,7 +136,7 @@ async fn capped_agent_sees_only_its_task_events_over_mcp() {
 
 /// MCP Events (SEP-3415, ADR-0145) on wisp's own MCP endpoint: the extension declared, the durable types listed, a
 /// poll with no cursor starting from now, the next one bringing what happened since (once), a modern request's
-/// `resultType`, and the codes for an unknown type and an unserved delivery mode (webhook).
+/// `resultType`, and the codes for an unknown type and a subscribe without its delivery.
 #[tokio::test(flavor = "multi_thread")]
 async fn mcp_events_poll_brings_what_happened_after_the_cursor_once() {
     let dir = temp("serve-events-mcp-events");
@@ -173,7 +173,7 @@ async fn mcp_events_poll_brings_what_happened_after_the_cursor_once() {
     let unknown = mcp(&api.http, port, &[], rpc(7, "events/poll", json!({ "name": "nope.never", "cursor": null }))).await;
     assert_eq!(unknown["error"]["code"], -32023, "{unknown}");
     let hook = mcp(&api.http, port, &[], rpc(8, "events/subscribe", json!({ "name": "turn.finished" }))).await;
-    assert_eq!((hook["error"]["code"].clone(), hook["error"]["data"]["value"].clone()), (json!(-32026), json!("webhook")), "{hook}");
+    assert_eq!(hook["error"]["code"], -32602, "a webhook needs its delivery: {hook}");
     drop(serve);
 }
 
@@ -231,7 +231,73 @@ async fn mcp_events_stream_pushes_each_event_as_it_happens() {
     assert_eq!(listed["served"], true, "{listed}");
     let found = listed["events"].as_array().and_then(|l| l.iter().find(|e| e["name"] == "turn.finished").cloned());
     let finished = found.unwrap_or_else(|| panic!("{listed}"));
-    assert_eq!(finished["delivery"], json!(["push", "poll"]));
+    assert_eq!(finished["delivery"], json!(["webhook", "push", "poll"]));
+    drop(serve);
+}
+
+/// Webhook delivery (ADR-0145), both ways on one `wisp serve`: a callback that doesn't echo the challenge is refused
+/// (`-32027 challenge_failed`), a bad secret or an `http` URL without `events.webhooks.allowPrivate` is
+/// `InvalidParams`, and wisp's own client, given its own address as the public one, subscribes to wisp's own
+/// `task.finished` and fires an `mcp.event` trigger from the delivery.
+#[tokio::test(flavor = "multi_thread")]
+async fn mcp_events_webhook_from_wisp_to_itself_fires_a_trigger() {
+    let dir = temp("serve-events-mcp-webhook");
+    let (serve, port) = start_with(&dir, &[]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+    let sub = |url: &str, secret: &str| json!({ "jsonrpc": "2.0", "id": 1, "method": "events/subscribe", "params": { "name": "task.finished", "delivery": { "mode": "webhook", "url": url, "secret": secret } } });
+    let plain = mcp(&api.http, port, &[], sub("http://127.0.0.1:9/hook", secret)).await;
+    assert_eq!(plain["error"]["code"], -32602, "http without allowPrivate: {plain}");
+    api.cmd("settings.set", json!({ "key": "events.webhooks.allowPrivate", "value": true })).await;
+    let bad = mcp(&api.http, port, &[], sub("http://127.0.0.1:9/hook", "nope")).await;
+    assert_eq!(bad["error"]["code"], -32602, "{bad}");
+    let (rport, _, _) = receiver(0).await;
+    let deaf = mcp(&api.http, port, &[], sub(&format!("http://127.0.0.1:{rport}/hook"), secret)).await;
+    assert_eq!(
+        (deaf["error"]["code"].clone(), deaf["error"]["data"]["reason"].clone()),
+        (json!(-32027), json!("challenge_failed")),
+        "{deaf}"
+    );
+    // wisp to itself: its address is the public one
+    api.cmd("settings.set", json!({ "key": "connectors.events.callback", "value": format!("http://127.0.0.1:{port}") })).await;
+    api.cmd("connectors.add", json!({ "name": "self", "transport": "remote", "url": format!("http://127.0.0.1:{port}/api/mcp") })).await;
+    let proj = dir.join("proj").to_string_lossy().into_owned();
+    let spec = json!({ "on": "mcp.event", "match": { "connector": "self", "event": "task.finished", "delivery": "webhook" }, "prompt": "Seen: {event.summary}", "project": proj, "rate": "1/h" });
+    api.cmd("resources.apply", json!({ "resources": [{ "kind": "trigger", "name": "hooked", "spec": spec }] })).await;
+    // the engine's first poll subscribes; each task until then ends unseen, the next one fires the trigger
+    let at = Instant::now();
+    loop {
+        task(&api, &dir, "fix the add bug").await;
+        let fired = api.cmd("events.tail", json!({ "type": "trigger.fired" })).await;
+        if fired.as_array().is_some_and(|l| l.iter().any(|e| e["data"]["trigger"] == "hooked" && e["data"]["on"] == "mcp.event")) {
+            // by webhook: wisp's server holds the subscription to wisp's own route, and has delivered to it
+            let hooks = api.cmd("events.webhooks", json!({})).await;
+            let h = hooks
+                .as_array()
+                .and_then(|l| l.iter().find(|h| h["name"] == "task.finished").cloned())
+                .unwrap_or_else(|| panic!("{hooks}"));
+            assert!(h["url"].as_str().is_some_and(|u| u.starts_with(&format!("http://127.0.0.1:{port}/api/connectors/events/"))), "{h}");
+            assert!(h["lastDeliveryAt"].is_string() && h["active"] == true && h["lastError"].is_null(), "{h}");
+            assert!(!hooks.to_string().contains("whsec_"), "secrets stay out");
+            break;
+        }
+        if at.elapsed() > Duration::from_secs(90) {
+            let ls = api.cmd("automations.trigger.ls", json!({})).await;
+            let log = std::fs::read_to_string(dir.join("serve.log")).unwrap_or_default();
+            let tail: String = log.lines().filter(|l| l.contains("WARN") || l.contains("ERROR")).collect::<Vec<_>>().join("\n");
+            let kinds: Vec<String> = api
+                .cmd("events.tail", json!({ "limit": 1000 }))
+                .await
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .iter()
+                .map(|e| e["type"].as_str().unwrap_or_default().to_owned())
+                .collect();
+            panic!("the trigger never fired: {fired}\ntriggers: {ls}\nlog: {tail}\nevents: {kinds:?}");
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
     drop(serve);
 }
 
