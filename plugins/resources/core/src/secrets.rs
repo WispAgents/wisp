@@ -69,12 +69,11 @@ fn without_secret_refs(s: &str) -> String {
     let mut rest = s;
     while let Some(at) = rest.find("${secret:") {
         out.push_str(&rest[..at]);
-        match rest[at..].find('}') {
-            Some(end) => rest = &rest[at + end + 1..],
-            None => {
-                out.push_str(&rest[at..]);
-                rest = "";
-            }
+        if let Some(end) = rest[at..].find('}') {
+            rest = &rest[at + end + 1..];
+        } else {
+            out.push_str(&rest[at..]);
+            rest = "";
         }
     }
     out.push_str(rest);
