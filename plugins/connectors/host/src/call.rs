@@ -1,7 +1,8 @@
 //! `connectors.call` (v1 connectors.js `mcpCall`): one tool of a remote connector, called by wisp itself over
 //! streamable HTTP (`initialize`, `notifications/initialized`, `tools/call`, with the server's session), with
 //! the connector's headers and its sign-in. Its token never leaves wisp. A JSON-RPC error or a tool's `isError`
-//! comes back as the server's own words. A connector wisp starts itself (stdio) isn't called here yet.
+//! comes back as the server's own words. A connector wisp starts itself (stdio) isn't called here yet. `request` is
+//! the same for any method (MCP Events' `events/list` and `events/poll`, `events.rs`).
 //!
 //! Also `issues.connectors@1`: the connectors with their secrets revealed and whether each is signed in, for
 //! the issue picker (Linear's API key, Jira's site and token, or a signed-in server's tools).
@@ -80,32 +81,45 @@ async fn post(ctx: &Ctx, url: &str, headers: &[(String, String)], session: Optio
 }
 
 pub async fn call(ctx: &Ctx, pane: &Pane, a: &CallArgs) -> Result<CallOut> {
-    let Some((_, mut c)) = pane.specs().await.into_iter().find(|(n, _)| *n == a.id) else {
-        return Err(WireError::not_found(format!("No connector called {}", a.id)));
+    let args = if a.args.is_null() { json!({}) } else { a.args.clone() };
+    let v = request(ctx, pane, &a.id, "tools/call", json!({ "name": a.tool, "arguments": args }), false).await?;
+    if let Some(why) = refusal_of(&v) {
+        return Err(WireError::unavailable(why));
+    }
+    Ok(CallOut { result: v.get("result").cloned().unwrap_or(Value::Null) })
+}
+
+/// One JSON-RPC request to a remote connector, with its headers and sign-in: the whole answer (`result` or `error`),
+/// for the caller to read. `modern`: a server that refuses `initialize` is asked again the `2026-07-28` way, the
+/// version in `_meta` and the `MCP-Protocol-Version` header (MCP Events, ADR-0145).
+pub async fn request(ctx: &Ctx, pane: &Pane, id: &str, method: &str, params: Value, modern: bool) -> Result<Value> {
+    let Some((_, mut c)) = pane.specs().await.into_iter().find(|(n, _)| *n == id) else {
+        return Err(WireError::not_found(format!("No connector called {id}")));
     };
     if c.url.is_empty() {
-        return Err(WireError::invalid(format!("{} runs on this computer: wisp calls only remote connectors' tools", a.id)));
+        return Err(WireError::invalid(format!("{id} runs on this computer: wisp calls only remote connectors' tools")));
     }
     for v in c.headers.values_mut() {
-        *v = crate::kinds::reveal(ctx, &a.id, v).await;
+        *v = crate::kinds::reveal(ctx, id, v).await;
     }
     let mut headers: Vec<(String, String)> = c.headers.into_iter().collect();
     headers.push(("content-type".into(), "application/json".into()));
     headers.push(("accept".into(), "application/json, text/event-stream".into()));
+    let ask = Ask { id, method, params: &params, modern };
     // a sign-in's token goes only over https or to this computer (`bearer_ok`): elsewhere the call goes without it
     if c.oauth != Some(true) || !crate::kinds::bearer_ok(&c.url) {
-        return exchange(ctx, &c.url, &headers, a).await;
+        return exchange(ctx, &c.url, &headers, &ask).await;
     }
     // signed in: a token that ran out is refreshed first; a refused one is refreshed and tried once more, and a
     // second refusal (or a refresh that fails) leaves the row asking for a sign-in
-    let t = pane.fresh_token(ctx, &a.id, None).await?;
-    match exchange(ctx, &c.url, &bearer(&headers, &t), a).await {
+    let t = pane.fresh_token(ctx, id, None).await?;
+    match exchange(ctx, &c.url, &bearer(&headers, &t), &ask).await {
         Err(e) if e.code == Code::Forbidden => {}
         done => return done,
     }
-    let t = pane.fresh_token(ctx, &a.id, Some(&t)).await?;
-    match exchange(ctx, &c.url, &bearer(&headers, &t), a).await {
-        Err(e) if e.code == Code::Forbidden => Err(pane.needs_signin(ctx, &a.id, &e.message).await),
+    let t = pane.fresh_token(ctx, id, Some(&t)).await?;
+    match exchange(ctx, &c.url, &bearer(&headers, &t), &ask).await {
+        Err(e) if e.code == Code::Forbidden => Err(pane.needs_signin(ctx, id, &e.message).await),
         done => done,
     }
 }
@@ -117,29 +131,50 @@ fn bearer(headers: &[(String, String)], token: &str) -> Vec<(String, String)> {
     h
 }
 
-/// One tool call over streamable HTTP: `initialize`, `notifications/initialized`, `tools/call`.
-async fn exchange(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &CallArgs) -> Result<CallOut> {
+struct Ask<'a> {
+    id: &'a str,
+    method: &'a str,
+    params: &'a Value,
+    modern: bool,
+}
+
+/// One request over streamable HTTP: `initialize`, `notifications/initialized`, then the method (in the server's
+/// session).
+async fn exchange(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &Ask<'_>) -> Result<Value> {
     let init: Value = serde_json::from_str(&initialize(env!("CARGO_PKG_VERSION"))).unwrap_or_default();
-    let r = post(ctx, url, headers, None, &init).await?;
+    let r = match post(ctx, url, headers, None, &init).await {
+        Ok(r) => r,
+        // a modern-only server answers a legacy opening with a 4xx: ask it the modern way
+        Err(e) if a.modern && e.code == Code::Unavailable => return modern(ctx, url, headers, a).await,
+        Err(e) => return Err(e),
+    };
     let session = r.header("mcp-session-id").map(str::to_owned);
     if let Some(why) = answer(&r).as_ref().and_then(refusal_of) {
+        if a.modern {
+            return modern(ctx, url, headers, a).await;
+        }
         return Err(WireError::unavailable(why));
     }
     let _ = post(ctx, url, headers, session.as_deref(), &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).await;
-    let args = if a.args.is_null() { json!({}) } else { a.args.clone() };
-    let r = post(
-        ctx,
-        url,
-        headers,
-        session.as_deref(),
-        &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": a.tool, "arguments": args } }),
-    )
-    .await?;
-    let v = answer(&r).ok_or_else(|| WireError::unavailable(format!("{} didn't answer {}", a.id, a.tool)))?;
-    if let Some(why) = refusal_of(&v) {
-        return Err(WireError::unavailable(why));
+    let r =
+        post(ctx, url, headers, session.as_deref(), &json!({ "jsonrpc": "2.0", "id": 2, "method": a.method, "params": a.params })).await?;
+    answer(&r).ok_or_else(|| WireError::unavailable(format!("{} didn't answer {}", a.id, a.method)))
+}
+
+/// The `2026-07-28` way: no handshake, the version in the request's `_meta` and in `MCP-Protocol-Version`.
+async fn modern(ctx: &Ctx, url: &str, headers: &[(String, String)], a: &Ask<'_>) -> Result<Value> {
+    let mut h = headers.to_vec();
+    h.push(("mcp-protocol-version".into(), wisp_connectors_core::events::MODERN.into()));
+    let mut params = a.params.clone();
+    if let Some(o) = params.as_object_mut() {
+        let meta = o.entry("_meta").or_insert_with(|| json!({}));
+        if let (Some(m), Value::Object(extra)) = (meta.as_object_mut(), wisp_connectors_core::events::meta(Some(env!("CARGO_PKG_VERSION"))))
+        {
+            m.extend(extra);
+        }
     }
-    Ok(CallOut { result: v.get("result").cloned().unwrap_or(Value::Null) })
+    let r = post(ctx, url, &h, None, &json!({ "jsonrpc": "2.0", "id": 2, "method": a.method, "params": params })).await?;
+    answer(&r).ok_or_else(|| WireError::unavailable(format!("{} didn't answer {}", a.id, a.method)))
 }
 
 /// The connectors as the issue picker reads them.
@@ -181,10 +216,12 @@ impl wisp_issues_api::Connectors for ForIssues {
 }
 
 pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, pane: Arc<Pane>) {
+    let p = pane.clone();
     s.command::<wisp_connectors_api::Call, _, _>(move |ctx, _call, a| {
-        let pane = pane.clone();
+        let pane = p.clone();
         async move { call(&ctx, &pane, &a).await }
     });
+    crate::events::register(s, pane);
     let issues: Arc<dyn wisp_issues_api::Connectors> = Arc::new(ForIssues { kind, ctx: s.ctx() });
     s.contribute(&wisp_issues_api::CONNECTORS, issues);
 }

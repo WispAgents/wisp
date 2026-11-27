@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **MCP Events, both ways.** A remote connector that serves MCP Events (SEP-3415) can start a task or wake a crew
+  member: write a trigger `on: mcp.event` with `match: { connector, event, arguments }`, and wisp polls it every
+  minute, firing once per event, from the moment the trigger is on. `connectors.events` lists what a connector
+  serves. In the other direction, wisp's own MCP endpoint serves its durable events: an MCP client lists them with
+  `events/list` and follows `task.finished`, `pr.opened`, `goal.failed` and the rest with `events/poll`, and a
+  task's agent sees only its own task's. wisp also answers `server/discover` and the `2026-07-28` protocol. Push and
+  webhook delivery come later (ADR-0145).
+
 - **This computer, in three tabs.** Overview opens on one line that says whether the computer is fine and why (memory short, disk almost full, automations waiting, a process left running, or *Room to spare*), then memory, CPU and disk as bars with a mark where automations start to wait, what needs you, what runs now, and the last 24 hours as a chart and one sentence. A process left running is named by what it runs (`python3 -m http.server`), not its interpreter's path. Space has the disk as one bar (build output, wisp's folders, everything else, free), each folder's build output with Remove and Remove all, Free up space and the harnesses' folders. Limits has automations. A warning on top says when the disk runs short, with one button that frees the build output, or when memory is under the floor (ADR-0144).
 - **Build output goes first.** `target/`, `node_modules/` and other folders the next build makes again can be removed on their own, from Space or with `wisp worktrees clean --build`. The folder, its branch and its uncommitted changes stay. Under 10 GB free, the hourly cleanup removes the build output of left-over folders, then of idle tasks', before it removes any folder (ADR-0144).
 - **Merge risk.** Turn on Settings → General → Merge risk, and another harness than the one that wrote a task reads each of its open pull requests (the ones Ship it opened and the ones its agent attached) and says how risky merging is: low, medium or high, a score and why. The PR card gets a Merge risk row under the Steward with the riskiest PR's verdict, each PR's chip says its own, the PR panel lists the reasons with Judge again, and Merge turns red for a PR judged high. A push judges that PR again. Off by default (ADR-0143).

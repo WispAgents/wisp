@@ -9,7 +9,8 @@ use ts_rs::TS;
 use wisp_kernel::{Command, Event};
 
 use crate::rows::{
-    AgentSigninOut, AgentText, ConnectorsView, ImportView, McpServers, ProxySpec, SignedInName, SigninUrl, TokenOut, Transport,
+    AgentSigninOut, AgentText, ConnectorsView, EventsArgs, EventsOut, ImportView, McpServers, ProxySpec, SignedInName, SigninUrl, TokenOut,
+    Transport,
 };
 
 // ---------- argument shapes ----------
@@ -349,6 +350,16 @@ command!(
     false,
     CallArgs,
     CallOut
+; typed);
+
+command!(
+    /// A remote connector's event types (MCP Events), for an `mcp.event` trigger.
+    Events,
+    "connectors.events",
+    "connectors:events",
+    true,
+    EventsArgs,
+    EventsOut
 ; typed);
 
 // ---------- events ----------

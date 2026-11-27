@@ -22,7 +22,8 @@ pub async fn rpc(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: O
         only = narrowed(ctx, call, sessions, session).await;
     }
     let (ex, contributed) = extras_for(ctx, call);
-    let plan = wisp_mcp_core::plan(text, &w, &ex);
+    let methods = ctx.contributions(&wisp_mcp_api::METHOD_POINT);
+    let plan = wisp_mcp_core::plan_served(text, &w, &ex, &served(&methods));
     let auto_off = crate::auto_off(ctx);
     let mut replies = Vec::with_capacity(plan.steps.len());
     for step in plan.steps {
@@ -33,6 +34,7 @@ pub async fn rpc(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: O
                 Some(only.as_ref().map_or_else(|| r.clone(), |o| crate::kinds::filter_list(&r, o)))
             }
             Step::Silent => None,
+            Step::Method { id, method, params } => Some(method_reply(ctx, call, &methods, &id, &method, params).await),
             Step::Call(c) if only.as_ref().is_some_and(|o| !o.allows(&c.name)) => Some(wisp_mcp_core::finish(
                 &c.id,
                 &c.name,
@@ -69,7 +71,42 @@ pub async fn rpc(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: O
             }
         });
     }
+    let replies = if plan.modern { replies.into_iter().map(|r| r.map(|r| wisp_mcp_core::rpc::completed(&r))).collect() } else { replies };
     wisp_mcp_core::assemble(replies, plan.batch)
+}
+
+/// What the dispatcher hands over (`mcp.method@1`, ADR-0145): each contributed method once (the first plugin to name
+/// one has it), and the extensions they declare.
+fn served(methods: &[std::sync::Arc<wisp_mcp_api::MethodContribution>]) -> wisp_mcp_core::Served {
+    let mut s = wisp_mcp_core::Served::default();
+    for m in methods {
+        if wisp_mcp_core::dispatch::core_method(&m.method) || s.methods.contains(&m.method) {
+            continue;
+        }
+        s.methods.push(m.method.clone());
+        if let Some((id, settings)) = &m.extension {
+            s.extensions.entry(id.clone()).or_insert_with(|| settings.clone());
+        }
+    }
+    s
+}
+
+/// A contributed method, run as the caller: its result, or its refusal with the code and data it chose.
+async fn method_reply(
+    ctx: &Ctx,
+    call: &Call,
+    methods: &[std::sync::Arc<wisp_mcp_api::MethodContribution>],
+    id: &serde_json::value::RawValue,
+    method: &str,
+    params: Value,
+) -> String {
+    let Some(m) = methods.iter().find(|m| m.method == method) else {
+        return wisp_mcp_core::rpc::error(id, wisp_mcp_core::rpc::METHOD_NOT_FOUND, &format!("Method not found: {method}"));
+    };
+    match (m.run)(ctx.clone(), call.clone(), params).await {
+        Ok(v) => wisp_mcp_core::rpc::result(id, &v.to_string()),
+        Err(e) => wisp_mcp_core::rpc::error_data(id, e.code, &e.message, e.data.as_ref()),
+    }
 }
 
 /// A tool call's catalogue event (`wisp_mcp_core::telemetry`), with the caller's harness.

@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS, Default)]
@@ -287,4 +288,23 @@ pub struct SignedInName {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenOut {
     pub token: Option<String>,
+}
+
+/// `connectors.events` (ADR-0145): the event types a remote connector serves (MCP Events, SEP-3415 `events/list`),
+/// what an `mcp.event` trigger can wait on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "connectors/")]
+pub struct EventsArgs {
+    /// the connector
+    pub id: String,
+}
+
+/// Its event types as it lists them (`name`, `description`, `delivery`, `inputSchema`, `payloadSchema`); `served` is
+/// false when it serves no events at all.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "connectors/")]
+pub struct EventsOut {
+    pub served: bool,
+    #[ts(type = "unknown[]")]
+    pub events: Vec<Value>,
 }

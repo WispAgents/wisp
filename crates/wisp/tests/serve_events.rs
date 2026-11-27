@@ -118,9 +118,62 @@ async fn capped_agent_sees_only_its_task_events_over_mcp() {
     // asking for another task's is refused
     let refused = mcp(&api.http, port, &agent, json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "wisp_events", "arguments": { "subject": other } } })).await;
     assert!(refused.to_string().contains("its own task"), "{refused}");
+    // MCP Events (ADR-0145): its poll is scoped the same way, in SEP-3415's Forbidden
+    let poll = json!({ "jsonrpc": "2.0", "id": 3, "method": "events/poll", "params": { "name": "turn.finished", "arguments": { "subject": other }, "cursor": "0" } });
+    let refused = mcp(&api.http, port, &agent, poll).await;
+    assert_eq!(refused["error"]["code"], -32024, "{refused}");
+    assert!(refused["error"]["message"].as_str().is_some_and(|m| m.contains("its own task")), "the scope refused it: {refused}");
+    // its own task's: answered
+    let own = json!({ "jsonrpc": "2.0", "id": 4, "method": "events/poll", "params": { "name": "turn.finished", "cursor": "0" } });
+    let mine = mcp(&api.http, port, &agent, own).await;
+    assert!(mine["result"]["events"].is_array(), "{mine}");
+    assert!(!mine.to_string().contains(&other), "{mine}");
     // the user sees both
     let all = api.cmd("events.tail", json!({})).await;
     assert!(all.to_string().contains(&other));
+    drop(serve);
+}
+
+/// MCP Events (SEP-3415, ADR-0145) on wisp's own MCP endpoint: the extension declared, the durable types listed, a
+/// poll with no cursor starting from now, the next one bringing what happened since (once), a modern request's
+/// `resultType`, and the codes for an unknown type and an unserved delivery mode.
+#[tokio::test(flavor = "multi_thread")]
+async fn mcp_events_poll_brings_what_happened_after_the_cursor_once() {
+    let dir = temp("serve-events-mcp-events");
+    let (serve, port) = start_with(&dir, &[]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let rpc = |id: u32, method: &str, params: Value| json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
+    let d = mcp(&api.http, port, &[], rpc(1, "server/discover", json!({}))).await;
+    assert!(d["result"]["capabilities"]["extensions"]["io.modelcontextprotocol/events"].is_object(), "{d}");
+    let init = mcp(&api.http, port, &[], rpc(2, "initialize", json!({ "protocolVersion": "2025-06-18" }))).await;
+    assert!(init["result"]["capabilities"]["extensions"]["io.modelcontextprotocol/events"].is_object(), "{init}");
+    let list = mcp(&api.http, port, &[], rpc(3, "events/list", json!({}))).await;
+    let names: Vec<&str> =
+        list["result"]["events"].as_array().unwrap_or_else(|| panic!("{list}")).iter().filter_map(|e| e["name"].as_str()).collect();
+    assert!(names.contains(&"turn.finished") && !names.contains(&"turn.activity"), "durable types only: {names:?}");
+    // no cursor: from now on, nothing yet
+    let first = mcp(&api.http, port, &[], rpc(4, "events/poll", json!({ "name": "turn.finished", "cursor": null }))).await;
+    assert_eq!(first["result"]["events"], json!([]), "{first}");
+    let c0 = first["result"]["cursor"].as_str().unwrap().to_owned();
+    let id = task(&api, &dir, "fix the add bug").await;
+    until_tail(&api, json!({ "type": "turn.finished", "subject": id }), "the turn's end", |l| !l.is_empty()).await;
+    let modern = json!({ "name": "turn.finished", "cursor": c0, "_meta": { "io.modelcontextprotocol/protocolVersion": "2026-07-28" } });
+    let next = mcp(&api.http, port, &[], rpc(5, "events/poll", modern)).await;
+    assert_eq!(next["result"]["resultType"], "complete", "{next}");
+    let got = next["result"]["events"].as_array().unwrap();
+    assert!(got.iter().any(|e| e["_meta"]["dev.trywisp/subject"] == json!(id)), "{next}");
+    assert!(
+        got.iter()
+            .all(|e| e["name"] == "turn.finished" && e["eventId"].is_string() && e["timestamp"].as_str().is_some_and(|t| t.ends_with('Z')))
+    );
+    let c1 = next["result"]["cursor"].as_str().unwrap().to_owned();
+    assert_ne!(c1, c0);
+    let again = mcp(&api.http, port, &[], rpc(6, "events/poll", json!({ "name": "turn.finished", "cursor": c1 }))).await;
+    assert!(!again["result"]["events"].as_array().unwrap().iter().any(|e| e["_meta"]["dev.trywisp/subject"] == json!(id)), "once: {again}");
+    let unknown = mcp(&api.http, port, &[], rpc(7, "events/poll", json!({ "name": "nope.never", "cursor": null }))).await;
+    assert_eq!(unknown["error"]["code"], -32023, "{unknown}");
+    let push = mcp(&api.http, port, &[], rpc(8, "events/stream", json!({ "name": "turn.finished" }))).await;
+    assert_eq!((push["error"]["code"].clone(), push["error"]["data"]["value"].clone()), (json!(-32026), json!("push")), "{push}");
     drop(serve);
 }
 

@@ -6,6 +6,7 @@
 pub mod agent;
 pub mod codex_toml;
 pub mod error;
+pub mod events;
 pub mod harness;
 pub mod model;
 pub mod oauth;

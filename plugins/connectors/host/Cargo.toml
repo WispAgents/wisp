@@ -19,6 +19,7 @@ thiserror.workspace = true
 tracing.workspace = true
 wisp-connectors-api.workspace = true
 wisp-connectors-core.workspace = true
+wisp-automations-api.workspace = true
 wisp-kernel.workspace = true
 wisp-runtime-api.workspace = true
 wisp-store.workspace = true

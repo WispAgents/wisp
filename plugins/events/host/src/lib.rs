@@ -7,12 +7,14 @@
 //! - **The topic:** a durable subscription (`feed`) keeps the last 5 000 events as `events_view` rows, each
 //!   on `events:*`, `events:<area>.*` and `events:<type>`, so a client subscribes and resumes from its
 //!   cursor like any topic (no second protocol). The row and the cursor are one write.
-//! - **MCP:** `wisp_events` (read).
+//! - **MCP:** `wisp_events` (read), and MCP Events (`mcp.rs`, ADR-0145): `events/list` and `events/poll` for any
+//!   MCP client, over `events.poll`.
 //! - **Sinks** (`sinks.rs`): `events.sink@1`, and a signed webhook.
 //!
 //! resources: data-only (the view is a copy of the log for the topic; a sink's row is how it's doing. The
 //! sinks themselves are the `events.sinks` setting, wisp.settings' `setting` kind).
 
+mod mcp;
 mod sinks;
 
 use std::sync::Arc;
@@ -271,6 +273,8 @@ impl Plugin for EventsPlugin {
             Ok(serde_json::to_value(log(&ctx)?.parked().await?).unwrap_or_default())
         });
         s.command::<api::Ls, _, _>(|ctx, _call, _a| async move { Ok(catalogue(&ctx)) });
+        s.command::<api::Poll, _, _>(|ctx, call, a| async move { mcp::poll(&ctx, &call, a).await });
+        mcp::register(s);
         sinks::register(s);
         s.contribute(&wisp_mcp_api::TOOL_POINT, Arc::new(mcp_tool()));
         s.on_durable_batch("feed", "*", |ctx, _call, envs| async move { feed(&ctx, &envs).await });

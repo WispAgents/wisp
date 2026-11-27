@@ -5,6 +5,7 @@
 mod agent;
 mod auth;
 mod call;
+mod events;
 mod kinds;
 mod pane;
 

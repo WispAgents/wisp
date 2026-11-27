@@ -332,6 +332,12 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
       (`notes:` on a task, validated), the TUI's health line and Thread pane (`t`), `serve_threads.rs` e2e. **To do:**
       recheck opencode (a JS plugin via `OPENCODE_CONFIG_CONTENT`) with a recorded run
 
+- [x] MCP Events both ways (owner, 2026-11-27; ADR-0145): `mcp.method@1` (a plugin serves a JSON-RPC method on the
+  MCP endpoint), a dual-era server (`server/discover`, `resultType`, `-32022`), `wisp.events` serving `events/list`
+  and `events/poll` (`events.poll`), and `wisp.connectors`' `connectors.events` plus the `mcp.event` trigger source
+  (poll, modern fallback). **To do:** push (`events/stream`) and webhook (`events/subscribe`) both ways, `mcp.event`
+  in the trigger editor, payload schemas in the catalogue
+
 ### 4.2 GUI (browser and desktop), v1 parity
 
 - [x] Every screen wired to the real server (the 2026-11-09 "mounts no task view" gap is closed)

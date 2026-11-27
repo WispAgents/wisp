@@ -205,6 +205,51 @@ impl std::fmt::Debug for ToolContribution {
 
 pub const TOOL_POINT: Point<ToolContribution> = Point::new("mcp.tool", 1);
 
+/// A protocol method's refusal as JSON-RPC carries it: `code` (`-32602` `InvalidParams`, SEP-3415's `-32023`
+/// `NotFound` … `-32026` `Unsupported`), `message`, and a typed `data`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MethodError {
+    pub code: i64,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
+}
+
+impl MethodError {
+    pub fn new(code: i64, message: impl Into<String>) -> Self {
+        Self { code, message: message.into(), data: None }
+    }
+    #[must_use]
+    pub fn with_data(mut self, data: Value) -> Self {
+        self.data = Some(data);
+        self
+    }
+}
+
+pub type MethodFn = Arc<dyn Fn(Ctx, Call, Value) -> BoxFuture<'static, std::result::Result<Value, MethodError>> + Send + Sync>;
+
+/// `mcp.method@1` (ADR-0145): a plugin serves a JSON-RPC method of its own on wisp's MCP endpoint, beyond tools: an
+/// MCP extension's (`events/list`, `events/poll`), declared under `capabilities.extensions` by its identifier. `run` gets
+/// wisp.mcp's context and the caller's `Call`: a contribution runs its own commands from its own context (`s.ctx()`,
+/// so its manifest's permissions hold) with that `Call` (the caller's capability set and scoping apply). Its `params`
+/// arrive as sent.
+pub struct MethodContribution {
+    /// `events/poll`; a core method (`initialize`, `tools/*`, `server/discover`, `ping`) can't be taken
+    pub method: String,
+    /// the extension it belongs to and that extension's settings (`io.modelcontextprotocol/events`, `{}`), shown in
+    /// `initialize` and `server/discover`
+    pub extension: Option<(String, Value)>,
+    pub run: MethodFn,
+}
+
+impl std::fmt::Debug for MethodContribution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MethodContribution").field("method", &self.method).finish_non_exhaustive()
+    }
+}
+
+pub const METHOD_POINT: Point<MethodContribution> = Point::new("mcp.method", 1);
+
 /// `mcp.session@1`: a plugin says what it knows of a session's tools (side: `read_only`, spells, watch).
 pub trait SessionFlags: Send + Sync {
     fn id(&self) -> &str;

@@ -21,6 +21,7 @@
     "onStartup"
   ],
   "contributes": {
+    "triggerSources": ["mcp.event"],
     "events": [
       "connectors.agent_added",
       "connectors.changed",
@@ -87,6 +88,11 @@
       {
         "id": "connectors.call",
         "title": "Call one tool of a remote connector, with its own sign-in (the issue picker lists Linear and Jira through them)"
+      },
+      {
+        "id": "connectors.events",
+        "title": "A remote connector's event types (MCP Events), what an mcp.event trigger waits on",
+        "readOnly": true
       }
     ],
     "topics": [
