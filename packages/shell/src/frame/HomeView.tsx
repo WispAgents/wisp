@@ -960,7 +960,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     const label = whereHow() ? `${place} · ${whereHow()}` : place;
     return {
       label: t('shell.home.on'),
-      select: { label, colors: [], icon: placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), title: t('shell.home.whereHow'), ariaLabel: `${t('shell.home.whereHow')}: ${label}`, onOpen: () => openRunOn(shell, runOnTarget) },
+      select: { label, colors: [], icon: placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), title: t('shell.home.whereHow'), ariaLabel: `${t('shell.home.whereHow')}: ${label}`, onOpen: () => openRunOn(shell, runOnTarget, t('shell.home.whereHow')) },
     };
   };
   // the chip names a declared goal it sends by name, else what Done when says
