@@ -8,6 +8,7 @@ import { flag, type PartName } from '../core/props.ts';
 import { reorderable, type OnReorder } from '../core/reorder.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import { faceColor } from '../crew/Face.tsx';
 import { Spirit } from '../crew/Spirit.tsx';
 import { WithAct, type Act } from './act.tsx';
 import { useRailCard } from './RailCard.tsx';
@@ -187,6 +188,8 @@ export interface RailMember {
   readonly avatar: string;
   /** the member's colour (v1 c-<colour>) */
   readonly color: string;
+  /** a job of theirs is running: a ring of the spirit's colour round the face (ADR-0140) */
+  readonly live?: boolean;
 }
 
 export interface CrewRailProps {
@@ -258,6 +261,7 @@ export function CrewRail(props: CrewRailProps): JSX.Element {
               data-part="crew.rail.face"
               data-id={m.id}
               data-on={flag(props.pickedId === m.id)}
+              data-live={flag(m.live)}
               aria-current={props.pickedId === m.id ? 'page' : undefined}
               aria-label={m.name}
               title={on() ? undefined : m.name}
@@ -272,7 +276,7 @@ export function CrewRail(props: CrewRailProps): JSX.Element {
             >
               <i data-kit="cl-pip" data-part="crew.rail.pick" />
               <span data-kit="cl-av">
-                <span data-kit="cr-av" data-part="crew.avatar" data-color={m.color}>
+                <span data-kit="cr-av" data-part="crew.avatar" data-color={m.color} data-ring={faceColor(m.avatar, m.name, m.color)}>
                   <Spirit code={m.avatar} seed={m.name} />
                 </span>
               </span>

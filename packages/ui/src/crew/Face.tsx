@@ -5,7 +5,7 @@ import type { KitProps } from '../core/props.ts';
 import { Spirit } from './Spirit.tsx';
 import { SPIRIT_COLORS, isSpirit, parseSpirit, type SpiritColor, type SpiritMood } from './spirit-code.ts';
 
-export type FaceSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+export type FaceSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'hero';
 
 export interface FaceProps extends KitProps {
   /** a spirit code, an emoji, or '' (rolled from `name`) */
@@ -14,7 +14,7 @@ export interface FaceProps extends KitProps {
   /** the member's colour when its avatar is an emoji (a spirit carries its own) */
   readonly color?: string;
   readonly mood?: SpiritMood;
-  /** xs 20 · sm 24 · md 32 · lg 44 · xl 64 */
+  /** xs 20 · sm 24 · md 32 · lg 44 · xl 64 · hero 82 (the member page) */
   readonly size?: FaceSize | 'card' | 'row';
   readonly dot?: 'asks' | 'unread';
   /** paused: dimmed */

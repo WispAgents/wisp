@@ -86,6 +86,10 @@ shift every later index. Everything outside the part still has to match.
   `settings.spells` keeps those two buttons' widths (and a sub-pixel the box above leaves) as its known parts off.
 - **Pin and Mark read in a task's menu** (the owner, 2026-11-12, round 30): v2 keeps them, after every one of v1's
   entries (v1's taskMenu had neither), so the row menu is two items longer than v1's: masked in task.right-click.
+- **A crew member's page is a profile** (the owner, 2026-11-27, ADR-0140; mock B of three): a hero (face in its
+  colour's glow, name, role, chips, real numbers) and tabs (Activity, Kit, Notebook, How they work) in place of v1's
+  head and side column, and the rail's face gets a ring of its colour while a job of theirs runs. Masked: the page
+  (`crew.page`) on the crew views and the rail's faces (`crew.avatar`) everywhere.
 
 ## 6. The list rows' glyph phase: found and fixed (2026-11-17)
 
@@ -194,4 +198,6 @@ settings*  settings.item  owner
 settings.usage  settings.budget  owner
 settings.usage  budget.usage.*  owner
 home*  split.next  owner
+crew*  crew.page  owner
+*   crew.avatar  owner
 ```

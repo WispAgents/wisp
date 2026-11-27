@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **A crew member's page is now a profile.** It opens on the member: their face in a glow of their colour, the name
+  and role, chips for what they're doing, their harness, what wakes them and their folder, and their numbers (jobs
+  done, this week, how long a job takes, who they hand work to). Tabs replace the side column: Activity, Kit,
+  Notebook, How they work. The jobs you gave them before sit above the job box, one click away, and a member's face on
+  the rail gets a ring of their colour while they work (ADR-0140).
 - **Usage in the profile menu.** The menu under your profile now has Usage, just above Settings: it opens
   Settings on its Usage pane.
 - **A crew member works in several folders, and carries on with fallbacks at a usage limit.** Beside their own folder

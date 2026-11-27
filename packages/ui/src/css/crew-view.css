@@ -1,43 +1,73 @@
-/* A crew member's page (src/crew/CrewView.tsx), v1 crew.css .crew-view: the head like a task's, the thread in
-   the reading column, what the member is beside it from pane-wide (860 px of its own width, v1 .crew-view.wide)
-   and folded above the thread under that, the job box pinned at the foot. */
+/* A crew member's page (src/crew/CrewView.tsx, ADR-0140): the hero in the member's colour, tabs under it in the
+   reading column, the job box pinned at the foot. */
 @layer kit {
-  [data-kit='crew-view'] { container: crewview / inline-size; --cv-pad: max(var(--space-8), calc((100% - var(--size-read-w)) / 2)); display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
-  [data-kit='cv-top'] { flex: none; display: flex; align-items: center; gap: var(--space-6); min-height: 60px; padding: var(--space-5) var(--cv-pad); border-bottom: 1px solid var(--line); }
-  [data-kit='cv-who'] { display: flex; align-items: baseline; gap: var(--space-4); min-width: 0; flex: 0 1 auto; }
-  [data-kit='cv-who'] > [data-kit='sh-title'] { flex: none; }
-  [data-kit='cv-role'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); color: var(--muted); }
-  [data-kit='cv-state'] { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--faint); }
-  [data-kit='cv-state'][data-tone='live'] { color: var(--accent-ink); }
-  [data-kit='cv-state'][data-tone='asks'] { color: var(--warn); font-weight: var(--fw-medium); }
+  [data-kit='crew-view'] { container: crewview / inline-size; --cv-pad: max(var(--space-8), calc((100% - var(--size-read-w)) / 2)); position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); overflow: hidden; }
+  /* the head: only its buttons, over the hero's glow */
+  [data-kit='cv-top'] { position: absolute; inset: 0 0 auto; z-index: 3; display: flex; align-items: center; gap: var(--space-3); min-height: 52px; padding: var(--space-4) var(--space-6); pointer-events: none; }
+  [data-kit='cv-top'] > * { pointer-events: auto; }
+  [data-kit='cv-top'] > [data-kit='grow'] { flex: 1; pointer-events: none; }
 
-  [data-kit='cv-scroll'] { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; padding: 0 var(--cv-pad); }
-  [data-kit='cv-cols'] { flex: 1 0 auto; display: flex; flex-direction: column; padding-top: 18px; }
+  [data-kit='cv-scroll'] { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+
+  /* the hero: the face in its colour's glow, the name, the role, the chips, the numbers */
+  [data-kit='cv-hero'] { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: 44px var(--cv-pad) var(--space-8); text-align: center; isolation: isolate; }
+  [data-kit='cv-glow'] {
+    position: absolute; z-index: -1; left: 50%; top: -140px; width: min(760px, 140%); height: 440px; transform: translateX(-50%); pointer-events: none;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--k-pc) 34%, transparent), transparent), radial-gradient(closest-side at 72% 62%, color-mix(in srgb, var(--accent) 8%, transparent), transparent);
+    filter: blur(8px);
+  }
+  [data-kit='cv-halo'] {
+    position: relative; display: grid; place-items: center; width: 100px; height: 100px; margin-bottom: var(--space-4); border-radius: var(--radius-pill);
+    background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--k-pc) 20%, var(--surface)), var(--surface));
+    box-shadow: 0 0 0 1px var(--line), 0 18px 56px color-mix(in srgb, var(--k-pc) 22%, transparent);
+  }
+  [data-kit='cv-halo'] > [data-kit='face'] { background: none; }
+  [data-kit='cv-name'] { margin: 0; font-size: 28px; line-height: 1.15; font-weight: var(--fw-semibold); letter-spacing: -0.02em; color: var(--ink); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-kit='cv-hero'] > [data-kit='cv-role'] { margin: 0; max-width: 60ch; font-size: var(--fs-lg); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-kit='cv-chips'] { --k-gap: var(--space-3); justify-content: center; margin-top: var(--space-6); max-width: 100%; }
+  [data-kit='cv-chip'] {
+    display: inline-flex; align-items: center; gap: var(--space-3); height: 26px; max-width: 280px; padding: 0 var(--space-5); border-radius: var(--radius-pill);
+    border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 82%, transparent); font-size: var(--fs-sm); color: var(--muted); white-space: nowrap;
+  }
+  [data-kit='cv-chip'] > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  [data-kit='cv-chip'] > [data-kit='icon'] { flex: none; width: var(--size-icon-sm); height: var(--size-icon-sm); color: var(--faint); }
+  [data-kit='cv-chip'] > [data-kit='cv-logo'] { margin: 0; }
+  button[data-kit='cv-chip'] { cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+  button[data-kit='cv-chip']:hover { background: var(--bg-2); color: var(--ink); border-color: var(--line-2); }
+  [data-kit='cv-chip'][data-tone='live'] { color: var(--ink); }
+  [data-kit='cv-chip'][data-tone='asks'] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+  [data-kit='cv-chip'][data-tone='paused'] { color: var(--faint); }
+  [data-kit='cv-pulse'] { flex: none; width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--good); animation: k-cv-pulse 1.6s ease-out infinite; }
+  [data-kit='cv-chip'][data-tone='asks'] > [data-kit='cv-pulse'] { background: var(--warn); }
+  @keyframes k-cv-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent), 0 0 0 0 color-mix(in srgb, var(--good) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 0 transparent, 0 0 0 6px transparent; } }
+  @media (prefers-reduced-motion: reduce) { [data-kit='cv-pulse'] { animation: none; } }
+  [data-kit='cv-stats'] { --k-gap: 28px; --k-row-gap: var(--space-4); justify-content: center; margin: var(--space-7) 0 0; }
+  [data-kit='cv-stat'] { display: flex; flex-direction: column-reverse; align-items: center; min-width: 0; max-width: 140px; }
+  [data-kit='cv-stat'] > dd { margin: 0; font-size: 18px; font-weight: var(--fw-semibold); color: var(--ink); font-variant-numeric: tabular-nums; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-kit='cv-stat'] > dt { font-size: var(--fs-xs); color: var(--faint); white-space: nowrap; }
+
+  /* the tabs: centred under the hero, the panel in the reading column */
+  [data-kit='cv-tabs'] { flex: 1 0 auto; display: flex; flex-direction: column; }
+  [data-kit='cv-tabs'] [role='tablist'] { justify-content: center; padding: 0 var(--cv-pad); border-bottom: 1px solid var(--line); }
+  [data-kit='cv-tab-body'] { flex: 1 0 auto; padding: 18px var(--cv-pad) 0; }
   [data-kit='cv-main'] { min-width: 0; display: flex; flex-direction: column; }
   [data-kit='cv-main'] > [data-cv='earlier'] { align-self: center; margin: 0 0 var(--space-5); font-size: var(--fs-xs); }
+  [data-kit='cv-panel'] { display: flex; flex-direction: column; gap: var(--space-5); font-size: var(--fs-sm); }
+  [data-kit='cv-panel'] > [data-kit='cv-sec']:first-child { padding-top: 0; border-top: 0; }
+  [data-kit='cv-panel'] > [data-kit='cv-facts'] { gap: var(--space-4); font-size: var(--fs-md); }
 
-  /* the side folded above the thread (v1 details.cv-about) */
-  [data-kit='cv-about'] { order: -1; margin: 0 0 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
-  [data-kit='cv-summary'] { display: flex; align-items: center; gap: var(--space-4); width: 100%; padding: 9px var(--space-6); font-size: var(--fs-md); text-align: left; color: var(--ink); }
-  [data-kit='cv-summary'] > b { font-weight: var(--fw-medium); flex: none; }
-  [data-kit='cv-summary'] > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); }
-  [data-kit='cv-summary'] > [data-kit='icon'] { width: var(--size-icon-md); height: var(--size-icon-md); color: var(--muted); }
-  [data-kit='cv-summary'] > [data-kit='icon']:last-child { transition: transform 0.2s; }
-  [data-kit='cv-about'][data-open] > [data-kit='cv-summary'] > [data-kit='icon']:last-child { transform: rotate(90deg); }
-  [data-kit='cv-about']:not([data-open]) > [data-kit='cv-side'] { display: none; }
-  [data-kit='cv-about'] > [data-kit='cv-side'] { padding: var(--space-2) var(--space-6) var(--space-6); }
+  /* the jobs you gave it before, above the box */
+  [data-kit='cv-suggest'] { display: flex; gap: var(--space-3); margin-bottom: var(--space-4); overflow-x: auto; scrollbar-width: none; }
+  [data-kit='cv-suggest'] > [data-kit='cv-chip'] { flex: none; height: 28px; }
 
-  @container crewview (min-width: 860px) {
-    /* a container query can't style its own container: the wide padding goes on the parts that use it */
-    [data-kit='cv-top'], [data-kit='cv-scroll'] { --cv-pad: max(var(--space-8), calc((100% - var(--size-read-w) - var(--size-details) - 48px) / 2)); }
-    [data-kit='cv-top'] { padding-right: calc(var(--cv-pad) - var(--space-4)); }
-    [data-kit='cv-cols'] { display: grid; grid-template-columns: minmax(0, 1fr) var(--size-details); column-gap: 48px; align-items: start; }
-    [data-kit='cv-about'] { order: 0; position: sticky; top: 18px; margin: 0; border: 0; background: none; }
-    [data-kit='cv-summary'] { display: none; }
-    [data-kit='cv-about'] > [data-kit='cv-side'], [data-kit='cv-about']:not([data-open]) > [data-kit='cv-side'] { display: flex; padding: 0; }
-    [data-kit='cv-dock'] { margin-right: calc(var(--size-details) + 48px); }
+  @container crewview (max-width: 520px) {
+    [data-kit='cv-hero'] { padding-top: 40px; }
+    [data-kit='cv-halo'] { width: 92px; height: 92px; }
+    [data-kit='cv-halo'] > [data-kit='face'] { --k-face: 72px; }
+    [data-kit='cv-name'] { font-size: 24px; }
+    [data-kit='cv-stats'] { --k-gap: 20px; }
+    [data-kit='cv-tabs'] [role='tablist'] { justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
   }
-
   [data-kit='cv-side'] { display: flex; flex-direction: column; gap: var(--space-5); font-size: var(--fs-sm); }
   [data-kit='cv-facts'] { display: flex; flex-direction: column; gap: 5px; color: var(--ink-2); }
   [data-kit='cv-fact'] { display: flex; align-items: flex-start; gap: 9px; min-width: 0; line-height: 1.4; text-align: left; color: inherit; font-size: inherit; }
@@ -102,7 +132,7 @@
   [data-kit='cv-empty'] code { font: var(--fs-sm) var(--mono); padding: 1px 5px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-ink); }
 
   /* the job box */
-  [data-kit='cv-dock'] { position: sticky; bottom: 0; z-index: 2; margin-top: auto; padding: 18px 0; background: linear-gradient(to bottom, transparent, var(--bg) 18px); }
+  [data-kit='cv-dock'] { position: sticky; bottom: 0; z-index: 2; margin-top: auto; padding: 18px var(--cv-pad); background: linear-gradient(to bottom, transparent, var(--bg) 18px); }
   [data-kit='cv-box'] { padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6); border-radius: var(--radius-xl); border: 1px solid var(--line-2); background: var(--surface); box-shadow: var(--shadow-1); transition: border-color 0.15s, box-shadow 0.15s; }
   [data-kit='cv-box']:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); box-shadow: 0 0 0 3px var(--accent-soft); }
   [data-kit='cv-input'] { display: block; width: 100%; resize: none; border: 0; outline: 0; background: transparent; padding: var(--space-3) 0; font: var(--fs-lg) / 1.5 var(--sans); color: var(--ink); max-height: 200px; field-sizing: content; }

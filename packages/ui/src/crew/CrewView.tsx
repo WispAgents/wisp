@@ -1,44 +1,84 @@
-// A crew member's page, as v1 draws it (web/js/features/crew.js buildView, jobHtml, quietHtml; crew.css
-// .crew-view): the head (face, name, role, state, its buttons), the thread of jobs in the reading column,
-// what the member is and how it works beside it on a wide pane (folded above the thread otherwise, by the
-// page's own width), and the box that gives it a job. Data and words come from the crew plugin.
-import { createSignal, For, Show, type JSX } from 'solid-js';
+// size-ok: the page and the parts drawn inside it (job cards, facts, sections) are one kit area, read together
+// A crew member's page (design/crew.md "The member's page", ADR-0140): a profile, not a log. A hero at the top
+// (the face in its colour's glow, the name, the role, chips for what it's doing and how it runs, a line of
+// numbers), tabs under it (Activity is the thread of jobs; the plugin adds Kit, Notebook, How they work), and the
+// box that gives it a job, with the jobs you gave it before as one-click starts. Data and words come from the
+// crew plugin.
+import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import { Tabs } from '../controls/Tabs.tsx';
+import { CrewHero, type CrewChip } from './CrewHero.tsx';
 import { WithAct, type Act } from '../app/act.tsx';
 import '../css/crew-view.css';
 
+export type { CrewChip } from './CrewHero.tsx';
+
+export interface CrewTab {
+  readonly value: string;
+  readonly label: string;
+  readonly count?: number | undefined;
+  /** the panel's data-part, so a plugin can restyle it (crew.kit, crew.notebook, crew.details) */
+  readonly part: string;
+  /** drawn only while its tab is open */
+  readonly content: () => JSX.Element;
+}
+
 export interface CrewViewProps {
+  /** the hero's face (Face size="hero") */
   readonly face: JSX.Element;
+  /** the member's colour: the hero's glow */
+  readonly color: string;
   readonly name: string;
   readonly role?: string | undefined;
-  readonly state: { readonly text: string; readonly tone: 'asks' | 'live' | 'report' | '' };
+  readonly chips: readonly CrewChip[];
+  /** a few numbers from its jobs ("12 jobs done"); none hides the line */
+  readonly stats: readonly { readonly value: string; readonly label: string }[];
   /** the head's buttons (Pause, More, Close), the plugin's kit controls */
   readonly actions: JSX.Element;
-  /** stack: back to the list, before the face */
+  /** stack: back to the list */
   readonly back?: { readonly label: string; readonly onClick: () => void } | undefined;
-  /** the jobs (CrewJob, CrewQuiet, CrewEmpty) */
+  /** the Activity tab's label, and its jobs (CrewJob, CrewQuiet, CrewEmpty) */
+  readonly activity: string;
   readonly thread: JSX.Element;
   readonly earlier?: { readonly label: string; readonly onClick: () => void } | undefined;
-  /** what it is and how it works (CrewFacts, CrewSideActions, CrewSection) */
-  readonly side: JSX.Element;
-  /** the folded side's summary on a narrow page: "About Ada", and how it works */
-  readonly about: { readonly label: string; readonly hint?: string };
+  /** the tabs after Activity */
+  readonly tabs: readonly CrewTab[];
+  readonly tabsLabel: string;
+  /** above the box: the jobs you gave it before, one click puts one in the box */
+  readonly suggestions?: readonly {
+    readonly label: string;
+    readonly onClick: () => void;
+  }[];
   readonly dock: {
     readonly placeholder: string;
     readonly value: string;
     readonly onInput: (v: string) => void;
     readonly onSend: () => void;
     readonly send: string;
-    readonly checkIn: { readonly label: string; readonly title: string; readonly act: Act };
+    readonly checkIn: {
+      readonly label: string;
+      readonly title: string;
+      readonly act: Act;
+    };
     readonly inputRef?: (el: HTMLTextAreaElement) => void;
   };
 }
 
-/** v1 .crew-view: head, scroll (columns, then the dock). */
+/** The page: the head's buttons over the hero, the tabs, the box pinned at the foot. */
 export function CrewView(props: CrewViewProps): JSX.Element {
-  const [open, setOpen] = createSignal(false);
+  const [tab, setTab] = createSignal('activity');
+  // the tab row is labels only: a panel is drawn when its tab opens, never while the row is read
+  const items = createMemo(() => [
+    { value: 'activity', label: props.activity },
+    ...props.tabs.map((t) => ({
+      value: t.value,
+      label: t.label,
+      ...(t.count ? { count: t.count } : {}),
+    })),
+  ]);
+  const open = createMemo(() => props.tabs.find((t) => t.value === tab()));
   const key = (e: KeyboardEvent): void => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -46,7 +86,7 @@ export function CrewView(props: CrewViewProps): JSX.Element {
     }
   };
   return (
-    <section data-kit="crew-view" data-part="crew.page">
+    <section data-kit="crew-view" data-part="crew.page" data-color={props.color}>
       <header data-kit="cv-top" data-part="crew.page.head">
         <Show when={props.back}>
           {(b) => (
@@ -55,49 +95,52 @@ export function CrewView(props: CrewViewProps): JSX.Element {
             </button>
           )}
         </Show>
-        {props.face}
-        <div data-kit="cv-who">
-          <h2 data-kit="sh-title" data-text="control">
-            {props.name}
-          </h2>
-          <Show when={props.role}>
-            <span data-kit="cv-role" data-text="control">
-              {props.role}
-            </span>
-          </Show>
-        </div>
-        <span data-kit="cv-state" data-tone={props.state.tone || undefined} data-text="control" title={props.state.text}>
-          {props.state.text}
-        </span>
+        <span data-kit="grow" />
         <span data-kit="sh-acts">{props.actions}</span>
       </header>
       <div data-kit="cv-scroll">
-        <div data-kit="cv-cols">
-          <div data-kit="cv-main">
-            <Show when={props.earlier}>
-              {(e) => (
-                <button type="button" data-kit="link" data-part="crew.page.earlier" data-cv="earlier" onClick={() => e().onClick()}>
-                  {e().label}
-                </button>
-              )}
-            </Show>
-            <div data-kit="cv-thread" data-part="crew.thread">
-              {props.thread}
-            </div>
-          </div>
-          <div data-kit="cv-about" data-part="crew.details" data-open={flag(open())}>
-            <button type="button" data-kit="cv-summary" aria-expanded={open()} onClick={() => setOpen(!open())}>
-              <Icon name="info" />
-              <b data-text="control">{props.about.label}</b>
-              <Show when={props.about.hint}>{(h) => <span data-text="control">{h()}</span>}</Show>
-              <Icon name="chevron" />
-            </button>
-            <div data-kit="cv-side" data-part="crew.side">
-              {props.side}
-            </div>
+        <CrewHero face={props.face} name={props.name} role={props.role} chips={props.chips} stats={props.stats} />
+        <div data-kit="cv-tabs" data-part="crew.tabs">
+          <Tabs aria-label={props.tabsLabel} value={tab()} onChange={setTab} items={items()} />
+          <div data-kit="cv-tab-body" role="tabpanel" aria-label={items().find((i) => i.value === tab())?.label}>
+            <Switch>
+              <Match when={tab() === 'activity' || !open()}>
+                <div data-kit="cv-main">
+                  <Show when={props.earlier}>
+                    {(e) => (
+                      <button type="button" data-kit="link" data-part="crew.page.earlier" data-cv="earlier" onClick={() => e().onClick()}>
+                        {e().label}
+                      </button>
+                    )}
+                  </Show>
+                  <div data-kit="cv-thread" data-part="crew.thread">
+                    {props.thread}
+                  </div>
+                </div>
+              </Match>
+              <Match when={open()} keyed>
+                {(t) => (
+                  <div data-kit="cv-panel" data-part={t.part}>
+                    {t.content()}
+                  </div>
+                )}
+              </Match>
+            </Switch>
           </div>
         </div>
         <div data-kit="cv-dock" data-part="crew.dock crew.compose">
+          <Show when={tab() === 'activity' && (props.suggestions?.length ?? 0) > 0}>
+            <div data-kit="cv-suggest" data-part="crew.suggest">
+              <For each={props.suggestions}>
+                {(s) => (
+                  <button type="button" data-kit="cv-chip" data-go="" title={s.label} onClick={() => s.onClick()}>
+                    <Icon name="replay" />
+                    <span data-text="control">{s.label}</span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
           <div data-kit="cv-box">
             <textarea
               data-kit="cv-input"
@@ -236,7 +279,7 @@ export function CrewQuiet(props: { readonly label: string; readonly time: string
 }
 
 /** v1 .cv-empty: nothing done yet. `lines` are the two sentences; `code` the @handle in the second. */
-export function CrewEmpty(props: { readonly face: JSX.Element; readonly name: string; readonly first: string; readonly second: readonly [string, string, string] }): JSX.Element {
+export function CrewEmpty(props: { readonly face?: JSX.Element; readonly name: string; readonly first: string; readonly second: readonly [string, string, string] }): JSX.Element {
   return (
     <div data-kit="cv-empty" data-part="crew.empty">
       {props.face}
