@@ -16,6 +16,7 @@
 
 mod delivery;
 mod mcp;
+mod schema;
 mod sinks;
 mod stream;
 mod webhook;

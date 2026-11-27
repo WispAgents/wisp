@@ -759,7 +759,7 @@ pub fn mcp_reply(root: &Path, msg: &Value) -> Option<Value> {
     let result = match msg.get("method").and_then(Value::as_str).unwrap_or_default() {
         // listChanged: a wisp reached after the first list says so (`notifications/tools/list_changed`)
         "initialize" => {
-            json!({ "protocolVersion": msg.pointer("/params/protocolVersion").cloned().unwrap_or(json!("2025-06-18")), "capabilities": { "tools": { "listChanged": true } }, "serverInfo": { "name": "wisp", "version": env!("CARGO_PKG_VERSION") } })
+            json!({ "protocolVersion": msg.pointer("/params/protocolVersion").cloned().unwrap_or(json!("2025-06-18")), "capabilities": { "tools": { "listChanged": true }, "extensions": { "io.modelcontextprotocol/events": {} } }, "serverInfo": { "name": "wisp", "version": env!("CARGO_PKG_VERSION") } })
         }
         // the history tools, and v1's task tools (setup audit F28; they need a wisp, started on the first call)
         "tools/list" => {
@@ -838,6 +838,8 @@ pub(crate) fn needs_wisp(method: &str, tool: &str) -> Need {
         "tools/list" => Need::Start,
         "tools/call" if !is_own_tool(tool) || crate::mcp_tasks::is_task_tool(tool) => Need::Start,
         "tools/call" if tool == "wisp_resume" => Need::Running,
+        // MCP Events (ADR-0145): the running wisp's, started when none answers
+        m if m.starts_with("events/") => Need::Start,
         _ => Need::No,
     }
 }
@@ -897,6 +899,12 @@ impl Mcp {
                 };
                 Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
             }
+            // MCP Events on the running wisp (ADR-0145): a stream's notifications go out as they come; cancelling the
+            // request (`notifications/cancelled`) drops it, which closes the stream there
+            (m, Some(c)) if m.starts_with("events/") => crate::mcp_stdio::forward(c, &msg, &self.at, &self.out).await,
+            (m, None) if m.starts_with("events/") => Some(
+                json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32603, "message": "wisp isn't running and didn't start: run wisp serve" } }),
+            ),
             ("tools/call", Some(c)) if tool == "wisp_resume" => {
                 Some(json!({ "jsonrpc": "2.0", "id": id, "result": resume_request(c, &self.root, &args).await }))
             }

@@ -63,7 +63,7 @@ pub fn durable_types(catalogue: &Value) -> Vec<(String, String)> {
 }
 
 /// `events/list`'s result.
-pub fn list(catalogue: &Value) -> Value {
+pub fn list(catalogue: &Value, samples: &std::collections::HashMap<String, Vec<Value>>) -> Value {
     let events: Vec<Value> = durable_types(catalogue)
         .into_iter()
         .map(|(ty, plugin)| {
@@ -74,11 +74,32 @@ pub fn list(catalogue: &Value) -> Value {
                 "inputSchema": { "type": "object", "properties": {
                     "subject": { "type": "string", "description": "only what's about this task (its id)" }
                 } },
-                "payloadSchema": { "type": "object" },
+                "payloadSchema": crate::schema::payload_schema(&ty, samples.get(&ty).map_or(&[][..], Vec::as_slice)),
             })
         })
         .collect();
     json!({ "resultType": "complete", "events": events })
+}
+
+/// The newest kept events' data of each type (`schema::SAMPLES` a type), read from the last `schema::LOOK_BACK`
+/// events: what `events/list` infers each `payloadSchema` from. Only shapes leave here, never the values.
+pub async fn samples(ctx: &Ctx) -> std::collections::HashMap<String, Vec<Value>> {
+    let mut out: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
+    let Ok(l) = crate::log(ctx) else { return out };
+    let Ok((_, last)) = l.bounds().await else { return out };
+    let mut after = last.saturating_sub(crate::schema::LOOK_BACK);
+    while after < last {
+        let Ok(rows) = l.read(after, 1000).await else { break };
+        let Some(end) = rows.last().map(|r| r.seq) else { break };
+        for r in rows.iter().rev() {
+            let v = out.entry(r.event.ty.clone()).or_default();
+            if v.len() < crate::schema::SAMPLES {
+                v.push(occurrence(r)["data"].clone());
+            }
+        }
+        after = end;
+    }
+    out
 }
 
 /// One kept event as an `EventOccurrence`: its seq is its id (stable, and the log never reuses one).
@@ -172,7 +193,8 @@ pub fn register(s: &mut wisp_kernel::Setup, newest_seq: &Arc<tokio::sync::watch:
     let list_fn: wisp_mcp_api::MethodFn = Arc::new(move |_mcp: Ctx, call: Call, _req| {
         let ctx = own.clone();
         Box::pin(async move {
-            ctx.run::<api::Ls>(&call, api::NoArgs {}).await.map(|c| wisp_mcp_api::MethodAnswer::Result(list(&c))).map_err(|e| refusal(&e))
+            let c = ctx.run::<api::Ls>(&call, api::NoArgs {}).await.map_err(|e| refusal(&e))?;
+            Ok(wisp_mcp_api::MethodAnswer::Result(list(&c, &samples(&ctx).await)))
         })
     });
     let own = s.ctx();
@@ -233,7 +255,7 @@ mod tests {
             { "type": "task.finished", "durable": true, "plugin": "wisp.other" },
             { "type": "goal.met", "durable": true, "plugin": "wisp.goal" },
         ]);
-        let l = list(&cat);
+        let l = list(&cat, &std::collections::HashMap::new());
         let names: Vec<&str> = l["events"].as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap()).collect();
         assert_eq!(names, ["goal.met", "task.finished"]);
         assert_eq!(l["events"][0]["delivery"], json!(["webhook", "push", "poll"]));

@@ -167,6 +167,17 @@ async fn mcp_events_poll_brings_what_happened_after_the_cursor_once() {
             .all(|e| e["name"] == "turn.finished" && e["eventId"].is_string() && e["timestamp"].as_str().is_some_and(|t| t.ends_with('Z')))
     );
     let c1 = next["result"]["cursor"].as_str().unwrap().to_owned();
+    // its payload schema, read from what's kept: the fields a turn.finished has, every sample's required
+    let list = mcp(&api.http, port, &[], rpc(9, "events/list", json!({}))).await;
+    let tf = list["result"]["events"].as_array().unwrap().iter().find(|e| e["name"] == "turn.finished").cloned().unwrap();
+    let schema = &tf["payloadSchema"];
+    assert_eq!(schema["type"], "object", "{schema}");
+    assert!(
+        schema["properties"]["sessionId"]["type"] == "string"
+            && schema["required"].as_array().is_some_and(|r| r.contains(&json!("sessionId"))),
+        "{schema}"
+    );
+    assert!(schema["description"].as_str().is_some_and(|d| d.contains("inferred")), "{schema}");
     assert_ne!(c1, c0);
     let again = mcp(&api.http, port, &[], rpc(6, "events/poll", json!({ "name": "turn.finished", "cursor": c1 }))).await;
     assert!(!again["result"]["events"].as_array().unwrap().iter().any(|e| e["_meta"]["dev.trywisp/subject"] == json!(id)), "once: {again}");

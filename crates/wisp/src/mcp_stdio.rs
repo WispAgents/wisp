@@ -108,6 +108,35 @@ pub fn stdout_writer() -> (mpsc::UnboundedSender<Value>, tokio::task::JoinHandle
     (tx, task)
 }
 
+/// A message to the running wisp that may be answered with a stream (MCP Events' `events/stream`, ADR-0145): each SSE
+/// frame's message to `out` as it comes, until the stream ends (`None`: everything was said there), or the plain
+/// answer. Dropping the future (`notifications/cancelled` aborts the request's task) closes the connection, which
+/// ends the stream on the server.
+pub async fn forward(c: &crate::client::Client, msg: &Value, cwd: &std::path::Path, out: &mpsc::UnboundedSender<Value>) -> Option<Value> {
+    let failed = |e: String| json!({ "jsonrpc": "2.0", "id": msg.get("id").cloned().unwrap_or(Value::Null), "error": { "code": -32603, "message": e } });
+    let mut r = match c.mcp_post(msg, cwd).await {
+        Ok(r) => r,
+        Err(e) => return Some(failed(e.to_string())),
+    };
+    let sse = r.headers().get("content-type").and_then(|v| v.to_str().ok()).is_some_and(|t| t.contains("text/event-stream"));
+    if !sse {
+        return Some(r.json().await.unwrap_or_else(|e| failed(e.to_string())));
+    }
+    let mut buf = String::new();
+    while let Ok(Some(chunk)) = r.chunk().await {
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(end) = buf.find("\n\n") {
+            let frame: String = buf.drain(..end + 2).collect();
+            for data in frame.lines().filter_map(|l| l.strip_prefix("data:")) {
+                if let Ok(v) = serde_json::from_str::<Value>(data.trim()) {
+                    let _ = out.send(v);
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
