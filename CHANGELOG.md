@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.19] - 2026-11-28
+
 ### Added
 
 - **MCP Events, both ways.** Any MCP server that sends events (SEP-3415) can start a task or wake a crew member:

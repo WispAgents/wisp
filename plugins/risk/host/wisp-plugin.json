@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.risk",
   "name": "merge risk",
-  "version": "1.0.0-alpha.18",
+  "version": "1.0.0-alpha.19",
   "api": "^1",
   "description": "merge risk: another harness than the author reads each open PR of a task and judges how risky merging it is (low, medium, high and why)",
   "kind": "plugin",

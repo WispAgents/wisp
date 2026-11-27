@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.share",
   "name": "Share",
-  "version": "1.0.0-alpha.18",
+  "version": "1.0.0-alpha.19",
   "api": "^1",
   "description": "share a task as a signed .wisp-task bundle (spec, report or full), previewed with its redactions; open one someone sent; send any share to a destination (wisp Cloud) through share.destination@1",
   "kind": "plugin",
