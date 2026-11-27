@@ -202,6 +202,76 @@ pub fn too_big(mb: usize) -> String {
     format!("The project is too big to send ({mb} MB; at most {} MB).", MAX_BUNDLE >> 20)
 }
 
+/// At most this much in files git doesn't track (and doesn't ignore) goes with a folder: they travel in the patch, and
+/// more than the patch can hold would fail anyway, after hashing all of it (an 87 GB build folder ran `git add -A`
+/// into its 300 s timeout, and the error said nothing about why).
+pub const MAX_UNTRACKED: u64 = MAX_PATCH as u64;
+
+/// One entry of `git ls-files --others --directory`: a new file, or a new folder (its bytes; `over`: more than the cap,
+/// not measured to the end).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Untracked {
+    pub path: String,
+    pub bytes: u64,
+    pub over: bool,
+}
+
+/// The paths of a NUL-separated `git ls-files -z` listing. A path ending in `/` is a folder: with `--directory` a new
+/// folder, without it a repo nested inside (git keeps only its commit, never its files, so it weighs nothing here).
+pub fn ls_paths(out: &str) -> impl Iterator<Item = &str> {
+    out.split('\0').filter(|p| !p.is_empty())
+}
+
+/// Why the folder can't go as it is, or `None`: its new files, biggest first (three named), against [`MAX_UNTRACKED`].
+pub fn too_much_untracked(found: &[Untracked]) -> Option<String> {
+    let total: u64 = found.iter().map(|u| u.bytes).sum();
+    if total <= MAX_UNTRACKED && !found.iter().any(|u| u.over) {
+        return None;
+    }
+    let mut big: Vec<&Untracked> = found.iter().filter(|u| u.bytes > 0 || u.over).collect();
+    big.sort_by(|a, b| b.over.cmp(&a.over).then(b.bytes.cmp(&a.bytes)));
+    let named: Vec<String> = big
+        .iter()
+        .take(3)
+        .map(|u| if u.over { format!("{} (over {})", u.path, size(MAX_UNTRACKED)) } else { format!("{} ({})", u.path, size(u.bytes)) })
+        .collect();
+    Some(format!(
+        "Too much in files git doesn't track to copy: {}; at most {} goes. Add them to .gitignore (a build folder) or commit them, then try again.",
+        named.join(", "),
+        size(MAX_UNTRACKED)
+    ))
+}
+
+fn size(b: u64) -> String {
+    match b {
+        b if b >= 1 << 30 => format!("{}.{} GB", b >> 30, ((b % (1 << 30)) * 10) >> 30),
+        b if b >= 1 << 20 => format!("{} MB", b >> 20),
+        b if b >= 1 << 10 => format!("{} KB", b >> 10),
+        b => format!("{b} B"),
+    }
+}
+
+/// What a git that failed said, for a person: its `hint:` blocks and the one-per-nested-repo warnings dropped (50
+/// worktrees under `.claude/worktrees` buried the error under them), its last lines kept, at most 300 chars.
+pub fn git_said(out: &str) -> String {
+    let lines: Vec<&str> = out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with("hint:") && !l.starts_with("warning: adding embedded git repository"))
+        .collect();
+    let tail = lines[lines.len().saturating_sub(3)..].join(" ");
+    if tail.chars().count() <= 300 {
+        return tail;
+    }
+    let cut: String = tail.chars().rev().take(299).collect::<Vec<_>>().into_iter().rev().collect();
+    format!("…{cut}")
+}
+
+/// The words for a git stopped at its timeout.
+pub fn git_timed_out(what: &str, secs: u64) -> String {
+    format!("git {what} didn't finish in {secs} s and was stopped")
+}
+
 pub fn not_a_copy() -> &'static str {
     "Only a copy wisp carried to this machine gives changes back."
 }
@@ -214,6 +284,7 @@ pub fn clash(kept: &str, why: &str) -> String {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use std::fmt::Write as _;
 
     #[test]
     fn a_copy_is_always_under_wisps_own_folder() {
@@ -306,5 +377,44 @@ mod tests {
         assert_eq!(data[STUCK].as_array().unwrap().len(), 1);
         // a drop never tried still reads as it did (no tries field)
         assert_eq!(serde_json::to_value(&other).unwrap(), serde_json::json!({ "lead": "t2", "task": "" }));
+    }
+
+    #[test]
+    fn too_much_untracked_names_the_biggest_and_a_small_folder_goes() {
+        let u = |p: &str, bytes: u64, over: bool| Untracked { path: p.into(), bytes, over };
+        assert_eq!(too_much_untracked(&[]), None);
+        assert_eq!(too_much_untracked(&[u("notes.md", 10, false), u(".claude/worktrees/", 0, false)]), None);
+        assert_eq!(too_much_untracked(&[u("a/", MAX_UNTRACKED, false)]), None, "the cap itself goes");
+        let why =
+            too_much_untracked(&[u("notes.md", 10, false), u("target-agents/", MAX_UNTRACKED, true), u("dist/", 5 << 20, false)]).unwrap();
+        assert!(
+            why.starts_with("Too much in files git doesn't track to copy: target-agents/ (over 16 MB), dist/ (5 MB), notes.md (10 B)"),
+            "{why}"
+        );
+        assert!(why.contains(".gitignore"), "{why}");
+        let why = too_much_untracked(&[u("a/", 10 << 20, false), u("b/", 10 << 20, false)]).unwrap();
+        assert!(why.contains("a/ (10 MB), b/ (10 MB)"), "two that add up over: {why}");
+        assert_eq!(size(87 << 30), "87.0 GB");
+        assert_eq!(ls_paths("a\0b/\0\0").collect::<Vec<_>>(), ["a", "b/"]);
+    }
+
+    /// The error the user saw: 50 embedded-repo warnings and their hint blocks, the real line last.
+    #[test]
+    fn git_said_drops_hints_and_nested_repo_warnings() {
+        let mut out = String::new();
+        for i in 0..50 {
+            let _ = write!(
+                out,
+                "warning: adding embedded git repository: .claude/worktrees/w{i}\nhint: You've added another git repository\nhint:\n"
+            );
+        }
+        out.push_str("fatal: unable to index file 'big.bin'\n");
+        assert_eq!(git_said(&out), "fatal: unable to index file 'big.bin'");
+        assert_eq!(git_said("hint: only hints\n"), "");
+        let long = "x".repeat(1000);
+        let s = git_said(&long);
+        assert_eq!(s.chars().count(), 300);
+        assert!(s.starts_with('…') && s.ends_with('x'));
+        assert_eq!(git_timed_out("add", 300), "git add didn't finish in 300 s and was stopped");
     }
 }

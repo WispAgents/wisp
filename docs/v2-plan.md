@@ -1160,11 +1160,13 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - 0114: a factory runs a task through stations and loops back with a limit
 - 0119: an agent runs a workflow under its own task, on any harness, and is told when it ends
 - 0127: computer use for every harness is Cua Driver behind wisp's own computer MCP server
+- 0143: merge risk, another harness judges each open PR (plugin wisp.risk, off by default)
 
 ## 11. Work log (recent rounds)
 
 | Round | What | State |
 |---|---|---|
+| risk | Merge risk (ADR-0143): plugin wisp.risk (api/core/host, `risk.harness` off by default), `ship.pr_diff`, ship asks on any open PR's new head; PR card row under the Steward, chip words, PR pane section, Merge confirm, Settings row, mock `?seed=risk`; tests core/host/ship slot + UI. Left: the row opens the pane on the riskiest PR | built, PR |
 | cu | Computer use for every harness (ADR-0127): plugin wisp.computer (Cua Driver 0.62.1 behind `POST /api/computer/mcp`, policy, off by default), grid image (driver pinned, window manager, AT-SPI; the browser server stays ADR-0128's); tests core/host + serve_computer.rs. Left: per-action approvals locally, recordings into the task, own Settings pane | built, PR |
 | fac | Software factories (row 65, ADR-0114): plugin wisp.factory, CLI/MCP/picker/band/TUI, docs, e2e serve_factory.rs | built, uncommitted |
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |

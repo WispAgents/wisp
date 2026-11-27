@@ -98,6 +98,15 @@ function Review(props: { readonly client: PluginClient }): JSX.Element {
   return <SelectSetting part="settings.review" title={t('shell-settings.review')} description={t('shell-settings.review.hint')} source={review} locked={locked} items={items()} />;
 }
 
+/** Merge risk (wisp.risk, ADR-0143): off by default; Another harness, or one that's here, judges each open PR. */
+function Risk(props: { readonly client: PluginClient }): JSX.Element {
+  const risk = text(fromRow(props.client, KEYS.risk), 'off');
+  const picked = useSignal(risk.value);
+  const harnesses = useSignal(props.client.entities.list<Harness>(HARNESS_KIND));
+  const items = createMemo(() => reviewChoices(harnesses() as readonly Harness[], picked()));
+  return <SelectSetting part="settings.risk" title={t('shell-settings.risk')} description={t('shell-settings.risk.hint')} source={risk} locked={locked} items={items()} />;
+}
+
 export default function General(props: { readonly client: PluginClient }): JSX.Element {
   const shell = useShell();
   // plain words: t() reads no signal, so there's nothing to follow
@@ -115,6 +124,7 @@ export default function General(props: { readonly client: PluginClient }): JSX.E
       <SettingsGroup part="settings.general.tasks">
         <OnOffRow client={props.client} k={KEYS.worktree} dflt title="shell-settings.worktree" hint="shell-settings.worktree.hint" />
         <Review client={props.client} />
+        <Risk client={props.client} />
         <OnOffRow client={props.client} k={KEYS.fixConflicts} dflt={false} title="shell-settings.fix-conflicts" hint="shell-settings.fix-conflicts.hint" />
         <OnOffRow client={props.client} k={KEYS.readTimes} dflt title="shell-settings.read-times" hint="shell-settings.read-times.hint" />
         <OnOffRow client={props.client} k={KEYS.watch} dflt title="shell-settings.watch" hint="shell-settings.watch.hint" />

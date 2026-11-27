@@ -46,17 +46,80 @@ async fn git(proc: &Proc, cwd: &Path, args: &[&str], index: Option<&Path>, input
         cwd: Some(cwd.to_owned()),
         env,
         input,
-        timeout: Some(Duration::from_secs(300)),
+        timeout: Some(Duration::from_secs(GIT_SECS)),
         max_output: core::MAX_PATCH + (1 << 20),
         ..ExecOpts::default()
     };
+    // the subcommand, past `-c key=value`
+    let what = args.iter().find(|a| !a.starts_with('-') && !a.contains('=')).copied().unwrap_or_default().to_owned();
     let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
     let r = proc.exec("git", &args, opts).await.map_err(|e| e.to_string())?;
+    // killed at the timeout: say so, not what it had written by then
+    if r.timed_out {
+        return Err(core::git_timed_out(&what, GIT_SECS));
+    }
     // a patch cut short would be another patch: refused
     if r.truncated {
         return Err(format!("git wrote more than {} MB", (core::MAX_PATCH + (1 << 20)) >> 20));
     }
-    if r.exit.success() { Ok(r.stdout_text()) } else { Err(format!("{}{}", r.stdout_text(), r.stderr_text()).trim().to_owned()) }
+    if r.exit.success() { Ok(r.stdout_text()) } else { Err(core::git_said(&format!("{}\n{}", r.stdout_text(), r.stderr_text()))) }
+}
+
+const GIT_SECS: u64 = 300;
+
+/// The folder's new files (not ignored) against [`core::MAX_UNTRACKED`], before `git add -A` hashes them all: each
+/// new folder listed by git (a nested repo weighs nothing: only its commit goes) and its files' sizes added up, the
+/// listing capped so a huge build folder stops at the cap instead of being walked and hashed to the end.
+async fn untracked(proc: &Proc, dir: &Path) -> Result<Vec<core::Untracked>, String> {
+    let ls = |path: Option<&str>, cap: usize| {
+        let mut args = vec!["ls-files", "--others", "--exclude-standard", "-z"];
+        if path.is_none() {
+            args.push("--directory");
+        }
+        let mut args: Vec<String> = args.into_iter().map(str::to_owned).collect();
+        if let Some(p) = path {
+            args.extend(["--".to_owned(), format!(":(literal){p}")]);
+        }
+        let opts = ExecOpts {
+            cwd: Some(dir.to_owned()),
+            env: Env::default().with("GIT_TERMINAL_PROMPT", "0"),
+            timeout: Some(Duration::from_secs(60)),
+            max_output: cap,
+            ..ExecOpts::default()
+        };
+        async move { proc.exec("git", &args, opts).await.map_err(|e| e.to_string()) }
+    };
+    let top = ls(None, core::MAX_PATCH).await?;
+    if !top.exit.success() || top.timed_out || top.truncated {
+        return Err(core::git_said(&top.stderr_text()));
+    }
+    let mut found = Vec::new();
+    let mut total = 0u64;
+    for path in core::ls_paths(&top.stdout_text()) {
+        if total > core::MAX_UNTRACKED {
+            break;
+        }
+        let mut u = core::Untracked { path: path.to_owned(), bytes: 0, over: false };
+        if path.ends_with('/') {
+            // a new folder: its files, a listing of at most 1 MB of paths (more is over the cap anyway)
+            let r = ls(Some(path), 1 << 20).await?;
+            u.over = r.truncated || r.timed_out;
+            if !u.over {
+                for f in core::ls_paths(&r.stdout_text()).filter(|f| !f.ends_with('/')) {
+                    u.bytes += tokio::fs::symlink_metadata(dir.join(f)).await.map_or(0, |m| m.len());
+                    if u.bytes > core::MAX_UNTRACKED {
+                        u.over = true;
+                        break;
+                    }
+                }
+            }
+        } else {
+            u.bytes = tokio::fs::symlink_metadata(dir.join(path)).await.map_or(0, |m| m.len());
+        }
+        total = total.saturating_add(if u.over { core::MAX_UNTRACKED + 1 } else { u.bytes });
+        found.push(u);
+    }
+    Ok(found)
 }
 
 /// The folder's whole working state (tracked, changed and new files, not ignored ones) as a tree, read through a
@@ -68,7 +131,8 @@ async fn tree_of(proc: &Proc, dir: &Path) -> Result<String, String> {
     // with the real one's mtime (git's racy-clean check), or none: an empty index re-hashes every file
     wisp_proc::copy_index(real, scratch.clone()).await;
     let out = async {
-        git(proc, dir, &["add", "-A"], Some(&scratch), None).await?;
+        // nested repos (worktrees) go as their commit: no warning and hint block for each
+        git(proc, dir, &["-c", "advice.addEmbeddedRepo=false", "add", "-A"], Some(&scratch), None).await?;
         git(proc, dir, &["write-tree"], Some(&scratch), None).await
     }
     .await;
@@ -114,6 +178,15 @@ async fn pack(proc: &Proc, cwd: &str, key: &str, all: bool) -> Res<Pack> {
         (Err(e), _) => return Err(MachinesError::Wire(WireError::internal(format!("git bundle: {e}")))),
         (_, Err(e)) => return Err(MachinesError::Wire(WireError::internal(format!("the bundle: {e}")))),
     };
+    // new files too big to go: refused by name, before git hashes them all
+    match untracked(proc, &dir).await {
+        Ok(found) => {
+            if let Some(why) = core::too_much_untracked(&found) {
+                return Err(MachinesError::Wire(WireError::new(wisp_kernel::Code::TooLarge, why)));
+            }
+        }
+        Err(e) => return Err(MachinesError::Wire(WireError::internal(format!("the new files: {e}")))),
+    }
     // what isn't committed, new files too: the difference from HEAD to the folder's whole state
     let patch = match tree_of(proc, &dir).await {
         Ok(tree) => git(proc, &dir, &["diff", "--binary", "HEAD", &tree], None, None)

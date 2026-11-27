@@ -25,6 +25,7 @@
     "runtime:followUp",
     "review:maybe",
     "review:view",
+    "risk:judge",
     "history:track",
     "git:repo",
     "git:status",
@@ -74,6 +75,11 @@
       {
         "id": "ship.check_log",
         "title": "The end of a failing check's log",
+        "readOnly": true
+      },
+      {
+        "id": "ship.pr_diff",
+        "title": "One of a task's pull requests' diff, as GitHub has it",
         "readOnly": true
       },
       {

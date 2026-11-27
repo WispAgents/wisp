@@ -153,13 +153,19 @@ fn start_writer(ctx: &Ctx, ship: &Arc<Ship>, known: &Arc<Known>) {
                 }
                 known.set(&id, value.clone());
                 let review = slot::new_head(was.as_ref(), &value);
+                let risk = slot::new_open_heads(was.as_ref(), &value);
                 // set-ext: whole this loop is the slot's one writer, and the value is ship's own task state, not a read
                 let a = rt::SetExtArgs { id: id.as_str().into(), plugin: PLUGIN.into(), value, expect: None };
                 if let Err(e) = cx.run::<rt::SetExt>(&cx.root_call(), a).await {
                     known.forget(&id);
                     tracing::warn!(error = %e.message, task = %id, "ship: keeping its slot on the task");
-                } else if review {
-                    ask_review(&cx, &id);
+                } else {
+                    if review {
+                        ask_review(&cx, &id);
+                    }
+                    if risk {
+                        ask_risk(&cx, &id);
+                    }
                 }
             }
         }
@@ -173,6 +179,16 @@ fn ask_review(ctx: &Ctx, id: &str) {
     ctx.spawn(async move {
         // wisp.review may be off or absent: then nobody reviews, as asked
         let _ = c.run::<wisp_review_api::MaybeReview>(&c.root_call(), wisp_review_api::MaybeArgs { id, force: false, pick: None }).await;
+    });
+}
+
+/// An open PR has a new head: merge risk decides whether to judge it (the setting, the heads it judged). Asked after
+/// the slot it reads is written.
+fn ask_risk(ctx: &Ctx, id: &str) {
+    let (c, id) = (ctx.clone(), id.to_owned());
+    ctx.spawn(async move {
+        // wisp.risk may be off or absent: then nobody judges, as asked
+        let _ = c.run::<wisp_risk_api::Judge>(&c.root_call(), wisp_risk_api::JudgeArgs { id, force: false, url: None }).await;
     });
 }
 

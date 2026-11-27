@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Merge risk.** Turn on Settings → General → Merge risk, and another harness than the one that wrote a task reads each of its open pull requests (the ones Ship it opened and the ones its agent attached) and says how risky merging is: low, medium or high, a score and why. The PR card gets a Merge risk row under the Steward with the riskiest PR's verdict, each PR's chip says its own, the PR panel lists the reasons with Judge again, and Merge turns red for a PR judged high. A push judges that PR again. Off by default (ADR-0143).
 - **A crew member's page is now a profile.** It opens on the member: their face in a glow of their colour, the name
   and role, chips for what they're doing, their harness, what wakes them and their folder, and their numbers (jobs
   done, this week, how long a job takes, who they hand work to). Tabs replace the side column: Activity, Kit,
@@ -45,6 +46,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - `wisp serve` with this home's wisp already running attaches to it and prints its address (exit 0), on its port or any `--port`; it said "port 4477 is in use: is wisp already running?" and exited 1.
+- **Sandbox: a project with a huge new folder says which folder, instead of a screen of git output.** Starting a
+  sandbox from a checkout with a big untracked build folder (an 87 GB `target-agents/`) and nested agent worktrees
+  ran `git add -A` until it timed out, then showed hundreds of lines of git's embedded-repository hints as the error.
+  wisp now measures new folders before copying and refuses at 16 MB, naming the three biggest (*"Too much in files git
+  doesn't track to copy: target-agents/ (over 16 MB); at most 16 MB goes. Add them to .gitignore …"*); a timeout says so; git's hints are dropped; and
+  the error shows in three lines with Show all.
+
 - **Phone app: pictures and videos show again on wisp Cloud and on computers reached through the grid.** Each one
   said "This picture can't be shown here." (or video). alpha.15's fix added the one-hour signed links to the old
   grid, but wisp Cloud already ran the new grid, which didn't have them. The new grid now signs these links
