@@ -38,6 +38,8 @@ impl Command for Preview {
 struct Slot {
     value: Value,
     before_offer: Option<Value>,
+    /// the task's `wisp.worktrees` slot (its worktree, branch and remote), when it has one
+    worktrees: Value,
 }
 
 /// wisp.runtime with one task, `t1`, in `dir`; its title can change; its history slot is kept and `runtime.setExt`
@@ -55,7 +57,10 @@ impl Plugin for Runtime {
         let read = slot.clone();
         s.command::<Get, _, _>(move |_c, _call, _a| {
             let (dir, title) = (dir.clone(), title.lock().unwrap().clone());
-            let ext = read.lock().unwrap().value.clone();
+            let (ext, wt) = {
+                let s = read.lock().unwrap();
+                (s.value.clone(), s.worktrees.clone())
+            };
             // the real runtime.get's shape (a whole Session), so a wrong-shape read fails here
             let mut t = wisp_runtime_api::model::Session {
                 id: "01a1bc12ab34cdef0123456789abcdef".into(),
@@ -67,6 +72,9 @@ impl Plugin for Runtime {
             };
             if !ext.is_null() {
                 t.ext.insert(wisp_history_api::EXT.into(), ext);
+            }
+            if !wt.is_null() {
+                t.ext.insert("wisp.worktrees".into(), wt);
             }
             async move { Ok(serde_json::to_value(t).unwrap()) }
         });
@@ -473,7 +481,7 @@ async fn a_saved_task_is_not_offered_again() {
 async fn a_save_between_the_offers_read_and_write_wins() {
     let d = dir("race", "history: { track: ask }", true);
     let saved = json!({ "tracked": { "repo": d.display().to_string(), "files": [".wisp/x.task.yml"], "store": "files" }, "offer": false, "seenTurns": 0 });
-    let slot = Arc::new(Mutex::new(Slot { value: Value::Null, before_offer: Some(saved.clone()) }));
+    let slot = Arc::new(Mutex::new(Slot { value: Value::Null, before_offer: Some(saved.clone()), ..Slot::default() }));
     let k = kernel_with(&d, &Arc::new(Mutex::new("Fix".into())), true, &Kept::default(), slot.clone()).await;
     super::on_done(&k.ctx("wisp.history").unwrap(), "t1").await;
     let s = slot.lock().unwrap();
@@ -555,7 +563,7 @@ async fn a_push_with_no_pr_keeps_the_saved_files() {
     let (d, origin, files) = saved_checkout("push-nopr");
     let p = wisp_proc::local();
     let gh = d.join("no-such-gh").display().to_string();
-    let out = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    let out = super::push::as_pr(&p, &gh, &d, "origin", (PUSHED_ID, "Fix"), &files, None).await.unwrap();
     assert_eq!((out.branch.as_str(), out.pr.as_deref()), ("wisp/history-01a1bc12ab34", None), "{out:?}");
     assert!(out.removed.is_empty(), "{out:?}");
     assert!(files.iter().all(|f| d.join(f).is_file()), "{:?}", files_under(&d));
@@ -577,17 +585,17 @@ async fn a_push_with_a_pr_takes_the_files_out_and_a_second_push_answers_it() {
     std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
     let gh = gh.display().to_string();
     let p = wisp_proc::local();
-    let first = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    let first = super::push::as_pr(&p, &gh, &d, "origin", (PUSHED_ID, "Fix"), &files, None).await.unwrap();
     assert_eq!(first.pr.as_deref(), Some("https://github.com/acme/app/pull/1"), "{first:?}");
     assert_eq!(first.removed, files);
     assert!(files.iter().all(|f| !d.join(f).exists()), "{:?}", files_under(&d));
     // what push() hands it from the task's slot, as the first push marked it
     let slot = json!({ "pushed": { "branch": first.branch, "commit": first.commit, "pr": first.pr, "compare": null } });
     let earlier = super::push::earlier(&slot, &files);
-    let again = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, earlier).await.unwrap();
+    let again = super::push::as_pr(&p, &gh, &d, "origin", (PUSHED_ID, "Fix"), &files, earlier).await.unwrap();
     assert_eq!((again.branch, again.commit, again.pr), (first.branch, first.commit, first.pr));
     // never pushed: the files really are gone
-    let e = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap_err();
+    let e = super::push::as_pr(&p, &gh, &d, "origin", (PUSHED_ID, "Fix"), &files, None).await.unwrap_err();
     assert!(e.message.contains("Save to repo again"), "{e:?}");
 }
 
@@ -603,7 +611,7 @@ async fn a_save_after_a_push_forgets_that_push() {
     std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
     let gh = gh.display().to_string();
     let p = wisp_proc::local();
-    let first = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    let first = super::push::as_pr(&p, &gh, &d, "origin", (PUSHED_ID, "Fix"), &files, None).await.unwrap();
     let pushed = json!({ "tracked": { "repo": d.display().to_string(), "files": files, "store": "files" }, "offer": false,
         "pushed": { "branch": first.branch, "commit": first.commit, "pr": first.pr } });
     // Save to repo again: the files come back, and the slot is marked as track() marks it
@@ -620,7 +628,7 @@ async fn a_save_after_a_push_forgets_that_push() {
     for f in &files {
         std::fs::remove_file(d.join(f)).unwrap();
     }
-    let e = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, earlier).await.unwrap_err();
+    let e = super::push::as_pr(&p, &gh, &d, "origin", (PUSHED_ID, "Fix"), &files, earlier).await.unwrap_err();
     assert!(e.message.contains("Save to repo again"), "{e:?}");
 }
 
@@ -656,4 +664,158 @@ fn a_remotes_web_page_never_carries_a_user() {
     assert_eq!(super::push::earlier(&json!({}), &[]), None);
     let on_base = super::push::earlier(&json!({ "pushed": { "branch": "", "commit": "c", "pr": null } }), &[]).unwrap();
     assert_eq!((on_base.branch.as_str(), on_base.pr), ("", None), "already on the base: the second push answers that too");
+}
+
+const TASK_BRANCH: &str = "wisp/task-fix";
+
+/// A main checkout with a bare `origin` holding its `main` (`.wisp/` gitignored when `ignored`), the task's worktree
+/// on its own branch off it, and a save's two files in the worktree's `.wisp/`: (checkout, origin, worktree, files).
+fn saved_worktree(name: &str, ignored: bool) -> (PathBuf, PathBuf, PathBuf, Vec<String>) {
+    let d = dir(name, "", true);
+    git(&d, &["config", "user.name", "t"]);
+    git(&d, &["config", "user.email", "t@t"]);
+    if ignored {
+        std::fs::write(d.join(".gitignore"), ".wisp/\n").unwrap();
+        git(&d, &["add", ".gitignore"]);
+        git(&d, &["commit", "-qm", "ignore .wisp"]);
+    }
+    let origin = std::env::temp_dir().join(format!("wisp-history-{name}-origin-{}.git", wisp_kernel::ids::uuid7()));
+    std::fs::create_dir_all(&origin).unwrap();
+    git(&origin, &["init", "-q", "--bare", "-b", "main"]);
+    git(&d, &["remote", "add", "origin", origin.to_str().unwrap()]);
+    git(&d, &["push", "-q", "origin", "main"]);
+    let wt = std::env::temp_dir().join(format!("wisp-history-{name}-wt-{}", wisp_kernel::ids::uuid7()));
+    git(&d, &["worktree", "add", "-q", "-b", TASK_BRANCH, wt.to_str().unwrap(), "main"]);
+    let files = vec![".wisp/tasks/01a1bc12ab34-fix.task.yml".to_owned(), ".wisp/tasks/01a1bc12ab34-fix.report.md".to_owned()];
+    std::fs::create_dir_all(wt.join(".wisp/tasks")).unwrap();
+    for f in &files {
+        std::fs::write(wt.join(f), format!("{f}\n")).unwrap();
+    }
+    (d, origin, wt, files)
+}
+
+fn no_gh(d: &Path) -> String {
+    d.join("no-such-gh").display().to_string()
+}
+
+/// final3 doc5a: Push to repo from a live worktree builds its commit on the branch's remote tip. The agent's commit
+/// that was never pushed stays unpushed, and the worktree's HEAD and index are as they were.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_worktree_push_never_ships_the_agents_unpushed_commits() {
+    let (d, origin, wt, files) = saved_worktree("push-wt", false);
+    git(&wt, &["push", "-q", "origin", TASK_BRANCH]);
+    let shipped = git(&origin, &["rev-parse", TASK_BRANCH]).trim().to_owned();
+    std::fs::write(wt.join("math.js"), "a - b\n").unwrap();
+    git(&wt, &["commit", "-qam", "not shipped yet"]);
+    let local = git(&wt, &["rev-parse", "HEAD"]).trim().to_owned();
+    std::fs::write(wt.join("staged.txt"), "staged\n").unwrap();
+    git(&wt, &["add", "staged.txt"]);
+    let cached = git(&wt, &["diff", "--cached"]);
+    let p = wisp_proc::local();
+    let out = super::push::onto_branch(&p, &no_gh(&d), &wt, "origin", TASK_BRANCH, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    let tip = git(&origin, &["rev-parse", TASK_BRANCH]).trim().to_owned();
+    assert_eq!((out.branch.as_str(), out.commit.as_str()), (TASK_BRANCH, tip.as_str()), "{out:?}");
+    assert_eq!(git(&origin, &["rev-parse", &format!("{TASK_BRANCH}^1")]).trim(), shipped);
+    assert!(!git(&origin, &["rev-list", TASK_BRANCH]).lines().any(|l| l == local), "the unpushed commit went out");
+    let tree = git(&origin, &["ls-tree", "-r", "--name-only", TASK_BRANCH]);
+    assert!(files.iter().all(|f| tree.lines().any(|l| l == f)), "{tree}");
+    assert_eq!(git(&wt, &["rev-parse", "HEAD"]).trim(), local);
+    assert_eq!(git(&wt, &["diff", "--cached"]), cached);
+    assert!(files.iter().all(|f| wt.join(f).is_file()));
+    // pushed again as saved: nothing new, the tip answered
+    let again = super::push::onto_branch(&p, &no_gh(&d), &wt, "origin", TASK_BRANCH, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    assert_eq!(again.commit, tip);
+    assert_eq!(git(&origin, &["rev-parse", TASK_BRANCH]).trim(), tip);
+}
+
+/// final3 doc5a: nothing shipped yet, so no branch goes up under the task's name: the history goes out as its own PR.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_worktree_push_before_the_branch_is_shipped_goes_out_as_a_pr() {
+    let (d, origin, wt, files) = saved_worktree("push-wt-new", false);
+    let p = wisp_proc::local();
+    let out = super::push::onto_branch(&p, &no_gh(&d), &wt, "origin", TASK_BRANCH, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    assert_eq!(out.branch, "wisp/history-01a1bc12ab34", "{out:?}");
+    let heads = git(&origin, &["for-each-ref", "--format=%(refname)", "refs/heads"]);
+    assert!(!heads.lines().any(|l| l == format!("refs/heads/{TASK_BRANCH}")), "{heads}");
+    assert!(heads.lines().any(|l| l == "refs/heads/wisp/history-01a1bc12ab34"), "{heads}");
+}
+
+/// final3 doc5a: every saved file gone: Save to repo again, and nothing on the remote moves (it used to push HEAD).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_worktree_push_with_its_files_gone_pushes_nothing() {
+    let (d, origin, wt, files) = saved_worktree("push-wt-gone", false);
+    git(&wt, &["push", "-q", "origin", TASK_BRANCH]);
+    std::fs::write(wt.join("math.js"), "a - b\n").unwrap();
+    git(&wt, &["commit", "-qam", "not shipped yet"]);
+    for f in &files {
+        std::fs::remove_file(wt.join(f)).unwrap();
+    }
+    let refs = git(&origin, &["for-each-ref"]);
+    let p = wisp_proc::local();
+    let e = super::push::onto_branch(&p, &no_gh(&d), &wt, "origin", TASK_BRANCH, (PUSHED_ID, "Fix"), &files, None).await.unwrap_err();
+    assert!(e.message.contains("Save to repo again"), "{e:?}");
+    assert_eq!(git(&origin, &["for-each-ref"]), refs);
+}
+
+/// final3: a repo that gitignores `.wisp/` still pushes from its worktree (`git add` refused the ignored paths).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_worktree_push_works_when_wisp_is_gitignored() {
+    let (d, origin, wt, files) = saved_worktree("push-wt-ignored", true);
+    git(&wt, &["push", "-q", "origin", TASK_BRANCH]);
+    let p = wisp_proc::local();
+    let out = super::push::onto_branch(&p, &no_gh(&d), &wt, "origin", TASK_BRANCH, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    assert_eq!(out.branch, TASK_BRANCH);
+    let tree = git(&origin, &["ls-tree", "-r", "--name-only", TASK_BRANCH]);
+    assert!(files.iter().all(|f| tree.lines().any(|l| l == f)), "{tree}");
+}
+
+/// final3 doc5b: the push goes to the task's own remote, not a hardcoded `origin`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_push_goes_to_the_tasks_own_remote() {
+    let d = dir("push-upstream", "", true);
+    git(&d, &["config", "user.name", "t"]);
+    git(&d, &["config", "user.email", "t@t"]);
+    let upstream = std::env::temp_dir().join(format!("wisp-history-push-upstream-bare-{}.git", wisp_kernel::ids::uuid7()));
+    std::fs::create_dir_all(&upstream).unwrap();
+    git(&upstream, &["init", "-q", "--bare", "-b", "main"]);
+    git(&d, &["remote", "add", "upstream", upstream.to_str().unwrap()]);
+    git(&d, &["push", "-q", "upstream", "main"]);
+    let files = vec![".wisp/tasks/01a1bc12ab34-fix.task.yml".to_owned()];
+    std::fs::create_dir_all(d.join(".wisp/tasks")).unwrap();
+    std::fs::write(d.join(&files[0]), "saved\n").unwrap();
+    let slot = Arc::new(Mutex::new(Slot {
+        value: json!({ "tracked": { "repo": d.display().to_string(), "files": files, "store": "files" } }),
+        worktrees: json!({ "remote": "upstream" }),
+        ..Slot::default()
+    }));
+    let k = kernel_with(&d, &Arc::new(Mutex::new("Fix".into())), true, &Kept::default(), slot).await;
+    let out = k.call(Caller::user(), "history.push", json!({ "id": "t1" })).await.unwrap();
+    assert_eq!(out["branch"], "wisp/history-01a1bc12ab34", "{out}");
+    let tree = git(&upstream, &["ls-tree", "-r", "--name-only", "wisp/history-01a1bc12ab34"]);
+    assert!(tree.lines().any(|l| l == files[0]), "{tree}");
+}
+
+#[test]
+fn the_remote_falls_back_to_origin() {
+    let of = super::push::remote_of;
+    assert_eq!(of(&Value::Null), "origin");
+    assert_eq!(of(&json!({ "path": "/wt" })), "origin");
+    assert_eq!(of(&json!({ "remote": "" })), "origin");
+    assert_eq!(of(&json!({ "remote": " " })), "origin");
+    assert_eq!(of(&json!({ "remote": "upstream" })), "upstream");
+}
+
+/// final3: the worktree it saved into, cleaned up since: say so and to save again, never "no remote to push to".
+#[tokio::test(flavor = "multi_thread")]
+async fn a_push_after_its_worktree_is_gone_says_to_save_again() {
+    let d = dir("push-stale", "", true);
+    let gone = std::env::temp_dir().join(format!("wisp-history-push-stale-wt-{}", wisp_kernel::ids::uuid7()));
+    let saved = json!({ "tracked": { "repo": gone.display().to_string(), "files": [".wisp/tasks/x.task.yml"], "store": "files" } });
+    let slot = Arc::new(Mutex::new(Slot { value: saved.clone(), ..Slot::default() }));
+    let k = kernel_with(&d, &Arc::new(Mutex::new("Fix".into())), true, &Kept::default(), slot.clone()).await;
+    let e = k.call(Caller::user(), "history.push", json!({ "id": "t1" })).await.unwrap_err();
+    assert_eq!(e.code, wisp_kernel::Code::Invalid, "{e:?}");
+    assert!(e.message.contains("is gone") && e.message.contains("Save to repo again"), "{e:?}");
+    assert!(!e.message.contains("no remote"), "{e:?}");
+    assert_eq!(slot.lock().unwrap().value, saved, "no pushed mark");
 }

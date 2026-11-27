@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Push to repo from a task's worktree pushes only its history.** It used to push the worktree's whole branch,
+  so commits the agent hadn't shipped went out with it, and with the saved files gone it pushed the branch with no
+  history at all. It now adds just the `.wisp/` files on top of what's already on the remote branch, leaving the
+  worktree as it was, and works when `.wisp/` is gitignored. A branch that isn't on the remote yet gets its history
+  as its own pull request, and no branch is made under the task's name. The push goes to the task's own remote
+  (a fork's `upstream`, say) instead of always `origin`, and once the worktree it saved into is cleaned up it says
+  to Save to repo again instead of "no remote to push to".
 - **A shipped task that needs you is back in Needs you.** One whose PR has a failing check, conflicts with its base,
   has changes requested, or whose report you haven't read, no longer waits quietly in Shipping: it sits in Needs
   you and counts in the tab title, Home and the project chips. A compare task whose shipped run is quiet now moves
