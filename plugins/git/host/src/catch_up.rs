@@ -134,7 +134,10 @@ impl Inner {
         // future in between leaves them in the git dir, put back by the next `catch_up` above
         let out = self.merge_history(&req, &theirs, &top).await;
         if let Some(batch) = &kept {
-            put_back(&self.git, batch, &top, Back::AfterMerge).await;
+            // a merge that didn't end (killed at its timeout, or an error) may have left files of its own, newer than
+            // the batch and not HEAD's: they'd pass for a save written meanwhile, so the set-aside saves go back over them
+            let back = if matches!(out, Ok(CaughtUp::Merged | CaughtUp::Even)) { Back::AfterMerge } else { Back::AfterFailedMerge };
+            put_back(&self.git, batch, &top, back).await;
             if let Some(aside) = &aside {
                 // only when empty: a batch that couldn't all go back stays for the next `catch_up`
                 let _ = tokio::fs::remove_dir(aside).await;
@@ -272,6 +275,8 @@ fn set_aside_at(batch: &Path) -> u128 {
 enum Back {
     Leftover,
     AfterMerge,
+    /// after a merge that didn't end in Merged or Even: every set-aside save goes back, whatever the worktree has
+    AfterFailedMerge,
 }
 
 /// Whether the worktree's `rel` (from git's top) is newer than a copy set aside at `since` (ns since the epoch), so the
@@ -280,6 +285,9 @@ enum Back {
 /// batch (a save committed since: yes). Anything else is a save only when written at or after `since` (history's
 /// `track:auto` re-saves `.wisp/` after every turn, mid-merge too); a leftover's tracked and edited copy always is.
 async fn newer_here(git: &Git, top: &Path, rel: &str, since: u128, back: Back) -> bool {
+    if back == Back::AfterFailedMerge {
+        return false;
+    }
     let Ok(meta) = tokio::fs::metadata(top.join(rel)).await else { return false };
     if !meta.is_file() {
         return false;
@@ -438,6 +446,20 @@ mod tests {
         put_back(&runner(), &batch, &r.0, Back::AfterMerge).await;
         assert_eq!(std::fs::read_to_string(r.0.join(".wisp/x.json")).unwrap(), "SAVED-MID-MERGE\n");
         assert_eq!(std::fs::read_to_string(r.0.join(".wisp/missing.json")).unwrap(), "BACK\n");
+        assert!(!batch.exists(), "the batch is gone");
+    }
+
+    /// final8 review: a merge that didn't end (killed at its timeout) left a file of its own, newer than the batch and not
+    /// HEAD's: it would pass for a save written meanwhile, so after a failed merge the set-aside save goes back over it.
+    #[tokio::test]
+    async fn after_a_failed_merge_every_set_aside_save_goes_back() {
+        let (r, git_dir) = repo("after-failed-merge");
+        let batch = git_dir.join(format!("wisp-aside/{}-{}", std::process::id(), now()));
+        write(&batch, ".wisp/x.json", "NEWER-LOCAL\n");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        write(&r.0, ".wisp/x.json", "HALF-MERGED\n");
+        put_back(&runner(), &batch, &r.0, Back::AfterFailedMerge).await;
+        assert_eq!(std::fs::read_to_string(r.0.join(".wisp/x.json")).unwrap(), "NEWER-LOCAL\n");
         assert!(!batch.exists(), "the batch is gone");
     }
 
