@@ -23,6 +23,9 @@ export interface TooltipProps extends KitProps, WithChildren {
   readonly disabled?: boolean;
   /** Held open by the caller (a click's confirmation: Copied), hover or not; with `disabled`, only then. */
   readonly open?: boolean;
+  /** Additive (2026-11-27, ADR-0145): a read-only card in place of the label (PrPeek's PR card), on a surface like a
+   *  popover's; `content` stays its accessible name. Nothing in it takes a click: the trigger does. */
+  readonly card?: () => JSX.Element;
 }
 
 export function Tooltip(props: TooltipProps): JSX.Element {
@@ -74,8 +77,8 @@ function Hover(props: TooltipProps): JSX.Element {
       <Show when={api().open}>
         <Portal>
           <div {...api().getPositionerProps()} data-kit="tooltip-positioner">
-            <div {...api().getContentProps()} data-kit="tooltip" data-part={part()}>
-              <span>{props.content}</span>
+            <div {...api().getContentProps()} data-kit="tooltip" data-part={part()} data-card={props.card ? '' : undefined} aria-label={props.card ? props.content : undefined}>
+              <Show when={props.card} fallback={<span>{props.content}</span>}>{(card) => card()()}</Show>
               <Show when={props.hint}>{(hint) => <span data-kit="tooltip-hint">{hint()}</span>}</Show>
             </div>
           </div>

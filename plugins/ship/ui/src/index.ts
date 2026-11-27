@@ -6,6 +6,7 @@ import { catalogue } from './i18n.ts';
 import { parseShipParams } from './params.ts';
 import { SHIP_VIEW } from './view-id.ts';
 import { prOf } from './model/prs.ts';
+import { prOfLink } from './model/link.ts';
 import { dialogTitle } from './model/title.ts';
 import { t } from './i18n.ts';
 import type { ShipSession } from './types.ts';
@@ -34,6 +35,16 @@ export default definePluginUi({
     }),
     // the PR card in the open task's details column (over the turns on a phone), in sight while they scroll: its line
     // and what to do next (Merge, Fix conflicts)
+    // a PR's link in the open task's turns (a pasted prompt, the agent's answer) as its live chip, card on hover
+    // (ADR-0145); only for the task's own PRs, so the `if` is the light matcher and the chip loads on first show
+    defineExtension({
+      id: 'wisp.ship.link',
+      attachTo: { id: 'shell.task:link' },
+      component: lazy(() => import('./PrLink.tsx')),
+      if: (p) => prOfLink(sess(p), p.href) !== undefined,
+    }),
+    // Settings → General → tasks: Follow PRs I link (`ship.attachPasted`, ADR-0145)
+    defineExtension({ id: 'wisp.ship.attachPasted', attachTo: { id: 'shell.settings:tasks' }, component: lazy(() => import('./PastedRow.tsx')) }),
     defineExtension({ id: 'wisp.ship.strip', attachTo: { id: 'shell.task:details' }, component: lazy(() => import('./PrStrip.tsx')) }),
   ],
   // its title from the click's guess ("Ship it", "Push to PR #412"), never the shell's fallback

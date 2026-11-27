@@ -190,5 +190,10 @@
   "wisp.ship.risk.level.low": "Low",
   "wisp.ship.risk.level.running": "Judging",
   "wisp.ship.risk.level.none": "Not judged",
-  "wisp.ship.risk.level.failed": "Unknown"
+  "wisp.ship.risk.level.failed": "Unknown",
+  "wisp.ship.link.hint": "Click to open the PR beside the task",
+  "wisp.ship.link.untitled": "PR #{n}",
+  "wisp.ship.settings.attachPasted": "Follow PRs I link",
+  "wisp.ship.settings.attachPasted.hint": "A GitHub PR link in a prompt or follow-up attaches that PR to the task: its checks and reviews stay current, and the link reads as its live chip",
+  "wisp.ship.settings.locked": "Set by the plugin {by}"
 }
