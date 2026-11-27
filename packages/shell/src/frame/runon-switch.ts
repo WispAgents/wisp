@@ -19,12 +19,13 @@ export interface RunOnTarget {
 
 let runOn: RunOnTarget | undefined;
 
-/** New task's Run on selector: the palette on its list. */
-export function openRunOn(ctx: ShellContext, target: RunOnTarget): void {
+/** New task's Run on selector: the palette on its list. `title` comes from Home (its string is Home's, en.home.json:
+ * this module is also the Sidebar's, so it never loads them). */
+export function openRunOn(ctx: ShellContext, target: RunOnTarget, title: string): void {
   runOn = target;
   ctx.navigate({
     t: 'openOverlay',
-    overlay: { kind: 'dialog', id: 'shell.palette' as never, params: { only: [RUNON_SOURCE], placeholder: ctx.t('shell.runon.search'), title: ctx.t('shell.home.whereHow') } },
+    overlay: { kind: 'dialog', id: 'shell.palette' as never, params: { only: [RUNON_SOURCE], placeholder: ctx.t('shell.runon.search'), title } },
   });
 }
 
