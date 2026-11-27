@@ -106,13 +106,18 @@ impl Runtime {
         if let Some(names) = waits_on.filter(|_| landing.state == wisp_runtime_api::model::SessionState::Running && !landing.handing) {
             Self::note_waits(&mut s, &names);
         }
-        let waits = self.waits_reset(&s, &mut turn, &mut landing);
+        // a fallback you set carries on first; only with none left does it wait for the reset
+        let fallback = self.moves_on(&s, &mut turn, &mut landing).await;
+        let waits = fallback.is_none() && self.waits_reset(&s, &mut turn, &mut landing);
         self.apply_landing(&mut s, &landing, later_by.as_deref());
         let (s0, t0, l) = (s.clone(), turn.clone(), &landing); // its events ride on the write (ADR-0074)
         self.persist_emitting(&mut s, vec![turn.clone()], |sum| Self::end_events(&s0, &t0, interrupted, l, sum, &text)).await?;
         // a delegate's turn ended (a child, or a crew job a lead handed out): its lead may have waited on it last
         if let Some(lead) = crate::more::lead_of(&s) {
             self.spawn_check_lead(&lead);
+        }
+        if let Some(next) = fallback {
+            self.spawn_fallback(&s.id, next);
         }
         if let (true, Some(l)) = (waits, turn.limit.as_ref()) {
             let (rt, sid, agent, until) = (self.clone(), s.id.0.clone(), turn.agent.clone(), l.until);

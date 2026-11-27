@@ -21,6 +21,8 @@ export type MemberPatch = Partial<
     | 'parallel'
     | 'team'
     | 'cwd'
+    | 'dirs'
+    | 'fallbacks'
     | 'machine'
     | 'sandbox'
     | 'agent'

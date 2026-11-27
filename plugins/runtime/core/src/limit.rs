@@ -4,7 +4,8 @@
 //! limits (design/accounts.md). With Settings → Wait for the reset on, the task carries on by itself after it.
 
 use serde_json::{Value, json};
-use wisp_runtime_api::model::{LimitAccount, TurnLimit};
+use wisp_runtime_api::commands::RunPick;
+use wisp_runtime_api::model::{LimitAccount, Turn, TurnLimit};
 
 /// The setting: wait for the reset by itself (v1 `defaults.limitWait: 'on'`, off by default).
 pub const WAIT: &str = "runtime.limitWait";
@@ -65,10 +66,109 @@ pub fn others(accounts: &Value, this: &str) -> Vec<LimitAccount> {
         .collect()
 }
 
+/// The words a CLI uses when the model itself is full, not your plan (router core's `CAPACITY`).
+pub fn at_capacity(text: &str) -> bool {
+    let e = text.to_ascii_lowercase();
+    e.contains("model is at capacity") || e.contains("capacity unavailable")
+}
+
+/// A turn that stopped where a fallback takes over: at its usage limit (`turn.limit`) or its model at capacity.
+pub fn stopped_at_limit(t: &Turn) -> bool {
+    t.limit.is_some() || (t.is_error && t.text.as_deref().is_some_and(at_capacity))
+}
+
+/// The task's next fallback (`session.fallbacks`, in order) after a run stopped at a limit, and what the
+/// follow-up says. `turns`: the task's turns, the one that just stopped included; `agent`: the task's harness (a
+/// fallback that names none keeps it); `here`: whether a harness can run now. A fallback is skipped once a run of
+/// this task stopped on it (same harness, and same model when it names one), and the task moves at most once per
+/// fallback, so a list where every one is at its limit ends with the card, never a loop. These are harnesses and
+/// models you named, never another account (design/accounts.md).
+pub fn next_fallback(fallbacks: &[RunPick], turns: &[Turn], agent: &str, here: impl Fn(&str) -> bool) -> Option<(RunPick, String)> {
+    let stopped: Vec<&Turn> = turns.iter().filter(|t| stopped_at_limit(t)).collect();
+    if stopped.is_empty() || stopped.len() > fallbacks.len() {
+        return None;
+    }
+    let tried = |a: &str, m: Option<&str>| stopped.iter().any(|t| t.agent == a && m.is_none_or(|m| t.model == m));
+    let last = stopped.last()?;
+    fallbacks.iter().find_map(|f| {
+        let a = f.agent.as_deref().filter(|a| !a.is_empty()).unwrap_or(agent);
+        let m = f.model.as_deref().filter(|m| !m.is_empty());
+        // the same harness with no model of its own is the run that just stopped
+        if a.is_empty() || (m.is_none() && a == last.agent) || tried(a, m) || !here(a) {
+            return None;
+        }
+        let to = m.map_or_else(|| a.to_owned(), |m| format!("{a} {m}"));
+        let was = if last.model.is_empty() { last.agent.clone() } else { format!("{} {}", last.agent, last.model) };
+        let why = if last.limit.is_some() { "hit its usage limit" } else { "is at capacity" };
+        let text = format!("{was} {why} · carrying on with {to}, a fallback you set. Carry on from where it stopped.");
+        Some((RunPick { agent: Some(a.to_owned()), model: m.map(str::to_owned), effort: f.effort.clone().filter(|e| !e.is_empty()) }, text))
+    })
+}
+
+/// The hero of a run a fallback carries on.
+pub fn moving_on(blocks: &mut [Value], to: &str) {
+    if let Some(h) = blocks.iter_mut().find(|b| b["type"] == "hero") {
+        h["summary"] = json!(format!("It carries on with {to}, a fallback you set, in this same conversation."));
+        h["status"] = json!("partial");
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    fn limited(agent: &str, model: &str) -> Turn {
+        Turn { agent: agent.into(), model: model.into(), is_error: true, limit: Some(TurnLimit::default()), ..Turn::default() }
+    }
+    fn pick(agent: &str, model: &str) -> RunPick {
+        RunPick { agent: Some(agent.into()), model: (!model.is_empty()).then(|| model.into()), effort: None }
+    }
+
+    #[test]
+    fn a_run_at_its_limit_carries_on_with_the_first_fallback_then_the_next_and_never_loops() {
+        let fb = [pick("codex", "gpt-5.5"), pick("claude", "sonnet")];
+        let all = |_: &str| true;
+        let one = [limited("claude", "opus")];
+        let (run, text) = next_fallback(&fb, &one, "claude", all).unwrap();
+        assert_eq!(run, pick("codex", "gpt-5.5"));
+        assert!(text.contains("claude opus hit its usage limit") && text.contains("codex gpt-5.5"), "{text}");
+        // the first fallback is at its limit too: the next one, the same harness on another model
+        let two = [limited("claude", "opus"), limited("codex", "gpt-5.5")];
+        assert_eq!(next_fallback(&fb, &two, "codex", all).unwrap().0, pick("claude", "sonnet"));
+        // every one tried: the card, no third move
+        let three = [limited("claude", "opus"), limited("codex", "gpt-5.5"), limited("claude", "sonnet")];
+        assert!(next_fallback(&fb, &three, "claude", all).is_none());
+    }
+
+    #[test]
+    fn no_fallback_without_a_limit_or_a_harness_that_can_run() {
+        let fb = [pick("codex", ""), pick("cursor", "")];
+        let done = [Turn { agent: "claude".into(), is_error: true, text: Some("boom".into()), ..Turn::default() }];
+        assert!(next_fallback(&fb, &done, "claude", |_| true).is_none(), "an ordinary error is not a limit");
+        let one = [limited("claude", "")];
+        assert_eq!(next_fallback(&fb, &one, "claude", |a| a == "cursor").unwrap().0, pick("cursor", ""), "codex isn't here");
+        assert!(next_fallback(&[], &one, "claude", |_| true).is_none());
+        // a fallback with no harness keeps the task's, on its own model
+        let same = [RunPick { agent: None, model: Some("haiku".into()), effort: Some("low".into()) }];
+        let (run, _) = next_fallback(&same, &one, "claude", |_| true).unwrap();
+        assert_eq!((run.agent.as_deref(), run.model.as_deref(), run.effort.as_deref()), (Some("claude"), Some("haiku"), Some("low")));
+        // the harness that just stopped, with no model of its own, is the same run: skipped
+        assert!(next_fallback(&[pick("claude", "")], &one, "claude", |_| true).is_none());
+    }
+
+    #[test]
+    fn a_model_at_capacity_counts_as_a_limit() {
+        let cap = Turn {
+            agent: "codex".into(),
+            model: "gpt-5.5".into(),
+            is_error: true,
+            text: Some("Selected model is at capacity".into()),
+            ..Turn::default()
+        };
+        let (_, text) = next_fallback(&[pick("codex", "gpt-5.5-mini")], &[cap], "codex", |_| true).unwrap();
+        assert!(text.contains("is at capacity"), "{text}");
+    }
 
     #[test]
     fn a_run_at_its_limit_shows_who_until_when_and_what_else_it_can_do() {

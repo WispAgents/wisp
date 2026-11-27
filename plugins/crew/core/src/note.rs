@@ -149,12 +149,27 @@ pub fn crew_note(m: &Member, job: &CrewExt, files: Option<&BTreeMap<String, Stri
         )
     };
     format!(
-        "\n\n## You are {name}, on the user's crew\n\n{role}You are one of the user's long-lived agents. wisp hands you work as separate jobs: on your schedule (check-ins), from the user, from other tasks' agents, from triggers and when tasks you watch finish or are marked done. Several can run at once, each in its own context. What carries over from job to job is your brief, your notebook and the log below, so keep the notebook current.\n\n### Your brief (from the user)\n\n{brief}\n{kit}### Your notebook\n\n{notebook}\n\n### Your recent jobs (newest first)\n\n{log}\n\n### This job\n\n{what}\n{links}{reporting}",
+        "\n\n## You are {name}, on the user's crew\n\n{role}You are one of the user's long-lived agents. wisp hands you work as separate jobs: on your schedule (check-ins), from the user, from other tasks' agents, from triggers and when tasks you watch finish or are marked done. Several can run at once, each in its own context. What carries over from job to job is your brief, your notebook and the log below, so keep the notebook current.\n\n### Your brief (from the user)\n\n{brief}\n{folders}{kit}### Your notebook\n\n{notebook}\n\n### Your recent jobs (newest first)\n\n{log}\n\n### This job\n\n{what}\n{links}{reporting}",
         name = m.name,
+        folders = folders_note(m),
         kit = kit_note(m, files),
         log = log_lines(m, zone),
         what = this_job(m, job),
         reporting = reporting(m, job),
+    )
+}
+
+/// The folders a member's jobs work in beyond their own (`Member.dirs`): said in the note too, as only some harnesses
+/// are handed them (`--add-dir`). '' when they have none.
+fn folders_note(m: &Member) -> String {
+    if m.dirs.is_empty() || m.cwd.is_empty() {
+        return String::new();
+    }
+    let l: Vec<String> = m.dirs.iter().map(|d| format!("- `{d}`")).collect();
+    format!(
+        "\n### Your folders\n\nEach job starts in your project, `{}` (or a worktree of it). The user also gave you these folders to work in; read and change them as the job needs:\n{}\n",
+        m.cwd,
+        l.join("\n")
     )
 }
 

@@ -274,6 +274,14 @@
      "type": "string",
      "description": "Absolute path of the folder they work in. Default when adding: the current project. \"\" = no folder."
     },
+    "dirs": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "maxItems": 10,
+     "description": "More folders they may work in beside cwd, as absolute paths. Every job starts in cwd and may read and change these too. [] = none."
+    },
     "agent": {
      "type": "string",
      "description": "Harness: auto, claude, codex, opencode, cursor, antigravity, grok or copilot. Default auto."
@@ -285,6 +293,28 @@
     "effort": {
      "type": "string",
      "description": "Thinking level, e.g. low | medium | high; \"\" for the default."
+    },
+    "fallbacks": {
+     "type": "array",
+     "maxItems": 5,
+     "items": {
+      "type": "object",
+      "properties": {
+       "agent": {
+        "type": "string",
+        "description": "Harness: claude, codex, opencode, cursor, antigravity, grok or copilot. \"\" keeps theirs."
+       },
+       "model": {
+        "type": "string",
+        "description": "Model id for that harness; \"\" for its default."
+       },
+       "effort": {
+        "type": "string",
+        "description": "Thinking level; \"\" for the default."
+       }
+      }
+     },
+     "description": "Where a job carries on, in order, when its run stops at a usage limit or its model is at capacity, e.g. [{\"agent\":\"codex\",\"model\":\"gpt-5.5\"}]. [] = none."
     },
     "mode": {
      "type": "string",
@@ -350,6 +380,14 @@
      "type": "string",
      "description": "Absolute path of the folder they work in. Default when adding: the current project. \"\" = no folder."
     },
+    "dirs": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "maxItems": 10,
+     "description": "More folders they may work in beside cwd, as absolute paths. Every job starts in cwd and may read and change these too. [] = none."
+    },
     "agent": {
      "type": "string",
      "description": "Harness: auto, claude, codex, opencode, cursor, antigravity, grok or copilot. Default auto."
@@ -361,6 +399,28 @@
     "effort": {
      "type": "string",
      "description": "Thinking level, e.g. low | medium | high; \"\" for the default."
+    },
+    "fallbacks": {
+     "type": "array",
+     "maxItems": 5,
+     "items": {
+      "type": "object",
+      "properties": {
+       "agent": {
+        "type": "string",
+        "description": "Harness: claude, codex, opencode, cursor, antigravity, grok or copilot. \"\" keeps theirs."
+       },
+       "model": {
+        "type": "string",
+        "description": "Model id for that harness; \"\" for its default."
+       },
+       "effort": {
+        "type": "string",
+        "description": "Thinking level; \"\" for the default."
+       }
+      }
+     },
+     "description": "Where a job carries on, in order, when its run stops at a usage limit or its model is at capacity, e.g. [{\"agent\":\"codex\",\"model\":\"gpt-5.5\"}]. [] = none."
     },
     "mode": {
      "type": "string",

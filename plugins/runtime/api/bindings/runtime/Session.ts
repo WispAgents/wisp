@@ -2,6 +2,7 @@
 import type { SessionId } from "../SessionId";
 import type { Mode } from "./Mode";
 import type { QueueItem } from "./QueueItem";
+import type { RunPick } from "./RunPick";
 import type { SessionState } from "./SessionState";
 
 export type Session = { id: SessionId, title: string, agent: string, model: string, effort: string, account?: string, 
@@ -12,7 +13,12 @@ lean?: string, mode: Mode, cwd: string,
 /**
  * extra folders the task may touch
  */
-dirs: Array<string>, state: SessionState, unread: boolean, archived: boolean, parentId?: SessionId, createdAt: bigint, updatedAt: bigint, queue: Array<QueueItem>, queueHeld?: boolean, tags?: Array<string>, 
+dirs: Array<string>, 
+/**
+ * where it carries on, in order, when a run stops at its usage limit or its model is at capacity
+ * (`runtime.create`'s `fallbacks`). Additive (2026-11-27).
+ */
+fallbacks?: Array<RunPick>, state: SessionState, unread: boolean, archived: boolean, parentId?: SessionId, createdAt: bigint, updatedAt: bigint, queue: Array<QueueItem>, queueHeld?: boolean, tags?: Array<string>, 
 /**
  * the harness conversation the next turn resumes (the last turn's resume id)
  */

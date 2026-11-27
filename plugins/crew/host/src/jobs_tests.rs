@@ -57,6 +57,7 @@ impl Plugin for Rt {
                 let id = format!("made-{}", t.len());
                 let mut s = Session { id: id.as_str().into(), state: SessionState::Running, ..Session::default() };
                 s.ext = a.ext;
+                (s.cwd, s.dirs, s.fallbacks) = (a.cwd.unwrap_or_default(), a.dirs, a.fallbacks);
                 t.insert(id.clone(), s);
                 Ok(rt::Created { id: id.as_str().into(), turn_id: None })
             }
@@ -486,4 +487,32 @@ async fn a_job_that_meets_the_grid_s_sandbox_cap_waits_again() {
     let queue: Vec<String> = st.member("ada1").unwrap().queue.into_iter().map(|w| w.id).collect();
     assert_eq!(queue, ["w1"], "it waits again");
     assert!(rt.made().is_empty(), "nothing ran");
+}
+
+/// A member's other folders and fallbacks go with every job of theirs: the job starts in their folder, may work in
+/// the others, and carries on with the fallbacks in order at a usage limit (owner, 2026-11-27).
+#[tokio::test]
+async fn a_job_gets_the_members_folders_and_fallbacks() {
+    let rt = Rt::default();
+    let (_k, ctx, st, _clock) = kernel(&rt).await;
+    let fb = |agent: &str, model: &str| wisp_crew_api::Fallback { agent: agent.into(), model: model.into(), effort: String::new() };
+    let m = Member {
+        id: "ada1".into(),
+        name: "Ada".into(),
+        agent: "claude".into(),
+        mode: "edits".into(),
+        parallel: 1,
+        cwd: "/repo/app".into(),
+        dirs: vec!["/repo/api".into(), "/repo/docs".into()],
+        fallbacks: vec![fb("codex", "gpt-5.5"), fb("", "sonnet")],
+        ..Member::default()
+    };
+    st.insert(m.clone());
+    let call = ctx.root_call();
+    assign(&ctx, &call, &st, &m, job("ship it")).await.unwrap();
+    let made = rt.made();
+    let s = made.first().expect("the job started");
+    assert_eq!((s.cwd.as_str(), s.dirs.as_slice()), ("/repo/app", ["/repo/api".to_owned(), "/repo/docs".to_owned()].as_slice()));
+    let picks: Vec<(Option<&str>, Option<&str>)> = s.fallbacks.iter().map(|f| (f.agent.as_deref(), f.model.as_deref())).collect();
+    assert_eq!(picks, [(Some("codex"), Some("gpt-5.5")), (None, Some("sonnet"))]);
 }

@@ -75,12 +75,13 @@ fn refused(error: String) -> c::AgentText {
     c::AgentText { text: None, error: Some(error) }
 }
 
-/// A capped task sees the members of its own project, and itself (v1's `seen`).
+/// A capped task sees the members of its own project (any of their folders), and itself (v1's `seen`).
 fn seen(capped: bool, task: Option<&wisp_runtime_api::Session>, m: &wisp_crew_api::Member) -> bool {
     let Some(t) = task.filter(|_| capped) else { return true };
     let own = crate::calls::crew_of(t).get("id").and_then(serde_json::Value::as_str) == Some(m.id.as_str());
     let inside = |a: &str, b: &str| a == b || a.strip_prefix(b).is_some_and(|r| r.starts_with('/'));
-    own || (!m.cwd.is_empty() && (inside(&t.cwd, &m.cwd) || inside(&m.cwd, &t.cwd)))
+    let near = |f: &String| !f.is_empty() && (inside(&t.cwd, f) || inside(f, &t.cwd));
+    own || std::iter::once(&m.cwd).chain(&m.dirs).any(near)
 }
 
 /// `remember`: at most 12 lines, each on one line and up to 300 characters, after the notebook (v1 PATCH).

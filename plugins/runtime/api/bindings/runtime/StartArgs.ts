@@ -7,6 +7,7 @@ import type { AutoOverride } from "./AutoOverride";
 import type { Base } from "./Base";
 import type { Lineage } from "./Lineage";
 import type { Mode } from "./Mode";
+import type { RunPick } from "./RunPick";
 
 /**
  * `runtime.create`: creates a task and starts its first turn. `agent: "auto"` lets wisp.router pick.
@@ -34,7 +35,12 @@ subagentModel?: string,
  * `off`: without its skills and slash commands (v1 `skills: 'off'`); `on` or none: as usual. Kept and refused
  * like `subagent_model`. Additive (2026-11-14).
  */
-skills?: string, cwd?: string, dirs?: Array<string>, title?: string, attachments?: Array<Attachment>, parentId?: SessionId, account?: string, by?: string, 
+skills?: string, cwd?: string, dirs?: Array<string>, 
+/**
+ * harnesses/models to carry on with, in order, when a run stops at its usage limit or its model is at
+ * capacity (a crew member's fallbacks). Additive (2026-11-27).
+ */
+fallbacks?: Array<RunPick>, title?: string, attachments?: Array<Attachment>, parentId?: SessionId, account?: string, by?: string, 
 /**
  * you said yes to going past Ask near the limit's line (v1 `confirmLimit`; the CLI's --yes). Additive (2026-11-11).
  */

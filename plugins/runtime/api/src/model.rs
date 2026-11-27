@@ -582,6 +582,11 @@ pub struct Session {
     /// extra folders the task may touch
     #[serde(default)]
     pub dirs: Vec<String>,
+    /// where it carries on, in order, when a run stops at its usage limit or its model is at capacity
+    /// (`runtime.create`'s `fallbacks`). Additive (2026-11-27).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<crate::commands::RunPick>>", optional)]
+    pub fallbacks: Vec<crate::commands::RunPick>,
     pub state: SessionState,
     #[serde(default)]
     pub unread: bool,

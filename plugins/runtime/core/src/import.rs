@@ -302,6 +302,7 @@ pub fn from_v1(v: &Value) -> Result<Imported, String> {
         mode: mode(o),
         cwd: s(o, "cwd"),
         dirs,
+        fallbacks: Vec::new(),
         state: state(&s(o, "state")),
         unread: flag(o, "unread"),
         archived: flag(o, "archived"),

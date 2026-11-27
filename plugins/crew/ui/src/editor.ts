@@ -1,7 +1,7 @@
 // A member's editor (v1 crew.js crewEditor; ADR-0043 §5 `wakes:`), DOM-free: the form's draft from a member (or a
 // new one), what Save sends (only what changed, for crew.update; everything, for crew.create), and the Wakes list:
 // each a trigger spec targeting this member (`{ on, match? }`; a hand-off is `crew.reported` matching who reports).
-import type { Member } from './types.ts';
+import type { FallbackPick, Member } from './types.ts';
 import type { MemberPatch } from './commands.ts';
 import { isSpirit, parseSpirit } from '@wisp/ui/pure';
 
@@ -27,6 +27,10 @@ export interface Draft {
   readonly agent: string;
   readonly mode: 'plan' | 'edits' | 'auto';
   readonly cwd: string;
+  /** more folders their jobs may work in, beside `cwd` */
+  readonly dirs: readonly string[];
+  /** where a job carries on, in order, at a usage limit */
+  readonly fallbacks: readonly FallbackPick[];
   readonly wakes: readonly Wake[];
   /** who every job of theirs can hand work to (v1 .ce-team, the launcher's Delegate with the member as lead): a
    *  harness's copies (`agent`) or another crew member (`crew`) */
@@ -48,6 +52,17 @@ export function toggleTeam(team: readonly TeamPick[], value: string, crew: (id: 
   if (has) return team.filter((x) => !(isCrew ? x.crew === id : !x.crew && x.agent === id));
   const m = isCrew ? crew(id) : undefined;
   return [...team, isCrew ? { agent: 'auto', crew: id, ...(m && { name: m.name }) } : { agent: id }];
+}
+
+/** Folders' toggle: a folder in or out of their other folders (never their own, which is `cwd`). */
+export function toggleDir(dirs: readonly string[], dir: string, cwd: string): string[] {
+  if (!dir || dir === cwd) return [...dirs];
+  return dirs.includes(dir) ? dirs.filter((x) => x !== dir) : [...dirs, dir];
+}
+
+/** Fallbacks' toggle: a harness in (last in the order, its default model) or out (with whatever model it had). */
+export function toggleFallback(list: readonly FallbackPick[], agent: string): FallbackPick[] {
+  return list.some((f) => f.agent === agent) ? list.filter((f) => f.agent !== agent) : [...list, { agent }];
 }
 
 const wakesOf = (m: Partial<Member> & { wakes?: unknown }): Wake[] =>
@@ -73,6 +88,8 @@ export function draftOf(m: (Partial<Member> & { wakes?: unknown }) | undefined):
     agent: m?.agent ?? '',
     mode: m?.mode === 'plan' || m?.mode === 'edits' ? m.mode : 'auto',
     cwd: m?.cwd ?? '',
+    dirs: Array.isArray(m?.dirs) ? m.dirs.filter((x) => typeof x === 'string' && x !== m.cwd) : [],
+    fallbacks: Array.isArray(m?.fallbacks) ? m.fallbacks.map((f) => ({ ...(f.agent && { agent: f.agent }), ...(f.model && { model: f.model }), ...(f.effort && { effort: f.effort }) })) : [],
     wakes: m ? wakesOf(m) : [],
     team: Array.isArray(m?.team) ? m.team.map((x) => ({ agent: x.agent, ...(x.crew && { crew: x.crew }), ...(x.name && { name: x.name }) })) : [],
   };
@@ -92,7 +109,7 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
 /** Save on an existing member: only the fields that changed (crew.update merges). */
 export function patchOf(d: Draft, before: Draft): MemberPatch & { wakes?: readonly Wake[] } {
   const out: Record<string, unknown> = {};
-  for (const k of ['name', 'role', 'avatar', 'color', 'bg', 'on', 'brief', 'cron', 'parallel', 'agent', 'mode', 'cwd', 'wakes', 'team'] as const) {
+  for (const k of ['name', 'role', 'avatar', 'color', 'bg', 'on', 'brief', 'cron', 'parallel', 'agent', 'mode', 'cwd', 'dirs', 'fallbacks', 'wakes', 'team'] as const) {
     const v = typeof d[k] === 'string' ? (d[k] as string).trim() : d[k];
     if (!same(v, before[k])) out[k] = v;
   }

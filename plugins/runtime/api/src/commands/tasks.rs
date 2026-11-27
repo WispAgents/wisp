@@ -180,6 +180,11 @@ pub struct StartArgs {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(as = "Option<Vec<String>>", optional)]
     pub dirs: Vec<String>,
+    /// harnesses/models to carry on with, in order, when a run stops at its usage limit or its model is at
+    /// capacity (a crew member's fallbacks). Additive (2026-11-27).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<RunPick>>", optional)]
+    pub fallbacks: Vec<RunPick>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub title: Option<String>,

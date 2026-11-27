@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 use wisp_crew_api::commands::MemberBody;
-use wisp_crew_api::{BRIEF_MAX, CREW_COLORS, HARNESSES, MAX_PARALLEL, MODES, Member, TeamRow};
+use wisp_crew_api::{BRIEF_MAX, CREW_COLORS, Fallback, HARNESSES, MAX_PARALLEL, MODES, Member, TeamRow};
 
 use crate::cron::{Words, read_schedule};
 use crate::error::{Result, bad};
@@ -231,6 +231,77 @@ pub fn bg_of(asked: Option<&str>, prev: Option<&str>) -> String {
     }
 }
 
+/// At most this many more folders beside a member's own.
+pub const MAX_DIRS: usize = 10;
+/// At most this many fallbacks.
+pub const MAX_FALLBACKS: usize = 5;
+
+/// `/…`, or a Windows drive (`C:\\…`), whichever computer the member's jobs run on.
+fn absolute(d: &str) -> bool {
+    d.starts_with('/') || (d.len() > 2 && d.as_bytes().get(1) == Some(&b':'))
+}
+
+/// A member's other folders, checked: absolute, on this computer when their jobs run here, never their own folder
+/// twice. Given, or what they had; a member with no folder of their own has none (a job starts in the first).
+fn dirs_of(body: &MemberBody, prev: Option<&Member>, cwd: &str, machine: &str, c: &Checks) -> Result<Vec<String>> {
+    let Some(given) = &body.dirs else {
+        // their folder taken away takes the others with it; moved onto one of them, that one leaves the list
+        let kept = prev.filter(|_| !cwd.is_empty()).map(|p| p.dirs.iter().filter(|d| d.as_str() != cwd).cloned().collect());
+        return Ok(kept.unwrap_or_default());
+    };
+    let mut out: Vec<String> = Vec::new();
+    for d in given {
+        let d = d.trim();
+        let d = if d.len() > 1 { d.trim_end_matches('/') } else { d };
+        if d.is_empty() || d == cwd || out.iter().any(|x| x == d) {
+            continue;
+        }
+        if !absolute(d) {
+            return Err(bad(format!("dirs: give each folder as a full path ({d})")));
+        }
+        if machine.is_empty() && !(c.exists)(d) {
+            return Err(bad(format!("Not a folder on this computer: {d}")));
+        }
+        out.push(d.to_owned());
+    }
+    if out.len() > MAX_DIRS {
+        return Err(bad(format!("dirs: at most {MAX_DIRS} folders beside their own")));
+    }
+    if cwd.is_empty() && !out.is_empty() {
+        return Err(bad("Give them their own folder first (cwd): their jobs start there, and may work in the others."));
+    }
+    Ok(out)
+}
+
+/// A member's fallbacks, checked: a harness wisp runs (never Auto, which moves on by itself), a model and a level
+/// in their shapes, none twice, at most [`MAX_FALLBACKS`].
+fn fallbacks_of(body: &MemberBody, prev: Option<&Member>) -> Result<Vec<Fallback>> {
+    let Some(given) = &body.fallbacks else { return Ok(prev.map(|p| p.fallbacks.clone()).unwrap_or_default()) };
+    let mut out: Vec<Fallback> = Vec::new();
+    for f in given {
+        let f = Fallback { agent: f.agent.trim().to_owned(), model: clip(f.model.trim(), 120), effort: f.effort.trim().to_owned() };
+        if f.agent.is_empty() && f.model.is_empty() {
+            continue;
+        }
+        if f.agent == "auto" {
+            return Err(bad("fallbacks: Auto moves on by itself; name a harness"));
+        }
+        if !f.agent.is_empty() && !HARNESSES.contains(&f.agent.as_str()) {
+            return Err(bad(format!("fallbacks: {} isn't a harness wisp runs ({})", f.agent, HARNESSES.join(", "))));
+        }
+        if !f.effort.is_empty() && !is_effort(&f.effort) {
+            return Err(bad(format!("fallbacks: {} isn't a thinking level", f.effort)));
+        }
+        if !out.contains(&f) {
+            out.push(f);
+        }
+    }
+    if out.len() > MAX_FALLBACKS {
+        return Err(bad(format!("fallbacks: at most {MAX_FALLBACKS}")));
+    }
+    Ok(out)
+}
+
 pub fn normalize_member(body: &MemberBody, prev: Option<&Member>, c: &Checks, ids: &mut dyn Ids, now: i64) -> Result<Member> {
     let name = squash(&pick(body.name.as_ref(), prev.map(|p| p.name.as_str()), ""));
     if name.is_empty() {
@@ -244,6 +315,8 @@ pub fn normalize_member(body: &MemberBody, prev: Option<&Member>, c: &Checks, id
         return Err(bad(format!("{name} is already on your crew. Pick another name.")));
     }
     let (sandbox, machine, agent, cwd) = place(body, prev, c)?;
+    let dirs = dirs_of(body, prev, &cwd, &machine, c)?;
+    let fallbacks = fallbacks_of(body, prev)?;
     let mode = pick(body.mode.as_ref(), prev.map(|p| p.mode.as_str()), "auto");
     if !MODES.contains(&mode.as_str()) {
         return Err(bad("mode must be plan, edits or auto."));
@@ -282,6 +355,7 @@ pub fn normalize_member(body: &MemberBody, prev: Option<&Member>, c: &Checks, id
     m.model = clip(&pick(body.model.as_ref(), prev.map(|p| p.model.as_str()), ""), 120);
     m.effort = if is_effort(&effort) { effort } else { String::new() };
     m.parallel = parallel_of(body.parallel, prev.map(|p| p.parallel));
+    (m.dirs, m.fallbacks) = (dirs, fallbacks);
     m.team = normalize_team(&team_src)?;
     m.paused = body.paused.or(prev.map(|p| p.paused)).unwrap_or(false);
     // wakes (ADR-0043): given, or v1's `on` read as wakes, or what it had

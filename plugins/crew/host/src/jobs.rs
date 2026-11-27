@@ -59,6 +59,16 @@ pub(crate) async fn job_follow_up(ctx: &Ctx, call: &Call, id: &str, text: String
     }
 }
 
+/// A member's fallbacks as the runtime takes them (`runtime.create`'s `fallbacks`): where its job carries on when a
+/// run stops at a limit.
+pub(crate) fn fallbacks_of(m: &Member) -> Vec<wisp_runtime_api::commands::RunPick> {
+    let some = |s: &str| (!s.is_empty()).then(|| s.to_owned());
+    m.fallbacks
+        .iter()
+        .map(|f| wisp_runtime_api::commands::RunPick { agent: some(&f.agent), model: some(&f.model), effort: some(&f.effort) })
+        .collect()
+}
+
 /// Where a member's job runs when it isn't here: on their machine (v1 crew.js `{ machine: m.machine }`, its folder
 /// one there), a sandbox per job, or their own (ADR-0047). `(machine, cwd)`.
 async fn sandbox_for(ctx: &Ctx, call: &Call, m: &Member) -> Result<Option<(String, String)>, WireError> {
@@ -147,6 +157,13 @@ async fn start(
     });
     if let Some(l) = outside_lineage(w.origin.as_ref()) {
         args["lineage"] = l;
+    }
+    // their other folders (paths on their computer: a sandbox has its own copy of `cwd` only)
+    if m.sandbox.is_empty() && !m.cwd.is_empty() && !m.dirs.is_empty() {
+        args["dirs"] = json!(m.dirs);
+    }
+    if !m.fallbacks.is_empty() {
+        args["fallbacks"] = json!(fallbacks_of(m));
     }
     // here, in its project: a worktree of its own, as every launch was in v1 (jobs and check-ins side by side edited
     // your checkout and each other: audit B #7); a sandbox's or another machine's folder is theirs
