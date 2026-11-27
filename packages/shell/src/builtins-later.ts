@@ -10,6 +10,7 @@ import { pastWork, taskItems } from './palette/tasks.ts';
 import { PENDING_KEY, TASK_KEY, type TaskKey } from './frame/task-keys.ts';
 import { afterNextPaint } from './frame/task-paint.ts';
 import { openFeedback } from './frame/feedback.ts';
+import { COMPUTER_SOURCE, RUNON_SOURCE, computerItems, runOnItems } from './frame/runon-switch.ts';
 import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, PROJECT_TAIL, placeItems, projectItems, projectShortcuts, projectTail } from './frame/project-switch.ts';
 import { doneRefused, flatRow, isSaved, undoneState } from './frame/rows-view.ts';
 import { markStepped } from './frame/stepped.ts';
@@ -316,6 +317,9 @@ export function shellLater(ctx: ShellContext): PluginUiLater {
       { id: PROJECT_SOURCE, order: 200, items: () => projectItems(ctx) },
       // New task's place list (its selector opens the palette on it alone): nothing in ⌘K
       { id: PLACE_SOURCE, order: 201, items: (pc) => (pc.narrowed ? placeItems(ctx) : []) },
+      // New task's Run on list and the list's computer filter (their selectors open the palette on them alone)
+      { id: RUNON_SOURCE, order: 203, items: (pc) => (pc.narrowed ? runOnItems(ctx) : []) },
+      { id: COMPUTER_SOURCE, order: 204, items: (pc) => (pc.narrowed ? computerItems(ctx) : []) },
       // the switcher's last rows (Add project…, Manage projects…, Repo history): nothing in ⌘K, which has its own
       { id: PROJECT_TAIL, order: 202, items: (pc) => projectTail(ctx, pc) },
     ],
