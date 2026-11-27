@@ -31,6 +31,7 @@ pub(super) struct Actor {
     backend: Arc<dyn Backend>,
     idem: Arc<Idempotency>,
     active: Arc<AtomicUsize>,
+    order: Order,
 }
 
 impl Actor {
@@ -41,7 +42,7 @@ impl Actor {
         backend: Arc<dyn Backend>,
         active: Arc<AtomicUsize>,
     ) -> Self {
-        Self { server, conns: HashMap::new(), tx, snaps, backend, idem: Arc::new(Idempotency::default()), active }
+        Self { server, conns: HashMap::new(), tx, snaps, backend, idem: Arc::new(Idempotency::default()), active, order: Order::default() }
     }
 
     pub(super) async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Msg>) {
@@ -216,12 +217,22 @@ impl Actor {
     }
 
     /// Runs once per (caller, mid): a mutate retried over a flaky tunnel gets the first answer.
-    fn command(&self, conn: ConnId, caller: Caller, mid: String, cmd: String, args: Value) {
+    fn command(&mut self, conn: ConnId, caller: Caller, mid: String, cmd: String, args: Value) {
         let (backend, idem, tx, snaps) = (self.backend.clone(), self.idem.clone(), self.tx.clone(), self.snaps.clone());
+        let who = format!("{}|{}", caller.set, caller.session.as_deref().unwrap_or(""));
+        // a read runs again on a retry; only a write's answer is kept (perf audit #1)
+        let read = backend.read_only(&cmd);
+        // a write waits for the one this client sent before it to the same plugin: taken here, in arrival order
+        let turn = (!read).then(|| self.order.next(format!("{who}|{}", plugin_of(&cmd))));
         tokio::spawn(async move {
-            let key = format!("{}|{}|{mid}", caller.set, caller.session.as_deref().unwrap_or(""));
-            // a read runs again on a retry; only a write's answer is kept (perf audit #1)
-            let read = backend.read_only(&cmd);
+            let key = format!("{who}|{mid}");
+            let _done = match turn {
+                Some((before, done)) => {
+                    before.wait().await;
+                    Some(done)
+                }
+                None => None,
+            };
             let run = async move { command_answer(backend.call(caller, &cmd, args).await, i64::try_from(snaps.head_seq()).unwrap_or(0)) };
             let (status, v) = if read { run.await } else { idem.once(key, run).await };
             let outcome = if status == 200 {
@@ -238,9 +249,101 @@ impl Actor {
     }
 }
 
+/// The plugin a command belongs to: `accounts` for `accounts.login.start`.
+fn plugin_of(cmd: &str) -> &str {
+    cmd.split_once('.').map_or(cmd, |(p, _)| p)
+}
+
+/// How long a write waits for the one before it: long enough for a burst (a reconnect sends every write it held
+/// at once; in telemetry from alpha.15, 27 Nov: three account adds, cancels and removes in 56ms ran in any order), short
+/// enough that a write that waits on the user or a run (`runtime.stop` winds the run down first) never holds the
+/// next one for long, nor for ever if it waits on the next one.
+const WAIT_BEFORE_MS: u64 = 5_000;
+
+/// Writes from one client to one plugin, in the order they reached the server (the writes a page held while away are
+/// user's actions in order: the page showed each at once). Writes to other plugins, and reads, don't wait.
+#[derive(Default)]
+struct Order {
+    /// per client and plugin, the last write started: dropped (its sender) when it has answered
+    last: HashMap<String, tokio::sync::oneshot::Receiver<()>>,
+}
+
+/// What a write waits on: the write before it (none: the first).
+struct Before(Option<tokio::sync::oneshot::Receiver<()>>);
+
+impl Before {
+    async fn wait(self) {
+        if let Some(rx) = self.0 {
+            let _ = tokio::time::timeout(std::time::Duration::from_millis(WAIT_BEFORE_MS), rx).await;
+        }
+    }
+}
+
+impl Order {
+    /// The write's place: what it waits on, and what it drops when it has answered.
+    fn next(&mut self, key: String) -> (Before, tokio::sync::oneshot::Sender<()>) {
+        if self.last.len() > 256 {
+            // the ones that answered already: nothing waits on them
+            self.last.retain(|_, rx| matches!(rx.try_recv(), Err(tokio::sync::oneshot::error::TryRecvError::Empty)));
+        }
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        (Before(self.last.insert(key, rx)), tx)
+    }
+}
+
 async fn sleep(ms: Option<u64>) {
     match ms {
         Some(ms) => tokio::time::sleep(std::time::Duration::from_millis(ms)).await,
         None => std::future::pending().await,
+    }
+}
+
+#[cfg(test)]
+mod order_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use std::sync::Mutex;
+
+    /// A slow write then a fast one to the same plugin: the fast one starts after the slow one answered. Another
+    /// plugin's write doesn't wait.
+    #[tokio::test]
+    async fn writes_to_one_plugin_run_in_order_others_dont_wait() {
+        let mut o = Order::default();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let run = |(before, done): (Before, tokio::sync::oneshot::Sender<()>),
+                   name: &'static str,
+                   ms: u64,
+                   log: Arc<Mutex<Vec<&'static str>>>| {
+            tokio::spawn(async move {
+                before.wait().await;
+                tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                log.lock().unwrap().push(name);
+                drop(done);
+            })
+        };
+        let a = run(o.next("me|accounts".into()), "add", 80, log.clone());
+        let b = run(o.next("me|accounts".into()), "remove", 0, log.clone());
+        let c = run(o.next("me|runtime".into()), "other", 0, log.clone());
+        for t in [a, b, c] {
+            t.await.unwrap();
+        }
+        assert_eq!(*log.lock().unwrap(), ["other", "add", "remove"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_write_waits_on_the_one_before_it_five_seconds_at_most() {
+        let mut o = Order::default();
+        let (_b1, held) = o.next("me|runtime".into());
+        let (b2, _d2) = o.next("me|runtime".into());
+        let at = tokio::time::Instant::now();
+        b2.wait().await;
+        assert_eq!(at.elapsed().as_millis(), u128::from(WAIT_BEFORE_MS));
+        drop(held);
+    }
+
+    #[test]
+    fn a_command_belongs_to_the_plugin_before_its_first_dot() {
+        assert_eq!(plugin_of("accounts.login.start"), "accounts");
+        assert_eq!(plugin_of("ping"), "ping");
     }
 }
