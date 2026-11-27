@@ -526,3 +526,134 @@ async fn deleted_worktree_saves_to_main_repo_not_app_home() {
     let plain_root = super::config::root_of(&p, Some(&app_wisp), &plain.display().to_string()).await;
     assert_ne!(plain_root, fake_home, "must never walk up into $HOME/.wisp");
 }
+
+/// A main checkout with a bare `origin` holding its `main`, and a save's two files in `.wisp/` (not committed).
+fn saved_checkout(name: &str) -> (PathBuf, PathBuf, Vec<String>) {
+    let d = dir(name, "", true);
+    // the push's own git (commit-tree) needs a name, as a user's machine has one
+    git(&d, &["config", "user.name", "t"]);
+    git(&d, &["config", "user.email", "t@t"]);
+    let origin = std::env::temp_dir().join(format!("wisp-history-{name}-origin-{}.git", wisp_kernel::ids::uuid7()));
+    std::fs::create_dir_all(&origin).unwrap();
+    git(&origin, &["init", "-q", "--bare", "-b", "main"]);
+    git(&d, &["remote", "add", "origin", origin.to_str().unwrap()]);
+    git(&d, &["push", "-q", "origin", "main"]);
+    let files = vec![".wisp/tasks/01a1bc12ab34-fix.task.yml".to_owned(), ".wisp/tasks/01a1bc12ab34-fix.report.md".to_owned()];
+    std::fs::create_dir_all(d.join(".wisp/tasks")).unwrap();
+    for f in &files {
+        std::fs::write(d.join(f), format!("{f}\n")).unwrap();
+    }
+    (d, origin, files)
+}
+
+const PUSHED_ID: &str = "01a1bc12ab34cdef0123456789abcdef";
+
+/// final audit F4: with no PR (gh missing or failing) the save's files were taken out all the same, and nothing
+/// would bring them back: they stay, the branch is on the remote, and the answer says no PR opened.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_push_with_no_pr_keeps_the_saved_files() {
+    let (d, origin, files) = saved_checkout("push-nopr");
+    let p = wisp_proc::local();
+    let gh = d.join("no-such-gh").display().to_string();
+    let out = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    assert_eq!((out.branch.as_str(), out.pr.as_deref()), ("wisp/history-01a1bc12ab34", None), "{out:?}");
+    assert!(out.removed.is_empty(), "{out:?}");
+    assert!(files.iter().all(|f| d.join(f).is_file()), "{:?}", files_under(&d));
+    assert_eq!(out.compare, None, "a path remote has no page to open a PR on");
+    assert!(out.no_pr, "the line says no PR opened, even with no page to open one on: {out:?}");
+    let on_origin = git(&origin, &["ls-tree", "-r", "--name-only", "wisp/history-01a1bc12ab34"]);
+    assert!(files.iter().all(|f| on_origin.lines().any(|l| l == f)), "{on_origin}");
+}
+
+/// final audit F4 and F3: with a PR the files are taken out (the pull brings them back), and pushing again answers
+/// what that push did instead of "Save to repo again".
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_push_with_a_pr_takes_the_files_out_and_a_second_push_answers_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let (d, _origin, files) = saved_checkout("push-pr");
+    let gh = d.join("gh-stub");
+    std::fs::write(&gh, "#!/bin/sh\necho https://github.com/acme/app/pull/1\n").unwrap();
+    std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let gh = gh.display().to_string();
+    let p = wisp_proc::local();
+    let first = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    assert_eq!(first.pr.as_deref(), Some("https://github.com/acme/app/pull/1"), "{first:?}");
+    assert_eq!(first.removed, files);
+    assert!(files.iter().all(|f| !d.join(f).exists()), "{:?}", files_under(&d));
+    // what push() hands it from the task's slot, as the first push marked it
+    let slot = json!({ "pushed": { "branch": first.branch, "commit": first.commit, "pr": first.pr, "compare": null } });
+    let earlier = super::push::earlier(&slot, &files);
+    let again = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, earlier).await.unwrap();
+    assert_eq!((again.branch, again.commit, again.pr), (first.branch, first.commit, first.pr));
+    // never pushed: the files really are gone
+    let e = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap_err();
+    assert!(e.message.contains("Save to repo again"), "{e:?}");
+}
+
+/// final audit F2/F3c: a save after a push drops that push from the slot, so neither a reload's line nor a later push
+/// answers the old branch and PR for the newer save: once its files are gone, push says to save again.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_save_after_a_push_forgets_that_push() {
+    use std::os::unix::fs::PermissionsExt;
+    let (d, _origin, files) = saved_checkout("push-resave");
+    let gh = d.join("gh-stub");
+    std::fs::write(&gh, "#!/bin/sh\necho https://github.com/acme/app/pull/1\n").unwrap();
+    std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let gh = gh.display().to_string();
+    let p = wisp_proc::local();
+    let first = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    let pushed = json!({ "tracked": { "repo": d.display().to_string(), "files": files, "store": "files" }, "offer": false,
+        "pushed": { "branch": first.branch, "commit": first.commit, "pr": first.pr } });
+    // Save to repo again: the files come back, and the slot is marked as track() marks it
+    for f in &files {
+        std::fs::write(d.join(f), format!("{f} again\n")).unwrap();
+    }
+    let mark = json!({ "tracked": { "repo": d.display().to_string(), "files": files, "store": "files" }, "offer": false, "seenTurns": 2 });
+    let slot = super::saved_slot(&pushed, &mark);
+    assert_eq!(slot.get("pushed"), None, "{slot}");
+    assert_eq!(slot.pointer("/tracked/files").and_then(Value::as_array).map(Vec::len), Some(2));
+    let earlier = super::push::earlier(&slot, &files);
+    assert_eq!(earlier, None);
+    // the newer save's files taken by hand (or an untrack): not the old push's answer, but save again
+    for f in &files {
+        std::fs::remove_file(d.join(f)).unwrap();
+    }
+    let e = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, earlier).await.unwrap_err();
+    assert!(e.message.contains("Save to repo again"), "{e:?}");
+}
+
+#[test]
+fn the_new_pr_page_is_in_the_hosts_own_format() {
+    let page = super::push::new_pr_page;
+    assert_eq!(
+        page("https://github.com/acme/app", "main", "wisp/history-x").as_deref(),
+        Some("https://github.com/acme/app/compare/main...wisp/history-x?expand=1")
+    );
+    assert_eq!(
+        page("https://gitlab.com/acme/app", "main", "wisp/history-x").as_deref(),
+        Some(
+            "https://gitlab.com/acme/app/-/merge_requests/new?merge_request%5Bsource_branch%5D=wisp/history-x&merge_request%5Btarget_branch%5D=main"
+        )
+    );
+    assert_eq!(
+        page("https://bitbucket.org/acme/app", "main", "wisp/history-x").as_deref(),
+        Some("https://bitbucket.org/acme/app/pull-requests/new?source=wisp/history-x&dest=main")
+    );
+    assert_eq!(page("https://git.example.com/acme/app", "main", "wisp/history-x"), None, "an unknown host gets no wrong link");
+}
+
+#[test]
+fn a_remotes_web_page_never_carries_a_user() {
+    let web = super::push::web_of;
+    assert_eq!(web("git@github.com:acme/app.git").as_deref(), Some("https://github.com/acme/app"));
+    assert_eq!(web("https://x-access-token:abc@github.com/acme/app.git").as_deref(), Some("https://github.com/acme/app"));
+    assert_eq!(web("ssh://git@github.com:22/acme/app").as_deref(), Some("https://github.com/acme/app"));
+    assert_eq!(web("/tmp/origin.git"), None);
+    assert_eq!(web(r"C:\repos\origin.git"), None);
+    assert_eq!(web("C:/repos/origin.git"), None);
+    assert_eq!(super::push::earlier(&json!({}), &[]), None);
+    let on_base = super::push::earlier(&json!({ "pushed": { "branch": "", "commit": "c", "pr": null } }), &[]).unwrap();
+    assert_eq!((on_base.branch.as_str(), on_base.pr), ("", None), "already on the base: the second push answers that too");
+}

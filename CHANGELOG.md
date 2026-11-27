@@ -24,6 +24,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A key pressed the moment a task opens now works.** ⇧F, ⇧R, M and the other task and list keys arrive a beat
   after the page draws; one pressed before that did nothing. It now runs once they're in, if you're still where you
   pressed it.
+- **Re-applying a `wisp export` with `${secret:NAME}` references works again.** A reference with a long name
+  (`${secret:LINEAR_WEBHOOK_SECRET}`) was masked like a token in `wisp export` and `wisp plan --json`, so applying
+  the export was refused as "a masked value". References now print as written; a real token beside one is still masked.
+- **Push to repo keeps your saved files when no pull request opened.** Without `gh` (or when it failed), the files
+  were deleted from your checkout though nothing would bring them back. They stay now, and the line says *Branch
+  pushed to …: open the pull request*, with a button to open it.
+- **Where a push went now shows after a reload and from ⋯.** The line under the answer says where the files went
+  (with **Open PR**) after a reload, ⋯ → **Push to repo** toasts the branch and its PR, and pushing again after the
+  files went out answers the earlier push instead of "Save to repo again". Saving again after a push offers **Push**
+  again instead of the old "Pushed to …".
 - **A PR you just shipped no longer shows green before its checks start.** Read the moment it opened, GitHub listed no checks yet, so the PR row said passed in green and the Steward said "green"; the checks only showed later (or after a reload). Now the row says *Waiting for checks* in amber, wisp asks GitHub every 5 s until they show, and the Steward says green only once checks have run on the head it judged.
 
 ## [1.0.0-alpha.17] - 2026-11-27

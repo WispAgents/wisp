@@ -48,7 +48,8 @@ const later: PluginUiLater = {
         select: (p) => {
           const key = String(p.session?.()?.id ?? '') as EntityKey;
           if (!key) return;
-          void runPush((k) => p.client.run(pushCmd, { key: k }), key);
+          // the task opens on its answer, whose line follows Pushing… and which toasts where it went (a refusal toasts)
+          void runPush((k) => p.client.run(pushCmd, { key: k }), key, true);
           p.client.navigate({ t: 'openTask', id: key as never });
         },
       },

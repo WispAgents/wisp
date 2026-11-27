@@ -3,13 +3,21 @@ import { defineCommand, readonly, signal, type EntityKey } from '@wisp/client';
 // its `history.save` command id is also the lazy half's "Save to repo" key, and only lazy modules (later.ts,
 // OfferFoot) import this one: the loader comes with it, so the words are there wherever the id is
 import './i18n/lazy.ts';
+import { t } from './i18n.ts';
 
 /** What the task's `wisp.history` slot holds (wisp_history_api::EXT): offered, and what the last save wrote. */
 export interface HistoryExt {
   readonly offer?: boolean;
   readonly repo?: string;
   readonly tracked?: { readonly repo?: string; readonly files?: readonly string[]; readonly store?: string };
-  readonly pushed?: { readonly branch?: string; readonly commit?: string; readonly pr?: string | null };
+  /** the last push, of the save in `tracked` (a save drops it: what it pushed was the save before) */
+  readonly pushed?: {
+    readonly branch?: string;
+    readonly commit?: string;
+    readonly pr?: string | null;
+    readonly compare?: string | null;
+    readonly noPr?: boolean;
+  } | null;
 }
 
 /** What `history.push` answers (wisp_history_api::Pushed): the branch pushed ('' when already on the base), its PR. */
@@ -19,6 +27,10 @@ export interface Pushed {
   readonly files: readonly string[];
   readonly pr?: string;
   readonly removed?: readonly string[];
+  /** the branch went out but no PR opened: where to open one by hand (the local copies stayed) */
+  readonly compare?: string;
+  /** the branch went out but no PR opened, with or without a page to open one on (`compare`) */
+  readonly noPr?: boolean;
 }
 
 /** What `history.track` / `history.save` answer (wisp_history_api::Tracked). */
@@ -74,6 +86,53 @@ function setState(key: string, v: SaveState): void {
   states({ ...states(), [key]: v });
 }
 
+/** Where a task's push stands in this window. `tell`: pressed from the ⋯ menu, so the answer toasts where it went
+ *  (the task opens on it, maybe scrolled away from the line); `at` stamps that toast. */
+export type PushState =
+  | { readonly s: 'pushing' }
+  | {
+      readonly s: 'pushed';
+      readonly branch: string;
+      readonly pr?: string;
+      readonly compare?: string;
+      readonly noPr?: boolean;
+      readonly at?: number;
+      readonly tell?: boolean;
+    }
+  | { readonly s: 'failed' };
+
+const pushes = signal<Readonly<Record<string, PushState>>>({});
+
+/** Every task's push state in this window. */
+export const pushStates = readonly(pushes);
+
+/** The push state of a task (by its entity key). */
+export const pushStateOf = (key: string): PushState | undefined => pushes()[key];
+
+/** What the task's slot says the last push did (`pushed`), as a push state: what the line shows after a reload. */
+export function pushedOf(ext: HistoryExt): PushState | undefined {
+  const p = ext.pushed;
+  if (typeof p?.branch !== 'string') return undefined;
+  return { s: 'pushed', branch: p.branch, ...(p.pr ? { pr: p.pr } : {}), ...(p.compare ? { compare: p.compare } : {}), ...(p.noPr ? { noPr: true } : {}) };
+}
+
+/** What the line says once pushed: the branch and its PR, a branch with no PR yet (open it by hand), or that the
+ *  remote had it already. */
+export function pushedText(p: PushState | undefined): string {
+  if (p?.s !== 'pushed') return '';
+  if (!p.branch) return t('history.pushed.none');
+  if (p.pr) return t('history.pushed.pr', { branch: p.branch });
+  // no PR opened: said even when the remote has no page to open one on (no button then)
+  return p.compare || p.noPr ? t('history.pushed.noPr', { branch: p.branch }) : t('history.pushed', { branch: p.branch });
+}
+
+/** The link the pushed line (and the ⋯ menu's toast) opens: the PR, else the page to open one on. */
+export function pushedLink(p: PushState | undefined): { readonly label: string; readonly url: string } | undefined {
+  if (p?.s !== 'pushed') return undefined;
+  if (p.pr) return { label: t('history.openPr'), url: p.pr };
+  return p.compare ? { label: t('history.newPr'), url: p.compare } : undefined;
+}
+
 /** Save to repo from the task's ⋯ menu (any task; again rewrites its files in place). */
 export const trackCmd = defineCommand<{ key: EntityKey }, Tracked>({
   id: 'history.track',
@@ -90,6 +149,12 @@ export async function runSave(run: (key: EntityKey) => Promise<Tracked>, key: En
   try {
     const t = await run(key);
     setState(key, { s: 'saved', files: t.files.length, repo: t.repo, scrubbed: t.scrubbed, at: Date.now() });
+    // what was pushed is the save before this one: the line offers Push again, not the old branch and its PR
+    if (pushes()[key]) {
+      const next: Record<string, PushState> = { ...pushes() };
+      delete next[key];
+      pushes(next);
+    }
     return t;
   } catch {
     setState(key, { s: 'failed' });
@@ -97,17 +162,24 @@ export async function runSave(run: (key: EntityKey) => Promise<Tracked>, key: En
   }
 }
 
-/** What the answer shows: the offer (Save to repo), Saving…, Saved, or nothing. */
+/** What the answer shows: the offer (Save to repo), Saving…, Saved, a save from before this window that was pushed
+ *  or is being pushed (`kept`, with what the slot says that push did), or nothing. */
 export type OfferView =
   | { readonly v: 'offer' }
   | { readonly v: 'saving' }
   | { readonly v: 'saved'; readonly files: number; readonly scrubbed: number; readonly at: number }
+  | { readonly v: 'kept'; readonly files: number; readonly pushed?: PushState }
   | { readonly v: 'none' };
 
-/** The line under the last answer, from the task's slot and this window's save. */
-export function offerView(ext: HistoryExt, state: SaveState | undefined): OfferView {
+/** The line under the last answer, from the task's slot, this window's save and its push. A save in this window wins:
+ *  the slot's push is of an earlier one. */
+export function offerView(ext: HistoryExt, state: SaveState | undefined, push?: PushState): OfferView {
   if (state?.s === 'saving') return { v: 'saving' };
   if (state?.s === 'saved') return { v: 'saved', files: state.files, scrubbed: state.scrubbed, at: state.at };
+  const files = ext.tracked?.files?.length ?? 0;
+  const pushed = pushedOf(ext);
+  // after a reload, or pushed from the ⋯ menu: the line says where it went (it said nothing before)
+  if (files > 0 && (pushed || push)) return { v: 'kept', files, ...(pushed ? { pushed } : {}) };
   return ext.offer === true ? { v: 'offer' } : { v: 'none' };
 }
 
@@ -153,27 +225,22 @@ export const pushCmd = defineCommand<{ key: EntityKey }, Pushed>({
   pending: 'Pushing… on the saved line under the answer',
 });
 
-/** Where a task's push stands in this window. */
-export type PushState =
-  | { readonly s: 'pushing' }
-  | { readonly s: 'pushed'; readonly branch: string; readonly pr?: string }
-  | { readonly s: 'failed' };
-
-const pushes = signal<Readonly<Record<string, PushState>>>({});
-
-/** Every task's push state in this window. */
-export const pushStates = readonly(pushes);
-
-/** The push state of a task (by its entity key). */
-export const pushStateOf = (key: string): PushState | undefined => pushes()[key];
-
-/** Runs a push and keeps its state; a second press while one runs does nothing. A refusal leaves the button. */
-export async function runPush(run: (key: EntityKey) => Promise<Pushed>, key: EntityKey): Promise<Pushed | undefined> {
+/** Runs a push and keeps its state; a second press while one runs does nothing. A refusal leaves the button (and the
+ *  shell's toast says why). `tell`: the answer toasts where it went (the ⋯ menu's push). */
+export async function runPush(run: (key: EntityKey) => Promise<Pushed>, key: EntityKey, tell = false): Promise<Pushed | undefined> {
   if (pushStateOf(key)?.s === 'pushing') return undefined;
   pushes({ ...pushes(), [key]: { s: 'pushing' } });
   try {
     const p = await run(key);
-    pushes({ ...pushes(), [key]: { s: 'pushed', branch: p.branch, ...(p.pr ? { pr: p.pr } : {}) } });
+    const done: PushState = {
+      s: 'pushed',
+      branch: p.branch,
+      ...(p.pr ? { pr: p.pr } : {}),
+      ...(p.compare ? { compare: p.compare } : {}),
+      ...(p.noPr ? { noPr: true } : {}),
+      ...(tell ? { tell, at: Date.now() } : {}),
+    };
+    pushes({ ...pushes(), [key]: done });
     return p;
   } catch {
     pushes({ ...pushes(), [key]: { s: 'failed' } });

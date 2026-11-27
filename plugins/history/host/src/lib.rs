@@ -158,8 +158,18 @@ async fn track(ctx: &Ctx, call: &Call, a: &api::TrackArgs) -> Result<Tracked> {
     // over what the slot holds now (never a stale copy), with the turns it saved as seen: the change this write
     // makes (or a done event read before it) must not offer what's already saved
     let mark = json!({ "tracked": { "repo": out.repo, "files": out.files, "store": out.store }, "offer": false, "seenTurns": turns });
-    calls::warn("marking the task (setExt)", calls::update_ext(ctx, call, &id, |slot| Some(calls::merged(slot, &mark))).await);
+    calls::warn("marking the task (setExt)", calls::update_ext(ctx, call, &id, |slot| Some(saved_slot(slot, &mark))).await);
     Ok(out)
+}
+
+/// The slot once a save lands: `mark` over it, and the last push dropped. That push was of the save before, so
+/// neither the line under the answer (after a reload) nor a later push may answer it for this one.
+pub(crate) fn saved_slot(slot: &Value, mark: &Value) -> Value {
+    let mut v = calls::merged(slot, mark);
+    if let Some(o) = v.as_object_mut() {
+        o.remove("pushed");
+    }
+    v
 }
 
 /// The harness's own session log of a task (Claude Code's `.jsonl`), compressed, so `wisp open` on another

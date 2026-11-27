@@ -67,9 +67,28 @@ pub fn scan_secrets(text: &str) -> Vec<Hit> {
     out
 }
 
+/// The byte spans of each `${secret:NAME}` and `${env:NAME}` reference in `text`, braces included. A reference names
+/// where a secret comes from and is never one itself, though `secret:LINEAR_WEBHOOK_SECRET` reads as `secret: <a long
+/// value>` to the generic pattern: masked, an export's own references came back as refused "masked values".
+fn reference_spans(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut out = Vec::new();
+    for open in ["${secret:", "${env:"] {
+        let mut from = 0;
+        while let Some(at) = text[from..].find(open) {
+            let start = from + at;
+            let Some(end) = text[start..].find('}') else { break };
+            out.push(start..start + end + 1);
+            from = start + end + 1;
+        }
+    }
+    out
+}
+
 /// Where each secret in `text` is (byte ranges, in order, not overlapping) and what it looks like: the token itself, or
-/// for "a secret value" its value alone (`api_key: <this>`), so a mask keeps what names it.
+/// for "a secret value" its value alone (`api_key: <this>`), so a mask keeps what names it. Nothing inside a
+/// `${secret:NAME}` or `${env:NAME}` reference counts.
 pub fn find_secrets(text: &str) -> Vec<(&'static str, std::ops::Range<usize>)> {
+    let refs = reference_spans(text);
     let mut out: Vec<(&'static str, std::ops::Range<usize>)> = Vec::new();
     for (what, re) in COMPILED.iter() {
         let found: Vec<std::ops::Range<usize>> = if *what == "a secret value" {
@@ -82,7 +101,8 @@ pub fn find_secrets(text: &str) -> Vec<(&'static str, std::ops::Range<usize>)> {
             re.find_iter(text).map(|m| m.range()).collect()
         };
         for r in found {
-            if !out.iter().any(|(_, o)| o.start < r.end && r.start < o.end) {
+            let overlaps = |o: &std::ops::Range<usize>| o.start < r.end && r.start < o.end;
+            if !out.iter().any(|(_, o)| overlaps(o)) && !refs.iter().any(overlaps) {
                 out.push((what, r));
             }
         }
@@ -119,5 +139,19 @@ mod tests {
         assert_eq!(mask_secrets("api_key: abcdefghijklmnopqrst"), "api_key: abcd…(masked)");
         assert_eq!(mask_secrets("Bearer ${secret:GH_TOKEN}"), "Bearer ${secret:GH_TOKEN}");
         assert_eq!(mask_secrets("api_key: your_key_goes_here_please"), "api_key: your_key_goes_here_please", "a placeholder");
+    }
+
+    /// `secret:ANTHROPIC_API_KEY` is `secret: <16+ chars>` to the generic pattern: an export masked its own references,
+    /// and re-applying it was refused as a masked value.
+    #[test]
+    fn a_reference_is_never_a_secret() {
+        assert_eq!(find_secrets("${secret:ANTHROPIC_API_KEY}"), vec![]);
+        assert_eq!(find_secrets("${env:LINEAR_WEBHOOK_SECRET}"), vec![]);
+        assert_eq!(find_secrets("x ${secret:LINEAR_WEBHOOK_SECRET} y ${env:GITHUB_TOKEN_FOR_CI_RUNS}"), vec![]);
+        let token = format!("ghp_{}", "a".repeat(36));
+        let text = format!("${{secret:ANTHROPIC_API_KEY}} token={token}");
+        let found = find_secrets(&text);
+        assert_eq!(found.len(), 1);
+        assert_eq!(&text[found[0].1.clone()], token);
     }
 }
