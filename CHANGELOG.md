@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A shipped task that needs you is back in Needs you.** One whose PR has a failing check, conflicts with its base,
+  has changes requested, or whose report you haven't read, no longer waits quietly in Shipping: it sits in Needs
+  you and counts in the tab title, Home and the project chips. A compare task whose shipped run is quiet now moves
+  to Shipping too, and the sidebar has its own Shipping section, so its counts match its chips.
+- **A failed task counts in Home's Needs you**, the project chips and the project switcher, as it already did in
+  the list.
+- **Mark done, archive and leaving an unread task open the next task that really needs you**, never one in
+  Shipping, saved for later or scheduled.
 - **A key pressed the moment a task opens now works.** ⇧F, ⇧R, M and the other task and list keys arrive a beat
   after the page draws; one pressed before that did nothing. It now runs once they're in, if you're still where you
   pressed it.

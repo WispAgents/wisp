@@ -3,7 +3,7 @@
 // are rows of their own (plans.ts). Compare runs (one launch on several harnesses, one groupId) are
 // one task while two or more sit on the same side of archived.
 
-import { parsePick } from '@wisp/shell/pure';
+import { parsePick, shipNeedsYou } from '@wisp/shell/pure';
 import type { EntityKey, Plan, Row, Session, SessionRow } from '../types.ts';
 
 export type SectionId = 'pinned' | 'needs' | 'shipping' | 'working' | 'scheduled' | 'drafts' | 'forLater' | 'done' | 'archived';
@@ -65,13 +65,21 @@ export function isScheduled(s: SessionRow): boolean {
   return s.state === 'review' && !s.reminder && !s.held && !s.pending && !(s.tui && s.term) && !!s.later?.some((l) => !l.remind);
 }
 
-/** Asking you, failed, or a report you haven't read: the tab title, the dots, the project counts. */
-export const needsYou = (s: SessionRow): boolean => !isForLater(s) && !s.archived && !isScheduled(s) && (s.state === 'waiting' || s.state === 'error' || (s.state === 'review' && !!s.unread));
-
 /** Shipped: wisp.ship is committing, pushing or opening its PR, or the PR it opened is still open (on its way to land).
  *  A task that runs, asks or failed sits where that says; one marked done is done. */
-export const isShipping = (s: SessionRow): boolean =>
-  s.state === 'review' && (!!s.shipping || s.pr?.state === 'OPEN');
+const shipped = (s: SessionRow): boolean => s.state === 'review' && (!!s.shipping || s.pr?.state === 'OPEN');
+
+/** Shipped, and its PR wants you (a failing check, a conflict, changes requested) or its report is unread: back in
+ *  Needs you. The shell's rule (`shipNeedsYou`, rows-view.ts), so Home and the chips agree. */
+const shipAttention = (s: SessionRow): boolean => shipped(s) && shipNeedsYou(s.pr, !!s.unread);
+
+/** Asking you, failed, a report you haven't read, or a shipped PR that wants you: the tab title, the dots, the
+ *  project counts. */
+export const needsYou = (s: SessionRow): boolean =>
+  !isForLater(s) && !s.archived && !isScheduled(s) && (s.state === 'waiting' || s.state === 'error' || (s.state === 'review' && (!!s.unread || shipAttention(s))));
+
+/** In Shipping: shipped and quiet, until its PR lands. One that needs you (shipAttention) sits in Needs you. */
+export const isShipping = (s: SessionRow): boolean => shipped(s) && !shipAttention(s);
 
 /** When a scheduled task's next thing happens: its follow-up, or its held run's reset. */
 export const nextAt = (s: SessionRow): number => Math.min(s.later?.[0]?.at ?? Infinity, s.held?.waiting ? (s.held.until ?? Infinity) : Infinity);
@@ -151,7 +159,9 @@ export function sections(all: readonly Keyed[], f: Filter = ALL, plans: readonly
   const scheduled = (e: Entry): boolean => e.kind === 'task' && isScheduled(e.s);
   const term = (e: Entry): boolean => e.kind === 'task' && inTerm(e.s);
   // Needs you: asking first, then the latest (including error tasks so they never vanish from every section)
-  const shipped = (e: Entry): boolean => e.kind === 'task' && isShipping(e.s);
+  // a compare task is shipped once a run ships and no run works or needs you (the same rule as one task's)
+  const shipped = (e: Entry): boolean =>
+    e.kind === 'task' ? isShipping(e.s) : e.kind === 'group' && e.state === 'review' && anyRun(e, isShipping) && !anyRun(e, needsYou);
   const needs = live
     .filter((e) => (stateOf(e) === 'review' || stateOf(e) === 'waiting' || stateOf(e) === 'error') && !term(e) && !scheduled(e) && !shipped(e))
     .sort((a, b) => Number(stateOf(b) === 'waiting') - Number(stateOf(a) === 'waiting') || updatedOf(b) - updatedOf(a));

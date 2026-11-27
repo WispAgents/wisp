@@ -90,6 +90,7 @@ export const SHELL_STRINGS = {
   'shell.toast.open': 'Open',
 
   'shell.section.needs': 'Needs you',
+  'shell.section.shipping': 'Shipping',
   'shell.section.working': 'Working',
   'shell.section.done': 'Done',
   'shell.status.working': 'Working',
