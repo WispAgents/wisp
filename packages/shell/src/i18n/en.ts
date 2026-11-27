@@ -244,6 +244,7 @@ export const SHELL_STRINGS = {
   'shell.account.settings': 'Settings',
   'shell.account.machines': 'Machines',
   'shell.account.automations': 'Automations',
+  'shell.account.usage': 'Usage',
   'shell.me.grid': 'wisp Grid',
   'shell.me.out': 'Not connected · Sign in',
   'shell.me.title': '{who} · Machines, Automations and Settings',
