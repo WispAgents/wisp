@@ -288,6 +288,12 @@ export function createShell(o: ShellOptions): Shell {
       for (const retry of [...failedLaters]) retry();
       return laterLoads.size ? Promise.all([...laterLoads]).then(() => undefined) : undefined;
     },
+    laterPending: () => {
+      // nothing started early and nothing failed tried again: what's already on its way, or waiting for the first screen
+      if (laterLoads.size) return Promise.all([...laterLoads]).then(() => undefined);
+      if (rendered || !laters.length) return undefined;
+      return new Promise<void>((resolve) => onLaters.push(resolve));
+    },
     sideTabs: () => sideTabs,
     previewAddresses: () => previewAddresses,
     accountLinks: () => accountLinks,
@@ -303,7 +309,11 @@ export function createShell(o: ShellOptions): Shell {
   const startLaters = (): void => {
     rendered = true;
     for (const load of laters.splice(0)) load();
+    const all = Promise.all([...laterLoads]).then(() => undefined);
+    for (const resolve of onLaters.splice(0)) resolve(all);
   };
+  /** laterPending()'s waits from before the first screen: they settle once the later parts it started have */
+  const onLaters: ((p: Promise<void>) => void)[] = [];
   /** the app's own deferred work, waiting with the later parts */
   const afterFirst: (() => void)[] = [];
   /** everything that waits for the first screen (ADR-0105), once: the later parts, the app's, the kit's */

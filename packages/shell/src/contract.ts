@@ -683,6 +683,9 @@ export interface ShellContext {
    *  again): a promise that settles when they have, or undefined when none is. A prompt box's send waits on it, so
    *  `/goal`, `@member` or `tomorrow 9am` sent as the page loads still reaches its prompt source. */
   laterReady?(): Promise<void> | undefined;
+  /** added 2026-11-27 (additive): the later parts already on their way, or waiting for the first screen, without
+   *  starting deferred work early or trying a failed one again (laterReady does both); undefined when none is */
+  laterPending?(): Promise<void> | undefined;
   /** added 2026-11-12 (additive): every plugin's tabs beside a task, each with its plugin's client */
   sideTabs?(): () => readonly (SideTabDef & { readonly plugin: string; readonly client: PluginClient })[];
   /** added 2026-11-14 (additive, ADR-0064): every plugin's preview addresses, each with its plugin's client */

@@ -5,20 +5,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Added
-
-- **Push a saved task from Save to repo.** Once saved, the line under its answer has **Push** (and ⋯ has **Push to
-  repo**), so its `.wisp/` files don't stay on your computer. While the task's work isn't shipped they're committed on
-  its branch and pushed (its PR gets them). Once its work is merged, they go out as a pull request from
-  `wisp/history-<id>`, built on the remote's main without touching your checkout, branch or staged files; the local
-  copies are taken out so your next `git pull` doesn't stop on "untracked files would be overwritten", and they come
-  back with it. The line then says where they went, with **Open PR**. Agents can do the same with the `history_push`
-  tool.
-
-### Changed
-
-- **The task list has a Shipping section**, under Needs you and before Working. A task you clicked Ship on moves there while wisp commits, pushes and opens its PR, and stays while that PR is open. Once the PR merges or closes it comes back to Needs you. If the task runs again (a fix for its checks), asks you something or is marked done, it shows in that section instead. Home's Needs you leaves these tasks out too.
-
 ### Fixed
 
 - **A key pressed the moment a task opens now works.** ⇧F, ⇧R, M and the other task and list keys arrive a beat
@@ -34,11 +20,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (with **Open PR**) after a reload, ⋯ → **Push to repo** toasts the branch and its PR, and pushing again after the
   files went out answers the earlier push instead of "Save to repo again". Saving again after a push offers **Push**
   again instead of the old "Pushed to …".
-- **A PR you just shipped no longer shows green before its checks start.** Read the moment it opened, GitHub listed no checks yet, so the PR row said passed in green and the Steward said "green"; the checks only showed later (or after a reload). Now the row says *Waiting for checks* in amber, wisp asks GitHub every 5 s until they show, and the Steward says green only once checks have run on the head it judged.
-
 ## [1.0.0-alpha.17] - 2026-11-27
 
 ### Changed
+
+- **The task list has a Shipping section**, under Needs you and before Working. A task you clicked Ship on moves there while wisp commits, pushes and opens its PR, and stays while that PR is open. Once the PR merges or closes it comes back to Needs you. If the task runs again (a fix for its checks), asks you something or is marked done, it shows in that section instead. Home's Needs you leaves these tasks out too.
 
 - **trywisp.dev on a phone offers what a phone can do.** In place of `npx wisp-agents` and the desktop download, the hero and the closing section offer **Send it to my computer** (the share sheet, or the link copied where there's none) and **Try it in the cloud** (Wisp Agents Cloud). On a computer nothing changes. Six in ten readers came on a phone, where neither command nor download works.
 - **The site counts its install funnel.** Each event says whether it came from a phone or a computer, and copies and downloads say where on the page they were. New: sending the page to a computer, opening the docs or the cloud from the hero, the sections a reader reached, and joining the phone app waitlist (without the address). docs/privacy.md says so.
@@ -51,6 +37,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **New headline: "Your coding agents, as code."** It replaces "Manage the code your agents write" on the site, the docs, the README, the npm package, llms.txt and the link preview card, with "Declare them. Run them anywhere. Track every line they write." under it.
 
 ### Fixed
+
+- **A PR you just shipped no longer shows green before its checks start.** Read the moment it opened, GitHub listed no checks yet, so the PR row said passed in green and the Steward said "green"; the checks only showed later (or after a reload). Now the row says *Waiting for checks* in amber, wisp asks GitHub every 5 s until they show, and the Steward says green only once checks have run on the head it judged.
 
 - **`--prune` removes only what this formula applied.** Each apply now records where it came from (the `.wisp/` folder and its workspace, or the set of `-f` files), and `wisp apply --prune` deletes a resource only if this same source applied it before. It used to delete every agent, task or trigger of the kinds the formula names that it didn't declare, so another repo's, another file's or one made in the app went too. The plan lists the ones it keeps (`agent/helper (not from this formula: kept)`); `--prune-all` keeps the old behaviour and says so. Without `--prune`, the plan says what this formula applied before and no longer declares (`2 no longer declared here: --prune removes them`). Resources applied before this version have no recorded source: the next apply that declares one (changed or not) records this formula as its source, so `--prune` removes it once the formula drops it; one no apply declares since is never pruned by `--prune`, so remove those with `--prune-all`.
 - **A token written into a formula is caught before it's stored.** `wisp validate`, `wisp plan` and the app's Import check every string of every spec for tokens and keys (GitHub, OpenAI, Anthropic, AWS, Slack, a private key, …) and name each one with its fix: `connectors.gh.headers.Authorization looks like a GitHub token: wisp secret set GH_TOKEN and write ${secret:GH_TOKEN}`. Apply refuses until it's fixed. `${env:NAME}` in a connector's `headers` or `env` is no longer filled in on your machine (its value went into wisp's store and every export): it's a problem with the same `${secret:NAME}` fix. `wisp export` and `wisp plan --json` mask anything that still looks like a token (`ghp_…(masked)`), and a plan refuses a masked value written back (`connectors.gh.headers.Authorization is a masked value from wisp export: wisp secret set GH_TOKEN and write ${secret:GH_TOKEN}`), so applying an export never overwrites a stored token with the mask.
@@ -119,6 +107,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Antigravity's models pick like every other harness's.** The picker used to list one row per model and thinking level (`Gemini 4 Neon (Low)`, `(Medium)`, `(High)`, `(XHigh)`). Now each model is one row ("Gemini 4 Neon"), and its thinking-level selector shows only the levels agy has for that model. A model saved as `…-xhigh` no longer fails with "conflicts with --effort".
 
 ### Added
+
+- **Push a saved task from Save to repo.** Once saved, the line under its answer has **Push** (and ⋯ has **Push to
+  repo**), so its `.wisp/` files don't stay on your computer. While the task's work isn't shipped they're committed on
+  its branch and pushed (its PR gets them). Once its work is merged, they go out as a pull request from
+  `wisp/history-<id>`, built on the remote's main without touching your checkout, branch or staged files; the local
+  copies are taken out so your next `git pull` doesn't stop on "untracked files would be overwritten", and they come
+  back with it. The line then says where they went, with **Open PR**. Agents can do the same with the `history_push`
+  tool.
 
 - **Find in task**: press ⌘F (Ctrl+F) on a task, or pick **Find in task** in its menu on a phone. wisp searches every step of the task: labels, commands, outputs, and the agent's messages, including steps inside folded groups and closed steps. It also searches older turns that haven't loaded yet, which the server searches for you. **Enter** and **Shift+Enter** (or the arrows) go to the next and previous match, which opens its turn, group and step and highlights the words. A hidden .env value is never matched unless you revealed it.
 - **Copy a step's output**: an opened step has a Copy button in its corner. It copies what the step shows: a .env file's masked text, or the value once you revealed it.
