@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Merge risk.** Turn on Settings → General → Merge risk, and another harness than the one that wrote a task reads each of its open pull requests (the ones Ship it opened and the ones its agent attached) and says how risky merging is: low, medium or high, a score and why. The PR card gets a Merge risk row under the Steward with the riskiest PR's verdict, each PR's chip says its own, the PR panel lists the reasons with Judge again, and Merge turns red for a PR judged high. A push judges that PR again. Off by default (ADR-0142).
 - **A Steward row on the PR card.** Every open PR of a task's branch, whether Ship it opened it or the agent attached it with `wisp_pr`, has a Steward row under it: its status ("Watching checks and reviews", "Fixing failing checks (2/6)", "Green"), or what it would do when off, and a switch. On, the task fixes failing checks, merge conflicts and new review comments, and wisp pushes; off stops it in one click. The switch's tooltip says what it does. It replaces the Keep green / Stop Steward button that hid in More.
 - **A new loader: Liquid.** Everything that loads now shows the same mark: three drops that orbit, merge and split
   like mercury. It replaces the dot grid on a working task, the ring on a busy button, and the pulsing dots and spinning icons elsewhere. It turns amber while a task waits on you and
