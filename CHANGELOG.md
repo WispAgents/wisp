@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Usage in the profile menu.** The menu under your profile now has Usage, just above Settings: it opens
+  Settings on its Usage pane.
 - **A crew member works in several folders, and carries on with fallbacks at a usage limit.** Beside their own folder
   (where each job starts), a member can have up to 10 more that every job of theirs may read and change: **More
   folders** on the member editor's bar, `--dirs` on `wisp crew create|update`, `dirs` in `wisp_crew_add`/`_edit`

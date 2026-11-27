@@ -149,6 +149,8 @@ export function useAccount() {
     { kind: 'separator' },
     { value: 'machines', label: shell.t('shell.account.machines'), icon: 'server' },
     { value: 'automations', label: shell.t('shell.account.automations'), icon: 'bolt' },
+    // quick access to Usage (owner, 2026-11-27): Settings opened on its Usage pane
+    { value: 'usage', label: shell.t('shell.account.usage'), icon: 'stats' },
     { value: 'settings', label: shell.t('shell.account.settings'), icon: 'settings', part: 'topbar.settings' },
     { kind: 'separator' },
     { value: 'theme', label: shell.t(theme() === 'dark' ? 'shell.cmd.theme.light' : 'shell.cmd.theme.dark'), icon: theme() === 'dark' ? 'sun' : 'moon' },
@@ -165,7 +167,7 @@ export function useAccount() {
     // v1 #machinesBtn → openMachines: the Machines dialog (wisp.machines' overlay view); This computer is in Settings
     else if (v === 'machines') shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'machines.dialog' as never, params: {} as Json } });
     // Settings on a phone opens on its list, as v1's did; a wider window shows General beside the list
-    else sheet(v === 'automations' ? 'automations' : nav().layout === 'stack' ? undefined : 'general');
+    else sheet(v === 'automations' || v === 'usage' ? v : nav().layout === 'stack' ? undefined : 'general');
   };
   return { me, items, label, onSelect };
 }
