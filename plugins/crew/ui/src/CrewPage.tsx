@@ -1,8 +1,8 @@
-// A crew member's page (v1 crew.js buildView): the area `shell.screen:crew` fills when a face on the rail is
-// picked. The head (face, name, role, what it's doing, Pause or Resume, More, Close), the thread of its jobs
-// (oldest first, quiet check-ins folded), what it is and how it works beside it (or folded above on a narrow
-// pane), and the box that gives it a job. Every write shows at once (crew.update, crew.assign) and rolls back
-// with the shell's toast when refused.
+// A crew member's page (ADR-0142): the area `shell.screen:crew` fills when a face on the rail is picked. The
+// hero (face, name, role, chips for what it's doing and how it runs, its numbers), tabs (Activity: the thread of its
+// jobs, oldest first, quiet check-ins folded; Kit; Notebook; How they work), and the box that gives it a job, with
+// your earlier prompts above it. Every write shows at once (crew.update, crew.assign) and rolls back with the shell's
+// toast when refused.
 import { createMemo, createSignal, For, lazy, Show, type JSX } from 'solid-js';
 import { uuidv7 } from '@wisp/client';
 import { useShell, type ExtensionProps } from '@wisp/shell';
@@ -16,6 +16,8 @@ import {
   CrewSideActions,
   CrewText,
   CrewView,
+  faceColor,
+  type CrewChip,
   Dialog,
   EmptyState,
   englishT,
@@ -29,8 +31,8 @@ import {
 import { assignJob, checkIn, removeMember, updateMember, type MemberPatch } from './commands.ts';
 import { crewData, emptyState } from './data.ts';
 import { t } from './i18n.ts';
-import { cadenceLabel, JOB_ICON, originLabel, statusLine } from './model.ts';
-import { facts, pillOf, quietLabel, thread } from './page.ts';
+import { cadenceLabel, cadenceText, JOB_ICON, originLabel, statusLine } from './model.ts';
+import { againPrompts, facts, folderChip, heroStats, pillOf, quietLabel, thread } from './page.ts';
 import type { SessionRow } from './types.ts';
 import { VIEW } from './views.ts';
 import { KitSection, OffersSection } from './more/index.ts';
@@ -82,7 +84,7 @@ function CrewPage(props: ExtensionProps): JSX.Element {
     <Show when={member()} fallback={<EmptyState icon="crew" title={t('wisp.crew.page.missing')} compact />}>
       {(m) => {
         const st = (): ReturnType<typeof emptyState> => states().get(m().id) ?? emptyState(m().paused);
-        const face = (size: 'sm' | 'md' | 'xl', mood?: 'idle' | 'live' | 'asks' | 'sleep'): JSX.Element => (
+        const face = (size: 'sm' | 'md' | 'hero', mood?: 'idle' | 'live' | 'asks' | 'sleep'): JSX.Element => (
           <Face avatar={m().avatar} name={m().name} color={m().color} size={size} mood={mood ?? st().mood} dim={m().paused} />
         );
         const line = () => statusLine(m(), st(), { t: say as never, now: now(), when: ago });
@@ -126,9 +128,25 @@ function CrewPage(props: ExtensionProps): JSX.Element {
             </span>
           </>
         );
+        // a job you gave it before, back in the box to send or change (focus follows, so Enter sends it)
+        let box: HTMLTextAreaElement | undefined;
+        const again = (prompt: string): void => {
+          setDraft(prompt);
+          box?.focus();
+        };
+        // what it's doing, then how it runs (each opens the editor)
+        const chips = (): CrewChip[] => {
+          const h = harness(m().agent);
+          const tune = { title: t('wisp.crew.page.chip.edit', { name: m().name }), onClick: editMember };
+          return [
+            { text: line().text, tone: m().paused && !line().tone ? 'paused' : line().tone, icon: m().paused ? 'pause' : line().tone === 'report' ? 'read' : 'clock' },
+            { text: h.name, logo: h.logo, icon: 'agent', ...tune },
+            ...(line().tone ? [{ text: cadenceText(m(), say as never), icon: 'clock' as const, ...tune }] : []),
+            { text: folderChip(m(), { t: say as never, place: (id) => id }), icon: 'folder', ...tune },
+          ];
+        };
         const empty = (): JSX.Element => (
           <CrewEmpty
-            face={face('xl', 'idle')}
             name={m().name}
             first={t('wisp.crew.page.empty.first')}
             second={[
@@ -141,10 +159,15 @@ function CrewPage(props: ExtensionProps): JSX.Element {
         return (
           <>
             <CrewView
-              face={face('md')}
+              face={face('hero')}
+              color={faceColor(m().avatar, m().name, m().color)}
               name={m().name}
               role={m().role || undefined}
-              state={{ text: line().text, tone: line().tone }}
+              chips={chips()}
+              stats={heroStats(m(), st().jobs, { t: say as never, now: now() })}
+              activity={t('wisp.crew.page.tab.activity')}
+              tabsLabel={t('wisp.crew.page.tabs', { name: m().name })}
+              suggestions={againPrompts(st().jobs).map((p) => ({ label: p, onClick: () => again(p) }))}
               back={nav().layout === 'stack' ? { label: t('wisp.crew.page.back'), onClick: close } : undefined}
               actions={
                 <>
@@ -216,38 +239,50 @@ function CrewPage(props: ExtensionProps): JSX.Element {
                 </Show>
               }
               earlier={items().earlier ? { label: t('wisp.crew.page.earlier', { n: items().earlier }), onClick: () => setShow(show() + SHOW) } : undefined}
-              // the header already says what they're doing ("On call"): the About row names their role instead (TRY-12)
-              about={{ label: t('wisp.crew.page.about', { name: m().name }), ...(m().role.trim() && { hint: m().role.trim() }) }}
-              side={
-                <>
-                  <CrewFacts items={facts(m(), { t: say as never, harness, place: (id) => id, onTeam: () => c.navigate({ t: 'openView', id: VIEW.org as never, params: null }) })} />
-                  <CrewSideActions
-                    items={[
-                      { icon: 'clock', label: t('wisp.crew.page.checkin'), act: { onClick: checkin } },
-                      { icon: 'pen', label: t('wisp.crew.page.editMember'), act: { onClick: editMember } },
-                      { icon: 'trash', label: t('wisp.crew.page.remove'), danger: true, act: { onClick: () => setRemoving(true) } },
-                    ]}
-                  />
-                  <CrewSection
-                    part="crew.notebook"
-                    title={t('wisp.crew.page.notebook')}
-                    link={editing() === 'notebook' ? undefined : { label: t('wisp.crew.page.edit'), onClick: () => edit('notebook') }}
-                  >
-                    <Show
-                      when={editing() === 'notebook'}
-                      fallback={<CrewText text={m().notebook || t('wisp.crew.page.notebook.empty')} empty={!m().notebook} dashed={!m().notebook} onClick={() => edit('notebook')} />}
+              tabs={[
+                { value: 'kit', label: t('wisp.crew.page.tab.kit'), count: m().kit?.length ?? 0, part: 'crew.kit.tab', content: () => <KitSection client={c} member={m} /> },
+                {
+                  value: 'notebook',
+                  label: t('wisp.crew.page.notebook'),
+                  part: 'crew.notebook.tab',
+                  content: () => (
+                    <CrewSection
+                      part="crew.notebook"
+                      title={t('wisp.crew.page.notebook')}
+                      link={editing() === 'notebook' ? undefined : { label: t('wisp.crew.page.edit'), onClick: () => edit('notebook') }}
                     >
-                      {editor()}
-                    </Show>
-                  </CrewSection>
-                  <CrewSection part="crew.brief" title={t('wisp.crew.page.brief')} link={editing() === 'brief' ? undefined : { label: t('wisp.crew.page.edit'), onClick: () => edit('brief') }}>
-                    <Show when={editing() === 'brief'} fallback={<CrewText text={m().brief || t('wisp.crew.page.brief.empty')} empty={!m().brief} />}>
-                      {editor()}
-                    </Show>
-                  </CrewSection>
-                  <KitSection client={c} member={m} />
-                </>
-              }
+                      <Show
+                        when={editing() === 'notebook'}
+                        fallback={<CrewText text={m().notebook || t('wisp.crew.page.notebook.empty')} empty={!m().notebook} dashed={!m().notebook} onClick={() => edit('notebook')} />}
+                      >
+                        {editor()}
+                      </Show>
+                    </CrewSection>
+                  ),
+                },
+                {
+                  value: 'how',
+                  label: t('wisp.crew.page.tab.how'),
+                  part: 'crew.details crew.side',
+                  content: () => (
+                    <>
+                      <CrewFacts items={facts(m(), { t: say as never, harness, place: (id) => id, onTeam: () => c.navigate({ t: 'openView', id: VIEW.org as never, params: null }) })} />
+                      <CrewSideActions
+                        items={[
+                          { icon: 'clock', label: t('wisp.crew.page.checkin'), act: { onClick: checkin } },
+                          { icon: 'pen', label: t('wisp.crew.page.editMember'), act: { onClick: editMember } },
+                          { icon: 'trash', label: t('wisp.crew.page.remove'), danger: true, act: { onClick: () => setRemoving(true) } },
+                        ]}
+                      />
+                      <CrewSection part="crew.brief" title={t('wisp.crew.page.brief')} link={editing() === 'brief' ? undefined : { label: t('wisp.crew.page.edit'), onClick: () => edit('brief') }}>
+                        <Show when={editing() === 'brief'} fallback={<CrewText text={m().brief || t('wisp.crew.page.brief.empty')} empty={!m().brief} />}>
+                          {editor()}
+                        </Show>
+                      </CrewSection>
+                    </>
+                  ),
+                },
+              ]}
               dock={{
                 placeholder: t('wisp.crew.page.placeholder', { name: m().name }),
                 value: draft(),
@@ -255,6 +290,7 @@ function CrewPage(props: ExtensionProps): JSX.Element {
                 onSend: send,
                 send: t('wisp.crew.page.send'),
                 checkIn: { label: t('wisp.crew.page.checkin'), title: t('wisp.crew.page.checkin.title'), act: { onClick: checkin } },
+                inputRef: (el) => (box = el),
               }}
             />
             <Dialog

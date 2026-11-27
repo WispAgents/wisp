@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **A crew member's page is now a profile.** It opens on the member: their face in a glow of their colour, the name
+  and role, chips for what they're doing, their harness, what wakes them and their folder, and their numbers (jobs
+  done, this week, how long a job takes, who they hand work to). Tabs replace the side column: Activity, Kit,
+  Notebook, How they work. The jobs you gave them before sit above the job box, one click away, and a member's face on
+  the rail gets a ring of their colour while they work (ADR-0142).
 - **A Steward row on the PR card.** Every open PR of a task's branch, whether Ship it opened it or the agent attached it with `wisp_pr`, has a Steward row under it: its status ("Watching checks and reviews", "Fixing failing checks (2/6)", "Green"), or what it would do when off, and a switch. On, the task fixes failing checks, merge conflicts and new review comments, and wisp pushes; off stops it in one click. The switch's tooltip says what it does. It replaces the Keep green / Stop Steward button that hid in More.
 - **A new loader: Liquid.** Everything that loads now shows the same mark: three drops that orbit, merge and split
   like mercury. It replaces the dot grid on a working task, the ring on a busy button, and the pulsing dots and spinning icons elsewhere. It turns amber while a task waits on you and
