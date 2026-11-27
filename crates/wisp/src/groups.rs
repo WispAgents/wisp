@@ -18,7 +18,7 @@ pub struct Where {
     pub user_home: PathBuf,
 }
 
-pub const DEFAULT: [&str; 53] = [
+pub const DEFAULT: [&str; 54] = [
     "cli",
     "events",
     "threads",
