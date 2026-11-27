@@ -8,6 +8,8 @@
 //! - [`schema`]: a spec checked against its kind's schema; the whole formula's schema for editors.
 //! - [`overlay`]: a formula as one task's overlay, nothing applied: the sections it reads, a goal it names inlined,
 //!   every name it gives checked (ADR-0111).
+//! - [`secrets`]: a secret written into a spec (a plaintext token, `${env:…}` where secrets go) as plan problems, and
+//!   specs masked for printing (AAC-4).
 
 pub mod export;
 pub mod expr;
@@ -16,3 +18,4 @@ pub mod module;
 pub mod overlay;
 pub mod plan;
 pub mod schema;
+pub mod secrets;

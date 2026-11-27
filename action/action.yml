@@ -1,5 +1,6 @@
-# wisp in CI (ADR-0040): run a task (a prompt), a declared task or a formula with wisp, post the report on the pull
-# request, and fail the job when it fails. Published as `wisp-agents/action`; this folder is its source.
+# wisp in CI (ADR-0040): run a task (a prompt), a declared task or a task file with wisp, post the report on the pull
+# request, and fail the job when it doesn't end well; or check the repo's .wisp/ setup (check: validate|plan) and post
+# its plan. Published as `wisp-agents/action`; this folder is its source (README.md lists every input).
 name: wisp
 description: Run a wisp task in CI and post its report on the pull request
 author: WispAgents
@@ -13,8 +14,14 @@ inputs:
   task:
     description: A declared task to run (wisp run <name>), instead of a prompt
     required: false
+  task-file:
+    description: A task file to run (wisp run -f <file>, a .task.yml), instead of a prompt
+    required: false
   formula:
-    description: A formula file to run (wisp run -f <file>), instead of a prompt
+    description: "Deprecated: the old name of task-file (still works, with a warning)"
+    required: false
+  check:
+    description: "validate or plan: check the .wisp/ setup (wisp validate, and wisp plan) and post the plan, running nothing; fails on problems or secrets that aren't set. Needs no prompt or task"
     required: false
   project:
     description: The folder it runs in
@@ -35,7 +42,7 @@ inputs:
     description: Post the report on the pull request (true or false)
     default: "true"
   fail-on:
-    description: "failed: fail the job when the task fails; never: always pass"
+    description: "failed: fail the job when the task failed, was blocked or stopped, waits on input, or timed out; never: always pass"
     default: failed
   github-token:
     description: The token gh posts the comment with
@@ -45,7 +52,7 @@ outputs:
     description: The task's id
     value: ${{ steps.run.outputs.task }}
   state:
-    description: How it ended (review, done, error)
+    description: How it ended (review, done, error; with check, ok or problems)
     value: ${{ steps.run.outputs.state }}
 runs:
   using: composite
@@ -63,7 +70,9 @@ runs:
       env:
         WISP_PROMPT: ${{ inputs.prompt }}
         WISP_TASK_NAME: ${{ inputs.task }}
+        WISP_TASK_FILE: ${{ inputs.task-file }}
         WISP_FORMULA: ${{ inputs.formula }}
+        WISP_CHECK: ${{ inputs.check }}
         WISP_PROJECT: ${{ inputs.project }}
         WISP_AGENT: ${{ inputs.agent }}
         WISP_MODEL: ${{ inputs.model }}

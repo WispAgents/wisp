@@ -205,7 +205,7 @@ pub fn config(o: &Opts, ks: &[KindInfo], dir: &Path) -> Result<Config> {
     let mut missing = BTreeSet::new();
     let src = crate::code::Files { cwd: dir.to_owned() };
     for r in &mut c.resources {
-        formula::fill_env(&mut r.spec, &src, &mut missing);
+        formula::fill_env_spec(r, ks, &src, &mut missing);
     }
     if !missing.is_empty() {
         return Err(CliError::said(format!("unset environment variables: {}", missing.into_iter().collect::<Vec<_>>().join(", "))));
@@ -441,6 +441,7 @@ pub fn mv(dir: &Path, c: &Config, from: &str, to: &str) -> Result<usize> {
     let mut n = 0;
     for (f, text) in files_in(dir) {
         let t = rename_text(&text, from, to, if f == file { line } else { None });
+        let t = rename_bare(&t, from, to);
         if t != text {
             std::fs::write(dir.join(&f), t).map_err(|e| CliError::said(e.to_string()))?;
             n += 1;
@@ -449,9 +450,191 @@ pub fn mv(dir: &Path, c: &Config, from: &str, to: &str) -> Result<usize> {
     Ok(n)
 }
 
+/// `kind.old` renamed `kind.new` where a field names it bare (AAC-2: `agent: builder` in a workflow's steps,
+/// `skills: [tidy]`, a `- tidy` under `skills:`): only in a field whose name names that kind ([`kinds_named_by`]), never
+/// the same word in another field, another kind's field, or a block of text (`prompt: |`). Line by line, so the file
+/// keeps its comments, quotes and layout.
+pub fn rename_bare(text: &str, from: &str, to: &str) -> String {
+    let (Some((kind, old)), Some((_, new))) = (from.split_once('.'), to.split_once('.')) else { return text.to_owned() };
+    let names = |key: &str| kinds_named_by(key.trim().trim_matches(|c| c == '"' || c == '\'')).contains(&kind);
+    // the keys whose value goes on below them (indent, key), and the indent a block scalar's text is under
+    let mut open: Vec<(usize, String)> = Vec::new();
+    let mut block: Option<usize> = None;
+    let mut out = String::with_capacity(text.len());
+    for raw in text.split_inclusive('\n') {
+        let body = raw.trim_end_matches(['\n', '\r']);
+        let indent = body.len() - body.trim_start().len();
+        if let Some(b) = block {
+            if body.trim().is_empty() || indent > b {
+                out.push_str(raw);
+                continue;
+            }
+            block = None;
+        }
+        if body.trim().is_empty() || body.trim_start().starts_with('#') {
+            out.push_str(raw);
+            continue;
+        }
+        // `- ` markers: an item's key sits after its dash
+        let mut rest = &body[indent..];
+        let mut item = false;
+        loop {
+            if let Some(r) = rest.strip_prefix("- ") {
+                rest = r.trim_start();
+            } else if rest == "-" {
+                rest = "";
+            } else {
+                break;
+            }
+            item = true;
+        }
+        let at = body.len() - rest.len();
+        // what this line is under: an item may sit at its key's own indent (`skills:` then `- tidy` below it)
+        open.retain(|(i, _)| if item { *i <= indent } else { *i < at });
+        let (head, comment) = split_comment(rest);
+        let line = match split_key(head) {
+            Some((key, value)) => {
+                let v = value.trim();
+                if v.is_empty() {
+                    open.push((at, key.to_owned()));
+                    head.to_owned()
+                } else if v.starts_with('|') || v.starts_with('>') {
+                    block = Some(at);
+                    head.to_owned()
+                } else if names(key) {
+                    format!("{key}:{}", rename_value(value, old, new))
+                } else if v.starts_with('{') || v.starts_with('[') {
+                    format!("{key}:{}", rename_flow(value, old, new, &names, false))
+                } else {
+                    head.to_owned()
+                }
+            }
+            None if item && head.starts_with('{') => rename_flow(head, old, new, &names, false),
+            // a bare item (`- tidy`) names what the key it's under names
+            None if item && open.last().is_some_and(|(_, k)| names(k)) => rename_value(head, old, new),
+            None => head.to_owned(),
+        };
+        out.push_str(&body[..body.len() - rest.len()]);
+        out.push_str(&line);
+        out.push_str(comment);
+        out.push_str(&raw[body.len()..]);
+    }
+    out
+}
+
+/// `text` and its trailing ` # comment` (outside quotes).
+fn split_comment(text: &str) -> (&str, &str) {
+    let mut quote: Option<char> = None;
+    let mut prev = ' ';
+    for (i, c) in text.char_indices() {
+        match (quote, c) {
+            (None, '"' | '\'') => quote = Some(c),
+            (Some(q), c) if c == q => quote = None,
+            (None, '#') if prev.is_whitespace() => return text.split_at(i),
+            _ => {}
+        }
+        prev = c;
+    }
+    (text, "")
+}
+
+/// `key: value` → (`key`, ` value`); None for a bare value. A `:` inside quotes or a flow isn't the key's.
+fn split_key(text: &str) -> Option<(&str, &str)> {
+    let mut quote: Option<char> = None;
+    for (i, c) in text.char_indices() {
+        match (quote, c) {
+            (None, '"' | '\'') if i == 0 => quote = Some(c),
+            (Some(q), c) if c == q => quote = None,
+            (None, '{' | '[') => return None,
+            (None, ':') if text[i + 1..].is_empty() || text[i + 1..].starts_with(' ') => return Some((&text[..i], &text[i + 1..])),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// A scalar value (` builder`, ` "builder"`) or a flow list (` [tidy, builder]`) with `old` made `new`.
+fn rename_value(value: &str, old: &str, new: &str) -> String {
+    let v = value.trim();
+    if v.starts_with('[') {
+        return rename_flow(value, old, new, &|_| true, true);
+    }
+    let lead = &value[..value.len() - value.trim_start().len()];
+    let tail = &value[value.trim_end().len()..];
+    let bare = v.trim_matches(|c| c == '"' || c == '\'');
+    if bare == old && v.len() - bare.len() != 1 { format!("{lead}{}{tail}", v.replacen(old, new, 1)) } else { value.to_owned() }
+}
+
+/// A flow (`{ agent: builder, model: x }`, `[a, b]`) with `old` made `new` where it's a value of a key that names the
+/// kind, or an item of a list that does (`all`).
+fn rename_flow(text: &str, old: &str, new: &str, names: &dyn Fn(&str) -> bool, all: bool) -> String {
+    let mut out = String::with_capacity(text.len());
+    // per depth: whether this list's items name the kind (a map's: false)
+    let mut lists: Vec<bool> = Vec::new();
+    let mut token = String::new();
+    let flush = |token: &mut String, out: &mut String, lists: &[bool]| {
+        if token.is_empty() {
+            return;
+        }
+        if let Some((k, v)) = token.split_once(':').filter(|(_, v)| v.is_empty() || v.starts_with(' ')) {
+            let renamed = if names(k) { rename_value(v, old, new) } else { v.to_owned() };
+            out.push_str(k);
+            out.push(':');
+            out.push_str(&renamed);
+        } else if lists.last().copied().unwrap_or(false) {
+            out.push_str(&rename_value(token, old, new));
+        } else {
+            out.push_str(token);
+        }
+        token.clear();
+    };
+    let mut quote: Option<char> = None;
+    for c in text.chars() {
+        if let Some(q) = quote {
+            token.push(c);
+            if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' => {
+                quote = Some(c);
+                token.push(c);
+            }
+            '[' => {
+                // a list right after `key:` names what the key names
+                let under = token.trim_end().strip_suffix(':').map(str::trim);
+                let names_it = if lists.is_empty() && under.is_none() { all } else { under.is_some_and(names) };
+                out.push_str(&token);
+                token.clear();
+                out.push(c);
+                lists.push(names_it);
+            }
+            '{' => {
+                out.push_str(&token);
+                token.clear();
+                out.push(c);
+                lists.push(false);
+            }
+            ']' | '}' | ',' => {
+                flush(&mut token, &mut out, &lists);
+                out.push(c);
+                if c != ',' {
+                    lists.pop();
+                }
+            }
+            _ => token.push(c),
+        }
+    }
+    flush(&mut token, &mut out, &lists);
+    out
+}
+
 /// Which kinds a field's value names, by the field's name (`agent: reviewer`, `skills: [tidy]`).
 fn kinds_named_by(key: &str) -> &'static [&'static str] {
     match key {
+        "goal" | "goals" => &["goal"],
         "agent" | "agents" | "judge" | "judges" | "review" | "lead" | "profile" => &["agent"],
         "skill" | "skills" => &["skill"],
         "team" => &["team"],
@@ -780,6 +963,17 @@ mod tests {
                 && out.contains("${agent.reviewers}"),
             "{out}"
         );
+        // AAC-2: a bare name in a field that names agents is the agent too; the word anywhere else isn't
+        let t = "agents:\n  - name: builder\n    skills: [builder, tidy]\nworkflows:\n  ship:\n    steps:\n      - agent: builder\n      - { agent: \"builder\", skill: builder }\n    lead: builder # the one\n    reviewers:\n      judges:\n      - builder\n      - builders\n    prompt: |\n      agent: builder\n      ask builder\n    note: builder\ntasks:\n  - name: t\n    agent: builder\n    skill: builder\n    prompt: \"let builder do it\"\ncrew: { ada: { agent: builder, skills: [builder] } }\n";
+        let mut out = rename_text(t, "agent.builder", "agent.maker", Some(2));
+        out = rename_bare(&out, "agent.builder", "agent.maker");
+        assert_eq!(
+            out,
+            "agents:\n  - name: maker\n    skills: [builder, tidy]\nworkflows:\n  ship:\n    steps:\n      - agent: maker\n      - { agent: \"maker\", skill: builder }\n    lead: maker # the one\n    reviewers:\n      judges:\n      - maker\n      - builders\n    prompt: |\n      agent: builder\n      ask builder\n    note: builder\ntasks:\n  - name: t\n    agent: maker\n    skill: builder\n    prompt: \"let builder do it\"\ncrew: { ada: { agent: maker, skills: [builder] } }\n"
+        );
+        // and a skill renamed: its list items, never an agent field
+        let s = rename_bare("agents:\n  - name: a\n    skills:\n    - tidy\n    - lint\n    agent: tidy\n", "skill.tidy", "skill.neat");
+        assert_eq!(s, "agents:\n  - name: a\n    skills:\n    - neat\n    - lint\n    agent: tidy\n");
     }
 
     #[test]
