@@ -133,5 +133,21 @@
   "machines.kind.cloud": "Cloud",
   "machines.menu.edit": "Edit…",
   "machines.menu.restart": "Restart wisp there",
-  "machines.menu.stop": "Stop wisp there"
+  "machines.menu.stop": "Stop wisp there",
+  "machines.here": "This computer",
+  "machines.here.sub": "Reach it from anywhere",
+  "machines.group.here": "Here",
+  "machines.group.machines": "Machines",
+  "machines.group.add": "Add",
+  "machines.fact.working": "Working",
+  "machines.fact.where": "Where",
+  "machines.fact.version": "Version",
+  "machines.fact.agents": "Agents",
+  "machines.fact.connects": "Connects",
+  "machines.connects.auto": "When wisp starts",
+  "machines.connects.manual": "When you press Connect",
+  "machines.working.none": "Nothing running",
+  "machines.update.note": "wisp {version} is out. This machine runs {current}.",
+  "machines.tasks.one": "{count} task",
+  "machines.tasks.other": "{count} tasks"
 }

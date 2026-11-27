@@ -15,6 +15,7 @@
 //                                 ?seed=team: the flaky-test task's Team tab, three crew jobs, one on Studio;
 //                                 ?seed=factory: a factory run at its review station (ADR-0114);
 //                                 ?seed=sandbox: three /sandbox launches (preparing, sign-in, failed);
+//                                 ?seed=machines: the Machines dialog, a machine in each state (online, asleep, failed);
 //                                 New task's first run; MOCK_FIRST_RUN=1 starts that way)
 // MOCK_SESSIONS=5000 adds that many plain tasks (a long list); MOCK_PEER names the peer.
 // MOCK_SEED=<design/v1-reference/seed.json> replays v1's reference data (qa/parity.mjs), with the
@@ -158,7 +159,7 @@ export function mockPeer(): Plugin {
     const peer = createMockPeer({
       sessions: Number(process.env['MOCK_SESSIONS'] ?? 0),
       ...(process.env['MOCK_PEER'] && { peer: process.env['MOCK_PEER'] }),
-      ...(seed === 'first-run' ? { firstRun: true } : seed === 'team' ? { team: true } : computers ? { computers: true } : seed === 'media' ? { media: true } : seed === 'ask' ? { ask: true } : seed === 'env' ? { env: true } : seed === 'usage' ? { usage: true } : seed === 'trial' ? { trial: true } : seed === 'cloud' ? { cloud: true } : seed === 'crew' ? { crew: true } : seed === 'setup' ? { crew: true, setup: true } : seed === 'factory' ? { factory: true } : seed === 'sandbox' ? { sandbox: true } : v1Seed()),
+      ...(seed === 'first-run' ? { firstRun: true } : seed === 'team' ? { team: true } : computers ? { computers: true } : seed === 'media' ? { media: true } : seed === 'ask' ? { ask: true } : seed === 'env' ? { env: true } : seed === 'usage' ? { usage: true } : seed === 'trial' ? { trial: true } : seed === 'cloud' ? { cloud: true } : seed === 'crew' ? { crew: true } : seed === 'setup' ? { crew: true, setup: true } : seed === 'factory' ? { factory: true } : seed === 'sandbox' ? { sandbox: true } : seed === 'machines' ? { machines: true } : v1Seed()),
     });
     // Studio: a wisp of its own with no tasks yet (and no projects: Run on sets one up there)
     const others = new Map<string, MockPeer>(computers ? [[STUDIO, createMockPeer({ peer: STUDIO, name: 'Studio', firstRun: true, ...(seed === 'team' && { farJob: true }) })]] : []);

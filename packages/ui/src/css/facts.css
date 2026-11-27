@@ -1,0 +1,37 @@
+/* Facts (Machines' detail): label | value lines; the labels one column, the values wrap in theirs. */
+@layer kit {
+  [data-kit='facts'] {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 10px 20px;
+    margin: 0;
+    font-size: 13px;
+  }
+  [data-kit='fact'] {
+    display: contents;
+  }
+  [data-kit='fact'] > dt {
+    color: var(--muted);
+    white-space: nowrap;
+    line-height: 24px;
+  }
+  [data-kit='fact'] > dd {
+    margin: 0;
+    min-width: 0;
+    color: var(--ink);
+    line-height: 24px;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 480px) {
+    [data-kit='facts'] {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2px;
+    }
+    [data-kit='fact'] > dt {
+      line-height: 18px;
+    }
+    [data-kit='fact'] > dd {
+      margin-bottom: 10px;
+    }
+  }
+}

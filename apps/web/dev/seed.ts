@@ -7,6 +7,7 @@ import type { PeerInfo, Topic } from '@wisp/protocol';
 import { accountRows } from './mock-reads.ts';
 import { SEED_ACCOUNTS } from './mock-cloud.ts';
 import { THREAD_TASK, threadRows } from './mock-threads.ts';
+import { MACHINES, machineRows } from './mock-machines.ts';
 
 /** MOCK_BUSY=1: a busy machine (the machine chip in the top bar). */
 const BUSY = typeof process !== 'undefined' && process.env['MOCK_BUSY'] === '1';
@@ -467,70 +468,6 @@ const ADA_KIT = {
   ],
 };
 
-const MACHINES = [
-  {
-    id: 'studio',
-    peer: 'studio',
-    name: 'studio-mac',
-    transport: 'ssh',
-    address: 'studio.local',
-    port: 22,
-    kind: 'ssh',
-    target: 'studio.local',
-    state: 'online',
-    steps: [],
-    error: '',
-    stale: false,
-    attempt: 0,
-    projects: 3,
-    working: 1,
-    remote: { version: '1.0.0-alpha.1', platform: 'darwin', agents: [] },
-    outdated: null,
-    log: [],
-  },
-  {
-    id: 'box',
-    peer: 'box',
-    name: 'mokh.grid',
-    transport: 'grid',
-    address: 'mokh.grid.trywisp.dev',
-    port: 443,
-    kind: 'grid',
-    target: 'mokh.grid.trywisp.dev',
-    state: 'asleep',
-    steps: [],
-    error: '',
-    stale: false,
-    attempt: 0,
-    projects: 1,
-    working: 0,
-    remote: null,
-    outdated: null,
-    log: [],
-  },
-  {
-    id: 'pi',
-    peer: 'pi',
-    name: 'raspberry',
-    transport: 'ssh',
-    address: '192.168.1.40',
-    port: 22,
-    kind: 'ssh',
-    target: 'pi@192.168.1.40',
-    state: 'error',
-    steps: [],
-    error: 'Connection refused',
-    hint: { text: 'Is sshd running on the Pi?' },
-    stale: false,
-    attempt: 3,
-    projects: 0,
-    working: 0,
-    remote: null,
-    outdated: '1.0.0-alpha.0',
-    log: [],
-  },
-];
-
 const STUFF = [
   { id: 'st1', kind: 'doc', title: 'wisp v2 rewrite plan', path: '~/.wisp/stuff/r9-wisp-rewrite-plan.md', size: 98_000 },
   { id: 'st2', kind: 'app', title: 'Token budget dashboard', path: '~/.wisp/stuff/budget/index.html', size: 14_000 },
@@ -781,7 +718,7 @@ function sandboxLaunches(now: number): Row[] {
   ];
 }
 
-export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean; factory?: boolean; sandbox?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean; factory?: boolean; sandbox?: boolean; machines?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -860,6 +797,9 @@ export function seed(o: { peer: string; now: number; extra: number; harnesses?: 
     ...MACHINES.map((m) => ({ e: 'machine', id: m.id, v: { ...m, addedAt: o.now - 30 * 24 * HOUR } })),
     // Studio as wisp.machines keeps a peer (`machines_peer`): the app adds it as a peer of its own
     ...(o.computers ? [{ e: 'machines_peer', id: `${o.peer}:${STUDIO}`, v: { id: `${o.peer}:${STUDIO}`, body: { peer: STUDIO, name: 'Studio' } } }] : []),
+    // `machines` (POST /__mock/reset?seed=machines): the Machines dialog's rows as wisp.machines writes them, one machine
+    // in each state it draws (online with an update, asleep, can't connect)
+    ...(o.machines ? machineRows(o.peer, o.now) : []),
   ]);
   topics.set(
     'stuff',

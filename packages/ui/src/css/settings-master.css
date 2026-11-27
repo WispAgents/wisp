@@ -130,6 +130,42 @@
     flex-direction: column;
     gap: 16px;
   }
+  /* a run's heading (Machines: This computer, Machines), v1's .set-nav group label */
+  [data-kit='settings-master-group'] {
+    margin: 0;
+    padding: 10px 9px 4px;
+    font-size: 11px;
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--faint);
+    white-space: nowrap;
+  }
+  [data-kit='settings-master-group']:first-child {
+    padding-top: 2px;
+  }
+  /* stack's Back: only when the detail is pushed over the list (narrow) */
+  [data-kit='settings-master-back'] {
+    display: none;
+    align-self: flex-start;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 8px 0 4px;
+    margin-left: -4px;
+    border-radius: var(--radius-control);
+    color: var(--muted);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  [data-kit='settings-master-back']:hover {
+    background: var(--bg-2);
+    color: var(--ink);
+  }
+  [data-kit='settings-master-back'] > [data-kit='icon'] {
+    width: 16px;
+    height: 16px;
+  }
   @media (max-width: 720px) {
     [data-kit='settings-master'] {
       grid-template-columns: minmax(0, 1fr);
@@ -152,6 +188,27 @@
     }
     [data-kit='settings-master-text'] > small {
       display: none;
+    }
+    /* stack: a phone's push, the list alone until a pick, then the pick alone with Back */
+    [data-kit='settings-master'][data-stack] [data-kit='settings-master-list'] {
+      flex-direction: column;
+      overflow-x: visible;
+    }
+    [data-kit='settings-master'][data-stack] [data-kit='settings-master-item'] {
+      width: 100%;
+      min-height: 48px;
+      border: 0;
+      border-radius: 9px;
+    }
+    [data-kit='settings-master'][data-stack] [data-kit='settings-master-text'] > small {
+      display: block;
+    }
+    [data-kit='settings-master'][data-stack]:not([data-open]) > [data-kit='settings-master-detail'],
+    [data-kit='settings-master'][data-stack][data-open] > [data-kit='settings-master-side'] {
+      display: none;
+    }
+    [data-kit='settings-master'][data-stack][data-open] [data-kit='settings-master-back'] {
+      display: inline-flex;
     }
   }
 }

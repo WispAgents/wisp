@@ -40,3 +40,30 @@ test('settings master detail: picking an item shows its detail; arrows move the 
   expect(host.querySelectorAll('[data-kit="settings-master-item"]').length).toBe(0);
   expect(host.querySelector('[data-kit="settings-master-empty"]')?.textContent).toBe('Nothing matches');
 });
+
+// Machines (owner's pick B): no search, a heading over each run of a group, and `stack` (a phone's push): a pick opens
+// the detail over the list, Back shows the list again.
+test('settings master detail: groups head their runs; stack opens on a pick and Back closes it; no search box without search', () => {
+  const [picked, setPicked] = createSignal('here');
+  const items: SettingsMasterItem[] = [
+    { id: 'here', label: 'This computer', group: 'Here' },
+    { id: 'cloud', label: 'Cloud', group: 'Machines', dot: 'good' },
+    { id: 'add', label: 'Add a machine', icon: 'plus', group: 'Machines' },
+  ];
+  const host = mount(() => (
+    <SettingsMasterDetail label="Machines" items={items} selected={picked()} onSelect={setPicked} empty="" stack={{ back: 'Machines' }}>
+      <p data-detail={picked()}>{picked()}</p>
+    </SettingsMasterDetail>
+  ));
+  const root = host.querySelector('[data-kit="settings-master"]');
+  expect(host.querySelector('[data-kit="settings-master-search"]')).toBeNull();
+  expect([...host.querySelectorAll('[data-kit="settings-master-group"]')].map((g) => g.textContent)).toEqual(['Here', 'Machines']);
+  expect(root?.hasAttribute('data-stack')).toBe(true);
+  expect(root?.hasAttribute('data-open'), 'the list first').toBe(false);
+  host.querySelector<HTMLButtonElement>('[data-id="cloud"]')?.click();
+  expect(picked()).toBe('cloud');
+  expect(root?.hasAttribute('data-open')).toBe(true);
+  host.querySelector<HTMLButtonElement>('[data-kit="settings-master-back"]')?.click();
+  expect(root?.hasAttribute('data-open'), 'Back shows the list').toBe(false);
+  expect(picked(), 'and keeps the pick').toBe('cloud');
+});
