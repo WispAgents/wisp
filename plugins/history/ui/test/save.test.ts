@@ -128,6 +128,37 @@ test('a_push_from_before_this_window_shows_from_the_tasks_slot', () => {
   expect(pushedOf({ pushed: { branch: '', commit: 'c', pr: null } })).toEqual({ s: 'pushed', branch: '' });
 });
 
+test('after_a_reload_a_save_after_a_push_shows_no_old_push', async () => {
+  // final audit F2: save, push, save again, then a fresh window (or a reload). history.track drops `pushed` from the
+  // slot, so the line has no old branch or PR to bring back for the newer, unpushed save
+  const key = 'local:r2' as EntityKey;
+  await runSave(() => Promise.resolve(tracked(2)), key);
+  await runPush(() => Promise.resolve({ branch: 'wisp/history-r2', commit: 'c', files: [], pr: 'https://x/pull/2' }), key);
+  const before = { tracked: { files: ['a', 'b'] }, pushed: { branch: 'wisp/history-r2', commit: 'c', pr: 'https://x/pull/2' } };
+  expect(offerView(before, undefined)).toMatchObject({ v: 'kept', pushed: { s: 'pushed', pr: 'https://x/pull/2' } });
+  await runSave(() => Promise.resolve(tracked(3)), key);
+  // the slot as the save left it, read by a window with no save or push of its own
+  const after = { tracked: { files: ['a', 'b', 'c'] }, offer: false };
+  expect(offerView(after, undefined, undefined)).toEqual({ v: 'none' });
+  expect(offerView({ ...after, pushed: null }, undefined, undefined)).toEqual({ v: 'none' });
+  expect(pushedOf({ ...after, pushed: null })).toBeUndefined();
+  // this window: the newer save, with Push (no push state) and no Open PR
+  expect(offerView(after, saveStateOf(key), pushStateOf(key))).toMatchObject({ v: 'saved', files: 3 });
+  expect(pushStateOf(key)).toBeUndefined();
+  expect(pushedLink(pushStateOf(key))).toBeUndefined();
+});
+
+test('a_branch_pushed_with_no_pr_and_no_page_still_says_no_pr', async () => {
+  // final audit F4: a path remote (no page, so no compare): the line still says no PR opened, with no button
+  const p = { s: 'pushed', branch: 'wisp/history-x', noPr: true } as const;
+  expect(pushedText(p)).toBe('Branch pushed to wisp/history-x: open the pull request');
+  expect(pushedLink(p)).toBeUndefined();
+  expect(pushedOf({ pushed: { branch: 'wisp/history-x', commit: 'c', pr: null, compare: null, noPr: true } })).toEqual(p);
+  const key = 'local:r3' as EntityKey;
+  await runPush(() => Promise.resolve({ branch: 'wisp/history-x', commit: 'c', files: [], noPr: true }), key);
+  expect(pushedText(pushStateOf(key))).toBe('Branch pushed to wisp/history-x: open the pull request');
+});
+
 test('a_branch_pushed_with_no_pr_says_to_open_one', () => {
   // final audit F4: no gh, the files stay and the line links the page to open the PR on
   const p = { s: 'pushed', branch: 'wisp/history-x', compare: 'https://github.com/a/b/compare/main...wisp/history-x?expand=1' } as const;

@@ -191,6 +191,10 @@ pub struct Pushed {
     /// stay, as nothing would bring them back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compare: Option<String>,
+    /// a PR branch pushed but no PR opened (`compare` is None when the remote has no page to open one on); the
+    /// task's own branch (its PR is ship's) never sets it
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_pr: bool,
 }
 
 command!(Track, "history.track", TrackArgs, Tracked);

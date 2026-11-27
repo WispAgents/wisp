@@ -560,6 +560,7 @@ async fn a_push_with_no_pr_keeps_the_saved_files() {
     assert!(out.removed.is_empty(), "{out:?}");
     assert!(files.iter().all(|f| d.join(f).is_file()), "{:?}", files_under(&d));
     assert_eq!(out.compare, None, "a path remote has no page to open a PR on");
+    assert!(out.no_pr, "the line says no PR opened, even with no page to open one on: {out:?}");
     let on_origin = git(&origin, &["ls-tree", "-r", "--name-only", "wisp/history-01a1bc12ab34"]);
     assert!(files.iter().all(|f| on_origin.lines().any(|l| l == f)), "{on_origin}");
 }
@@ -588,6 +589,59 @@ async fn a_push_with_a_pr_takes_the_files_out_and_a_second_push_answers_it() {
     // never pushed: the files really are gone
     let e = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap_err();
     assert!(e.message.contains("Save to repo again"), "{e:?}");
+}
+
+/// final audit F2/F3c: a save after a push drops that push from the slot, so neither a reload's line nor a later push
+/// answers the old branch and PR for the newer save: once its files are gone, push says to save again.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_save_after_a_push_forgets_that_push() {
+    use std::os::unix::fs::PermissionsExt;
+    let (d, _origin, files) = saved_checkout("push-resave");
+    let gh = d.join("gh-stub");
+    std::fs::write(&gh, "#!/bin/sh\necho https://github.com/acme/app/pull/1\n").unwrap();
+    std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let gh = gh.display().to_string();
+    let p = wisp_proc::local();
+    let first = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, None).await.unwrap();
+    let pushed = json!({ "tracked": { "repo": d.display().to_string(), "files": files, "store": "files" }, "offer": false,
+        "pushed": { "branch": first.branch, "commit": first.commit, "pr": first.pr } });
+    // Save to repo again: the files come back, and the slot is marked as track() marks it
+    for f in &files {
+        std::fs::write(d.join(f), format!("{f} again\n")).unwrap();
+    }
+    let mark = json!({ "tracked": { "repo": d.display().to_string(), "files": files, "store": "files" }, "offer": false, "seenTurns": 2 });
+    let slot = super::saved_slot(&pushed, &mark);
+    assert_eq!(slot.get("pushed"), None, "{slot}");
+    assert_eq!(slot.pointer("/tracked/files").and_then(Value::as_array).map(Vec::len), Some(2));
+    let earlier = super::push::earlier(&slot, &files);
+    assert_eq!(earlier, None);
+    // the newer save's files taken by hand (or an untrack): not the old push's answer, but save again
+    for f in &files {
+        std::fs::remove_file(d.join(f)).unwrap();
+    }
+    let e = super::push::as_pr(&p, &gh, &d, (PUSHED_ID, "Fix"), &files, earlier).await.unwrap_err();
+    assert!(e.message.contains("Save to repo again"), "{e:?}");
+}
+
+#[test]
+fn the_new_pr_page_is_in_the_hosts_own_format() {
+    let page = super::push::new_pr_page;
+    assert_eq!(
+        page("https://github.com/acme/app", "main", "wisp/history-x").as_deref(),
+        Some("https://github.com/acme/app/compare/main...wisp/history-x?expand=1")
+    );
+    assert_eq!(
+        page("https://gitlab.com/acme/app", "main", "wisp/history-x").as_deref(),
+        Some(
+            "https://gitlab.com/acme/app/-/merge_requests/new?merge_request%5Bsource_branch%5D=wisp/history-x&merge_request%5Btarget_branch%5D=main"
+        )
+    );
+    assert_eq!(
+        page("https://bitbucket.org/acme/app", "main", "wisp/history-x").as_deref(),
+        Some("https://bitbucket.org/acme/app/pull-requests/new?source=wisp/history-x&dest=main")
+    );
+    assert_eq!(page("https://git.example.com/acme/app", "main", "wisp/history-x"), None, "an unknown host gets no wrong link");
 }
 
 #[test]

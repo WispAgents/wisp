@@ -107,7 +107,7 @@ pub(crate) async fn push(ctx: &Ctx, call: &Call, a: &api::PushArgs) -> Result<Pu
         let earlier = earlier(task.ext_of(api::EXT), &files);
         as_pr(&p, &git::gh_bin(), &root, (&id, &task.title), &files, earlier).await?
     };
-    let mark = json!({ "pushed": { "branch": out.branch, "commit": out.commit, "pr": out.pr, "compare": out.compare } });
+    let mark = json!({ "pushed": { "branch": out.branch, "commit": out.commit, "pr": out.pr, "compare": out.compare, "noPr": out.no_pr } });
     calls::warn("marking the task pushed (setExt)", calls::update_ext(ctx, call, &id, |slot| Some(calls::merged(slot, &mark))).await);
     Ok(out)
 }
@@ -124,6 +124,7 @@ pub(crate) fn earlier(slot: &Value, files: &[String]) -> Option<Pushed> {
         pr: text("pr"),
         removed: Vec::new(),
         compare: text("compare"),
+        no_pr: p.get("noPr").and_then(Value::as_bool).unwrap_or(false),
     })
 }
 
@@ -161,7 +162,7 @@ async fn onto_branch(p: &Proc, root: &Path, branch: &str, files: &[String], msg:
     git_ok(p, root, &[], &["push", REMOTE, &format!("HEAD:refs/heads/{branch}")], "git push").await?;
     let commit = git_ok(p, root, &[], &["rev-parse", "HEAD"], "git rev-parse").await?;
     let pr = git::pr_of(p, root, std::slice::from_ref(&commit), branch).await;
-    Ok(Pushed { branch: branch.to_owned(), commit, files, pr, removed: Vec::new(), compare: None })
+    Ok(Pushed { branch: branch.to_owned(), commit, files, pr, removed: Vec::new(), compare: None, no_pr: false })
 }
 
 /// The main checkout: a commit on the remote's base made in a scratch index, pushed to its own branch, a PR.
@@ -218,11 +219,11 @@ pub(crate) async fn as_pr(
     // would leave them nowhere but on a remote branch nobody merges
     if pr.is_none() && !pushed_to.is_empty() {
         let remote = exec(p, "git", root, &[], &["remote", "get-url", REMOTE]).await.unwrap_or_default();
-        let compare = web_of(&remote).map(|w| format!("{w}/compare/{base}...{pushed_to}?expand=1"));
-        return Ok(Pushed { branch: pushed_to, commit, files, pr, removed: Vec::new(), compare });
+        let compare = web_of(&remote).and_then(|w| new_pr_page(&w, &base, &pushed_to));
+        return Ok(Pushed { branch: pushed_to, commit, files, pr, removed: Vec::new(), compare, no_pr: true });
     }
     let removed = take_out(p, root, &files).await;
-    Ok(Pushed { branch: pushed_to, commit, files, pr, removed, compare: None })
+    Ok(Pushed { branch: pushed_to, commit, files, pr, removed, compare: None, no_pr: false })
 }
 
 /// The remote's web page (`https://github.com/o/r`) from its URL: https, `git@host:o/r.git` or `ssh://git@host/o/r`.
@@ -244,6 +245,27 @@ pub(crate) fn web_of(remote: &str) -> Option<String> {
     let path = path.trim_matches('/').trim_end_matches(".git");
     // a host has a dot (`C:/repo` is a Windows path, not host `C`)
     (host.contains('.') && !path.is_empty() && !r.contains('\\')).then(|| format!("https://{host}/{path}"))
+}
+
+/// Where to open a PR from `head` into `base` by hand on the remote's web page `web`, in its host's own format:
+/// GitHub's compare page, GitLab's new merge request, Bitbucket's new pull request. None for any other host (its
+/// format is unknown: a wrong link is worse than none).
+pub(crate) fn new_pr_page(web: &str, base: &str, head: &str) -> Option<String> {
+    let host = web.strip_prefix("https://")?.split('/').next()?.to_ascii_lowercase();
+    let q = |s: &str| s.replace('%', "%25").replace('&', "%26").replace('#', "%23").replace('+', "%2B").replace(' ', "%20");
+    if host == "github.com" || host.starts_with("github.") {
+        Some(format!("{web}/compare/{base}...{head}?expand=1"))
+    } else if host == "gitlab.com" || host.starts_with("gitlab.") {
+        Some(format!(
+            "{web}/-/merge_requests/new?merge_request%5Bsource_branch%5D={}&merge_request%5Btarget_branch%5D={}",
+            q(head),
+            q(base)
+        ))
+    } else if host == "bitbucket.org" {
+        Some(format!("{web}/pull-requests/new?source={}&dest={}", q(head), q(base)))
+    } else {
+        None
+    }
 }
 
 /// `gh pr create`, or the PR already open on that branch.

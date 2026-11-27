@@ -10,7 +10,14 @@ export interface HistoryExt {
   readonly offer?: boolean;
   readonly repo?: string;
   readonly tracked?: { readonly repo?: string; readonly files?: readonly string[]; readonly store?: string };
-  readonly pushed?: { readonly branch?: string; readonly commit?: string; readonly pr?: string | null; readonly compare?: string | null };
+  /** the last push, of the save in `tracked` (a save drops it: what it pushed was the save before) */
+  readonly pushed?: {
+    readonly branch?: string;
+    readonly commit?: string;
+    readonly pr?: string | null;
+    readonly compare?: string | null;
+    readonly noPr?: boolean;
+  } | null;
 }
 
 /** What `history.push` answers (wisp_history_api::Pushed): the branch pushed ('' when already on the base), its PR. */
@@ -22,6 +29,8 @@ export interface Pushed {
   readonly removed?: readonly string[];
   /** the branch went out but no PR opened: where to open one by hand (the local copies stayed) */
   readonly compare?: string;
+  /** the branch went out but no PR opened, with or without a page to open one on (`compare`) */
+  readonly noPr?: boolean;
 }
 
 /** What `history.track` / `history.save` answer (wisp_history_api::Tracked). */
@@ -81,7 +90,15 @@ function setState(key: string, v: SaveState): void {
  *  (the task opens on it, maybe scrolled away from the line); `at` stamps that toast. */
 export type PushState =
   | { readonly s: 'pushing' }
-  | { readonly s: 'pushed'; readonly branch: string; readonly pr?: string; readonly compare?: string; readonly at?: number; readonly tell?: boolean }
+  | {
+      readonly s: 'pushed';
+      readonly branch: string;
+      readonly pr?: string;
+      readonly compare?: string;
+      readonly noPr?: boolean;
+      readonly at?: number;
+      readonly tell?: boolean;
+    }
   | { readonly s: 'failed' };
 
 const pushes = signal<Readonly<Record<string, PushState>>>({});
@@ -96,7 +113,7 @@ export const pushStateOf = (key: string): PushState | undefined => pushes()[key]
 export function pushedOf(ext: HistoryExt): PushState | undefined {
   const p = ext.pushed;
   if (typeof p?.branch !== 'string') return undefined;
-  return { s: 'pushed', branch: p.branch, ...(p.pr ? { pr: p.pr } : {}), ...(p.compare ? { compare: p.compare } : {}) };
+  return { s: 'pushed', branch: p.branch, ...(p.pr ? { pr: p.pr } : {}), ...(p.compare ? { compare: p.compare } : {}), ...(p.noPr ? { noPr: true } : {}) };
 }
 
 /** What the line says once pushed: the branch and its PR, a branch with no PR yet (open it by hand), or that the
@@ -105,7 +122,8 @@ export function pushedText(p: PushState | undefined): string {
   if (p?.s !== 'pushed') return '';
   if (!p.branch) return t('history.pushed.none');
   if (p.pr) return t('history.pushed.pr', { branch: p.branch });
-  return p.compare ? t('history.pushed.noPr', { branch: p.branch }) : t('history.pushed', { branch: p.branch });
+  // no PR opened: said even when the remote has no page to open one on (no button then)
+  return p.compare || p.noPr ? t('history.pushed.noPr', { branch: p.branch }) : t('history.pushed', { branch: p.branch });
 }
 
 /** The link the pushed line (and the ⋯ menu's toast) opens: the PR, else the page to open one on. */
@@ -214,7 +232,14 @@ export async function runPush(run: (key: EntityKey) => Promise<Pushed>, key: Ent
   pushes({ ...pushes(), [key]: { s: 'pushing' } });
   try {
     const p = await run(key);
-    const done: PushState = { s: 'pushed', branch: p.branch, ...(p.pr ? { pr: p.pr } : {}), ...(p.compare ? { compare: p.compare } : {}), ...(tell ? { tell, at: Date.now() } : {}) };
+    const done: PushState = {
+      s: 'pushed',
+      branch: p.branch,
+      ...(p.pr ? { pr: p.pr } : {}),
+      ...(p.compare ? { compare: p.compare } : {}),
+      ...(p.noPr ? { noPr: true } : {}),
+      ...(tell ? { tell, at: Date.now() } : {}),
+    };
     pushes({ ...pushes(), [key]: done });
     return p;
   } catch {
