@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import zlib from 'node:zlib';
-import { PARTS } from '../web/js/spell-schema.js';
+import { PARTS } from './v1-parts.mjs';
 import { inspect as layoutProblems } from './layout.mjs';
 import { launchBrowser, OUT, ROOT } from './lib.mjs';
 import { openPreview } from './panel-rules.ts';

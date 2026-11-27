@@ -9,8 +9,6 @@ on:
       - 'scripts/site.mjs'
       - 'scripts/guides.mjs'
       - 'scripts/stage-site.sh'
-      - 'server/adapters/**'
-      - 'web/js/spirit.js'
       # trywisp.dev/docs (ADR-0039): its pages and the code its reference is generated from
       - 'apps/docs/**'
       - 'crates/wisp/src/args.rs'

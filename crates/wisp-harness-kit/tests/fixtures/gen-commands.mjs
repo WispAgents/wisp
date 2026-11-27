@@ -3,7 +3,10 @@
 // and records v1's describeCommand answer for each command under the same three cwd forms, so the Rust
 // port can be checked against v1 without Node (gate G6 for ticker labels).
 //
-//   node crates/wisp-harness-kit/tests/fixtures/gen-commands.mjs
+//   WISP_V1=/tmp/wisp-v1 node crates/wisp-harness-kit/tests/fixtures/gen-commands.mjs
+//
+// v1 (server/, test/) left this repo on 2026-11-27; WISP_V1 is a checkout from before then, which has them:
+//   git worktree add --detach /tmp/wisp-v1 a7c98f73
 //
 // Writes commands.v1.json beside this file: `runs` says how each run spells @CWD@ / @REAL@ in a command
 // and which RunPaths the Rust side passes; each line of `cases` is [command, v1 for run 0, run 1, run 2],
@@ -11,9 +14,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const root = new URL('../../../../', import.meta.url);
+if (!process.env.WISP_V1) throw new Error('WISP_V1 must name a checkout that still has v1 (see the top of this file)');
+const root = pathToFileURL(path.resolve(process.env.WISP_V1) + path.sep);
 const { describeCommand } = await import(new URL('server/adapters/commands.js', root).href);
 
 // --- the corpus ---

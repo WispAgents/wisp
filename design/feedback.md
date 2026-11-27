@@ -45,7 +45,7 @@ silent failure.
 
 ## How it's checked (`qa/feedback.mjs`)
 
-For every interactive element in every view of `qa/views.mjs` (the same sweep as `qa/buttons.mjs`), with the
+For every interactive element in every view of `qa/views.mjs`, with the
 network slowed to 400 ms:
 
 1. Click (or press Enter on) it, and record the first DOM mutation or style change in the page.

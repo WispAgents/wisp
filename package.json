@@ -15,8 +15,6 @@
   },
   "scripts": {
     "test": "node tools/test.ts",
-    "test:real": "node test/real-clis.mjs",
-    "test:v1": "node scripts/test.mjs",
     "check": "node tools/check/index.ts",
     "typecheck": "node tools/typecheck.ts",
     "verify": "npm run check && npm run typecheck && npm test",

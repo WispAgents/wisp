@@ -159,13 +159,14 @@ cd mobile/android && ./gradlew testDebugUnitTest
 `ssh-keygen -lf`, moves v1's key files into the vault once and checks the password is dropped once
 the phone's key is added. `TunnelTest`'s ADR-0065 cases (a pinned fingerprint, a changed host key,
 wisp stopped there, two computers at once) run against an sshd in the test's JVM (`FakeSshd`,
-Apache MINA sshd, test-only). `ComputersTest` replays `web/test/fixtures/android-bridge.json`, the
+Apache MINA sshd, test-only). `ComputersTest` replays `mobile/web/test/fixtures/android-bridge.json`, the
 recording `mobile/web`'s bridge-contract suite replays too. Three older `TunnelTest` cases need a
 real sshd and wisp, so they run only when asked:
 
 ```sh
-# a throwaway sshd on 127.0.0.1:2299 that accepts /tmp/wsshd/client; the script starts this
-# checkout's wisp on 4733 (and starts it again when startsWispAgainWhenItStops kills it)
+# a throwaway sshd on 127.0.0.1:2299 that accepts /tmp/wsshd/client; the script starts wisp on 4733 (and starts it
+# again when startsWispAgainWhenItStops kills it). These cases were written against v1's script, which left the repo
+# on 2026-11-27: run this from a checkout that has it (git worktree add --detach /tmp/wisp-v1 a7c98f73; cd there)
 node -e "import('../../server/machines/bootstrap.js').then(m => process.stdout.write(m.bootstrapScript({ port: 4733, command: 'node ' + require('path').resolve('../../bin/wisp.js'), apiVersion: 'any' })))" > /tmp/wsshd/script.sh
 WISP_SSH_TEST=$USER@127.0.0.1:2299 WISP_SSH_KEY=/tmp/wsshd/client \
 WISP_SSH_SCRIPT=/tmp/wsshd/script.sh WISP_SSH_PORT=4733 ./gradlew testDebugUnitTest

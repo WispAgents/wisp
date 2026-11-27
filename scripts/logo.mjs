@@ -226,7 +226,7 @@ function mark() {
 
 const write = (file, text) => { fs.writeFileSync(path.join(ROOT, file), text); console.log('wrote', file); };
 const RES = 'mobile/android/app/src/main/res/drawable';
-for (const file of ['docs/assets/icon.svg', 'web/favicon.svg', 'desktop/icon.svg', 'grid/assets/icon.svg']) write(file, icon());
+for (const file of ['docs/assets/icon.svg', 'desktop/icon.svg']) write(file, icon());
 write('mobile/store/icon.svg', icon({ bleed: true }));
 write('mobile/store/feature-graphic.svg', featureGraphic());
 write(`${RES}/ic_launcher_foreground.xml`, androidForeground());
