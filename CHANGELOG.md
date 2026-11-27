@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **An agent's question on its task reads cleanly again, as in v1.** The card showed the question's markdown marks (`**`, backticks) in one muted paragraph and cut each answer off with "…". It now has v1's orange Needs your call header and border, the question itself as the headline, the agent's explanation under it as smaller text (lists, bold and code rendered), and numbered answers that wrap to show their whole text. Approvals get the same card.
 - **A workflow run cut by a wisp restart lands its task.** Its view already said it stopped; the task it held in Working (the `<name> (workflow)` task, or a lead whose turn ended while its run went) now lands in Needs review, unread, instead of saying Working for ever.
 - **A task with a goal stays in Working while its judges vote**, and lands once when the goal is met. It used to land in Needs review, unread, with a notification, every round, while the judges were still voting; another round now starts without passing through Review. A wisp restart in the middle of a round no longer leaves the task in Working for ever: it is judged again, or lands if its verdict was in.
 - **A goal's judges vote at once.** A round took the sum of every judge's time; now it takes the slowest one's, and with vote `any` (one yes) or `all` (one no) the rest stop as soon as the outcome is fixed, their records saying they weren't needed.
