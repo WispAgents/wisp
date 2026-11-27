@@ -32,3 +32,34 @@ test('the_details_keep_only_facts_no_actions_row_ux_4', () => {
   expect(host.querySelector('[data-kit="it-actions"]')).toBeNull();
   expect(host.querySelector('[data-kit="ml-name"]')?.textContent).toBe('Claude Code · Opus');
 });
+
+// owner 2026-11-28: the wide column reads as one sentence: the harness, 📁 in wisp, on This computer, the branch, then
+// the usage (it was harness, project, usage, then computer and branch)
+test('the_details_read_harness_in_project_on_computer_then_branch_then_usage', () => {
+  const host = mount(() => (
+    <TaskDetails
+      harness="Claude Code · Opus"
+      project="wisp"
+      color="blue"
+      machine={{ name: 'This computer', icon: 'laptop' }}
+      branch={{ head: 'wisp/task', tail: '-33bfeb', title: 'wisp/task-33bfeb' }}
+      usage={{ context: { text: '8% context', title: '8%', share: 0.08, hi: false }, sections: () => [], label: 'Task usage', more: { label: 'Usage', onClick: () => {} } }}
+      leads={{ project: 'in', machine: 'on' }}
+      actions={[]}
+    />
+  ));
+  const bar = host.querySelector('[data-kit="it-bar"]');
+  const order = [...(bar?.querySelectorAll('[data-kit="ml-name"], [data-kit="q-proj"], [data-kit="m-where"], [data-kit="m-branch"], [data-kit="plan-used"]') ?? [])].map((e) => (e as HTMLElement).dataset['kit']);
+  expect(order).toEqual(['ml-name', 'q-proj', 'm-where', 'm-branch', 'plan-used']);
+  const inProject = host.querySelector('[data-kit="it-in"]');
+  expect(inProject?.querySelector('[data-kit="icon"]')).not.toBeNull();
+  expect(inProject?.textContent).toBe('inwisp');
+  expect(host.querySelector('[data-kit="m-where"]')?.textContent).toBe('onThis computer');
+});
+
+test('the_details_without_leads_add_no_words_or_folder_icon', () => {
+  const host = mount(() => <TaskDetails harness="Claude Code · Opus" project="wisp" color="blue" machine={{ name: 'This computer', icon: 'laptop' }} actions={[]} />);
+  expect(host.querySelector('[data-kit="it-lead"]')).toBeNull();
+  expect(host.querySelector('[data-kit="it-in"] > [data-kit="icon"]')).toBeNull();
+  expect(host.querySelector('[data-kit="m-where"]')?.textContent).toBe('This computer');
+});
