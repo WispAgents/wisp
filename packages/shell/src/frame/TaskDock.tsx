@@ -1,6 +1,8 @@
 // The open task's dock as v1 draws it (TaskView.tsx; ship.css .overlap-strip, composer.css): the overlap note, what
 // waits on you (`shell.task:foot`), the reply box with its mode, harness, `+`, chips, goal line, hold row and hints,
 // and the harness picker.
+import '../i18n/lazy.ts';
+import '../i18n/home.ts';
 import { Show, createMemo, on, type JSX } from 'solid-js';
 import { OverlapNote, ReplyBox, type ReplyCap, type Act, type LauncherTool } from '@wisp/ui';
 import { usePlanRing } from './plan-ring.ts';

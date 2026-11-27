@@ -1,6 +1,7 @@
 // The open task's turns (TaskView.tsx): Find in task over them, the band (wisp.goal's), the earlier turns as a ledger
 // (ADR-0068) with the latest whole after it, the /btw side questions and what side discussions proposed. Before the
 // page's body is built, their skeleton.
+import '../i18n/lazy.ts';
 import { Show, createMemo, lazy, type JSX } from 'solid-js';
 import { entityKey, ownerOf } from '@wisp/client';
 import { BtwList, ForKeyed, Ledger, Skeleton, Stack } from '@wisp/ui';

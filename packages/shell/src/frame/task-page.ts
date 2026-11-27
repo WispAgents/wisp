@@ -1,6 +1,8 @@
 // The open task's page state (TaskView.tsx): its row, turns and events, the reader's place, Find, the reply, the
 // head's actions and the questions they ask. The markup reads it as one object (TaskPage), each part of the page from
 // its own component (TaskDock.tsx, TaskSide.tsx, TaskTop.tsx, TaskTurns.tsx).
+import '../i18n/lazy.ts';
+import '../i18n/home.ts';
 import { defineCommand, entityKey, ownerOf, type EntityKey } from '@wisp/client';
 import { createMemo, createResource, createSignal, onCleanup, untrack } from 'solid-js';
 import { changeWhere as changeWhereOf, whereOf } from './change-where.ts';

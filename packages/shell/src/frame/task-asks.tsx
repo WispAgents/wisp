@@ -1,6 +1,7 @@
 // The open task's two questions before it acts (TaskView.tsx): Stop (v1 #781: what else stops, its running subagents
 // and a subagent's report, and that queued follow-ups stay) and Restore to before a turn (orch #17: it undoes every
 // change made in the folder since then, with Undo after).
+import '../i18n/lazy.ts';
 import { Show, createSignal, type JSX } from 'solid-js';
 import { Button, Dialog, Inline } from '@wisp/ui';
 import { stopQuestion, type StopQuestion } from './stop-question.ts';
