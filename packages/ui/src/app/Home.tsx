@@ -97,6 +97,9 @@ export interface LauncherProps {
   /** where it works (owner, 2026-11-15): the one project selector in place of v1's row of place chips; it opens the
    *  same list as ⌘P, with No folder and Other folder… after the projects */
   readonly place: Omit<ProjectSelectProps, 'part' | 'where'>;
+  /** added 2026-11-27 (additive, owner): where it runs and how ("This computer · Worktree"), a second selector beside
+   *  the project's, after its word ("on"); it opens the same kind of list as the project's */
+  readonly runOn?: { readonly label: string; readonly select: Omit<ProjectSelectProps, 'part' | 'where'> } | undefined;
   readonly placeholder: string;
   readonly value: string;
   /** what's in the box after each input, with the input event (v1 #800: what a phone keyboard's clipboard put in) */
@@ -271,6 +274,14 @@ function LauncherBox(props: LauncherProps): JSX.Element {
         <div data-kit="l-projects" data-part="launcher.projects">
           <span data-kit="l-in">{props.inLabel}</span>
           <ProjectSelect {...props.place} part="launcher.place" where="launcher" />
+          <Show when={props.runOn}>
+            {(r) => (
+              <>
+                <span data-kit="l-in">{r().label}</span>
+                <ProjectSelect {...r().select} part="launcher.runon" where="launcher" />
+              </>
+            )}
+          </Show>
         </div>
         <Show when={props.setup}>{(s) => <LauncherSetup {...s()} />}</Show>
         <div data-kit="mn-wrap">

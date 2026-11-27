@@ -12,7 +12,7 @@ import { Spirit } from '../crew/Spirit.tsx';
 import { WithAct, type Act } from './act.tsx';
 import { useRailCard } from './RailCard.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
-import { ProjectSelect } from './ProjectSelect.tsx';
+import { ProjectSelect, type ProjectSelectProps } from './ProjectSelect.tsx';
 import { phoneStage } from './phone-stage-load.ts';
 import { drag } from './grip-drag.ts';
 
@@ -317,6 +317,9 @@ export interface SidebarHeadProps {
   /** added 2026-11-14: several projects picked: the selector names them ("api + web", "4 projects") over their stacked
    *  dots (three at most), the need-you counts summed, the tip listing every one */
   readonly pick?: { readonly colors: readonly string[]; readonly label: string; readonly tip: string; readonly need: number; readonly needLabel: string };
+  /** added 2026-11-27 (additive, owner): the list's computer filter beside the project's (All computers, or one), the
+   *  same selector; absent with one computer */
+  readonly computer?: Omit<ProjectSelectProps, 'part' | 'where'> | undefined;
   readonly onBrand?: () => void;
   /** Home is open: the brand (which goes there) is where you are */
   readonly homeOn?: boolean;
@@ -440,6 +443,7 @@ export function SidebarHead(props: SidebarHeadProps): JSX.Element {
             );
           }}
         </Show>
+        <Show when={props.computer}>{(c) => <ProjectSelect {...c()} part="topbar.computer-select" where="head" />}</Show>
         {props.slots?.chips}
         {/* v1's + (Manage projects) only when given something to do: the app's is in the switcher now (docs/ux/2026-11-18 #11) */}
         <Show when={props.manageAct || props.onManage}>

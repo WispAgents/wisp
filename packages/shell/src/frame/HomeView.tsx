@@ -20,7 +20,7 @@ import { tipPick } from './home-tips.ts';
 import { computed, entityKey, newRowId, ownerOf, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip, type SetupTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
-import type { LaunchTargetDef, SendHold } from '../contract.ts';
+import type { LaunchTargetDef, PaletteItem, SendHold } from '../contract.ts';
 import { aheadLabel, startsAt, waitable, whenTip } from './hold.ts';
 import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
@@ -44,6 +44,7 @@ import { sandboxPeers, targetValue, whereItems } from './where.ts';
 import { placeOn } from './run-on.ts';
 import { dirsOf, launchOf, parsePick, pickLabel, pickedProjects, placePick } from './project-pick.ts';
 import { openPlaces, releasePlaces, type PlaceTarget } from './project-switch.ts';
+import { openRunOn, releaseRunOn, type RunOnTarget } from './runon-switch.ts';
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { displayCombo } from '../keys.ts';
 import { draftValue, launcherDraft, withShareLink } from './drafts.ts';
@@ -932,38 +933,35 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         [!when() && { id: 'later', part: 'launcher.later', icon: 'clock', label: t('shell.home.later'), act: laterTool().act }],
       ],
     });
-  // Where it runs and how, one chip (Where and Worktree were two chips for one question): "This computer · Worktree"
-  const whereChip = (): LauncherTool => {
+  // Where it runs and how (owner, 2026-11-27): one selector beside the project's ("in wisp on This computer ·
+  // Worktree"), opening the same palette dialog as the project's: the computers, Add a computer…, then the folder's
+  // Worktree / In place (Where and Worktree were two chips for one question, then one chip's menu in the footer)
+  const whereHow = (): string => (project() === undefined ? '' : worktree() ? t('shell.home.worktree') : t('shell.home.inPlace'));
+  const runOnTarget: RunOnTarget = {
+    items: (): PaletteItem[] => {
+      const g = t('shell.home.whereSheet');
+      const picked = t('shell.home.picked');
+      const at = placeOf() ? runOn() : target();
+      const rows = (whereItems(runOnPeers(), at, home, (p) => shell.client.peers.name(p as PeerId), t, targets().map((d) => ({ id: d.id, label: d.label(), icon: d.icon }))) as { value: string; label: string; icon?: string; checked?: boolean }[]).map(
+        (m, i): PaletteItem => ({ id: `runon:${m.value}`, group: g, label: m.label, ...(m.icon !== undefined && { icon: m.icon }), rank: i, ...(m.checked && { sub: picked }), keywords: 'computer machine run on', run: () => setRunOn(m.value) }),
+      );
+      // No folder: no git repo, so no worktree either (v1 paintScratch). The pick is kept for every New task, as v1's
+      // toggle was (`defaults.worktree`); the CLI and `wisp mcp` keep their own default (audit C4), so the hints say both
+      const how = project() === undefined ? [] : [
+        { id: 'runon:how:worktree', on: worktree(), label: t('shell.home.worktree'), hint: t('shell.home.worktreeHint'), icon: 'branch', set: true },
+        { id: 'runon:how:inPlace', on: !worktree(), label: t('shell.home.inPlace'), hint: t('shell.home.inPlaceHint'), icon: 'folder', set: false },
+      ].map((h, i): PaletteItem => ({ id: h.id, group: t('shell.home.folderHow'), label: h.label, icon: h.icon, rank: i, sub: h.on ? `${picked} · ${h.hint}` : h.hint, keywords: 'worktree in place branch folder', run: () => setWorktree(h.set) }));
+      return [...rows, { id: 'runon:add', group: g, label: t('shell.home.addMachine'), icon: 'plus', rank: rows.length, keywords: 'add computer machine ssh', run: () => view('machine.this') }, ...how];
+    },
+  };
+  onCleanup(() => releaseRunOn(runOnTarget));
+  const runOnSelect = (): NonNullable<LauncherProps['runOn']> => {
     const place = placeOf()?.label() ?? (target() === home ? t('shell.card.thisComputer') : shell.client.peers.name(target()));
-    // No folder: no git repo, so no worktree either (v1 paintScratch)
-    const how = project() === undefined ? '' : worktree() ? t('shell.home.worktree') : t('shell.home.inPlace');
-    const where = whereAct().menu;
-    return tool('where', 'launcher.where', placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), how ? `${place} · ${how}` : place, t('shell.home.whereHow'), {
-      text: true,
-      act: {
-        menu: {
-          items: [
-            ...(where?.items ?? []),
-            ...(how
-              ? [
-                  {
-                    kind: 'group' as const,
-                    id: 'how',
-                    label: t('shell.home.folderHow'),
-                    items: [
-                      // the pick is kept for every New task, as v1's toggle was (`defaults.worktree`); the CLI and
-                      // `wisp mcp` keep their own default (audit C4), so the menu says both
-                      { value: 'how:worktree', label: t('shell.home.worktree'), hint: t('shell.home.worktreeHint'), icon: 'branch' as const, checked: worktree(), part: 'launcher.worktree' as const },
-                      { value: 'how:inPlace', label: t('shell.home.inPlace'), hint: t('shell.home.inPlaceHint'), icon: 'folder' as const, checked: !worktree(), part: 'launcher.worktree' as const },
-                    ],
-                  },
-                ]
-              : []),
-          ],
-          onSelect: (v) => (v === 'how:worktree' || v === 'how:inPlace' ? setWorktree(v === 'how:worktree') : where?.onSelect(v)),
-        },
-      },
-    });
+    const label = whereHow() ? `${place} · ${whereHow()}` : place;
+    return {
+      label: t('shell.home.on'),
+      select: { label, colors: [], icon: placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), title: t('shell.home.whereHow'), ariaLabel: `${t('shell.home.whereHow')}: ${label}`, onOpen: () => openRunOn(shell, runOnTarget) },
+    };
   };
   // the chip names a declared goal it sends by name, else what Done when says
   const goalChipLabel = (): string => {
@@ -1025,6 +1023,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       <Launcher
         inLabel={t('shell.home.in')}
         place={place()}
+        {...(desk() && { runOn: runOnSelect() })}
         placeholder={desk() ? t('shell.home.placeholderPlus') : promptHint()}
         value={text()}
         onInput={(v, e) => {
@@ -1115,7 +1114,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           ...(mic ? [tool('mic', 'launcher.mic', 'mic', mic.label(), mic.label(), { on: mic.on(), act: { onClick: mic.toggle } })] : []),
           whereTool(),
         ])}
-        mid={desk() ? [whereChip()] : firstRunTools(firstRun(), 'mid', [
+        mid={desk() ? [] : firstRunTools(firstRun(), 'mid', [
           // v1 #771: no Try it two ways button; the runner's + adds the second run
           // v1 team.js paintTeamBtn: "Delegate", or how many agents the lead can hand work to; its panel (teamEditor)
           teamTool(),

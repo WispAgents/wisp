@@ -8,9 +8,11 @@ import { computed, ownerOf, type EntityKey, type Json } from '@wisp/client';
 import { forLater, isSaved, markRead, setState } from './commands.ts';
 import { listShown } from './pane-widths.ts';
 import { openSwitcher } from './project-switch.ts';
+import { computerName, computersNow, openComputers } from './runon-switch.ts';
+import { ALL_COMPUTERS, hasComputerFilter, knownComputer } from './computer-filter.ts';
 import { parsePick, pickLabel, pickOnly, pickRemove, pickValue, pickedProjects, pickHas } from './project-pick.ts';
 import { displayCombo } from '../keys.ts';
-import { CrewRail, EmptyState, Feed, FeedSection, PickStrip, SidebarHead, Skeleton, SplitTop, Stack, TaskCard, useSignal, type MenuEntry, type ProjectChip, type RailMember } from '@wisp/ui';
+import { CrewRail, EmptyState, Feed, FeedSection, PickStrip, SidebarHead, Skeleton, SplitTop, Stack, TaskCard, useSignal, type MenuEntry, type ProjectChip, type RailMember, type SidebarHeadProps } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { routeOf, routeTip } from './auto.ts';
 import { useNow } from '../clock.ts';
@@ -180,8 +182,18 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
   const listSet = useSignal(() => shell.sidebar.open() !== false);
   // shown, as the frame shows it: the side panel takes the list's place in a window under 1180 (pane-widths listShown)
   const listOpen = (): boolean => listShown(listSet(), nav().layout === 'split' && nav().main.kind !== 'home' && nav().side.kind !== 'none', window.innerWidth);
+  // the computer filter beside the project's (owner, 2026-11-27): All computers or one, from two computers on
+  const computers = useSignal(() => computersNow(shell));
+  const computerOn = useSignal(() => knownComputer(shell.computerFilter?.value(), computersNow(shell)));
+  const computer = (): SidebarHeadProps['computer'] => {
+    if (!hasComputerFilter(computers())) return undefined;
+    const on = computerOn();
+    const label = on === ALL_COMPUTERS ? shell.t('shell.phone.allComputers') : computerName(shell, on);
+    return { label, colors: [], icon: on === ALL_COMPUTERS ? 'server' : on === shell.client.home() ? 'laptop' : 'server', title: shell.t('shell.computers.title'), ariaLabel: shell.t('shell.computers.aria', { name: label }), onOpen: () => openComputers(shell) };
+  };
   return (
     <SidebarHead
+      computer={computer()}
       homeOn={homeOn()}
       slots={slots()}
       brandLabel={shell.t('shell.brand')}

@@ -14,6 +14,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   its usage limit or its model is at capacity, the job carries on with the next one in the same conversation, and
   nobody is pinged. With every fallback tried, you get the limit card as before (ADR-0139).
 
+### Changed
+
+- **Where a task runs sits beside its project.** New task reads "in wisp on This computer · Worktree": the computer
+  and Worktree / In place moved from the footer's menu to a selector next to the project's, and it opens the same
+  searchable list as the project picker (your computers, Add a computer…, then Worktree or In place).
+- **Filter the task list by computer.** With more than one computer, the list's head has a computer selector beside
+  the project's: All computers, or one computer's tasks, picked from the same kind of list.
+
 ## [1.0.0-alpha.18] - 2026-11-27
 
 ### Fixed
