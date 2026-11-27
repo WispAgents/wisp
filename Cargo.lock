@@ -4096,6 +4096,7 @@ dependencies = [
  "wisp-resources-api",
  "wisp-resources-core",
  "wisp-review",
+ "wisp-risk",
  "wisp-router",
  "wisp-runtime",
  "wisp-runtime-api",
@@ -5628,6 +5629,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "wisp-risk"
+version = "1.0.0-alpha.18"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tracing",
+ "wisp-kernel",
+ "wisp-risk-api",
+ "wisp-risk-core",
+ "wisp-runtime-api",
+ "wisp-ship-api",
+]
+
+[[package]]
+name = "wisp-risk-api"
+version = "1.0.0-alpha.18"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "wisp-kernel",
+]
+
+[[package]]
+name = "wisp-risk-core"
+version = "1.0.0-alpha.18"
+dependencies = [
+ "serde_json",
+ "wisp-risk-api",
+]
+
+[[package]]
 name = "wisp-router"
 version = "1.0.0-alpha.18"
 dependencies = [
@@ -5852,6 +5885,7 @@ dependencies = [
  "wisp-kernel",
  "wisp-proc",
  "wisp-review-api",
+ "wisp-risk-api",
  "wisp-runtime-api",
  "wisp-ship-api",
  "wisp-ship-core",

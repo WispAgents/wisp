@@ -1,6 +1,6 @@
 // The side panel's PR pane (v1 features/panel.js paintPr): the task's PRs from `ship.details` (one chip each when
 // there are several), the title as a link, #n · state · branch → base · author, the verdict with its one step
-// (Merge, Fix conflicts), checks with the passed folded, reviewers, the conversation (outdated threads and bots
+// (Merge, Fix conflicts), merge risk (PrRisk), checks with the passed folded, reviewers, the conversation (outdated threads and bots
 // folded), the files, and Open on GitHub · Checked … · Check now. Skeleton rows while the first answer comes.
 import { For, Show, createEffect, createMemo, createResource, createSignal, on, type JSX } from 'solid-js';
 import { defineCommand, type EntityKey } from '@wisp/client';
@@ -8,6 +8,7 @@ import { Banner, Button, CheckList, CheckRow, Dialog, EmptyState, FileStatList, 
 import type { Tone as KitTone } from '@wisp/tokens';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
+import { PrRisk } from './PrRisk.tsx';
 import { checkGroups, dur, fixText, gist, hasPr, prFiles, talk, verdict, type CheckItem, type PrNote, type PrPanel, type Tone } from './pr.ts';
 import '../i18n/lazy.ts';
 
@@ -208,6 +209,7 @@ export function PrPane(): JSX.Element {
                     : {})}
                 />
                 <Show when={p().error}>{(e) => <Banner tone="warn" title={e()} part="side.pr.error" />}</Show>
+                <PrRisk url={p().url} open={p().state === 'OPEN'} />
                 <Show when={p().checkList}>
                   <Stack gap="1" part="side.pr.checks">
                     <PaneHead title={t('shell-task.pr.checks')} {...((p().checkList ?? []).length > 0 && { meta: String((p().checkList ?? []).length) })} />

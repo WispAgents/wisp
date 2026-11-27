@@ -125,6 +125,17 @@ fn a_review_is_asked_for_when_the_open_prs_head_moves_and_only_then() {
 }
 
 #[test]
+fn merge_risk_is_asked_for_when_any_open_prs_head_moves_attached_ones_too() {
+    let at = |own: &str, attached: &str, state: &str| json!({ "repos": [{ "pr": { "url": "u1", "state": "OPEN", "head": own } }], "prs": [{ "repo": "lib", "pr": { "url": "u2", "state": state, "head": attached } }] });
+    assert!(new_open_heads(None, &at("a", "x", "OPEN")), "first seen");
+    assert!(!new_open_heads(Some(&at("a", "x", "OPEN")), &at("a", "x", "OPEN")), "nothing moved");
+    assert!(new_open_heads(Some(&at("a", "x", "OPEN")), &at("a", "y", "OPEN")), "an attached PR was pushed to");
+    assert!(new_open_heads(Some(&at("a", "x", "OPEN")), &at("b", "x", "OPEN")), "the task's own PR was pushed to");
+    assert!(!new_open_heads(Some(&at("a", "x", "OPEN")), &at("a", "x", "MERGED")), "one merged: nothing to judge");
+    assert!(!new_open_heads(None, &at("", "", "CLOSED")), "no head yet");
+}
+
+#[test]
 fn a_pr_poll_that_found_nothing_new_is_not_a_write() {
     let at = |checked: i64, state: &str| json!({ "pr": { "state": state, "checkedAt": checked }, "repos": [{ "pr": { "state": state, "checkedAt": checked } }] });
     assert!(same_news(&at(1, "OPEN"), &at(2, "OPEN")));

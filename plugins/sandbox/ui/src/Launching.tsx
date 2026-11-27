@@ -14,6 +14,9 @@ import { SIGNIN } from './signin-kind.ts';
 import type { LaunchingParams } from './views.ts';
 import './i18n/lazy.ts';
 
+/** past this many characters a failure's reason is cut to three lines, with Show all */
+const LONG_ERROR = 200;
+
 export default function Launching(props: { readonly client: PluginClient; readonly params: LaunchingParams }): JSX.Element {
   const c = props.client;
   const shell = useShell();
@@ -64,6 +67,7 @@ export default function Launching(props: { readonly client: PluginClient; readon
     void c.run(claudeCode, { peer, code: code() }).finally(() => setSending(false));
   };
   const inBrowser = (): boolean => signin()?.state === 'link' || signin()?.state === 'waiting' || signin()?.state === 'saving';
+  const [whole, setWhole] = createSignal(false);
   const again = (): void => void c.run(retry, { peer, id: props.params.id });
   const drop = (): void => {
     void c.run(dismiss, { peer, id: props.params.id });
@@ -180,7 +184,22 @@ export default function Launching(props: { readonly client: PluginClient; readon
           <Steps items={stepsOf(launch())} part="sandbox.launching.steps" />
         </Show>
         <Show when={state() === 'failed'}>
-          <Callout tone="bad" title={launch()?.error ?? t('sandbox.failed')} part="sandbox.launching.error" />
+          {/* why, in three lines at most (a git error once filled the screen); the rest a click away */}
+          <Callout
+            tone="bad"
+            part="sandbox.launching.error"
+            action={
+              <Show when={(launch()?.error ?? '').length > LONG_ERROR}>
+                <Button size="sm" variant="ghost" onClick={() => setWhole(!whole())} part="sandbox.launching.error.more">
+                  {whole() ? t('sandbox.failed.less') : t('sandbox.failed.more')}
+                </Button>
+              </Show>
+            }
+          >
+            <Text size="sm" breakAnywhere {...(whole() ? {} : { lines: 3 as const })} part="sandbox.launching.error.reason">
+              {launch()?.error || t('sandbox.failed')}
+            </Text>
+          </Callout>
           <Inline gap="2">
             <Button size="sm" variant="primary" icon="rotate" onClick={again}>
               {t('sandbox.retry')}

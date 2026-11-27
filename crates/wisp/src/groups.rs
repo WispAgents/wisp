@@ -18,7 +18,7 @@ pub struct Where {
     pub user_home: PathBuf,
 }
 
-pub const DEFAULT: [&str; 53] = [
+pub const DEFAULT: [&str; 54] = [
     "cli",
     "events",
     "threads",
@@ -41,6 +41,7 @@ pub const DEFAULT: [&str; 53] = [
     "worktrees",
     "ship",
     "review",
+    "risk",
     "issues",
     "terminal",
     "lsp",
@@ -170,6 +171,8 @@ fn add(g: PluginGroup, name: &str, at: &Where) -> PluginGroup {
         "ship" => g.add(wisp_ship::ShipPlugin::default()),
         #[cfg(feature = "review")]
         "review" => g.add(wisp_review::ReviewPlugin),
+        #[cfg(feature = "risk")]
+        "risk" => g.add(wisp_risk::RiskPlugin),
         #[cfg(feature = "issues")]
         "issues" => g.add(wisp_issues::IssuesPlugin),
         #[cfg(feature = "terminal")]
@@ -279,6 +282,7 @@ pub fn in_build(name: &str) -> bool {
         "worktrees" => cfg!(feature = "worktrees"),
         "ship" => cfg!(feature = "ship"),
         "review" => cfg!(feature = "review"),
+        "risk" => cfg!(feature = "risk"),
         "issues" => cfg!(feature = "issues"),
         "terminal" => cfg!(feature = "terminal"),
         "lsp" => cfg!(feature = "lsp"),

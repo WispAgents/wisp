@@ -14,6 +14,7 @@ import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
 import { fixing, openPrs, prChipTitle, prsOf, prTone, worstTone, type PrTone } from './model/pr.ts';
 import { prStripSub, prStripTitle } from './model/strip.ts';
 import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
+import { chipRisk, RISK_ICON, RISK_TONE, riskLine, riskRow, verdictOf } from './model/risk.ts';
 import { stepsOfLive, track } from './model/ship.ts';
 import { stewardLine, stewardStatus, stewardSwitch } from './model/steward.ts';
 import { ShipRun } from './ShipRun.tsx';
@@ -105,6 +106,7 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
   const tone = createMemo((): PrTone => worstTone(prs().map((x) => prTone(x.pr, fixFor(x)))));
   const open = createMemo(() => openPrs(props.s));
   const rv = () => (props.s.pr?.state === 'OPEN' ? reviewState(t, props.s, ctx()) : undefined);
+  const risk = createMemo(() => riskRow(t, props.s, open()));
   // A single settled (merged/closed) PR has no active toolbar actions: put its GitHub link inline in the row
   // instead of opening a mostly empty 32px toolbar beneath it.
   const inlineGithub = createMemo((): string | undefined => {
@@ -112,6 +114,16 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
     if (!first || several() || open().length > 0 || rv()) return undefined;
     return first.pr.url;
   });
+  // each PR's chip says its own merge risk ("#853 · high risk"), its title the judge's line
+  const chipSuffix = (o: RepoPr): string | undefined => {
+    const n = !sameRepo() && o.repo ? `#${o.pr.number}` : undefined;
+    const r = o.pr.state === 'OPEN' ? chipRisk(t, props.s, o.pr) : undefined;
+    return r ? [n, r].filter(Boolean).join(' · ') : n;
+  };
+  const chipTitle = (o: RepoPr): string => {
+    const base = prChipTitle(t, o, fixFor(o));
+    return props.s.riskOn && o.pr.state === 'OPEN' ? `${base}\n${riskLine(t, o, verdictOf(props.s, o.pr), false)}` : base;
+  };
   const title = (): string => prStripTitle(t, prs());
   const sub = (): string => prStripSub(t, prs(), props.s.pr, props.s.conflictFix);
   const overflow = (): boolean => prs().length > PR_CHIP_CAP;
@@ -225,6 +237,25 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
             />
           )}
         </Show>
+        {/* merge risk (ADR-0143) on its own row, built as the Steward's: the worst open PR's verdict in a line and its
+            level on the right (every PR's line on hover); each PR's own word is on its chip, the reasons in the PR pane */}
+        <Show when={risk()}>
+          {(r) => (
+            <ListRow
+              part="pr.strip.risk"
+              lead={<Icon name={RISK_ICON[r().kind]} size="sm" tone={RISK_TONE[r().kind] === 'muted' ? 'faint' : RISK_TONE[r().kind]} />}
+              title={t('wisp.ship.risk.title')}
+              sub={r().sub}
+              subTitle={`${r().title}\n${t('wisp.ship.risk.open')}`}
+              actions={
+                <Text size="sm" weight="medium" tone={RISK_TONE[r().kind]} nowrap part="pr.strip.risk.level">
+                  {r().level}
+                </Text>
+              }
+              onOpen={() => ship.openPane()}
+            />
+          )}
+        </Show>
         {/* every attached PR as a wrapping chip row under the summary (never ListRow's nowrap pills column, which
             squeezed the title and spilled chips past the card); bounded with "+N more" past 5 PRs */}
         <Show when={several()}>
@@ -234,10 +265,10 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
                 <ToneChip
                   part="pr.strip.chip"
                   label={!sameRepo() && o.repo ? o.repo : `#${o.pr.number}`}
-                  suffix={!sameRepo() && o.repo ? `#${o.pr.number}` : undefined}
+                  suffix={chipSuffix(o)}
                   tone={TONE[prTone(o.pr, fixFor(o))]}
                   live={(!!o.pr.checks?.pending || !!o.pr.waitingChecks) && o.pr.state === 'OPEN'}
-                  title={prChipTitle(t, o, fixFor(o))}
+                  title={chipTitle(o)}
                   onClick={() => ship.shell.platform.openExternal(o.pr.url)}
                 />
               )}
