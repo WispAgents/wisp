@@ -332,12 +332,15 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
       (`notes:` on a task, validated), the TUI's health line and Thread pane (`t`), `serve_threads.rs` e2e. **To do:**
       recheck opencode (a JS plugin via `OPENCODE_CONFIG_CONTENT`) with a recorded run
 
-- [x] MCP Events both ways (owner, 2026-11-27; ADR-0145): `mcp.method@1` (a plugin serves a JSON-RPC method on the
-  MCP endpoint, a result or an SSE stream), a dual-era server (`server/discover`, `resultType`, `-32022`),
-  `wisp.events` serving `events/list`, `events/poll` (`events.poll`) and `events/stream` (push, woken by the feed),
-  and `wisp.connectors`' `connectors.events` plus the `mcp.event` trigger source (push when offered, poll otherwise
-  or while the stream is down; modern fallback). **To do:** webhook (`events/subscribe`) both ways, `events/*` through
-  `wisp mcp` stdio, a per-caller stream limit, `mcp.event` in the trigger editor, payload schemas in the catalogue
+- [x] MCP Events both ways, every delivery mode (owner, 2026-11-27; ADR-0145): `mcp.method@1` (a plugin serves a
+  JSON-RPC method on the MCP endpoint, a result or an SSE stream), a dual-era server (`server/discover`,
+  `resultType`, `-32022`), `wisp.events` serving `events/list` (inferred payload schemas), `events/poll`,
+  `events/stream` (16 a caller) and `events/subscribe`/`unsubscribe` (Standard Webhooks, verification,
+  `Net::fetch_untrusted`), `events.webhooks`; `events/*` through `wisp mcp` stdio; `wisp.connectors`'
+  `connectors.events` and the `mcp.event` source (webhook with `connectors.events.callback`, push, poll; modern
+  fallback); the trigger editor's MCP server event tile. Fixed on the way: an `mcp.event` trigger's project filtered
+  its events away. **To do:** a stdio connector's events, schemars payload schemas, dual-signing on secret
+  rotation
 
 ### 4.2 GUI (browser and desktop), v1 parity
 

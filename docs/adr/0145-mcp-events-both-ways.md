@@ -1,11 +1,13 @@
-# ADR-0145: MCP Events both ways, poll and push: an `mcp.event` trigger source, and wisp's log on `events/poll` and `events/stream`
+# ADR-0145: MCP Events both ways, every delivery mode: an `mcp.event` trigger source, and wisp's log served by poll, push and webhook
 
 - Status: accepted
 - Date: 2026-11-27
 - Source: the owner asked what MCP events are and how wisp can use them, then said "do 1 and 2": (1) wisp as an
   Events client (any MCP server's events start a task or wake a crew member) and (2) wisp as an Events server (any MCP
   client reacts to wisp's durable events). The extension is SEP-3415, `io.modelcontextprotocol/events`, merged as
-  Final on 2026-11-19. A follow-up the same day: "Add push delivery (events/stream) both ways". Builds on ADR-0043 (one trigger engine, `trigger.source@1`), ADR-0044 (the durable log and
+  Final on 2026-11-19. Follow-ups the same day: "Add push delivery (events/stream) both ways", then "do all of it":
+  webhook both ways, `events/*` through `wisp mcp` (stdio), a per-caller stream limit, `mcp.event` in the trigger
+  editor, and payload schemas. Builds on ADR-0043 (one trigger engine, `trigger.source@1`), ADR-0044 (the durable log and
   its catalogue) and ADR-0040 (meet users where they work).
 
 ## Context
@@ -64,10 +66,20 @@
 
 ### 3. wisp as an Events server (`wisp.events`)
 
-- **`events/list`** lists the catalogue's **durable** types only, each with `delivery: ["push", "poll"]`. Ephemeral
-  events never reach the log, so a poll couldn't serve them.
+- **`events/list`** lists the catalogue's **durable** types only, each with `delivery: ["webhook", "push", "poll"]`.
+  Ephemeral events never reach the log, so a poll couldn't serve them.
   - Each type takes one argument, `subject` (a task id).
-  - Its `payloadSchema` is `{type: object}`: the catalogue has no schemas yet.
+  - **Its `payloadSchema` is inferred** (`schema.rs`) from the newest 20 events of that type still kept, read from
+    the last 5 000 in the log:
+    - each field's JSON types (an integer that is sometimes a fraction is a `number`);
+    - objects and lists looked into, four levels deep;
+    - `required` lists the fields every sample had;
+    - the `description` says it is inferred, and from how many events.
+
+    Only shapes leave the log, never values. A type with nothing kept is a bare `{type: object}`. Deriving schemars
+    schemas on the durable event structs (as ADR-0044 planned) would also mean deriving them on the runtime models
+    those structs carry, which is a larger change for later. The inferred schema describes what a client actually
+    receives.
 - **`events/poll`** is a new read command, **`events.poll`**. It is also an MCP tool (`events_poll`) and a CLI verb,
   like every command.
   - **The cursor** is the log's seq, as a string. `null` returns no events and the newest seq ("from now").
@@ -96,10 +108,52 @@
   - **No stream polls the log.** The plugin's durable feed handler (`feed`, which already writes the
     `events_view` rows) bumps a `watch` of the newest seq. Each open stream waits on it, then reads the log past its
     cursor.
-- **Not yet:**
-  - `events/subscribe` answers `Unsupported` (`-32026`, `data: {feature: "deliveryMode", value: "webhook"}`).
-  - `events/unsubscribe` answers `NotFound` (`data.kind: "subscription"`).
-  - Webhook delivery exists as `events.sink@1`. Moving it onto the SEP's method is later work (below).
+  - **Limits:** a caller (its capability set and task) holds at most 16 open streams, and wisp at most 256 in all.
+    Past either, the answer is `ResourceExhausted` (`-32025`, `data: {limit: "streams", max}`). A stream's place
+    is freed when it ends (`stream::Held`).
+- **`events/subscribe`** (webhook; `webhook.rs` subscribes, `delivery.rs` sends):
+  - **Checked like a poll**, by running `events.poll` as the caller. Then:
+    - the secret must be `whsec_` plus base64 of 24 to 64 bytes;
+    - the URL must be `https`. `http`, and private or loopback addresses, are allowed only with the setting
+      `events.webhooks.allowPrivate` (off by default; for a LAN or a test).
+
+    A bad value is `InvalidParams`.
+  - **The key is `(principal, url, name, arguments)`.** The arguments are compared as canonical JSON, and the
+    principal is the caller's capability set plus its task. The id is `sub_` followed by 16 hex digits of a SHA-256
+    of the key, so it is stable across refreshes and restarts.
+  - **A subscribe on a live key is an upsert:**
+    - the TTL is granted again (1 h by default, 1 minute to 24 h, and a request for no expiry gets 24 h);
+    - the secret is replaced;
+    - delivery suspended by failures resumes;
+    - the response carries `deliveryStatus` (`active`, `lastDeliveryAt`, `lastError` as a category only,
+      `failedSince`).
+  - **Verification:** before the first delivery to a `(principal, url)`, wisp POSTs a signed `verification` envelope.
+    The endpoint must echo its challenge, which is compared in constant time. A success is remembered for an hour.
+    A failure is `CallbackEndpointError` (`-32027`, `data.reason`: `challenge_failed`, `http_4xx`, `timeout`, …).
+  - **Per-caller limit:** 32 subscriptions (`-32025`).
+- **Delivery:** one task per subscription, woken by the feed like a stream. Each event is a signed POST, in order:
+  - **Headers:** `webhook-id` is `msg_` plus 22 random characters (never the event's id), alongside
+    `webhook-timestamp`, `webhook-signature` (`v1,` and the HMAC-SHA256 of `id.timestamp.body` under the secret) and
+    `X-MCP-Subscription-Id`.
+  - **How it's sent:** through `Net::fetch_untrusted` (below).
+  - **Retries:** at 2 s, 10 s, 1 min and 5 min, each with a fresh timestamp and signature. `410` and `413` are never
+    retried.
+  - **The body's `cursor` is the watermark:** everything before it was delivered or abandoned.
+  - **Suspension:** ten abandoned events in a row suspend delivery until the next refresh.
+  - **Envelopes:** a cursor past retention sends a `gap` envelope. Losing access (`Forbidden` or `NotFound` on the
+    read) sends `terminated` and ends the subscription.
+  - **State is in memory**, as SEP-3415 allows for short TTLs. After a restart, the client's next refresh brings the
+    subscription back from its cursor.
+- **`events/unsubscribe`** resolves the same key (the id is never accepted as input). An unknown key is `NotFound`.
+- **`events.webhooks`** (read) lists the live subscriptions, never their secrets. A caller sees its own; the user
+  sees all of them. A task's agent isn't granted it.
+- **`Net::fetch_untrusted` (`wisp-kernel`, additive):** a request to an address nobody vouched for.
+  - It never follows a redirect.
+  - The host is resolved at send time and checked with `is_global` (the IANA special-purpose ranges: loopback,
+    private, link-local, CGNAT, documentation, ULA, and IPv4-mapped forms of those).
+  - The connection goes to that exact address (reqwest `resolve`), so DNS can't rebind between the check and the
+    connect. The TLS name stays the host's.
+  - Its default implementation is `fetch`, so a test's fake `Net` still answers. wisp's real `Net` implements it.
 
 ### 4. wisp as an Events client (`wisp.connectors`)
 
@@ -131,6 +185,14 @@
   `MCP-Protocol-Version: 2026-07-28`, and the version and client info in `_meta`. `tools/call` keeps its current
   flow.
 - **Refusals in words:** "pd serves no MCP events", "pd has no event x", and so on.
+- **The mode, and the project:** `match.delivery` (`webhook`, `push` or `poll`) names the one mode a trigger takes.
+  Without it, the source takes the first the server offers, in SEP-3415's SDK order: webhook (if this wisp has a
+  public address), then push, then poll. `delivery` is echoed in the payload so the `match` filter passes it.
+  - **A fix found here:** the engine read a trigger's `project` as a filter on the event, so no `mcp.event` trigger
+    with a project could fire, by any mode. `mcp.event` now joins `schedule`, `webhook` and the other sources
+    whose project is only where the task runs.
+  - **`check()`** refuses, when the trigger is applied, an `mcp.event` without `match.connector` and `match.event`,
+    and one with an unknown `match.delivery`.
 
 #### Push from a connector (`events/stream`)
 
@@ -156,17 +218,65 @@
   - five failed opens in a row: polls for 10 minutes, then push is tried again;
   - `terminated`, or a refusal of `events/stream`: polls for an hour.
 
+#### Webhook from a connector (`events/subscribe`)
+
+- **Only with a public address:** this wisp's public `https` address must be set (`connectors.events.callback`,
+  empty by default). Without one, a webhook offer is ignored.
+- **Subscribing:** the first poll subscribes with a secret made here (32 random bytes) and a callback URL with a
+  random route token: `<address>/api/connectors/events/<token>`.
+  - Both are kept before `events/subscribe` is sent, because the server's verification arrives while the request
+    is still open.
+  - A refused subscribe, or a `terminated` envelope, leaves the trigger to push or poll for an hour.
+- **The route** is `POST`, open (no sign-in), raw, 256 KiB at most (`hook.rs`). It checks each delivery before reading
+  it:
+  - the token, else `410`;
+  - the Standard Webhooks signature (any of several, for a rotation) and a timestamp within five minutes, else
+    `401`;
+  - a `webhook-id` not seen in the last 256, else `200` and nothing done.
+
+  A `verification` envelope is answered with its challenge. An event goes to the engine
+  (`automations.trigger.push`) before the answer, so a `2xx` means it was taken; if that push fails, the route
+  answers `503` and the server tries again. `gap` moves the cursor.
+- **Lifecycle:** as for a stream, the engine's poll keeps it alive.
+  - A poll while subscribed asks nothing and returns the watermark the deliveries carried.
+  - It refreshes at 80 % of the grant.
+  - A subscription no trigger polled for three intervals is unsubscribed (best effort; the server's TTL ends it
+    anyway).
+
+### `wisp mcp` (stdio)
+
+- **Initialize:** the stdio server declares `io.modelcontextprotocol/events` in `initialize`.
+- **Forwarding:** `events/*` goes to the running wisp, started when none answers (`mcp_stdio::forward`).
+  - A plain answer is sent back as it is.
+  - A stream's SSE frames go to stdout as notifications as they come.
+  - `notifications/cancelled` aborts the request's task, which drops the connection and so ends the stream on the
+    server. With stdin closed after it, the process exits.
+
+### The trigger editor
+
+- **The tile:** "MCP server event" (`trigger-form.ts`, `McpEventFields.tsx`), with these rows:
+  - a remote connector (`connectors.list`);
+  - one of its event types (`connectors.events`, read when the connector is picked), or "This server sends no MCP
+    events";
+  - that type's arguments from its `inputSchema`: an enum is a pick, a boolean is Any/Yes/No (so it can be left
+    out, which a switch can't say), anything else a box;
+  - Delivery: Automatic, Webhook, Push, or Poll every minute.
+- **Defaults:** it starts in Plan with the outside-input warning, and its default prompt wraps the event as untrusted
+  data.
+- **Edit and the list:** Edit reads the trigger back, and the list says "When pd sends incident.created, in api".
+- **The dev mock** answers both reads.
+
 ### Places it reaches (ADR-0040)
 
 - **Inside wisp:** triggers (a `trigger` in `wisp.yml`, or `wisp trigger add <name> mcp.event`) and crew wakes (a
   member's `wakes:` is a trigger).
 - **From a harness:**
-  - wisp's MCP endpoint (`events/list`, `events/poll`, `events/stream`) for any Events-capable client;
+  - wisp's MCP endpoint (`events/list`, `events/poll`, `events/stream`, `events/subscribe`, `events/unsubscribe`) for
+    any Events-capable client, over HTTP or through `wisp mcp` (stdio);
   - the MCP tools `events_poll` and `connectors_events`;
   - `wisp_events`, as before.
-- **CLI:** the generated verbs of `events.poll` and `connectors.events` (ADR-0022).
-- **Not in the UI yet:** the trigger editor's source list (`plugins/automations/ui/src/trigger-form.ts` `SOURCE`)
-  doesn't offer `mcp.event`. A trigger is written as code, from the CLI or by an agent.
+- **CLI:** the generated verbs of `events.poll`, `events.webhooks` and `connectors.events` (ADR-0022).
+- **The UI:** the trigger editor's MCP server event tile.
 
 ## Consequences
 
@@ -184,6 +294,10 @@
 - **wisp declares `2026-07-28`** while serving it statelessly. Only `resultType` is added, and no modern-only field
   is required of clients. A modern client that needs more (`subscriptions/listen`, caching hints) gets what a legacy
   one gets.
+- **A connector that wants webhook deliveries needs this wisp reachable at a public `https` address.** On the grid
+  that is the box's own address; on a laptop it needs a tunnel, or it uses push or poll.
+- **Webhook state is in memory on the server**, which is fine for TTLs of an hour. Granting no expiry would require
+  durable storage (SEP-3415), so wisp never grants it.
 - **The SEP's error numbers are provisional.** If they change before the core schema records them, `mcp.rs` and
   `events.rs` change with them.
 
@@ -195,7 +309,7 @@
 - A modern request gets `resultType`. An unknown modern version gets `-32022` with the supported list
   (`dispatch::tests`).
 - Polling from `null` returns nothing. The next poll returns the turn's `turn.finished`, and a third returns it no
-  more. An unknown type is `-32023` and `events/subscribe` is `-32026`
+  more. An unknown type is `-32023`, and `events/subscribe` without its delivery is `-32602`
   (`serve_events.rs mcp_events_poll_brings_what_happened_after_the_cursor_once`).
 - **A stream on `wisp serve`** sends `active` with the subscription id and the granted heartbeat, then the turn's
   `turn.finished` as it happens (its cursor equals its `eventId`), then a heartbeat. A type that isn't kept is
@@ -207,6 +321,31 @@
   meanwhile asks nothing and returns the stream's cursor. A dropped stream is opened again from its cursor. After
   `terminated`, polling carries on from the stream's cursor, not the engine's older one. `match.delivery: poll`
   never streams (`connectors/host/tests/events.rs`).
+- **Webhook, server and client, on one `wisp serve`:**
+  - `http` without the setting and a bad secret are `-32602`;
+  - a callback that doesn't echo the challenge is `-32027 challenge_failed`;
+  - wisp's own client, given its own address, subscribes to wisp's own `task.finished`. A delivery fires an
+    `mcp.event` trigger, and `events.webhooks` shows the subscription delivered with no error, and no secret
+    (`serve_events.rs mcp_events_webhook_from_wisp_to_itself_fires_a_trigger`).
+- **A refused webhook** falls back to polling at once and isn't asked again on the next poll. Without a public
+  address, no webhook is asked for (`connectors/host/tests/events.rs`).
+- **Webhook pure parts:**
+  - the key is order-free and the id stable;
+  - secrets are checked;
+  - the signature matches Standard Webhooks' published test vector;
+  - the URL, the TTL grant and the error categories (`events/host/src/webhook.rs`);
+  - a delivery verifies under any of several signatures, and a stale, forged or re-signed one doesn't;
+  - the envelope kinds, and refreshing at 80 % (`connectors/core/src/hook.rs`);
+  - `is_global` over the special-purpose ranges (`wisp-kernel` `services.rs`).
+- **The stream cap:** a caller's 17th stream is refused, another caller isn't held up, and closed streams free their
+  places (`events/host/src/stream.rs`).
+- **Payload schemas:** fields, their types, what every sample has, mixed types, bounded depth, and a type with nothing
+  kept (`schema.rs`); on a real serve, `turn.finished`'s schema has `sessionId`, required
+  (`serve_events.rs mcp_events_poll…`).
+- **stdio:** the extension is declared, list and poll are forwarded, a stream's event reaches stdout, and after a
+  cancel and stdin closed the process exits (`serve_mcp_stdio_catalogue.rs wisp_mcp_forwards_mcp_events…`).
+- **The filter fix and `check()`** (`automations/api/tests/mcp_event.rs`). The form round-trips an `mcp.event`, its
+  arguments typed (`automations/ui/test/trigger-form.test.ts`).
 - **Pure parts of push:** offers and `wants_push`, `delivery` echoed, every frame kind read, a stream's error
   answer read as terminated, backoff (`connectors/core/src/events.rs`).
 - A capped agent polling another task's events gets `-32024` (`serve_events.rs capped_agent_sees_only…`).
@@ -221,13 +360,7 @@
 
 ### Later
 
-- **`wisp mcp` (stdio)** forwards only tools to the server today. It could forward `events/*`, a stream as
-  notifications on stdout, cancelled with `notifications/cancelled`.
-- **A limit on concurrent streams per caller** (`-32025`).
-- **Webhook (`events/subscribe`):**
-  - As a server: `events.sink@1` with Standard Webhooks signing, the challenge, TTL and `deliveryStatus`.
-  - As a client: the grid's public URL as the callback.
-- **The trigger editor** offers `mcp.event`, with the connector's event types from `connectors.events` and the
-  `inputSchema` as the form.
-- **Payload schemas** in the catalogue, so `events/list` can carry real `payloadSchema`s.
 - **A stdio connector's events**, once wisp calls stdio connectors at all.
+- **Schemars payload schemas** on the durable event structs and the models they carry, in place of the inferred ones.
+- **Persisted webhook subscriptions**, if a grant longer than 24 h or no expiry is ever wanted.
+- **Dual-signing during a secret rotation** (SEP-3415 SHOULD): today a refresh with a new secret switches at once.

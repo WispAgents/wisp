@@ -7,14 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **MCP Events, both ways.** A remote connector that serves MCP Events (SEP-3415) can start a task or wake a crew
-  member: write a trigger `on: mcp.event` with `match: { connector, event, arguments }`. When the server offers
-  push, wisp holds a stream open and the trigger fires the moment an event arrives; otherwise wisp polls every
-  minute. Either way each event fires once, from the moment the trigger is on. `connectors.events` lists what a
-  connector serves. In the other direction, wisp's own MCP endpoint serves its durable events: an MCP client lists
-  them with `events/list`, and follows `task.finished`, `pr.opened`, `goal.failed` and the rest with `events/poll` or
-  as they happen with `events/stream`. A task's agent sees only its own task's events. wisp also answers
-  `server/discover` and the `2026-07-28` protocol. Webhook delivery comes later (ADR-0145).
+- **MCP Events, both ways.** Any MCP server that sends events (SEP-3415) can start a task or wake a crew member:
+  in Automations → Triggers pick **MCP server event**, a connector, one of its events and its arguments (or write
+  `on: mcp.event` with `match: { connector, event, arguments }`). wisp takes the events by webhook when the server
+  offers it and this wisp has a public address (`connectors.events.callback`), else holds a stream open, else polls
+  every minute; each event fires once, from the moment the trigger is on. In the other direction, wisp's own MCP
+  endpoint, over HTTP or through `wisp mcp`, serves its durable events: an MCP client lists them with `events/list`
+  (each with its payload's shape), and follows `task.finished`, `pr.opened`, `goal.failed` and the rest by poll,
+  stream or a signed webhook to a verified address. A task's agent sees only its own task's events, and
+  `events.webhooks` lists where events go. wisp also answers `server/discover` and the `2026-07-28` protocol
+  (ADR-0145).
 
 ## [1.0.0-alpha.18] - 2026-11-27
 
