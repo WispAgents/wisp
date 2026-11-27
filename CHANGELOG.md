@@ -5,6 +5,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-alpha.17] - 2026-11-27
+
+### Changed
+
+- **trywisp.dev on a phone offers what a phone can do.** In place of `npx wisp-agents` and the desktop download, the hero and the closing section offer **Send it to my computer** (the share sheet, or the link copied where there's none) and **Try it in the cloud** (Wisp Agents Cloud). On a computer nothing changes. Six in ten readers came on a phone, where neither command nor download works.
+- **The site counts its install funnel.** Each event says whether it came from a phone or a computer, and copies and downloads say where on the page they were. New: sending the page to a computer, opening the docs or the cloud from the hero, the sections a reader reached, and joining the phone app waitlist (without the address). docs/privacy.md says so.
+- **Settings → Computers → Sandboxes lists every sandbox your grid holds**, with how many you have of the most it keeps ("3 of 5 sandboxes", amber when full). One made from another computer, or whose machine here went, shows as "Not on this computer" with a Delete that removes it on the grid: before, it held one of your slots where nothing showed it. A sandbox with no owner now says it's yours and stays until you delete it (it said the sweep removes it, which it never did).
+- **The Sandboxes list stays live.** A launch's sandbox appears as it lands, one dropped goes, and online/asleep follows its link while the pane is open; it looks again when a launch ends and when you come back to the window.
+- **Sign in to Codex there shows on the sandbox's row**: starting at once, then an Open the sign-in page button and the device code with a copy button, then done or why it failed. It was a 4-second toast, and the first click showed nothing.
+
+- **Each `wisp` exit code means one thing.** 0 it worked, 1 wisp refused or the task failed, 2 the command line didn't fit (nothing ran), 3 the task waits on you, 4 no task with that id, 124 a wait timed out. A task that asks you something now makes `wisp wait` and `--wait` exit 3 (it was 2, the same as a typo). `wisp show`, `wait`, `reply`, `btw`, `stop` and `attach` with no id, a launch with a misspelled flag or a bad `--mode`, `--effort` or `--model`, and a bad `wisp share`, `wisp trigger` or `wisp cloud` argument now exit 2 (they exited 1), and an unknown task id exits 4. `wisp --help` and the wisp skill list the codes.
+
+- **New headline: "Your coding agents, as code."** It replaces "Manage the code your agents write" on the site, the docs, the README, the npm package, llms.txt and the link preview card, with "Declare them. Run them anywhere. Track every line they write." under it.
+
 ### Fixed
 
 - **`--prune` removes only what this formula applied.** Each apply now records where it came from (the `.wisp/` folder and its workspace, or the set of `-f` files), and `wisp apply --prune` deletes a resource only if this same source applied it before. It used to delete every agent, task or trigger of the kinds the formula names that it didn't declare, so another repo's, another file's or one made in the app went too. The plan lists the ones it keeps (`agent/helper (not from this formula: kept)`); `--prune-all` keeps the old behaviour and says so. Without `--prune`, the plan says what this formula applied before and no longer declares (`2 no longer declared here: --prune removes them`). Resources applied before this version have no recorded source: the next apply that declares one (changed or not) records this formula as its source, so `--prune` removes it once the formula drops it; one no apply declares since is never pruned by `--prune`, so remove those with `--prune-all`.
@@ -23,17 +37,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Codex tasks start again after `wisp skill install --agent codex`.** It wrote wisp's history server into `~/.codex/config.toml` as `[mcp_servers.wisp]`. That is also the name of each run's own `wisp` server, so Codex refused its whole config ("url is not supported for stdio in `mcp_servers.wisp`") and no Codex task ran. The table is now `[mcp_servers.wisp-history]`, the name runs already use, and wisp renames the one an older version wrote the next time it finds Codex. A `wisp` server you wrote yourself for something else is left alone.
 - **Toasts centre on the prompt box.** On a task page or New task, a toast sits over the middle of the reply box or New task's box, not the middle of the whole main area, so a side pane beside the box no longer pulls it off the input.
 - **`wisp tui`'s side panes scroll, show under 100 columns, and the Terminal shows only the terminal.** With a pane focused (Tab), j k, PgUp PgDn, g g / Home and G / End scroll it and the wheel over it scrolls it, instead of moving the transcript beside it; the Terminal follows its newest output and says how much is below when you scroll back. Under 100 columns `d`, `t` and `p` open the pane in the task's place (Esc or Tab goes back), and closing a pane gives the focus back to the task. The Terminal lists shell commands with their own output under each, and no longer shows what a Read or a fetch returned. `/` from a pane searches the transcript (typing there used to close the pane or ask to stop the task), ↓ ↑ Ctrl-N Ctrl-P and Enter jump to the next or previous match with a "2/5" count, and an open step with a long output says how many lines are cut, with Enter (or Space again) showing all of it.
-
-### Changed
-
-- **trywisp.dev on a phone offers what a phone can do.** In place of `npx wisp-agents` and the desktop download, the hero and the closing section offer **Send it to my computer** (the share sheet, or the link copied where there's none) and **Try it in the cloud** (Wisp Agents Cloud). On a computer nothing changes. Six in ten readers came on a phone, where neither command nor download works.
-- **The site counts its install funnel.** Each event says whether it came from a phone or a computer, and copies and downloads say where on the page they were. New: sending the page to a computer, opening the docs or the cloud from the hero, the sections a reader reached, and joining the phone app waitlist (without the address). docs/privacy.md says so.
-- **Settings → Computers → Sandboxes lists every sandbox your grid holds**, with how many you have of the most it keeps ("3 of 5 sandboxes", amber when full). One made from another computer, or whose machine here went, shows as "Not on this computer" with a Delete that removes it on the grid: before, it held one of your slots where nothing showed it. A sandbox with no owner now says it's yours and stays until you delete it (it said the sweep removes it, which it never did).
-- **The Sandboxes list stays live.** A launch's sandbox appears as it lands, one dropped goes, and online/asleep follows its link while the pane is open; it looks again when a launch ends and when you come back to the window.
-- **Sign in to Codex there shows on the sandbox's row**: starting at once, then an Open the sign-in page button and the device code with a copy button, then done or why it failed. It was a 4-second toast, and the first click showed nothing.
-
-### Fixed
-
 - **An agent can only delete or re-own its own task's sandboxes** (ADR-0136). `sandbox.drop` and `sandbox.own` from an agent reached any sandbox, another task's included; now they're held to the agent's own task, and a delegate's sandbox still holding work is yours to delete.
 - **Sandbox env vars, Claude's code and Sign out say why they failed, where it happened.** A name the grid refuses (starting with a digit, `PATH`, `HOME`, `WISP_…`, `LD_…`) is said before it's sent; a variable the grid turned down comes back into its inputs with the grid's words under them, and one whose removal failed comes back too. A refused Claude code and a failed Sign out show their error instead of nothing.
 - **Deleting a sandbox asks first.** Settings → Computers → Sandboxes' trash opens a confirm that names the sandbox and whose it is, and warns that what wasn't brought back from it is lost; only Delete drops it (Cancel, Escape or a click outside keep it).
@@ -41,16 +44,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A failed sandbox setup's log fits on the page.** The end of what `.wisp/sandbox.sh` said is a dozen lines tall, scrolled to the error, so Open its task stays in view on a phone.
 - **A connector's notes wrap.** "Codex uses its own …" and "can't reach an SSE server" show whole on narrow screens instead of being cut with "…".
 - **Settings rows:** a meter as a row's control keeps its width (it drew 0px wide), and an empty notes band under a row no longer draws a stray line.
-
-## [1.0.0-alpha.17] - 2026-11-26
-
-### Changed
-
-- **Each `wisp` exit code means one thing.** 0 it worked, 1 wisp refused or the task failed, 2 the command line didn't fit (nothing ran), 3 the task waits on you, 4 no task with that id, 124 a wait timed out. A task that asks you something now makes `wisp wait` and `--wait` exit 3 (it was 2, the same as a typo). `wisp show`, `wait`, `reply`, `btw`, `stop` and `attach` with no id, a launch with a misspelled flag or a bad `--mode`, `--effort` or `--model`, and a bad `wisp share`, `wisp trigger` or `wisp cloud` argument now exit 2 (they exited 1), and an unknown task id exits 4. `wisp --help` and the wisp skill list the codes.
-
-- **New headline: "Your coding agents, as code."** It replaces "Manage the code your agents write" on the site, the docs, the README, the npm package, llms.txt and the link preview card, with "Declare them. Run them anywhere. Track every line they write." under it.
-
-### Fixed
 
 - **`wisp reply <id> "…" --wait` waits as `wisp wait` does.** It honours `--timeout` (a bad value is said before anything is sent) and exits with how the task ended; it used to wait a fixed 30 minutes and exit 0.
 - **`wisp ls --watch` follows the list you asked for.** `--state`, `--agent`, `--crew`, `--project`, `--since` and `--limit` narrow it at each redraw (it showed every task), it fits your terminal's height, and `--json` prints one JSON object per change. `wisp ls --watch` and `wisp show --watch` refuse a flag they don't take instead of ignoring it.
