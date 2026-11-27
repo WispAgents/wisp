@@ -213,12 +213,29 @@ impl Inner {
             self.notify("head");
             return Ok(CaughtUp::Merged);
         }
-        let _ = self.git.exec(&self.dir, &args(&["merge", "--abort"]), Opts::default()).await;
+        self.abort_merge().await;
         Ok(match (files.is_empty(), outside.is_empty()) {
             (true, _) => CaughtUp::Unknown,
             (false, true) => CaughtUp::Diverged { files },
             (false, false) => CaughtUp::Diverged { files: outside },
         })
+    }
+
+    /// The merge undone. A history file committed where git-lfs wasn't set up is a plain blob, and here, with the
+    /// save's `filter=lfs` line in the worktree's `.gitattributes`, lfs's clean filter makes it a pointer that differs
+    /// from the index: `merge --abort` refuses ("not uptodate") and leaves the repo mid-merge. Then once more with the
+    /// lfs filter off, so the copy is compared as the bytes the merge wrote.
+    async fn abort_merge(&self) {
+        let aborted = self.git.exec(&self.dir, &args(&["merge", "--abort"]), Opts::default()).await;
+        if aborted.is_ok_and(|r| r.exit.success()) {
+            return;
+        }
+        let no_lfs =
+            ["-c", "filter.lfs.process=", "-c", "filter.lfs.clean=", "-c", "filter.lfs.smudge=", "-c", "filter.lfs.required=false"];
+        let again: Vec<&str> = no_lfs.iter().copied().chain(["merge", "--abort"]).collect();
+        if !self.git.exec(&self.dir, &args(&again), Opts::default()).await.is_ok_and(|r| r.exit.success()) {
+            tracing::warn!("catch_up: the merge couldn't be undone; the repo is left mid-merge");
+        }
     }
 
     /// The conflicted `files` resolved to HEAD's side (gone, when HEAD took the file out) and the merge committed.

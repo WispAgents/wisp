@@ -766,6 +766,35 @@ async fn catch_up_never_takes_ours_on_a_conflicting_gitattributes() {
     assert_eq!(git(&dir, &["status", "--porcelain"]), "");
 }
 
+/// The history file was pushed from a clone without git-lfs (a plain blob), and here `filter.lfs` is set up (as on
+/// GitHub's runners, in the system config): its clean filter makes the merged copy differ from the index, so a bare
+/// `merge --abort` refuses. It's undone all the same, never left mid-merge. The filter is a stand-in for git-lfs,
+/// so this runs where git-lfs isn't installed.
+#[tokio::test]
+async fn catch_up_undoes_the_merge_when_lfs_is_set_up_here_and_wasnt_there() {
+    use wisp_git_api::CaughtUp;
+    let t = tmp("catchup-lfs-here");
+    let (dir, other) = task_and_elsewhere(&t);
+    write(&other, ".gitattributes", &format!("*.png binary\n{LFS_LINE}"));
+    write(&other, ".wisp/history/x.jsonl.zst", "zst\n");
+    git(&other, &["add", "-f", ".gitattributes", ".wisp"]);
+    git(&other, &["commit", "-q", "-m", SAVE_MESSAGE]);
+    git(&other, &["push", "-q", "origin", "wisp/task"]);
+    write(&dir, ".gitattributes", "*.txt text eol=lf\n");
+    git(&dir, &["add", ".gitattributes"]);
+    git(&dir, &["commit", "-q", "-m", "agent attrs"]);
+    for (k, v) in [("filter.lfs.clean", "sed s/^/pointer:/"), ("filter.lfs.smudge", "cat"), ("filter.lfs.required", "true")] {
+        git(&dir, &["config", k, v]);
+    }
+    let head = git(&dir, &["rev-parse", "HEAD"]);
+    let (_, s) = service();
+    let r = s.repo(&user(), &owner(), dir.to_str().unwrap()).await.unwrap();
+    assert_eq!(r.catch_up(&user(), catch_up_ask()).await.unwrap(), CaughtUp::Diverged { files: vec![".gitattributes".into()] });
+    assert_eq!(git(&dir, &["rev-parse", "HEAD"]), head);
+    assert!(!dir.join(".git/MERGE_HEAD").exists(), "the merge is undone");
+    assert_eq!(git(&dir, &["status", "--porcelain"]), "");
+}
+
 /// final6 F3: a catch_up cut off mid-merge (wisp quit) leaves the set-aside saves in the git dir: the next one puts
 /// them back first (the local save wins) and removes the folder.
 #[tokio::test]
