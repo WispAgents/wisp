@@ -290,6 +290,16 @@ pub struct CatchUpRequest {
     pub branch: String,
     /// a folder name (`.wisp`), at the repo's top or in any subfolder of it
     pub only: String,
+    /// the subfolders of `only` its commits may touch (`tasks`, `history`: what a history save writes); empty:
+    /// anywhere in it. Additive (2026-11-27)
+    #[serde(default)]
+    pub within: Vec<String>,
+    /// what each of those commits' subject starts and ends with (the history push's own); empty: any subject.
+    /// Someone else's commit to the same files is theirs to merge, never wisp's (it would go out --no-verify)
+    #[serde(default)]
+    pub subject_start: String,
+    #[serde(default)]
+    pub subject_end: String,
 }
 
 /// What [`Repo::catch_up`] found.
@@ -298,10 +308,11 @@ pub struct CatchUpRequest {
 pub enum CaughtUp {
     /// the remote has nothing HEAD doesn't (or no such branch): the push is a fast-forward as it is
     Even,
-    /// the remote's commits, all in the `only` folder, merged into HEAD
+    /// the remote's commits, all in the `only` folder, merged into HEAD (a file both changed keeps HEAD's copy: the
+    /// newer save, pushed again later)
     Merged,
-    /// the remote has other commits (`files`: the paths they touch outside the folder, or the ones the merge
-    /// conflicted on); nothing was changed
+    /// the remote has other commits (`files`: the paths they touch outside the folder, a commit's subject when it
+    /// touches none, or the ones the merge conflicted on outside it); nothing was changed
     Diverged { files: Vec<String> },
     /// git couldn't tell (the fetch failed: offline, no access): the push decides
     Unknown,

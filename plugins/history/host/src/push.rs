@@ -68,7 +68,7 @@ pub(crate) fn history_branch(id: &str) -> String {
 /// code commits, and this one isn't).
 pub(crate) fn message(title: &str, id: &str) -> String {
     let title = if title.trim().is_empty() { repo::short(id) } else { title.trim() };
-    format!("wisp: save task \"{title}\" to the repo's history\n\nIts spec, report and transcript in .wisp/ (task {id}).")
+    format!("{}\n\nIts spec, report and transcript in .wisp/ (task {id}).", api::save_subject(title))
 }
 
 /// `<remote>/HEAD`'s branch (`main` from `origin/main`), else `main` or `master` when the remote has it.
@@ -347,7 +347,7 @@ pub(crate) fn new_pr_page(web: &str, base: &str, head: &str) -> Option<String> {
 /// `gh pr create`, or the PR already open on that branch.
 async fn open_pr(p: &Proc, gh: &str, root: &Path, branch: &str, base: &str, title: &str, id: &str) -> Option<String> {
     let t = if title.trim().is_empty() { repo::short(id) } else { title.trim() };
-    let pr_title = format!("wisp: save task \"{t}\" to the repo's history");
+    let pr_title = api::save_subject(t);
     let body = format!(
         "Its spec, report and transcript in `.wisp/`, scrubbed of keys and private paths (task `{id}`).\n\nPushed from wisp's Save to repo."
     );

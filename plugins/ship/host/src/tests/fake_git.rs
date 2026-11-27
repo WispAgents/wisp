@@ -184,7 +184,7 @@ impl Repo for FakeRepo {
         done(Some(format!("sha-{p}-{}", st.ahead[&p])))
     }
     fn catch_up(&self, _call: &Call, req: CatchUpRequest) -> F<CaughtUp> {
-        self.log(format!("catch-up {} {} {}", req.remote, req.branch, req.only));
+        self.log(format!("catch-up {} {} {} {}", req.remote, req.branch, req.only, req.within.join(",")));
         done(self.git.lock().catch_up.clone().unwrap_or(CaughtUp::Even))
     }
     fn push(&self, _call: &Call, req: PushRequest) -> F<()> {

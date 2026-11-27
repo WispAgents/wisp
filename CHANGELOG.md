@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Ship it merges in only wisp's own history, and never loses a newer save.** It merged any commit on the task's
+  remote branch that stayed in `.wisp/`, so someone else's `.wisp/worktree.json`, `sandbox.sh` or `wisp.yml` went
+  out under your name; now only Push to repo's own commits (its message, the task files and transcripts) are merged,
+  and anything else is refused, naming it. A history file saved both here and in that push no longer stops Ship as
+  "has commits this branch doesn't": your newer copy wins. And with `.wisp/` gitignored, a newer save on disk is no
+  longer silently replaced by the older pushed copy; it stays, ready for the next Push to repo.
 - **Ship it and the agent's own push work after Push to repo from a worktree.** The history commit landed on the
   remote branch while the worktree's branch stayed behind, so the next push was refused as a non-fast-forward. A
   branch still at that tip now moves up with it (`git status` stays clean, the files untouched), and Ship it first

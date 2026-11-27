@@ -109,8 +109,16 @@ impl Shipper {
         on_step("push");
         // a history push from the worktree (Push to repo) put a commit of .wisp/ files on the branch's remote tip:
         // merged in first, so this push stays a fast-forward. Anything else there is refused, never forced over.
-        // git failing to tell leaves it to the push, as before
-        let caught = CatchUpRequest { remote: remote.clone(), branch: wt.branch.clone(), only: HISTORY_DIR.into() };
+        // git failing to tell leaves it to the push, as before. Only the push's own commits (its subject, the files a
+        // save writes): someone else's .wisp/worktree.json or sandbox.sh would run here, merged with --no-verify
+        let caught = CatchUpRequest {
+            remote: remote.clone(),
+            branch: wt.branch.clone(),
+            only: HISTORY_DIR.into(),
+            within: wisp_history_api::SAVED_DIRS.iter().map(|d| (*d).to_owned()).collect(),
+            subject_start: wisp_history_api::SAVE_SUBJECT_START.into(),
+            subject_end: wisp_history_api::SAVE_SUBJECT_END.into(),
+        };
         if let Ok(CaughtUp::Diverged { files }) = repo.catch_up(call, caught).await {
             return Err(diverged(&remote, &wt.branch, &files).into());
         }
