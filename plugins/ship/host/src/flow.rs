@@ -249,6 +249,18 @@ impl Ship {
         let out = self.shipper.gh.job_log(&Self::gh_dir(&task).await, &owner, &repo, &job).await;
         Ok(log_tail(&out, LOG_LINES))
     }
+
+    /// One of the task's PRs' diff (`gh pr diff <url>`): only a PR the task has.
+    pub async fn pr_diff(&self, session: &str, url: &str) -> Result<String> {
+        let task = self.task(session)?;
+        let known =
+            task.repos.iter().filter_map(|r| r.pr.as_ref()).chain(task.prs.iter().map(|x| &x.pr)).any(|p| !url.is_empty() && p.url == url);
+        if !known {
+            return Err(ShipError::NotFound(format!("{url} isn't one of this task's pull requests")));
+        }
+        let args = [String::from("pr"), "diff".into(), url.into()];
+        self.shipper.gh.run(&Self::gh_dir(&task).await, &args, Some(std::time::Duration::from_secs(60))).await
+    }
 }
 
 /// Whether `dir` has a project `.wisp/` folder (excluding wisp's own app data directory).

@@ -1,11 +1,12 @@
 // Merge's words (v1 ship.js mergePr): what the confirm asks, what it warns about, and what the
 // toasts say. A warning is a line, never a hold (design/ux.md): Merge turns red only for what's
-// wrong with the PR (checks, review, a clash), not for comments you haven't sent.
+// wrong with the PR (checks, review, a high merge risk, a clash), not for comments you haven't sent.
 
 import type { T } from '../i18n.ts';
 import type { MergeResult, ShipSession } from '../types.ts';
 import { openPrs, shippedPrs } from './pr.ts';
 import { reviewWarning, type ReviewContext } from './review.ts';
+import { riskWarnings } from './risk.ts';
 import '../i18n/lazy.ts';
 
 export interface MergePlan {
@@ -42,7 +43,9 @@ export function mergePlan(t: T, s: ShipSession | undefined, ctx: ReviewContext):
   const first = open[0];
   if (!s || !first) return undefined;
   const several = open.length > 1;
-  const warn = [...checkWarnings(t, s, several), reviewWarning(t, s, ctx), s.overlap ?? ''].filter(Boolean);
+  // merge risk (ADR-0142): a PR judged high is wrong enough to turn Merge red; a medium one is a line only
+  const risk = riskWarnings(t, s, open);
+  const warn = [...checkWarnings(t, s, several), reviewWarning(t, s, ctx), ...risk.high, s.overlap ?? ''].filter(Boolean);
   const what = several
     ? t('wisp.ship.merge.these', { count: open.length, list: open.map((x) => `${x.repo ?? ''} #${x.pr.number}`).join(', ') })
     : t(first.pr.draft ? 'wisp.ship.merge.oneDraft' : 'wisp.ship.merge.one', { n: first.pr.number });
@@ -59,7 +62,7 @@ export function mergePlan(t: T, s: ShipSession | undefined, ctx: ReviewContext):
   return {
     // what follows is its own sentence, its full stop with it: none after the question mark when nothing follows (QA r14 #5)
     question: t('wisp.ship.merge.question', { what, after: after ? `${after}.` : '' }),
-    lines: [...warn, unsentLine(t, s.unsentComments)].filter(Boolean),
+    lines: [...warn, ...risk.medium, unsentLine(t, s.unsentComments)].filter(Boolean),
     ok: several ? t('wisp.ship.merge.okMany') : t('wisp.ship.merge.okOne'),
     danger: warn.length > 0,
     merging: several ? t('wisp.ship.merge.mergingMany', { count: open.length }) : t('wisp.ship.merge.mergingOne', { n: first.pr.number }),

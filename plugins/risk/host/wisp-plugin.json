@@ -1,0 +1,64 @@
+{
+  "wispPlugin": 1,
+  "id": "wisp.risk",
+  "name": "merge risk",
+  "version": "1.0.0-alpha.18",
+  "api": "^1",
+  "description": "merge risk: another harness than the author reads each open PR of a task and judges how risky merging it is (low, medium, high and why)",
+  "kind": "plugin",
+  "server": {
+    "builtin": "wisp_risk"
+  },
+  "requires": {
+    "wisp.runtime": "^1.0.0-0",
+    "wisp.ship": "^1.0.0-0"
+  },
+  "provides": {},
+  "permissions": [
+    "settings:read",
+    "runtime:get",
+    "runtime:turns",
+    "runtime:agents",
+    "runtime:quick",
+    "runtime:setExt",
+    "ship:pr_diff"
+  ],
+  "activation": [
+    "onCommand:risk.judge",
+    "onCommand:risk.view",
+    "onStartup"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "risk.judge",
+        "title": "Judge the merge risk of a task's open pull requests with another harness"
+      },
+      {
+        "id": "risk.view",
+        "title": "The merge risk of a task's pull requests",
+        "readOnly": true
+      }
+    ],
+    "events": [{"type": "risk.judged", "durable": true}],
+    "settings": [
+      {
+        "key": "risk.harness",
+        "type": "enum",
+        "values": [
+          "off",
+          "other",
+          "claude",
+          "codex",
+          "antigravity",
+          "copilot",
+          "opencode",
+          "cursor",
+          "grok"
+        ],
+        "default": "off",
+        "title": "Merge risk: another harness judges each pull request"
+      }
+    ]
+  }
+}

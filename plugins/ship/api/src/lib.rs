@@ -317,6 +317,31 @@ pub struct CheckLogArgs {
     pub url: String,
 }
 
+/// `ship.pr_diff`: one of the task's PRs' diff as GitHub has it (`gh pr diff`), for merge risk (wisp.risk). Only a
+/// PR the task has (shipped or attached); refused for any other link.
+#[derive(Debug)]
+pub struct PrDiff;
+impl Command for PrDiff {
+    const ID: &'static str = "ship.pr_diff";
+    const READ_ONLY: bool = true;
+    type Args = PrDiffArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <PrDiffArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <PrDiffArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
+    type Out = String;
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
+pub struct PrDiffArgs {
+    pub session: String,
+    /// the PR's URL, as the task's slot has it
+    pub url: String,
+}
+
 // ---------- events ----------
 
 /// A ship moved to its next stage (the card follows it).

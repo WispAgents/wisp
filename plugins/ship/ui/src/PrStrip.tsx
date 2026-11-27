@@ -8,12 +8,13 @@ import { CommandError, readonly, type EntityKey, type PluginClient } from '@wisp
 import { mergeRequest } from './merge-request.ts';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { Button, Card, Icon, IconButton, ListRow, Stack, Text, Toolbar, ToneChip, useSignal, Wrap, type ToolbarItem } from '@wisp/ui';
-import { fixConflicts, refresh, review, setSteward } from './commands.ts';
+import { fixConflicts, judgeRisk, refresh, review, setSteward } from './commands.ts';
 import { t } from './i18n.ts';
 import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
 import { fixing, openPrs, prChipTitle, prsOf, prTone, worstTone, type PrTone } from './model/pr.ts';
 import { prStripSub, prStripTitle } from './model/strip.ts';
 import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
+import { chipRisk, RISK_ICON, riskActs, riskLine, riskStrip, verdictOf } from './model/risk.ts';
 import { stepsOfLive, track } from './model/ship.ts';
 import { stewardAction, stewardLine } from './model/steward.ts';
 import { ShipRun } from './ShipRun.tsx';
@@ -98,6 +99,7 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
   const tone = createMemo((): PrTone => worstTone(prs().map((x) => prTone(x.pr, fixFor(x)))));
   const open = createMemo(() => openPrs(props.s));
   const rv = () => (props.s.pr?.state === 'OPEN' ? reviewState(t, props.s, ctx()) : undefined);
+  const risk = createMemo(() => riskStrip(t, props.s, open()));
   // A single settled (merged/closed) PR has no active toolbar actions: put its GitHub link inline in the row
   // instead of opening a mostly empty 32px toolbar beneath it.
   const inlineGithub = createMemo((): string | undefined => {
@@ -105,6 +107,16 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
     if (!first || several() || open().length > 0 || rv()) return undefined;
     return first.pr.url;
   });
+  // each PR's chip says its own merge risk ("#853 · high risk"), its title the judge's line
+  const chipSuffix = (o: RepoPr): string | undefined => {
+    const n = !sameRepo() && o.repo ? `#${o.pr.number}` : undefined;
+    const r = o.pr.state === 'OPEN' ? chipRisk(t, props.s, o.pr) : undefined;
+    return r ? [n, r].filter(Boolean).join(' · ') : n;
+  };
+  const chipTitle = (o: RepoPr): string => {
+    const base = prChipTitle(t, o, fixFor(o));
+    return props.s.riskOn && o.pr.state === 'OPEN' ? `${base}\n${riskLine(t, o, verdictOf(props.s, o.pr), false)}` : base;
+  };
   const title = (): string => prStripTitle(t, prs());
   const sub = (): string => prStripSub(t, prs(), props.s.pr, props.s.conflictFix);
   const overflow = (): boolean => prs().length > PR_CHIP_CAP;
@@ -159,6 +171,36 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
           ) : (
             <Button size="sm" variant="ghost" icon={REVIEW_ICON[v.kind]} {...(bad ? { tone: 'bad' as const } : {})} title={v.title} onClick={go} part="pr.strip.review">
               {v.label}
+            </Button>
+          ),
+      });
+    }
+    // merge risk (ADR-0142): the worst of the open PRs' verdicts; its title has every PR's line
+    const rk = risk();
+    if (rk) {
+      const go = (): void =>
+        riskActs(rk.kind)
+          ? void props.client.run(judgeRisk, { key: props.k }).then(
+              (r) => {
+                if (r && !r.started && r.why) ship.shell.toast.show(r.why);
+              },
+              () => {}, // the shell's onError toasts it
+            )
+          : ship.openPane();
+      const bad = rk.kind === 'high';
+      out.push({
+        id: 'risk',
+        icon: RISK_ICON[rk.kind],
+        label: rk.label,
+        priority: 3,
+        ...(bad ? { tone: 'bad' as const } : {}),
+        onSelect: go,
+        render: (form) =>
+          form === 'icon' ? (
+            <IconButton icon={RISK_ICON[rk.kind]} size="sm" variant="ghost" {...(bad ? { tone: 'bad' as const } : {})} label={`${rk.label}: ${rk.title}`} onClick={go} part="pr.strip.risk" />
+          ) : (
+            <Button size="sm" variant="ghost" icon={RISK_ICON[rk.kind]} {...(bad ? { tone: 'bad' as const } : {})} title={rk.title} onClick={go} part="pr.strip.risk">
+              {rk.label}
             </Button>
           ),
       });
@@ -232,10 +274,10 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
                 <ToneChip
                   part="pr.strip.chip"
                   label={!sameRepo() && o.repo ? o.repo : `#${o.pr.number}`}
-                  suffix={!sameRepo() && o.repo ? `#${o.pr.number}` : undefined}
+                  suffix={chipSuffix(o)}
                   tone={TONE[prTone(o.pr, fixFor(o))]}
                   live={(!!o.pr.checks?.pending || !!o.pr.waitingChecks) && o.pr.state === 'OPEN'}
-                  title={prChipTitle(t, o, fixFor(o))}
+                  title={chipTitle(o)}
                   onClick={() => ship.shell.platform.openExternal(o.pr.url)}
                 />
               )}

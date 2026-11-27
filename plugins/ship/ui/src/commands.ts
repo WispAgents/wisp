@@ -5,7 +5,8 @@
 import { defineCommand, type EntityKey, type EntityReader, type LocalOp } from '@wisp/client';
 import type { PatchOp } from '@wisp/protocol';
 import { shipRow } from './row.ts';
-import { SESSION, type MergeResult, type PrSummary, type Review, type ShipInfo, type ShipResult, type ShipSession, type ShipStep } from './types.ts';
+import { SESSION, type MergeResult, type PrSummary, type Review, type ShipInfo, type ShipResult, type RiskVerdict, type ShipSession, type ShipStep } from './types.ts';
+import { prsOf } from './model/prs.ts';
 
 interface Task {
   readonly key: EntityKey;
@@ -18,6 +19,8 @@ const wire = (a: Task): Record<string, unknown> => {
 };
 const raw = (base: EntityReader, key: EntityKey): { id: string; summary?: unknown } | undefined => base.peek<{ id: string; summary?: unknown }>(SESSION, key) as never;
 const row = (base: EntityReader, key: EntityKey): ShipSession | undefined => shipRow(raw(base, key), key);
+/** The task's open PRs, as the strip lists them. */
+const openOf = (s: ShipSession): PrSummary[] => prsOf(s).flatMap((x) => (x.pr.state === 'OPEN' ? [x.pr] : []));
 /** A field of the row where the server keeps it: under `summary` on a synced row (flat on a flat one). */
 const set = (base: EntityReader, key: EntityKey, path: string, value: unknown): LocalOp => {
   const at = raw(base, key)?.summary !== undefined ? `/summary${path}` : path;
@@ -90,6 +93,23 @@ export const review = defineCommand<Task>({
     const head = s.pr.head ?? was?.head;
     const next: Review = { ...was, status: 'running', current: true, findings: [], ...(head !== undefined && { head }), ...(was?.by && { by: was.by }) };
     return [set(base, a.key, '/review', next)];
+  },
+});
+
+/** Merge risk, now (wisp.risk's `risk.judge`, forced: by hand it judges heads judged already, and mid-turn). The
+ * strip says Judging risk at once for every open PR of the task. */
+export const judgeRisk = defineCommand<Task, { started: number; why: string }>({
+  id: 'risk.judge',
+  owner,
+  wire: (a) => ({ id: a.key.slice(a.key.indexOf(':') + 1), force: true }),
+  optimistic: (base, a) => {
+    const s = row(base, a.key);
+    if (!s?.riskOn) return [];
+    const open = openOf(s);
+    if (!open.length) return [];
+    const kept = (s.risk ?? []).filter((v) => !open.some((p) => p.url === v.url));
+    const next: RiskVerdict[] = [...open.map((p): RiskVerdict => ({ url: p.url, repo: '', number: p.number, head: p.head ?? '', status: 'running', at: Date.now(), current: true })), ...kept];
+    return [set(base, a.key, '/risk', next)];
   },
 });
 

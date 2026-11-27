@@ -764,7 +764,26 @@ export const COMMANDS: Record<string, CommandFn> = {
       { path: 'plugins/ship/host/src/lib.rs', additions: 120, deletions: 3 },
       { path: 'plugins/ship/ui/src/PrStrip.tsx', additions: 8, deletions: 0 },
     ];
-    return { ops: [], result: [{ ...pr, repo: 'WispAgents/wisp', branch: 'fix/retry-scope', base: 'main', author: 'you', additions: 337, deletions: 17, changedFiles: files.length, checks: { pass: 2, fail: 1, pending: 2 }, review: 'REVIEW_REQUIRED', files, checkList, reviewers: [], notes: [], threads: [] }] };
+    // the PRs its agent attached (`risk` seed's sync-lib #44), each a plain passing PR
+    const attached = ((sum(ctx.row('list', 'session', key))['prs'] ?? []) as { repo: string; pr: Args }[]).map((x) => ({ ...x.pr, repo: `WispAgents/${x.repo}`, branch: 'drop-cursor', base: 'main', author: 'you', additions: 40, deletions: 12, changedFiles: 2, review: '', files: [{ path: 'migrations/0042_drop_cursor.sql', additions: 6, deletions: 0 }], checkList: [{ name: 'test', workflow: 'ci', state: 'pass', ms: 30_000 }], reviewers: [], notes: [], threads: [] }));
+    return { ops: [], result: [{ ...pr, repo: 'WispAgents/wisp', branch: 'fix/retry-scope', base: 'main', author: 'you', additions: 337, deletions: 17, changedFiles: files.length, checks: { pass: 2, fail: 1, pending: 2 }, review: 'REVIEW_REQUIRED', files, checkList, reviewers: [], notes: [], threads: [] }, ...attached] };
+  },
+  // merge risk (ADR-0142): Judge again re-judges at once (the mock's judge is instant): the verdicts' time moves on
+  'risk.judge': (a, ctx) => {
+    const x = obj(a);
+    const key = str(x, 'id').includes(':') ? str(x, 'id') : `${ctx.peer}:${str(x, 'id')}`;
+    const row = obj(ctx.row('list', 'session', key));
+    const summary = obj(row['summary']);
+    if (!summary['riskOn']) return { ops: [], result: { started: 0, why: 'Merge risk is off.' } };
+    const only = typeof x['url'] === 'string' ? x['url'] : undefined;
+    const risk = ((summary['risk'] ?? []) as Args[]).map((v) => (!only || v['url'] === only ? { ...v, status: 'done', current: true, at: ctx.now() } : v));
+    const patch = { op: 'add' as const, path: '/summary/risk', value: risk };
+    return { ops: [{ topic: 'list', e: 'session', id: key, op: 'patch', ops: [patch] }], result: { started: only ? 1 : risk.length, why: '' } };
+  },
+  'risk.view': (a, ctx) => {
+    const id = str(obj(a), 'id');
+    const key = id.includes(':') ? id : `${ctx.peer}:${id}`;
+    return { ops: [], result: obj(obj(ctx.row('list', 'session', key))['summary'])['risk'] ?? [] };
   },
   // Find in task (R4-3): the mock sends every turn whole (no stubs), so the client finds everything itself
   'runtime.searchTask': () => ({ ops: [], result: { hits: [] } }),

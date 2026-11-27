@@ -247,6 +247,11 @@ fn follow_commands(s: &mut Setup, slot: &Slot) {
         async move { Ok(get(&sl)?.check_log(&a.session, &a.url).await?) }
     });
     let sl = slot.clone();
+    s.command::<api::PrDiff, _, _>(move |_ctx, _call, a| {
+        let sl = sl.clone();
+        async move { Ok(get(&sl)?.pr_diff(&a.session, &a.url).await?) }
+    });
+    let sl = slot.clone();
     s.command::<api::SetSteward, _, _>(move |ctx, _call, a| {
         let sl = sl.clone();
         async move {

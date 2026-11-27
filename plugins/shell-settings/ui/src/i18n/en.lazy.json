@@ -20,6 +20,8 @@
   "shell-settings.review.hint": "Before you merge a task’s PR, a harness other than the one that wrote it reads the diff and lists what it would fix, and the tests run again on the PR’s head. Merge stays possible; it says when the PR isn’t reviewed or the review found issues. Runs on that harness’s own account, never another",
   "shell-settings.review.off": "Off",
   "shell-settings.review.other": "Another harness than the author",
+  "shell-settings.risk": "Merge risk",
+  "shell-settings.risk.hint": "Another harness than the one that wrote it reads each open pull request of a task and says how risky merging it is: low, medium or high, and why. It shows on the PR row, in the PR panel and when you merge; Merge stays possible. Runs on that harness’s own account, never another",
   "shell-settings.fix-conflicts": "Auto-fix PR conflicts",
   "shell-settings.fix-conflicts.hint": "Without waiting for a click on Fix conflicts: when a shipped PR conflicts with its base, the task merges the base in, resolves it and pushes",
   "shell-settings.read-times": "Read times in prompts",

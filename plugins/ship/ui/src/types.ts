@@ -133,8 +133,34 @@ export interface ShipSession {
   readonly unsentComments?: number;
   /** Settings → Review by another harness is on (the host sends it with the row) */
   readonly reviewOn?: boolean;
+  /** Settings → Merge risk is on (wisp.risk sends it with the row) */
+  readonly riskOn?: boolean;
+  /** merge risk, one verdict per PR it judged (wisp.risk's RiskView), the task's own first */
+  readonly risk?: readonly RiskVerdict[];
   /** other open tasks changing the same files (overlaps.js), in words */
   readonly overlap?: string;
+}
+
+export type RiskLevel = 'low' | 'medium' | 'high';
+
+/** One PR's merge risk (wisp-risk-api RiskView): of `head`, `current` while that is the PR's head. */
+export interface RiskVerdict {
+  readonly url: string;
+  readonly repo: string;
+  readonly number: number;
+  readonly head: string;
+  readonly status: 'running' | 'done' | 'failed';
+  readonly level?: RiskLevel;
+  /** 0–100 */
+  readonly score?: number;
+  readonly summary?: string;
+  readonly reasons?: readonly string[];
+  readonly by?: { readonly agent: string; readonly model: string };
+  readonly why?: string;
+  /** only the start of a long diff was judged */
+  readonly partial?: boolean;
+  readonly at: number;
+  readonly current: boolean;
 }
 
 /** One PR and its repo, as the row lists them. */
