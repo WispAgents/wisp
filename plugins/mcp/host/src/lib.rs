@@ -251,6 +251,20 @@ pub(crate) fn who(ctx: &Ctx, call: &Call, sessions: &Sessions) -> Who {
     Who::of(&caller.set, caller.session.as_deref(), info, VERSION)
 }
 
+/// A method's messages as SSE `data:` frames. The client gone (the body dropped) drops `rx`, which ends the method's
+/// stream at its next send.
+fn sse(ctx: &Ctx, mut rx: tokio::sync::mpsc::Receiver<Value>) -> tokio::sync::mpsc::Receiver<Vec<u8>> {
+    let (tx, body) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+    ctx.spawn(async move {
+        while let Some(m) = rx.recv().await {
+            if tx.send(format!("data: {m}\n\n").into_bytes()).await.is_err() {
+                break;
+            }
+        }
+    });
+    body
+}
+
 fn route(sessions: Arc<Sessions>) -> Route {
     Route {
         method: "POST",
@@ -265,10 +279,14 @@ fn route(sessions: Arc<Sessions>) -> Route {
             Box::pin(async move {
                 let text = String::from_utf8_lossy(&req.body).into_owned();
                 let cwd = req.header("x-wisp-cwd").map(str::to_owned);
-                match run::rpc(&ctx, &call, &sessions, &text, cwd).await {
-                    Some(body) => Ok(Response::Text { status: 200, content_type: "application/json".into(), body }),
+                match run::answer(&ctx, &call, &sessions, &text, cwd, true).await {
+                    run::Answer::Text(Some(body)) => Ok(Response::Text { status: 200, content_type: "application/json".into(), body }),
                     // only notifications: nothing to answer
-                    None => Ok(Response::Text { status: 202, content_type: "application/json".into(), body: String::new() }),
+                    run::Answer::Text(None) => {
+                        Ok(Response::Text { status: 202, content_type: "application/json".into(), body: String::new() })
+                    }
+                    // a method's stream (`events/stream`): each message an SSE frame, until it ends or the client goes
+                    run::Answer::Stream(rx) => Ok(Response::Stream { content_type: "text/event-stream".into(), body: sse(&ctx, rx) }),
                 }
             })
         }),

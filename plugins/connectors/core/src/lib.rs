@@ -6,11 +6,14 @@
 pub mod agent;
 pub mod codex_toml;
 pub mod error;
+pub mod events;
 pub mod harness;
+pub mod hook;
 pub mod model;
 pub mod oauth;
 pub mod page;
 pub mod probe;
+pub mod push;
 pub mod rpc;
 pub mod text;
 

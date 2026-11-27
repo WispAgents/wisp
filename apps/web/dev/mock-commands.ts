@@ -1131,6 +1131,37 @@ export const COMMANDS: Record<string, CommandFn> = {
   'automations.tasks': () => ({ ops: [], result: COMPOSER ? RECIPES : [] }),
   'automations.task.run': () => ({ ops: [], result: {} }),
   'automations.trigger.ls': () => ({ ops: [], result: [] }),
+  // the MCP server event trigger's pickers (ADR-0146): one remote connector serving events, one serving none
+  'connectors.list': () => ({
+    ops: [],
+    result: {
+      connectors: [
+        { id: 'pagerduty', name: 'pagerduty', transport: 'remote', url: 'https://mcp.pagerduty.example/mcp', enabled: true },
+        { id: 'docs', name: 'docs', transport: 'remote', url: 'https://mcp.docs.example/mcp', enabled: true },
+      ],
+      found: [],
+      hidden: [],
+      reach: [],
+    },
+  }),
+  'connectors.events': (a) => ({
+    ops: [],
+    result:
+      (a as { id?: string }).id === 'pagerduty'
+        ? {
+            served: true,
+            events: [
+              {
+                name: 'incident.created',
+                description: 'A new incident',
+                delivery: ['webhook', 'push', 'poll'],
+                inputSchema: { type: 'object', properties: { severity: { type: 'string', enum: ['P1', 'P2', 'P3'] }, service: { type: 'string', description: 'Any service' }, urgent: { type: 'boolean' } } },
+              },
+              { name: 'incident.resolved', delivery: ['poll'], inputSchema: { type: 'object', properties: {} } },
+            ],
+          }
+        : { served: false, events: [] },
+  }),
   // the switch and Delete (audit H4): the mock has no triggers, so nothing to change
   'automations.trigger.switch': () => ({ ops: [], result: { ok: true } }),
   'automations.trigger.remove': () => ({ ops: [], result: { ok: true } }),

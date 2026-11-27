@@ -13,17 +13,28 @@ use crate::{Sessions, extras_for, who as who_of};
 const POLL_MS: u64 = 250;
 const ASK_WAIT_MS: i64 = 30 * 60_000;
 
-/// One body in, its answer out (`None`: only notifications).
+/// A body's answer: its text (`None`: only notifications), or a method's stream (Streamable HTTP's SSE response).
+pub enum Answer {
+    Text(Option<String>),
+    Stream(tokio::sync::mpsc::Receiver<Value>),
+}
+
+/// One body in, its answer out (`None`: only notifications). A stream can't be sent here (`mcp.rpc`): it is refused.
 pub async fn rpc(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: Option<String>) -> Option<String> {
-    let mut w = who_of(ctx, call, sessions);
-    let mut only = None;
-    if let Who::Agent { session, info } = &mut w {
-        merge_flags(ctx, call, session, info).await;
-        only = narrowed(ctx, call, sessions, session).await;
+    match answer(ctx, call, sessions, text, cwd, false).await {
+        Answer::Text(t) => t,
+        Answer::Stream(_) => None,
     }
+}
+
+/// `rpc`, where a single request may be answered with a stream (`can_stream`: one message over HTTP).
+pub async fn answer(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: Option<String>, can_stream: bool) -> Answer {
+    let (w, only) = caller(ctx, call, sessions).await;
     let (ex, contributed) = extras_for(ctx, call);
-    let plan = wisp_mcp_core::plan(text, &w, &ex);
+    let methods = ctx.contributions(&wisp_mcp_api::METHOD_POINT);
+    let plan = wisp_mcp_core::plan_served(text, &w, &ex, &served(&methods));
     let auto_off = crate::auto_off(ctx);
+    let one = !plan.batch && plan.steps.len() == 1;
     let mut replies = Vec::with_capacity(plan.steps.len());
     for step in plan.steps {
         replies.push(match step {
@@ -33,6 +44,11 @@ pub async fn rpc(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: O
                 Some(only.as_ref().map_or_else(|| r.clone(), |o| crate::kinds::filter_list(&r, o)))
             }
             Step::Silent => None,
+            Step::Method { id, method, params } => match method_reply(ctx, call, &methods, &id, &method, params).await {
+                MethodOut::Text(t) => Some(t),
+                MethodOut::Stream(rx) if can_stream && one => return Answer::Stream(rx),
+                MethodOut::Stream(_) => Some(stream_refused(&id, &method)),
+            },
             Step::Call(c) if only.as_ref().is_some_and(|o| !o.allows(&c.name)) => Some(wisp_mcp_core::finish(
                 &c.id,
                 &c.name,
@@ -69,7 +85,70 @@ pub async fn rpc(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: O
             }
         });
     }
-    wisp_mcp_core::assemble(replies, plan.batch)
+    let replies = if plan.modern { replies.into_iter().map(|r| r.map(|r| wisp_mcp_core::rpc::completed(&r))).collect() } else { replies };
+    Answer::Text(wisp_mcp_core::assemble(replies, plan.batch))
+}
+
+/// Who the call speaks for, with its session's flags, and the tools its run is narrowed to (if it is).
+async fn caller(ctx: &Ctx, call: &Call, sessions: &Sessions) -> (Who, Option<crate::kinds::ToolsSpec>) {
+    let mut w = who_of(ctx, call, sessions);
+    let mut only = None;
+    if let Who::Agent { session, info } = &mut w {
+        merge_flags(ctx, call, session, info).await;
+        only = narrowed(ctx, call, sessions, session).await;
+    }
+    (w, only)
+}
+
+/// SEP-3415's `Unsupported` (`-32026`), where a stream can't be sent: in a batch, or through `mcp.rpc`.
+fn stream_refused(id: &serde_json::value::RawValue, method: &str) -> String {
+    let why = format!("{method} answers with a stream: send it alone, as a POST to the MCP endpoint (Streamable HTTP)");
+    wisp_mcp_core::rpc::error(id, -32026, &why)
+}
+
+enum MethodOut {
+    Text(String),
+    Stream(tokio::sync::mpsc::Receiver<Value>),
+}
+
+/// What the dispatcher hands over (`mcp.method@1`, ADR-0146): each contributed method once (the first plugin to name
+/// one has it), and the extensions they declare.
+fn served(methods: &[std::sync::Arc<wisp_mcp_api::MethodContribution>]) -> wisp_mcp_core::Served {
+    let mut s = wisp_mcp_core::Served::default();
+    for m in methods {
+        if wisp_mcp_core::dispatch::core_method(&m.method) || s.methods.contains(&m.method) {
+            continue;
+        }
+        s.methods.push(m.method.clone());
+        if let Some((id, settings)) = &m.extension {
+            s.extensions.entry(id.clone()).or_insert_with(|| settings.clone());
+        }
+    }
+    s
+}
+
+/// A contributed method, run as the caller: its result, its stream, or its refusal with the code and data it chose.
+async fn method_reply(
+    ctx: &Ctx,
+    call: &Call,
+    methods: &[std::sync::Arc<wisp_mcp_api::MethodContribution>],
+    id: &serde_json::value::RawValue,
+    method: &str,
+    params: Value,
+) -> MethodOut {
+    let Some(m) = methods.iter().find(|m| m.method == method) else {
+        return MethodOut::Text(wisp_mcp_core::rpc::error(
+            id,
+            wisp_mcp_core::rpc::METHOD_NOT_FOUND,
+            &format!("Method not found: {method}"),
+        ));
+    };
+    let req = wisp_mcp_api::MethodRequest { id: serde_json::from_str(id.get()).unwrap_or(Value::Null), params };
+    match (m.run)(ctx.clone(), call.clone(), req).await {
+        Ok(wisp_mcp_api::MethodAnswer::Result(v)) => MethodOut::Text(wisp_mcp_core::rpc::result(id, &v.to_string())),
+        Ok(wisp_mcp_api::MethodAnswer::Stream(rx)) => MethodOut::Stream(rx),
+        Err(e) => MethodOut::Text(wisp_mcp_core::rpc::error_data(id, e.code, &e.message, e.data.as_ref())),
+    }
 }
 
 /// A tool call's catalogue event (`wisp_mcp_core::telemetry`), with the caller's harness.

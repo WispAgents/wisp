@@ -85,3 +85,70 @@ async fn wisp_mcp_offers_the_user_what_api_mcp_does_audit_b_4() {
     assert!(a["result"]["isError"] != json!(true) && a.get("error").is_none(), "{a}");
     assert!(a["result"]["content"][0]["text"].is_string(), "{a}");
 }
+
+/// MCP Events through `wisp mcp` (ADR-0146): the stdio server declares the extension, forwards `events/list` and
+/// `events/poll` to the running wisp, and an `events/stream`'s notifications come out on stdout as they happen, each
+/// with its subscription id. `notifications/cancelled` ends it: stdin closed after, the process exits (nothing hangs on
+/// a stream nobody reads).
+#[tokio::test(flavor = "multi_thread")]
+async fn wisp_mcp_forwards_mcp_events_and_a_stream_until_cancelled() {
+    use std::io::BufRead as _;
+    let dir = temp("serve-mcp-stdio-events");
+    let (_serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let mut child = Command::new(env!("CARGO_BIN_EXE_wisp"))
+        .arg("mcp")
+        .env("WISP_HOME", dir.join("home"))
+        .env("WISP_PORT", port.to_string())
+        .current_dir(dir.join("proj"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel::<Value>();
+    let stdout = child.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+            if let Ok(v) = serde_json::from_str(&line) {
+                let _ = tx.send(v);
+            }
+        }
+    });
+    let until = |what: &str, f: &dyn Fn(&Value) -> bool| -> Value {
+        let at = std::time::Instant::now();
+        loop {
+            let left = std::time::Duration::from_secs(30).saturating_sub(at.elapsed());
+            match rx.recv_timeout(left) {
+                Ok(v) if f(&v) => return v,
+                Ok(_) => {}
+                Err(e) => panic!("never: {what} ({e})"),
+            }
+        }
+    };
+    let mut say = |v: Value| writeln!(input, "{v}").unwrap();
+    say(json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-06-18" } }));
+    let init = until("initialize", &|v| v["id"] == 1);
+    assert!(init["result"]["capabilities"]["extensions"]["io.modelcontextprotocol/events"].is_object(), "{init}");
+    say(json!({ "jsonrpc": "2.0", "id": 2, "method": "events/list" }));
+    let list = until("events/list", &|v| v["id"] == 2);
+    assert!(list["result"]["events"].as_array().is_some_and(|l| l.iter().any(|e| e["name"] == "turn.finished")), "{list}");
+    say(json!({ "jsonrpc": "2.0", "id": 3, "method": "events/poll", "params": { "name": "turn.finished", "cursor": null } }));
+    let polled = until("events/poll", &|v| v["id"] == 3);
+    assert!(polled["result"]["cursor"].is_string(), "{polled}");
+    say(json!({ "jsonrpc": "2.0", "id": "s", "method": "events/stream", "params": { "name": "turn.finished", "cursor": null } }));
+    until("active", &|v| {
+        v["method"] == "notifications/events/active" && v["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"] == "s"
+    });
+    let made = api
+        .cmd("runtime.create", json!({ "prompt": "fix the add bug", "cwd": dir.join("proj"), "agent": "claude", "worktree": false }))
+        .await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    let ev = until("the turn's end, pushed", &|v| v["method"] == "notifications/events/event");
+    assert_eq!(ev["params"]["_meta"]["dev.trywisp/subject"], json!(id), "{ev}");
+    say(json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": "s" } }));
+    drop(input);
+    let status = tokio::task::spawn_blocking(move || child.wait()).await.unwrap().unwrap();
+    assert!(status.success(), "{status:?}");
+}

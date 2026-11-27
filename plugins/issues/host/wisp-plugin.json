@@ -2,7 +2,7 @@
   "wispPlugin": 1,
   "id": "wisp.issues",
   "name": "issues",
-  "version": "1.0.0-alpha.18",
+  "version": "1.0.0-alpha.19",
   "api": "^1",
   "description": "issues to start a task from: a project's GitHub issues (gh), the Linear and Jira issues assigned to you",
   "kind": "plugin",

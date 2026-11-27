@@ -25,5 +25,7 @@
   "automations.form.missing.when": "Say when: “every monday” or “every 2 hours”.",
   "automations.form.missing.label": "Say which label starts it.",
   "automations.form.missing.secret": "Give it a secret: a call must know it, or sign with it.",
-  "automations.form.missing.people": "Name the people who may start it (their Slack member IDs)."
+  "automations.form.missing.people": "Name the people who may start it (their Slack member IDs).",
+  "automations.form.missing.connector": "Pick the MCP server it listens to.",
+  "automations.form.missing.event": "Pick which of its events starts it."
 }

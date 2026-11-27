@@ -270,12 +270,17 @@ impl Client {
 
     /// One JSON-RPC message to `/api/mcp` as the user's editor working in `cwd` (ADR-0040): its answer, as it came.
     pub async fn mcp(&self, msg: &Value, cwd: &Path) -> Result<Value> {
+        let r = self.mcp_post(msg, cwd).await?;
+        r.json().await.map_err(|e| CliError::said(format!("wisp at {}: /api/mcp: {e}", self.url)))
+    }
+
+    /// One message to `/api/mcp`, its response as it comes (a stream's is read by `mcp_stdio::forward`).
+    pub async fn mcp_post(&self, msg: &Value, cwd: &Path) -> Result<reqwest::Response> {
         let mut b = self.http.post(format!("{}/api/mcp", self.url)).header("x-wisp-cwd", cwd.display().to_string()).json(msg);
         if let Some(t) = &self.token {
             b = b.header("x-wisp-token", t);
         }
-        let r = b.send().await.map_err(|e| CliError::said(format!("wisp at {}: {e}", self.url)))?;
-        r.json().await.map_err(|e| CliError::said(format!("wisp at {}: /api/mcp: {e}", self.url)))
+        b.send().await.map_err(|e| CliError::said(format!("wisp at {}: {e}", self.url)))
     }
 
     /// The wisp answering here (its `/api/health`), bounded: something that takes the connection and never answers

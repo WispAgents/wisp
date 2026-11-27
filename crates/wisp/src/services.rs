@@ -226,6 +226,7 @@ impl Secrets for FileSecrets {
 #[derive(Debug, Clone)]
 pub struct ReqwestNet {
     client: reqwest::Client,
+    version: String,
 }
 
 impl ReqwestNet {
@@ -235,7 +236,7 @@ impl ReqwestNet {
             .connect_timeout(Duration::from_secs(10))
             .build()
             .unwrap_or_default();
-        Self { client }
+        Self { client, version: version.to_owned() }
     }
 }
 
@@ -251,6 +252,55 @@ impl Net for ReqwestNet {
                 b = b.header(k, v);
             }
             let r = b.send().await.map_err(|e| WireError::unavailable(format!("{}: {e}", req.url)))?;
+            let status = r.status().as_u16();
+            let headers = r.headers().iter().filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str().to_owned(), v.to_owned()))).collect();
+            let body = r.bytes().await.map_err(|e| WireError::unavailable(e.to_string()))?.to_vec();
+            Ok(NetResponse { status, headers, body })
+        })
+    }
+
+    fn fetch_untrusted(&self, req: NetRequest, allow_private: bool) -> BoxFuture<'static, Result<NetResponse>> {
+        let version = self.version.clone();
+        Box::pin(async move {
+            let url = reqwest::Url::parse(&req.url).map_err(|e| WireError::invalid(format!("{}: {e}", req.url)))?;
+            let host = url.host_str().ok_or_else(|| WireError::invalid(format!("{} names no host", req.url)))?.to_owned();
+            let port = url.port_or_known_default().unwrap_or(443);
+            let bare = host.trim_start_matches('[').trim_end_matches(']').to_owned();
+            // resolved now, and connected to as resolved: the name can't move between the check and the connection
+            let addr = match bare.parse::<std::net::IpAddr>() {
+                Ok(ip) => std::net::SocketAddr::new(ip, port),
+                Err(_) => tokio::net::lookup_host((bare.as_str(), port))
+                    .await
+                    .map_err(|e| WireError::unavailable(format!("{host}: {e}")))?
+                    .next()
+                    .ok_or_else(|| WireError::unavailable(format!("{host} doesn't resolve")))?,
+            };
+            if !allow_private && !wisp_kernel::services::is_global(addr.ip()) {
+                return Err(WireError::invalid(format!("{host} is not a public address ({})", addr.ip())));
+            }
+            let client = reqwest::Client::builder()
+                .user_agent(format!("wisp/{version}"))
+                .connect_timeout(Duration::from_secs(5))
+                .redirect(reqwest::redirect::Policy::none())
+                .resolve(&bare, addr)
+                .build()
+                .map_err(|e| WireError::internal(e.to_string()))?;
+            let method =
+                reqwest::Method::from_bytes(req.method.to_ascii_uppercase().as_bytes()).map_err(|e| WireError::invalid(e.to_string()))?;
+            let timeout = Duration::from_millis(if req.timeout_ms == 0 { 10_000 } else { req.timeout_ms });
+            let mut b = client.request(method, url).timeout(timeout).body(req.body);
+            for (k, v) in &req.headers {
+                b = b.header(k, v);
+            }
+            let r = b.send().await.map_err(|e| {
+                WireError::unavailable(if e.is_timeout() {
+                    "timeout".to_owned()
+                } else if e.is_connect() {
+                    "connection_refused".to_owned()
+                } else {
+                    e.to_string()
+                })
+            })?;
             let status = r.status().as_u16();
             let headers = r.headers().iter().filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str().to_owned(), v.to_owned()))).collect();
             let body = r.bytes().await.map_err(|e| WireError::unavailable(e.to_string()))?.to_vec();
