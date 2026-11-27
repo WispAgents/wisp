@@ -217,6 +217,21 @@ fn an_unanswered_check_is_tried_again_not_counted() {
     assert!(u.view("stable").available, "the pill shows");
 }
 
+/// `wisp --port 4891` sets no `WISP_PORT`: the port comes from the edge's own address, or the update relaunched on
+/// 4477 (another wisp's port, or none the open tab knew) and the tab never came back.
+#[test]
+fn the_relaunch_port_is_read_from_the_address_wisp_serves_on() {
+    use wisp_update_core::port_of;
+    assert_eq!(port_of("http://127.0.0.1:4891"), Some(4891));
+    assert_eq!(port_of("http://[::1]:4891/"), Some(4891));
+    assert_eq!(port_of("http://0.0.0.0:65535/api"), Some(65535));
+    assert_eq!(port_of("127.0.0.1:5000"), Some(5000));
+    // nothing to reuse: the caller keeps what it had
+    for bad in ["http://127.0.0.1", "http://127.0.0.1:0", "http://127.0.0.1:99999", "http://[::1]", ""] {
+        assert_eq!(port_of(bad), None, "{bad}");
+    }
+}
+
 #[test]
 fn relaunch_keeps_the_port_wisp_is_serving_on() {
     let mut u = Updater::new(global(), mac(), CURRENT, 5123, Env::default());

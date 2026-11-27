@@ -23,12 +23,23 @@ fn relaunch_opts() -> wisp_proc::SpawnOpts {
 /// Hands off to the detached waiter that stops this wisp and starts the new one (`Updater::hand_off`: `sh` on Unix,
 /// `PowerShell` on Windows), through the proc service. False: it couldn't start, and the user restarts it.
 pub(crate) fn relaunch(ctx: &Ctx, st: &St) -> bool {
+    // the port this wisp is serving on now, whatever started it (`--port`, `WISP_PORT`, the default)
+    if let Some(port) = bound_port(ctx) {
+        lock(&st.up).port = port;
+    }
     // only a Windows npm install uses the folder (and it wrote its pending file there first)
     let files = files(ctx, st).unwrap_or_else(|| Files { dir: String::new(), exe: st.exe.clone() });
     let Some(h) = lock(&st.up).hand_off(std::process::id(), &files) else { return false };
     let Ok(proc) = ctx.service::<wisp_proc::Proc>() else { return false };
     // Err: the user restarts it by hand.
     proc.spawn_detached(h.bin, &h.args, relaunch_opts()).is_ok()
+}
+
+/// The port the edge bound, from its own address (`AgentAccess`, which the install provides): `St::new` only sees
+/// `WISP_PORT`, which `wisp --port N` never sets, so the relaunch came back on 4477 and the open tab lost it.
+pub(crate) fn bound_port(ctx: &Ctx) -> Option<u16> {
+    let access = ctx.service::<std::sync::Arc<dyn wisp_runtime_api::points::AgentAccess>>().ok()?;
+    wisp_update_core::port_of(&access.url())
 }
 
 /// Where the Windows hand-off and the next start meet: `<home>/plugins/wisp.update`.
