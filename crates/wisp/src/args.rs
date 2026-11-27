@@ -52,7 +52,7 @@ pub const HELP: &str = "usage:
   wisp hook install|uninstall|status   a git hook that adds Wisp-Task: <id> to commits a task's agent makes
   wisp secret set|rm NAME       a secret your formulas reference as ${secret:NAME}: piped in or typed hidden, never an argument
   wisp import [home]            bring another wisp home (~/.wisp) in: its plan first, then on yes   (--dry-run  --yes)
-  wisp apply -f wisp.yml        your setup as code: plan, diff, confirm   (--dry-run  --yes  --prune  --trust  --profile P)
+  wisp apply -f wisp.yml        your setup as code: plan, diff, confirm   (--dry-run  --yes  --prune[-all]  --trust  --profile P)
   wisp diff|validate -f F       what apply would change; schema and checks
   wisp schema                   the JSON schema of a formula, for your editor
   wisp export [kinds…]          what's set up here, as a formula   (--include ui,account  --format yaml|json|toml)

@@ -530,15 +530,20 @@ async fn folder_view(first: &str, o: &code::Opts, port: u16, cwd: &Path) -> Resu
                     .cmd("resources.export", serde_json::json!({ "kinds": [kind] }))
                     .await
                     .is_ok_and(|l| l.as_array().is_some_and(|a| a.iter().any(|r| r["name"] == stored.as_str())));
+                // the rename renames what names it in wisp too (a workflow step's agent, AAC-2): say how many
+                let mut refs = 0;
                 if has {
-                    c.cmd("resources.rename", serde_json::json!({ "kind": kind, "from": stored, "to": new_name })).await?;
+                    let done = c.cmd("resources.rename", serde_json::json!({ "kind": kind, "from": stored, "to": new_name })).await?;
+                    refs = done["references"].as_u64().unwrap_or(0);
                 }
                 let n = folder::mv(&dir, &cfg, from, to)?;
-                scripted::say(&format!(
-                    "  ✓ {from} → {to} in {n} file{}{}",
-                    if n == 1 { "" } else { "s" },
-                    if has { " and in wisp" } else { "" }
-                ));
+                let in_wisp = match (has, refs) {
+                    (false, _) => String::new(),
+                    (true, 0) => " and in wisp".to_owned(),
+                    (true, 1) => " and in wisp (1 resource that named it too)".to_owned(),
+                    (true, r) => format!(" and in wisp ({r} resources that named it too)"),
+                };
+                scripted::say(&format!("  ✓ {from} → {to} in {n} file{}{in_wisp}", if n == 1 { "" } else { "s" }));
                 0
             }
             _ => return Err(CliError::said("wisp mv <kind>.<name> <kind>.<new name>")),

@@ -348,7 +348,10 @@ pub(crate) fn register(s: &mut Setup) -> (Arc<StoredKind>, Arc<dyn ResourceKind>
     let inner = Arc::new(StoredKind::new(
         KindInfo::new("connector", "connectors", "wisp.connectors", schema_of::<ConnectorSpec>())
             .order(18)
-            .names(wisp_resources_api::Names::new("agents[]", "agent")),
+            .names(wisp_resources_api::Names::new("agents[]", "agent"))
+            // a token belongs in secrets: `${env:…}` here isn't filled into the stored row (AAC-4)
+            .secret_field("env")
+            .secret_field("headers"),
         s.ctx(),
     ));
     let cache: Cache = Arc::default();

@@ -12,6 +12,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde-saphyr.workspace = true
 toml.workspace = true
+wisp-envmask.workspace = true
 wisp-resources-api.workspace = true
 
 [lints]

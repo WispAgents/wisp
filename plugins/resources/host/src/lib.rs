@@ -2,7 +2,8 @@
 //!
 //! - `resources.kinds`: what this wisp can declare (each kind's section, owner, scope and schema).
 //! - `resources.plan`: the formula's resources against what is here: creates, updates (a desired spec
-//!   patches the current one), and with `prune` deletes; each spec checked against its kind's schema;
+//!   patches the current one), and with `prune` deletes of what this formula's source applied before (`prune_all`:
+//!   of whatever is undeclared); each spec checked against its kind's schema and for secrets written into it;
 //!   `${secret:NAME}` references that don't exist here; the sensitive ops in plain words.
 //! - `resources.apply`: the same plan, then each op through its owner (`ResourceKind::apply`, which
 //!   runs the owner's own commands). Refused while the plan has problems or missing secrets, and for a
@@ -25,6 +26,7 @@ use wisp_resources_api::{
     Applied, Apply, Export, ExportArgs, KindInfo, Kinds, Op, OpKind, Plan, PlanArgs, PlanCmd, RESOURCE_KIND, Read, ReadOut, Refresh,
     RefreshArgs, Rename, RenameArgs, Resource, ResourceKind, Scope, Write, WriteOut,
 };
+use wisp_resources_core::plan::Prune;
 use wisp_resources_core::{formula, plan, schema};
 
 pub use wisp_resources_api::PLUGIN_ID;
@@ -88,7 +90,7 @@ async fn drift_and_secrets(ctx: &Ctx, out: &mut Plan) -> Result<()> {
     let base = applied::all(ctx).await.unwrap_or_default();
     for o in out.ops.iter().filter(|o| o.op == OpKind::Update) {
         if let (Some(was), Some(now)) = (base.get(&applied::key(&o.kind, &o.name)), o.before.as_ref())
-            && was != now
+            && was.spec != *now
         {
             out.drift.push(applied::key(&o.kind, &o.name));
         }
@@ -254,8 +256,71 @@ async fn kept_refs(ks: &[Arc<dyn ResourceKind>], call: &Call, ops: &[Op]) -> Vec
     out
 }
 
+/// How `a` prunes: `--prune` removes what this source applied before, never another repo's, another file's or the app's
+/// (AAC-1); an API call that names no source prunes as it always did.
+fn prune_mode(a: &PlanArgs) -> Prune {
+    if a.prune_all || (a.prune && a.source.is_none()) {
+        Prune::All
+    } else if a.prune {
+        Prune::Own
+    } else {
+        Prune::Off
+    }
+}
+
+/// What every declared resource is checked for, planned or already so: a secret written into it would sit in the store's
+/// row and in every export (AAC-4); the references of one left as it is still have to name something (a workflow left
+/// alone can name an agent that went, AAC-2). The planned ones' references are gathered where they're planned.
+fn check_declared(
+    k: &dyn ResourceKind,
+    info: &KindInfo,
+    (current, desired, ops): (&[Resource], &[Resource], &[Op]),
+    problems: &mut Vec<String>,
+    refs: &mut Vec<(String, wisp_resources_api::Ref)>,
+) {
+    for d in desired {
+        problems.extend(wisp_resources_core::secrets::problems(info, d));
+        if ops.iter().any(|o| o.op != OpKind::Delete && o.name == d.name) {
+            continue;
+        }
+        if let Some(c) = current.iter().find(|c| c.name == d.name) {
+            let r = Resource::new(info.kind.clone(), d.name.clone(), plan::merge(&c.spec, &d.spec));
+            refs.extend(k.refs(&r).into_iter().chain(named_refs(info, &r)).map(|x| (format!("{}.{}", info.section, r.name), x)));
+        }
+    }
+}
+
+/// A kind's ops (its own plan, else the generic one), with the deletes `--prune` makes cut to what this source applied
+/// ([`plan::own`]); what it keeps and what this source no longer declares go in `out`, with the count already so.
+fn plan_kind(
+    k: &dyn ResourceKind,
+    info: &KindInfo,
+    (current, desired): (&[Resource], &[Resource]),
+    a: &PlanArgs,
+    base: &std::collections::HashMap<String, applied::Baseline>,
+    out: &mut Plan,
+) -> Vec<Op> {
+    let mode = prune_mode(a);
+    let pruning = mode != Prune::Off;
+    let ops = if let Some(ops) = k.plan(current, desired, pruning) {
+        out.unchanged += desired.len().saturating_sub(ops.iter().filter(|o| o.op != OpKind::Delete).count());
+        ops
+    } else {
+        let (ops, same) = plan::plan(current, desired, pruning);
+        out.unchanged += same;
+        ops
+    };
+    let from = |name: &str| base.get(&applied::key(&info.kind, name)).and_then(|b| b.source.clone());
+    let pruned = plan::own(ops, current, desired, &from, a.source.as_deref(), mode);
+    out.kept.extend(pruned.kept);
+    out.stale.extend(pruned.stale);
+    pruned.ops
+}
+
 async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
     let ks = kinds(ctx);
+    let mode = prune_mode(a);
+    let base = applied::all(ctx).await.unwrap_or_default();
     let mut refs: Vec<(String, wisp_resources_api::Ref)> = Vec::new();
     let mut names_after: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     let mut out = Plan::default();
@@ -281,8 +346,9 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
             .collect();
         let gone: Vec<&str> =
             a.destroy.iter().filter_map(|d| d.split_once('.')).filter(|(kind, _)| info.named(kind)).map(|(_, n)| n).collect();
-        // a section the formula names with nothing left in it (`triggers: []`) still prunes: its last one went
-        let emptied = a.prune && a.kinds.iter().any(|k| info.named(k));
+        // a section the formula names with nothing left in it (`triggers: []`) still prunes: its last one went (and,
+        // without prune, still says what this source applied there before)
+        let emptied = (mode != Prune::Off || a.source.is_some()) && a.kinds.iter().any(|k| info.named(k));
         if desired.is_empty() && gone.is_empty() && !emptied {
             continue;
         }
@@ -312,14 +378,8 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
             infos.push(info);
             continue;
         }
-        let ops = if let Some(ops) = k.plan(&current, &desired, a.prune) {
-            out.unchanged += desired.len().saturating_sub(ops.iter().filter(|o| o.op != OpKind::Delete).count());
-            ops
-        } else {
-            let (ops, same) = plan::plan(&current, &desired, a.prune);
-            out.unchanged += same;
-            ops
-        };
+        let ops = plan_kind(k.as_ref(), &info, (&current, &desired), a, &base, &mut out);
+        check_declared(k.as_ref(), &info, (&current, &desired, &ops), &mut out.problems, &mut refs);
         for o in ops.iter().filter(|o| o.op != OpKind::Delete) {
             let r = Resource::new(info.kind.clone(), o.name.clone(), o.spec.clone());
             // a map-form kind's schema is the whole map's: its own check validates each value
@@ -389,8 +449,14 @@ async fn apply(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Applied> {
         }
         done.push(op);
     }
-    let base: Vec<(String, Option<serde_json::Value>)> =
-        done.iter().map(|o| (applied::key(&o.kind, &o.name), (o.op != OpKind::Delete).then(|| o.spec.clone()))).collect();
+    // each row says where it came from, so a later `--prune` from elsewhere leaves it (AAC-1)
+    let base: Vec<(String, Option<applied::Baseline>)> = done
+        .iter()
+        .map(|o| {
+            let row = (o.op != OpKind::Delete).then(|| applied::Baseline { spec: o.spec.clone(), source: a.source.clone() });
+            (applied::key(&o.kind, &o.name), row)
+        })
+        .collect();
     if let Err(e) = applied::set(ctx, base).await {
         tracing::warn!("resources: the applied baseline wasn't kept: {}", e.message);
     }
@@ -438,19 +504,78 @@ async fn rename(ctx: &Ctx, call: &Call, a: &RenameArgs) -> Result<serde_json::Va
     k.rename(call, &a.from, &a.to).await?;
     let mut base = applied::all(ctx).await.unwrap_or_default();
     let was = base.remove(&applied::key(&kind, &a.from));
-    applied::set(ctx, vec![(applied::key(&kind, &a.from), None), (applied::key(&kind, &a.to), was)]).await?;
-    Ok(serde_json::json!({ "kind": kind, "from": a.from, "to": a.to }))
+    let mut rows = vec![(applied::key(&kind, &a.from), None), (applied::key(&kind, &a.to), was)];
+    let references = rename_references(&ks, call, &kind, a, &base, &mut rows).await?;
+    applied::set(ctx, rows).await?;
+    Ok(serde_json::json!({ "kind": kind, "from": a.from, "to": a.to, "references": references }))
+}
+
+/// What names the renamed resource in a field its kind declares ([`KindInfo::names`]: a workflow step's `agent`, a
+/// trigger's `task`) renamed with it, through each owner, and its baseline too, so the next plan sees no drift (AAC-2:
+/// `wisp mv` said "and in wisp" while the stored workflow still named the old agent). → how many resources changed.
+async fn rename_references(
+    ks: &[Arc<dyn ResourceKind>],
+    call: &Call,
+    kind: &str,
+    a: &RenameArgs,
+    base: &std::collections::HashMap<String, applied::Baseline>,
+    rows: &mut Vec<(String, Option<applied::Baseline>)>,
+) -> Result<usize> {
+    let mut n = 0;
+    for k in ks {
+        let info = k.info();
+        let fields: Vec<&wisp_resources_api::Names> = info.names.iter().filter(|x| x.kind == kind).collect();
+        if fields.is_empty() {
+            continue;
+        }
+        for r in k.read(call).await? {
+            let mut spec = r.spec.clone();
+            let mut changed = false;
+            for f in &fields {
+                changed |= wisp_resources_api::rename_in(&mut spec, f, &a.from, &a.to);
+            }
+            if !changed {
+                continue;
+            }
+            let mut changes = Vec::new();
+            plan::diff(&r.spec, &spec, "", &mut changes);
+            let op = Op {
+                op: OpKind::Update,
+                kind: info.kind.clone(),
+                name: r.name.clone(),
+                spec,
+                id: r.id.clone(),
+                changes,
+                before: Some(r.spec),
+            };
+            apply_one(k.as_ref(), call, &op).await?;
+            let key = applied::key(&info.kind, &r.name);
+            if let Some(b) = base.get(&key) {
+                let mut spec = b.spec.clone();
+                for f in &fields {
+                    wisp_resources_api::rename_in(&mut spec, f, &a.from, &a.to);
+                }
+                rows.push((key, Some(applied::Baseline { spec, source: b.source.clone() })));
+            }
+            n += 1;
+        }
+    }
+    Ok(n)
 }
 
 /// `resources.refresh`: what wisp has now is the baseline (drift accepted). → what was refreshed.
 async fn refresh(ctx: &Ctx, call: &Call, a: &RefreshArgs) -> Result<Vec<String>> {
     let ks = kinds(ctx);
+    let base = applied::all(ctx).await.unwrap_or_default();
     let mut items = Vec::new();
     for r in &a.resources {
         let Some((kind, name)) = r.split_once('/') else { continue };
         let Some(k) = find(&ks, kind) else { continue };
         if let Some(now) = k.read(call).await?.into_iter().find(|x| x.name == name) {
-            items.push((applied::key(&k.info().kind, name), Some(now.spec)));
+            // drift accepted keeps where the resource came from
+            let key = applied::key(&k.info().kind, name);
+            let source = base.get(&key).and_then(|b| b.source.clone());
+            items.push((key, Some(applied::Baseline { spec: now.spec, source })));
         }
     }
     let done: Vec<String> = items.iter().map(|(k, _)| k.clone()).collect();

@@ -12,7 +12,8 @@ pub mod oauth;
 pub mod page;
 pub mod probe;
 pub mod rpc;
-pub mod secret_scan;
 pub mod text;
 
 pub use error::{ConnectorError, Result};
+/// The one list of what a secret looks like, shared with wisp.resources (a formula's plaintext token, AAC-4).
+pub use wisp_envmask::secret_scan;

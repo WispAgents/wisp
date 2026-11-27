@@ -24,6 +24,8 @@ pub struct Opts {
     pub include: Vec<String>,
     pub format: Option<String>,
     pub prune: bool,
+    /// `--prune-all`: prune whatever applied it, not only this formula's source (AAC-1)
+    pub prune_all: bool,
     pub trust: bool,
     pub dry_run: bool,
     pub yes: bool,
@@ -143,6 +145,10 @@ pub fn opts(argv: &[String]) -> Opts {
             "--revoke" => o.revoke = Some(val(&mut it)),
             "--updates" => o.updates = true,
             "--prune" => o.prune = true,
+            "--prune-all" => {
+                o.prune = true;
+                o.prune_all = true;
+            }
             "--trust" => o.trust = true,
             "--dry-run" => o.dry_run = true,
             "--yes" | "-y" => o.yes = true,
@@ -334,6 +340,17 @@ pub fn show_plan(p: &Plan, st: &wisp_cli_api::Style) {
             )
         ));
     }
+    for k in &p.kept {
+        say(&format!("  {}", paint(st, DIM, &format!("= {k}  (not from this formula: kept)"))));
+    }
+    if !p.stale.is_empty() {
+        say(&format!(
+            "  {} {} no longer declared here: --prune removes them ({})",
+            paint(st, YELLOW, "!"),
+            p.stale.len(),
+            p.stale.join(", ")
+        ));
+    }
     for s in &p.sensitive {
         say(&format!("  {} {}", paint(st, YELLOW, "!"), s));
     }
@@ -349,6 +366,18 @@ fn ask(question: &str) -> String {
     let mut o = std::io::stdout().lock();
     let _ = write!(o, "{question}");
     let _ = o.flush();
+    read_answer()
+}
+
+/// [`ask`] on stderr: `--json`'s stdout is the JSON alone.
+fn ask_err(question: &str) -> String {
+    let mut e = std::io::stderr().lock();
+    let _ = write!(e, "{question}");
+    let _ = e.flush();
+    read_answer()
+}
+
+fn read_answer() -> String {
     let mut line = String::new();
     let _ = std::io::stdin().read_line(&mut line);
     line.trim().to_owned()
@@ -367,11 +396,105 @@ pub fn anchor_paths(resources: &mut [wisp_resources_api::Resource], base: &Path)
     }
 }
 
+/// Where a formula comes from, as each apply records it (AAC-1): the `.wisp/` folder (canonical) with its workspace, or
+/// the sorted set of its `-f` files (canonical; a URL or gist as written). The same formula gives the same key from any
+/// cwd, so `--prune` removes what it applied before and nothing another repo or file did.
+pub fn source_key(dir: Option<&Path>, workspace: &str, files: &[String], cwd: &Path) -> String {
+    let canon = |p: &Path| wisp_proc::canonical_blocking(p).unwrap_or_else(|_| p.components().collect()).display().to_string();
+    if let Some(d) = dir {
+        return format!("folder:{}#{workspace}", canon(d));
+    }
+    let mut all: Vec<String> =
+        files.iter().map(|f| if f.contains("://") || f.starts_with("gist:") { f.clone() } else { canon(&cwd.join(f)) }).collect();
+    all.sort();
+    all.dedup();
+    format!("files:{}", all.join(","))
+}
+
+/// What `--json` does once the plan is in (AAC-8: `wisp apply --json` printed the plan and applied nothing, exit 0).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JsonNext {
+    /// print the plan and exit with this
+    Plan(i32),
+    /// ask (on stderr), then apply
+    Ask,
+    /// ask for `trust` (on stderr), then apply
+    AskTrust,
+    /// print `{"error": …}`, exit 1
+    Refuse(&'static str),
+    Apply,
+}
+
+/// [`JsonNext`] for `verb` and its plan: validate, plan, diff and `--dry-run` print it; apply and destroy apply it through
+/// the same yes, trust and terminal gates as the text path. Every exit is 1 while there are problems or missing secrets.
+pub fn json_next(verb: &str, o: &Opts, plan: &Plan, foreign: bool, tty: bool) -> JsonNext {
+    let bad = !plan.problems.is_empty() || !plan.missing_secrets.is_empty();
+    if matches!(verb, "validate" | "diff" | "plan") || o.dry_run || bad || plan.ops.is_empty() {
+        return JsonNext::Plan(i32::from(bad));
+    }
+    if foreign && !plan.sensitive.is_empty() && !o.trust {
+        return if o.yes || !tty {
+            JsonNext::Refuse("this formula comes from elsewhere and changes who may act: read the plan, then apply it with --trust")
+        } else {
+            JsonNext::AskTrust
+        };
+    }
+    match (o.yes, tty) {
+        (true, _) => JsonNext::Apply,
+        (false, true) => JsonNext::Ask,
+        (false, false) => JsonNext::Refuse("not a terminal: apply with --yes"),
+    }
+}
+
+/// The plan as `--json` prints it, with what the secret scanner hits masked (AAC-4).
+fn plan_json(plan: &Plan) -> Value {
+    let mut v = serde_json::to_value(plan).unwrap_or_default();
+    wisp_resources_core::secrets::mask(&mut v);
+    v
+}
+
+/// `--json` once the plan is in ([`json_next`]): the plan printed, or applied through the gates (asking on stderr) and
+/// printed with how many changes went in.
+async fn apply_json(c: &Client, verb: &str, o: &Opts, plan: &Plan, mut args: Value, foreign: bool) -> Result<i32> {
+    let tty = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
+    let trust = match json_next(verb, o, plan, foreign, tty) {
+        JsonNext::Plan(code) => {
+            say(&serde_json::to_string_pretty(&plan_json(plan)).unwrap_or_default());
+            return Ok(code);
+        }
+        JsonNext::Refuse(why) => {
+            say(&serde_json::to_string_pretty(&json!({ "error": why, "plan": plan_json(plan) })).unwrap_or_default());
+            return Ok(1);
+        }
+        JsonNext::AskTrust => {
+            if ask_err("It comes from elsewhere and changes who may act. Type trust to apply it: ") != "trust" {
+                say(&json!({ "error": "nothing applied", "plan": plan_json(plan) }).to_string());
+                return Ok(1);
+            }
+            true
+        }
+        JsonNext::Ask => {
+            let n = plan.ops.len();
+            if !matches!(ask_err(&format!("Apply {n} change{}? [y/N] ", if n == 1 { "" } else { "s" })).as_str(), "y" | "Y" | "yes") {
+                say(&json!({ "error": "nothing applied", "plan": plan_json(plan) }).to_string());
+                return Ok(1);
+            }
+            o.trust
+        }
+        JsonNext::Apply => o.trust,
+    };
+    args["trust"] = json!(trust);
+    let done = c.cmd("resources.apply", args).await?;
+    say(&serde_json::to_string_pretty(&json!({ "plan": plan_json(plan), "applied": done["applied"] })).unwrap_or_default());
+    Ok(0)
+}
+
 /// `wisp apply -f`, `wisp diff -f`, `wisp validate -f`.
 pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> {
     let st = crate::cli::style();
     let ks = formula_kinds(c).await?;
     let dir = crate::folder::folder(o, cwd);
+    let source = source_key(dir.as_deref(), &dir.as_deref().map(crate::folder::workspace).unwrap_or_default(), &o.files, cwd);
     let loaded = if let Some(d) = &dir {
         let cfg = crate::folder::config(o, &ks, d)?;
         let ws = crate::folder::workspace(d);
@@ -397,11 +520,13 @@ pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> 
     let destroy: Vec<String> =
         if verb == "destroy" { loaded.resources.iter().map(|r| format!("{}.{}", r.kind, r.name)).collect() } else { Vec::new() };
     let resources = if verb == "destroy" { Vec::new() } else { loaded.resources.clone() };
-    let args = json!({ "resources": resources, "prune": o.prune, "foreign": foreign, "trust": o.trust, "destroy": destroy, "kinds": loaded.kinds });
+    let args = json!({
+        "resources": resources, "prune": o.prune, "prune_all": o.prune_all, "source": source, "foreign": foreign, "trust": o.trust,
+        "destroy": destroy, "kinds": loaded.kinds,
+    });
     let plan: Plan = serde_json::from_value(c.cmd("resources.plan", args.clone()).await?).map_err(|e| CliError::said(e.to_string()))?;
     if o.json {
-        say(&serde_json::to_string_pretty(&plan).unwrap_or_default());
-        return Ok(i32::from(!plan.problems.is_empty()));
+        return apply_json(c, verb, o, &plan, args, foreign).await;
     }
     if verb == "validate" {
         return Ok(show_validate(&plan, &loaded, &st));
@@ -466,6 +591,9 @@ pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> 
 
 /// --prune empties only the sections the formula names: one deleted whole names nothing, so say how (audit A #15).
 fn prune_hint(o: &Opts, plan: &Plan, loaded: &Loaded, verb: &str, st: &wisp_cli_api::Style) {
+    if o.prune_all && verb != "destroy" {
+        say(&format!("  {}", paint(st, DIM, "--prune-all: what the formula doesn't declare goes, whichever formula, repo or app made it")));
+    }
     if o.prune && plan.ops.is_empty() && loaded.kinds.is_empty() && verb != "destroy" {
         say(&format!(
             "  {}",
@@ -510,13 +638,17 @@ pub async fn export_cmd(c: &Client, o: &Opts) -> Result<i32> {
     let list: Vec<Resource> =
         serde_json::from_value(c.cmd("resources.export", json!({ "kinds": kinds_asked, "include": o.include })).await?)
             .map_err(|e| CliError::said(e.to_string()))?;
-    let list = if o.with_deps || o.words.iter().any(|w| w.contains('.')) {
+    let mut list = if o.with_deps || o.words.iter().any(|w| w.contains('.')) {
         let all: Vec<Resource> = serde_json::from_value(c.cmd("resources.export", json!({ "include": o.include })).await?)
             .map_err(|e| CliError::said(e.to_string()))?;
         crate::folder::with_deps(&all, &o.words)
     } else {
         list
     };
+    // a token pasted into a spec never leaves in an export (AAC-4): `wisp secret set` and `${secret:NAME}` are the way
+    for r in &mut list {
+        wisp_resources_core::secrets::mask(&mut r.spec);
+    }
     if let Some(dir) = &o.out {
         let written = crate::folder::write_folder(&list, &ks, Path::new(dir), o.single_file)?;
         say(&format!("  {} {} resources → {dir}/ ({})", paint(&crate::cli::style(), GREEN, "✓"), list.len(), written.join(", ")));
@@ -557,6 +689,57 @@ mod anchor_tests {
         assert_eq!(rs[1].spec["path"], "/abs/SKILL.md");
         assert!(rs[2].spec.get("path").is_none());
         assert_eq!(rs[3].spec["path"], "x", "only a skill's path");
+    }
+}
+
+#[cfg(test)]
+mod json_tests {
+    use super::*;
+
+    fn plan_with(missing: &[&str], ops: usize) -> Plan {
+        let op = wisp_resources_api::Op {
+            op: wisp_resources_api::OpKind::Create,
+            kind: "agent".into(),
+            name: "a".into(),
+            spec: json!({}),
+            id: None,
+            changes: Vec::new(),
+            before: None,
+        };
+        Plan { missing_secrets: missing.iter().map(|s| (*s).to_owned()).collect(), ops: vec![op; ops], ..Plan::default() }
+    }
+
+    /// AAC-8: `wisp apply --json` printed the plan and returned before applying; `validate --json` exited 0 with a
+    /// secret missing. Apply and destroy go through the gates and apply; every exit counts missing secrets.
+    #[test]
+    fn json_applies_through_the_same_gates_and_counts_missing_secrets_aac_8() {
+        let yes = Opts { yes: true, ..Opts::default() };
+        let no = Opts::default();
+        assert_eq!(json_next("validate", &no, &plan_with(&["K"], 0), false, false), JsonNext::Plan(1), "a missing secret is 1");
+        assert_eq!(json_next("validate", &no, &plan_with(&[], 1), false, false), JsonNext::Plan(0));
+        assert_eq!(json_next("plan", &yes, &plan_with(&[], 1), false, true), JsonNext::Plan(0), "plan never applies");
+        assert_eq!(json_next("apply", &yes, &plan_with(&[], 1), false, false), JsonNext::Apply);
+        assert_eq!(json_next("destroy", &yes, &plan_with(&[], 1), false, false), JsonNext::Apply);
+        assert_eq!(json_next("apply", &yes, &plan_with(&["K"], 1), false, false), JsonNext::Plan(1), "missing secret: no apply");
+        assert_eq!(json_next("apply", &Opts { dry_run: true, ..yes.clone() }, &plan_with(&[], 1), false, false), JsonNext::Plan(0));
+        assert_eq!(json_next("apply", &no, &plan_with(&[], 1), false, false), JsonNext::Refuse("not a terminal: apply with --yes"));
+        assert_eq!(json_next("apply", &no, &plan_with(&[], 1), false, true), JsonNext::Ask);
+        let sensitive = Plan { sensitive: vec!["lets chat 1 start tasks".into()], ..plan_with(&[], 1) };
+        assert!(matches!(json_next("apply", &yes, &sensitive, true, false), JsonNext::Refuse(_)), "foreign needs --trust");
+        assert_eq!(json_next("apply", &Opts { trust: true, ..yes }, &sensitive, true, false), JsonNext::Apply);
+    }
+
+    /// AAC-1: a formula's source is the same from any cwd and in any -f order; a folder's names its workspace.
+    #[test]
+    fn a_formulas_source_is_stable_aac_1() {
+        let tmp = std::env::temp_dir();
+        let a = source_key(None, "", &["b.yml".into(), "a.yml".into()], &tmp);
+        assert_eq!(a, source_key(None, "", &["a.yml".into(), "./b.yml".into(), "a.yml".into()], &tmp));
+        assert!(a.starts_with("files:") && a.contains("a.yml,") && a.ends_with("b.yml"), "{a}");
+        assert_eq!(source_key(None, "", &["https://x.dev/t.yml".into()], &tmp), "files:https://x.dev/t.yml");
+        let f = source_key(Some(&tmp), "staging", &[], &tmp);
+        assert!(f.starts_with("folder:") && f.ends_with("#staging"), "{f}");
+        assert_ne!(f, source_key(Some(&tmp), "default", &[], &tmp));
     }
 }
 
