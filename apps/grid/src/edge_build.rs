@@ -51,6 +51,12 @@ impl Grid {
             .map(Arc::new)
             .map_err(|e| tracing::warn!("grid: no master key, so no sandboxes: {e}"))
             .ok();
+        // media links outlive a restart when there's a master key; without one, a random key (they stop at restart)
+        let media = crate::media::MediaKey::new(secrets.as_ref().and_then(|s| s.media_key().ok()).unwrap_or_else(|| {
+            let mut k = [0u8; 32];
+            k.copy_from_slice(&crate::secrets::random_bytes(32));
+            k
+        }));
         let sandboxes = sandboxes_of(&cfg, &db, &clock, secrets.clone(), &boxes);
         let urls = cfg.clone();
         let sites = crate::sites::Sites::new(
@@ -94,6 +100,7 @@ impl Grid {
             mail,
             push,
             notes: tokio::sync::broadcast::channel(64).0,
+            media,
         })
     }
 }
