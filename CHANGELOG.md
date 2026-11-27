@@ -21,6 +21,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A key pressed the moment a task opens now works.** ⇧F, ⇧R, M and the other task and list keys arrive a beat
+  after the page draws; one pressed before that did nothing. It now runs once they're in, if you're still where you
+  pressed it.
 - **A PR you just shipped no longer shows green before its checks start.** Read the moment it opened, GitHub listed no checks yet, so the PR row said passed in green and the Steward said "green"; the checks only showed later (or after a reload). Now the row says *Waiting for checks* in amber, wisp asks GitHub every 5 s until they show, and the Steward says green only once checks have run on the head it judged.
 
 ## [1.0.0-alpha.17] - 2026-11-27

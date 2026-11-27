@@ -81,10 +81,9 @@ test('fork_from_the_heads_menu_opens_v1s_fork_dialog_and_cancelling_it_makes_not
 });
 
 test('shift_f_opens_the_fork_dialog_too_and_makes_nothing_qa_r14_1', async () => {
-  const { sent, sessions, shell } = await openTask();
+  const { sent, sessions } = await openTask();
   const before = sessions().length;
-  // the page's keys are the shell's later part (builtins-later.ts), in once the first screen is drawn
-  await shell.context.laterReady?.();
+  // pressed at once: the page's keys (builtins-later.ts) may still be on their way, and the press waits for them
   document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'F', code: 'KeyF', shiftKey: true, bubbles: true }));
   await until(() => dialog('fork.modal') !== null);
   expect(dialog('fork.modal'), 'Shift+F opens the fork dialog').not.toBeNull();
