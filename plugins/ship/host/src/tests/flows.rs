@@ -93,7 +93,7 @@ async fn merge_readies_a_draft_squashes_the_reviewed_head_and_tidies() {
     let wts = h.track("t", &[("repo", None)]);
     h.dirty(&wts[0], 1);
     h.ship.ship_all(&h.call, "t", "feat: x", "", true).await.unwrap_or_else(|e| panic!("{e}"));
-    let merged = h.ship.merge_all(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}"));
+    let merged = h.ship.merge_all(&h.call, "t", false).await.unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(merged.pr.state, "MERGED");
     assert!(merged.sync.ok);
     assert_eq!(h.gh.calls("ready").len(), 1, "the draft was readied first");
@@ -102,7 +102,30 @@ async fn merge_readies_a_draft_squashes_the_reviewed_head_and_tidies() {
     assert_eq!(h.git.logged("sync").len(), 1);
     assert_eq!(h.git.logged("branch -D"), [format!("branch -D {}", wts[0].branch)]);
     assert!(h.git.logged("push").iter().any(|l| l.contains("--delete")));
-    assert!(h.ship.merge_all(&h.call, "t").await.is_err(), "nothing left to merge");
+    assert!(h.ship.merge_all(&h.call, "t", false).await.is_err(), "nothing left to merge");
+}
+
+/// The base branch's rules hold the merge: a typed refusal (the UI asks to bypass or wait), nothing tidied; `admin`
+/// merges with `--admin`.
+#[tokio::test]
+async fn a_merge_held_by_branch_rules_is_refused_as_blocked_and_admin_bypasses() {
+    let h = h();
+    let wts = h.track("t", &[("repo", None)]);
+    h.dirty(&wts[0], 1);
+    h.ship.ship_all(&h.call, "t", "feat: x", "", false).await.unwrap_or_else(|e| panic!("{e}"));
+    h.gh.lock().protected = true;
+    let held = h.ship.merge_all(&h.call, "t", false).await.err();
+    assert!(matches!(&held, Some(crate::error::ShipError::Blocked(m)) if m.contains("aren't met")), "{held:?}");
+    let w = held.map(wisp_kernel::WireError::from);
+    assert_eq!(w.as_ref().map(|w| w.code), Some(wisp_kernel::Code::Forbidden));
+    assert_eq!(
+        w.and_then(|w| w.details).and_then(|d| d["reason"].as_str().map(str::to_owned)).as_deref(),
+        Some(wisp_ship_api::MERGE_BLOCKED)
+    );
+    assert!(h.git.logged("branch -D").is_empty(), "nothing tidied while held");
+    let merged = h.ship.merge_all(&h.call, "t", true).await.unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(merged.pr.state, "MERGED");
+    assert!(h.gh.calls("merge").last().is_some_and(|m| m.iter().any(|a| a == "--admin")));
 }
 
 /// After a merge the folder and its branch stay (here and on the remote), with a note why, when git can't read the
@@ -115,7 +138,7 @@ async fn a_merge_keeps_the_folder_and_its_branch_unless_its_removal_went() {
         let wts = h.track("t", &[("repo", None)]);
         h.dirty(&wts[0], 1);
         h.ship.ship_all(&h.call, "t", "feat: x", "", false).await.unwrap_or_else(|e| panic!("{e}"));
-        (wts[0].clone(), h.ship.merge_all(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}")))
+        (wts[0].clone(), h.ship.merge_all(&h.call, "t", false).await.unwrap_or_else(|e| panic!("{e}")))
     }
     let untouched = |h: &crate::tests::H, wt: &wisp_ship_api::Worktree| {
         assert!(std::path::Path::new(&wt.path).is_dir(), "the folder stays");
@@ -129,7 +152,7 @@ async fn a_merge_keeps_the_folder_and_its_branch_unless_its_removal_went() {
     h.dirty(&wts[0], 1);
     h.ship.ship_all(&h.call, "t", "feat: x", "", false).await.unwrap_or_else(|e| panic!("{e}"));
     h.git.lock().status_fails = Some("index file corrupt".into());
-    let m = h.ship.merge_all(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}"));
+    let m = h.ship.merge_all(&h.call, "t", false).await.unwrap_or_else(|e| panic!("{e}"));
     assert!(m.kept.iter().any(|n| n.contains("git status failed") && n.contains("index file corrupt")), "{:?}", m.kept);
     assert_eq!(h.git.logged("tidy"), [] as [String; 0]);
     untouched(&h, &wts[0]);
@@ -176,7 +199,7 @@ async fn a_foreign_worktree_is_merged_but_never_tidied() {
     h.ship.tasks.put(task);
     h.dirty(&h.task("t").repos[0].worktree, 1);
     h.ship.ship_all(&h.call, "t", "feat: x", "", false).await.unwrap_or_else(|e| panic!("{e}"));
-    h.ship.merge_all(&h.call, "t").await.unwrap_or_else(|e| panic!("{e}"));
+    h.ship.merge_all(&h.call, "t", false).await.unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(h.git.logged("branch -D"), [] as [std::string::String; 0]);
     assert_eq!(h.git.logged("worktree remove"), [] as [std::string::String; 0]);
 }

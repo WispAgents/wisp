@@ -24,7 +24,8 @@ pub const HELP: &str = "usage:
                                 repo's own programs, or skip this run
   wisp ship <id>                commit, push and open a PR for a worktree session   (--draft, --steward fix|review|off:
                                 keep the PR green: its failing checks and review comments go back to the task)
-  wisp merge <id>               squash-merge its PR and sync your local base branch
+  wisp merge <id>               squash-merge its PR and sync your local base branch   (--admin: bypass the base branch's
+                                rules, required checks and reviews, with your admin rights)
   wisp run <recipe> [values…]   run a saved recipe; values fill its {params} in order, or key=value
   wisp recipes                  list recipes
   wisp plugin                   list plugins
@@ -189,6 +190,8 @@ pub struct Flags {
     /// `--factory [name]`: the task runs through a software factory ('' : the built-in `default`, ADR-0114)
     pub factory: Option<String>,
     pub draft: bool,
+    /// `wisp merge <id> --admin`: bypass the base branch's rules (`gh pr merge --admin`)
+    pub admin: bool,
     /// `wisp ship <id> --steward fix|review|off`: keep its PR green (the Steward, ADR-0132)
     pub steward: Option<String>,
     pub days: Option<u32>,
@@ -244,6 +247,7 @@ impl Flags {
             formula: Vec::new(),
             factory: None,
             draft: false,
+            admin: false,
             steward: None,
             days: None,
             on: None,
@@ -501,6 +505,7 @@ fn set(f: &mut Flags, a: &str, value: &mut dyn FnMut() -> Result<String, UsageEr
         "--goal-text" => f.goal_text = Some(value()?),
         "--formula" => f.formula.extend(value()?.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)),
         "--draft" => f.draft = true,
+        "--admin" => f.admin = true,
         "--steward" => f.steward = Some(value()?),
         "--on" => f.on = Some(value()?),
         "--all" => f.all = true,

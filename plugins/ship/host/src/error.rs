@@ -13,6 +13,9 @@ pub enum ShipError {
     Gh(String),
     #[error("{0}")]
     NotFound(String),
+    /// the base branch's rules hold a merge (required checks or reviews): the UI asks to bypass or wait
+    #[error("{0}")]
+    Blocked(String),
     #[error(transparent)]
     Wire(#[from] WireError),
 }
@@ -34,6 +37,7 @@ impl ShipError {
             Self::Refused(r) => Self::Refused(r.in_repo(name, of)),
             Self::Gh(m) => Self::Gh(format!("{name}: {m}")),
             Self::NotFound(m) => Self::NotFound(format!("{name}: {m}")),
+            Self::Blocked(m) => Self::Blocked(format!("{name}: {m}")),
             Self::Wire(mut w) => {
                 w.message = format!("{name}: {}", w.message);
                 Self::Wire(w)
@@ -48,6 +52,7 @@ impl From<ShipError> for WireError {
             ShipError::Refused(Refusal::Invalid(m)) | ShipError::Gh(m) => WireError::invalid(m),
             ShipError::Refused(Refusal::Conflict(m)) => WireError::conflict(m),
             ShipError::NotFound(m) => WireError::not_found(m),
+            ShipError::Blocked(m) => WireError::forbidden(m).with_details(serde_json::json!({ "reason": wisp_ship_api::MERGE_BLOCKED })),
             ShipError::Wire(w) => w,
         }
     }

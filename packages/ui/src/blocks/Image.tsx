@@ -94,12 +94,28 @@ export function MediaTools(props: {
 
 const COPIED_MS = 1400;
 
+/** Whether a picture's or video's bytes are in (its first frame, for a video): until then the block keeps its
+ *  skeleton in place, so a picture still on its way never shows as an empty strip. One already in the browser's
+ *  cache counts at once (its load event may have fired before the handler was there). */
+export function useArrived(): { readonly arrived: () => boolean; readonly done: () => void; readonly check: (el: HTMLImageElement | HTMLVideoElement) => void } {
+  const [arrived, setArrived] = createSignal(false);
+  const done = (): void => void setArrived(true);
+  const check = (el: HTMLImageElement | HTMLVideoElement): void =>
+    queueMicrotask(() => {
+      if (el instanceof HTMLImageElement ? el.complete && el.naturalWidth > 0 : el.readyState >= HAVE_METADATA) done();
+    });
+  return { arrived, done, check };
+}
+
+const HAVE_METADATA = 1;
+
 export function ImageBlock(props: BlockProps): JSX.Element {
   const t = useBlockT();
   const media = useMedia(props);
   const [broken, setBroken] = createSignal(false);
   const [view, setView] = createSignal<{ list: readonly ViewItem[]; at: number } | undefined>();
   const caption = (): string | undefined => opt(props.block['caption']);
+  const bytes = useArrived();
   let img: HTMLImageElement | undefined;
   const open = (): void => {
     if (img) setView(mediaSet(img));
@@ -109,8 +125,25 @@ export function ImageBlock(props: BlockProps): JSX.Element {
       <Show when={media.url() !== null} fallback={<Skeleton part="block.image.loading" shape="block" width="full" height="home-top" label={t('block.image.loading')} />}>
         <Show when={!broken() && media.url()} fallback={<CantShow part="block.image.missing">{t('block.image.missing')}</CantShow>}>
           {(src) => (
-            <div data-kit="rb-media-box">
-              <img ref={img} data-kit="rb-image" data-zoom="" src={src()} alt={caption() ?? media.name()} loading="lazy" decoding="async" onClick={open} onError={() => setBroken(true)} />
+            <div data-kit="rb-media-box" data-loading={bytes.arrived() ? undefined : ''}>
+              <Show when={!bytes.arrived()}>
+                <Skeleton part="block.image.loading" shape="block" width="full" height="home-top" label={t('block.image.loading')} />
+              </Show>
+              <img
+                ref={(el) => {
+                  img = el;
+                  bytes.check(el);
+                }}
+                data-kit="rb-image"
+                data-zoom=""
+                src={src()}
+                alt={caption() ?? media.name()}
+                loading="lazy"
+                decoding="async"
+                onClick={open}
+                onLoad={bytes.done}
+                onError={() => setBroken(true)}
+              />
               <MediaTools src={src()} name={opt(props.block['source']) ?? media.name()} alt={caption() ?? media.name()} part="image.tools" onFull={open} block={props.block} />
             </div>
           )}
