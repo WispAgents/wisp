@@ -127,21 +127,24 @@ async fn a_trigger_url_reaches_its_computers_trigger_by_its_token_and_nothing_el
     assert_eq!(client.post(api("/api/hooks")).json(&json!({ "trigger": "x" })).send().await.unwrap().status(), 401);
 
     // offline: held (202), in order, a sender's retry of one delivery held once
-    for (body, delivery) in [("one", "d1"), ("two", "d2"), ("one again", "d1"), ("three", "d3")] {
+    for (body, delivery) in [("call one", "d1"), ("call two", "d2"), ("call one again", "d1"), ("call three", "d3")] {
         let r = client.post(&url).header("x-github-delivery", delivery).body(body).send().await.unwrap();
         assert_eq!(r.status(), 202, "{body}");
         assert_eq!(r.json::<Value>().await.unwrap()["held"], true);
     }
     assert_eq!(g.held.count(&studio.id).unwrap(), 3);
     let kept: Vec<String> = g.db.with(|c| c.prepare("SELECT sealed FROM hook_held")?.query_map([], |r| r.get(0))?.collect()).unwrap();
-    assert!(kept.iter().all(|k| !k.contains("one") && !k.contains("triggers")), "held sealed: {kept:?}");
+    // sealed is base64url ciphertext: any plain body or JSON (spaces, quotes, braces) would show as a
+    // character outside that alphabet. A substring check like "one" matched random ciphertext by chance.
+    let sealed_only = |k: &String| k.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+    assert!(kept.len() == 3 && kept.iter().all(sealed_only), "held sealed: {kept:?}");
 
     // back: the held calls go to it in order; it fails the first try (503), which is tried again
     let got: Got = Got::default();
     let up = computer(port, &studio.id, &token, got.clone(), 1).await;
     until("online", || g.tunnels.online(&studio.id)).await;
     until("delivered", || got.lock().unwrap().len() == 3).await;
-    assert_eq!(*got.lock().unwrap(), ["one", "two", "three"]);
+    assert_eq!(*got.lock().unwrap(), ["call one", "call two", "call three"]);
     until("emptied", || g.held.count(&studio.id).unwrap() == 0).await;
     got.lock().unwrap().clear();
     // the call: to the trigger, marked, its signature kept, the grid's cookie and a grid bearer dropped
