@@ -1,11 +1,13 @@
 // Automations (v1 features/automations.js openAutomations, automations.css): the lede, Recipes · Triggers with their
 // counts, then the tab's list (each item an icon, its name, a line, tags and actions), "+ New …" and a hint; or a
-// form: the trigger kinds as tiles (v1 .au-kinds), then rows of a label and its control (.au-form), the When presets
+// form: Starts when (the trigger kinds in groups behind one field, owner 2026-11-28), then rows of a label and its control (.au-form), the When presets
 // with what the box will do read back, a warning, and Cancel / Create. Value for value; the owner draws the data.
-import { For, Index, Show, type JSX } from 'solid-js';
+import { createMemo, createSignal, createUniqueId, For, Index, Show, type JSX } from 'solid-js';
 import { flag, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import { Popover } from '../controls/Popover.tsx';
+import '../css/menu-filter.css';
 import '../css/app-automations.css';
 
 /** words with `{ code }` runs, as v1 wrote `<code>{name}</code>` in its lines */
@@ -109,27 +111,161 @@ export function AutoList(props: {
 }
 
 export interface TriggerKind {
-  /** the tile's own key (a kind, or kind:preset) */
+  /** the option's own key (a kind, or kind:preset) */
   readonly key: string;
   readonly label: string;
   readonly hint: string;
   readonly icon: IconName;
 }
 
-/** v1 .au-kinds: three across (two on a narrow dialog), the picked one in the accent */
-export function TriggerKinds(props: { readonly kinds: readonly TriggerKind[]; readonly value: string; readonly onPick: (key: string) => void }): JSX.Element {
+/** a heading over some kinds (On GitHub, From an app) */
+export interface TriggerKindGroup {
+  readonly id: string;
+  readonly label: string;
+  readonly kinds: readonly TriggerKind[];
+}
+
+export interface TriggerKindsProps {
+  readonly groups: readonly TriggerKindGroup[];
+  readonly value: string;
+  readonly onPick: (key: string) => void;
+  /** the search box's placeholder and name, and the line shown when nothing matches */
+  readonly search: string;
+  readonly empty: string;
+}
+
+/** what a typed query keeps: each word in the label, the hint or the group's name */
+export function matchKinds(groups: readonly TriggerKindGroup[], query: string): TriggerKindGroup[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [...groups];
+  return groups
+    .map((g) => ({ ...g, kinds: g.kinds.filter((k) => words.every((w) => `${k.label} ${k.hint} ${g.label}`.toLowerCase().includes(w))) }))
+    .filter((g) => g.kinds.length > 0);
+}
+
+/** Starts when (owner 2026-11-28, design B; it replaced v1's .au-kinds tiles): one field showing the picked kind, its
+ *  icon and hint, that opens the kinds in groups under a search box. Typing narrows them, ↑ ↓ move, Enter picks, Escape
+ *  closes; the focus stays in the box (aria-activedescendant), as a combobox's. */
+export function TriggerKinds(props: TriggerKindsProps): JSX.Element {
+  const [open, setOpen] = createSignal(false);
+  const [query, setQuery] = createSignal('');
+  const [active, setActive] = createSignal('');
+  const id = createUniqueId();
+  const all = createMemo(() => props.groups.flatMap((g) => g.kinds));
+  const picked = (): TriggerKind | undefined => all().find((k) => k.key === props.value) ?? all()[0];
+  const shown = createMemo(() => matchKinds(props.groups, query()));
+  const flat = createMemo(() => shown().flatMap((g) => g.kinds));
+  const optId = (key: string): string => `${id}-${key.replace(/[^a-z0-9]/gi, '-')}`;
+  // what Enter takes: the lit row while it's still shown, else the first match
+  const lit = (): string | undefined => (flat().some((k) => k.key === active()) ? active() : flat()[0]?.key);
+  const openChange = (o: boolean): void => {
+    setOpen(o);
+    if (!o) return;
+    setQuery('');
+    setActive(props.value);
+  };
+  const pick = (key: string): void => {
+    props.onPick(key);
+    setOpen(false);
+  };
+  const move = (by: number): void => {
+    const xs = flat();
+    if (!xs.length) return;
+    const at = xs.findIndex((k) => k.key === lit());
+    const next = xs[(at + by + xs.length) % xs.length];
+    if (!next) return;
+    setActive(next.key);
+    document.getElementById(optId(next.key))?.scrollIntoView({ block: 'nearest' });
+  };
+  const keys = (e: KeyboardEvent): void => {
+    if (e.isComposing) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      move(e.key === 'ArrowDown' ? 1 : -1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const k = lit();
+      if (k) pick(k);
+    }
+  };
   return (
-    <div data-kit="au-kinds" data-part="automations.kinds">
-      <For each={props.kinds}>
-        {(k) => (
-          <button type="button" data-on={flag(props.value === k.key)} aria-pressed={props.value === k.key} data-kind={k.key} onClick={() => props.onPick(k.key)}>
-            <Icon name={k.icon} />
-            <b>{k.label}</b>
-            <small>{k.hint}</small>
-          </button>
-        )}
-      </For>
-    </div>
+    <Popover
+      trigger={{ label: picked()?.label ?? '' }}
+      part="automations.kinds"
+      cardPart="automations.kinds.menu"
+      placement="bottom-start"
+      bare
+      open={open()}
+      onOpenChange={openChange}
+      vars={{ '--popover-w': 'var(--au-kinds-w)' }}
+      render={(trigger) => (
+        <button {...trigger()} type="button" data-kit="au-kind" data-part="automations.kinds" aria-haspopup="listbox" data-on={flag(open())}>
+          <Show when={picked()}>
+            {(k) => (
+              <>
+                <Icon name={k().icon} />
+                <span data-kit="au-kind-text">
+                  <b data-text="control">{k().label}</b>
+                  <small data-text="control">{k().hint}</small>
+                </span>
+              </>
+            )}
+          </Show>
+          <Icon name="chevron" />
+        </button>
+      )}
+    >
+      <div data-kit="menu-filter" data-part="automations.kinds.filter">
+        <Icon name="search" size="sm" tone="faint" />
+        <input
+          ref={(el) => requestAnimationFrame(() => el.focus({ preventScroll: true }))}
+          type="search"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls={`${id}-list`}
+          aria-activedescendant={lit() ? optId(lit() as string) : undefined}
+          aria-label={props.search}
+          placeholder={props.search}
+          value={query()}
+          autocomplete="off"
+          spellcheck={false}
+          onInput={(e) => setQuery(e.currentTarget.value)}
+          onKeyDown={keys}
+        />
+      </div>
+      <div id={`${id}-list`} role="listbox" aria-label={props.search} data-kit="au-kind-list" data-part="automations.kinds.list">
+        <For each={shown()} fallback={<p data-kit="au-kind-empty">{props.empty}</p>}>
+          {(g) => (
+            <div role="group" aria-labelledby={`${id}-g-${g.id}`} data-kit="au-kind-group">
+              <span id={`${id}-g-${g.id}`} data-kit="menu-group-label">
+                {g.label}
+              </span>
+              <For each={g.kinds}>
+                {(k) => (
+                  <div
+                    id={optId(k.key)}
+                    role="option"
+                    aria-selected={k.key === props.value}
+                    title={k.hint}
+                    data-kit="menu-item"
+                    data-kind={k.key}
+                    data-highlighted={flag(k.key === lit())}
+                    data-on={flag(k.key === props.value)}
+                    onPointerMove={() => setActive(k.key)}
+                    // the box keeps the focus: a press on a row picks it without blurring the search
+                    onPointerDown={(e) => e.preventDefault()}
+                    onClick={() => pick(k.key)}
+                  >
+                    <Icon name={k.icon} />
+                    <span data-kit="menu-item-label">{k.label}</span>
+                  </div>
+                )}
+              </For>
+            </div>
+          )}
+        </For>
+      </div>
+    </Popover>
   );
 }
 

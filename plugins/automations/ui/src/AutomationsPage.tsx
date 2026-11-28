@@ -39,6 +39,7 @@ import {
   EVERY,
   HOOK_KINDS,
   KINDS,
+  kindGroups,
   POLLED,
   SCHEDULE_PRESETS,
   TASK_KINDS,
@@ -321,12 +322,20 @@ function TriggerForm(props: {
     );
   };
   const anyProject = (): string => (TASK_KINDS.has(kind()) ? say(f().crew ? 'automations.form.theirProject' : 'automations.form.anyProject') : say('automations.form.ownFolder'));
-  // the New button that opened the form is gone: focus stays in the form on the picked kind (v1 focused no field)
+  // the New button that opened the form is gone: focus stays in the form on Starts when (v1 focused no field)
   let root: HTMLDivElement | undefined;
-  onMount(() => root?.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus({ preventScroll: true }));
+  onMount(() => root?.querySelector<HTMLElement>('[data-kit="au-kind"]')?.focus({ preventScroll: true }));
   return (
     <div data-part="automations.form" ref={root}>
-      <TriggerKinds kinds={KINDS.map((k) => ({ key: k.key, label: k.label, hint: k.hint, icon: k.icon }))} value={f().key} onPick={(k) => setF(pick(f(), k))} />
+      <AutoRow label={say('automations.form.startsWhen')} part="automations.startsWhen">
+        <TriggerKinds
+          groups={kindGroups((g) => say(`automations.form.kinds.group.${g}`))}
+          value={f().key}
+          onPick={(k) => setF(pick(f(), k))}
+          search={say('automations.form.kinds.search')}
+          empty={say('automations.form.kinds.empty')}
+        />
+      </AutoRow>
       <AutoRow label={say('automations.form.name')}>
         <Input value={f().name} onInput={(v) => set({ name: v })} maxLength={60} spellcheck={false} disabled={!!old} aria-label={say('automations.form.name')} />
       </AutoRow>
