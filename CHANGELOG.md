@@ -15,6 +15,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **No "Save this task to the repo?" while the task works.** A task that finished, offered Save to repo and was
+  then reopened kept the offer under its answer while the agent ran again; it now shows only once the task stops.
 - **Home's tips link to the right guide and show three at a time.** Each tip opened `trywisp.dev/guides#<id>`, a page
   with no such section; each now opens the docs section that explains it. Home shows three tips, picked at random on
   each visit (a setup card such as Sign in to GitHub takes one of the three), and **More tips** moves on to three more

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { EntityKey } from '@wisp/client';
-import { historyOf, lastTurnOf, offerView, pushable, pushedLink, pushedOf, pushedText, pushStateOf, runPush, runSave, saveable, saveStateOf, type Pushed, type Tracked } from '../src/save.ts';
+import { historyOf, lastTurnOf, offerView, pushable, pushedLink, pushedOf, pushedText, pushStateOf, runPush, runSave, saveable, saveStateOf, working, type Pushed, type Tracked } from '../src/save.ts';
 import { t } from '../src/i18n.ts';
 import '../src/i18n/lazy.ts';
 
@@ -32,6 +32,15 @@ test('the_answer_offers_then_says_saving_then_what_was_saved', () => {
   // refused: offered again while the task still is
   expect(offerView({ offer: true }, { s: 'failed' })).toEqual({ v: 'offer' });
   expect(offerView({}, { s: 'failed' })).toEqual({ v: 'none' });
+});
+
+test('a_working_task_offers_nothing_even_after_an_earlier_offer', () => {
+  expect(working({ id: 'a', state: 'running' })).toBe(true);
+  expect(working({ id: 'a', body: { state: 'running', ext: { 'wisp.history': { offer: true } } } })).toBe(true);
+  expect(working({ id: 'a', state: 'waiting' })).toBe(true);
+  expect(working({ id: 'a', state: 'done' })).toBe(false);
+  expect(working({ id: 'a', state: 'review' })).toBe(false);
+  expect(working(undefined)).toBe(false);
 });
 
 test('only_the_tasks_last_turn_shows_the_offer', () => {
