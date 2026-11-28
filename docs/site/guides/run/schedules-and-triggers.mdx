@@ -127,7 +127,7 @@ trigger's line in the list says "Watches my assigned issues labelled agent …" 
 ```sh
 wisp trigger add my-agent-issues issue.labeled "Fix {event.summary}" --label agent --assignee me
 wisp trigger add my-reports issue.opened "Triage {event.summary}" --author me
-wisp trigger add my-reviews pr.review_requested --reviewer me     # no prompt: a review of the PR, in Plan
+wisp trigger add my-reviews pr.review_requested "Review PR #{event.payload.number}: {event.payload.title}" --reviewer me
 ```
 `--assignee`, `--author` and `--reviewer` write the same `match` the app's choice does; any GitHub login (or a team's
 `org/slug` for `--reviewer`) works in place of `me`.
@@ -145,6 +145,7 @@ triggers:
   my-reviews:
     on: pr.review_requested      # a reviewer newly asked on an open PR, polled with gh
     match: { reviewer: me }      # only the teammate asked: one review, not one per teammate
+    prompt: "Review PR #{event.payload.number}: {event.payload.title}"
 ```
 </TabItem>
 </Tabs>
@@ -192,7 +193,7 @@ doesn't show, written in a formula, is kept when you edit the trigger.
 </TabItem>
 <TabItem label="CLI">
 ```sh
-wisp trigger add small-reviews pr.review_requested --reviewer me --from trusted --no-drafts --no-forks \
+wisp trigger add small-reviews pr.review_requested "Review PR #{event.payload.number}" --reviewer me --from trusted --no-drafts --no-forks \
   --paths 'src/**,!**/*.md' --max-size 400 --milestone v2.1
 wisp trigger add triage issue.labeled "Triage {event.summary}" --label bug --from people --match 'labels=!wip'
 ```
@@ -212,6 +213,7 @@ triggers:
       fork: false
       paths: [src/**, "!**/*.md"]
       size: "<=400"
+    prompt: "Review PR #{event.payload.number}"
   bugs-from-people:
     on: issue.labeled
     label: bug
