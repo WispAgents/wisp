@@ -30,6 +30,7 @@ test('every tile comes back as itself; a source only a formula declares has no f
     { name: 'a', key: 'schedule', when: 'every hour', prompt: 'x' },
     { name: 'a', key: 'ci', branch: 'main', prompt: 'x' },
     { name: 'a', key: 'issues', label: 'bug', prompt: 'x' },
+    { name: 'a', key: 'review', prompt: 'x' },
     { name: 'a', key: 'finished', prompt: 'x' },
     { name: 'a', key: 'done', crew: 'm1', prompt: 'x' },
     { name: 'a', key: 'webhook', secret: 's', prompt: 'x' },
@@ -64,4 +65,64 @@ test('the switch turns a trigger off and back on: enabled is sent either way, si
   const off = { on: 'schedule', cron: '* * * * *', prompt: 'Tidy', enabled: false };
   expect(switchedSpec(off, true)).toEqual({ ...off, enabled: true });
   expect(switchedSpec({ on: 'schedule', cron: '* * * * *', prompt: 'Tidy' }, false)).toMatchObject({ enabled: false });
+});
+
+test('an issue trigger takes only my issues, the same match the CLI and a formula write, and an edit keeps a formula’s own filter', () => {
+  const base = { ...pick(emptyForm('/code/api'), 'issues'), name: 'mine', label: 'agent', prompt: 'Fix it' };
+  // `wisp trigger add mine issue.labeled --label agent --assignee me` writes this same spec
+  expect(specOfForm({ ...base, whose: 'assigned' })).toMatchObject({ spec: { on: 'issue.labeled', label: 'agent', match: { assignees: 'me' } } });
+  expect(specOfForm({ ...base, whose: 'opened' })).toMatchObject({ spec: { match: { author: 'me' } } });
+  const anyone = specOfForm(base);
+  expect('spec' in anyone && anyone.spec['match']).toBeUndefined();
+  // a saved one opens on its choice; `assignee: me` (the first assignee) reads as Assigned to me too
+  expect(formOfSpec('mine', { on: 'issue.labeled', label: 'agent', match: { assignees: 'me' } })?.whose).toBe('assigned');
+  expect(formOfSpec('mine', { on: 'issue.labeled', label: 'agent', match: { assignee: 'me' } })?.whose).toBe('assigned');
+  expect(formOfSpec('mine', { on: 'issue.labeled', label: 'agent', match: { author: ['me', 'dependabot'] } })?.whose).toBe('');
+  // an edit to Anyone's drops the me it showed, and keeps what only a formula said
+  const spec = { on: 'issue.labeled', label: 'agent', prompt: 'Fix it', match: { assignees: 'me', author: ['me', 'dependabot'] } };
+  const f = formOfSpec('mine', spec);
+  expect(f && specOfEdit({ ...f, whose: '' }, { name: 'mine', spec })).toMatchObject({ spec: { match: { author: ['me', 'dependabot'] } } });
+  const cleared = f && specOfEdit({ ...f, whose: '' }, { name: 'mine', spec: { ...spec, match: { assignees: 'me' } } });
+  expect(cleared && 'spec' in cleared && cleared.spec['match']).toBeUndefined();
+  expect(f && specOfEdit({ ...f, whose: 'opened' }, { name: 'mine', spec: { ...spec, match: { assignees: 'me' } } })).toMatchObject({ spec: { match: { author: 'me' } } });
+  expect(describeSpec({ on: 'issue.labeled', label: 'agent', project: '/code/api', match: { assignees: 'me' } }, o)).toBe('Watches my assigned issues labelled agent in api every 5 min');
+});
+
+test('a review trigger wakes only the teammate asked: Asked of me is match.reviewer: me, as `--reviewer me` writes it', () => {
+  const base = { ...pick(emptyForm('/code/api'), 'review'), name: 'my-reviews' };
+  expect(base.mode).toBe('plan'); // PR text comes from outside
+  const made = specOfForm({ ...base, whose: 'asked' });
+  expect(made).toMatchObject({ spec: { on: 'pr.review_requested', project: '/code/api', every: 5, match: { reviewer: 'me' } } });
+  expect('spec' in made && String(made.spec['prompt'])).toContain('gh pr diff {event.payload.number}'); // no prompt: the default one
+  expect(formOfSpec('my-reviews', { on: 'pr.review_requested', match: { reviewer: 'me' } })).toMatchObject({ key: 'review', whose: 'asked' });
+  // an issue choice doesn't carry over to a review trigger
+  expect(pick({ ...emptyForm(), key: 'issues', whose: 'assigned' }, 'review').whose).toBe('');
+  expect(specOfForm({ ...base, whose: 'assigned' })).not.toHaveProperty('spec.match');
+  // an edit keeps a formula's own filter beside the me it shows
+  const spec = { on: 'pr.review_requested', prompt: 'Review', match: { reviewer: 'me', base: 'main' } };
+  const f = formOfSpec('my-reviews', spec);
+  expect(f && specOfEdit({ ...f, whose: '' }, { name: 'my-reviews', spec })).toMatchObject({ spec: { match: { base: 'main' } } });
+  expect(describeSpec({ on: 'pr.review_requested', project: '/code/api', match: { reviewer: 'me' } }, o)).toBe('Watches review requests for me in api every 5 min');
+  expect(fireLabel({ on: 'pr.review_requested' })).toBe('check');
+});
+
+test('the filters the CLI writes come from the app too, back into the form, and an edit keeps the rest', () => {
+  const base = { ...pick(emptyForm('/code/api'), 'review'), name: 'r' };
+  // `--reviewer me --from trusted --no-drafts --paths src/**,!**/*.md --max-size 400 --milestone v2.1`
+  const made = specOfForm({ ...base, whose: 'asked', from: 'trusted', skipDrafts: true, paths: 'src/**, !**/*.md', size: '400', milestone: 'v2.1' });
+  const match = { reviewer: 'me', trusted: true, draft: false, paths: ['src/**', '!**/*.md'], size: '<=400', milestone: 'v2.1' };
+  expect(made).toMatchObject({ spec: { match } });
+  const spec = { on: 'pr.review_requested', project: '/code/api', prompt: 'Review', match: { ...match, labels: '!wip' } };
+  const f = formOfSpec('r', spec);
+  expect(f).toMatchObject({ whose: 'asked', from: 'trusted', skipDrafts: true, paths: 'src/**, !**/*.md', size: '400', milestone: 'v2.1' });
+  // clearing every filter keeps only what the form never showed
+  const cleared = f && specOfEdit({ ...f, whose: '', from: '', skipDrafts: false, paths: '', size: '', milestone: '' }, { name: 'r', spec });
+  expect(cleared && 'spec' in cleared && cleared.spec['match']).toEqual({ labels: '!wip' });
+  // a size the form has no step for (<=250) is a formula's: kept, not shown
+  expect(formOfSpec('r', { ...spec, match: { size: '<=250' } })?.size).toBe('');
+  // an issue trigger has From and Milestone, not a review's drafts, paths or size
+  const issue = specOfForm({ ...pick(emptyForm('/code/api'), 'issues'), name: 'i', label: 'bug', prompt: 'x', from: 'people', milestone: 'v2.1', skipDrafts: true, size: '100' });
+  expect('spec' in issue && issue.spec['match']).toEqual({ bot: false, milestone: 'v2.1' });
+  expect(describeSpec(spec, o)).toBe('Watches review requests for me, from people who may push, not drafts, up to 400 lines, touching src/**, !**/*.md, in v2.1 in api every 5 min');
+  expect(describeSpec({ on: 'issue.labeled', label: 'bug', project: '/code/api', match: { bot: false } }, o)).toBe('Watches issues labelled bug not from bots in api every 5 min');
 });

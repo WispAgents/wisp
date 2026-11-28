@@ -33,6 +33,23 @@ pub struct Issue {
     /// ≤ 4000 characters, `\r\n` made `\n`
     pub body: String,
     pub updated_at: Option<String>,
+    /// who opened it (a GitHub login; empty where the source doesn't say). Off the wire: v1's shape stays field for
+    /// field; triggers read it (`match: { author: me }`).
+    #[serde(skip)]
+    #[ts(skip)]
+    pub author: String,
+    /// every assignee (GitHub logins); `assignee` is the first. Off the wire, as `author`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub assignees: Vec<String>,
+    /// its author is a bot (Dependabot, an app). Off the wire, as `author`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub author_bot: bool,
+    /// its milestone's title. Off the wire, as `author`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub milestone: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]

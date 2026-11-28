@@ -84,6 +84,10 @@ pub fn linear_mcp_issue(n: &Value) -> Option<Issue> {
         assignee: name_of(n.get("assignee").unwrap_or(&Value::Null)),
         body: body(&s("description")),
         updated_at: n.get("updatedAt").and_then(Value::as_str).map(str::to_owned),
+        author: String::new(),
+        assignees: Vec::new(),
+        author_bot: false,
+        milestone: String::new(),
     })
 }
 

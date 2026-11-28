@@ -31,6 +31,7 @@ import {
 } from '@wisp/ui';
 import { lastRunWords } from './panes/summary.ts';
 import { McpEventFields } from './McpEventFields.tsx';
+import { TriggerFilters } from './TriggerFilters.tsx';
 import { fireTrigger, recipes, removeRecipe, removeTrigger, saveTrigger, switchTrigger, triggers, type Recipe, type Trigger } from './commands.ts';
 import { fieldsOf } from './recipe.ts';
 import { t } from './i18n.ts';
@@ -414,6 +415,7 @@ function TriggerForm(props: {
           </AutoRow>
         </Show>
       </Show>
+      <TriggerFilters kind={kind()} f={f()} set={set} />
       <Show when={POLLED.has(kind())}>
         <AutoRow label={say('automations.form.every')}>
           <Select

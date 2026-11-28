@@ -199,37 +199,115 @@ fn folder_holds(w: &str, g: &str) -> bool {
     g == r || g.starts_with(&format!("{r}/"))
 }
 
-fn takes(key: &str, want: &Value, got: Option<&Value>) -> bool {
-    let Some(got) = got else { return false };
-    match want {
-        Value::Array(list) => list.iter().any(|w| takes(key, w, Some(got))),
-        Value::String(w) => {
-            let one = |g: &Value| {
-                let g = match g {
-                    Value::String(s) => s.clone(),
-                    other => other.to_string(),
-                };
-                if key == "keyword" || key == "text" {
-                    g.to_lowercase().contains(&w.to_lowercase())
-                } else if is_folder(w) {
-                    // a path: itself or anything under it
-                    folder_holds(w, &g)
-                } else {
-                    glob(w, &g)
-                }
-            };
-            match got {
-                Value::Array(a) => a.iter().any(one),
-                g => one(g),
-            }
+/// One wanted string against one payload value: a number comparison (`<400`, `>=2`), a keyword's words, a folder
+/// (itself or under it), else a glob.
+fn one_takes(key: &str, w: &str, g: &Value) -> bool {
+    if let Some((op, n)) = comparison(w) {
+        let got = g.as_f64().or_else(|| g.as_str().and_then(|s| s.trim().parse().ok()));
+        return got.is_some_and(|x| match op {
+            "<" => x < n,
+            "<=" => x <= n,
+            ">" => x > n,
+            ">=" => x >= n,
+            _ => false,
+        });
+    }
+    let g = match g {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    if key == "keyword" || key == "text" {
+        g.to_lowercase().contains(&w.to_lowercase())
+    } else if key == "paths" {
+        path_glob(w, &g)
+    } else if is_folder(w) {
+        folder_holds(w, &g)
+    } else {
+        glob(w, &g)
+    }
+}
+
+/// A changed file's glob, as `.gitignore` reads `**/`: zero or more folders, so `**/*.md` is a top-level `a.md` too
+/// and `src/**/x.rs` is `src/x.rs` (a `*` already crosses folders).
+fn path_glob(w: &str, g: &str) -> bool {
+    glob(w, g)
+        || w.strip_prefix("**/").is_some_and(|r| path_glob(r, g))
+        || (w.contains("/**/") && path_glob(&w.replacen("/**/", "/", 1), g))
+}
+
+/// `<400`, `<= 2`, `>0`: the operator and the number, or None for anything else.
+fn comparison(w: &str) -> Option<(&'static str, f64)> {
+    let w = w.trim();
+    let (op, rest) = ["<=", ">=", "<", ">"].iter().find_map(|op| w.strip_prefix(op).map(|r| (*op, r)))?;
+    rest.trim().parse().ok().map(|n| (op, n))
+}
+
+/// The wanted strings split into what must match (any of them) and what must not (`!wip`: none of them).
+fn split_wants(want: &Value) -> (Vec<Value>, Vec<String>) {
+    let all = match want {
+        Value::Array(a) => a.clone(),
+        w => vec![w.clone()],
+    };
+    let (mut yes, mut no) = (Vec::new(), Vec::new());
+    for w in all {
+        match w.as_str().and_then(|s| s.strip_prefix('!')) {
+            Some(n) => no.push(n.to_owned()),
+            None => yes.push(w),
         }
-        other => got == other,
+    }
+    (yes, no)
+}
+
+/// Whether a filter takes the payload's value. A list is any of its values; `!x` is never x: on a list payload
+/// (an issue's labels) none of them is x, and with nothing there, nothing is excluded. `paths` is read file by
+/// file, as `.gitignore` is: some changed file matches a wanted glob (any, when only `!` globs are given) and no
+/// `!` glob, so `[src/**, "!**/*.md"]` is "a change in src that isn't only docs".
+fn takes(key: &str, want: &Value, got: Option<&Value>) -> bool {
+    let (yes, no) = split_wants(want);
+    let hit = |w: &Value, g: &Value| match w {
+        Value::String(w) => one_takes(key, w, g),
+        // a wanted bool or number: the payload's own (`draft: false`), or its text (`--match draft=false`)
+        other => g == other || g.as_str() == Some(other.to_string().as_str()),
+    };
+    if key == "paths" {
+        let files: Vec<Value> = match got {
+            Some(Value::Array(a)) => a.clone(),
+            Some(g) => vec![g.clone()],
+            None => return false,
+        };
+        return files.iter().any(|f| (yes.is_empty() || yes.iter().any(|w| hit(w, f))) && !no.iter().any(|n| one_takes(key, n, f)));
+    }
+    let values: Vec<&Value> = match got {
+        Some(Value::Array(a)) => a.iter().collect(),
+        Some(g) => vec![g],
+        None => return yes.is_empty() && !no.is_empty(),
+    };
+    let wanted = yes.is_empty() || yes.iter().any(|w| values.iter().any(|g| hit(w, g)));
+    let refused = no.iter().any(|n| values.iter().any(|g| one_takes(key, n, g)));
+    wanted && !refused
+}
+
+/// `me` in a filter is whoever this computer is on the event's service: the source says so in the payload's `me`
+/// (an issue's: the gh login). An event without one matches no `me`, so a trigger a team shares never fires on
+/// everyone's computer for want of knowing who's who.
+fn with_me(want: &Value, payload: &Value) -> Value {
+    let me = || payload.get("me").and_then(Value::as_str).filter(|m| !m.is_empty());
+    match want {
+        Value::String(w) if w == "me" => me().map_or(Value::Null, |m| Value::String(m.to_owned())),
+        // `!me`: anyone but me (not knowing who I am, nobody passes: it would fire for everyone)
+        Value::String(w) if w == "!me" => me().map_or(Value::Null, |m| Value::String(format!("!{m}"))),
+        Value::Array(a) => Value::Array(a.iter().map(|w| with_me(w, payload)).filter(|w| !w.is_null()).collect()),
+        other => other.clone(),
     }
 }
 
 /// Whether the event passes the trigger's `match` (flat fields included).
 pub fn filters_pass(spec: &TriggerSpec, ev: &TriggerEvent) -> bool {
     spec.all_filters().iter().all(|(k, want)| {
+        let want = &with_me(want, &ev.payload);
+        if want.is_null() {
+            return false;
+        }
         // a keyword is looked for in the message's text
         let field = if k == "keyword" {
             ev.payload.get("text").or_else(|| ev.payload.get("keyword")).cloned()

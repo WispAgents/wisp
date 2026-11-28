@@ -1,5 +1,5 @@
 // Under the task's last answer (`shell.turn:foot`, the turn's key as its id): Save to repo when the repo offers it
-// (`track: ask`, the task done), then Saving… and what was saved, whichever way it was saved (the answer's button or
+// (`track: ask`, the task done: nothing while it works, a reopened one too), then Saving… and what was saved, whichever way it was saved (the answer's button or
 // the ⋯ menu), then where Push sent it (after a reload too, from the task's slot). Also toasts once per save so mobile
 // users tapping ⋮ → Save to repo see immediate confirmation even when scrolled away from the bottom of the turn, and
 // once per ⋯ → Push to repo, naming the branch with its PR.
@@ -10,7 +10,7 @@ import type { ExtensionProps } from '@wisp/shell/contract';
 import { Button, Icon, Inline, Text, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
-import { historyOf, lastTurnOf, offerView, pushedLink, pushedText, pushStates, runSave, saveCmd, saveStates, type OfferView, type TaskRow } from './save.ts';
+import { historyOf, lastTurnOf, offerView, pushedLink, pushedText, pushStates, runSave, saveCmd, saveStates, working, type OfferView, type TaskRow } from './save.ts';
 import SavedLine, { type SavedView } from './SavedLine.tsx';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
@@ -53,7 +53,7 @@ export default function OfferFoot(props: ExtensionProps): JSX.Element {
     shell.toast.success(pushedText(p), link ? { action: { label: link.label, onClick: () => shell.platform.openExternal(link.url) } } : undefined);
   });
   return (
-    <Show when={last() && view().v !== 'none'}>
+    <Show when={last() && !working(task()) && view().v !== 'none'}>
       <Inline gap="2" align="center" part="history.offer">
         <Switch>
           <Match when={view().v === 'offer' || view().v === 'saving'}>

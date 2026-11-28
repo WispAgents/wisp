@@ -450,3 +450,85 @@ fn a_paused_or_switched_off_trigger_drains_nothing_and_keeps_its_queue() {
     assert_eq!(st.queue.len(), 2);
     assert_eq!(starts(&drain(&s, &mut st, &w(3))), ["1", "2"]);
 }
+
+#[test]
+fn me_in_a_filter_is_who_this_computer_is_so_a_shared_trigger_fires_on_one_teammates() {
+    let mut f = std::collections::BTreeMap::new();
+    f.insert("assignees".to_owned(), json!("me"));
+    let s = TriggerSpec { on: "issue.labeled".into(), filters: f, ..spec() };
+    let on = |me: Option<&str>, assignees: serde_json::Value| {
+        let mut payload = json!({ "assignee": assignees[0].clone(), "assignees": assignees, "author": "sam" });
+        if let Some(m) = me {
+            payload["me"] = json!(m);
+        }
+        TriggerEvent { on: "issue.labeled".into(), payload, ..ev("i") }
+    };
+    assert!(filters_pass(&s, &on(Some("omar"), json!(["lena", "omar"]))), "any of its assignees");
+    assert!(!filters_pass(&s, &on(Some("ada"), json!(["lena", "omar"]))), "a teammate's issue: not on this computer");
+    assert!(!filters_pass(&s, &on(None, json!(["me"]))), "not signed in: `me` is nobody, never the word itself");
+    // a list may mix me with others; author works the same; anything not `me` is as it was
+    let mut f = std::collections::BTreeMap::new();
+    f.insert("author".to_owned(), json!(["me", "dependabot"]));
+    let s = TriggerSpec { on: "issue.opened".into(), filters: f, ..spec() };
+    assert!(filters_pass(&s, &TriggerEvent { payload: json!({ "author": "sam", "me": "sam" }), ..ev("a") }));
+    assert!(filters_pass(&s, &TriggerEvent { payload: json!({ "author": "dependabot", "me": "sam" }), ..ev("b") }));
+    assert!(filters_pass(&s, &TriggerEvent { payload: json!({ "author": "dependabot" }), ..ev("c") }), "the rest of the list still holds");
+    assert!(!filters_pass(&s, &TriggerEvent { payload: json!({ "author": "lena", "me": "sam" }), ..ev("d") }));
+}
+
+fn with(k: &str, want: serde_json::Value) -> TriggerSpec {
+    let mut f = std::collections::BTreeMap::new();
+    f.insert(k.to_owned(), want);
+    TriggerSpec { on: "pr.review_requested".into(), filters: f, ..spec() }
+}
+fn pay(p: serde_json::Value) -> TriggerEvent {
+    TriggerEvent { payload: p, ..ev("p") }
+}
+
+#[test]
+fn a_bang_is_never_that_value_on_one_value_a_list_or_nothing() {
+    assert!(filters_pass(&with("author", json!("!dependabot")), &pay(json!({ "author": "lena" }))));
+    assert!(!filters_pass(&with("author", json!("!dependabot")), &pay(json!({ "author": "dependabot" }))));
+    let not_bots = with("author", json!(["!dependabot", "!renovate*"]));
+    assert!(!filters_pass(&not_bots, &pay(json!({ "author": "renovate-bot" }))), "a glob after the bang");
+    assert!(filters_pass(&not_bots, &pay(json!({ "author": "sam" }))));
+    // on a list, none of it: an issue labelled wip is refused whatever else it has
+    assert!(!filters_pass(&with("labels", json!("!wip")), &pay(json!({ "labels": ["bug", "wip"] }))));
+    assert!(filters_pass(&with("labels", json!("!wip")), &pay(json!({ "labels": ["bug"] }))));
+    assert!(filters_pass(&with("labels", json!("!wip")), &pay(json!({}))), "nothing there: nothing to refuse");
+    // wanted and refused together: a bug, and not wip
+    let both = with("labels", json!(["bug", "!wip"]));
+    assert!(filters_pass(&both, &pay(json!({ "labels": ["bug"] }))));
+    assert!(!filters_pass(&both, &pay(json!({ "labels": ["bug", "wip"] }))));
+    assert!(!filters_pass(&both, &pay(json!({ "labels": ["docs"] }))));
+    // !me: anyone but me; not knowing me, nobody
+    assert!(filters_pass(&with("author", json!("!me")), &pay(json!({ "author": "sam", "me": "omar" }))));
+    assert!(!filters_pass(&with("author", json!("!me")), &pay(json!({ "author": "omar", "me": "omar" }))));
+    assert!(!filters_pass(&with("author", json!("!me")), &pay(json!({ "author": "sam" }))));
+}
+
+#[test]
+fn numbers_compare_and_bools_match_from_yaml_or_the_command_line() {
+    assert!(filters_pass(&with("size", json!("<400")), &pay(json!({ "size": 120 }))));
+    assert!(!filters_pass(&with("size", json!("<400")), &pay(json!({ "size": 400 }))));
+    assert!(filters_pass(&with("size", json!("<= 400")), &pay(json!({ "size": 400 }))));
+    assert!(filters_pass(&with("comments", json!(">=2")), &pay(json!({ "comments": "3" }))), "a number given as text");
+    assert!(!filters_pass(&with("size", json!("<400")), &pay(json!({}))), "no size: not small");
+    assert!(filters_pass(&with("draft", json!(false)), &pay(json!({ "draft": false }))));
+    assert!(!filters_pass(&with("draft", json!(false)), &pay(json!({ "draft": true }))));
+    assert!(filters_pass(&with("draft", json!("false")), &pay(json!({ "draft": false }))), "--match draft=false");
+    assert!(filters_pass(&with("bot", json!(false)), &pay(json!({ "bot": false }))));
+}
+
+#[test]
+fn paths_read_file_by_file_like_gitignore() {
+    let src_not_docs = with("paths", json!(["src/**", "!**/*.md"]));
+    assert!(filters_pass(&src_not_docs, &pay(json!({ "paths": ["src/api/a.rs", "README.md"] }))));
+    assert!(!filters_pass(&src_not_docs, &pay(json!({ "paths": ["src/api/notes.md"] }))), "only docs in src");
+    assert!(!filters_pass(&src_not_docs, &pay(json!({ "paths": ["web/app.ts"] }))));
+    let not_docs = with("paths", json!("!**/*.md"));
+    assert!(filters_pass(&not_docs, &pay(json!({ "paths": ["a.md", "b.rs"] }))), "one file that isn't docs");
+    assert!(!filters_pass(&not_docs, &pay(json!({ "paths": ["a.md"] }))));
+    assert!(!filters_pass(&not_docs, &pay(json!({}))), "no files said: no match");
+    assert!(filters_pass(&with("paths", json!("src/**/lib.rs")), &pay(json!({ "paths": ["src/lib.rs"] }))), "**/ is zero folders too");
+}

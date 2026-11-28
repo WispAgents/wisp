@@ -4,7 +4,7 @@
   "name": "GitHub",
   "version": "1.0.0-alpha.19",
   "api": "^1",
-  "description": "wisp.github: CI as a trigger source (gh run list), and the GitHub transport for wisp.channels",
+  "description": "wisp.github: CI and review requests as trigger sources (gh run list, gh pr list), and the GitHub transport for wisp.channels",
   "server": {
     "builtin": "wisp-github"
   },
@@ -16,6 +16,6 @@
     "onStartup"
   ],
   "contributes": {
-    "triggerSources": ["ci.failed", "ci.passed"]
+    "triggerSources": ["ci.failed", "ci.passed", "pr.review_requested"]
   }
 }

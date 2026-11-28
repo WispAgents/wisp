@@ -137,7 +137,8 @@ wisp connectors list            # Linear and Jira come in through connectors
 </Tabs>
 
 **By itself:** a trigger starts a task, or gives a crew member a job, when an issue gets a label or a new Linear
-issue arrives. In the app: Automations → **New trigger** → **Issue labelled** or **Linear issue created**.
+issue arrives. In the app: Automations → **New trigger** → **Issue labelled** or **Linear issue created**. On a team, set **Issues** to **Assigned to me** so the same trigger
+doesn't start on every teammate's computer ([Shared with a team](../schedules-and-triggers/#shared-with-a-team)).
 
 ```yaml
 crew:
@@ -146,6 +147,7 @@ triggers:
   agent-label:
     on: issue.labeled          # GitHub issues, polled with gh
     label: agent
+    match: { assignees: me }   # a team shares it: each teammate's wisp takes only the issues assigned to them
     crew: bob
     prompt: "Build {event.summary}"
 
