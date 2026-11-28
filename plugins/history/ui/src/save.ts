@@ -50,7 +50,8 @@ export interface TaskRow {
   readonly parent_id?: string | null;
   readonly parentId?: string | null;
   readonly ext?: unknown;
-  readonly body?: { readonly ext?: unknown; readonly parent_id?: string | null } | null;
+  readonly state?: string;
+  readonly body?: { readonly ext?: unknown; readonly parent_id?: string | null; readonly state?: string } | null;
 }
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined);
@@ -60,6 +61,13 @@ const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 export function historyOf(row: TaskRow | undefined): HistoryExt {
   const ext = obj(row?.body?.ext) ?? obj(row?.ext);
   return (obj(ext?.['wisp.history']) ?? {}) as HistoryExt;
+}
+
+/** The task is still working (running, or waiting on its user): its answer offers nothing yet, even when an earlier
+ *  turn finished and offered (a reopened task asks again once this turn is done). */
+export function working(row: TaskRow | undefined): boolean {
+  const st = row?.state ?? row?.body?.state;
+  return st === 'running' || st === 'waiting';
 }
 
 /** A task the ⋯ menu can save: there, not still being created, and not a subagent's (its lead's task holds it). */
