@@ -202,7 +202,7 @@ wisp team unkey acme <id>
 Put it in the repo's secrets as `WISP_HUB_KEY` (`gh secret set WISP_HUB_KEY`). The workflow `wisp grid init` wrote
 then plans each pull request, with the plan as a comment, and deploys each merge to main:
 
-```yaml
+```yml
 - uses: WispAgents/wisp/action@main
   with:
     hub: ops/hub
