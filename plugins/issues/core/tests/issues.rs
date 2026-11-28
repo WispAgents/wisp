@@ -26,7 +26,7 @@ use wisp_issues_core::*;
 
 fn gh_issues() -> Value {
     json!([
-        { "number": 12, "title": "Users get logged out after a refresh", "url": "https://github.com/acme/repo/issues/12", "labels": ["bug", "auth"], "assignees": [{ "login": "lena" }, { "login": "omar" }], "author": { "login": "sam" }, "updatedAt": "2026-11-01T09:00:00Z", "body": "It happens on every refresh.\r\n\r\nSee the logs." },
+        { "number": 12, "title": "Users get logged out after a refresh", "url": "https://github.com/acme/repo/issues/12", "labels": ["bug", "auth"], "assignees": [{ "login": "lena" }, { "login": "omar" }], "author": { "login": "sam", "is_bot": false }, "milestone": { "title": "v2.1" }, "updatedAt": "2026-11-01T09:00:00Z", "body": "It happens on every refresh.\r\n\r\nSee the logs." },
         { "number": 9, "title": "Docs for the API", "url": "https://github.com/acme/repo/issues/9", "labels": [], "assignees": [], "updatedAt": "2026-10-28T09:00:00Z", "body": "x".repeat(5000) },
     ])
 }
@@ -46,6 +46,8 @@ fn a_projects_open_github_issues_read_as_v1() {
         updated_at: Some("2026-11-01T09:00:00Z".into()),
         author: "sam".into(),
         assignees: vec!["lena".into(), "omar".into()],
+        author_bot: false,
+        milestone: "v2.1".into(),
     };
     assert_eq!(list[0], want);
     // the wire shape is v1's: the author and every assignee are only for triggers
@@ -55,6 +57,7 @@ fn a_projects_open_github_issues_read_as_v1() {
     );
     assert_eq!(list[1].assignee, "");
     assert!(list[1].assignees.is_empty() && list[1].author.is_empty(), "no author on gh's answer: none");
+    assert!(!list[1].author_bot && list[1].milestone.is_empty());
     assert_eq!(list[1].body.chars().count(), 4000);
     assert!(list[1].body.ends_with('…'));
 }
@@ -64,7 +67,7 @@ fn the_gh_call_lists_open_issues_with_v1s_fields_and_limit() {
     let a = gh_args("acme/repo", "");
     assert_eq!(a[..6], ["issue", "list", "--repo", "acme/repo", "--state", "open"]);
     let at = |f: &str| a[a.iter().position(|x| x == f).unwrap() + 1].clone();
-    assert_eq!(at("--json"), "number,title,labels,assignees,author,url,updatedAt,body");
+    assert_eq!(at("--json"), "number,title,labels,assignees,author,milestone,url,updatedAt,body");
     assert_eq!(at("--limit"), "50");
     assert_eq!(gh_args("acme/repo", "docs").last().unwrap(), "docs");
     assert!(!gh_args("acme/repo", "").contains(&"--search".to_owned()));

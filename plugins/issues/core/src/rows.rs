@@ -52,7 +52,7 @@ fn number_text(v: &Value) -> String {
     }
 }
 
-/// `gh issue list --json number,title,labels,assignees,author,url,updatedAt,body` → one issue.
+/// `gh issue list --json number,title,labels,assignees,author,milestone,url,updatedAt,body` → one issue.
 pub fn gh_issue(j: &Value) -> Issue {
     let who = |a: &Value| a["login"].as_str().filter(|s| !s.is_empty()).or_else(|| a["name"].as_str()).unwrap_or_default().to_owned();
     let assignees: Vec<String> =
@@ -71,6 +71,9 @@ pub fn gh_issue(j: &Value) -> Issue {
         updated_at: opt_text(&j["updatedAt"]),
         author: j["author"]["login"].as_str().unwrap_or_default().to_owned(),
         assignees,
+        author_bot: j["author"]["is_bot"].as_bool().unwrap_or(false)
+            || j["author"]["login"].as_str().is_some_and(|l| l.starts_with("app/") || l.ends_with("[bot]")),
+        milestone: j["milestone"]["title"].as_str().unwrap_or_default().to_owned(),
     }
 }
 
@@ -95,6 +98,8 @@ pub fn linear_issue(n: &Value) -> Issue {
         updated_at: opt_text(&n["updatedAt"]),
         author: String::new(),
         assignees: Vec::new(),
+        author_bot: false,
+        milestone: String::new(),
     }
 }
 
@@ -131,6 +136,8 @@ pub fn jira_issue(site: &str, i: &Value) -> Issue {
         updated_at: Some(text(&f["updated"])),
         author: String::new(),
         assignees: Vec::new(),
+        author_bot: false,
+        milestone: String::new(),
     }
 }
 

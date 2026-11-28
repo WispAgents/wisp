@@ -31,6 +31,7 @@ import {
 } from '@wisp/ui';
 import { lastRunWords } from './panes/summary.ts';
 import { McpEventFields } from './McpEventFields.tsx';
+import { TriggerFilters } from './TriggerFilters.tsx';
 import { fireTrigger, recipes, removeRecipe, removeTrigger, saveTrigger, switchTrigger, triggers, type Recipe, type Trigger } from './commands.ts';
 import { fieldsOf } from './recipe.ts';
 import { t } from './i18n.ts';
@@ -41,7 +42,6 @@ import {
   POLLED,
   SCHEDULE_PRESETS,
   TASK_KINDS,
-  WHOSE,
   describeSpec,
   emptyForm,
   fireLabel,
@@ -370,14 +370,6 @@ function TriggerForm(props: {
         <AutoRow label={say('automations.form.label')}>
           <Input value={f().label} onInput={(v) => set({ label: v })} spellcheck={false} placeholder="wisp" aria-label={say('automations.form.label')} />
         </AutoRow>
-        <AutoRow label={say('automations.form.whose')}>
-          <Select
-            aria-label={say('automations.form.whose')}
-            value={f().whose}
-            onChange={(v) => set({ whose: WHOSE.find((w) => w === v) ?? '' })}
-            items={WHOSE.map((w) => ({ value: w, label: say(`automations.form.whose.${w || 'anyone'}`) }))}
-          />
-        </AutoRow>
       </Show>
       <Show when={kind() === 'mcp'}>
         <McpEventFields client={c} f={f()} set={set} />
@@ -423,6 +415,7 @@ function TriggerForm(props: {
           </AutoRow>
         </Show>
       </Show>
+      <TriggerFilters kind={kind()} f={f()} set={set} />
       <Show when={POLLED.has(kind())}>
         <AutoRow label={say('automations.form.every')}>
           <Select
