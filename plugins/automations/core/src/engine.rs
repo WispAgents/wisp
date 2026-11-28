@@ -227,9 +227,25 @@ fn takes(key: &str, want: &Value, got: Option<&Value>) -> bool {
     }
 }
 
+/// `me` in a filter is whoever this computer is on the event's service: the source says so in the payload's `me`
+/// (an issue's: the gh login). An event without one matches no `me`, so a trigger a team shares never fires on
+/// everyone's computer for want of knowing who's who.
+fn with_me(want: &Value, payload: &Value) -> Value {
+    let me = || payload.get("me").and_then(Value::as_str).filter(|m| !m.is_empty());
+    match want {
+        Value::String(w) if w == "me" => me().map_or(Value::Null, |m| Value::String(m.to_owned())),
+        Value::Array(a) => Value::Array(a.iter().map(|w| with_me(w, payload)).filter(|w| !w.is_null()).collect()),
+        other => other.clone(),
+    }
+}
+
 /// Whether the event passes the trigger's `match` (flat fields included).
 pub fn filters_pass(spec: &TriggerSpec, ev: &TriggerEvent) -> bool {
     spec.all_filters().iter().all(|(k, want)| {
+        let want = &with_me(want, &ev.payload);
+        if want.is_null() {
+            return false;
+        }
         // a keyword is looked for in the message's text
         let field = if k == "keyword" {
             ev.payload.get("text").or_else(|| ev.payload.get("keyword")).cloned()

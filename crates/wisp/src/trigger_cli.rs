@@ -1,11 +1,12 @@
 //! `wisp trigger …` and `wisp crew wake|graph` (ADR-0043): the one trigger engine from the terminal.
 //!
 //! - `wisp trigger add <name> <on> [prompt…] [--cron C] [--task T] [--crew M] [--workflow W] [--follow-up]
-//!   [--branch B] [--label L] [--every MIN] [--secret S] [--match k=v]… [--if EXPR] [--users a,b] [--rate 5/h]
+//!   [--branch B] [--label L] [--assignee me|LOGIN] [--author me|LOGIN] [--every MIN] [--secret S] [--match k=v]… [--if EXPR] [--users a,b] [--rate 5/h]
 //!   [--debounce 10m] [--concurrency skip|queue|replace|parallel:N] [--cooldown 30m] [--budget-day USD]
 //!   [--approval] [--tz ZONE] [-C dir] [--agent A] [--model M] [--mode M]`: writes the `trigger` resource (what
 //!   `wisp apply` would), so the formula, the app and the CLI share one spec. (`--on` is the machine flag: the
-//!   source is the second word.)
+//!   source is the second word.) `--assignee`/`--author` are an issue trigger's `match.assignees`/`match.author`, as
+//!   the app's Issues choice writes them: `me` is the GitHub login each computer's gh is signed in as.
 //! - `wisp trigger ls | rm <name> | off <name> | on <name> | fire <name> [--payload @file|JSON] | test <name>
 //!   [--event @file] [--last N] | log <name> | resume <name> | approve <name> <job> [--no] | sources` (`off`/`on`
 //!   change only `enabled`, audit H13)
@@ -66,6 +67,10 @@ pub fn read(rest: &[String]) -> std::result::Result<Said, String> {
             let v = val(a)?;
             let (k, x) = v.split_once('=').ok_or_else(|| format!("--match takes key=value (not {v})"))?;
             s.matches.push((k.to_owned(), x.to_owned()));
+        } else if a == "--assignee" || a == "--author" {
+            // the same `match` the app's Issues choice (Assigned to me / Opened by me) writes
+            let key = if a == "--assignee" { "assignees" } else { "author" };
+            s.matches.push((key.to_owned(), val(a)?));
         } else if a == "--every" {
             s.every = Some(val(a)?.parse().map_err(|_| "--every takes minutes".to_owned())?);
         } else if a == "--last" {
@@ -403,6 +408,20 @@ mod tests {
         assert!(read(&words("x y --nope 1")).is_err(), "an unknown flag is said, not dropped");
         assert!(spec_of(&read(&words("only")).unwrap(), &p, "").is_err(), "needs an on");
         assert_eq!(spec["project"], "/w/api", "-C is the project");
+    }
+
+    /// The app's Issues choice and the CLI write one spec: Assigned to me is `match.assignees: me`, Opened by me
+    /// `match.author: me` (plugins/automations/ui trigger-form.ts), so a trigger made either way reads the same.
+    #[test]
+    fn assignee_and_author_write_the_same_match_as_the_apps_issues_choice() {
+        let s = read(&words("mine issue.labeled fix it --label agent --assignee me")).unwrap();
+        let argv: Vec<String> = ["trigger", "add"].iter().map(|s| (*s).to_owned()).chain(words("mine")).collect();
+        let p = crate::args::parse(&argv, None, std::path::Path::new("/h"), std::path::Path::new("/w")).unwrap();
+        let (_, spec) = spec_of(&s, &p, "/w/api").unwrap();
+        assert_eq!((spec["label"].as_str(), &spec["match"]), (Some("agent"), &json!({ "assignees": "me" })));
+        let (_, spec) = spec_of(&read(&words("mine issue.opened x --author me --match label=bug")).unwrap(), &p, "/w/api").unwrap();
+        assert_eq!(spec["match"], json!({ "author": "me", "label": "bug" }));
+        assert!(read(&words("mine issue.opened --assignee")).is_err(), "--assignee needs a value");
     }
 
     /// cli-r6 L1: a trigger or crew verb typed wrong (no such verb, a missing name, a flag it doesn't take) is the

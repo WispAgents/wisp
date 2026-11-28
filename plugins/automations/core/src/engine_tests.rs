@@ -450,3 +450,28 @@ fn a_paused_or_switched_off_trigger_drains_nothing_and_keeps_its_queue() {
     assert_eq!(st.queue.len(), 2);
     assert_eq!(starts(&drain(&s, &mut st, &w(3))), ["1", "2"]);
 }
+
+#[test]
+fn me_in_a_filter_is_who_this_computer_is_so_a_shared_trigger_fires_on_one_teammates() {
+    let mut f = std::collections::BTreeMap::new();
+    f.insert("assignees".to_owned(), json!("me"));
+    let s = TriggerSpec { on: "issue.labeled".into(), filters: f, ..spec() };
+    let on = |me: Option<&str>, assignees: serde_json::Value| {
+        let mut payload = json!({ "assignee": assignees[0].clone(), "assignees": assignees, "author": "sam" });
+        if let Some(m) = me {
+            payload["me"] = json!(m);
+        }
+        TriggerEvent { on: "issue.labeled".into(), payload, ..ev("i") }
+    };
+    assert!(filters_pass(&s, &on(Some("omar"), json!(["lena", "omar"]))), "any of its assignees");
+    assert!(!filters_pass(&s, &on(Some("ada"), json!(["lena", "omar"]))), "a teammate's issue: not on this computer");
+    assert!(!filters_pass(&s, &on(None, json!(["me"]))), "not signed in: `me` is nobody, never the word itself");
+    // a list may mix me with others; author works the same; anything not `me` is as it was
+    let mut f = std::collections::BTreeMap::new();
+    f.insert("author".to_owned(), json!(["me", "dependabot"]));
+    let s = TriggerSpec { on: "issue.opened".into(), filters: f, ..spec() };
+    assert!(filters_pass(&s, &TriggerEvent { payload: json!({ "author": "sam", "me": "sam" }), ..ev("a") }));
+    assert!(filters_pass(&s, &TriggerEvent { payload: json!({ "author": "dependabot", "me": "sam" }), ..ev("b") }));
+    assert!(filters_pass(&s, &TriggerEvent { payload: json!({ "author": "dependabot" }), ..ev("c") }), "the rest of the list still holds");
+    assert!(!filters_pass(&s, &TriggerEvent { payload: json!({ "author": "lena", "me": "sam" }), ..ev("d") }));
+}

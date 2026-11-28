@@ -52,10 +52,12 @@ fn number_text(v: &Value) -> String {
     }
 }
 
-/// `gh issue list --json number,title,labels,assignees,url,updatedAt,body` → one issue.
+/// `gh issue list --json number,title,labels,assignees,author,url,updatedAt,body` → one issue.
 pub fn gh_issue(j: &Value) -> Issue {
-    let a = &j["assignees"][0];
-    let assignee = a["login"].as_str().filter(|s| !s.is_empty()).or_else(|| a["name"].as_str()).unwrap_or_default().to_owned();
+    let who = |a: &Value| a["login"].as_str().filter(|s| !s.is_empty()).or_else(|| a["name"].as_str()).unwrap_or_default().to_owned();
+    let assignees: Vec<String> =
+        j["assignees"].as_array().map(|a| a.iter().map(who).filter(|s| !s.is_empty()).collect()).unwrap_or_default();
+    let assignee = assignees.first().cloned().unwrap_or_default();
     let n = number_text(&j["number"]);
     Issue {
         id: n.clone(),
@@ -67,6 +69,8 @@ pub fn gh_issue(j: &Value) -> Issue {
         assignee,
         body: body(j["body"].as_str().unwrap_or_default()),
         updated_at: opt_text(&j["updatedAt"]),
+        author: j["author"]["login"].as_str().unwrap_or_default().to_owned(),
+        assignees,
     }
 }
 
@@ -89,6 +93,8 @@ pub fn linear_issue(n: &Value) -> Issue {
         assignee,
         body: body(n["description"].as_str().unwrap_or_default()),
         updated_at: opt_text(&n["updatedAt"]),
+        author: String::new(),
+        assignees: Vec::new(),
     }
 }
 
@@ -123,6 +129,8 @@ pub fn jira_issue(site: &str, i: &Value) -> Issue {
         assignee: text(&f["assignee"]["displayName"]),
         body: clip(&adf_text(&f["description"]), BODY_MAX),
         updated_at: Some(text(&f["updated"])),
+        author: String::new(),
+        assignees: Vec::new(),
     }
 }
 

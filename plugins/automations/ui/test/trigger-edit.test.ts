@@ -65,3 +65,24 @@ test('the switch turns a trigger off and back on: enabled is sent either way, si
   expect(switchedSpec(off, true)).toEqual({ ...off, enabled: true });
   expect(switchedSpec({ on: 'schedule', cron: '* * * * *', prompt: 'Tidy' }, false)).toMatchObject({ enabled: false });
 });
+
+test('an issue trigger takes only my issues, the same match the CLI and a formula write, and an edit keeps a formula’s own filter', () => {
+  const base = { ...pick(emptyForm('/code/api'), 'issues'), name: 'mine', label: 'agent', prompt: 'Fix it' };
+  // `wisp trigger add mine issue.labeled --label agent --assignee me` writes this same spec
+  expect(specOfForm({ ...base, whose: 'assigned' })).toMatchObject({ spec: { on: 'issue.labeled', label: 'agent', match: { assignees: 'me' } } });
+  expect(specOfForm({ ...base, whose: 'opened' })).toMatchObject({ spec: { match: { author: 'me' } } });
+  const anyone = specOfForm(base);
+  expect('spec' in anyone && anyone.spec['match']).toBeUndefined();
+  // a saved one opens on its choice; `assignee: me` (the first assignee) reads as Assigned to me too
+  expect(formOfSpec('mine', { on: 'issue.labeled', label: 'agent', match: { assignees: 'me' } })?.whose).toBe('assigned');
+  expect(formOfSpec('mine', { on: 'issue.labeled', label: 'agent', match: { assignee: 'me' } })?.whose).toBe('assigned');
+  expect(formOfSpec('mine', { on: 'issue.labeled', label: 'agent', match: { author: ['me', 'dependabot'] } })?.whose).toBe('');
+  // an edit to Anyone's drops the me it showed, and keeps what only a formula said
+  const spec = { on: 'issue.labeled', label: 'agent', prompt: 'Fix it', match: { assignees: 'me', author: ['me', 'dependabot'] } };
+  const f = formOfSpec('mine', spec);
+  expect(f && specOfEdit({ ...f, whose: '' }, { name: 'mine', spec })).toMatchObject({ spec: { match: { author: ['me', 'dependabot'] } } });
+  const cleared = f && specOfEdit({ ...f, whose: '' }, { name: 'mine', spec: { ...spec, match: { assignees: 'me' } } });
+  expect(cleared && 'spec' in cleared && cleared.spec['match']).toBeUndefined();
+  expect(f && specOfEdit({ ...f, whose: 'opened' }, { name: 'mine', spec: { ...spec, match: { assignees: 'me' } } })).toMatchObject({ spec: { match: { author: 'me' } } });
+  expect(describeSpec({ on: 'issue.labeled', label: 'agent', project: '/code/api', match: { assignees: 'me' } }, o)).toBe('Watches my assigned issues labelled agent in api every 5 min');
+});

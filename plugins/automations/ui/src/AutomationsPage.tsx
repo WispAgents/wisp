@@ -41,6 +41,7 @@ import {
   POLLED,
   SCHEDULE_PRESETS,
   TASK_KINDS,
+  WHOSE,
   describeSpec,
   emptyForm,
   fireLabel,
@@ -368,6 +369,14 @@ function TriggerForm(props: {
       <Show when={kind() === 'issues'}>
         <AutoRow label={say('automations.form.label')}>
           <Input value={f().label} onInput={(v) => set({ label: v })} spellcheck={false} placeholder="wisp" aria-label={say('automations.form.label')} />
+        </AutoRow>
+        <AutoRow label={say('automations.form.whose')}>
+          <Select
+            aria-label={say('automations.form.whose')}
+            value={f().whose}
+            onChange={(v) => set({ whose: WHOSE.find((w) => w === v) ?? '' })}
+            items={WHOSE.map((w) => ({ value: w, label: say(`automations.form.whose.${w || 'anyone'}`) }))}
+          />
         </AutoRow>
       </Show>
       <Show when={kind() === 'mcp'}>

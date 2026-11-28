@@ -17,7 +17,16 @@ impl TriggerSource for Issues {
         "wisp.issues"
     }
     fn ons(&self) -> Vec<SourceOn> {
-        let fields = json!({ "type": "object", "properties": { "project": { "type": "string" }, "label": { "type": "string" }, "author": { "type": "string" } } });
+        // `me` in assignee/assignees/author is whoever this computer's gh is signed in as: one shared trigger, each
+        // teammate's wisp takes only their own issues
+        let who = |d: &str| json!({ "type": ["string", "array"], "description": d });
+        let fields = json!({ "type": "object", "properties": {
+            "project": { "type": "string" },
+            "label": { "type": "string" },
+            "author": who("who opened it (a GitHub login, or me)"),
+            "assignee": who("its first assignee (a GitHub login, or me)"),
+            "assignees": who("any of its assignees (a GitHub login, or me)"),
+        } });
         vec![
             SourceOn {
                 on: "issue.opened".into(),
@@ -42,7 +51,8 @@ impl TriggerSource for Issues {
                 return Err(WireError::unavailable(e));
             }
             let now = ctx.clock()?.now_ms();
-            let (events, cursor) = wisp_issues_core::trigger::issue_events(&on, &list.issues, &cursor, now);
+            let me = lister.me(&call).await;
+            let (events, cursor) = wisp_issues_core::trigger::issue_events(&on, &list.issues, &cursor, now, &me);
             Ok(Polled { events, cursor, retry_at: None })
         })
     }
