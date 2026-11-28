@@ -2,7 +2,10 @@
 //! Remove takes only that leftover's (it once took every task folder's), only what git ignores goes (a tracked folder
 //! named `target` stays, and a `target` without cargo's tag), and a low disk takes a leftover's first. Over real repos
 //! in temp folders and the real git service.
+// Unix only: sizes and build output come from `du`, which Windows has no copy of on its PATH, so a Windows home's are
+// never sized and nothing is trimmed there yet (the sizes need a Windows walk of their own)
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::many_single_char_names)]
+#![cfg(unix)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
