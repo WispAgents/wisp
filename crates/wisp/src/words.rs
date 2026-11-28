@@ -291,6 +291,8 @@ const TRIGGER: &[&str] = &[
     "--agent",
     "-a",
     "--approval",
+    "--assignee",
+    "--author",
     "--branch",
     "--budget-day",
     "--concurrency",

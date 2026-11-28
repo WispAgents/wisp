@@ -111,6 +111,41 @@ says which plugin offers each.
 A job waiting for approval shows in the app; from a terminal,
 `wisp automations trigger approve <trigger> <job> --yes`.
 
+## Shared with a team
+
+When teammates apply the same `.wisp/` triggers, each of their wisps polls GitHub on its own. Without a filter, an
+issue labelled `agent` starts a task on every teammate's computer at once. Make an issue trigger take only your own
+issues, so each wisp works on its teammate's. `me` is the GitHub login that computer's `gh` is signed in as.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+**New trigger** → **Issue labelled**, then pick **Issues**: **Anyone's** (the default), **Assigned to me** or
+**Opened by me**. The trigger's line in the list says "Watches my assigned issues labelled agent …".
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp trigger add my-agent-issues issue.labeled "Fix {event.summary}" --label agent --assignee me
+wisp trigger add my-reports issue.opened "Triage {event.summary}" --author me
+```
+`--assignee` and `--author` write the same `match` the app's choice does; any GitHub login works in place of `me`.
+</TabItem>
+<TabItem label=".wisp/ folder">
+
+```yaml
+triggers:
+  my-agent-issues:
+    on: issue.labeled
+    label: agent
+    match: { assignees: me }     # any of its assignees; `assignee` is the first one, `author` who opened it
+    prompt: "Fix {event.summary}"
+```
+</TabItem>
+</Tabs>
+
+`match` takes a login, a glob or a list (`author: [me, dependabot]`). Where `gh` isn't signed in, `me` matches
+nothing, so the trigger stays quiet rather than firing for everyone. An issue no one is assigned to still reaches
+every teammate whose trigger takes anyone's issues: assign it, or keep one teammate's trigger on **Anyone's**.
+
 ## Webhooks
 
 Anything that can POST can start a task. Each webhook trigger has its own secret URL, shown on the trigger once you

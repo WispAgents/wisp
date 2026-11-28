@@ -49,7 +49,12 @@ impl std::fmt::Debug for Deps {
 pub struct Lister {
     deps: Deps,
     cache: Mutex<core::IssueCache>,
+    /// the gh login and when it was read (a trigger's `me`)
+    me: Mutex<Option<(String, i64)>>,
 }
+
+/// How long the gh login is trusted before it's read again (`gh auth switch` takes effect within it).
+const ME_FRESH_MS: i64 = 10 * 60_000;
 
 /// gh and git print "fatal:" / "error:" first; otherwise the tail is the useful part.
 pub fn why_of(stderr: &str) -> String {
@@ -63,7 +68,7 @@ pub fn why_of(stderr: &str) -> String {
 
 impl Lister {
     pub fn new(deps: Deps) -> Self {
-        Self { deps, cache: Mutex::new(core::IssueCache::default()) }
+        Self { deps, cache: Mutex::new(core::IssueCache::default()), me: Mutex::new(None) }
     }
 
     pub fn clear(&self) {
@@ -147,6 +152,26 @@ impl Lister {
             Ok(issues) => IssueList { issues, ..base },
             Err(problem) => IssueList { error: Some(problem.error), fix: problem.fix, ..base },
         }
+    }
+
+    /// The GitHub login this computer's gh is signed in as (`gh api user`), kept 10 minutes; empty when gh can't
+    /// say (not installed, signed out, offline): then a trigger's `me` matches nothing, and the next poll asks again.
+    pub async fn me(&self, call: &Call) -> String {
+        let now = (self.deps.now)();
+        if let Some((login, _)) = self.me.lock().unwrap_or_else(PoisonError::into_inner).clone().filter(|(_, at)| now - at < ME_FRESH_MS) {
+            return login;
+        }
+        let env = Env::default().with("GH_PROMPT_DISABLED", "1").with("GH_NO_UPDATE_NOTIFIER", "1");
+        let opts = ExecOpts { env, timeout: Some(Duration::from_secs(15)), scope: Some(call.cancelled().clone()), ..ExecOpts::default() };
+        let args = ["api".to_owned(), "user".to_owned(), "--jq".to_owned(), ".login".to_owned()];
+        let login = match self.deps.proc.exec(&self.deps.gh, &args, opts).await {
+            Ok(r) if r.exit.success() && !r.timed_out => r.stdout_text().trim().to_owned(),
+            _ => String::new(),
+        };
+        if !login.is_empty() {
+            *self.me.lock().unwrap_or_else(PoisonError::into_inner) = Some((login.clone(), now));
+        }
+        login
     }
 
     async fn gh(&self, repo: &str, q: &str, call: &Call) -> std::result::Result<Vec<wisp_issues_api::Issue>, Problem> {

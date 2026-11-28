@@ -61,7 +61,8 @@ A trigger starts work when something happens. Its `on` is any of the
 triggers:
   build-labeled-issues:
     on: issue.labeled
-    label: agent              # an issue labeled "agent" (GitHub, Linear or Jira, through wisp.issues)
+    label: agent              # a GitHub issue labeled "agent" (polled with gh, through wisp.issues)
+    match: { assignees: me }  # only issues assigned to whoever this computer's gh is signed in as: a team shares it
     crew: bob
     prompt: "Build {event.summary}"
     concurrency: queue

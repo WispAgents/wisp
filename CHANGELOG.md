@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **A trigger the team shares fires on one teammate's computer, not everyone's.** Issue triggers (`issue.opened`,
+  `issue.labeled`) take `match: { assignees: me }`, `assignee: me` or `author: me`. `me` is the GitHub login that
+  computer's `gh` is signed in as, so the same `.wisp/` trigger starts a task only on the computer of the teammate the
+  issue belongs to. Where gh isn't signed in, `me` matches nothing. In the app, an **Issue labelled** trigger has an
+  **Issues** choice (Anyone's, Assigned to me, Opened by me); from a terminal, `wisp trigger add … --assignee me` or
+  `--author me` writes the same spec. An edit in the app keeps any other `match` a formula gave the trigger.
+
 ### Changed
 
 - **Your messages look like chat messages in Chat mode.** A prompt is a bubble as wide as its words (up to 80% of
@@ -17,6 +26,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **No "Save this task to the repo?" while the task works.** A task that finished, offered Save to repo and was
   then reopened kept the offer under its answer while the agent ran again; it now shows only once the task stops.
+- **An issue trigger's `author` filter matches.** The issue triggers offered an `author` field, but their events never
+  said who opened the issue, so any trigger with `author` set never fired. Events now carry the author and every
+  assignee, not only the first.
 - **Home's tips link to the right guide and show three at a time.** Each tip opened `trywisp.dev/guides#<id>`, a page
   with no such section; each now opens the docs section that explains it. Home shows three tips, picked at random on
   each visit (a setup card such as Sign in to GitHub takes one of the three), and **More tips** moves on to three more

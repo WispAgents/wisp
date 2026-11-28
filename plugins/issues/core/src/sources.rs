@@ -9,7 +9,7 @@ use wisp_issues_api::{Connector, HttpRequest, Issue, Problem};
 use crate::rows::{clip, gh_issue, jira_issue, linear_issue};
 
 pub const LIMIT: usize = 50;
-pub const GH_FIELDS: &str = "number,title,labels,assignees,url,updatedAt,body";
+pub const GH_FIELDS: &str = "number,title,labels,assignees,author,url,updatedAt,body";
 pub const LINEAR_API: &str = "https://api.linear.app/graphql";
 
 /// `gh issue list` for `repo`'s open issues, `q` as a search when there is one.

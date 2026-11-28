@@ -86,6 +86,8 @@ export interface TriggerFormState {
   readonly when: string;
   readonly branch: string;
   readonly label: string;
+  /** an issue trigger's issues: anyone's (''), the ones assigned to me, or the ones I opened (`match.assignees`/`author: me`) */
+  readonly whose: Whose;
   readonly every: number;
   readonly secret: string;
   readonly header: string;
@@ -105,6 +107,13 @@ export interface TriggerFormState {
   readonly delivery: string;
 }
 
+/** Whose issues an issue trigger takes. `me` is the GitHub login each computer's gh is signed in as, so one trigger a
+ * team shares fires on the computer of the teammate the issue belongs to. */
+export type Whose = '' | 'assigned' | 'opened';
+export const WHOSE: readonly Whose[] = ['', 'assigned', 'opened'];
+/** The `match` key each choice sets to `me`. */
+const WHOSE_KEY = { assigned: 'assignees', opened: 'author' } as const;
+
 export const emptyForm = (project = ''): TriggerFormState => ({
   key: 'schedule',
   name: '',
@@ -113,6 +122,7 @@ export const emptyForm = (project = ''): TriggerFormState => ({
   when: '',
   branch: '',
   label: '',
+  whose: '',
   every: 5,
   secret: '',
   header: '',
@@ -211,6 +221,7 @@ export function specOfForm(f: TriggerFormState): { name: string; spec: Record<st
   if (k.kind === 'issues') {
     if (!cut(f.label)) return { missing: 'label' };
     spec['label'] = cut(f.label);
+    if (f.whose) spec['match'] = { [WHOSE_KEY[f.whose]]: 'me' };
   }
   if (POLLED.has(k.kind)) spec['every'] = f.every;
   if (k.kind === 'webhook' || k.kind === 'linear') {
@@ -295,6 +306,7 @@ export function formOfSpec(name: string, spec: Readonly<Record<string, unknown>>
     when: str(spec['cron']),
     branch: str(spec['branch']),
     label: key === 'linear' ? str(match['data.labels.name']) : str(spec['label']),
+    whose: key === 'issues' ? whoseOf(match) : '',
     every: typeof spec['every'] === 'number' ? spec['every'] : 5,
     header: key.startsWith('webhook') ? str(spec['header']) : '',
     users: users.join(', '),
@@ -311,6 +323,12 @@ export function formOfSpec(name: string, spec: Readonly<Record<string, unknown>>
   };
 }
 
+/** The choice a saved issue trigger's `match` is, '' when it's none of them (a formula's own filter is kept, not shown). */
+function whoseOf(match: Readonly<Record<string, unknown>>): Whose {
+  if (match['assignees'] === 'me' || match['assignee'] === 'me') return 'assigned';
+  return match['author'] === 'me' ? 'opened' : '';
+}
+
 /** A saved trigger's MCP arguments back as the form types them. */
 function argsOf(v: unknown): Record<string, string> {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
@@ -325,6 +343,17 @@ export function specOfEdit(f: TriggerFormState, old: { readonly name: string; re
   if (!('spec' in out)) return out;
   const spec: Record<string, unknown> = { ...old.spec };
   for (const k of FORM_KEYS) delete spec[k];
+  // an issue trigger's `match` from a formula (`author: [me, dependabot]`, `assignee: lena`) is kept: the form owns
+  // only the `me` it shows, so an edit never drops a filter it can't display
+  if (kindOf(f.key).kind === 'issues' && keyOfSpec(old.spec) === 'issues') {
+    const kept = { ...((old.spec['match'] ?? {}) as Record<string, unknown>) };
+    for (const k of ['assignees', 'assignee', 'author']) if (kept[k] === 'me') delete kept[k];
+    const match = { ...kept, ...((out.spec['match'] ?? {}) as Record<string, unknown>) };
+    const next = { ...spec, ...out.spec };
+    if (Object.keys(match).length) next['match'] = match;
+    else delete next['match'];
+    return { name: old.name, spec: next };
+  }
   return { name: old.name, spec: { ...spec, ...out.spec } };
 }
 
@@ -359,11 +388,15 @@ export function describeSpec(
   }
   if (kind === 'schedule' && key) return `${o.words(str(spec['cron'])) ?? str(spec['cron'])} in ${proj}`;
   if (key === 'ci' || key === 'issues') {
-    const what = key === 'ci' ? `failed CI${str(spec['branch']) ? ` on ${str(spec['branch'])}` : ''}` : `issues labelled ${str(spec['label'])}`;
+    const what = key === 'ci' ? `failed CI${str(spec['branch']) ? ` on ${str(spec['branch'])}` : ''}` : `${whoseWords(whoseOf((spec['match'] ?? {}) as Record<string, unknown>))}issues labelled ${str(spec['label'])}`;
     return `Watches ${what} in ${proj} every ${typeof spec['every'] === 'number' ? spec['every'] : 5} min`;
   }
   // a source only a formula declares (ADR-0043): its event, and where
   return `On ${str(spec['on'])}${path ? ` in ${o.place(path)}` : ''}${who ? ` → ${who}` : ''}`;
+}
+
+function whoseWords(w: Whose): string {
+  return w === 'assigned' ? 'my assigned ' : w === 'opened' ? 'my own ' : '';
 }
 
 /** Run now on a trigger (v1): a schedule runs now, a GitHub watcher checks now; what an event or a call starts has none. */
