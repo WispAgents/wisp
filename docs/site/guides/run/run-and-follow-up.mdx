@@ -50,13 +50,15 @@ Each task runs in its own git worktree by default, so tasks never step on each o
 <TabItem label="Desktop app">
 The task page shows what the agent does, step by step, then its answer as cards: a summary, the diff, the tests.
 The list on the left says which tasks work, which need you and which are done. **J** and **K** move to the next and
-previous task; **V** opens the full transcript.
+previous task; **V** opens the full transcript. **Ctrl+.** (or **⋯** → **Zen mode**) puts that task alone in zen mode:
+only your messages and the agent's answers, no tool calls, thinking or in-between steps. Press it again to leave;
+each task remembers it.
 
 <Shot name="task" alt="A finished task: the agent's report as cards, with a summary, the diff and the tests" />
 </TabItem>
 <TabItem label="Phone app">
 Tap a task in **Tasks**. It shows the steps live, then the answer. The pills under the title (*Changes +n −n*,
-the PR) open the changes and the PR as a sheet. **⋯** (iPhone) or **⋮** (Android) → **Show ›** has the full transcript.
+the PR) open the changes and the PR as a sheet. **⋯** (iPhone) or **⋮** (Android) → **Show ›** has the full transcript, and **Zen mode** for the task.
 </TabItem>
 <TabItem label="TUI">
 Press **Enter** on a task to open it. **j** and **k** move between steps, **Space** opens one, **G** follows the

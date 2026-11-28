@@ -12,7 +12,7 @@ import { menuSections, type MenuEntry, type MenuItem, type MenuSubmenu } from '@
 const ACT = ['ship', 'done', 'reopen'];
 const WORK = ['rerun'];
 const AWAY = ['later', 'archive', 'unarchive', 'delete'];
-const SHOW = new Set(['transcript', 'changes', 'shell', 'pr', 'next-task', 'previous-task']);
+const SHOW = new Set(['transcript', 'zen', 'changes', 'shell', 'pr', 'next-task', 'previous-task']);
 const KEEP = new Set(['fork', 'x:shell.row.fork', 'copy-id', 'x:shell.row.copyResume', 'rollback', 'x:wisp.history.rowSave']);
 /** a plugin's entry that belongs with the task even when its section is Show (Set goal, Add to crew) */
 const OWN = /goal|crew/i;

@@ -281,6 +281,8 @@ function shortcuts(ctx: ShellContext): ShortcutDef[] {
     k('transcript', 'v', 'shell.key.transcript', 'transcript'),
     // Find in task (R4-3): even while typing in the reply box; with no task open the browser's own find runs
     { ...k('find', 'mod+f', 'shell.key.find', 'find'), when: 'always' },
+    // Zen mode on the open task (task-zen.ts): from the reply box too
+    { ...k('zen', 'ctrl+.', 'shell.key.zen', 'zen'), when: 'always' },
     k('rerun', 'shift+r', 'shell.key.rerun', 'rerun'),
     k('fork', 'shift+f', 'shell.key.fork', 'fork'),
     k('ship', 's', 'shell.key.ship', 'ship'),
