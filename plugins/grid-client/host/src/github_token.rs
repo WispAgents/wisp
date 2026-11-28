@@ -1,9 +1,14 @@
 //! A team hub's GitHub App token (ADR-0148 §8e), kept fresh on the hub's own box: every half hour (and at start) it asks
-//! the grid for its team's token (`GET /api/github/token`, its box secret) and hands it to gh (`gh auth login
-//! --with-token`, on stdin, never on a command line), then makes gh git's credential helper (`gh auth setup-git`), so
+//! the grid for its team's token (`GET /api/github/token`, its box secret) and writes it into gh's own `hosts.yml`
+//! (0600, never on a command line), then makes gh git's credential helper (`gh auth setup-git`), so
 //! `gh`, `gh repo clone` and git all reach the repos the team gave the App. A token lasts GitHub's hour; this renews it
 //! twice in that. Off a hub, or a team that hasn't connected GitHub, it does nothing (the hub's `GH_TOKEN` secret, if
 //! any, is what gh has).
+//!
+//! Not `gh auth login --with-token`: it checks a token by asking who it belongs to (`GET /user`), which an App's
+//! installation token isn't allowed to, and on a desktop it would go to the system keychain. With a current
+//! `config.yml` (`version: "1"`), gh reads the token from `hosts.yml` without asking GitHub (checked with gh 2.88).
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -36,6 +41,54 @@ pub fn asked(status: u16, v: &Value) -> Asked {
         200 => v.get("token").and_then(Value::as_str).filter(|t| !t.is_empty()).map_or(Asked::Again, |t| Asked::Token(t.to_owned())),
         403 | 404 => Asked::Nothing,
         _ => Asked::Again,
+    }
+}
+
+/// gh's config folder, as gh finds it: `$GH_CONFIG_DIR`, `$XDG_CONFIG_HOME/gh`, else `~/.config/gh`.
+pub fn gh_config_dir(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    let set = |k: &str| env(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+    set("GH_CONFIG_DIR").or_else(|| set("XDG_CONFIG_HOME").map(|x| x.join("gh"))).or_else(|| set("HOME").map(|h| h.join(".config/gh")))
+}
+
+/// github.com's entry in gh's `hosts.yml` for `token` (gh's older one-account and newer `users` shapes both).
+pub fn hosts_yml(token: &str) -> String {
+    format!(
+        "github.com:\n    users:\n        x-access-token:\n            oauth_token: {token}\n    git_protocol: https\n    oauth_token: {token}\n    user: x-access-token\n"
+    )
+}
+
+/// Writes gh's `hosts.yml` (0600) with the token: false when it can't.
+async fn write_hosts(token: &str) -> bool {
+    let Some(dir) = gh_config_dir(&|k| std::env::var(k).ok()) else { return false };
+    if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+        tracing::warn!("grid-client: gh's config folder: {e}");
+        return false;
+    }
+    // a config gh takes as current: without one, gh first "migrates" to accounts and asks GitHub who the token is
+    // (`GET /user`), which an installation token may not, and refuses to run. Never over one that's there.
+    let config = dir.join("config.yml");
+    if !tokio::fs::try_exists(&config).await.unwrap_or(false)
+        && let Err(e) = tokio::fs::write(&config, "version: \"1\"\n").await
+    {
+        tracing::warn!("grid-client: gh's config.yml: {e}");
+        return false;
+    }
+    let path = dir.join("hosts.yml");
+    let mut o = tokio::fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    o.mode(0o600);
+    let done = async {
+        let mut f = o.open(&path).await?;
+        tokio::io::AsyncWriteExt::write_all(&mut f, hosts_yml(token).as_bytes()).await?;
+        tokio::io::AsyncWriteExt::flush(&mut f).await
+    };
+    match done.await {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!("grid-client: gh's hosts.yml: {e}");
+            false
+        }
     }
 }
 
@@ -72,7 +125,7 @@ async fn renew(st: &Arc<St>, git_set: &mut bool) -> Duration {
         Asked::Nothing => EVERY,
         Asked::Again => RETRY,
         Asked::Token(t) => {
-            if !gh(st, &["auth", "login", "--hostname", "github.com", "--with-token"], Some(t.into_bytes())).await {
+            if !write_hosts(&t).await {
                 return RETRY;
             }
             if !*git_set {
@@ -109,6 +162,22 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn the_token_goes_in_ghs_own_hosts_file_where_gh_looks() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| pairs.iter().find(|(a, _)| *a == k).map(|(_, v)| (*v).to_owned())
+        };
+        assert_eq!(gh_config_dir(&env(&[("GH_CONFIG_DIR", "/c"), ("HOME", "/h")])), Some(PathBuf::from("/c")));
+        assert_eq!(gh_config_dir(&env(&[("XDG_CONFIG_HOME", "/x"), ("HOME", "/h")])), Some(PathBuf::from("/x/gh")));
+        assert_eq!(gh_config_dir(&env(&[("HOME", "/h")])), Some(PathBuf::from("/h/.config/gh")));
+        assert_eq!(gh_config_dir(&env(&[])), None);
+        let y = hosts_yml("ghs_abc");
+        assert!(
+            y.starts_with("github.com:\n") && y.matches("oauth_token: ghs_abc").count() == 2 && y.contains("git_protocol: https"),
+            "{y}"
+        );
+    }
 
     #[test]
     fn only_a_hub_box_renews_and_the_grids_answer_says_what_to_do() {

@@ -179,8 +179,9 @@ their webhooks. A grid without an App (grid.json `githubApp`, or `GRID_GITHUB_AP
   (`team_github`, migration 20).
 - **Tokens.** The grid mints a token with the App's key (RS256 JWT, from the `rsa` crate it already has) and keeps one
   per installation until 5 minutes before its hour ends. A hub's box asks for its own (`GET /api/github/token`, its box
-  secret) every half hour and hands it to `gh auth login --with-token` (stdin) and `gh auth setup-git`, so `gh`, `gh
-  repo clone` and git use it. Its env then carries no `GH_TOKEN` of the team's (an env token would win over gh's own
+  secret) every half hour and writes it into gh's own `hosts.yml` (0600; a current `config.yml` so gh never asks GitHub
+  who the token is, which an installation token may not answer), then `gh auth setup-git`, so `gh`, `gh repo clone`
+  and git use it. Its env then carries no `GH_TOKEN` of the team's (an env token would win over gh's own
   and stop working within the hour). A sandbox has no account to ask with: it starts with the token in its env (made
   when the hub asks for the sandbox), and a job outlasting the hour falls back to nothing.
 - **Webhooks.** `POST /github/webhook` checks GitHub's signature (`X-Hub-Signature-256`, the App's secret) before
