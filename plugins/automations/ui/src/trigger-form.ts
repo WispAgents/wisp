@@ -13,23 +13,33 @@ export interface Kind {
   readonly preset?: string;
   readonly label: string;
   readonly hint: string;
-  readonly icon: 'clock' | 'warn' | 'ask' | 'bolt' | 'done' | 'plug' | 'comment' | 'target' | 'bell';
+  readonly icon: 'clock' | 'warn' | 'ask' | 'bolt' | 'done' | 'plug' | 'comment' | 'target' | 'bell' | 'merge' | 'server';
+  /** the heading it sits under in Starts when (GROUPS) */
+  readonly group: Group;
 }
 
+/** Starts when's headings, in order (owner 2026-11-28, design B): by where the event comes from */
+export const GROUPS = ['time', 'github', 'wisp', 'app', 'any'] as const;
+export type Group = (typeof GROUPS)[number];
+
 export const KINDS: readonly Kind[] = [
-  { key: 'schedule', kind: 'schedule', label: 'Schedule', icon: 'clock', hint: 'At times you pick, like every monday' },
-  { key: 'ci', kind: 'ci', label: 'CI failed', icon: 'warn', hint: 'A GitHub Actions run fails (polled with gh)' },
-  { key: 'issues', kind: 'issues', label: 'Issue labelled', icon: 'ask', hint: 'An open issue gets a label (polled with gh)' },
-  { key: 'review', kind: 'review', label: 'Review requested', icon: 'comment', hint: 'Someone is asked to review a PR (polled with gh)' },
-  { key: 'finished', kind: 'finished', label: 'Task finished', icon: 'bolt', hint: 'One of your tasks finishes' },
-  { key: 'done', kind: 'done', label: 'Task marked done', icon: 'done', hint: 'You mark a task done, or ship it' },
-  { key: 'webhook', kind: 'webhook', label: 'Webhook called', icon: 'plug', hint: 'Anything that can POST to a secret URL' },
-  { key: 'slack', kind: 'slack', label: 'Slack mention', icon: 'comment', hint: 'From the people you name, through your Slack app' },
-  { key: 'linear', kind: 'linear', label: 'Linear issue created', icon: 'target', hint: 'Through a Linear webhook' },
-  { key: 'webhook:sentry', kind: 'webhook', preset: 'sentry', label: 'Sentry alert', icon: 'warn', hint: 'A Sentry internal integration’s webhook' },
-  { key: 'webhook:pagerduty', kind: 'webhook', preset: 'pagerduty', label: 'PagerDuty incident', icon: 'bell', hint: 'A PagerDuty v3 webhook subscription' },
-  { key: 'mcp', kind: 'mcp', label: 'MCP server event', icon: 'plug', hint: 'An event a connected MCP server sends (MCP Events)' },
+  { key: 'schedule', kind: 'schedule', label: 'Schedule', icon: 'clock', hint: 'At times you pick, like every monday', group: 'time' },
+  { key: 'ci', kind: 'ci', label: 'CI failed', icon: 'warn', hint: 'A GitHub Actions run fails (polled with gh)', group: 'github' },
+  { key: 'issues', kind: 'issues', label: 'Issue labelled', icon: 'ask', hint: 'An open issue gets a label (polled with gh)', group: 'github' },
+  { key: 'review', kind: 'review', label: 'Review requested', icon: 'merge', hint: 'Someone is asked to review a PR (polled with gh)', group: 'github' },
+  { key: 'finished', kind: 'finished', label: 'Task finished', icon: 'bolt', hint: 'One of your tasks finishes', group: 'wisp' },
+  { key: 'done', kind: 'done', label: 'Task marked done', icon: 'done', hint: 'You mark a task done, or ship it', group: 'wisp' },
+  { key: 'webhook', kind: 'webhook', label: 'Webhook called', icon: 'plug', hint: 'Anything that can POST to a secret URL', group: 'any' },
+  { key: 'slack', kind: 'slack', label: 'Slack mention', icon: 'comment', hint: 'From the people you name, through your Slack app', group: 'app' },
+  { key: 'linear', kind: 'linear', label: 'Linear issue created', icon: 'target', hint: 'Through a Linear webhook', group: 'app' },
+  { key: 'webhook:sentry', kind: 'webhook', preset: 'sentry', label: 'Sentry alert', icon: 'warn', hint: 'A Sentry internal integration’s webhook', group: 'app' },
+  { key: 'webhook:pagerduty', kind: 'webhook', preset: 'pagerduty', label: 'PagerDuty incident', icon: 'bell', hint: 'A PagerDuty v3 webhook subscription', group: 'app' },
+  { key: 'mcp', kind: 'mcp', label: 'MCP server event', icon: 'server', hint: 'An event a connected MCP server sends (MCP Events)', group: 'any' },
 ];
+
+/** the kinds under their headings, in GROUPS' order, each group as KINDS lists it */
+export const kindGroups = (label: (g: Group) => string): { id: Group; label: string; kinds: Kind[] }[] =>
+  GROUPS.map((g) => ({ id: g, label: label(g), kinds: KINDS.filter((k) => k.group === g) }));
 
 export const kindOf = (key: string): Kind => KINDS.find((k) => k.key === key) ?? (KINDS[0] as Kind);
 export const TASK_KINDS = new Set(['finished', 'done']);

@@ -1,6 +1,6 @@
 // v1's trigger form on v2's trigger spec (src/trigger-form.ts, v1 automations.js triggerForm).
 import { expect, test } from 'vitest';
-import { argFields, DEFAULT_PROMPTS, describeSpec, emptyForm, formOfSpec, keyOfSpec, pick, readBack, specOfForm, typedArg, warning } from '../src/trigger-form.ts';
+import { argFields, DEFAULT_PROMPTS, describeSpec, emptyForm, formOfSpec, keyOfSpec, KINDS, kindGroups, pick, readBack, specOfForm, typedArg, warning } from '../src/trigger-form.ts';
 
 test('each kind saves the spec its v2 source reads; a kind v2 has no source for says so_v1_trigger_form', () => {
   const f = { ...emptyForm('/code/web'), name: 'Morning tidy', when: 'every weekday at 9am', prompt: 'Tidy the repo' };
@@ -90,4 +90,14 @@ test('Edit reads an MCP server event back, and its arguments come from the event
   expect(fields[0]?.options).toEqual(['P1', 'P2']);
   expect(fields[1]?.hint).toBe('Strip PII');
   expect(argFields(undefined)).toEqual([]);
+});
+
+// Starts when (owner 2026-11-28, design B): every kind sits under exactly one heading, the headings in GROUPS' order
+test('kindGroups puts every kind under one heading, by where its event comes from', () => {
+  const groups = kindGroups((g) => g);
+  expect(groups.map((g) => g.id)).toEqual(['time', 'github', 'wisp', 'app', 'any']);
+  expect(groups.flatMap((g) => g.kinds.map((k) => k.key)).sort()).toEqual(KINDS.map((k) => k.key).sort());
+  expect(groups.find((g) => g.id === 'github')?.kinds.map((k) => k.key)).toEqual(['ci', 'issues', 'review']);
+  expect(groups.find((g) => g.id === 'app')?.kinds.map((k) => k.key)).toEqual(['slack', 'linear', 'webhook:sentry', 'webhook:pagerduty']);
+  expect(groups.find((g) => g.id === 'any')?.kinds.map((k) => k.key)).toEqual(['webhook', 'mcp']);
 });

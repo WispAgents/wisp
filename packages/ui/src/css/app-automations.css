@@ -190,45 +190,29 @@
     font-size: 12.5px;
     color: var(--muted);
   }
-  /* .au-kinds */
-  [data-kit='au-kinds'] {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-    margin-bottom: 6px;
+  /* Starts when (owner 2026-11-28, design B; replaced v1's .au-kinds tiles): one field, the picked kind's icon in the
+     accent, its name over its hint, a chevron; it opens the kinds in groups, two columns, under a search box */
+  [data-kit='au-kind'] {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px;
+    text-align: left; cursor: pointer; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-soft);
   }
-  [data-kit='au-kinds'] > button {
-    display: grid;
-    grid-template-columns: 16px minmax(0, 1fr);
-    column-gap: 8px;
-    text-align: left;
-    padding: 8px 10px;
-    border-radius: 10px;
-    border: 1px solid var(--line);
-  }
-  [data-kit='au-kinds'] > button > [data-kit='icon'] {
-    grid-row: span 2;
-    margin-top: 2px;
-    color: var(--muted);
-  }
-  [data-kit='au-kinds'] > button > b {
-    font-size: 13px;
-  }
-  [data-kit='au-kinds'] > button > small {
-    font-size: 11.5px;
-    color: var(--muted);
-  }
-  [data-kit='au-kinds'] > button[data-on] {
-    border-color: var(--accent);
-    background: var(--accent-soft);
-  }
-  [data-kit='au-kinds'] > button[data-on] > [data-kit='icon'] {
-    color: var(--accent);
-  }
+  [data-kit='au-kind'] > [data-kit='icon']:first-child { flex: none; color: var(--accent); }
+  [data-kit='au-kind'] > [data-kit='icon']:last-child { flex: none; color: var(--muted); transform: rotate(90deg); transition: transform var(--dur-fast) var(--ease); }
+  /* the kit's chevron points right: down while shut, up while open */
+  [data-kit='au-kind'][data-on] > [data-kit='icon']:last-child { transform: rotate(-90deg); }
+  [data-kit='au-kind']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  [data-kit='au-kind-text'] { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+  [data-kit='au-kind-text'] > b { font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-kit='au-kind-text'] > small { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* the card: as wide as the field (the form's width less its label), up to the window */
+  [data-kit='popover'][data-bare][data-part~='automations.kinds.menu'] { --au-kinds-w: min(560px, calc(100vw - 32px)); padding: var(--space-2); max-height: min(70vh, 520px); overflow-y: auto; }
+  [data-kit='au-kind-list'] { columns: 2; column-gap: var(--space-2); }
+  [data-kit='au-kind-group'] { break-inside: avoid; display: flex; flex-direction: column; }
+  [data-kit='au-kind-list'] [data-kit='menu-item'][data-on] { background: var(--accent-soft); color: var(--ink); }
+  [data-kit='au-kind-list'] [data-kit='menu-item'][data-on] > [data-kit='icon'] { color: var(--accent); }
+  [data-kit='au-kind-empty'] { margin: 0; padding: var(--space-5); color: var(--muted); font-size: var(--fs-md); column-span: all; }
   @media (max-width: 32.5rem) {
-    [data-kit='au-kinds'] {
-      grid-template-columns: repeat(2, 1fr);
-    }
+    [data-kit='au-kind-list'] { columns: 1; }
   }
   /* .au-form rows: the label 92px, its control, a line under */
   [data-kit='au-row'] {
