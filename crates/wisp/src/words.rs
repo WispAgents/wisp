@@ -274,6 +274,7 @@ const SWITCHES: &[&str] = &[
     "--all",
     "--watch",
     "--draft",
+    "--admin",
     "--queue",
     "--detach",
 ];

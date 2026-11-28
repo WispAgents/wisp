@@ -7,9 +7,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Your messages look like chat messages in Chat mode.** A prompt is a bubble as wide as its words (up to 80% of
+  the column), on the right, instead of a full-width card. Presentation mode is unchanged.
 - **A task's details read as one line of thought.** The column beside the turns now goes: the harness, 📁 *in* the project,
   *on* the computer it runs on, its branch, then its usage and context (the usage used to sit between the project and
   the computer). The narrow bar and the phone sheet are unchanged.
+
+### Fixed
+
+- **Home's tips link to the right guide and show three at a time.** Each tip opened `trywisp.dev/guides#<id>`, a page
+  with no such section; each now opens the docs section that explains it. Home shows three tips, picked at random on
+  each visit (a setup card such as Sign in to GitHub takes one of the three), and **More tips** moves on to three more
+  until every tip has shown. The six old tips are now 18, reworded to match today's controls (**Compare with another
+  agent…**, **⋯ → Compare runs**). Tips about the **+** menu wait until New task shows its **+**.
+- A picture or video an agent shows in its answer holds its place with a loading skeleton until it arrives, instead of
+  an empty strip with only its caption. It also arrives sooner: the server reads only the bytes asked for (a video starts
+  on its first 4 MiB instead of the whole file being read for every seek), checks only the files that path can name
+  instead of every file the task's answers ever named, and lets the browser keep a copy (wisp's kept copies for a day,
+  others revalidated with an ETag).
+- **Merging a PR the branch rules hold asks instead of failing.** When the base branch's rules (required checks or
+  reviews) block a merge, Merge used to toast gh's advice about `--admin` and `--auto` flags. It now opens a confirm:
+  *Bypass and merge* merges at once with your admin rights (`gh pr merge --admin`), *Wait for requirements* closes it.
+  *Merge anyway* (shown when checks fail or a review or risk warns) bypasses them at once. `wisp merge <id> --admin`
+  and `ship.merge` with `admin: true` do the same from the CLI and MCP.
 
 ## [1.0.0-alpha.19] - 2026-11-28
 

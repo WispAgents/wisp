@@ -614,8 +614,12 @@
     padding-top: var(--space-6);
     border-top: 1px solid var(--line);
   }
+  /* Chat mode: the prompt is a chat message, a bubble as wide as its words up to 80% on the right (owner 2026-11-28) */
   [data-kit='turn'][data-chat] [data-kit='ask'] {
-    margin: 0 0 var(--space-5);
+    width: fit-content;
+    min-width: 0;
+    max-width: 80%;
+    margin: 0 0 var(--space-5) auto;
   }
   [data-kit='turn'][data-chat] [data-kit='trail'] {
     margin-top: var(--space-5);

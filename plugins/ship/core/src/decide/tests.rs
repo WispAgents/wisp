@@ -73,15 +73,27 @@ fn an_open_pr_is_updated_by_the_push_a_closed_one_gets_a_new_pr() {
 /// Edge case Git 8: squash with --match-head-commit, ready a draft first.
 #[test]
 fn merge_squashes_the_reviewed_head_and_readies_a_draft_first() {
-    let p = merge_plan(&pr(1, "OPEN"), "1").unwrap_or_else(|_| MergePlan { ready: None, merge: Vec::new() });
+    let p = merge_plan(&pr(1, "OPEN"), "1", false).unwrap_or_else(|_| MergePlan { ready: None, merge: Vec::new() });
     assert_eq!(p.ready, None);
     assert_eq!(p.merge, ["pr", "merge", "1", "--squash", "--match-head-commit", "h1"]);
     let draft = PrSummary { draft: true, ..pr(2, "OPEN") };
-    assert_eq!(merge_plan(&draft, "2").ok().and_then(|p| p.ready), Some(vec!["pr".into(), "ready".into(), "2".into()]));
-    assert_eq!(merge_plan(&pr(4, "MERGED"), "4"), Err(Refusal::Invalid("PR #4 is merged.".into())));
-    assert_eq!(merge_plan(&pr(4, "CLOSED"), "4"), Err(Refusal::Invalid("PR #4 is closed.".into())));
+    assert_eq!(merge_plan(&draft, "2", false).ok().and_then(|p| p.ready), Some(vec!["pr".into(), "ready".into(), "2".into()]));
+    assert_eq!(merge_plan(&pr(4, "MERGED"), "4", false), Err(Refusal::Invalid("PR #4 is merged.".into())));
+    assert_eq!(merge_plan(&pr(4, "CLOSED"), "4", false), Err(Refusal::Invalid("PR #4 is closed.".into())));
     assert!(cleans_up(&wt("x")));
     assert!(!cleans_up(&Worktree { foreign: true, ..wt("x") }), "a foreign worktree is never ours to tidy");
+}
+
+/// A merge the base branch's rules hold is told apart from any other gh failure, and `admin` bypasses it.
+#[test]
+fn a_merge_held_by_branch_rules_is_recognised_and_admin_bypasses_it() {
+    let gh = "X Pull request WispAgents/wisp#1064 is not mergeable: the base branch policy prohibits the merge. To have the pull request merged after all the requirements have been met, add the `--auto` flag.";
+    assert!(merge_blocked(gh));
+    assert!(!merge_blocked("GraphQL: Head branch was modified. Review and try the merge again."));
+    let p = merge_plan(&pr(1064, "OPEN"), "1064", true).map(|p| p.merge).unwrap_or_default();
+    assert_eq!(p.last().map(String::as_str), Some("--admin"));
+    assert!(p.iter().any(|a| a == "--match-head-commit"), "a bypass still merges only the reviewed head");
+    assert_eq!(blocked_text(1064), "PR #1064 can't merge yet: the base branch's rules (required checks or reviews) aren't met.");
 }
 
 /// A merged task's folder that stays says why: kept, working, holding work, or not removable.

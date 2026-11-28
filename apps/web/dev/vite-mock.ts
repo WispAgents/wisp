@@ -95,7 +95,9 @@ function mediaFile(url: URL, res: ServerResponse): void {
   if (!/\.(png|jpe?g|gif|webp|svg)$/i.test(p)) return void res.writeHead(404, { 'content-type': 'application/json' }).end('{"error":"not found"}');
   const hue = [...p].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 0);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700"><rect width="1200" height="700" fill="hsl(${hue} 60% 55%)"/><text x="600" y="370" font-family="sans-serif" font-size="56" text-anchor="middle" fill="white">${p.replace(/[<&]/g, '')}</text></svg>`;
-  res.writeHead(200, { 'content-type': 'image/svg+xml' }).end(svg);
+  // MOCK_MEDIA_MS=1500: the picture takes that long, to see the block's loading state
+  const wait = Number(process.env['MOCK_MEDIA_MS'] ?? 0);
+  setTimeout(() => res.writeHead(200, { 'content-type': 'image/svg+xml' }).end(svg), wait);
 }
 
 /** A file sent with a prompt (stuff's GET /uploads/:id): a picture's upload is a drawn SVG, anything else its text. */

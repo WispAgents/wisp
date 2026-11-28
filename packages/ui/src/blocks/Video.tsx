@@ -3,7 +3,7 @@
 // answer's other pictures and videos, and Download and Show in folder sit top right like a picture's.
 import { createSignal, Show, type JSX } from 'solid-js';
 import { useBlockT } from './context.tsx';
-import { Caption, MediaTools, useMedia } from './Image.tsx';
+import { Caption, MediaTools, useArrived, useMedia } from './Image.tsx';
 import { MediaViewer, mediaSet, type ViewItem } from './Viewer.tsx';
 import { opt } from './read.ts';
 import { CantShow } from './rich-ui.tsx';
@@ -16,6 +16,7 @@ export function VideoBlock(props: BlockProps): JSX.Element {
   const media = useMedia(props);
   const [broken, setBroken] = createSignal(false);
   const caption = (): string | undefined => opt(props.block['caption']);
+  const bytes = useArrived();
   let video: HTMLVideoElement | undefined;
   const [view, setView] = createSignal<{ list: readonly ViewItem[]; at: number } | undefined>();
   // full screen is wisp's viewer, with the answer's other pictures and videos: the button, or the player's own
@@ -35,15 +36,22 @@ export function VideoBlock(props: BlockProps): JSX.Element {
       <Show when={media.url() !== null} fallback={<Skeleton part="block.video.loading" shape="block" width="full" height="home-top" label={t('block.video.loading')} />}>
       <Show when={!broken() && media.url()} fallback={<CantShow part="block.video.missing">{t('block.video.missing')}</CantShow>}>
         {(src) => (
-          <div data-kit="rb-media-box">
+          <div data-kit="rb-media-box" data-loading={bytes.arrived() ? undefined : ''}>
+            <Show when={!bytes.arrived()}>
+              <Skeleton part="block.video.loading" shape="block" width="full" height="home-top" label={t('block.video.loading')} />
+            </Show>
             <video
-              ref={video}
+              ref={(el) => {
+                video = el;
+                bytes.check(el);
+              }}
               data-kit="rb-video"
               src={src()}
               controls
               playsinline
               preload="metadata"
               aria-label={caption() ?? (media.name() || t('block.video.name'))}
+              onLoadedMetadata={bytes.done}
               onError={() => setBroken(true)}
               onFullscreenChange={handOver}
             />

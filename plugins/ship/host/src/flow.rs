@@ -106,7 +106,7 @@ impl Ship {
 
     /// Merge: squash-merge each open PR of the task, its own first; stops at the first that fails. An
     /// attached PR is merged on GitHub with nothing to sync.
-    pub async fn merge_all(&self, call: &Call, session: &str) -> Result<Merged> {
+    pub async fn merge_all(&self, call: &Call, session: &str, admin: bool) -> Result<Merged> {
         let mut task = self.task(session)?;
         let own: Vec<usize> = (0..task.repos.len()).filter(|&i| task.repos[i].pr.as_ref().is_some_and(PrSummary::is_open)).collect();
         let attached: Vec<usize> = (0..task.prs.len()).filter(|&i| task.prs[i].pr.is_open()).collect();
@@ -118,7 +118,7 @@ impl Ship {
         for i in own {
             let (wt, number, name) =
                 (task.repos[i].worktree.clone(), task.repos[i].pr.as_ref().map_or(0, |p| p.number), task.repos[i].name.clone());
-            match self.shipper.merge(call, session, &wt, number).await {
+            match self.shipper.merge(call, session, &wt, number, admin).await {
                 Ok((pr, sync, left)) => {
                     task.repos[i].pr = Some(pr);
                     synced.push(sync);
@@ -130,7 +130,7 @@ impl Ship {
         let dir = Self::gh_dir(&task).await;
         for i in attached {
             let (url, name) = (task.prs[i].pr.url.clone(), task.prs[i].repo.clone());
-            match self.shipper.merge_url(&dir, &url).await {
+            match self.shipper.merge_url(&dir, &url, admin).await {
                 Ok(pr) => task.prs[i].pr = pr,
                 Err(e) => return Err(self.merge_failed(task, e.in_repo(&name, n))),
             }

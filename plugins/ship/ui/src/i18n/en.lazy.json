@@ -195,5 +195,10 @@
   "wisp.ship.link.untitled": "PR #{n}",
   "wisp.ship.settings.attachPasted": "Follow PRs I link",
   "wisp.ship.settings.attachPasted.hint": "A GitHub PR link in a prompt or follow-up attaches that PR to the task: its checks and reviews stay current, and the link reads as its live chip",
-  "wisp.ship.settings.locked": "Set by the plugin {by}"
+  "wisp.ship.settings.locked": "Set by the plugin {by}",
+  "wisp.ship.merge.blockedTitle": "Branch rules block this merge",
+  "wisp.ship.merge.bypass": "Bypass and merge",
+  "wisp.ship.merge.wait": "Wait for requirements",
+  "wisp.ship.merge.bypassWhy": "Bypassing merges now with your admin rights, skipping the required checks and reviews.",
+  "wisp.ship.merge.anywayAdmin": "Merge anyway uses your admin rights, so the base branch's rules (required checks, reviews) don't hold it."
 }

@@ -15,6 +15,18 @@
     background: var(--surface-2);
     cursor: zoom-in;
   }
+  /* still on its way: the skeleton holds the place, the picture or video loads under it unseen (in the box, so a
+     lazy picture still counts as on screen), and its tools wait */
+  [data-kit='rb-media-box'][data-loading] > [data-kit='rb-image'],
+  [data-kit='rb-media-box'][data-loading] > [data-kit='rb-video'] {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    opacity: 0;
+  }
+  [data-kit='rb-media-box'][data-loading] > [data-kit='rb-media-tools'] {
+    display: none;
+  }
   [data-kit='rb-media'][data-video] [data-kit='rb-media-box'] {
     background: var(--term-bg);
   }

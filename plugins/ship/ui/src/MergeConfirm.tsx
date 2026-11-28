@@ -1,8 +1,9 @@
 // Merge's confirm (v1 ship.js mergePr → ask()): the question names what merges and what happens
 // after; warnings are lines under it, never a hold. Red, and *Merge anyway*, only for what's wrong
-// with the PR. Driven by the task's merge flow: confirming → merging → idle.
+// with the PR. Driven by the task's merge flow: confirming → merging → idle. When the base branch's rules hold the
+// merge (merging → blocked), a second confirm: Bypass and merge (`gh pr merge --admin`) or Wait for requirements (closes).
 
-import { createSignal, For, Show, type Accessor, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, Show, type Accessor, type JSX } from 'solid-js';
 import { Button, Dialog, Inline, Stack, Text, useSignal } from '@wisp/ui';
 import type { TaskFlows } from './flows.ts';
 import { t } from './i18n.ts';
@@ -23,6 +24,7 @@ export interface MergeAsk {
 
 export function useMerge(flows: TaskFlows, s: Accessor<ShipSession | undefined>, ctx: Accessor<ReviewContext>, shell: ShipShell): MergeAsk {
   const state = useSignal(flows.merge.state);
+  const why = useSignal(flows.blocked);
   // Two places can ask (the row and the pane): the confirm opens by the one that did.
   const [asked, setAsked] = createSignal(false);
   const unsent = useUnsent();
@@ -31,15 +33,56 @@ export function useMerge(flows: TaskFlows, s: Accessor<ShipSession | undefined>,
     setAsked(false);
     flows.merge.send('cancel');
   };
+  // "Merging PR #n…" while it runs; gone once the branch's rules hold it (the confirm says so instead)
+  let toast: string | undefined;
+  // the one that asked keeps the ask until the merge ends, so only its strip shows the bypass confirm
+  createEffect(() => {
+    const st = state();
+    if (st === 'idle') setAsked(false);
+    if (st === 'blocked' && toast !== undefined) shell.toast.dismiss(toast);
+  });
   const go = (): void => {
     const p = plan();
-    // confirm first: closing the dialog may report a close, which must not cancel the merge
-    const went = flows.merge.send('confirm');
-    setAsked(false);
-    if (went && p) shell.toast.show(p.merging);
+    // confirm first: closing the dialog may report a close, which must not cancel the merge. Merge anyway (the
+    // user saw what's wrong: failing or pending checks, no review, high risk) bypasses the branch's rules at once
+    const went = flows.merge.send('confirm', p?.danger ? 'admin' : undefined);
+    if (went && p) toast = shell.toast.show(p.merging);
+  };
+  const bypass = (): void => {
+    const p = plan();
+    if (flows.merge.send('bypass', 'admin') && p) toast = shell.toast.show(p.merging);
+  };
+  const wait = (): void => {
+    flows.merge.send('cancel');
   };
   const Confirm = (): JSX.Element => (
-    <Show when={plan()}>
+    <>
+      <Dialog
+        open={asked() && state() === 'blocked'}
+        onOpenChange={(open) => !open && wait()}
+        role="alertdialog"
+        size="sm"
+        title={t('wisp.ship.merge.blockedTitle')}
+        part="ship.merge.blocked"
+        footer={
+          <Inline gap="3" justify="end">
+            <Button variant="secondary" size="sm" onClick={wait} part="ship.merge.wait">
+              {t('wisp.ship.merge.wait')}
+            </Button>
+            <Button variant="danger" size="sm" icon="check" onClick={bypass} part="ship.merge.bypass">
+              {t('wisp.ship.merge.bypass')}
+            </Button>
+          </Inline>
+        }
+      >
+        <Stack gap="3">
+          <Text as="p">{why()}</Text>
+          <Text as="p" size="sm" tone="warn">
+            {t('wisp.ship.merge.bypassWhy')}
+          </Text>
+        </Stack>
+      </Dialog>
+      <Show when={plan()}>
       {(p) => (
         <Dialog
           open={asked() && state() === 'confirming'}
@@ -68,10 +111,16 @@ export function useMerge(flows: TaskFlows, s: Accessor<ShipSession | undefined>,
                 </Text>
               )}
             </For>
+            <Show when={p().danger}>
+              <Text as="p" size="sm" tone="muted" part="ship.merge.admin">
+                {t('wisp.ship.merge.anywayAdmin')}
+              </Text>
+            </Show>
           </Stack>
         </Dialog>
       )}
-    </Show>
+      </Show>
+    </>
   );
   return {
     ask() {

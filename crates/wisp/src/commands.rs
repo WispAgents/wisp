@@ -37,7 +37,8 @@ pub fn own_flags(cmd: &str) -> Option<&'static [&'static str]> {
         "wait" => &["--timeout"],
         "reply" => &["--queue", "--mode", "-m", "--agent", "-a", "--model", "--effort", "--wait", "-w", "--timeout", "--detach", "-d"],
         "ship" => &["--draft", "--steward"],
-        "btw" | "stop" | "held" | "merge" | "recipes" => &[],
+        "merge" => &["--admin"],
+        "btw" | "stop" | "held" | "recipes" => &[],
         _ => return None,
     })
 }
@@ -135,7 +136,7 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
                 .cmd("runtime.get", json!({ "id": id }))
                 .await
                 .is_ok_and(|t| t.pointer("/ext/wisp.worktrees/path").is_some_and(Value::is_string));
-            let r = c.cmd("ship.merge", json!({ "session": id })).await?;
+            let r = c.cmd("ship.merge", json!({ "session": id, "admin": f.admin })).await?;
             out(f, &r, &merged_words(&r, had_tree));
             Ok(())
         }

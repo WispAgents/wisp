@@ -198,8 +198,8 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
       const out = fn(peerIds(m.args), ctx);
       commit(out.ops, { clientId: c.clientId, messages: [{ t: 'ack', mid: m.mid, seq: 0, ...(out.result !== undefined && { result: out.result }) }] });
     } catch (err) {
-      const e = err as { code?: string; message?: string };
-      c.send({ id: null, messages: [{ t: 'reject', mid: m.mid, code: e.code ?? 'invalid', message: e.message ?? String(err) }] });
+      const e = err as { code?: string; message?: string; reason?: string };
+      c.send({ id: null, messages: [{ t: 'reject', mid: m.mid, code: e.code ?? 'invalid', message: e.message ?? String(err), ...(e.reason !== undefined && { reason: e.reason }) }] });
     }
   }
 
