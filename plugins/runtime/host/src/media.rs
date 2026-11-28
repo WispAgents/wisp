@@ -91,7 +91,11 @@ fn range(h: Option<&str>, size: u64) -> Span {
         let (a, b) = spec.split_once('-')?;
         let (a, b) = match (a.trim(), b.trim()) {
             ("", n) => (size.saturating_sub(n.parse().ok()?), size - 1),
-            (a, "") => (a.parse().ok()?, size - 1),
+            // open-ended: a chunk, and the player asks for the next
+            (a, "") => {
+                let a: u64 = a.parse().ok()?;
+                (a, a.saturating_add(CHUNK - 1).min(size - 1))
+            }
             (a, b) => (a.parse().ok()?, b.parse::<u64>().ok()?.min(size - 1)),
         };
         Some(if a <= b && a < size { Span::Part(a, b) } else { Span::Unsatisfiable })
@@ -201,13 +205,16 @@ impl Runtime {
         let turns = self.repo.turns(id, None, None).await?;
         let blocks: Vec<Value> = turns.into_iter().filter_map(|t| t.presentation).flat_map(|p| p.blocks).collect();
         let dir = PathBuf::from(&s.cwd);
-        // what's on disk is read first: the core decides without touching it
-        let mut named = vec![resolve(&dir, asked)];
-        for b in &blocks {
-            for k in ["path", "src", "source"] {
-                if let Some(v) = b.get(k).and_then(Value::as_str) {
-                    named.push(resolve(&dir, v));
-                }
+        // what's on disk is read first: the core decides without touching it. Only the paths `media_file` can ask
+        // about are looked at: the one asked, and the fields of a picture or video block naming it (a long task's
+        // every block, statted on each request, kept a picture waiting)
+        let wanted = resolve(&dir, asked);
+        let mut named = vec![wanted.clone()];
+        for b in blocks.iter().filter(|b| matches!(b.get("type").and_then(Value::as_str), Some("image" | "video"))) {
+            let fields: Vec<PathBuf> =
+                ["path", "src", "source"].iter().filter_map(|k| b.get(*k).and_then(Value::as_str)).map(|v| resolve(&dir, v)).collect();
+            if fields.contains(&wanted) {
+                named.extend(fields);
             }
         }
         let mut seen = std::collections::HashMap::new();
@@ -288,38 +295,77 @@ impl Runtime {
     }
 }
 
+/// The most an open-ended range (`bytes=0-`, a player's first ask) gets at once: the player starts on it and asks
+/// for the rest, instead of waiting for a whole recording to be read into memory first.
+const CHUNK: u64 = 4 * 1024 * 1024;
+
+/// A validator for the file as it is now: its size and when it last changed.
+fn etag(meta: &std::fs::Metadata) -> String {
+    let at = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+    format!("\"{:x}-{at:x}\"", meta.len())
+}
+
+/// Whether `If-None-Match` already names `tag` (the browser's copy is current).
+fn current(asked: Option<&str>, tag: &str) -> bool {
+    asked.is_some_and(|h| h.split(',').any(|t| t.trim() == tag || t.trim() == "*"))
+}
+
 async fn serve(slot: Slot, req: Request) -> WireResult<Response> {
+    use tokio::io::{AsyncReadExt as _, AsyncSeekExt as _};
     let r = rt(&slot)?;
     let id = req.param("id").unwrap_or_default().to_owned();
     let asked = req.query("path").unwrap_or_default().to_owned();
     let not_found = || Response::Json { status: 404, body: json!({ "error": "not found" }) };
     let Some(f) = r.media(&id, &asked).await.map_err(WireError::from)? else { return Ok(not_found()) };
-    let Ok(data) = tokio::fs::read(&f.path).await else { return Ok(not_found()) };
+    // one open handle: what's checked is what's sent
+    let Ok(mut file) = tokio::fs::File::open(&f.path).await else { return Ok(not_found()) };
+    let Ok(meta) = file.metadata().await else { return Ok(not_found()) };
+    if !meta.is_file() {
+        return Ok(not_found());
+    }
+    let mut head = Vec::with_capacity(SNIFF_LEN);
     // the bytes that go out are checked themselves: the file may have been swapped since `media` looked
-    if !content_fits(&f.path, data.get(..SNIFF_LEN.min(data.len())).unwrap_or_default()) {
+    if (&mut file).take(SNIFF_LEN as u64).read_to_end(&mut head).await.is_err() || !content_fits(&f.path, &head) {
         return Ok(not_found());
     }
     let ty = mime(&f.path).to_owned();
-    let size = data.len() as u64;
+    let size = meta.len();
+    let tag = etag(&meta);
+    // wisp's own copy (`~/.wisp/shots/<task>/<turn>-<i>`) never changes: kept a day, so scrolling back or opening the
+    // viewer shows it at once; a file the agent may still rewrite is asked again, and a 304 when it hasn't changed
+    let kept = r.host.shots().is_some_and(|d| f.path.starts_with(d));
+    let cache = if kept { "private, max-age=86400" } else { "private, no-cache" };
     let mut headers = vec![
         ("accept-ranges".into(), "bytes".into()),
         ("x-content-type-options".into(), "nosniff".into()),
         ("content-security-policy".into(), MEDIA_CSP.into()),
+        ("etag".into(), tag.clone()),
+        ("cache-control".into(), cache.into()),
     ];
-    Ok(match range(req.header("range"), size) {
-        Span::Whole => Response::Bytes { status: 200, content_type: ty, body: data, headers },
-        Span::Unsatisfiable => Response::Bytes {
-            status: 416,
-            content_type: "text/plain".into(),
-            body: Vec::new(),
-            headers: vec![("content-range".into(), format!("bytes */{size}"))],
-        },
+    if current(req.header("if-none-match"), &tag) {
+        return Ok(Response::Bytes { status: 304, content_type: ty, body: Vec::new(), headers });
+    }
+    let (status, from, to) = match range(req.header("range"), size) {
+        Span::Whole => (200, 0, size.saturating_sub(1)),
+        Span::Unsatisfiable => {
+            return Ok(Response::Bytes {
+                status: 416,
+                content_type: "text/plain".into(),
+                body: Vec::new(),
+                headers: vec![("content-range".into(), format!("bytes */{size}"))],
+            });
+        }
         Span::Part(a, b) => {
             headers.push(("content-range".into(), format!("bytes {a}-{b}/{size}")));
-            let (a, b) = (usize::try_from(a).unwrap_or(0), usize::try_from(b).unwrap_or(0));
-            Response::Bytes { status: 206, content_type: ty, body: data.get(a..=b).unwrap_or_default().to_vec(), headers }
+            (206, a, b)
         }
-    })
+    };
+    let want = if size == 0 { 0 } else { to - from + 1 };
+    let mut body = Vec::with_capacity(usize::try_from(want).unwrap_or(0));
+    if file.seek(std::io::SeekFrom::Start(from)).await.is_err() || file.take(want).read_to_end(&mut body).await.is_err() {
+        return Ok(not_found());
+    }
+    Ok(Response::Bytes { status, content_type: ty, body, headers })
 }
 
 /// GET /api/sessions/:id/file?path=… (an `image`/`video` block's file).
@@ -343,6 +389,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_picture_the_browser_already_has_is_not_sent_again() {
+        let tag = "\"a-1\"";
+        assert!(current(Some("\"a-1\""), tag));
+        assert!(current(Some("\"b-2\", \"a-1\""), tag));
+        assert!(current(Some("*"), tag));
+        assert!(!current(Some("\"a-2\""), tag));
+        assert!(!current(None, tag));
+    }
+
+    #[test]
     fn a_video_answers_one_range_and_reveal_opens_the_file_manager_v1_media_route() {
         assert_eq!(range(None, 10), Span::Whole);
         assert_eq!(range(Some("bytes=0-"), 10), Span::Part(0, 9));
@@ -351,6 +407,9 @@ mod tests {
         assert_eq!(range(Some("bytes=5-99"), 10), Span::Part(5, 9));
         assert_eq!(range(Some("bytes=12-"), 10), Span::Unsatisfiable);
         assert_eq!(range(Some("bytes=0-1,4-5"), 10), Span::Whole);
+        assert_eq!(range(Some("bytes=0-"), 3 * CHUNK), Span::Part(0, CHUNK - 1));
+        assert_eq!(range(Some("bytes=10-"), 3 * CHUNK), Span::Part(10, CHUNK + 9));
+        assert_eq!(range(Some("bytes=0-"), CHUNK + 5), Span::Part(0, CHUNK - 1));
         assert_eq!(reveal_argv("macos", "/s/a.png"), ("open", vec!["-R".to_owned(), "/s/a.png".to_owned()]));
         assert_eq!(reveal_argv("linux", "/s/a.png"), ("xdg-open", vec!["/s".to_owned()]));
         assert_eq!(reveal_argv("windows", "C:\\s\\a.png").1, vec!["/select,C:\\s\\a.png".to_owned()]);
