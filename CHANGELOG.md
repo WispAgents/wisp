@@ -17,6 +17,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   deploy at a time, each kept with its commit: `wisp grid deploys`). The GitHub Action gets `deploy: plan|apply`,
   `hub` and `hub-key`. A project can name its `repo:`, cloned on apply; a hub's crew with `sandbox: job` runs each job
   in a sandbox the hub owns.
+- **Zen mode on one task.** **Ctrl+.** (⌃. on a Mac), or **⋯** → **Zen mode**, shows only the messages and answers in
+  that task's chat: no tool calls, thinking or in-between steps, whatever Settings → Chat says for the others. Press it
+  again to leave; each task remembers it in this browser.
 - **A review request starts a review.** `pr.review_requested` fires when someone is newly asked to review an open PR
   (polled with gh; app: **New trigger** → **Review requested**). With `reviewer: me` (app: **Reviews** → **Asked of
   me**; CLI: `--reviewer me`) it wakes only the teammate asked, so a team sharing the trigger runs one review.
