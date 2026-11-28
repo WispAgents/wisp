@@ -8,6 +8,7 @@ import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { Button, Code, englishT, Inline, Stack, Text, timeLabel, Wrap } from '@wisp/ui';
 import { t } from './i18n.ts';
+import './i18n/lazy.ts';
 
 export interface GridUrl {
   readonly id: string;

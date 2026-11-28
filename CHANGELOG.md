@@ -59,6 +59,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- A webhook trigger's grid URLs list loads its own strings, so its labels never show as raw keys.
+- `wisp grid deploy` in a folder with no `grid.yml` is a usage error (exit 2) that says `wisp grid init <team>` or `-f <formula>`.
 - **Issue and PR triggers with a project fire again.** `issue.opened`, `issue.labeled`, `pr.review_requested` and the
   CI triggers took their `project` as a filter on events that never say their project, so every event was dropped
   without a word. A polled event now comes from its trigger's project.

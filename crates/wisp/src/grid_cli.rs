@@ -60,8 +60,12 @@ fn slug_ok(s: &str) -> bool {
 /// The folder a hub command works on: the words' first, else this one; it must hold `grid.yml`.
 fn folder(o: &Opts, cwd: &Path) -> Result<(PathBuf, Target)> {
     let dir = o.words.get(1).map_or_else(|| cwd.to_owned(), |d| cwd.join(d));
-    let text = std::fs::read_to_string(dir.join(FILE))
-        .map_err(|_| CliError::said(format!("no {FILE} in {}: wisp grid init <team> makes one", dir.display())))?;
+    let text = std::fs::read_to_string(dir.join(FILE)).map_err(|_| {
+        CliError::usage(format!(
+            "no {FILE} in {}: wisp grid init <team> makes one, or wisp grid deploy -f <formula> for your own box",
+            dir.display()
+        ))
+    })?;
     let t = read_target(&text);
     if t.hub.is_empty() || t.team.is_empty() {
         return Err(CliError::said(format!("{} needs team: and hub:", dir.join(FILE).display())));
