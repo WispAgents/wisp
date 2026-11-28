@@ -172,11 +172,11 @@ fn commands(s: &mut Setup, slot: &Slot) {
     s.command::<api::Merge, _, _>(move |ctx, call, a| {
         let sl = sl.clone();
         async move {
-            let out = match get(&sl)?.merge_all(&call, &a.session).await {
+            let out = match get(&sl)?.merge_all(&call, &a.session, a.admin).await {
                 Ok(o) => o,
                 Err(e) => return Err(why(&ctx, &call, &a.session, e).await),
             };
-            track(&ctx, "merge", serde_json::json!({}));
+            track(&ctx, "merge", serde_json::json!({ "admin": a.admin }));
             Ok(out)
         }
     });

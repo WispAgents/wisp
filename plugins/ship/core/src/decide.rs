@@ -112,13 +112,28 @@ pub struct MergePlan {
 }
 
 /// Edge case Git 8. `pr_ref`: the number in the task's repo, or the URL of an attached PR.
-pub fn merge_plan(pr: &PrSummary, pr_ref: &str) -> Result<MergePlan, Refusal> {
+/// `admin`: bypass the base branch's rules (`gh pr merge --admin`), asked for after [`merge_blocked`].
+pub fn merge_plan(pr: &PrSummary, pr_ref: &str, admin: bool) -> Result<MergePlan, Refusal> {
     if !pr.is_open() {
         return Err(Refusal::Invalid(format!("PR #{} is {}.", pr.number, pr.state.to_lowercase())));
     }
     let ready = pr.draft.then(|| vec!["pr".into(), "ready".into(), pr_ref.to_owned()]);
-    let merge = vec!["pr".into(), "merge".into(), pr_ref.to_owned(), "--squash".into(), "--match-head-commit".into(), pr.head.clone()];
+    let mut merge = vec!["pr".into(), "merge".into(), pr_ref.to_owned(), "--squash".into(), "--match-head-commit".into(), pr.head.clone()];
+    if admin {
+        merge.push("--admin".into());
+    }
     Ok(MergePlan { ready, merge })
+}
+
+/// gh's refusal when the base branch's rules (required checks or reviews, a ruleset) hold the merge: "the base
+/// branch policy prohibits the merge" (gh 2.x). Its fix is `--admin` (bypass) or waiting, so the user picks.
+pub fn merge_blocked(gh_error: &str) -> bool {
+    gh_error.contains("base branch policy prohibits the merge")
+}
+
+/// What a blocked merge says (gh's own text names flags nobody types in wisp).
+pub fn blocked_text(number: u64) -> String {
+    format!("PR #{number} can't merge yet: the base branch's rules (required checks or reviews) aren't met.")
 }
 
 /// After a merge: wisp's own worktree and branch are tidied (locally and on the remote); a foreign

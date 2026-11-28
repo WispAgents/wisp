@@ -94,8 +94,17 @@ export const review = defineCommand<Task>({
 });
 
 /** POST /sessions/:id/merge: squash-merge each open PR, sync the local base, clean up. The confirm
- * came first; the merge itself takes seconds, so the flow shows it (not a guess at the result). */
-export const merge = defineCommand<Task, MergeResult>({ id: 'ship.merge', owner, wire, optimistic: 'none', pending: 'the ship.merge control' });
+ * came first; the merge itself takes seconds, so the flow shows it (not a guess at the result). `admin` bypasses the
+ * base branch's rules (`gh pr merge --admin`), asked after a `merge_blocked` refusal. */
+export const merge = defineCommand<Task & { readonly admin: boolean }, MergeResult>({
+  id: 'ship.merge',
+  owner,
+  wire,
+  optimistic: 'none',
+  pending: 'the ship.merge control',
+  // the merge flow says why itself: a branch-rules hold opens the bypass confirm, not a toast of gh's advice
+  quiet: true,
+});
 
 /** GET /sessions/:id/check-log: the end of a failing check's log, for Ask to fix. Reads only. */
 export const checkLog = defineCommand<Task & { readonly url: string }, { log: string }>({ id: 'ship.check_log', owner, wire, optimistic: 'none', pending: 'the ship.checkLog control' });

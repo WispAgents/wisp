@@ -735,6 +735,19 @@ export const COMMANDS: Record<string, CommandFn> = {
   // TRY-13: the task's agent writes its PR (the mock's answer, in the real Draft shape)
   'ship.write': () => ({ ops: [], result: { title: 'fix(login): wait for the session cookie', body: '## What\nThe login test waits for the session cookie.\n\n## Tested\n- npm test' } }),
   'accounts.recheck': () => ({ ops: [], result: {} }),
+  // the base branch's rules hold every merge (required checks or reviews), as a protected main does: the refusal
+  // the real wisp.ship sends (`merge_blocked`), so Merge opens its bypass confirm; `admin` (Bypass and merge) merges
+  'ship.merge': (a, ctx) => {
+    const id = str(obj(a), 'session');
+    const key = id.includes(':') ? id : `${ctx.peer}:${id}`;
+    const pr = obj(obj(obj(ctx.row('list', 'session', key))['summary'])['pr']);
+    if (!pr['number']) refuse('invalid', 'No pull request to merge.');
+    if (obj(a)['admin'] !== true) {
+      throw { code: 'forbidden', reason: 'merge_blocked', message: `PR #${String(pr['number'])} can't merge yet: the base branch's rules (required checks or reviews) aren't met.` };
+    }
+    const merged = { ...pr, state: 'MERGED' };
+    return { ops: [{ topic: 'list', e: 'session', id: key, op: 'patch', ops: [{ op: 'add', path: '/summary/pr', value: merged }] }], result: { pr: merged, sync: { ok: true, text: 'main is up to date.' } } };
+  },
   // the side panel's PR pane: the task's PR as wisp.ship's PrPanel (the `ask` seed's #812), none for the rest
   'ship.details': (a, ctx) => {
     const id = str(obj(a), 'session');
