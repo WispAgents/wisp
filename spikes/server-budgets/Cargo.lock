@@ -1116,6 +1116,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "wisp-git-api"
+version = "1.0.0-alpha.19"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "wisp-kernel",
+]
+
+[[package]]
 name = "wisp-harness-kit"
 version = "1.0.0-alpha.19"
 dependencies = [
@@ -1235,6 +1245,7 @@ dependencies = [
  "wisp-budget-api",
  "wisp-crew-api",
  "wisp-envmask",
+ "wisp-git-api",
  "wisp-issues-api",
  "wisp-kernel",
  "wisp-later-api",
