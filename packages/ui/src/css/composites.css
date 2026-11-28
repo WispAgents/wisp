@@ -12,6 +12,7 @@
     padding: var(--space-3) var(--space-5);
     border-radius: var(--radius-md);
     color: var(--ink);
+    cursor: pointer;
     transition: background var(--dur-fast);
   }
   [data-kit='list-row'][data-time] {

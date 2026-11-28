@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **A task's details read as one line of thought.** The column beside the turns now goes: the harness, 📁 *in* the project,
+  *on* the computer it runs on, its branch, then its usage and context (the usage used to sit between the project and
+  the computer). The narrow bar and the phone sheet are unchanged.
+
 ## [1.0.0-alpha.19] - 2026-11-28
 
 ### Added
@@ -71,6 +77,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **The sidebar's section headings and task rows show the pointer.** For later, Done and Archived showed the text cursor on hover, and so did a task row in the sidebar; both are clickable, so they show the hand now.
 - **This computer no longer stays on "Reading…".** A first look rebuilt the page's data from a week of saved changes (10–12 s), and once older ones were pruned it found nothing, for good. It reads the data as it is now. The same fix applies to every plugin pane whose data sits on a topic of its own (ADR-0144).
 - **A left-over worktree no longer fills the disk unseen.** "Can go" counted only left-over folders with no changes, so one with 580 changed screenshots and a 120 GB `target/` counted for nothing. Their build output counts now, and a low disk removes it (ADR-0144).
 - **Remove on This computer shows what it does.** A row says Removing… until it's gone, one harness's Remove no longer puts every row in waiting, the page updates the moment a cleanup ends instead of up to a minute later, and its toasts show (they went to a toaster that was never on screen).

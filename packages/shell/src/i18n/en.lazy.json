@@ -568,6 +568,8 @@
   "shell.task.checkpoint": "Git checkpoint before this turn on {branch} ({sha})",
   "shell.task.activity": "Show activity",
   "shell.task.tokens": "{n} tokens",
+  "shell.task.inProject": "in",
+  "shell.task.onMachine": "on",
   "shell.task.tokensTitle": "{n} tokens read and written",
   "shell.task.files.one": "{count} file",
   "shell.task.files.other": "{count} files",

@@ -196,6 +196,18 @@
     line-height: var(--lh-base);
     color: var(--muted);
   }
+  /* the project's chips sit straight in the bar (no box of their own) and the column's words ("in", "on") are hidden:
+     the narrow bar and the phone sheet read as before; the wide column below shows them */
+  [data-kit='it-in'] {
+    display: contents;
+  }
+  [data-kit='it-lead'],
+  [data-kit='it-in'] > [data-kit='icon'] {
+    display: none;
+  }
+  [data-kit='it-usage'] {
+    display: none;
+  }
   [data-kit='it-state'] {
     display: none;
   }
@@ -473,6 +485,58 @@
       gap: var(--space-4);
       margin-top: -6px;
       overflow: visible;
+    }
+    /* one sentence down the column (owner 2026-11-28): the harness, "📁 in wisp", "💻 on This computer", the branch,
+       then the usage; the folder icon (in the project's colour) leads its line as the other icons lead theirs, the
+       task's other folders follow on the same line and truncate first (layout.md: one line, never wrapped) */
+    [data-kit='it-in'] {
+      display: flex;
+      align-items: center;
+      column-gap: 6px;
+      min-width: 0;
+      font-size: var(--fs-sm);
+      line-height: 1.45;
+      color: var(--ink-2);
+    }
+    [data-kit='it-in'] > [data-kit='icon'] {
+      display: block;
+      width: 13px;
+      height: 13px;
+      flex: none;
+      margin-right: 3px;
+      color: var(--pc);
+    }
+    [data-kit='it-in'] > [data-kit='q-proj'] {
+      min-width: 3ch;
+      padding-left: 14px;
+    }
+    [data-kit='it-in'] > [data-kit='q-proj']::before {
+      left: 2px;
+    }
+    /* the task's own folder right after "in": the folder icon is its mark */
+    [data-kit='it-in'] > [data-kit='it-lead'] + [data-kit='q-proj'] {
+      padding-left: 0;
+    }
+    [data-kit='it-in'] > [data-kit='it-lead'] + [data-kit='q-proj']::before {
+      display: none;
+    }
+    [data-kit='it-lead'] {
+      display: inline;
+      flex: none;
+      min-width: 0;
+      color: var(--faint);
+    }
+    [data-kit='m-where'] > [data-kit='it-lead'] {
+      min-width: 0;
+      margin-right: 0.3em;
+    }
+    [data-kit='it-usage'] {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-4);
+      margin-top: -6px;
+      min-width: 0;
     }
     [data-kit='m-where'],
     [data-kit='m-branch'] {
