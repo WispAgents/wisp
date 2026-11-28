@@ -276,3 +276,50 @@ async fn a_member_signs_in_at_the_hub_from_the_grid() {
     assert_eq!(s, 401);
     g.done();
 }
+
+/// The Teams pages' forms (ADR-0147): a person makes a team and a deploy key in the browser, with the page's CSRF token,
+/// and the key is said once; a form without the token, or someone outside the team, changes nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_teams_pages_make_a_team_and_say_a_key_once() {
+    let g = rig("pages").await;
+    let u = g.grid.accounts.dev_user("ada").unwrap();
+    let cookie = format!("wisp_grid={}", g.grid.accounts.new_session(&u.id).unwrap());
+    let page = |path: &str| g.web.get(g.api(path)).header("cookie", &cookie).send();
+    let csrf_of = |html: &str| html.split(r#"name="csrf" value=""#).nth(1).unwrap().split('"').next().unwrap().to_owned();
+    let html = page("/teams").await.unwrap().text().await.unwrap();
+    assert!(html.contains("No teams yet"), "{html}");
+    let csrf = csrf_of(&html);
+    let post = |path: &str, form: Vec<(&str, String)>| {
+        let body: String =
+            url::form_urlencoded::Serializer::new(String::new()).extend_pairs(form.iter().map(|(k, v)| (*k, v.as_str()))).finish();
+        g.web
+            .post(g.api(path))
+            .header("cookie", &cookie)
+            .header("origin", g.grid.cfg.public_url.clone())
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+    };
+    let r = post("/teams", vec![("csrf", csrf.clone()), ("slug", "acme".into()), ("name", "Acme".into())]).await.unwrap();
+    assert_eq!(r.status(), 302);
+    assert_eq!(r.headers()["location"], "/teams/acme");
+    // stale form: nothing made
+    let r = post("/teams/acme/keys", vec![("csrf", "nope".into()), ("name", "ci".into())]).await.unwrap();
+    assert_eq!(r.status(), 403);
+    let r = post("/teams/acme/keys", vec![("csrf", csrf.clone()), ("name", "ci-main".into()), ("rights", "deploy".into())]).await.unwrap();
+    assert_eq!(r.status(), 303);
+    let held = r.headers()["set-cookie"].to_str().unwrap().split(';').next().unwrap().to_owned();
+    let both = format!("{cookie}; {held}");
+    let html = g.web.get(g.api("/teams/acme")).header("cookie", &both).send().await.unwrap().text().await.unwrap();
+    let key = html.split(r#"<code class="key">"#).nth(1).unwrap().split('<').next().unwrap().to_owned();
+    assert!(key.starts_with("wgh_"), "{key}");
+    let again = g.web.get(g.api("/teams/acme")).header("cookie", &both).send().await.unwrap().text().await.unwrap();
+    assert!(!again.contains(&key), "said once");
+    assert!(again.contains("ci-main"));
+    // someone outside the team sees nothing of it
+    let bo = g.grid.accounts.dev_user("bo").unwrap();
+    let bo_cookie = format!("wisp_grid={}", g.grid.accounts.new_session(&bo.id).unwrap());
+    let r = g.web.get(g.api("/teams/acme")).header("cookie", &bo_cookie).send().await.unwrap();
+    assert_eq!(r.status(), 302, "back to /teams with why");
+    g.done();
+}

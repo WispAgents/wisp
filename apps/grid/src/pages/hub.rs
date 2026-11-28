@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn a_signed_in_reader_has_the_grid_s_header() {
         let u = PageUser { handle: "ada".into(), ..PageUser::default() };
-        let nav = r#"<a href="/">Home</a><a href="/account">Account</a>"#;
+        let nav = r#"<a href="/">Home</a><a href="/teams">Teams</a><a href="/account">Account</a>"#;
         let c = ShareCard { id: "abc".into(), kind: "task".into(), ..ShareCard::default() };
         assert!(share_page(&cfg(), &c, &json!({}), Some(&u)).contains(nav));
         assert!(!share_page(&cfg(), &c, &json!({}), None).contains(nav));

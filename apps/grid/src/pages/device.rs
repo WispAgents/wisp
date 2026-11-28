@@ -297,7 +297,7 @@ mod tests {
     fn a_signed_in_message_page_has_the_grid_s_header_and_one_elsewhere_links_home() {
         let u = PageUser { handle: "ada".into(), ..PageUser::default() };
         let m = MessagePage { title: "Nothing here".into(), text: "No.".into(), user: Some(u.clone()), ..MessagePage::default() };
-        assert!(message_page(&cfg(), &m).contains(r#"<a href="/">Home</a><a href="/account">Account</a>"#));
+        assert!(message_page(&cfg(), &m).contains(r#"<a href="/">Home</a><a href="/teams">Teams</a><a href="/account">Account</a>"#));
         assert!(!message_page(&cfg(), &MessagePage { user: None, ..m }).contains(r#"<a href="/account">"#));
         // the offline page sits at the computer's own address: its header links to the grid's
         let p = OfflinePage {
@@ -308,7 +308,7 @@ mod tests {
             ..OfflinePage::default()
         };
         let h = offline_page(&cfg(), &p);
-        assert!(h.contains(r#"<a href="https://grid.test/">Home</a><a href="https://grid.test/account">Account</a>"#), "{h}");
+        assert!(h.contains(r#"<a href="https://grid.test/">Home</a><a href="https://grid.test/teams">Teams</a><a href="https://grid.test/account">Account</a>"#), "{h}");
     }
 
     #[test]

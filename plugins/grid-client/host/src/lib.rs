@@ -22,6 +22,7 @@ mod accounts;
 mod calls;
 mod cloud;
 pub mod computer;
+mod hub_peers;
 mod hubs;
 mod keys;
 mod net;
@@ -143,7 +144,14 @@ impl Plugin for GridClientPlugin {
         on!(s, slot, api::SandboxLogin, |st, a| async move { sandboxes::login(&st, &a).await });
         on!(s, slot, api::SandboxLogout, |st, a| async move { sandboxes::logout(&st, &a).await });
         on!(s, slot, api::SandboxEnv, |st, a| async move { sandboxes::env(&st, &a).await });
-        on!(s, slot, api::Teams, |st, a| async move { sandboxes::teams(&st, &a).await });
+        on!(s, slot, api::Teams, |st, a| async move {
+            let v = sandboxes::teams(&st, &a).await?;
+            // a new team has a hub; one you left (rm yourself) doesn't: the machines list follows
+            if matches!(a.op.as_str(), "new" | "create" | "rm" | "remove") {
+                calls::warn("the hubs of your teams", hub_peers::sync_hubs(&st).await);
+            }
+            Ok::<_, WireError>(v)
+        });
         on!(s, slot, api::Hubs, |st, _a| async move { hubs::list(&st).await });
         on!(s, slot, api::Hub, |st, a| async move { hubs::hub(&st, &a).await });
         on!(s, slot, api::HubInvite, |st, a| async move { hubs::invite(&st, &a).await });
@@ -165,6 +173,7 @@ impl Plugin for GridClientPlugin {
             let st2 = st.clone();
             st.ctx.spawn(async move {
                 calls::warn("the account's computers", peers::sync_computers(&st2).await);
+                calls::warn("the hubs of your teams", hub_peers::sync_hubs(&st2).await);
                 calls::warn("telling the grid of a sign-out", accounts::tell_pending(&st2).await);
             });
             Ok(())

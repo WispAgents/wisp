@@ -73,7 +73,12 @@ async fn grid(st: &Arc<St>, method: &str, path: &str, body: Option<&Value>) -> R
 
 pub async fn hub(st: &Arc<St>, a: &api::HubArgs) -> Result<Value> {
     let (method, path, body) = hub_call(a)?;
-    grid(st, method, &path, body.as_ref()).await
+    let v = grid(st, method, &path, body.as_ref()).await?;
+    // a hub joined, turned on or deleted: the machines list follows now, not at the next start
+    if matches!(a.op.as_str(), "join" | "create" | "delete") {
+        crate::calls::warn("the hubs of your teams", crate::hub_peers::sync_hubs(st).await);
+    }
+    Ok(v)
 }
 
 /// The hubs of your teams, from `/api/me`: `[{slug, name, role, url}]`.

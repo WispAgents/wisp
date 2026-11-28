@@ -83,6 +83,8 @@ mod shares_route;
 mod signin;
 #[path = "edge_sites.rs"]
 mod sites;
+#[path = "edge_teams_pages.rs"]
+mod teams_pages;
 #[path = "edge_waitlist.rs"]
 mod waitlist;
 pub use serve::{bytes_body, dev, serve};
@@ -325,6 +327,10 @@ impl Grid {
         let (head, body) = req.into_parts();
         let bytes = read_bytes(body, crate::shares::MAX_BYTES * 2).await?;
         let peer = head.extensions.get::<common::Peer>().map(|p| p.0);
+        // Teams and a team's hub (edge_teams_pages.rs, ADR-0147)
+        if let Some(r) = self.teams_pages(method.as_str(), parts.as_slice(), q, &head.headers, &bytes, &who).await {
+            return r;
+        }
         // the signed-in pages and their forms (edge_pages.rs)
         if let Some(r) = self.pages_route(method.as_str(), parts.as_slice(), q, &head.headers, &bytes, &who).await {
             return r;

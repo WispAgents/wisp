@@ -212,7 +212,8 @@ async fn grid_pages_say_who_is_signed_in() {
     // Home, Account and you, as Home does, once you're signed in; signed out they don't
     let g = rig("header").await;
     let ada = g.session("ada");
-    let nav = r#"<nav class="navt" aria-label="Your grid"><a href="/">Home</a><a href="/account">Account</a></nav>"#;
+    let nav =
+        r#"<nav class="navt" aria-label="Your grid"><a href="/">Home</a><a href="/teams">Teams</a><a href="/account">Account</a></nav>"#;
     for path in ["/nope", "/s/doesnotexist0000", "/gallery"] {
         let page = g.page(path, &ada).await;
         assert!(page.contains(nav) && page.contains(r#"<span class="who">ada</span>"#), "{path}: {page}");
