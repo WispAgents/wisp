@@ -35,6 +35,11 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - **wisp is a harness wrapper** for every harness (Claude Code, Codex, opencode, Cursor, …); the user doesn't read long
   agent sessions: wisp shows a presentation of what was done; you follow up from wisp (2026-10-16).
+- **Team hubs** (2026-11-28): the grid is where teams run their common agents. `wisp grid init` makes a folder of
+  agents, triggers and projects, deployed to the team's hub from the CLI or GitHub Actions on merge (like Terraform),
+  with deploy keys made in the grid; teams, members, admins and keys from the grid UI or the CLI; a GitHub App the team
+  installs for repo access (a `GH_TOKEN` fallback for self-hosted grids); tasks sandboxed inside the hub; the hub opens
+  as a wisp like the grid's and is a machine in the desktop app.
 - **Wisp as code** (2026-11-08): everything declarable in files (agents, crew, machines, tools, MCP, skills, tasks,
   formulas), imported, run with `--formula`, deployed to the grid; GUI, TUI and CLI are wrappers over it. Not "one
   file": references and modules like Terraform (11-08 23:52). Import happens in the UI too (11-09).
@@ -278,6 +283,13 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - [x] Events + triggers (ADR-0043, 0044)
 - [x] Grid leftovers: GitHub/Google sign-in, boxd container driver, sandboxes as peers, `wisp ssh`, teams in the CLI
+- [x] **Team hubs** (owner, 2026-11-28; ADR-0147): a team's own wisp on the grid (`teams.hub_user_id`, a box at
+      `<team>.<domain>`), people by role through the edge (`hub:member|viewer|deploy|plan`, a read-only set kind in the
+      kernel), invite links, `wgh_` deploy keys, sealed hub secrets, one deploy at a time with a history;
+      `wisp grid init|plan|deploy|deploys`, `wisp team …` hub ops, grid-client `hub*` commands; projects by `repo:`
+      (cloned on apply); a hub makes its own sandboxes; grid Teams pages; hubs as machines; the Action's `deploy:`;
+      guide `guides/declare/team-hubs`, site and README sections. Left: the GitHub App (webhooks and per-repo tokens;
+      `GH_TOKEN` as a hub secret meanwhile), spaces per team, OIDC instead of a stored key
 - [x] Terminal context (ADR-0023)
 - [x] Rest of the backend: chat transports, computer pane, update host, telemetry, settings, mentions, setup, copilot reader
 - [x] GitHub Action and image, git hook (ADR-0040)

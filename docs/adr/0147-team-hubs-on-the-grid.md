@@ -46,11 +46,14 @@ The edge opens a hub's address for **the team's members**, by their role. It tel
 | an owner or admin (session, device, cookie) | — | `box` (as a person's own box) | everything a box's person may |
 | a member | `member` | `hub:member` | start and follow up tasks, run triggers and workflows, read everything; no settings, secrets, plugins, accounts or resources |
 | a viewer | `viewer` | `hub:viewer` | read topics, sessions, stuff |
-| a deploy key (`wgh_…`) | `deploy` | `hub:deploy` | `resources:*` (kinds, plan, apply, export, refresh), `topic:read`, `edge:health`; nothing else |
+| a deploy key (`wgh_…`, rights deploy) | `deploy` | `hub:deploy` | plan and apply: what each kind reads and applies through its own plugin's commands (crew, triggers, projects…), but no work (no task, follow-up, wake, fire or run), no session, no secret, no machine, no key |
+| a plan key (`wgh_…`, rights plan) | `plan` | `hub:plan` | `hub:deploy`'s set, read-only |
 | anyone else | — | — | 403 "That hub is acme's: ask an owner to add you." |
 
 The trust table gets one credential, `HubKey`: it reaches `Box` (its own hub only, checked like a `wgk_` key's
-handle) and `GridHub` (the hub's deploy history), and nothing else. A `wgk_` key never opens a hub.
+handle) and nothing else; the deploy history is `GET /_grid/deploys` at the hub's own address. A `wgk_` key never opens
+a hub. A read-only set (`readOnly` in `capabilities.json`) is new in the kernel: a command that writes can't start
+under it (`dispatch.rs`), whatever its allow list says; viewers and plan keys hold one.
 
 ### 3. People: create, invite, roles
 
@@ -74,13 +77,13 @@ handle) and `GridHub` (the hub's deploy history), and nothing else. A `wgk_` key
 
 ### 5. Deploying: the folder, the plan, the history
 
-- `wisp grid init [dir] --team acme` writes a formula folder (ADR-0034): `grid.yml` (the grid's URL and the team),
-  `projects/`, `agents/`, `triggers/`, `workflows/` (empty), `README.md`, and `.github/workflows/wisp-hub.yml`.
+- `wisp grid init <team> [dir]` writes a formula folder (ADR-0034): `grid.yml` (the grid, the team and the hub's
+  address), `projects/`, `agents/`, `triggers/`, `README.md`, and `.github/workflows/wisp-hub.yml` at the repo's root.
   It never overwrites a file.
 - `wisp grid plan` / `wisp grid deploy [--yes] [--prune]` evaluate the folder on the caller's machine and run the same
   `resources.plan` / `resources.apply` as `wisp apply`, sent straight to the hub's address with
-  `Authorization: Bearer <key>` (`WISP_HUB_KEY`) or the person's device token. **No local wisp is needed**, so it works
-  in a bare CI runner.
+  `Authorization: Bearer <key>` (`WISP_HUB_KEY`): **no local wisp is needed**, so it works in a bare CI runner. Without
+  a key, through the person's own wisp and its grid sign-in (`grid-client.hubCall`, `resources.*` only).
 - The edge holds **one deploy at a time per hub**: a second `resources.apply` while one runs is refused with 409
   "deploy #14 by ci-main is running". A deploy that dies gives up its lock after 10 minutes.
 - Every apply that changed something is recorded (`team_deploys`): its number, who (person or key), its source
@@ -95,19 +98,23 @@ handle) and `GridHub` (the hub's deploy history), and nothing else. A `wgk_` key
   grid (the sandboxes' sealed env, keyed by the hub's account). `wisp team secret ls` lists names only.
 - The hub's box starts with them in its environment, and so does every sandbox the hub owns. A formula refers to them
   as `${env:NAME}` or `${secret:NAME}`. They are never in the repo.
-- Setting a secret restarts a running hub box once it's idle, so the next task sees the new value.
+- A running hub box gets a new value when it next starts: `wisp team restart acme` (or the hub's next sleep and wake).
 
 ### 7. Projects
 
-The `project` kind (ADR-0026) gains `repo` (`github.com/acme/api`) and `ref`. On a hub, a project with a `repo` and no
-`path` is cloned into the hub's home on apply and fetched before each task, with the hub's `GH_TOKEN`. Triggers and
-crew already point at projects by name.
+The `project` kind (ADR-0026) gains `repo` (`https://github.com/acme/api`, `git@…` or `acme/api`). A project with a
+`repo` and no `path` is cloned on apply (`git.clone`, `gh repo clone` first, so a hub's `GH_TOKEN` reaches a private
+repo) into `<wisp home>/repos/<project>/<repo>`, which becomes its path; a formula that names only the repo plans as
+unchanged once it's cloned (`normalize_named`). Triggers and crew already point at projects by name. A `ref`, and a
+fetch before each task, are later.
 
 ### 8. Tasks in sandboxes
 
-The hub's own box can make sandboxes for itself (`Box` credential, a hub's box only, counted against the hub's
-sandbox cap), so `/sandbox`, `sandbox.place` and crew members' `sandbox: true` work on a hub as on a laptop. A
-sandbox the hub owns gets the hub's secrets.
+The hub's own box can make sandboxes for itself (its `Box <handle> <secret>` credential, which the grid takes from a
+hub's box only, counted against the hub's sandbox cap), so `/sandbox`, `sandbox.place` and crew members'
+`sandbox: job` work on a hub as on a laptop. A sandbox the hub owns gets the hub's secrets. `wisp grid init`'s
+agent sets `sandbox: job`; a default of a sandbox for every hub task, and fork PRs always sandboxed, come with the
+GitHub App.
 
 ### 9. The desktop app and the GitHub Action
 

@@ -11,9 +11,9 @@ use crate::code::Opts;
 use crate::scripted::say;
 
 /// The `wisp team` words this file answers.
-pub const OPS: [&str; 18] = [
-    "hub", "open", "restart", "delete", "invite", "invites", "uninvite", "join", "role", "keys", "key", "unkey", "secrets", "secret",
-    "unset", "login", "logout", "deploys",
+pub const OPS: [&str; 19] = [
+    "help", "hub", "open", "restart", "delete", "invite", "invites", "uninvite", "join", "role", "keys", "key", "unkey", "secrets",
+    "secret", "unset", "login", "logout", "deploys",
 ];
 
 pub const USAGE: &str = "wisp team new <team> [name]        a team, and its hub: its own wisp at <team>.<grid>
@@ -83,6 +83,10 @@ pub async fn team(c: &Client, o: &Opts) -> Result<i32> {
         |what: &str| -> Result<()> { if team.is_empty() { Err(CliError::usage(format!("wisp team {op} <team>{what}"))) } else { Ok(()) } };
     let hub = |args: Value| async move { c.cmd("grid-client.hub", args).await };
     let out = match op.as_str() {
+        "help" => {
+            say(USAGE);
+            return Ok(0);
+        }
         "join" => {
             let v = hub(json!({ "op": "join", "code": team })).await?;
             say(&format!("  {} you're in {} as {}: {}", paint(&st, GREEN, "✓"), s(&v, "slug"), s(&v, "role"), s(&v, "url")));

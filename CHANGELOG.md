@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Team hubs: your team's own wisp on the Grid, deployed like Terraform.** Making a team (grid **Teams** → **New team**,
+  or `wisp team new acme`) makes its hub at `acme.<grid>`, where the team's shared agents and triggers run while
+  laptops sleep. People open it by their role (owner, admin, member, viewer) from the browser, the desktop app (each hub
+  is a machine, *Acme hub*), the TUI or `--on "Acme hub"`. Invite links (`wisp team invite`), deploy keys for CI
+  (`wisp team key`), and secrets kept on the grid (`wisp team secret`, `wisp team login acme claude`), all on the
+  team's page too. `wisp grid init acme ops/hub` writes a folder of projects, agents and triggers plus a GitHub workflow;
+  `wisp grid plan` / `wisp grid deploy` send it to the hub, as you or with `WISP_HUB_KEY` and no wisp running (one
+  deploy at a time, each kept with its commit: `wisp grid deploys`). The GitHub Action gets `deploy: plan|apply`,
+  `hub` and `hub-key`. A project can name its `repo:`, cloned on apply; a hub's crew with `sandbox: job` runs each job
+  in a sandbox the hub owns.
 - **A review request starts a review.** `pr.review_requested` fires when someone is newly asked to review an open PR
   (polled with gh; app: **New trigger** → **Review requested**). With `reviewer: me` (app: **Reviews** → **Asked of
   me**; CLI: `--reviewer me`) it wakes only the teammate asked, so a team sharing the trigger runs one review.

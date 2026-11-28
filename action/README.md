@@ -19,6 +19,15 @@ the task doesn't end well. It can also check the repo's `.wisp/` setup and post 
     check: plan
 ```
 
+```yaml
+# a team hub's folder (ADR-0147): planned on every pull request, deployed on every merge to main
+- uses: wisp-agents/action@v1
+  with:
+    hub: ops/hub                     # the folder with grid.yml (wisp grid init writes this workflow for you)
+    deploy: ${{ github.event_name == 'push' && 'apply' || 'plan' }}
+    hub-key: ${{ secrets.WISP_HUB_KEY }}   # wisp team key <team> ci, or the team page's Deploy keys
+```
+
 ## Inputs
 
 | input | what it does | default |
@@ -28,6 +37,9 @@ the task doesn't end well. It can also check the repo's `.wisp/` setup and post 
 | `task-file` | a task file to run (`wisp run -f <file>`, a `.task.yml`), instead of a prompt | |
 | `formula` | deprecated: the old name of `task-file`; still works, with a warning | |
 | `check` | `validate` or `plan`: runs `wisp validate` (and `wisp plan`) on `.wisp/`, posts the output as the pull request comment and step summary, and fails on problems or secrets that aren't set. Needs no prompt or task | |
+| `deploy` | `plan` or `apply`: plans the hub folder (`wisp grid plan`) or deploys it to its team's hub (`wisp grid deploy --yes`) with `hub-key`, straight to the hub's address; posts the output as the pull request comment and step summary. Needs no prompt or task | |
+| `hub` | the hub's folder (it holds `grid.yml`), for `deploy` | `.` |
+| `hub-key` | a deploy key for the hub (`wgh_…`); `plan` takes a plan-only key | |
 | `project` | the folder it runs in | `.` |
 | `agent` | the harness (claude, codex, opencode, …); the task's or wisp's default when left out | |
 | `model` | the model | |
@@ -44,7 +56,7 @@ Give one of `prompt`, `task`, `task-file` or `check`.
 | output | what it is |
 | --- | --- |
 | `task` | the task's id |
-| `state` | how it ended (`review`, `done`, `error`); with `check`, `ok` or `problems` |
+| `state` | how it ended (`review`, `done`, `error`); with `check`, `ok` or `problems`; with `deploy`, `planned`, `deployed` or `failed` |
 
 ## How the job ends
 

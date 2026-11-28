@@ -63,6 +63,49 @@ if [ -n "${WISP_CHECK:-}" ]; then
   exit 0
 fi
 
+# `deploy: plan|apply` (ADR-0147): a team hub's folder planned or deployed to its hub with a deploy key, straight to the
+# hub's address (no wisp runs here); the plan or what was applied goes on the pull request
+if [ -n "${WISP_DEPLOY:-}" ]; then
+  case "$WISP_DEPLOY" in
+    plan) verb=plan ;;
+    apply | deploy) verb=deploy ;;
+    *)
+      echo "::error::wisp: deploy is plan or apply, not $WISP_DEPLOY"
+      exit 2
+      ;;
+  esac
+  if [ -z "${WISP_HUB_KEY:-}" ]; then
+    echo "::error::wisp: deploy needs hub-key (a deploy key: wisp team key <team> <name>, kept in the repo's secrets)"
+    exit 2
+  fi
+  rc=0
+  said=$(WISP_HUB_KEY="$WISP_HUB_KEY" wisp grid "$verb" "${WISP_HUB_DIR:-.}" --yes 2>&1) || rc=$?
+  verdict=$([ "$rc" -ne 0 ] && echo failed || { [ "$verb" = plan ] && echo planned || echo deployed; })
+  {
+    echo "### wisp hub $verb: $verdict"
+    echo
+    echo '```'
+    printf '%s\n' "$said"
+    echo '```'
+  } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+  echo "state=$verdict" >> "${GITHUB_OUTPUT:-/dev/null}"
+  body=$(mktemp)
+  {
+    echo "**wisp hub $verb** ($verdict)"
+    echo
+    echo '```'
+    printf '%s\n' "$said"
+    echo '```'
+  } > "$body"
+  comment "$body"
+  printf '%s\n' "$said"
+  if [ "$rc" -ne 0 ]; then
+    echo "::error::wisp: the hub $verb failed"
+    exit 1
+  fi
+  exit 0
+fi
+
 # `formula` is the old name of `task-file`
 task_file=${WISP_TASK_FILE:-}
 if [ -z "$task_file" ] && [ -n "${WISP_FORMULA:-}" ]; then

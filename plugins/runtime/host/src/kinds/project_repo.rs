@@ -61,10 +61,10 @@ impl ProjectKind {
         let url = if repo.contains("://") || repo.starts_with("git@") { repo.to_owned() } else { format!("https://github.com/{repo}") };
         let got = self
             .ctx
-            .run_json(call, "git.clone", json!({ "url": url, "parent": parent }))
+            .run::<wisp_git_api::commands::Clone>(call, wisp_git_api::CloneRequest { url, parent })
             .await
             .map_err(|e| wisp_kernel::WireError::invalid(format!("project {name}: {repo} couldn't be cloned: {}", e.message)))?;
-        let at = got.get("dir").and_then(Value::as_str).unwrap_or_default();
+        let at = got.dir.as_str();
         if std::path::Path::new(at) != dir {
             return Err(wisp_kernel::WireError::invalid(format!(
                 "project {name}: {repo} was cloned to {at}, not {}: take that folder out and apply again",

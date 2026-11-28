@@ -5729,6 +5729,7 @@ dependencies = [
  "wisp-budget-api",
  "wisp-crew-api",
  "wisp-envmask",
+ "wisp-git-api",
  "wisp-issues-api",
  "wisp-kernel",
  "wisp-later-api",

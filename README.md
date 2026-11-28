@@ -103,7 +103,7 @@ this repo (`--agent codex`, `--agent all`). See [MCP from your harness](https://
 ## Guides
 
 - **Start with your agent:** [Claude Code](https://trywisp.dev/docs/guides/agents/claude-code/) · [Codex](https://trywisp.dev/docs/guides/agents/codex/) · [Cursor](https://trywisp.dev/docs/guides/agents/cursor/) · [opencode](https://trywisp.dev/docs/guides/agents/opencode/) · [Copilot](https://trywisp.dev/docs/guides/agents/copilot/) · [Grok](https://trywisp.dev/docs/guides/agents/grok/) · [Antigravity](https://trywisp.dev/docs/guides/agents/antigravity/)
-- **Declare:** [build a software factory as code](https://trywisp.dev/docs/guides/declare/software-factory-as-code/) · [share skills, AGENTS.md files and MCP servers with your team](https://trywisp.dev/docs/guides/declare/share-skills-and-mcps/)
+- **Declare:** [build a software factory as code](https://trywisp.dev/docs/guides/declare/software-factory-as-code/) · [a team hub on the Grid](https://trywisp.dev/docs/guides/declare/team-hubs/) · [share skills, AGENTS.md files and MCP servers with your team](https://trywisp.dev/docs/guides/declare/share-skills-and-mcps/)
 - **Run:** [run and follow up](https://trywisp.dev/docs/guides/run/run-and-follow-up/) · [compare and try it two ways](https://trywisp.dev/docs/guides/run/compare-and-try/) · [worktrees and shipping](https://trywisp.dev/docs/guides/run/worktrees-and-shipping/) · [goals and judges](https://trywisp.dev/docs/guides/run/goals/) · [review by another agent](https://trywisp.dev/docs/guides/run/review-by-another-agent/) · [crew and check-ins](https://trywisp.dev/docs/guides/run/crew-and-check-ins/) · [automations and triggers](https://trywisp.dev/docs/guides/run/schedules-and-triggers/) · [Slack, Linear, Telegram and more](https://trywisp.dev/docs/guides/run/from-slack-and-linear/) · [long threads](https://trywisp.dev/docs/guides/run/long-threads/) · [machines, the Grid and wisp Cloud](https://trywisp.dev/docs/guides/run/machines/) · [budgets and usage](https://trywisp.dev/docs/guides/run/budgets-and-usage/)
 - **Track:** [track your agents' work beside your code](https://trywisp.dev/docs/guides/track/track-agent-work/)
 - **Make it yours:** [plugins](https://trywisp.dev/docs/plugins/make-wisp-your-own/) · [import a wisp home](https://trywisp.dev/docs/migrate/import/)
@@ -115,6 +115,23 @@ this repo (`--agent codex`, `--agent all`). See [MCP from your harness](https://
 agents keep working when your laptop sleeps, and `wisp computer on` puts your own computers on it too, reachable from
 any browser with no SSH or open ports. Run the same service for your team on your own server with `wisp grid serve`.
 [More](https://trywisp.dev/cloud.html).
+
+## Team hubs
+
+A team gets its own wisp on the Grid: a **hub**, where its shared agents and triggers run while everyone's laptop is
+closed. Its people open it by their role, from the browser, the desktop app, the TUI or the CLI. Its agents, projects
+and triggers live in a folder in your repo, and deploy like infrastructure: plan each pull request, deploy each merge.
+
+```sh
+wisp team new acme                 # the team and its hub, at its own address
+wisp team invite acme member 5     # an invite link for five people
+wisp grid init acme ops/hub        # projects, agents, triggers, and a GitHub workflow
+wisp grid plan ops/hub             # what deploying would change on the hub
+wisp grid deploy ops/hub
+wisp team key acme ci              # a deploy key for CI: WISP_HUB_KEY
+```
+
+[Set up a team hub](https://trywisp.dev/docs/guides/declare/team-hubs/).
 
 ## Speed
 
