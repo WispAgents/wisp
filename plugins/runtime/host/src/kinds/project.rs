@@ -50,8 +50,13 @@ pub struct ProjectTrust {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectSpec {
-    /// the folder (absolute), or a repo URL cloned into the worktree dir
+    /// the folder (absolute); left out with `repo`, the folder wisp clones the repo into
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub path: String,
+    /// the repo (`https://github.com/acme/api`, `git@…`, or `acme/api`): with no `path`, wisp clones it on apply into a
+    /// folder of its own and works there (ADR-0148: how a team's hub gets its projects)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub repo: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub color: String,
     /// the agent profile or harness its tasks use unless they say

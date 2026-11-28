@@ -33,7 +33,7 @@ const FLASH: &str = "wisp_flash";
 /// Home's Getting-started steps you took (`a`, `t`) or dismissed (`x`), set by the page's own script (`HOME_JS`).
 const START: &str = "wisp_start";
 
-fn page_user(u: &UserRow) -> PageUser {
+pub(super) fn page_user(u: &UserRow) -> PageUser {
     PageUser { handle: u.handle.clone(), name: u.name.clone(), email: u.email.clone(), avatar: u.avatar.clone() }
 }
 
@@ -86,7 +86,7 @@ impl Grid {
         Some(r)
     }
 
-    fn csrf_of(h: &HeaderMap) -> String {
+    pub(super) fn csrf_of(h: &HeaderMap) -> String {
         Self::csrf(&cookies(h).get(COOKIE).cloned().unwrap_or_default())
     }
 
@@ -99,7 +99,7 @@ impl Grid {
     }
 
     /// The flash a form left for this page (or an old `?m=` link's).
-    fn flash_of(h: &HeaderMap, q: &str) -> (String, Tone) {
+    pub(super) fn flash_of(h: &HeaderMap, q: &str) -> (String, Tone) {
         if let Some(v) = cookies(h).get(FLASH).filter(|v| !v.is_empty()) {
             return match v.strip_prefix('!') {
                 Some(m) => (m.to_owned(), Tone::Bad),
@@ -110,7 +110,7 @@ impl Grid {
     }
 
     /// A page that showed the flash drops it.
-    fn shown(&self, h: &HeaderMap, mut r: Resp) -> Resp {
+    pub(super) fn shown(&self, h: &HeaderMap, mut r: Resp) -> Resp {
         if cookies(h).contains_key(FLASH) {
             add_cookie(&mut r, &cookie(FLASH, "", CookieOptions { secure: self.cfg.secure, max_age: Some(0), path: None, framed: false }));
         }
@@ -347,6 +347,10 @@ impl Grid {
     async fn delete_account(&self, u: &UserRow, confirm: &str) -> Result<Resp> {
         if confirm.trim().to_lowercase() != u.handle {
             return Ok(self.back("/account", &format!("Type {} to delete your account.", u.handle), true));
+        }
+        // a team keeps an owner (ADR-0148): its hub would be no one's
+        if let Some(t) = self.teams.sole_owner_of(&u.id)?.first() {
+            return Ok(self.back("/account", &format!("You're {t}'s only owner: make someone else owner, or delete {t}, first."), true));
         }
         self.delete_user(u).await?;
         Ok(self.cleared(redirect(&format!("/signin?m={}", encode_component("Your account is deleted.")), &[])))

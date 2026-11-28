@@ -62,7 +62,9 @@ fn peer(kernel: &Kernel, name: String) -> wisp_protocol::PeerInfo {
             wisp_protocol::PeerPlugin { id: s.id, version: s.version, commands, topics, blocks: Vec::new() }
         })
         .collect();
-    wisp_protocol::PeerInfo { peer: id, name, build: VERSION.into(), version: VERSION.into(), proto_min: 2, proto_max: 2, plugins }
+    // a team's hub (the grid says so, ADR-0148): its UI names it by its name, never "This computer"
+    let kind = env("WISP_HUB").filter(|v| v == "1").map(|_| "hub".to_owned());
+    wisp_protocol::PeerInfo { peer: id, name, build: VERSION.into(), version: VERSION.into(), proto_min: 2, proto_max: 2, plugins, kind }
 }
 
 /// How a task's agent reaches this wisp: the edge's address, and the task's own token (HMAC of the
@@ -354,7 +356,11 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     let hub = Hub::new();
     let notify: NotifyService = hub.clone();
     let at = Where { home: home.to_owned(), user_home: crate::services::user_home().unwrap_or_else(|| home.to_owned()) };
-    let fallback = if box_mode { Group::Box } else { Group::Default };
+    let fallback = match (box_mode, env("WISP_HUB").is_some_and(|v| v == "1")) {
+        (true, true) => Group::Hub,
+        (true, false) => Group::Box,
+        _ => Group::Default,
+    };
     let group = env("WISP_PLUGINS").and_then(|g| Group::named(&g)).unwrap_or(fallback);
     tracing::info!("plugins in this build: {:?}", crate::groups::compiled(group));
     // one server per home, before its store is opened or its server.json written; a second says where the first is

@@ -13,7 +13,7 @@ use crate::client::{CliError, Client, Result};
 use crate::scripted::say;
 
 /// The value: stdin when it's piped (its last newline dropped), else typed with nothing shown.
-fn value(name: &str) -> Result<String> {
+pub(crate) fn value(name: &str) -> Result<String> {
     let mut stdin = std::io::stdin();
     if !stdin.is_terminal() {
         let mut v = String::new();

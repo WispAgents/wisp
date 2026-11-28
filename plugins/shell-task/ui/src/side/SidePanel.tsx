@@ -22,6 +22,7 @@ import { ofTask, worktreeDir } from './changes.ts';
 import { FilePane } from './FilePane.tsx';
 import { PreviewPane } from './PreviewPane.tsx';
 import { WatchPane } from './WatchPane.tsx';
+import { useHere } from '@wisp/shell';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 /** How long the ⋯ shows its check after a copy (as the sign-in Copy, SettingsSignIn's COPIED_MS). */
@@ -64,6 +65,7 @@ const REFOCUS_MS = 1000;
 
 export function SidePanel(props: { readonly pane: SidePane; readonly file?: string }): JSX.Element {
   const shell = useShell();
+  const here = useHere();
   const task = useTask();
   const t = shell.t;
   // the panel's head and tabs paint in the press's frame; its body (a pane's rows, a terminal) is built in the frame
@@ -88,7 +90,7 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     // a synced row keeps its folder under `body` (audit A #19: read from the top, it was always empty, and the ⋯ had
     // only Copy branch name); a flat row (a test's, an optimistic one) at the top
     const dir = r?.body?.ext?.['wisp.worktrees']?.path ?? r?.ext?.['wisp.worktrees']?.path ?? sum.worktree?.path ?? r?.body?.cwd ?? r?.cwd ?? sum.cwd ?? '';
-    return { where: sum.machine?.name ?? t('shell-task.side.here'), remote: !!sum.machine, branch: sum.worktree?.branch ?? sum.branch ?? '', dirty: sum.toShip?.dirty ?? 0, dir };
+    return { where: sum.machine?.name ?? (here.hub() ? here.name() : t('shell-task.side.here')), remote: !!sum.machine, branch: sum.worktree?.branch ?? sum.branch ?? '', dirty: sum.toShip?.dirty ?? 0, dir };
   };
   // the place row's ⋯ (v1 panel.js placeMenu): copy where the work is, open it in the editor Settings names (its URL
   // scheme), or in the terminal app (wisp.terminal's terminal.app.open; only where one can open: this computer's desktop)

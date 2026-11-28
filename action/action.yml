@@ -23,6 +23,15 @@ inputs:
   check:
     description: "validate or plan: check the .wisp/ setup (wisp validate, and wisp plan) and post the plan, running nothing; fails on problems or secrets that aren't set. Needs no prompt or task"
     required: false
+  deploy:
+    description: "plan or apply: a team hub's folder (ADR-0148) planned (the plan posted on the pull request) or deployed to its hub, with hub-key; needs no prompt or task"
+    required: false
+  hub:
+    description: "The hub's folder (it holds grid.yml), for deploy"
+    default: .
+  hub-key:
+    description: "A deploy key for the hub (wisp team key <team> <name>), for deploy; plan accepts a plan-only key"
+    required: false
   project:
     description: The folder it runs in
     default: .
@@ -52,7 +61,7 @@ outputs:
     description: The task's id
     value: ${{ steps.run.outputs.task }}
   state:
-    description: How it ended (review, done, error; with check, ok or problems)
+    description: How it ended (review, done, error; with check, ok or problems; with deploy, planned, deployed or failed)
     value: ${{ steps.run.outputs.state }}
 runs:
   using: composite
@@ -73,6 +82,9 @@ runs:
         WISP_TASK_FILE: ${{ inputs.task-file }}
         WISP_FORMULA: ${{ inputs.formula }}
         WISP_CHECK: ${{ inputs.check }}
+        WISP_DEPLOY: ${{ inputs.deploy }}
+        WISP_HUB_DIR: ${{ inputs.hub }}
+        WISP_HUB_KEY: ${{ inputs.hub-key }}
         WISP_PROJECT: ${{ inputs.project }}
         WISP_AGENT: ${{ inputs.agent }}
         WISP_MODEL: ${{ inputs.model }}

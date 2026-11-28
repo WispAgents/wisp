@@ -317,8 +317,15 @@ pub fn filters_pass(spec: &TriggerSpec, ev: &TriggerEvent) -> bool {
         } else {
             ev.payload.get(k).cloned()
         };
-        // a project matches the payload's project or its folder
-        let field = if k == "project" { field.or_else(|| ev.payload.get("cwd").cloned()) } else { field };
+        // a project matches the payload's project or its folder: a hub's webhook event says both (its project's name
+        // and folder), and a trigger names its project either way
+        if k == "project" {
+            let cwd = ev.payload.get("cwd").cloned();
+            return match field {
+                Some(f) => takes(k, want, Some(&f)) || cwd.is_some_and(|c| takes(k, want, Some(&c))),
+                None => takes(k, want, cwd.as_ref()),
+            };
+        }
         takes(k, want, field.as_ref())
     })
 }

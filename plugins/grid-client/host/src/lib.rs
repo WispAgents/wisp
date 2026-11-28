@@ -22,7 +22,10 @@ mod accounts;
 mod calls;
 mod cloud;
 pub mod computer;
+mod github_token;
 mod hooks;
+mod hub_peers;
+mod hubs;
 mod keys;
 mod net;
 mod peers;
@@ -143,7 +146,21 @@ impl Plugin for GridClientPlugin {
         on!(s, slot, api::SandboxLogin, |st, a| async move { sandboxes::login(&st, &a).await });
         on!(s, slot, api::SandboxLogout, |st, a| async move { sandboxes::logout(&st, &a).await });
         on!(s, slot, api::SandboxEnv, |st, a| async move { sandboxes::env(&st, &a).await });
-        on!(s, slot, api::Teams, |st, a| async move { sandboxes::teams(&st, &a).await });
+        on!(s, slot, api::Teams, |st, a| async move {
+            let v = sandboxes::teams(&st, &a).await?;
+            // a new team has a hub; one you left (rm yourself) doesn't: the machines list follows
+            if matches!(a.op.as_str(), "new" | "create" | "rm" | "remove") {
+                calls::warn("the hubs of your teams", hub_peers::sync_hubs(&st).await);
+            }
+            Ok::<_, WireError>(v)
+        });
+        on!(s, slot, api::Hubs, |st, _a| async move { hubs::list(&st).await });
+        on!(s, slot, api::Hub, |st, a| async move { hubs::hub(&st, &a).await });
+        on!(s, slot, api::HubInvite, |st, a| async move { hubs::invite(&st, &a).await });
+        on!(s, slot, api::HubKeyCreate, |st, a| async move { hubs::key_create(&st, &a).await });
+        on!(s, slot, api::HubSecretSet, |st, a| async move { hubs::secret_set(&st, &a).await });
+        on!(s, slot, api::HubCall, |st, a| async move { hubs::call(&st, &a).await });
+        on!(s, slot, api::HubHookCreate, |st, a| async move { hubs::hook_create(&st, &a).await });
         on!(s, slot, api::KeyList, |st, _a| async move { keys::list(&st).await });
         on!(s, slot, api::KeyCreate, |st, a| async move { keys::create(&st, &a.name).await });
         on!(s, slot, api::KeyRevoke, |st, a| async move { keys::revoke(&st, &a.id).await });
@@ -159,9 +176,12 @@ impl Plugin for GridClientPlugin {
             let _ = slot.set(st.clone());
             computer::resume(&st).await;
             view::publish(&st);
+            // a team hub's box keeps its GitHub App token fresh for gh and git (ADR-0148 §8e)
+            github_token::start(&st);
             let st2 = st.clone();
             st.ctx.spawn(async move {
                 calls::warn("the account's computers", peers::sync_computers(&st2).await);
+                calls::warn("the hubs of your teams", hub_peers::sync_hubs(&st2).await);
                 calls::warn("telling the grid of a sign-out", accounts::tell_pending(&st2).await);
             });
             Ok(())

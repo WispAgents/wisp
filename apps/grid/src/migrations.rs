@@ -179,6 +179,35 @@ pub const MIGRATIONS: &[&str] = &[
      delivery TEXT, sealed TEXT NOT NULL, size INTEGER NOT NULL, at INTEGER NOT NULL,
      tries INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, UNIQUE(hook_id, delivery));
    CREATE INDEX hook_held_computer ON hook_held(computer_id, id);",
+    // ADR-0148: a team's hub is an account of its own (a users row with the team's slug and no identity), so it gets a
+    // box like anyone's. Invite links, deploy keys (`wgt_`), deploys and its webhook trigger URLs (`team_hooks`, ADR-0147's tokens at the hub's
+    // address) belong to the team and go with it.
+    r"ALTER TABLE teams ADD COLUMN hub_user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+   CREATE UNIQUE INDEX teams_hub ON teams(hub_user_id) WHERE hub_user_id IS NOT NULL;
+   CREATE TABLE team_invites (
+     id TEXT PRIMARY KEY, team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE, code_hash TEXT UNIQUE NOT NULL,
+     role TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+     uses_left INTEGER NOT NULL, revoked_at INTEGER);
+   CREATE INDEX team_invites_team ON team_invites(team_id);
+   CREATE TABLE team_keys (
+     id TEXT PRIMARY KEY, team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE, name TEXT NOT NULL,
+     token_hash TEXT UNIQUE NOT NULL, hint TEXT NOT NULL, rights TEXT NOT NULL, created_by TEXT NOT NULL,
+     created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
+   CREATE INDEX team_keys_team ON team_keys(team_id);
+   CREATE TABLE team_deploys (
+     team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE, n INTEGER NOT NULL, by_kind TEXT NOT NULL,
+     by_name TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', state TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '{}',
+     error TEXT, started_at INTEGER NOT NULL, finished_at INTEGER, PRIMARY KEY (team_id, n));
+   CREATE TABLE team_hooks (
+     id TEXT PRIMARY KEY, team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE, trigger TEXT NOT NULL,
+     token_hash TEXT UNIQUE NOT NULL, hint TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
+     last_used_at INTEGER, calls INTEGER NOT NULL DEFAULT 0, revoked_at INTEGER);
+   CREATE INDEX team_hooks_team ON team_hooks(team_id);",
+    // ADR-0148 §8e: the GitHub App installation a team connected to its hub (one each way: an installation is one
+    // team's), proven its installer's at connect time
+    r"CREATE TABLE team_github (
+     team_id TEXT PRIMARY KEY REFERENCES teams(id) ON DELETE CASCADE, installation_id INTEGER UNIQUE NOT NULL,
+     account TEXT NOT NULL, connected_by TEXT NOT NULL, connected_at INTEGER NOT NULL);",
 ];
 
 /// Every table the migrations make (and `meta`), for tests and `wisp grid backup` checks.

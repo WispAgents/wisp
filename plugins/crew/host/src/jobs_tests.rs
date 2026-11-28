@@ -516,3 +516,28 @@ async fn a_job_gets_the_members_folders_and_fallbacks() {
     let picks: Vec<(Option<&str>, Option<&str>)> = s.fallbacks.iter().map(|f| (f.agent.as_deref(), f.model.as_deref())).collect();
     assert_eq!(picks, [(Some("codex"), Some("gpt-5.5")), (None, Some("sonnet"))]);
 }
+
+/// ADR-0148: a trigger's project is where a woken member's job works, not the member's own folder (a team hub's
+/// triager wakes on an issue in the repo the trigger names: `crew.wake {cwd}`); with none, the member's own.
+#[tokio::test]
+async fn a_job_with_a_folder_works_there_and_without_one_in_the_members() {
+    let rt = Rt::default();
+    let (_k, ctx, st, _clock) = kernel(&rt).await;
+    let m = Member {
+        id: "tri1".into(),
+        name: "Triager".into(),
+        agent: "claude".into(),
+        mode: "plan".into(),
+        parallel: 2,
+        cwd: "/repo/own".into(),
+        ..Member::default()
+    };
+    st.insert(m.clone());
+    let call = ctx.root_call();
+    assign(&ctx, &call, &st, &m, WaitingJob { cwd: Some("/hub/repos/app/api".into()), ..job("an issue") }).await.unwrap();
+    assign(&ctx, &call, &st, &m, job("another")).await.unwrap();
+    let mut cwds: Vec<String> = rt.made().into_iter().map(|s| s.cwd).collect();
+    cwds.sort();
+    assert_eq!(cwds, ["/hub/repos/app/api", "/repo/own"]);
+    assert_eq!(st.member("tri1").unwrap().cwd, "/repo/own", "the member's own folder is left as it was");
+}

@@ -5,7 +5,7 @@
 // the command's own words say what to do.
 import { createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
-import { useShell } from '@wisp/shell';
+import { useHere, useShell } from '@wisp/shell';
 import { Button, Code, englishT, Inline, Stack, Text, timeLabel, Wrap } from '@wisp/ui';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
@@ -40,6 +40,7 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
 export function GridUrls(props: { readonly client: PluginClient; readonly trigger: string }): JSX.Element {
   const c = props.client;
   const shell = useShell();
+  const here = useHere();
   const [rows, setRows] = createSignal<readonly GridUrl[] | undefined>();
   const [failed, setFailed] = createSignal('');
   const [making, setMaking] = createSignal(false);
@@ -95,7 +96,7 @@ export function GridUrls(props: { readonly client: PluginClient; readonly trigge
         {(url) => (
           <Stack gap="2" part="automations.form.gridUrl.new">
             <Code block>{url()}</Code>
-            <Text tone="muted">{t('automations.form.gridUrl.once')}</Text>
+            <Text tone="muted">{t(here.hub() ? 'automations.form.gridUrl.onceHub' : 'automations.form.gridUrl.once')}</Text>
             <Inline gap="2">
               <Button size="sm" variant="primary" icon="copy" part="automations.form.gridUrl.copy" onClick={() => copy(url())}>
                 {t('automations.form.gridUrl.copy')}

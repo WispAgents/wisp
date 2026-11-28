@@ -4,6 +4,7 @@
 //! crate isn't in this build is skipped (and `wisp plugin` says so).
 //!   `DefaultPlugins`   everything wisp ships: `wisp` on a laptop and the desktop app
 //!   `BoxPlugins`       Default minus machines and update: a grid box (its proc is the grid's)
+//!   `HubPlugins`       Box with machines: a team's hub box, whose sandbox plugin adds the sandboxes it makes (ADR-0148)
 //!   `HeadlessPlugins`  runtime, the harnesses, git, mcp: CI, `wisp mcp`, servers
 //!   `MinimalPlugins`   runtime, one harness: the smallest working wisp, and the base for tests
 use std::path::PathBuf;
@@ -76,6 +77,9 @@ pub const DEFAULT: [&str; 54] = [
 ];
 /// A grid box serves the web frontend only (ADR-0024).
 pub const BOX_OFF: [&str; 3] = ["machines", "update", "cli"];
+/// A team's hub box (ADR-0148 §8): a box that keeps machines, so its sandboxes are peers it reaches. People there still
+/// can't (every box and hub set denies `machines:*`); only plugins, on their own grants.
+pub const HUB_OFF: [&str; 2] = ["update", "cli"];
 pub const HEADLESS: [&str; 16] = [
     "cli",
     "resources",
@@ -100,16 +104,18 @@ pub const MINIMAL: [&str; 5] = ["cli", "resources", "settings", "runtime", "clau
 pub enum Group {
     Default,
     Box,
+    Hub,
     Headless,
     Minimal,
 }
 
 impl Group {
-    /// `WISP_PLUGINS=default|box|headless|minimal` (a box defaults to `box`).
+    /// `WISP_PLUGINS=default|box|hub|headless|minimal` (a box defaults to `box`, a team's hub box to `hub`).
     pub fn named(name: &str) -> Option<Self> {
         match name {
             "default" => Some(Self::Default),
             "box" => Some(Self::Box),
+            "hub" => Some(Self::Hub),
             "headless" => Some(Self::Headless),
             "minimal" => Some(Self::Minimal),
             _ => None,
@@ -121,6 +127,7 @@ impl Group {
         let all: Vec<&'static str> = match self {
             Self::Default => DEFAULT.to_vec(),
             Self::Box => DEFAULT.iter().copied().filter(|n| !BOX_OFF.contains(n)).collect(),
+            Self::Hub => DEFAULT.iter().copied().filter(|n| !HUB_OFF.contains(n)).collect(),
             Self::Headless => HEADLESS.to_vec(),
             Self::Minimal => MINIMAL.to_vec(),
         };
@@ -343,9 +350,11 @@ mod tests {
         assert!(d.iter().all(|n| d.iter().filter(|m| *m == n).count() == 1), "no plugin twice");
         let b = Group::Box.names();
         assert!(!b.contains(&"machines") && !b.contains(&"update") && !b.contains(&"cli") && b.contains(&"runtime"));
+        let h = Group::Hub.names();
+        assert!(h.contains(&"machines") && h.contains(&"sandbox") && !h.contains(&"update") && !h.contains(&"cli"));
         assert!(HARNESSES.iter().all(|h| Group::Headless.names().contains(h)));
         assert_eq!(Group::Minimal.names(), ["cli", "resources", "settings", "runtime", "claude"]);
-        for g in [Group::Box, Group::Headless, Group::Minimal] {
+        for g in [Group::Box, Group::Hub, Group::Headless, Group::Minimal] {
             assert!(g.names().iter().all(|n| d.contains(n)), "every group is part of Default");
         }
         assert!(compiled(Group::Default).iter().all(|n| in_build(n)));

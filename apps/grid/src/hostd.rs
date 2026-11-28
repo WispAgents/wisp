@@ -91,6 +91,8 @@ struct Inst {
     stopped_at: Option<i64>,
     /// its next scheduled task, as its `/api/status` last said (v1 hostd.js `nextWakeAt`)
     next_wake_at: Option<i64>,
+    /// the next wake it had as it started: kept while it's new and says none yet (its plugins still loading)
+    wake_before: Option<i64>,
     /// its own last activity, from `/api/status`, or the last use the edge saw
     last_active_at: Option<i64>,
     /// the timer that wakes it for `next_wake_at` while it sleeps
@@ -251,7 +253,7 @@ impl ProcessHost {
                 (BoxState::Running, Some(port), secret, Some(child), Some(now), now, run_id);
             // awake now: its schedule is its own again until it next sleeps (v1). Only now: a start that didn't come
             // up leaves the box asleep with its schedule, so its wake still comes (grid-r2-2)
-            i.next_wake_at = None;
+            i.wake_before = i.next_wake_at.take();
             if let Some(w) = i.wake.take() {
                 w.abort();
             }

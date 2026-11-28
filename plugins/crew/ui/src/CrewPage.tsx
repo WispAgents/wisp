@@ -5,7 +5,7 @@
 // toast when refused.
 import { createMemo, createSignal, For, lazy, Show, type JSX } from 'solid-js';
 import { uuidv7 } from '@wisp/client';
-import { useShell, type ExtensionProps } from '@wisp/shell';
+import { useHere, useShell, type ExtensionProps } from '@wisp/shell';
 import {
   Button,
   CrewEmpty,
@@ -59,6 +59,7 @@ export default function CrewScreen(props: ExtensionProps): JSX.Element {
 function CrewPage(props: ExtensionProps): JSX.Element {
   const c = props.client;
   const shell = useShell();
+  const here = useHere();
   const data = crewData(c);
   const members = useSignal(data.members);
   const states = useSignal(data.states);
@@ -266,7 +267,7 @@ function CrewPage(props: ExtensionProps): JSX.Element {
                   part: 'crew.details crew.side',
                   content: () => (
                     <>
-                      <CrewFacts items={facts(m(), { t: say as never, harness, place: (id) => id, onTeam: () => c.navigate({ t: 'openView', id: VIEW.org as never, params: null }) })} />
+                      <CrewFacts items={facts(m(), { t: say as never, harness, place: (id) => id, ...(here.hub() && { here: here.name() }), onTeam: () => c.navigate({ t: 'openView', id: VIEW.org as never, params: null }) })} />
                       <CrewSideActions
                         items={[
                           { icon: 'clock', label: t('wisp.crew.page.checkin'), act: { onClick: checkin } },

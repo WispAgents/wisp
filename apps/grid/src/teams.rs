@@ -83,7 +83,7 @@ impl Teams {
         Ok(r.as_deref().and_then(Role::parse))
     }
 
-    /// A new team, with its maker as owner.
+    /// A new team, with its maker as owner, and its hub (`hubs.rs`). 409 when the slug is a team, a handle or reserved.
     pub fn create(&self, user: &UserRow, slug: &str, name: &str) -> Result<Value> {
         let slug = slug.trim().to_ascii_lowercase();
         if !slug_ok(&slug) {
@@ -101,9 +101,11 @@ impl Teams {
                 "INSERT INTO team_members (team_id, user_id, role, created_at) VALUES (?1, ?2, 'owner', ?3)",
                 params![id, user.id, now],
             )?;
+            // the team's hub (ADR-0148): its own account, so it gets a box at <slug>.<domain>
+            crate::hubs::make(tx, &id, &slug, &name, now)?;
             Ok(())
         })?;
-        Ok(json!({ "slug": slug, "name": name, "role": "owner" }))
+        Ok(json!({ "slug": slug, "name": name, "role": "owner", "hub": true }))
     }
 
     /// `actor` adds `handle` (or changes their role).
@@ -118,6 +120,9 @@ impl Teams {
             .db
             .with(|c| c.query_row("SELECT id FROM users WHERE handle = ?1", [handle], |r| r.get(0)).optional())?
             .ok_or_else(|| bad(format!("There's nobody called {handle} here."), 404))?;
+        if self.is_hub(&uid)? {
+            return Err(bad(format!("{handle} is a team's hub, not a person."), 400));
+        }
         if self.role(&uid, slug)? == Some(Role::Owner) && mine != Role::Owner {
             return Err(bad("Only an owner changes an owner's role.", 403));
         }

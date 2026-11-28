@@ -152,6 +152,18 @@ form.inline{display:inline}
 @media (pointer:coarse){.navt a,.t-go,.top .me a{min-height:44px}.m-acts .primary,.m-acts .ghost,.more,.add-pop>summary,.s-head .ghost,.a-main .ghost{height:44px}.more{width:44px}.copy{height:44px}}
 @media (prefers-reduced-motion:reduce){.t-go svg{transition:none}.dot{animation:none!important}.state i{animation:none!important}}
 .going{pointer-events:none;opacity:.55;cursor:progress}.primary.wait>svg,.ghost.wait>svg{display:none}.wait{pointer-events:none;opacity:.75}.wait::after{content:'';width:12px;height:12px;flex:none;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:wait-spin .7s linear infinite}@keyframes wait-spin{to{transform:rotate(360deg)}}
+/* Teams (ADR-0148): a hub's people, links, keys, secrets, deploys, in Account's rows */
+.acct .a-main.solo{grid-column:1/-1;max-width:720px}
+a.r.link{color:inherit;text-decoration:none;cursor:pointer}a.r.link:hover{background:var(--bg-2)}a.r.link .ic:last-child{color:var(--faint)}
+.key-f select.input,.key-f .input.sel{flex:none;width:auto;height:32px;padding:0 28px 0 10px;font:13px var(--sans);cursor:pointer}
+.key-f .input.num{flex:none;width:64px}
+.r .av.sm{width:26px;height:26px;font-size:12px}
+.pill.on{color:var(--good);border-color:color-mix(in srgb,var(--good) 35%,var(--line))}.pill.on .dot{background:var(--good)}
+.pill.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
+.counts{font:12px var(--mono);color:var(--muted);font-weight:400}
+.crumb{margin:0 0 4px;font-size:12.5px}.crumb a{color:var(--muted);text-decoration:none;cursor:pointer}.crumb a:hover{color:var(--ink)}
+#hub .primary{flex:none;height:32px}
+@media (max-width:640px){.key-f{flex-wrap:wrap}.key-f .input{min-width:0}#hub .r{flex-wrap:wrap}}
 "#;
 
 /// What a locked share adds to it.

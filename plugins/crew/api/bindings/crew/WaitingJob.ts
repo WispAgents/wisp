@@ -24,4 +24,8 @@ unattended?: boolean, run?: RunPick,
 /**
  * the channel thread it came from, which its answer goes back to
  */
-thread?: Record<string, unknown>, at: number, };
+thread?: Record<string, unknown>, 
+/**
+ * the folder it works in instead of the member's own: a trigger's project (ADR-0148). Additive.
+ */
+cwd?: string, at: number, };

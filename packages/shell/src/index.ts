@@ -28,6 +28,7 @@ export { platformKind, type PlatformKind } from './platform/kind.ts';
 export type * from './platform/types.ts';
 export { routeOf, routeTip, type RouteSeen } from './frame/auto.ts';
 export { PROJECT_ORDER, movedOrder, projectList, projectOf, type ProjectView } from './frame/rows-view.ts';
+export { useHere, type Here } from './frame/use-here.ts';
 export { remoteUiDefs, RemoteView, clean as cleanDescriptor, frameDoc, SANDBOX as REMOTE_SANDBOX, CSP as REMOTE_CSP, type RemoteUi } from './remote/index.ts';
 export { COMPUTERS_VIEW, DESTINATIONS, destinationOf, destinationsOf, intentOf, type Destination, type DestinationId } from './frame/destinations.ts';
 // Auto's one switch (`runtime.auto`, default off: owner, 2026-11-17): plugins that show Auto ask it

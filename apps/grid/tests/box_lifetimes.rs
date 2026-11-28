@@ -43,6 +43,17 @@ fn fake_box_serve() {
         while r.read_line(&mut h).is_ok_and(|n| n > 2) {
             h.clear();
         }
+        if line.contains("/api/events") {
+            // a sync stream: its head, then held open (on a thread of its own, so the box goes on answering)
+            let mut s = r.into_inner();
+            let _ = write!(s, "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n3\r\n:\n\n\r\n");
+            let _ = s.flush();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(60));
+                drop(s);
+            });
+            continue;
+        }
         if line.contains("/_die") {
             let mut s = r.into_inner();
             let _ = write!(s, "HTTP/1.1 200 OK\r\ncontent-length: 3\r\nconnection: close\r\n\r\nbye");
@@ -246,6 +257,54 @@ async fn home_says_when_the_cloud_wisp_started_slept_and_wakes_next() {
     // asleep since when, and what wakes it next: on the row, and in its ⋯ with the machine
     assert!(home.contains("Asleep · since just now · opens in a few seconds · next schedule "), "{home}");
     assert!(home.contains("<small>Next schedule: ") && !home.contains("Next schedule: nothing scheduled"), "{home}");
+    g.done().await;
+}
+
+/// A hub's link to its sandbox (ADR-0148) kept the sandbox up all day: the link's passive event stream counted as a
+/// request in flight, so the box was never idle. A passive stream is watching: the box sleeps under it. Anyone else's
+/// open stream (a browser's) still holds it up.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_passive_event_stream_never_keeps_a_box_up_and_anyone_elses_does() {
+    let g = rig_with("watched", None, |o| o.idle_ms = 300).await;
+    let cookie = g.session();
+    let stream = |passive: bool| {
+        let mut r = g.c.get(format!("http://ada.wisp.localhost:{}/api/events?client_id=c1", g.port)).header("cookie", &cookie);
+        if passive {
+            r = r.header("x-wisp-passive", "1");
+        }
+        r.send()
+    };
+    assert_eq!(g.open(&cookie).await, "fake box");
+    until("it runs", || g.row().0 == "running").await;
+    let open = stream(false).await.unwrap();
+    assert_eq!(open.status(), 200);
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert_eq!(g.row().0, "running", "an open stream that isn't passive holds the box up");
+    drop(open);
+    g.open(&cookie).await;
+    let watching = stream(true).await.unwrap();
+    assert_eq!(watching.status(), 200);
+    until("it sleeps under a passive stream", || g.row().0 == "stopped").await;
+    assert_eq!(g.row().4.as_deref(), Some("idle"));
+    drop(watching);
+    g.done().await;
+}
+
+/// A box just started says no next wake until its plugins load. The grid restarting in those seconds stopped a hub with
+/// none recorded, and it never woke for its triggers again (ADR-0148): a next wake still ahead is kept.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_box_that_says_no_next_wake_as_it_starts_keeps_the_one_ahead() {
+    let g = rig("keeps-wake", None).await;
+    let cookie = g.session();
+    let ahead = wisp_grid::clock::system().now_ms() + 3_600_000;
+    let bu = wisp_grid::rows::BoxUser { id: g.uid(), handle: "ada".into(), sandbox: None, owner: None };
+    g.grid.boxes.restore(&bu, Some(ahead));
+    assert_eq!(g.open(&cookie).await, "fake box");
+    // a few ticks of `nextWakeAt: null`
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    g.grid.boxes.stop(&g.uid(), "grid stopped").await.unwrap();
+    until("its stop is recorded", || g.row().0 == "stopped").await;
+    assert_eq!(g.row().3, Some(ahead), "the schedule it had is still the one it wakes for");
     g.done().await;
 }
 

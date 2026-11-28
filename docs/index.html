@@ -334,6 +334,29 @@ wisp grid serve   <span class="muted"># run a Grid on your own server</span></co
     </div>
   </section>
 
+  <section id="hubs" aria-labelledby="hubs-h">
+    <div class="pillar">
+      <div>
+        <p class="eyebrow">Team hubs</p>
+        <h2 id="hubs-h">Your team’s agents, deployed like infrastructure<span class="tag">New</span></h2>
+        <p class="muted">A team gets its own wisp on the Grid: a hub where its shared agents and triggers run, day and night. Declare them in a folder in your repo, plan every pull request and deploy every merge with a deploy key. Invite people with a link, and each opens the hub with their role: from the browser, the desktop app, the TUI or the CLI. Secrets stay on the grid, and each job can run in a sandbox of its own.</p>
+        <p><a class="btn ghost" href="/docs/guides/declare/team-hubs/">Set up a team hub <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
+      </div>
+      <div class="ways">
+  <div class="ways-tabs" role="tablist" aria-label="Do it from"><button type="button" role="tab" id="w5-desktop" aria-controls="w5-desktopp" data-way-pick="desktop" aria-selected="true">Desktop app</button><button type="button" role="tab" id="w5-phone" aria-controls="w5-phonep" data-way-pick="phone" aria-selected="false" tabindex="-1">Phone app</button><button type="button" role="tab" id="w5-tui" aria-controls="w5-tuip" data-way-pick="tui" aria-selected="false" tabindex="-1">TUI</button><button type="button" role="tab" id="w5-cli" aria-controls="w5-clip" data-way-pick="cli" aria-selected="false" tabindex="-1">CLI</button><span class="label">A hub for your team</span></div>
+  <div class="way" data-k="desktop" role="tabpanel" id="w5-desktopp" aria-labelledby="w5-desktop"><ol><li>On your grid: <b>Teams</b> → <b>New team</b>. The team gets its hub, at its own address.</li><li><b>Invite links</b> for your people; <b>Deploy keys</b> for CI; <b>Secrets</b> for its GitHub token and Claude sign-in.</li><li>In the app, the hub is one more machine (<b>Acme hub</b>), and its tasks are in your list.</li></ol></div>
+  <div class="way" data-k="phone" role="tabpanel" id="w5-phonep" aria-labelledby="w5-phone"><ol><li>Open your grid in the phone’s browser → <b>Teams</b>.</li><li>Pick the team → <b>Open the hub</b>: the same wisp, as you, with your role.</li></ol></div>
+  <div class="way" data-k="tui" role="tabpanel" id="w5-tuip" aria-labelledby="w5-tui"><ol><li><kbd>g</kbd> <kbd>m</kbd> for machines: the hub is there as <b>Acme hub</b>.</li><li>Or open it whole: <code>wisp tui --on "Acme hub"</code>.</li></ol></div>
+  <div class="way" data-k="cli" role="tabpanel" id="w5-clip" aria-labelledby="w5-cli"><pre><code>wisp team new acme
+wisp team invite acme member 5   <span class="muted"># a link for five people</span>
+wisp grid init acme ops/hub      <span class="muted"># projects, agents, triggers</span>
+wisp grid deploy ops/hub
+wisp team key acme ci            <span class="muted"># a deploy key for CI</span>
+wisp ls --on "Acme hub"</code></pre></div>
+</div>
+    </div>
+  </section>
+
   <section id="faq" aria-labelledby="faq-h">
     <div class="sec-head center" style="text-align:center"><p class="eyebrow">Questions</p><h2 id="faq-h">Frequently asked</h2></div>
     <div class="faq">

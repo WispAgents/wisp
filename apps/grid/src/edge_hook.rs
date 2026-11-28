@@ -12,7 +12,7 @@
 //!   computer it is: a URL always starts work where it was made.
 //!
 //! What goes through: the caller's own headers (its signature, `x-wisp-secret`, its delivery id), without the grid's
-//! cookie, a grid bearer (`wgd_`, `wgk_`), any grid mark or `x-forwarded-*`, marked `x-wisp-route: hook` (which the
+//! cookie, a grid bearer (`wgd_`, `wgk_`, a team's `wgt_`), any grid mark or `x-forwarded-*`, marked `x-wisp-route: hook` (which the
 //! edge drops from everything else it forwards, and the computer takes on that one path only). 1 MB at most, the
 //! trigger's own cap. Offline: held, sealed, and delivered in order once its tunnel is back (202 `{held: true}`,
 //! `hook_held.rs`); a call that can't be held is 503 with `Retry-After`. Nothing a call said, nor a token, goes to a log.
@@ -67,7 +67,8 @@ pub fn trigger_path(trigger: &str, query: Option<&str>) -> String {
 
 /// The headers a webhook call takes to the computer: the caller's own, without the grid's credentials and marks.
 pub fn hook_headers(h: &HeaderMap) -> Vec<(String, String)> {
-    let grid_bearer = |v: &str| v.strip_prefix("Bearer ").is_some_and(|t| t.starts_with("wgd_") || t.starts_with("wgk_"));
+    let grid_bearer =
+        |v: &str| v.strip_prefix("Bearer ").is_some_and(|t| t.starts_with("wgd_") || t.starts_with("wgk_") || t.starts_with("wgt_"));
     let mut out: Vec<(String, String)> = h
         .iter()
         .filter_map(|(k, v)| Some((k.as_str().to_ascii_lowercase(), v.to_str().ok()?.to_owned())))
@@ -154,6 +155,12 @@ impl Grid {
 
     /// `/api/hooks` and `/api/hooks/<id>`: the calling device's computer's trigger URLs.
     pub(super) fn hooks_route(&self, method: &Method, id: Option<&str>, h: &HeaderMap, bytes: &[u8], who: &Who) -> Result<Resp> {
+        // a team hub's own box: its hub's URLs (ADR-0148), which start work on the hub itself, never on a laptop
+        if let Who::Box(u) = who
+            && let Some(hub) = self.teams.hub_by_user(&u.id)?
+        {
+            return self.hub_box_hooks(method, id, h, bytes, &hub);
+        }
         let cred = who.credential().ok_or_else(|| bad("Sign in first.", 401))?;
         if let Some(r) = no(&may(cred, Reach::GridHooks)) {
             return Ok(r);

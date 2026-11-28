@@ -87,20 +87,35 @@ async fn sandbox_for(ctx: &Ctx, call: &Call, m: &Member) -> Result<Option<(Strin
 /// The member's jobs as the runtime has them now.
 async fn jobs_of(ctx: &Ctx, call: &Call, st: &State, m: &Member) -> Vec<JobSummary> {
     let ids = lock(&st.jobs).get(&m.id).cloned().unwrap_or_default();
-    jobs_in(ctx, call, m, ids).await
+    jobs_in(ctx, call, m, ids, true).await
+}
+
+/// The member's live jobs only: a job in a sandbox that's asleep isn't running (a live turn keeps a box up), so it
+/// isn't asked, which would wake it. A hub counting its members' jobs each time it woke for its schedule woke every
+/// job's sandbox, so none ever slept (ADR-0148).
+async fn live_of(ctx: &Ctx, call: &Call, m: &Member, ids: Vec<String>) -> usize {
+    jobs_in(ctx, call, m, ids, false).await.iter().filter(|j| j.live()).count()
 }
 
 /// How many of the member's jobs are live, and which jobs that read (for `State::taken`, which adds the ones started
 /// since).
 async fn busy_of(ctx: &Ctx, call: &Call, st: &State, m: &Member) -> (u32, Vec<String>) {
     let ids = lock(&st.jobs).get(&m.id).cloned().unwrap_or_default();
-    let live = jobs_in(ctx, call, m, ids.clone()).await.iter().filter(|j| j.live()).count();
+    let live = live_of(ctx, call, m, ids.clone()).await;
     (u32::try_from(live).unwrap_or(u32::MAX), ids)
 }
 
-async fn jobs_in(ctx: &Ctx, call: &Call, m: &Member, ids: Vec<String>) -> Vec<JobSummary> {
+/// `wake`: ask a job's sandbox even if it's asleep (someone is looking at the list), else only those up.
+async fn jobs_in(ctx: &Ctx, call: &Call, m: &Member, ids: Vec<String>, wake: bool) -> Vec<JobSummary> {
     let mut out = Vec::new();
+    let up = if !wake && ids.iter().any(|id| id.contains('|')) { calls::machines_up(ctx, call).await } else { Vec::new() };
     for id in ids {
+        if !wake
+            && let Some((machine, _)) = id.split_once('|')
+            && !up.iter().any(|u| u == machine)
+        {
+            continue;
+        }
         let Ok(s) = job_task(ctx, call, &id).await else { continue };
         let job = s.pointer("/ext/wisp.crew/job").and_then(|j| serde_json::from_value::<JobKind>(j.clone()).ok()).unwrap_or_default();
         let state = s.get("state").and_then(Value::as_str).unwrap_or("done").to_owned();
@@ -110,7 +125,8 @@ async fn jobs_in(ctx: &Ctx, call: &Call, m: &Member, ids: Vec<String>) -> Vec<Jo
 }
 
 pub(crate) async fn view(ctx: &Ctx, call: &Call, st: &State, m: &Member) -> MemberView {
-    let live = jobs_of(ctx, call, st, m).await.iter().filter(|j| j.live()).count();
+    let ids = lock(&st.jobs).get(&m.id).cloned().unwrap_or_default();
+    let live = live_of(ctx, call, m, ids).await;
     st.view(m, u32::try_from(live).unwrap_or(u32::MAX), now(ctx))
 }
 
@@ -128,6 +144,14 @@ pub(crate) fn tree_reuse(args: &mut Value, m: &Member, job: JobKind) {
 /// or when it fails to start).
 /// `w.run`: this job's own pick (`wisp_crew_core::run`), already checked. `capped`: a capped lead's cap
 /// (`{ mode }`), which a job it delegated runs under (v1 `atCap`, and the job keeps it as a child would).
+/// The member as this job sees them: in the job's own folder (a trigger's project, ADR-0148) when it has one.
+fn in_its_folder<'a>(m: &'a Member, w: &WaitingJob) -> std::borrow::Cow<'a, Member> {
+    match &w.cwd {
+        Some(c) if *c != m.cwd => std::borrow::Cow::Owned(Member { cwd: c.clone(), ..m.clone() }),
+        _ => std::borrow::Cow::Borrowed(m),
+    }
+}
+
 async fn start(
     ctx: &Ctx,
     call: &Call,
@@ -137,6 +161,7 @@ async fn start(
     capped: Option<&Value>,
     slot: Slot<'_>,
 ) -> Result<Value, WireError> {
+    let m = &*in_its_folder(m, w);
     let (prompt, job, attachments) = (&w.prompt, w.job, &w.attachments);
     // what it was asked, for its page (a check-in's prompt is the crew's own)
     let asked = (job != JobKind::Checkin && !prompt.trim().is_empty()).then(|| prompt.chars().take(2000).collect::<String>());
@@ -343,7 +368,8 @@ pub(crate) async fn checkin(ctx: &Ctx, call: &Call, st: &State, id: &str, wake: 
     if m.paused {
         return Err(WireError::conflict(format!("{} is paused. Resume them to check in.", m.name)));
     }
-    let live = jobs_of(ctx, call, st, &m).await.iter().any(|j| j.job == JobKind::Checkin && j.live());
+    let ids = lock(&st.jobs).get(&m.id).cloned().unwrap_or_default();
+    let live = jobs_in(ctx, call, &m, ids, false).await.iter().any(|j| j.job == JobKind::Checkin && j.live());
     if checkin_already(&m, live) {
         return Err(WireError::conflict(format!("{} is already checking in.", m.name)));
     }
@@ -402,7 +428,9 @@ fn wakes(s: &mut Setup, st: &Arc<State>) {
             Some(src) => format!("{why}\n\n(woken by {src})"),
             None => why,
         };
-        let w = WaitingJob { origin: woken_by(a.source.as_ref()), ..work(prompt, JobKind::Task, Vec::new(), None) };
+        // a trigger's project: the job works there, not in the member's own folder (ADR-0148)
+        let cwd = a.cwd.as_deref().map(str::trim).filter(|c| !c.is_empty()).map(str::to_owned);
+        let w = WaitingJob { origin: woken_by(a.source.as_ref()), cwd, ..work(prompt, JobKind::Task, Vec::new(), None) };
         assign(&ctx, &call, &st, &m, w).await
     });
     on!(s, st, c::WakeMentions, |st, ctx, call, a| Ok(wake_mentions(&ctx, &call, &st, &a).await));

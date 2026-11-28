@@ -11,6 +11,8 @@ pub(super) enum Tab {
     None,
     Home,
     Account,
+    /// Teams and a team's hub (ADR-0148)
+    Teams,
     /// Home and Account in the header, neither of them this page (Activate)
     Neither,
 }
@@ -81,8 +83,9 @@ pub(super) fn app_page(p: &AppPage<'_>) -> String {
     let nav = if tabbed {
         let cur = |t| if p.tab == t { r#" aria-current="page""# } else { "" };
         format!(
-            r#"<nav class="navt" aria-label="Your grid"><a href="{h}/"{}>Home</a><a href="{h}/account"{}>Account</a></nav>"#,
+            r#"<nav class="navt" aria-label="Your grid"><a href="{h}/"{}>Home</a><a href="{h}/teams"{}>Teams</a><a href="{h}/account"{}>Account</a></nav>"#,
             cur(Tab::Home),
+            cur(Tab::Teams),
             cur(Tab::Account),
             h = esc(p.home),
         )
@@ -92,7 +95,7 @@ pub(super) fn app_page(p: &AppPage<'_>) -> String {
     let wide = if tabbed { " wide" } else { "" };
     // a narrow page (Activate) keeps its narrow column under the wide header
     // only Home and Account are wide pages; a message or a share keeps its reading width under the wide header
-    let main_wide = if matches!(p.tab, Tab::Home | Tab::Account) && !p.narrow { " wide" } else { "" };
+    let main_wide = if matches!(p.tab, Tab::Home | Tab::Account | Tab::Teams) && !p.narrow { " wide" } else { "" };
     let narrow = if p.narrow { " narrow" } else { "" };
     // "wisp Grid · wisp Grid" says it twice: a page named after the grid is just the grid's name
     let title = if p.title == cfg.name { esc(&cfg.name) } else { format!("{} · {}", esc(p.title), esc(&cfg.name)) };
