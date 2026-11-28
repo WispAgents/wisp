@@ -582,6 +582,12 @@ impl Cleanup {
                 *c = c.map(|p| Progress { done: p.done + 1, total: p.total.max(total) });
             }
         }
+        // the record goes in before `cleaning` clears: a look that sees the clean-up ended finds what to tell
+        // (`worktrees.cleaned`); it was stored after `df`, and a look between found none
+        let rec = (count > 0).then(|| CleanedRecord { at: self.engine.clock.now_ms(), count, freed, auto });
+        if let (Some(r), Ok(mut c)) = (rec, self.cleaned.lock()) {
+            *c = Some(r);
+        }
         self.set_cleaning(None);
         let dir = dir_of(&self.engine);
         let disk = self.disk(&dir).await;
@@ -590,15 +596,9 @@ impl Cleanup {
             seen.disk_at = self.engine.clock.now_ms().max(1);
         }
         seen.disk = disk.or(seen.disk);
-        if count == 0 {
-            return None;
-        }
+        let rec = rec?;
         seen.changed = true;
         drop(seen);
-        let rec = CleanedRecord { at: self.engine.clock.now_ms(), count, freed, auto };
-        if let Ok(mut c) = self.cleaned.lock() {
-            *c = Some(rec);
-        }
         self.changed.notify_one();
         let mut st = self.port.settings().await;
         st.last = Some(rec);

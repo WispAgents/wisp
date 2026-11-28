@@ -14,7 +14,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import wisp  # noqa: E402
 
 SEEN = []
-STATE = {"state": "running", "stream": None}
+STATE = {"state": "running", "stream": None, "gets": 0}
+# a runtime.get came in: the stream waits on it to change the state, so the look a frame causes always reads the state
+# before that frame's change (a 100 ms sleep here raced a slow Windows runner: the look read the next frame's state)
+GOT = threading.Condition()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -39,11 +42,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("content-type", "text/event-stream")
             self.end_headers()
+            with GOT:
+                looked = STATE["gets"]
             self.wfile.write(b'event: sync\nid: 1\ndata: [{"t":"welcome"},')
             self.wfile.flush()
             self.wfile.write(b'{"t":"snapshot","topic":"session:t1","seq":1,"rows":[]}]\n\n')
             self.wfile.flush()
-            time.sleep(0.1)
+            with GOT:
+                GOT.wait_for(lambda: STATE["gets"] > looked, timeout=5)
             STATE["state"] = "review"
             self.wfile.write(b'event: sync\nid: 2\ndata: [{"t":"patch","seq":2,"ops":[]}]\n\n')
             self.wfile.flush()
@@ -56,6 +62,9 @@ class Handler(BaseHTTPRequestHandler):
         SEEN.append({"path": self.path, "headers": {k.lower(): v for k, v in self.headers.items()}, "body": body})
         cmd, args = body["cmd"], body["args"]
         if cmd == "runtime.get":
+            with GOT:
+                STATE["gets"] += 1
+                GOT.notify_all()
             return self._json(200, {"ok": True, "result": {"id": args["id"], "state": STATE["state"]}})
         if cmd == "runtime.create":
             return self._json(200, {"ok": True, "result": {"id": "t1", "echo": args}})
