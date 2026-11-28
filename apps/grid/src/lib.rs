@@ -46,6 +46,10 @@ pub mod push;
 pub mod route;
 
 // publishing and reach
+pub mod hub_deploys;
+pub mod hub_invites;
+pub mod hub_keys;
+pub mod hubs;
 pub mod sandboxes;
 pub mod shares;
 pub mod sites;

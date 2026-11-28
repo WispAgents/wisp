@@ -1,6 +1,6 @@
 //! Into your own addresses from the grid's pages (v1 grid/server.js `/go`, `boxEdge`, `computerEdge`; `handoff.rs`):
 //!
-//! - `GET <domain>/go[?computer=<id>|?sandbox=<id>][&path=]`: signed in at the grid, a one-time ticket to that
+//! - `GET <domain>/go[?computer=<id>|?sandbox=<id>|?hub=<team>][&path=]`: signed in at the grid, a one-time ticket to that
 //!   address, `302 <address>/_grid/auth?t=<ticket>&r=<path>`.
 //! - `GET <address>/_grid/auth?t=&r=`: the ticket, once, becomes that address's own cookie, then on to `r` (a path
 //!   on that address only). A spent, expired or someone else's ticket gets no cookie: the browser goes back to `/go`
@@ -37,6 +37,12 @@ impl Grid {
             self.accounts.computer(&id)?.filter(|c| c.user_id == u.id).ok_or_else(|| bad("No such computer.", 404))?.label
         } else if let Some(id) = query(q, "sandbox") {
             self.sandboxes.get(&id)?.filter(|s| s.user_id == u.id).ok_or_else(|| bad("No such sandbox.", 404))?.label
+        } else if let Some(slug) = query(q, "hub") {
+            // a team's hub (ADR-0147): anyone in the team gets a ticket to it, as themselves
+            match self.teams.hub(&slug)? {
+                Some(h) if self.teams.role(&u.id, &slug)?.is_some() => h.slug,
+                _ => return Err(bad("No such hub, or you aren't in its team.", 404)),
+            }
         } else {
             u.handle.clone()
         };
@@ -82,11 +88,13 @@ impl Grid {
     fn address_auth(&self, q: &str, h: &HeaderMap, label: &str, owner: &UserRow, back: &str, offline: bool) -> Resp {
         let t = query(q, "t").unwrap_or_default();
         let spent = self.accounts.use_address_ticket(&t, label);
-        if !matches!(&spent, Ok(Some(uid)) if *uid == owner.id) {
+        if !matches!(&spent, Ok(Some(uid)) if self.holds_address(owner, uid)) {
             // spent, expired, for another address or another person: no cookie, a fresh ticket from the grid
             return redirect(back, &[("cache-control", "no-store".into())]);
         }
-        let session = match self.accounts.new_address_session(&owner.id, label, header_str(h, "user-agent")) {
+        // the person's own session at a hub's address; the owner's at anyone else's (they're the same there)
+        let who = spent.ok().flatten().unwrap_or_default();
+        let session = match self.accounts.new_address_session(&who, label, header_str(h, "user-agent")) {
             Ok(s) => s,
             Err(e) => return super::err(&e),
         };
@@ -101,7 +109,15 @@ impl Grid {
     /// Who this address's own cookie signs in (its owner only).
     pub(super) fn address_user(&self, h: &HeaderMap, label: &str, owner: &UserRow) -> Option<UserRow> {
         let c = cookies(h).get(COOKIE).cloned()?;
-        self.accounts.address_session(&c, label).ok().flatten().filter(|u| u.id == owner.id)
+        self.accounts.address_session(&c, label).ok().flatten().filter(|u| self.holds_address(owner, &u.id))
+    }
+
+    /// Whether `uid` may be signed in at `owner`'s address: its owner, or anyone in the team whose hub it is (ADR-0147).
+    fn holds_address(&self, owner: &UserRow, uid: &str) -> bool {
+        if uid == owner.id {
+            return true;
+        }
+        matches!(self.teams.hub_by_user(&owner.id), Ok(Some(h)) if matches!(self.teams.role(uid, &h.slug), Ok(Some(_))))
     }
 
     /// Nobody signed in at an address: a browser goes for a ticket, a fetch hears 401.

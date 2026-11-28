@@ -164,6 +164,24 @@ pub const MIGRATIONS: &[&str] = &[
     // there is gets one now; a new share gets its own when it's made (`shares.rs`).
     r"ALTER TABLE shares ADD COLUMN cap TEXT;
    UPDATE shares SET cap = lower(hex(randomblob(16))) WHERE cap IS NULL;",
+    // ADR-0147: a team's hub is an account of its own (a users row with the team's slug and no identity), so it gets a
+    // box like anyone's. Invite links, deploy keys (`wgh_`) and deploys belong to the team and go with it.
+    r"ALTER TABLE teams ADD COLUMN hub_user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+   CREATE UNIQUE INDEX teams_hub ON teams(hub_user_id) WHERE hub_user_id IS NOT NULL;
+   CREATE TABLE team_invites (
+     id TEXT PRIMARY KEY, team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE, code_hash TEXT UNIQUE NOT NULL,
+     role TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+     uses_left INTEGER NOT NULL, revoked_at INTEGER);
+   CREATE INDEX team_invites_team ON team_invites(team_id);
+   CREATE TABLE team_keys (
+     id TEXT PRIMARY KEY, team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE, name TEXT NOT NULL,
+     token_hash TEXT UNIQUE NOT NULL, hint TEXT NOT NULL, rights TEXT NOT NULL, created_by TEXT NOT NULL,
+     created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
+   CREATE INDEX team_keys_team ON team_keys(team_id);
+   CREATE TABLE team_deploys (
+     team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE, n INTEGER NOT NULL, by_kind TEXT NOT NULL,
+     by_name TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', state TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '{}',
+     error TEXT, started_at INTEGER NOT NULL, finished_at INTEGER, PRIMARY KEY (team_id, n));",
 ];
 
 /// Every table the migrations make (and `meta`), for tests and `wisp grid backup` checks.

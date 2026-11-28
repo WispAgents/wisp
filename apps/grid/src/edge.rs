@@ -51,6 +51,10 @@ mod events;
 mod forms;
 #[path = "edge_handoff.rs"]
 mod handoff;
+#[path = "edge_hub.rs"]
+mod hub;
+#[path = "edge_hub_api.rs"]
+mod hub_api;
 #[path = "edge_inbox.rs"]
 mod inbox;
 #[path = "edge_keys.rs"]
@@ -337,7 +341,10 @@ impl Grid {
             (_, ["api", "keys"]) => self.keys_route(&method, None, &head.headers, &bytes, &who),
             (_, ["api", "keys", id]) => self.keys_route(&method, Some(id), &head.headers, &bytes, &who),
             (_, ["api", "sandboxes", ..]) => self.sandboxes_route(&method, &parts, &head.headers, &bytes, &who).await,
-            (_, ["api", "teams", ..]) => self.teams_route(&method, &parts, &head.headers, &bytes, &who),
+            (_, ["api", "teams", ..] | ["api", "join"]) => match self.hub_api(&method, &parts, &head.headers, &bytes, &who).await {
+                Some(r) => r,
+                None => self.teams_route(&method, &parts, &head.headers, &bytes, &who),
+            },
             (_, ["api", "channels", which @ ("url" | "rotate" | "key")]) => {
                 self.channels_route(&method, which, q, &head.headers, &bytes, &who)
             }

@@ -156,6 +156,10 @@ impl Grid {
         let Some(user) = self.accounts.user_by_handle(handle)?.filter(|u| u.disabled == 0) else {
             return Ok(self.not_found(&req, "Nobody here", "There's nobody with that handle here."));
         };
+        // a team's hub (ADR-0147): its members by role, and its deploy keys
+        if let Some(hub) = self.teams.hub_by_user(&user.id)? {
+            return self.hub_edge(req, &user, &hub).await;
+        }
         let mut req = match self.address_own(req, handle, &user, "/go", false) {
             handoff::Own::Done(r) => return Ok(r),
             handoff::Own::Next(r) => r,
@@ -209,7 +213,7 @@ impl Grid {
         if let Some(v) = if key.is_some() { Some("key") } else { (cred == Credential::Hook).then_some("hook") } {
             req.extensions_mut().insert(Via(v));
         }
-        self.proxy(req, &BoxUser::user(&user), handle).await
+        self.proxy(req.map(incoming), &BoxUser::user(&user), handle).await
     }
 
     /// Starts the box in the background (unless a start is under way): what its waiting page waits for.
@@ -226,7 +230,7 @@ impl Grid {
     }
 
     /// A request into a box (the user's own, or a sandbox): woken unless passive, counted as use until answered.
-    pub(super) async fn proxy(&self, req: http::Request<Incoming>, bu: &BoxUser, handle: &str) -> Result<Resp> {
+    pub(super) async fn proxy(&self, req: http::Request<crate::http::Body>, bu: &BoxUser, handle: &str) -> Result<Resp> {
         let path = req.uri().path().to_owned();
         if path == "/_grid/state" {
             // what its waiting page shows: its place in line, or why its last start didn't work
@@ -314,7 +318,7 @@ impl Grid {
         set(&mut head.headers, "host", &format!("127.0.0.1:{}", running.port));
         let up = self
             .client
-            .request(http::Request::from_parts(head, incoming(body)))
+            .request(http::Request::from_parts(head, body))
             .await
             .map_err(|e| bad(format!("Your wisp didn't answer: {e}"), 502))?;
         let (mut parts, b) = up.into_parts();

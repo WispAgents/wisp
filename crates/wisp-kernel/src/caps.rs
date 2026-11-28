@@ -60,12 +60,18 @@ pub struct CapabilitySet {
     /// deny pattern → what the caller reads (v1's wording for capped refusals). Added in v2.0 (additive).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub why: BTreeMap<String, String>,
+    /// only read-only commands, whatever `allow` says: a hub's viewer (ADR-0147). Checked where a call starts
+    /// (the edge, MCP), so a read that writes on its own (a mark, a cache) still works. Additive.
+    #[serde(default, rename = "readOnly", skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
 }
 
 /// A set ready to check: patterns parsed once.
 #[derive(Debug)]
 pub(crate) struct Compiled {
     pub(crate) id: String,
+    /// only read-only commands may start under it (`CapabilitySet::read_only`)
+    pub(crate) read_only: bool,
     all: bool,
     allow: Vec<Permission>,
     deny: Vec<(Permission, Option<String>)>,
@@ -77,7 +83,7 @@ impl Compiled {
         let deny: Vec<(Permission, Option<String>)> =
             s.deny.iter().filter_map(|d| perm::parse(d).map(|p| (p, s.why.get(d).cloned()))).collect();
         let all = deny.is_empty() && allow.iter().any(|p| p.ns == "*" && p.action == "*" && p.scope.is_empty());
-        Self { id: s.id.clone(), all, allow, deny }
+        Self { id: s.id.clone(), read_only: s.read_only, all, allow, deny }
     }
 
     /// Allowed, or the message the caller reads.
@@ -111,6 +117,8 @@ struct SetData {
     allow: Vec<String>,
     #[serde(default)]
     deny: Vec<Deny>,
+    #[serde(default, rename = "readOnly")]
+    read_only: bool,
 }
 
 #[derive(Deserialize)]
@@ -153,7 +161,7 @@ fn base(id: &str) -> Option<CapabilitySet> {
     let d = data()?;
     let s = d.sets.iter().find(|s| s.id == id)?;
     Some(with(
-        CapabilitySet { id: s.id.clone(), allow: s.allow.clone(), ..CapabilitySet::default() },
+        CapabilitySet { id: s.id.clone(), allow: s.allow.clone(), read_only: s.read_only, ..CapabilitySet::default() },
         s.deny.iter().map(|x| (x.permission.clone(), x.why.clone())),
     ))
 }

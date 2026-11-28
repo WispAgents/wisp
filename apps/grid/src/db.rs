@@ -157,8 +157,8 @@ mod tests {
         // v1's grid.db: 25 tables made by 11 migrations, plus meta; v2's 12th adds share_versions, teams
         // and team_members (ADR-0038, ADR-0041); the 13th adds channel_urls.channel_key (Discord's key), no table; the
         // 14th push_handles (the phone relay, ADR-0065); the 15th app_waitlist (the site's Get the app); the 16th
-        // device_codes.requester_ip and requester_agent (ADR-0129), no table; the 17th shares.cap (ADR-0130), no table.
-        assert_eq!(want.len(), 31);
-        assert_eq!(MIGRATIONS.len(), 17);
+        // device_codes.requester_ip and requester_agent (ADR-0129), no table; the 17th shares.cap (ADR-0130), no table; the 18th team_invites, team_keys and team_deploys (hubs, ADR-0147).
+        assert_eq!(want.len(), 34);
+        assert_eq!(MIGRATIONS.len(), 18);
     }
 }

@@ -81,6 +81,24 @@ async fn default_deny_and_capability_sets() {
     assert!(k.refusals().iter().any(|r| r.code == "forbidden" && r.stack.iter().any(|f| f == "wisp.alpha:alpha.echo")));
 }
 
+/// ADR-0147: a read-only set (a hub's viewer) starts reads and is refused a write, whatever its allow list says;
+/// the same allow list without `readOnly` writes.
+#[tokio::test]
+async fn a_read_only_set_starts_reads_only() {
+    let k = common::start(PluginGroup::new().add(alpha())).await;
+    k.define_set(&wisp_kernel::CapabilitySet { id: "test:viewer".into(), allow: vec!["*".into()], read_only: true, ..Default::default() });
+    k.define_set(&wisp_kernel::CapabilitySet { id: "test:member".into(), allow: vec!["*".into()], ..Default::default() });
+    assert_eq!(k.call(Caller::set("test:viewer"), "alpha.peek", json!(null)).await.unwrap(), json!(0));
+    let e = k.call(Caller::set("test:viewer"), "alpha.write", json!(null)).await.unwrap_err();
+    assert_eq!(e.code, Code::Forbidden);
+    assert!(e.message.contains("only reads"), "{}", e.message);
+    assert!(k.call(Caller::set("test:member"), "alpha.write", json!(null)).await.is_ok());
+    // the data file's viewer is read-only too
+    let e = k.call(Caller::set("hub:viewer"), "alpha.write", json!(null)).await.unwrap_err();
+    assert_eq!(e.code, Code::Forbidden);
+    assert!(k.call(Caller::set("hub:viewer"), "alpha.peek", json!(null)).await.is_ok());
+}
+
 #[tokio::test]
 async fn a_call_narrows_through_the_plugin_it_passes() {
     let k = common::start(PluginGroup::new().add(alpha()).add(beta(&[]))).await;

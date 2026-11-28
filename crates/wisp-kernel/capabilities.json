@@ -94,6 +94,71 @@
         { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
       ]
     },
+    {
+      "$comment": "ADR-0147: a team member at the hub's address: tasks, triggers, workflows, crew; nothing that changes the hub itself",
+      "id": "hub:member",
+      "allow": ["*"],
+      "deny": [
+        { "permission": "machines:*", "why": "reach other machines from a grid box" },
+        { "permission": "grid-client:computer", "why": "be one of your computers: a box never gets a laptop token" },
+        { "permission": "update:*", "why": "update wisp on a grid box: the grid does" },
+        { "permission": "notify:native", "why": "show a desktop notification on a grid box" },
+        { "permission": "proc:spawn{sandbox:none}", "why": "run a process outside the box sandbox" },
+        { "permission": "secrets:*", "why": "read or change the hub's secrets: an owner or admin sets them on the grid" },
+        { "permission": "settings:set", "why": "change the hub's settings: an owner or admin does" },
+        { "permission": "plugins:*", "why": "change the hub's plugins: an owner or admin does" },
+        { "permission": "accounts:*", "why": "change the hub's harness accounts: an owner or admin does" },
+        { "permission": "apikeys:*", "why": "make or revoke keys" },
+        { "permission": "grid-client:*", "why": "change the hub's grid sign-in, its sandboxes' logins or its keys" },
+        { "permission": "sandbox:claude.*", "why": "sign the hub's sandboxes in to a harness" },
+        { "permission": "sandbox:logout", "why": "sign the hub's sandboxes out" },
+        { "permission": "sandbox:env", "why": "change the hub's sandboxes' environment" },
+        { "permission": "resources:apply", "why": "change what's declared on the hub: a deploy does" },
+        { "permission": "resources:secretSet", "why": "set the hub's secrets" },
+        { "permission": "resources:secretRemove", "why": "remove the hub's secrets" },
+        { "permission": "resources:rename", "why": "rename what a deploy declared" },
+        { "permission": "resources:refresh", "why": "take the hub's state as the deploy's baseline" },
+        { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
+      ]
+    },
+    {
+      "$comment": "ADR-0147: a team viewer: reads only (readOnly: no command that writes starts under it)",
+      "id": "hub:viewer",
+      "readOnly": true,
+      "allow": ["*"],
+      "deny": [
+        { "permission": "machines:*", "why": "reach other machines from a grid box" },
+        { "permission": "grid-client:computer", "why": "be one of your computers: a box never gets a laptop token" },
+        { "permission": "update:*", "why": "update wisp on a grid box: the grid does" },
+        { "permission": "notify:native", "why": "show a desktop notification on a grid box" },
+        { "permission": "proc:spawn{sandbox:none}", "why": "run a process outside the box sandbox" },
+        { "permission": "secrets:*", "why": "read or change the hub's secrets: an owner or admin sets them on the grid" },
+        { "permission": "settings:set", "why": "change the hub's settings: an owner or admin does" },
+        { "permission": "plugins:*", "why": "change the hub's plugins: an owner or admin does" },
+        { "permission": "accounts:*", "why": "change the hub's harness accounts: an owner or admin does" },
+        { "permission": "apikeys:*", "why": "make or revoke keys" },
+        { "permission": "grid-client:*", "why": "change the hub's grid sign-in, its sandboxes' logins or its keys" },
+        { "permission": "sandbox:claude.*", "why": "sign the hub's sandboxes in to a harness" },
+        { "permission": "sandbox:logout", "why": "sign the hub's sandboxes out" },
+        { "permission": "sandbox:env", "why": "change the hub's sandboxes' environment" },
+        { "permission": "resources:apply", "why": "change what's declared on the hub: a deploy does" },
+        { "permission": "resources:secretSet", "why": "set the hub's secrets" },
+        { "permission": "resources:secretRemove", "why": "remove the hub's secrets" },
+        { "permission": "resources:rename", "why": "rename what a deploy declared" },
+        { "permission": "resources:refresh", "why": "take the hub's state as the deploy's baseline" },
+        { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
+      ]
+    },
+    {
+      "$comment": "ADR-0147: a team's deploy key (wgh_, rights deploy): plan and apply the team's folder",
+      "id": "hub:deploy",
+      "allow": ["edge:health", "resources:kinds", "resources:plan", "resources:apply", "resources:export", "resources:read", "resources:refresh"]
+    },
+    {
+      "$comment": "ADR-0147: a team's plan-only key (wgh_, rights plan): what a pull request would change",
+      "id": "hub:plan",
+      "allow": ["edge:health", "resources:kinds", "resources:plan", "resources:export", "resources:read"]
+    },
     { "id": "preview", "allow": ["topic:read", "session:read", "stuff:read", "blob:read"], "deny": [
       { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
     ] },

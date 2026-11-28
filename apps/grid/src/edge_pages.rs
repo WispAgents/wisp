@@ -348,6 +348,10 @@ impl Grid {
         if confirm.trim().to_lowercase() != u.handle {
             return Ok(self.back("/account", &format!("Type {} to delete your account.", u.handle), true));
         }
+        // a team keeps an owner (ADR-0147): its hub would be no one's
+        if let Some(t) = self.teams.sole_owner_of(&u.id)?.first() {
+            return Ok(self.back("/account", &format!("You're {t}'s only owner: make someone else owner, or delete {t}, first."), true));
+        }
         self.delete_user(u).await?;
         Ok(self.cleared(redirect(&format!("/signin?m={}", encode_component("Your account is deleted.")), &[])))
     }

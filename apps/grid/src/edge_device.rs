@@ -79,7 +79,7 @@ impl Grid {
                 let computers: Vec<Value> = self.accounts.computers(&u.id)?.iter().map(|c| self.computer_view(c)).collect();
                 Ok(json(
                     200,
-                    &json!({ "user": { "handle": u.handle, "name": u.name }, "instance": self.instance(u), "computers": computers, "teams": self.teams.of(&u.id)? }),
+                    &json!({ "user": { "handle": u.handle, "name": u.name }, "instance": self.instance(u), "computers": computers, "teams": self.teams.of(&u.id)?, "hubs": self.teams.hubs_of(&u.id, |s| self.cfg.instance_url(s))? }),
                 ))
             }
             ("POST", ["api", "computers"]) => {

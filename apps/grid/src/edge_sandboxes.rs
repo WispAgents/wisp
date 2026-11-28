@@ -52,9 +52,9 @@ impl Grid {
             if cred == Credential::Cookie && self.foreign_origin(req.method(), req.headers(), &sb.label) {
                 return Err(bad("forbidden origin", 403));
             }
-            return self.proxy(req, &Sandboxes::box_user(sb), &sb.label).await;
+            return self.proxy(req.map(super::incoming), &Sandboxes::box_user(sb), &sb.label).await;
         }
-        self.proxy(req, &Sandboxes::box_user(sb), &sb.label).await
+        self.proxy(req.map(super::incoming), &Sandboxes::box_user(sb), &sb.label).await
     }
 
     fn sandbox_view(&self, row: &SandboxRow) -> Value {
@@ -65,6 +65,8 @@ impl Grid {
     pub(super) async fn sandboxes_route(&self, method: &Method, parts: &[&str], h: &HeaderMap, bytes: &[u8], who: &Who) -> Result<Resp> {
         let user = match who {
             Who::Device(u, _) | Who::Session(u) => u.clone(),
+            // a team's hub box makes its own (ADR-0147 §8): the hub is its own owner, under its own cap
+            Who::Box(u) if self.teams.is_hub(&u.id)? => u.clone(),
             Who::Box(_) => return Err(bad("A box asks for sandboxes through its owner's wisp.", 403)),
             Who::Nobody => return Err(bad("Sign in first.", 401)),
         };

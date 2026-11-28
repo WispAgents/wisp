@@ -169,7 +169,8 @@ fn inbox_opts(c: Option<&crate::config::ChannelsConfig>) -> crate::inbox::Opts {
 
 type Sealed = Option<Arc<crate::secrets::Secrets>>;
 
-/// Sandboxes, and the env and sign-ins their boxes start with (a sandbox's box gets its owner's; a user's own box never).
+/// Sandboxes, and the env and sign-ins their boxes start with (a sandbox's box gets its owner's, a hub's box its team's;
+/// a person's own box never).
 fn sandboxes_of(cfg: &GridConfig, db: &Arc<Db>, clock: &SharedClock, secrets: Sealed, boxes: &ProcessHost) -> crate::sandboxes::Sandboxes {
     let sb_cfg = cfg.sandboxes.clone().unwrap_or_default();
     let sandboxes = crate::sandboxes::Sandboxes {
@@ -180,8 +181,13 @@ fn sandboxes_of(cfg: &GridConfig, db: &Arc<Db>, clock: &SharedClock, secrets: Se
         per_user: sb_cfg.per_user.unwrap_or(10),
     };
     let sb = sandboxes.clone();
+    let teams = crate::teams::Teams { db: db.clone(), clock: clock.clone() };
     boxes.set_env_for(Arc::new(move |u: &BoxUser| {
-        u.owner.as_deref().filter(|_| u.sandbox.is_some()).map(|o| sb.env_for(o)).unwrap_or_default()
+        if let Some(o) = u.owner.as_deref().filter(|_| u.sandbox.is_some()) {
+            return sb.env_for(o);
+        }
+        // a team's hub box starts with its team's secrets (ADR-0147 §6); a person's own box never with sandboxes'
+        if teams.is_hub(&u.id).unwrap_or(false) { sb.hub_env(&u.id) } else { Vec::new() }
     }));
     sandboxes
 }

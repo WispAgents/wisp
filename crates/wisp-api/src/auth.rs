@@ -9,6 +9,7 @@
 //! | `x-wisp-token` = anything else                    | 403 `bad token`, whatever the route          |
 //! | via the proxy with `x-wisp-proxy-via: key`        | `apikey` (a grid API key, checked at the grid) |
 //! | via the proxy with `x-wisp-proxy-via: hook`       | `public`: a webhook delivery the grid let in unsigned-in (open routes only) |
+//! | via the proxy with `x-wisp-proxy-via: member`, `viewer`, `deploy`, `plan` | a team hub's `hub:member`, `hub:viewer`, `hub:deploy`, `hub:plan` (ADR-0147) |
 //! | via the proxy, otherwise                          | the user set                                 |
 //! | the local page (Host and Origin checked)          | the user set                                 |
 //! | either of those two with `x-wisp-plugin: user.<x>` | `plugin:user.<x>`: an untrusted plugin's UI (ADR-0048), never more than the user |
@@ -67,6 +68,25 @@ pub mod sets {
     pub const APIKEY: &str = "apikey";
     /// an open route's caller without a token (a webhook from the internet)
     pub const PUBLIC: &str = "public";
+    /// a team hub's people and keys, as the grid's edge names them (ADR-0147)
+    pub const HUB_MEMBER: &str = "hub:member";
+    pub const HUB_VIEWER: &str = "hub:viewer";
+    pub const HUB_DEPLOY: &str = "hub:deploy";
+    pub const HUB_PLAN: &str = "hub:plan";
+}
+
+/// The set a grid edge's `x-wisp-proxy-via` names, when it names one.
+fn proxied_set(via: Option<&str>) -> Option<&'static str> {
+    Some(match via? {
+        "key" => sets::APIKEY,
+        // a webhook delivery the grid let in without a sign-in (ADR-0146): no one, whatever route it reaches
+        "hook" => sets::PUBLIC,
+        "member" => sets::HUB_MEMBER,
+        "viewer" => sets::HUB_VIEWER,
+        "deploy" => sets::HUB_DEPLOY,
+        "plan" => sets::HUB_PLAN,
+        _ => return None,
+    })
 }
 
 /// Decides the agent's set for a session (`agent:session`, or `agent:capped` for a capped task).
@@ -141,12 +161,10 @@ pub fn resolve(h: &HeaderMap, params: &BTreeMap<String, String>, body: &[u8], o:
             None => Err(ApiError::BadToken),
         };
     }
-    if o.via_proxy && header(h, "x-wisp-proxy-via") == Some("key") {
-        return Ok(Caller { set: sets::APIKEY.into(), session: None, plugin: None });
-    }
-    // a webhook delivery the grid let in without a sign-in (ADR-0146): no one, whatever route it reaches
-    if o.via_proxy && header(h, "x-wisp-proxy-via") == Some("hook") {
-        return Ok(Caller { set: sets::PUBLIC.into(), session: None, plugin: None });
+    if o.via_proxy
+        && let Some(set) = proxied_set(header(h, "x-wisp-proxy-via"))
+    {
+        return Ok(Caller { set: set.into(), session: None, plugin: None });
     }
     if o.public {
         return Ok(Caller { set: sets::PUBLIC.into(), session: None, plugin: None });
@@ -164,7 +182,9 @@ pub fn untrusted_plugin_id(id: &str) -> bool {
 /// manages API keys, and a connector token opens only the connectors' token route.
 pub fn edge_denies(caller: &Caller, permission: &str) -> bool {
     match caller.set.as_str() {
-        sets::APIKEY => permission.starts_with("apikeys:") || permission.starts_with("grid:apikeys"),
+        sets::APIKEY | sets::HUB_MEMBER | sets::HUB_VIEWER | sets::HUB_DEPLOY | sets::HUB_PLAN => {
+            permission.starts_with("apikeys:") || permission.starts_with("grid:apikeys")
+        }
         sets::CONNECTOR => !permission.starts_with("connectors:"),
         _ => false,
     }
@@ -271,5 +291,30 @@ mod tests {
         assert_eq!(resolve(&hm(&[("x-wisp-proxy-via", "key")]), &BTreeMap::new(), b"", &opts(false)).unwrap().set, "user:full");
         // a webhook the grid let in unsigned-in is no one, never the box's owner
         assert_eq!(resolve(&hm(&[("x-wisp-proxy-via", "hook")]), &BTreeMap::new(), b"", &opts(true)).unwrap().set, "public");
+    }
+
+    /// ADR-0147: a hub's member, viewer and keys each speak for their own set, only from behind the grid's proxy; a
+    /// word the edge doesn't send is the person's set, as before.
+    #[test]
+    fn a_hubs_people_and_keys_get_their_sets() {
+        let set = |via: &str, proxy: bool| resolve(&hm(&[("x-wisp-proxy-via", via)]), &BTreeMap::new(), b"", &opts(proxy)).unwrap().set;
+        assert_eq!(set("member", true), "hub:member");
+        assert_eq!(set("viewer", true), "hub:viewer");
+        assert_eq!(set("deploy", true), "hub:deploy");
+        assert_eq!(set("plan", true), "hub:plan");
+        assert_eq!(set("member", false), "user:full", "not through the proxy, the header means nothing");
+        assert_eq!(set("owner", true), "user:full");
+        let member = Caller { set: "hub:member".into(), session: None, plugin: None };
+        assert!(edge_denies(&member, "apikeys:create"));
+        // what each set holds, from capabilities.json
+        let may = |set: &str, p: &str| wisp_kernel::caps::allowed(&Caller { set: set.into(), session: None, plugin: None }, p);
+        assert!(may("hub:member", "runtime:create") && may("hub:member", "automations:fire"));
+        for p in ["secrets:read{key:x}", "settings:set", "plugins:install", "accounts:add", "resources:apply", "grid-client:keysCreate"] {
+            assert!(!may("hub:member", p), "a member may not {p}");
+            assert!(!may("hub:viewer", p), "a viewer may not {p}");
+        }
+        assert!(may("hub:deploy", "resources:apply") && may("hub:deploy", "resources:plan"));
+        assert!(!may("hub:deploy", "runtime:create") && !may("hub:deploy", "resources:secretSet"));
+        assert!(may("hub:plan", "resources:plan") && !may("hub:plan", "resources:apply"));
     }
 }
