@@ -23,6 +23,8 @@ pub enum Credential {
     Device,
     /// an API key (`wgk_…`): a script, for its user's own wisp
     Key,
+    /// a team's deploy key (`wgt_…`, ADR-0148): CI, for its own team's hub
+    HubKey,
     /// `Box <handle> <secret>`: the cloud wisp asking for itself
     Box,
     /// a sandbox's own bearer, for that sandbox's address
@@ -35,8 +37,18 @@ pub enum Credential {
 }
 
 impl Credential {
-    pub const ALL: [Self; 9] =
-        [Self::Session, Self::Cookie, Self::Preview, Self::Device, Self::Key, Self::Box, Self::Sandbox, Self::Hook, Self::Webhook];
+    pub const ALL: [Self; 10] = [
+        Self::Session,
+        Self::Cookie,
+        Self::Preview,
+        Self::Device,
+        Self::Key,
+        Self::HubKey,
+        Self::Box,
+        Self::Sandbox,
+        Self::Hook,
+        Self::Webhook,
+    ];
 }
 
 /// Where a request goes.
@@ -170,11 +182,12 @@ const fn deny(reach: Reach, why: &'static str) -> Deny {
 const PREVIEW_ONLY: &str = "a preview cookie is good for its own label’s preview addresses only";
 const KEY_OWN: &str = "a key reaches none of the grid’s own API";
 const KEYS_IN_BROWSER: &str = "API keys are made from Settings, in a browser";
+const HUB_KEY_OWN: &str = "a deploy key opens its own team’s hub, nothing else";
 
 use Reach as R;
 
 /// The table. Changing a row is a deliberate act in the PR (`tests/trust.rs` pins it).
-pub const CAPABILITIES: [CapabilitySet; 9] = [
+pub const CAPABILITIES: [CapabilitySet; 10] = [
     CapabilitySet { credential: Credential::Session, allow: &[R::GridPages, R::GridRoutePage, R::GridTeams], deny: &[] },
     CapabilitySet {
         credential: Credential::Cookie,
@@ -222,6 +235,21 @@ pub const CAPABILITIES: [CapabilitySet; 9] = [
             deny(R::GridPublish, KEY_OWN),
             deny(R::GridTeams, KEY_OWN),
             deny(R::GridHooks, "a key opens its user’s own wisp, never a computer’s trigger"),
+        ],
+    },
+    CapabilitySet {
+        credential: Credential::HubKey,
+        allow: &[R::Box],
+        deny: &[
+            deny(R::Computer, HUB_KEY_OWN),
+            deny(R::Sandbox, HUB_KEY_OWN),
+            deny(R::Preview, HUB_KEY_OWN),
+            deny(R::GridTunnel, HUB_KEY_OWN),
+            deny(R::GridDevice, HUB_KEY_OWN),
+            deny(R::GridKeys, "a key can’t manage keys"),
+            deny(R::EdgeKeys, HUB_KEY_OWN),
+            deny(R::GridPublish, HUB_KEY_OWN),
+            deny(R::GridTeams, "a deploy key can’t change who is in a team, or make keys"),
         ],
     },
     CapabilitySet {
@@ -309,6 +337,7 @@ mod tests {
             (Credential::Preview, false),
             (Credential::Device, true),
             (Credential::Key, false),
+            (Credential::HubKey, false),
             (Credential::Box, false),
             (Credential::Sandbox, false),
             (Credential::Hook, false),

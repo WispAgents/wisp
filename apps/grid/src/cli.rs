@@ -128,7 +128,7 @@ const HARNESS_BINS: [(&str, &str); 7] = [
 fn dev_harness_env(env: &[(String, String)], data: &std::path::Path, real: bool) -> (Vec<(String, String)>, String) {
     let mut out: Vec<(String, String)> = env
         .iter()
-        .filter(|(k, v)| !v.is_empty() && ((k.starts_with("WISP_") && k.ends_with("_BIN")) || k == "WISP_WEB_DIR"))
+        .filter(|(k, v)| !v.is_empty() && ((k.starts_with("WISP_") && k.ends_with("_BIN")) || k == "WISP_WEB_DIR" || k == "WISP_LOG"))
         .cloned()
         .collect();
     let unset: Vec<(&str, &str)> = HARNESS_BINS.iter().copied().filter(|(_, var)| !out.iter().any(|(k, _)| k == var)).collect();
@@ -165,11 +165,20 @@ async fn dev(args: &[String]) -> i32 {
         eprintln!("  ✗ {}: {e}", data.display());
         return 1;
     }
+    // a master key of its own (secrets/master.json), so a dev grid keeps sandboxes' sign-ins and hubs' secrets
+    if let Err(e) = crate::secrets::ensure_master(&data) {
+        eprintln!("  ! no master key in {}: {e} (no sandboxes, no hub secrets)", data.display());
+    }
     // dev only: the fake harnesses and the web bundle for the boxes too, when set here; never a real CLI unasked
     let env: Vec<(String, String)> = std::env::vars().collect();
     let (pass, said) = dev_harness_env(&env, &data, args.iter().any(|a| a == "--real-harnesses"));
     eprintln!("{said}");
-    match crate::edge::dev(&data, port, bin, pass, idle).await {
+    // a GitHub App to try team hubs with (GRID_GITHUB_APP_*), as `serve` takes one
+    let mut more = serde_json::Map::new();
+    if let Some(app) = crate::config::github_app_env(&crate::config::process_env()) {
+        more.insert("githubApp".into(), app);
+    }
+    match crate::edge::dev_with(&data, port, bin, pass, idle, more).await {
         Ok((grid, port, stop)) => {
             eprintln!(
                 "\n  ◌ wisp Grid (dev) at http://wisp.localhost:{port}  ·  sign in at /auth/dev\n    sign in from wisp: wisp cloud signin http://wisp.localhost:{port}\n"

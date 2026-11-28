@@ -22,6 +22,7 @@ fn peer() -> PeerInfo {
         proto_min: 2,
         proto_max: 2,
         plugins: vec![],
+        kind: None,
     }
 }
 

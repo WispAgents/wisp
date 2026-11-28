@@ -75,12 +75,25 @@ pub async fn dev(
     env: Vec<(String, String)>,
     idle_ms: i64,
 ) -> Result<(Arc<Grid>, u16, CancellationToken)> {
+    dev_with(data, port, wisp_bin, env, idle_ms, serde_json::Map::new()).await
+}
+
+/// [`dev`] with more of grid.json's sections (a test's `githubApp`).
+pub async fn dev_with(
+    data: &std::path::Path,
+    port: u16,
+    wisp_bin: std::path::PathBuf,
+    env: Vec<(String, String)>,
+    idle_ms: i64,
+    more: serde_json::Map<String, serde_json::Value>,
+) -> Result<(Arc<Grid>, u16, CancellationToken)> {
     let listener = TcpListener::bind(("127.0.0.1", port)).await.map_err(|e| bad(format!("can't listen on {port}: {e}"), 500))?;
     let port = listener.local_addr().map_err(|e| bad(e.to_string(), 500))?.port();
-    let cfg = crate::config::for_test(
-        data,
-        json!({ "domain": "wisp.localhost", "listen": { "host": "127.0.0.1", "port": port }, "auth": { "dev": true } }),
-    )?;
+    let mut file = json!({ "domain": "wisp.localhost", "listen": { "host": "127.0.0.1", "port": port }, "auth": { "dev": true } });
+    if let Some(o) = file.as_object_mut() {
+        o.extend(more);
+    }
+    let cfg = crate::config::for_test(data, file)?;
     let clock = crate::clock::system();
     let db = Arc::new(Db::open(data, clock.now_ms())?);
     let url_cfg = cfg.clone();

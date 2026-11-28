@@ -234,7 +234,9 @@ async fn the_pages_keep_what_people_type_and_say_the_right_things() {
         assert!(!p.contains("wisp Grid · wisp Grid"), "{p}");
     }
     assert!(
-        activate.contains(r#"<nav class="navt" aria-label="Your grid"><a href="/">Home</a><a href="/account">Account</a></nav>"#),
+        activate.contains(
+            r#"<nav class="navt" aria-label="Your grid"><a href="/">Home</a><a href="/teams">Teams</a><a href="/account">Account</a></nav>"#
+        ),
         "{activate}"
     );
     // one Grid badge everywhere: the landing's look

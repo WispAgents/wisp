@@ -1191,7 +1191,11 @@
           "type": "string"
         },
         "path": {
-          "description": "the folder (absolute), or a repo URL cloned into the worktree dir",
+          "description": "the folder (absolute); left out with `repo`, the folder wisp clones the repo into",
+          "type": "string"
+        },
+        "repo": {
+          "description": "the repo (`https://github.com/acme/api`, `git@…`, or `acme/api`): with no `path`, wisp clones it on apply into a\nfolder of its own and works there (ADR-0148: how a team's hub gets its projects)",
           "type": "string"
         },
         "run": {
@@ -1233,9 +1237,6 @@
           ]
         }
       },
-      "required": [
-        "path"
-      ],
       "title": "ProjectSpec",
       "type": "object"
     },
@@ -1374,12 +1375,20 @@
           "description": "Computer use: every task's agent can see and use this computer's screen through Cua Driver (needs cua-driver installed)",
           "type": "boolean"
         },
+        "connectors.events.callback": {
+          "description": "This wisp's public https address, for MCP Events webhooks (empty: connectors' events come by push or poll)",
+          "type": "string"
+        },
         "crew.tint": {
           "description": "Crew tint: with the crew rail, the task list takes a very light tint of the colour of the member you pick.",
           "type": "boolean"
         },
         "events.sinks": {
           "description": "Event sinks"
+        },
+        "events.webhooks.allowPrivate": {
+          "description": "Let MCP Events webhooks reach http and private addresses (a LAN, a test)",
+          "type": "boolean"
         },
         "git.cloneDir": {
           "description": "Where a pasted repo URL is cloned ('': the first of ~/code, ~/dev, ~/Developer, ~/projects… that exists, else ~/code)",
@@ -1442,6 +1451,21 @@
         },
         "review.harness": {
           "description": "Review by another harness",
+          "enum": [
+            "off",
+            "other",
+            "claude",
+            "codex",
+            "antigravity",
+            "copilot",
+            "opencode",
+            "cursor",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "risk.harness": {
+          "description": "Merge risk: another harness judges each pull request",
           "enum": [
             "off",
             "other",
@@ -1609,6 +1633,10 @@
             "off"
           ],
           "type": "string"
+        },
+        "ship.attachPasted": {
+          "description": "Follow PRs I link: a GitHub PR link in a prompt or follow-up attaches that PR to the task, with its checks and reviews",
+          "type": "boolean"
         },
         "ship.fixConflicts": {
           "description": "Fix merge conflicts by itself: when a task's PR has conflicts, its agent is asked to fix them without waiting for you",

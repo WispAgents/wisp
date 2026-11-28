@@ -1,5 +1,5 @@
-//! Grid and grid-tunnel transport connection behaviour: waking a sleeping cloud computer with a
-//! non-passive `/api/health`, surfacing real 502/401/404 errors instead of SSH's `NO_TUNNEL`,
+//! Grid and grid-tunnel transport connection behaviour: a passive look first, then waking a sleeping cloud computer
+//! with a non-passive `/api/health`, surfacing real 502/401/404 errors instead of SSH's `NO_TUNNEL`,
 //! and marking an offline `grid-tunnel` computer as `FailKind::Asleep`.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -113,11 +113,32 @@ async fn connecting_to_a_cloud_computer_wakes_it_without_passive_header() {
     let ch = t.connect(peer(&origin, false), io.clone(), CancellationToken::new()).await.unwrap();
     ch.close();
 
-    assert_eq!(seen_passive.load(Ordering::SeqCst), 0, "connect must never send x-wisp-passive");
-    assert_eq!(calls.load(Ordering::SeqCst), 2, "retried after 503 and connected");
+    assert_eq!(seen_passive.load(Ordering::SeqCst), 1, "one passive look first, which never wakes it");
+    assert_eq!(calls.load(Ordering::SeqCst), 2, "then woken without x-wisp-passive: retried after 503 and connected");
     let steps = io.steps.lock().unwrap();
     assert!(steps.iter().any(|(id, st, d)| id == "wake" && *st == StepStatus::Run && d.as_deref() == Some("Starting…")), "{steps:?}");
     assert!(steps.iter().any(|(id, st, _)| id == "wake" && *st == StepStatus::Done), "{steps:?}");
+}
+
+/// A hub woke every few minutes for its schedule, found its sandbox up, and reconnected with a non-passive health
+/// check: use, every time, so the sandbox never slept (ADR-0148). Connecting to a box that's up is a passive look only.
+#[tokio::test(flavor = "multi_thread")]
+async fn connecting_to_a_cloud_computer_already_up_is_never_use() {
+    let woken = Arc::new(AtomicUsize::new(0));
+    let w = woken.clone();
+    let origin = mock_grid(move |req| {
+        if req.headers().get("x-wisp-passive").is_none() {
+            w.fetch_add(1, Ordering::SeqCst);
+        }
+        (StatusCode::OK, json!({ "name": "wisp", "version": "1.0.0" }))
+    })
+    .await;
+    let t = GridTransport { tunnel: false, client: reqwest::Client::builder().no_proxy().build().unwrap() };
+    let io = Arc::new(SpyIo { secret: Some("wgd_tok".into()), ..SpyIo::default() });
+    let ch = t.connect(peer(&origin, false), io.clone(), CancellationToken::new()).await.unwrap();
+    ch.close();
+    assert_eq!(woken.load(Ordering::SeqCst), 0, "a box that's up isn't woken, nor its use counted");
+    assert!(io.steps.lock().unwrap().iter().any(|(id, st, _)| id == "wake" && *st == StepStatus::Done));
 }
 
 #[tokio::test(flavor = "multi_thread")]

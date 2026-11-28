@@ -157,3 +157,27 @@ async fn a_save_over_a_briefly_held_file_waits_it_out_instead_of_failing() {
     assert_eq!(gone.await.unwrap_err().kind(), ErrorKind::NotFound);
     assert_eq!(tries.load(Ordering::SeqCst), 1, "not a held file: no retry");
 }
+
+/// ADR-0148: on a team hub's box the team's secrets (env vars the grid names in `WISP_HUB_SECRETS`) answer as
+/// `${secret:NAME}` where the file has none; the file's own value wins; anywhere else, nothing from the env.
+#[tokio::test]
+async fn a_hubs_team_secrets_answer_as_secrets_and_the_file_wins() {
+    static HUB: [(&str, &str); 5] =
+        [("WISP_HUB", "1"), ("WISP_HUB_SECRETS", "HOOK_SECRET, GH_TOKEN,"), ("HOOK_SECRET", "s3"), ("GH_TOKEN", "ghp"), ("PATH", "/bin")];
+    static NOT_A_HUB: [(&str, &str); 2] = [("WISP_HUB_SECRETS", "PATH"), ("PATH", "/bin")];
+    let d = std::env::temp_dir().join(format!("wisp-team-secrets-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    let env =
+        |pairs: &'static [(&'static str, &'static str)]| move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| (*v).to_owned());
+    let team = super::team_secrets(&env(&HUB));
+    assert_eq!(team.keys().collect::<Vec<_>>(), ["GH_TOKEN", "HOOK_SECRET"], "only the names the grid gave");
+    assert!(super::team_secrets(&env(&NOT_A_HUB)).is_empty(), "not a hub: none");
+    let s = FileSecrets::with_team(&d, team);
+    assert_eq!(s.get("HOOK_SECRET").await.unwrap().as_deref(), Some("s3"));
+    assert_eq!(s.get("PATH").await.unwrap(), None);
+    s.set("HOOK_SECRET", "mine").await.unwrap();
+    assert_eq!(s.get("HOOK_SECRET").await.unwrap().as_deref(), Some("mine"), "the file's own wins");
+    assert_eq!(s.keys("").await.unwrap(), ["GH_TOKEN", "HOOK_SECRET"]);
+    let _ = std::fs::remove_dir_all(&d);
+}

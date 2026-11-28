@@ -11,7 +11,7 @@
 // and rolls back with the shell's toast when refused. Its own chunk: only the phone apps load it.
 import { createMemo, createSignal, For, Show, type JSX } from 'solid-js';
 import { uuidv7, type PluginClient } from '@wisp/client';
-import { useShell } from '@wisp/shell';
+import { useHere, useShell } from '@wisp/shell';
 import {
   Box,
   Button,
@@ -196,6 +196,7 @@ export function CrewPhoneOrg(props: { readonly client: PluginClient; readonly ch
 export function CrewPhoneMember(props: { readonly client: PluginClient; readonly id: string }): JSX.Element {
   const c = props.client;
   const shell = useShell();
+  const here = useHere();
   const data = crewData(c);
   const members = useSignal(data.members);
   const states = useSignal(data.states);
@@ -402,6 +403,7 @@ export function CrewPhoneMember(props: { readonly client: PluginClient; readonly
                         t,
                         harness,
                         place: (id) => id,
+                        ...(here.hub() && { here: here.name() }),
                         onTeam: () => toOrg(c, true),
                       })}
                     />

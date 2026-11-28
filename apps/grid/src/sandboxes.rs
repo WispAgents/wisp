@@ -68,7 +68,7 @@ pub struct Sandboxes {
 
 impl Sandboxes {
     fn secrets(&self) -> Result<&Secrets> {
-        self.secrets.as_deref().ok_or_else(|| bad("This grid has no master key, so it keeps no sandboxes.", 503))
+        self.secrets.as_deref().ok_or_else(|| bad("This grid has no master key, so it keeps no sandboxes and no hub secrets (GRID_MASTER_KEY, or secrets/master.json in its data folder).", 503))
     }
 
     pub fn get(&self, id: &str) -> Result<Option<SandboxRow>> {
@@ -235,6 +235,14 @@ impl Sandboxes {
 
     /// A sandbox's environment: its owner's env vars, then the sign-ins they gave sandboxes, and `WISP_SANDBOX`.
     pub fn env_for(&self, owner: &str) -> Vec<(String, String)> {
+        let mut out = self.hub_env(owner);
+        out.push(("WISP_SANDBOX".into(), "1".into()));
+        out
+    }
+
+    /// The env vars and sign-ins sealed for `owner`, without `WISP_SANDBOX`: what a team's hub box starts with
+    /// (ADR-0148 §6; a hub's are its team's secrets).
+    pub fn hub_env(&self, owner: &str) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = self.read_env(owner).into_iter().collect();
         if let Some(s) = self.secrets.as_deref() {
             for (a, var, ..) in LOGINS {
@@ -243,7 +251,6 @@ impl Sandboxes {
                 }
             }
         }
-        out.push(("WISP_SANDBOX".into(), "1".into()));
         out
     }
 }

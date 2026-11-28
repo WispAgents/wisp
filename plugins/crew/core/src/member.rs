@@ -194,14 +194,8 @@ fn place(body: &MemberBody, prev: Option<&Member>, c: &Checks) -> Result<(String
     }
     let agent = pick(body.agent.as_ref().filter(|a| !a.is_empty()), prev.map(|p| p.agent.as_str()), c.default_agent);
     let agent = if agent.is_empty() { c.default_agent.to_owned() } else { agent };
-    if !sandbox.is_empty() && agent != "auto" && agent != "claude" {
-        return Err(bad(if c.default_agent == "auto" {
-            "Only Claude Code signs in to sandboxes so far: pick Claude Code or Auto for a member whose jobs run in a sandbox."
-        } else {
-            // Auto is off: it isn't offered (audit H HS7)
-            "Only Claude Code signs in to sandboxes so far: pick Claude Code for a member whose jobs run in a sandbox."
-        }));
-    }
+    // any harness may run in a sandbox (ADR-0148, as wisp.sandbox's `may_start` says): Claude with the grid's sign-in
+    // for sandboxes, the others signing in inside it, or needing none (opencode's free models on a team hub)
     let cwd = pick(body.cwd.as_ref(), prev.map(|p| p.cwd.as_str()), "");
     if !cwd.is_empty() && machine.is_empty() && !(c.exists)(&cwd) {
         return Err(bad(format!("Not a folder on this computer: {cwd}")));

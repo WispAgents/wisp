@@ -10,6 +10,63 @@ use serde_json::{Value, json};
 use wisp_automations_api::TriggerEvent;
 use wisp_issues_api::Issue;
 
+/// One issue's event: its payload (`me` when known, plus `extra`) under `key`.
+fn event_of(on: &str, i: &Issue, key: String, summary: String, extra: Value, at: i64, me: &str) -> TriggerEvent {
+    let mut payload = json!({ "id": i.id, "ref": i.reference, "number": i.number, "title": i.title, "url": i.url, "labels": i.labels, "assignee": i.assignee, "assignees": i.assignees, "author": i.author, "bot": i.author_bot, "milestone": i.milestone, "text": i.body });
+    if !me.is_empty()
+        && let Some(p) = payload.as_object_mut()
+    {
+        p.insert("me".into(), Value::String(me.to_owned()));
+    }
+    if let (Some(p), Value::Object(e)) = (payload.as_object_mut(), extra) {
+        p.extend(e);
+    }
+    TriggerEvent { on: on.to_owned(), key, at, payload, summary, ..TriggerEvent::default() }
+}
+
+/// GitHub's `issues` webhook (ADR-0148 §8e: a hub's App sends it) as the events a poll would have made of it: `opened`
+/// is `issue.opened`, `labeled` is `issue.labeled` for that label, each with the poll's payload and key, so a webhook
+/// and the poll after it fire a trigger once. `repo` (the repository's `owner/name`) is in each payload, for the hub
+/// to find the project.
+pub fn webhook_events(body: &Value, at: i64) -> Vec<TriggerEvent> {
+    let Some(j) = body.get("issue").filter(|_| body.get("pull_request").is_none()) else { return Vec::new() };
+    let user = j.get("user").cloned().unwrap_or(Value::Null);
+    // as `gh issue list --json` says it, so the poll's own reader makes the issue
+    let gh = json!({
+        "number": j.get("number").cloned().unwrap_or(Value::Null), "title": j.get("title").cloned().unwrap_or(Value::Null),
+        "url": j.get("html_url").cloned().unwrap_or(Value::Null), "labels": j.get("labels").cloned().unwrap_or_else(|| json!([])),
+        "assignees": j.get("assignees").cloned().unwrap_or_else(|| json!([])), "body": j.get("body").cloned().unwrap_or(Value::Null),
+        "updatedAt": j.get("updated_at").cloned().unwrap_or(Value::Null), "milestone": j.get("milestone").cloned().unwrap_or(Value::Null),
+        "author": { "login": user.get("login").cloned().unwrap_or(Value::Null), "is_bot": user.get("type").and_then(Value::as_str) == Some("Bot") },
+    });
+    let i = crate::rows::gh_issue(&gh);
+    let mut out = match body.get("action").and_then(Value::as_str) {
+        Some("opened") => vec![event_of(
+            "issue.opened",
+            &i,
+            format!("issue:{}:opened", i.id),
+            format!("{} opened: {}", i.reference, i.title),
+            json!({}),
+            at,
+            "",
+        )],
+        Some("labeled") => body
+            .pointer("/label/name")
+            .and_then(Value::as_str)
+            .map(|l| {
+                let (key, summary) = (format!("issue:{}:label:{l}", i.id), format!("{} labelled {l}: {}", i.reference, i.title));
+                vec![event_of("issue.labeled", &i, key, summary, json!({ "label": l }), at, "")]
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let repo = body.pointer("/repository/full_name").and_then(Value::as_str).unwrap_or_default();
+    for e in &mut out {
+        e.payload["repo"] = json!(repo);
+    }
+    out
+}
+
 /// The events since `cursor` (`{ "<id>": [labels] }`), and the new cursor (the issues listed now, capped at 500).
 /// `me`: the GitHub login this computer's gh is signed in as, empty when unknown (then `me` matches nothing).
 pub fn issue_events(on: &str, issues: &[Issue], cursor: &Value, at: i64, me: &str) -> (Vec<TriggerEvent>, Value) {
@@ -18,18 +75,7 @@ pub fn issue_events(on: &str, issues: &[Issue], cursor: &Value, at: i64, me: &st
     let mut out = Vec::new();
     for i in issues {
         let was = before.as_ref().map(|b| b.get(&i.id));
-        let ev = |key: String, summary: String, extra: Value| {
-            let mut payload = json!({ "id": i.id, "ref": i.reference, "number": i.number, "title": i.title, "url": i.url, "labels": i.labels, "assignee": i.assignee, "assignees": i.assignees, "author": i.author, "bot": i.author_bot, "milestone": i.milestone, "text": i.body });
-            if !me.is_empty()
-                && let Some(p) = payload.as_object_mut()
-            {
-                p.insert("me".into(), Value::String(me.to_owned()));
-            }
-            if let (Some(p), Value::Object(e)) = (payload.as_object_mut(), extra) {
-                p.extend(e);
-            }
-            TriggerEvent { on: on.to_owned(), key, at, payload, summary, ..TriggerEvent::default() }
-        };
+        let ev = |key: String, summary: String, extra: Value| event_of(on, i, key, summary, extra, at, me);
         match (on, was) {
             ("issue.opened", Some(None)) => {
                 out.push(ev(format!("issue:{}:opened", i.id), format!("{} opened: {}", i.reference, i.title), json!({})));
@@ -108,5 +154,27 @@ mod tests {
         let (_, c) = issue_events("issue.labeled", &[issue("7", &[])], &Value::Null, 0, "");
         let (ev, _) = issue_events("issue.labeled", &[i], &c, 1, "");
         assert!(ev[0].payload.get("me").is_none(), "not signed in: no me, so `me` matches nothing");
+    }
+
+    /// A hub's App: GitHub's `issues` webhook is the poll's own event, same key, so the poll after it adds nothing.
+    #[test]
+    fn an_issues_webhook_is_the_polls_event() {
+        let body = json!({
+            "action": "opened", "repository": { "full_name": "acme/app" },
+            "issue": { "number": 3, "title": "slug keeps a dash", "html_url": "https://github.com/acme/app/issues/3",
+                "user": { "login": "ada", "type": "User" }, "labels": [{ "name": "bug" }], "assignees": [], "body": "x" },
+        });
+        let evs = webhook_events(&body, 9);
+        assert_eq!(evs.len(), 1);
+        assert_eq!((evs[0].on.as_str(), evs[0].key.as_str()), ("issue.opened", "issue:3:opened"));
+        assert_eq!((evs[0].payload["author"].clone(), evs[0].payload["repo"].clone()), (json!("ada"), json!("acme/app")));
+        let (polled, _) = issue_events("issue.opened", &[issue("3", &["bug"])], &json!({}), 10, "");
+        assert_eq!(polled[0].key, evs[0].key, "the poll's key");
+        let labeled =
+            json!({ "action": "labeled", "label": { "name": "agent" }, "issue": { "number": 3, "labels": [{ "name": "agent" }] } });
+        assert_eq!(webhook_events(&labeled, 1)[0].key, "issue:3:label:agent");
+        // a pull request's `issues`-like event, or another action: none
+        assert!(webhook_events(&json!({ "action": "closed", "issue": { "number": 3 } }), 1).is_empty());
+        assert!(webhook_events(&json!({ "action": "opened", "issue": { "number": 3 }, "pull_request": {} }), 1).is_empty());
     }
 }

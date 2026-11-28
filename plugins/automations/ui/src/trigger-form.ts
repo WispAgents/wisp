@@ -418,3 +418,16 @@ export function fireLabel(spec: Readonly<Record<string, unknown>>): 'run' | 'che
 export function switchedSpec(spec: Readonly<Record<string, unknown>>, on: boolean): Record<string, unknown> {
   return { ...spec, enabled: on };
 }
+
+/** The Project select's items: each project by its folder, but the one a formula names by its name or id (`project:
+ * app`, as a hub's folder writes it) keeps that value, so it shows picked (it was blank) and saving unchanged writes back
+ * what the formula says (no drift at the next deploy). One that names no project here is listed as it is. */
+export function projectItems(
+  projects: readonly { readonly id: string; readonly name: string; readonly path: string }[],
+  current: string,
+): { value: string; label: string }[] {
+  const named = (p: { id: string; name: string; path: string }): boolean => current !== '' && current !== p.path && (p.name === current || p.id === current);
+  const items = projects.map((p) => ({ value: named(p) ? current : p.path, label: p.name }));
+  if (current !== '' && !items.some((i) => i.value === current)) items.push({ value: current, label: current });
+  return items;
+}

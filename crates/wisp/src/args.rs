@@ -72,6 +72,9 @@ pub const HELP: &str = "usage:
   wisp open <file|url|link>     a shared task or setup: its plan, then run, import or apply it   (--run  --their-setup  --compare  --import  --yes)
   wisp cloud signin|status|signout   wisp Cloud (or another grid: wisp cloud signin <url>)
   wisp cloud accounts|switch|remove  each grid account signed in to; switch or sign out of one
+  wisp team new|open|invite|join|key|secret|deploys …   a team's hub on the grid: people, keys, secrets   (wisp team help)
+  wisp grid init <team> [dir]   a folder for a team's hub: projects, agents, triggers, and its GitHub workflow
+  wisp grid plan|deploy [dir]   what deploying the folder would change on the hub; deploy it   (WISP_HUB_KEY in CI)
   wisp version                  print this wisp's version (also --version, -v)
   wisp update [apply]           is there a newer wisp? apply installs it   (wisp help update: check, view)
   wisp usage                    your limits this period and what each task took   (--agent ID: that harness's, by task)

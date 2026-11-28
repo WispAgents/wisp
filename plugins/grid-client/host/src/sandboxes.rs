@@ -17,11 +17,42 @@ fn machine_of(list: &[Peer], id: &str) -> String {
     list.iter().find(|p| p.field("sandbox") == Some(id)).map(|p| p.id.clone()).unwrap_or_default()
 }
 
+/// How this wisp asks the grid for sandboxes: its grid, handle, and credential (an `Authorization` value).
+pub(crate) struct Asker {
+    pub(crate) grid: String,
+    pub(crate) handle: String,
+    pub(crate) auth: String,
+}
+
+/// A team's hub box (ADR-0148 §8) makes its own sandboxes with its box secret (`Box <handle> <secret>`, which the grid
+/// takes from a hub's box only); anywhere else, this computer's device token. A sandbox never makes one.
+pub(crate) fn box_asker(env: &dyn Fn(&str) -> Option<String>) -> Option<Asker> {
+    if env("WISP_BOX").as_deref() != Some("1") || env("WISP_SANDBOX").as_deref() == Some("1") {
+        return None;
+    }
+    let grid = env("WISP_GRID_URL").filter(|g| !g.is_empty())?.trim_end_matches('/').to_owned();
+    let secret = env("WISP_TRUSTED_PROXY_SECRET").filter(|s| !s.is_empty())?;
+    let public = env("WISP_PUBLIC_URL").filter(|s| !s.is_empty())?;
+    let handle = public.split("://").nth(1).unwrap_or(&public).split(['/', ':', '.']).next().unwrap_or_default().to_owned();
+    Some(Asker { grid, auth: format!("Box {handle} {secret}"), handle })
+}
+
+pub(crate) async fn asker(st: &Arc<St>) -> Result<Asker> {
+    match st.signed_in().await {
+        Ok((a, token)) => Ok(Asker { grid: a.grid, handle: a.handle, auth: format!("Bearer {token}") }),
+        Err(why) => box_asker(&|k| std::env::var(k).ok()).ok_or_else(|| WireError::unavailable(why)),
+    }
+}
+
+/// One call to the grid as [`asker`] says.
+async fn ask(st: &Arc<St>, who: &Asker, method: &str, path: &str, body: Option<&Value>) -> Result<(u16, Value)> {
+    net::call(&st.http, method, &format!("{}{path}", who.grid), None, body, &[("authorization", who.auth.as_str())]).await
+}
+
 /// Makes one on the grid and adds its peer.
 pub async fn create(st: &Arc<St>, name: &str) -> Result<api::Sandbox> {
-    let (a, token) = st.signed_in().await.map_err(WireError::unavailable)?;
-    let (status, v) =
-        net::call(&st.http, "POST", &format!("{}/api/sandboxes", a.grid), Some(&token), Some(&json!({ "name": name })), &[]).await?;
+    let a = asker(st).await?;
+    let (status, v) = ask(st, &a, "POST", "/api/sandboxes", Some(&json!({ "name": name }))).await?;
     if status >= 400 {
         return Err(net::refused(status, &v));
     }
@@ -53,8 +84,8 @@ pub async fn create(st: &Arc<St>, name: &str) -> Result<api::Sandbox> {
 }
 
 pub async fn list(st: &Arc<St>) -> Result<Vec<api::Sandbox>> {
-    let (a, token) = st.signed_in().await.map_err(WireError::unavailable)?;
-    let (status, v) = net::call(&st.http, "GET", &format!("{}/api/sandboxes", a.grid), Some(&token), None, &[]).await?;
+    let a = asker(st).await?;
+    let (status, v) = ask(st, &a, "GET", "/api/sandboxes", None).await?;
     if status >= 400 {
         return Err(net::refused(status, &v));
     }
@@ -72,8 +103,8 @@ pub async fn list(st: &Arc<St>) -> Result<Vec<api::Sandbox>> {
 
 /// Deletes it on the grid (its box and home), then its peer here.
 pub async fn remove(st: &Arc<St>, id: &str) -> Result<Value> {
-    let (a, token) = st.signed_in().await.map_err(WireError::unavailable)?;
-    let (status, v) = net::call(&st.http, "DELETE", &format!("{}/api/sandboxes/{id}", a.grid), Some(&token), None, &[]).await?;
+    let a = asker(st).await?;
+    let (status, v) = ask(st, &a, "DELETE", &format!("/api/sandboxes/{id}"), None).await?;
     if status >= 400 && status != 404 {
         return Err(net::refused(status, &v));
     }
@@ -86,8 +117,8 @@ pub async fn remove(st: &Arc<St>, id: &str) -> Result<Value> {
 
 /// One call to the grid's `/api/sandboxes…` with this computer's device token (ADR-0047).
 async fn grid(st: &Arc<St>, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
-    let (a, token) = st.signed_in().await.map_err(WireError::unavailable)?;
-    let (status, v) = net::call(&st.http, method, &format!("{}/api/sandboxes{path}", a.grid), Some(&token), body, &[]).await?;
+    let a = asker(st).await?;
+    let (status, v) = ask(st, &a, method, &format!("/api/sandboxes{path}"), body).await?;
     if status >= 400 {
         return Err(net::refused(status, &v));
     }
@@ -177,6 +208,31 @@ mod tests {
         let list = vec![peer("m1", "computer", "c1"), peer("m2", "sandbox", "0a1b2c3d")];
         assert_eq!(machine_of(&list, "0a1b2c3d"), "m2");
         assert_eq!(machine_of(&list, "ffffffff"), "");
+    }
+
+    #[test]
+    fn a_hub_box_asks_for_sandboxes_with_its_own_secret_and_a_sandbox_never() {
+        fn env(pairs: &[(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+            let pairs = pairs.to_vec();
+            move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| (*v).to_owned())
+        }
+        let hub = [
+            ("WISP_BOX", "1"),
+            ("WISP_GRID_URL", "https://grid.example/"),
+            ("WISP_TRUSTED_PROXY_SECRET", "s3cret"),
+            ("WISP_PUBLIC_URL", "https://acme.grid.example"),
+        ];
+        let a = box_asker(&env(&hub)).unwrap_or_else(|| panic!("a box asks"));
+        assert_eq!((a.grid.as_str(), a.handle.as_str(), a.auth.as_str()), ("https://grid.example", "acme", "Box acme s3cret"));
+        let sandbox = [
+            ("WISP_BOX", "1"),
+            ("WISP_SANDBOX", "1"),
+            ("WISP_GRID_URL", "g"),
+            ("WISP_TRUSTED_PROXY_SECRET", "s"),
+            ("WISP_PUBLIC_URL", "u"),
+        ];
+        assert!(box_asker(&env(&sandbox)).is_none(), "a sandbox makes none");
+        assert!(box_asker(&env(&[("WISP_GRID_URL", "g")])).is_none(), "not a box");
     }
 
     #[test]

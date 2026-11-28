@@ -143,6 +143,15 @@ pub(crate) async fn machine_ids(ctx: &Ctx, call: &Call) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The machines that may be up (`machines.list`: all but those asleep or off): asking an asleep one wakes it.
+pub(crate) async fn machines_up(ctx: &Ctx, call: &Call) -> Vec<String> {
+    use wisp_machines_api::PeerState as P;
+    ctx.run::<wisp_machines_api::List>(call, wisp_machines_api::NoArgs {})
+        .await
+        .map(|v| v.into_iter().filter(|p| !matches!(p.state, P::Asleep | P::Off)).map(|p| p.id).collect())
+        .unwrap_or_default()
+}
+
 /// `resources.export`: wisp's resources of these kinds.
 pub(crate) async fn export(ctx: &Ctx, call: &Call, kinds: &[&str]) -> R<Vec<wisp_resources_api::Resource>> {
     let a = wisp_resources_api::ExportArgs { kinds: kinds.iter().map(|k| (*k).to_owned()).collect(), include: Vec::new() };

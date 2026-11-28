@@ -9,8 +9,8 @@
   "server": { "builtin": "wisp_issues" },
   "requires": { "git.service": "^1" },
   "provides": {},
-  "permissions": ["connectors:call", "runtime:get", "git:repo", "git:read", "proc:exec{bin:gh}", "net:fetch{host:api.linear.app}", "net:fetch{host:*.atlassian.net}"],
-  "activation": ["onCommand:issues.list", "onRoute:GET /api/issues"],
+  "permissions": ["connectors:call", "runtime:get", "git:repo", "git:read", "proc:exec{bin:gh}", "net:fetch{host:api.linear.app}", "net:fetch{host:*.atlassian.net}", "automations:run", "resources:read"],
+  "activation": ["onCommand:issues.list", "onRoute:GET /api/issues", "onRoute:POST /api/issues/webhook"],
   "contributes": {
     "commands": [{ "id": "issues.list", "title": "List issues to start a task from", "readOnly": true }],
     "triggerSources": ["issue.opened", "issue.labeled"],

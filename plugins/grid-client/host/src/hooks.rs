@@ -42,7 +42,9 @@ fn trigger_name(name: &str) -> Result<&str> {
 /// One call to `<grid>/api/hooks…`. A 404 on a list or a make is a grid from before trigger URLs; a 409 is this
 /// computer not on the grid yet.
 async fn ask(http: &reqwest::Client, grid: &str, token: &str, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
-    let (status, v) = net::call(http, method, &format!("{grid}/api/hooks{path}"), Some(token), body, &[]).await?;
+    // a team hub's box asks with its own secret (`Box <hub> <secret>`), sent as it is; anyone else with a device token
+    let (bearer, auth) = if token.starts_with("Box ") { (None, vec![("authorization", token)]) } else { (Some(token), Vec::new()) };
+    let (status, v) = net::call(http, method, &format!("{grid}/api/hooks{path}"), bearer, body, &auth).await?;
     if status == 404 && method != "DELETE" {
         return Err(WireError::unavailable(format!(
             "{} doesn’t make webhook trigger URLs yet (its wisp Grid is older).",
@@ -87,6 +89,13 @@ pub async fn revoke_at(http: &reqwest::Client, grid: &str, token: &str, id: &str
 
 /// The trigger URLs are this computer's: it has to be on the grid (`wisp computer on`) for one to reach it.
 async fn on_the_grid(st: &Arc<St>) -> Result<(String, String)> {
+    // a team hub's box (ADR-0148): its own hub's trigger URLs, with its box secret (the grid takes it from a hub only),
+    // whatever sign-in it holds: a hub's URL starts work on the hub, never on a computer
+    if std::env::var("WISP_HUB").as_deref() == Ok("1")
+        && let Some(b) = crate::sandboxes::box_asker(&|k| std::env::var(k).ok())
+    {
+        return Ok((b.grid, b.auth));
+    }
     let (a, token) = st.signed_in().await.map_err(WireError::unavailable)?;
     if !a.computer_on {
         return Err(WireError::invalid(

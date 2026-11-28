@@ -145,6 +145,8 @@ triggers:
   my-reviews:
     on: pr.review_requested      # a reviewer newly asked on an open PR, polled with gh
     match: { reviewer: me }      # only the teammate asked: one review, not one per teammate
+    mode: plan
+    prompt: "Review PR #{event.payload.number} with gh pr diff {event.payload.number}, then leave a review."
 ```
 </TabItem>
 </Tabs>
@@ -212,6 +214,7 @@ triggers:
       fork: false
       paths: [src/**, "!**/*.md"]
       size: "<=400"
+    prompt: "Review PR #{event.payload.number}: {event.payload.title}"
   bugs-from-people:
     on: issue.labeled
     label: bug

@@ -214,6 +214,14 @@ async fn wake_and_check(
     cancel: &CancellationToken,
 ) -> Failing<()> {
     let url = format!("{origin}/api/health");
+    // one passive look first: a box already up is connected to without counting as use, so a hub that wakes every few
+    // minutes and finds its sandbox running doesn't keep it up for good; one asleep (503) is woken below
+    if let Ok((200, v)) = net::call(client, "GET", &url, Some(token), None, &[(PASSIVE, "1")]).await
+        && v.get("name").and_then(Value::as_str) == Some("wisp")
+    {
+        io.step(WAKE_STEP, StepStatus::Done, Some(net::host_of(origin)));
+        return Ok(());
+    }
     let deadline = Instant::now() + WAKE_TIMEOUT;
     let mut hard_fails = 0u32;
     let mut last_err = String::new();

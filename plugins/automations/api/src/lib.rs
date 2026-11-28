@@ -23,7 +23,9 @@ pub use cron::{
     Cron, CronError, FixedOffset, Local, Utc, Zone, local_fields, matches, matches_local, next_run, parse_cron, read_schedule, schedule_of,
 };
 pub use model::{Delivery, Held, MemberRef, Origin, Recipe, RecipeFrom, RecipeView, TriggerBase, TriggerView};
-pub use source::{PROVIDERS, Polled, Provided, SOURCE, SourceOn, TriggerEvent, TriggerFired, TriggerProvider, TriggerSource};
+pub use source::{
+    PROVIDERS, Polled, Provided, SOURCE, SourceOn, TriggerEvent, TriggerFired, TriggerProvider, TriggerSource, placed, repo_slug,
+};
 pub use spec::{Budget, Target, TriggerSpec, When};
 pub use words::to_cron;
 

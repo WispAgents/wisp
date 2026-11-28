@@ -377,6 +377,18 @@ impl Ctx {
         self.k().map(|k| crate::life::status(&k)).unwrap_or_default()
     }
 
+    /// Activates every lazy plugin waiting on `event` (`onTriggerSource:issue.opened`, `onTopic:…`): how many woke.
+    /// The trigger engine wakes a polled source's plugin this way. Additive (2026-11-28, ADR-0148).
+    pub fn wake(&self, event: &str) -> BoxFuture<'static, usize> {
+        let k = self.k();
+        let event = event.to_owned();
+        Box::pin(async move {
+            let Ok(k) = k else { return 0 };
+            let (kind, name) = event.split_once(':').unwrap_or((event.as_str(), ""));
+            crate::life::wake(&k, kind, name, None).await
+        })
+    }
+
     /// Each contribution to `point` with the id of the plugin that made it (ADR-0043: a source or a provided
     /// trigger is shown with its plugin). Additive (2026-11-09).
     pub fn contributions_by<T: ?Sized + Send + Sync + 'static>(&self, point: &Point<T>) -> Vec<(String, Arc<T>)> {

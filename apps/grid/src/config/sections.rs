@@ -278,3 +278,29 @@ pub struct ApnsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api: Option<String>,
 }
+
+/// `githubApp`: the GitHub App a team installs so its hub gets short-lived tokens for its repos and its webhooks
+/// (ADR-0148 §8e). Its secrets are files or env vars, never grid.json: the OAuth client's secret
+/// (`GRID_GITHUB_APP_CLIENT_SECRET`), the app's private key (`GRID_GITHUB_APP_PRIVATE_KEY`, PEM) and its webhook
+/// secret (`GRID_GITHUB_APP_WEBHOOK_SECRET`), each also `*_FILE`. Without it, hubs use a `GH_TOKEN` secret.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubAppConfig {
+    /// the App's id (a number, as GitHub shows it)
+    pub id: String,
+    /// its URL name: `https://github.com/apps/<slug>`
+    pub slug: String,
+    pub client_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_secret_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub private_key_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhook_secret_file: Option<String>,
+    /// tests and GitHub Enterprise: default `https://api.github.com`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api: Option<String>,
+    /// default `https://github.com`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web: Option<String>,
+}

@@ -66,6 +66,10 @@ pub struct Engine {
     /// a declared trigger's `project:` as written (a project's name), where the engine reads its folder: what
     /// `trigger.ls` says, so the app's Edit and switch send it back as written (audit H4)
     pub(crate) written: Mutex<std::collections::BTreeMap<String, String>>,
+    /// the earliest moment a live trigger needs the tick (a poll, a schedule's minute, a one-off, a batch closing), as
+    /// of the last tick; 0: none. What `GET /api/status` says as `nextWakeAt`, so a grid box asleep wakes for it
+    /// (ADR-0148: a team hub's polled and scheduled triggers run while nobody has it open)
+    pub(crate) next_wake: std::sync::atomic::AtomicI64,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -105,7 +109,13 @@ impl Engine {
             plan_runs: Mutex::default(),
             loading: tokio::sync::Mutex::new(()),
             unread: std::sync::atomic::AtomicBool::new(false),
+            next_wake: std::sync::atomic::AtomicI64::new(0),
         }
+    }
+
+    /// When the tick next has work for a live trigger (ms), as of the last tick; None: nothing scheduled.
+    pub fn next_wake_at(&self) -> Option<i64> {
+        Some(self.next_wake.load(std::sync::atomic::Ordering::Relaxed)).filter(|at| *at > 0)
     }
 
     /// Set once, at start (the store is a service then).
@@ -237,6 +247,11 @@ impl Engine {
                     core::started(st, &job, &sid, now);
                     out.session = Some(sid);
                 }
+                Err(e) if e.message.starts_with(QUEUED) => {
+                    let why = queued_words(&t.spec.crew, &e.message);
+                    st.log(now, "queued", &why, &key, None);
+                    out = FireOut { result: "queued".into(), why, session: None };
+                }
                 Err(e) => {
                     st.log(now, "failed", &format!("didn't start: {}", e.message), &key, None);
                     out = FireOut { result: "failed".into(), why: e.message, session: None };
@@ -314,6 +329,7 @@ impl Engine {
     pub async fn tick(&self, ctx: &Ctx, now: i64) {
         let call = ctx.root_call();
         let owners = owners_of(ctx);
+        let mut wake: Option<i64> = None;
         for t in self.all(ctx) {
             let _one = self.gate.lock().await;
             let mut st = self.load(&t.name).await;
@@ -343,12 +359,16 @@ impl Engine {
             if st.unavailable.is_none() && st.next_poll_at.is_none_or(|at| at <= now) {
                 self.poll(ctx, &call, &t, &mut st, now).await;
             }
+            if off_words(&t.name, &t).is_none() && st.unavailable.is_none() {
+                wake = [wake, wakes_at(&t, &st, now)].into_iter().flatten().min();
+            }
             if st != before
                 && let Err(e) = self.save(&t.name, &st).await
             {
                 tracing::warn!(automation = %t.name, "couldn't save the automation's state: {}", e.message);
             }
         }
+        self.next_wake.store(wake.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
     }
 
     /// The runs it thinks are going that aren't: a task that's gone, or one idle on two ticks in a row (an end it never
@@ -374,8 +394,14 @@ impl Engine {
     }
 
     async fn poll(&self, ctx: &Ctx, call: &Call, t: &Live, st: &mut State, now: i64) {
-        let Some(src) = ctx.contributions(&SOURCE).into_iter().find(|s| s.ons().iter().any(|o| o.mode == "poll" && o.on == t.spec.on))
-        else {
+        let find = || ctx.contributions(&SOURCE).into_iter().find(|s| s.ons().iter().any(|o| o.mode == "poll" && o.on == t.spec.on));
+        // its plugin is lazy and asleep (nobody listed issues here yet): woken for the trigger, then asked again
+        let src = match find() {
+            Some(s) => Some(s),
+            None if ctx.wake(&format!("onTriggerSource:{}", t.spec.on)).await > 0 => find(),
+            None => None,
+        };
+        let Some(src) = src else {
             return;
         };
         let every = src.ons().iter().find(|o| o.on == t.spec.on).and_then(|o| o.every).unwrap_or(5);
@@ -396,7 +422,8 @@ impl Engine {
         st.next_poll_at = Some(next);
         st.poll_failures = f;
         let w = Self::world(t, now);
-        for ev in events {
+        for mut ev in events {
+            from_its_project(&t.spec, &mut ev);
             let depth = ev.depth;
             let d = core::admit(&t.name, &t.spec, st, ev, &w);
             if d != Decision::Nothing {
@@ -628,6 +655,40 @@ pub fn sources(ctx: &Ctx) -> Vec<SourceRow> {
 }
 
 /// The schedule's or the one-off's event, when it's due.
+/// The words a queued crew job's answer starts with, between `start` and `act` (never shown as they are).
+const QUEUED: &str = "queued:";
+
+/// What a queued job's log line says: `waits in triager's queue (#2 in line)`.
+pub(crate) fn queued_words(crew: &str, answer: &str) -> String {
+    let at = answer.rsplit_once('|').map(|(_, p)| p).filter(|p| !p.is_empty());
+    at.map_or_else(|| format!("waits in {crew}'s queue"), |p| format!("waits in {crew}'s queue (#{p} in line)"))
+}
+
+/// A polled event came from the project its trigger watches (the source polled there: an issue, a PR, a CI run of
+/// that repo): its payload says so as `cwd` when it names no project of its own. Before, `project:` (a filter on these
+/// events) looked for a project the issue and PR events never carried, and every event of a trigger with a project was
+/// dropped without a word (found on a team hub, ADR-0148).
+pub(crate) fn from_its_project(spec: &TriggerSpec, ev: &mut TriggerEvent) {
+    let names_one = ev.payload.get("project").is_some_and(|p| !p.is_null()) || ev.payload.get("cwd").is_some_and(|p| !p.is_null());
+    if spec.project.trim().is_empty() || names_one {
+        return;
+    }
+    if let Some(p) = ev.payload.as_object_mut() {
+        p.insert("cwd".into(), json!(spec.project));
+    }
+}
+
+/// When trigger `t` next needs the tick after `now`: its next poll, a schedule's next minute, a one-off's time, a batch
+/// window closing; the earliest of them. None: nothing on a clock (a webhook, an event the feed brings).
+pub(crate) fn wakes_at(t: &Live, st: &State, now: i64) -> Option<i64> {
+    let schedule = (t.spec.on == "schedule")
+        .then(|| wisp_automations_api::schedule_of(&t.spec.cron).ok())
+        .flatten()
+        .and_then(|c| wisp_automations_api::cron::next_run(&c, now, &zone(&t.spec.tz)));
+    let once = (t.spec.on == "once").then_some(t.spec.at).flatten().filter(|at| *at > now);
+    [st.next_poll_at, schedule, once, st.batch_due].into_iter().flatten().min()
+}
+
 fn due_event(t: &Live, st: &State, now: i64) -> Option<TriggerEvent> {
     match t.spec.on.as_str() {
         "schedule" => {
@@ -779,7 +840,7 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
             let made = ctx.run::<rt::Create>(call, a).await?;
             serde_json::to_value(made).map_err(|e| WireError::internal(e.to_string()))?
         }
-        Target::Crew(member) => wake(ctx, call, member, text("{event.summary}"), &by).await?,
+        Target::Crew(member) => wake(ctx, call, member, text("{event.summary}"), &cwd, &by).await?,
         Target::Workflow(w) => run_workflow(ctx, call, w, &first, &cwd, &by).await?,
         Target::FollowUp => {
             let Some(id) = first.subject.clone() else {
@@ -798,12 +859,23 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
             json!({ "id": id })
         }
     };
-    id_of(&made).ok_or_else(|| WireError::internal(format!("{} started, but its answer names no task: {made}", t.name)))
+    if let Some(sid) = id_of(&made) {
+        return Ok(sid);
+    }
+    // a crew member whose hands are full takes the job later, in their queue: not a failure (found on a team hub, ADR-0148)
+    if let Some(q) = made.get("queued").and_then(Value::as_str) {
+        let at = made.get("position").and_then(Value::as_u64).map_or_else(String::new, |p| p.to_string());
+        return Err(WireError::new(wisp_kernel::Code::Conflict, format!("{QUEUED}{q}|{at}")));
+    }
+    Err(WireError::internal(format!("{} started, but its answer names no task: {made}", t.name)))
 }
 
-/// `crew.wake`: the member's job, as the trigger's answer (`session.id` names its task).
-async fn wake(ctx: &Ctx, call: &Call, member: &str, why: String, by: &str) -> Result<Value> {
-    let a = wisp_crew_api::commands::WakeArgs { id: member.to_owned(), why, source: Some(by.to_owned()) };
+/// `crew.wake`: the member's job, in the trigger's folder when it has one, as the trigger's answer (`session.id` names its
+/// task).
+async fn wake(ctx: &Ctx, call: &Call, member: &str, why: String, cwd: &str, by: &str) -> Result<Value> {
+    // the trigger's project, when it has one, is where the job works (ADR-0148): a hub's triager in the repo it names
+    let cwd = (!cwd.is_empty()).then(|| cwd.to_owned());
+    let a = wisp_crew_api::commands::WakeArgs { id: member.to_owned(), why, source: Some(by.to_owned()), cwd };
     let started = ctx.run::<wisp_crew_api::commands::Wake>(call, a).await?;
     serde_json::to_value(started).map_err(|e| WireError::internal(e.to_string()))
 }
@@ -893,3 +965,58 @@ pub fn outcome_of(ty: &str, data: &Value) -> Outcome {
 }
 
 pub type Shared = Arc<Engine>;
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod wake_tests {
+    use super::*;
+
+    fn live(on: &str, cron: &str, at: Option<i64>) -> Live {
+        let spec = TriggerSpec { on: on.into(), cron: cron.into(), tz: "UTC".into(), at, ..TriggerSpec::default() };
+        Live { name: "t".into(), spec, from: "trigger".into(), paused: false, full_auto: false }
+    }
+
+    /// ADR-0148: what a grid box asleep wakes for. A polled trigger's next poll, a schedule's next minute, a one-off still
+    /// to come, a batch window closing: the earliest. A webhook (or an event the feed brings) is on no clock.
+    #[test]
+    fn a_trigger_wakes_the_box_for_its_poll_its_schedule_its_one_off_or_its_batch() {
+        let now = 1_795_000_000_000; // a minute's start is :00
+        let st = State::default();
+        assert_eq!(wakes_at(&live("webhook", "", None), &st, now), None);
+        let polled = State { next_poll_at: Some(now + 60_000), ..State::default() };
+        assert_eq!(wakes_at(&live("issue.opened", "", None), &polled, now), Some(now + 60_000));
+        let hourly = wakes_at(&live("schedule", "0 * * * *", None), &st, now).unwrap();
+        assert!(hourly > now && hourly <= now + 3_600_000 && hourly % 3_600_000 == 0, "{hourly}");
+        assert_eq!(wakes_at(&live("once", "", Some(now + 5_000)), &st, now), Some(now + 5_000));
+        assert_eq!(wakes_at(&live("once", "", Some(now - 5_000)), &st, now), None, "a one-off gone by");
+        let batched = State { next_poll_at: Some(now + 60_000), batch_due: Some(now + 10_000), ..State::default() };
+        assert_eq!(wakes_at(&live("issue.opened", "", None), &batched, now), Some(now + 10_000), "the earliest");
+    }
+
+    /// A crew wake that queues is logged as queued, with its place in line, never as a failure.
+    #[test]
+    fn a_queued_crew_job_says_where_it_waits() {
+        assert_eq!(queued_words("triager", "queued:job1|2"), "waits in triager's queue (#2 in line)");
+        assert_eq!(queued_words("triager", "queued:job1|"), "waits in triager's queue");
+    }
+
+    /// An issue (or PR, CI) event polled for a trigger with a project passes its `project` filter: it came from there.
+    /// One that names a project of its own keeps it, and is filtered as it says.
+    #[test]
+    fn a_polled_event_comes_from_its_triggers_project() {
+        let spec = TriggerSpec { on: "issue.opened".into(), project: "/hub/repos/app/api".into(), ..TriggerSpec::default() };
+        let issue = || TriggerEvent {
+            on: "issue.opened".into(),
+            key: "issue:1:opened".into(),
+            payload: json!({ "number": 1 }),
+            ..TriggerEvent::default()
+        };
+        assert!(!core::filters_pass(&spec, &issue()), "as the source says it, the project filter refuses it");
+        let mut ev = issue();
+        from_its_project(&spec, &mut ev);
+        assert!(core::filters_pass(&spec, &ev));
+        let mut elsewhere = TriggerEvent { payload: json!({ "cwd": "/elsewhere" }), ..issue() };
+        from_its_project(&spec, &mut elsewhere);
+        assert!(!core::filters_pass(&spec, &elsewhere), "its own folder stands");
+    }
+}

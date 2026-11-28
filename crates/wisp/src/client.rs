@@ -55,6 +55,10 @@ impl CliError {
 
 pub type Result<T> = std::result::Result<T, CliError>;
 
+#[path = "client_hub.rs"]
+mod hub;
+pub use hub::grid_http;
+
 #[derive(Debug, Clone)]
 pub struct Client {
     pub url: String,
@@ -63,6 +67,8 @@ pub struct Client {
     /// `--on <machine>`: commands go to that peer through this wisp (`machines.route`, same key)
     on: Option<String>,
     peer: std::sync::Arc<tokio::sync::OnceCell<(String, String)>>,
+    /// a team's hub (ADR-0148, `wisp grid plan|deploy`): every command goes there instead
+    hub: Option<hub::Hub>,
 }
 
 static ON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -140,6 +146,7 @@ impl Client {
             token: std::env::var("WISP_TOKEN").ok().filter(|t| !t.is_empty()),
             on: ON.get().cloned(),
             peer: std::sync::Arc::default(),
+            hub: None,
         }
     }
 
@@ -210,6 +217,14 @@ impl Client {
     /// `--on`, on that machine: through `machines.route` with the same key.
     pub async fn cmd(&self, cmd: &str, args: Value) -> Result<Value> {
         let key = format!("cli-{}", crate::services::hex(&rand::random::<[u8; 12]>()));
+        match &self.hub {
+            Some(hub::Hub::Key { url, key: bearer, source }) => return self.hub_cmd(url, bearer, source, cmd, args, &key).await,
+            Some(hub::Hub::Via { team, source }) => {
+                let call = serde_json::json!({ "team": team, "cmd": cmd, "args": args, "source": source });
+                return self.local_cmd("grid-client.hubCall", call, &key).await;
+            }
+            None => {}
+        }
         match self.on.as_deref() {
             Some(on) if !local_only(cmd) => {
                 let (id, _) = self.peer(on).await?;

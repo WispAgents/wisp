@@ -7,6 +7,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **A team hub connects the grid's GitHub App.** On the team's page (**GitHub → Connect GitHub**) or with `wisp team
+  github <team> connect`, an owner installs the App on the org and picks repos. The hub then gets an hour's token for
+  them, renewed by itself, and their new issues, labels and review requests reach its triggers at once, waking it. A
+  grid without an App keeps the `GH_TOKEN` secret. Running your own grid: set `GRID_GITHUB_APP_*`
+  (the team hubs guide).
+- **Team hubs: your team's own wisp on the Grid, deployed like Terraform.** Making a team (grid **Teams** → **New team**,
+  or `wisp team new acme`) makes its hub at `acme.<grid>`, where the team's shared agents and triggers run while
+  laptops sleep. People open it by their role (owner, admin, member, viewer) from the browser, the desktop app (each hub
+  is a machine, *Acme hub*), the TUI or `--on "Acme hub"`. Invite links (`wisp team invite`), deploy keys for CI
+  (`wisp team key`), and secrets kept on the grid (`wisp team secret`, `wisp team login acme claude`), all on the
+  team's page too. `wisp grid init acme ops/hub` writes a folder of projects, agents and triggers plus a GitHub workflow;
+  `wisp grid plan` / `wisp grid deploy` send it to the hub, as you or with `WISP_HUB_KEY` and no wisp running (one
+  deploy at a time, each kept with its commit: `wisp grid deploys`). The GitHub Action gets `deploy: plan|apply`,
+  `hub` and `hub-key`. A project can name its `repo:`, cloned on apply; a hub's crew with `sandbox: job` runs each job
+  in a sandbox the hub owns. A hub's webhook triggers get URLs at its own address (`wisp team url acme sentry`, the
+  team's page, or the hub's Automations page); the hub wakes for each call, and a trigger's `${secret:NAME}` reads the
+  team's secrets there.
 - **Webhook triggers work from the internet on any of your computers, through the grid.** Open a saved webhook
   trigger and press **Make a grid URL**. You get `https://<computer>--<you>.<grid>/_hook/wgh_…`: the address names the
   computer that runs the trigger, and the token is the only way in, so a trigger's name alone opens nothing. wisp shows
@@ -46,6 +63,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the computer). The narrow bar and the phone sheet are unchanged.
 
 ### Fixed
+
+- **A team hub is called by its name.** On a hub, a task's side panel, crew and Automations said "This computer" (and
+  "this machine" for its triggers); they now say "Acme hub", and Automations says the hub wakes for its triggers with
+  the team's `GH_TOKEN`.
+- A trigger from a formula that names its project (`project: app`) shows that project in its form, where the select was
+  blank; saving it unchanged keeps the name.
+- **A hub's sandboxes sleep again.** A crew job's sandbox stayed up for good. The hub's link to it, its read-only checks,
+  and the crew counting live jobs each kept it awake, and a hub waking for its schedule woke every sandbox. Now only a
+  write counts as use, a watching link never holds a box up, and an asleep sandbox is never woken to ask whether it is
+  busy. A box the grid restarts right after it started keeps its next scheduled wake.
+- A webhook trigger's grid URLs list loads its own strings, so its labels never show as raw keys.
+- `wisp grid deploy` in a folder with no `grid.yml` is a usage error (exit 2) that says `wisp grid init <team>` or `-f <formula>`.
+- **Issue and PR triggers with a project fire again.** `issue.opened`, `issue.labeled`, `pr.review_requested` and the
+  CI triggers took their `project` as a filter on events that never say their project, so every event was dropped
+  without a word. A polled event now comes from its trigger's project.
+- **A cloud computer (or a team hub) wakes for its triggers.** It slept through every poll and schedule: nothing told
+  the grid when its next trigger was due. Now it does, and the grid wakes it then. A trigger's source plugin that
+  hadn't loaded yet (issues, until someone opened the issues list) is woken for it too.
+- **A crew member whose jobs run in a sandbox can use any harness**, not only Claude Code (opencode's free models need
+  no sign-in at all). A trigger's job waiting in a member's queue is logged as queued, not failed.
 
 - **No "Save this task to the repo?" while the task works.** A task that finished, offered Save to repo and was
   then reopened kept the offer under its answer while the agent ran again; it now shows only once the task stops.

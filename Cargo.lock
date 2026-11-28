@@ -4845,6 +4845,7 @@ dependencies = [
  "wisp-github-core",
  "wisp-kernel",
  "wisp-proc",
+ "wisp-resources-api",
  "wisp-runtime-api",
 ]
 
@@ -5099,6 +5100,7 @@ dependencies = [
  "wisp-issues-core",
  "wisp-kernel",
  "wisp-proc",
+ "wisp-resources-api",
 ]
 
 [[package]]
@@ -5729,6 +5731,7 @@ dependencies = [
  "wisp-budget-api",
  "wisp-crew-api",
  "wisp-envmask",
+ "wisp-git-api",
  "wisp-issues-api",
  "wisp-kernel",
  "wisp-later-api",

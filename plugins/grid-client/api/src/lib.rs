@@ -416,3 +416,6 @@ command!(KeyRevoke = "grid-client.keysRevoke" : IdArgs => Value);
 command!(HookList = "grid-client.hooks" read yes : HookArgs => Vec<TriggerHook>);
 command!(HookCreate = "grid-client.hooksCreate" : HookArgs => NewHook);
 command!(HookRevoke = "grid-client.hooksRevoke" : IdArgs => Value);
+
+mod hubs;
+pub use hubs::*;

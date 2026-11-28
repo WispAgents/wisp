@@ -21,6 +21,20 @@ pub(super) fn ago(t: Option<i64>, now_ms: i64) -> String {
 
 /// `new Date(t).toLocaleString()` as Node prints it on the grid's server (en-US, UTC):
 /// `11/8/2026, 3:04:05 PM`, with ICU's narrow no-break space before AM/PM.
+/// How soon a time to come is: `in 3 h`, `in 6 days`; one gone by says `ended`.
+pub(super) fn until(t: i64, now_ms: i64) -> String {
+    let s = (t - now_ms) / 1000;
+    match s {
+        i64::MIN..=0 => "ended".into(),
+        1..=3599 => format!("in {} min", (s + 59) / 60),
+        3600..=86_399 => format!("in {} h", s / 3600),
+        _ => {
+            let d = s / 86_400;
+            if d == 1 { "in a day".into() } else { format!("in {d} days") }
+        }
+    }
+}
+
 pub(super) fn locale_string(t: i64) -> String {
     let (y, m, d, hh, mm, ss) = civil(t);
     let (h12, half) = match hh {

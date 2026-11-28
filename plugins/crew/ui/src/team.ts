@@ -53,10 +53,10 @@ const prefix = (k: string): string => (k.includes(':') ? k.slice(0, k.indexOf(':
 /** Where job `s` of the lead `lead` runs, seen from peer `here` (v1 team.js ranOn: a crew job runs in the member's own
  *  folder, on their machine when they have one). A job's row comes from the peer it runs on (a member's machine is a
  *  peer of its own, `s.peer`); the lead's is its key's prefix. */
-export function placeOf(s: SessionRow, lead: string, here: string, who: string, say: Say): TeamPlace {
+export function placeOf(s: SessionRow, lead: string, here: string, who: string, say: Say, hereName?: string): TeamPlace {
   const leadPeer = prefix(lead) || here;
   const peer = s.peer || leadPeer;
-  const name = peer === here ? say('wisp.crew.page.here') : s.machine || say('wisp.crew.team.elsewhere');
+  const name = peer === here ? (hereName ?? say('wisp.crew.page.here')) : s.machine || say('wisp.crew.team.elsewhere');
   const away = peer !== leadPeer;
   // v1: a server when it's away from its lead or on a machine; a laptop only here, with a lead that's here too
   return { name, icon: away || peer !== here ? 'server' : 'laptop', away, tip: say('wisp.crew.team.ranOn', { where: name, name: who }) };
@@ -94,7 +94,8 @@ function statusOf(s: SessionRow, say: Say): Pick<TeamRow, 'status' | 'tone' | 'l
 }
 
 /** The jobs task `lead` (its entity key or id) handed to crew members, oldest first. `here`: this wisp's peer id. */
-export function teamRows(jobs: readonly SessionRow[], lead: string, memberOf: (id: string) => TeamMember | undefined, say: Say, here = ''): TeamRow[] {
+/** `hereName`: what this wisp is called when it isn't This computer (a team's hub, ADR-0148). */
+export function teamRows(jobs: readonly SessionRow[], lead: string, memberOf: (id: string) => TeamMember | undefined, say: Say, here = '', hereName?: string): TeamRow[] {
   return jobs
     .filter((s) => handedOut(s, lead))
     .slice()
@@ -105,7 +106,7 @@ export function teamRows(jobs: readonly SessionRow[], lead: string, memberOf: (i
       const st = statusOf(s, say);
       const line = (st.live ? s.live : s.preview) || s.title || s.crew?.prompt || '';
       const handle = name ? `@${name}` : say('wisp.crew.team.someone');
-      const place = placeOf(s, lead, here, name || handle, say);
+      const place = placeOf(s, lead, here, name || handle, say, hereName);
       return {
         id: s.id,
         member: s.crew?.id ?? '',

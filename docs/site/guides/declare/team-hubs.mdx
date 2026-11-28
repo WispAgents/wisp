@@ -1,0 +1,313 @@
+---
+title: A team hub on the Grid
+description: Give your team its own wisp on the Grid, where shared agents and triggers run. Invite people, make deploy keys, and deploy its agents from a folder with the CLI or GitHub Actions, like Terraform.
+sidebar:
+  order: 4
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A **hub** is a wisp that belongs to a team, not to one person. It runs on a wisp Grid at its own address
+(`https://acme.grid.trywisp.dev`). The team's shared agents, projects and triggers live there and run there, so an
+issue gets triaged even when everyone's laptop is closed.
+
+- **People** open the hub by their role in the team: owners and admins run it, members start tasks and triggers on
+  it, viewers read.
+- **Agents, projects and triggers** live in a folder of YAML in a repo. `wisp grid deploy` sends that folder to the
+  hub, from your terminal or from GitHub Actions on every merge. It works like Terraform: plan, review, apply.
+- **Deploy keys** let CI deploy without anyone's sign-in. A key opens its own team's hub and nothing else.
+- **GitHub** through the grid's GitHub App (an hour's token for the repos you pick, and webhooks), or a `GH_TOKEN`.
+- **Secrets** (the hub's Claude sign-in, a token) are kept on the grid, never in the repo.
+
+## 1. Make a team
+
+Making a team makes its hub too.
+
+<Tabs syncKey="way">
+<TabItem label="Grid">
+Sign in to your grid → **Teams** → **New team**. Give it a name (its address: `acme`) and, if you like, what it
+shows as (`Acme`). **Make the team**.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp team new acme Acme
+wisp team open acme            # its address, whether it's awake, your role
+```
+</TabItem>
+</Tabs>
+
+A hub sleeps when no one uses it and wakes when someone opens it or one of its triggers fires.
+
+## 2. Bring people in
+
+| Role | Can |
+| --- | --- |
+| owner | everything, delete the team, make other owners |
+| admin | people, invite links, deploy keys, secrets, deploys |
+| member | start tasks and follow them up, run triggers and workflows, read everything |
+| viewer | read |
+
+<Tabs syncKey="way">
+<TabItem label="Grid">
+On the team's page: **People** → type a handle → pick a role → **Add**. Or **Invite links** → pick a role, how many
+people and how long → **Make a link**. The link is shown once: send it, and whoever opens it, signed in, joins with
+that role.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp team add acme bo admin                 # someone already on the grid
+wisp team invite acme member 5 --expires 7d # a link for 5 people, shown once
+wisp team join https://grid.trywisp.dev/join/wgi_…
+wisp team role acme bo member
+wisp team rm acme bo
+```
+</TabItem>
+</Tabs>
+
+## 3. Open the hub
+
+The hub is a whole wisp: the same app you know, with the team's tasks.
+
+<Tabs syncKey="way">
+<TabItem label="Grid">
+On the team's page, **Open the hub**. You're signed in there as yourself, with your role.
+</TabItem>
+<TabItem label="Desktop app">
+Every hub of every team you're in is in **Machines** as *Acme hub*, beside your cloud computer, and its tasks show
+in your list. To start one there, click **This computer** in New task's footer and pick **Acme hub**.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp ls --on "Acme hub"
+wisp "Look at the flaky test in api" --on "Acme hub"
+wisp tui --on "Acme hub"
+```
+</TabItem>
+</Tabs>
+
+## 4. Give it its secrets
+
+The hub and the sandboxes it makes start with these. A formula names them (`${env:GH_TOKEN}`); it never holds them.
+
+<Tabs syncKey="way">
+<TabItem label="Grid">
+On the team's page, **Secrets**: sign the hub in to **Claude** with a token from `claude setup-token`, and set
+`GH_TOKEN` (a GitHub token that can read the team's repos and comment on their issues), unless the team connects
+the grid's GitHub App (step 5).
+</TabItem>
+<TabItem label="CLI">
+```sh
+claude setup-token                    # prints a token for the hub's Claude
+wisp team login acme claude           # paste it: it isn't shown, and never goes on the command line
+printf %s "$GITHUB_TOKEN" | wisp team secret acme GH_TOKEN
+wisp team secrets acme          # the names, never the values
+wisp team restart acme          # a running hub picks them up when it next starts
+```
+</TabItem>
+</Tabs>
+
+## 5. GitHub: the App, or a token
+
+A hub reaches its team's repos one of two ways:
+
+- **The grid's GitHub App** (best). Install it on your org and pick the repos. The hub gets a fresh token for those
+  repos every hour, and no one's personal token sits on the grid. Each new or labelled issue, and each review request,
+  reaches the hub's triggers the moment it happens, waking the hub if it's asleep.
+- **A `GH_TOKEN` secret** (step 4), on a grid without the App. The hub then polls GitHub every few minutes.
+
+<Tabs syncKey="way">
+<TabItem label="Grid">
+On the team's page, **GitHub** → **Connect GitHub**. GitHub asks where to install the App and which repos it may
+use, then brings you back, connected.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp team github acme connect      # prints the link to install the App: open it signed in to the grid
+wisp team github acme              # connected to what, by whom
+wisp team github acme disconnect
+```
+</TabItem>
+</Tabs>
+
+Connecting checks that GitHub really let *you* install it on that account: a link to someone else's installation
+connects nothing. With the App connected, the hub's `gh` and `git` use its tokens, and a `GH_TOKEN` secret is used
+only after you disconnect. Webhooks only speed things up: the hub still polls, and an event fires a trigger once,
+whichever comes first. A webhook reaches the triggers of the project whose `repo:` names that repo.
+
+<details>
+<summary>Running your own grid: making its GitHub App</summary>
+
+On GitHub, **Settings → Developer settings → GitHub Apps → New GitHub App**:
+
+- **Callback URL** and **Setup URL**: `https://<your grid>/github/setup`. Tick **Request user authorization (OAuth)
+  during installation**.
+- **Webhook URL**: `https://<your grid>/github/webhook`, with a secret you make.
+- **Repository permissions**: Contents, Issues and Pull requests: read and write; Metadata: read.
+- **Subscribe to events**: Issues, Pull request.
+
+Then give the grid its id, URL name and client id, and its three secrets (each also as a file with `_FILE`):
+
+```sh
+GRID_GITHUB_APP_ID=123456 GRID_GITHUB_APP_SLUG=acme-wisp GRID_GITHUB_APP_CLIENT_ID=Iv1.abc
+GRID_GITHUB_APP_CLIENT_SECRET=…  GRID_GITHUB_APP_PRIVATE_KEY_FILE=/etc/wisp/app.pem  GRID_GITHUB_APP_WEBHOOK_SECRET=…
+```
+</details>
+
+## 6. The hub as code
+
+```sh
+wisp grid init acme ops/hub
+```
+
+```text
+ops/hub/
+├── grid.yml                  # which grid and team this folder deploys to
+├── projects/app.wisp.yml     # the repos the hub works in
+├── agents/triager.wisp.yml   # crew members
+├── triggers/issues.wisp.yml  # what starts work
+└── README.md
+.github/workflows/wisp-hub.yml   # plan on pull requests, deploy on merge
+```
+
+`init` never overwrites a file. The folder holds formulas, so everything in
+[Build a software factory as code](/docs/guides/declare/software-factory-as-code/) works there too: crew, workflows,
+connectors, modules, variables.
+
+**A project by its repo.** On a hub, a project names its repo. Deploying clones it into the hub with the App's
+token (or the hub's `GH_TOKEN`):
+
+```yaml
+wisp: 1
+projects:
+  app:
+    repo: acme/app            # or https://github.com/acme/app, git@github.com:acme/app.git
+```
+
+**An agent and what wakes it:**
+
+```yaml
+wisp: 1
+crew:
+  triager:
+    role: triager
+    agent: opencode                           # free models, no sign-in; or claude (wisp team login acme claude)
+    model: opencode/deepseek-v4.1-flash-free
+    mode: auto                                # it runs `gh issue comment` without asking
+    brief: Read each new issue, find the code it's about, and comment with what you found. Never merge.
+    sandbox: job              # each job in a sandbox of its own, which the hub makes and drops
+triggers:
+  triage-new-issues:
+    on: issue.opened
+    project: app
+    crew: triager
+    prompt: "A new issue: {event.summary}"
+```
+
+With `sandbox: job`, each job runs in a fresh sandbox on the grid: the repo, the hub's secrets, and nothing else of
+the hub's. Any harness runs there: Claude with the hub's sign-in, opencode's free models with none.
+
+A hub sleeps when nobody uses it, and wakes by itself when one of its triggers is due (a poll, a schedule), so an
+issue opened at night is triaged at night.
+
+## 7. Plan and deploy
+
+```sh
+cd ops/hub
+wisp grid plan        # what deploying would change on the hub
+wisp grid deploy      # plan, confirm, apply   (--yes in scripts, --prune: delete what the folder no longer declares)
+wisp grid deploys     # who deployed what, from which commit
+```
+
+```text
+Plan (ops/hub)
+  + project/app  (new)
+  + crew/triager  (new)
+  + trigger/triage-new-issues  (new)
+
+  3 to add, 0 to change, 0 to remove, 0 unchanged
+  ✓ applied 3 changes
+```
+
+From your terminal, wisp deploys as you, through your grid sign-in. The hub keeps one deploy at a time: a second one
+waits for the first and says whose it is.
+
+## 8. Deploy from CI
+
+<Tabs syncKey="way">
+<TabItem label="Grid">
+On the team's page, **Deploy keys** → name it (`github-actions`) → **plan and deploy** → **Make a key**. Copy it: it's
+shown once.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp team key acme github-actions          # plan and deploy
+wisp team key acme pull-requests plan      # plan only, for pull requests
+wisp team keys acme                        # last used, never the key
+wisp team unkey acme <id>
+```
+</TabItem>
+</Tabs>
+
+Put it in the repo's secrets as `WISP_HUB_KEY` (`gh secret set WISP_HUB_KEY`). The workflow `wisp grid init` wrote
+then plans each pull request, with the plan as a comment, and deploys each merge to main:
+
+```yml
+- uses: WispAgents/wisp/action@main
+  with:
+    hub: ops/hub
+    deploy: ${{ github.event_name == 'push' && 'apply' || 'plan' }}
+    hub-key: ${{ secrets.WISP_HUB_KEY }}
+```
+
+Anywhere else, `WISP_HUB_KEY=… wisp grid deploy --yes` deploys straight to the hub. It needs no wisp running on
+that machine.
+
+## 9. Webhooks from the internet
+
+A hub has a public address, so GitHub, Sentry or Linear can start its webhook triggers directly. Declare the trigger
+and switch webhook triggers on in the folder; set its secret on the grid:
+
+```yaml
+wisp: 1
+settings:
+  automations.webhookTriggers: true
+triggers:
+  sentry:
+    on: webhook
+    header: Sentry-Hook-Signature
+    secret: "${secret:SENTRY_HOOK}"    # a team secret: wisp team secret acme SENTRY_HOOK
+    project: app
+    mode: plan
+    prompt: "A Sentry alert: {event.summary}. Find the cause; don't fix yet."
+```
+
+On a hub, `${secret:NAME}` reads the team's secrets, so the value never goes in the repo or through CI. Then make its
+URL (shown once):
+
+<Tabs syncKey="way">
+<TabItem label="Grid">
+On the team's page, **Trigger URLs** → the trigger's name → **Make a URL**. Or in the hub itself: Settings →
+Automations → the trigger → **Make a grid URL**.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp team url acme sentry        # https://acme.grid.trywisp.dev/_hook/wgh_…, printed once
+wisp team urls acme              # the live ones, by their last four characters
+wisp team url-revoke acme <id>
+```
+</TabItem>
+</Tabs>
+
+The token is the only way in, and the trigger still checks its secret or signature. The hub wakes for each call, so
+nothing waits for a laptop to come back.
+
+## What a key and a role can't do
+
+- A deploy key changes what's declared on its own team's hub. It can't start tasks, read tasks or secrets, reach
+  another hub or any machine, or make keys. A plan-only key can only read.
+- A member can't change the hub's settings, secrets, plugins or harness accounts, and can't deploy. A viewer can only
+  read.
+- Only a person makes a key, an invite link or a secret: wisp's MCP tools never do, so none of them ever sits in an
+  agent's transcript.
+- Nobody signs in *as* a hub, and a team keeps at least one owner. An account that is a team's only owner can't be
+  deleted until someone else is an owner.

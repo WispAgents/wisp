@@ -30,7 +30,12 @@ export type PeerPlugin = { id: string, version: string, commands: Array<string>,
 /**
  * Who answers on the other end of a stream, and the protocol window it speaks.
  */
-export type PeerInfo = { peer: string, name: string, build: string, version: string, proto_min: number, proto_max: number, plugins: Array<PeerPlugin>, };
+export type PeerInfo = { peer: string, name: string, build: string, version: string, proto_min: number, proto_max: number, plugins: Array<PeerPlugin>, 
+/**
+ * what this wisp is, when it isn't a person's own computer: `"hub"`, a team's hub on a grid (ADR-0148), which
+ * its UI names by its name ("Acme hub") where it says "This computer" anywhere else. Absent: a computer
+ */
+kind?: string, };
 
 export type Hello = { t: 'hello', proto_min: number, proto_max: number, client_id: string, build: string, epoch?: string, cursor?: number, };
 

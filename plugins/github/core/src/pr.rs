@@ -112,6 +112,50 @@ pub fn review_events(on: &str, stdout: &str, cursor: &Value, at: i64, me: &str) 
     Ok((out, serde_json::to_value(next).unwrap_or_default()))
 }
 
+/// GitHub's `pull_request` webhook (ADR-0148 §8e: a hub's App sends it) as the events a poll would have made of it:
+/// `review_requested` is `pr.review_requested` for the one just asked, with the poll's payload and key (the same PR at
+/// the same moment), so a webhook and the poll after it fire a trigger once. Any other action: none. `repo` (the
+/// repository's `owner/name`) is in each payload, for the hub to find the project.
+pub fn webhook_events(body: &Value, at: i64) -> Vec<TriggerEvent> {
+    if body.get("action").and_then(Value::as_str) != Some("review_requested") {
+        return Vec::new();
+    }
+    let Some(pr) = body.get("pull_request") else { return Vec::new() };
+    let str_at = |v: &Value, p: &str| v.pointer(p).and_then(Value::as_str).unwrap_or_default().to_owned();
+    let org = str_at(body, "/organization/login");
+    let team = |t: &Value| json!({ "__typename": "Team", "slug": t.get("slug").cloned().unwrap_or(Value::Null), "organization": org });
+    let user = |u: &Value| json!({ "__typename": "User", "login": u.get("login").cloned().unwrap_or(Value::Null) });
+    let mut asked: Vec<Value> =
+        pr.get("requested_reviewers").and_then(Value::as_array).map(|a| a.iter().map(user).collect()).unwrap_or_default();
+    asked.extend(pr.get("requested_teams").and_then(Value::as_array).map(|a| a.iter().map(team).collect::<Vec<_>>()).unwrap_or_default());
+    let just = body.get("requested_team").map(team).or_else(|| body.get("requested_reviewer").map(user));
+    let Some(just) = just.as_ref().and_then(requested) else { return Vec::new() };
+    let author = pr.get("user").cloned().unwrap_or(Value::Null);
+    let gh = json!({
+        "number": pr.get("number").cloned().unwrap_or(Value::Null),
+        "title": str_at(pr, "/title"), "url": str_at(pr, "/html_url"),
+        "author": { "login": author.get("login").cloned().unwrap_or(Value::Null), "is_bot": author.get("type").and_then(Value::as_str) == Some("Bot") },
+        "reviewRequests": asked,
+        "labels": pr.get("labels").cloned().unwrap_or_else(|| json!([])),
+        "baseRefName": str_at(pr, "/base/ref"), "headRefName": str_at(pr, "/head/ref"),
+        "isDraft": pr.get("draft").and_then(Value::as_bool).unwrap_or(false),
+        "updatedAt": str_at(pr, "/updated_at"),
+        "isCrossRepository": str_at(pr, "/head/repo/full_name") != str_at(pr, "/base/repo/full_name"),
+        "additions": pr.get("additions").cloned().unwrap_or(json!(0)), "deletions": pr.get("deletions").cloned().unwrap_or(json!(0)),
+        "changedFiles": pr.get("changed_files").cloned().unwrap_or(json!(0)),
+        "files": [], "milestone": { "title": pr.pointer("/milestone/title").cloned().unwrap_or(Value::Null) },
+    });
+    let n = pr.get("number").and_then(Value::as_u64).unwrap_or(0).to_string();
+    // everyone asked before this one: the poll's cursor as it was just before
+    let had: Vec<String> = asked.iter().filter_map(requested).filter(|w| *w != just).collect();
+    let (mut out, _) = review_events("pr.review_requested", &json!([gh]).to_string(), &json!({ n: had }), at, "").unwrap_or_default();
+    let repo = str_at(body, "/repository/full_name");
+    for e in &mut out {
+        e.payload["repo"] = json!(repo);
+    }
+    out
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::assert_is_empty)]
 mod tests {
@@ -189,5 +233,43 @@ mod tests {
         assert!(evs[0].payload.get("me").is_none(), "`me` then matches nothing");
         assert!(review_events("pr.review_requested", "not json", &c, 1, "").is_err());
         assert!(review_events("pr.review_requested", "", &c, 1, "").unwrap().0.is_empty());
+    }
+
+    /// A hub's App: GitHub's `review_requested` webhook is the poll's own event for that reviewer, same key.
+    #[test]
+    fn a_review_request_webhook_is_the_polls_event() {
+        let body = json!({
+            "action": "review_requested",
+            "requested_reviewer": { "login": "bo" },
+            "organization": { "login": "acme" },
+            "repository": { "full_name": "acme/app" },
+            "pull_request": {
+                "number": 12, "title": "Fix slug", "html_url": "https://github.com/acme/app/pull/12", "draft": false,
+                "user": { "login": "ada", "type": "User" }, "updated_at": "2026-11-28T09:00:00Z",
+                "requested_reviewers": [{ "login": "cy" }, { "login": "bo" }], "requested_teams": [{ "slug": "core" }],
+                "labels": [{ "name": "bug" }], "base": { "ref": "main", "repo": { "full_name": "acme/app" } },
+                "head": { "ref": "fix", "repo": { "full_name": "acme/app" } }, "additions": 3, "deletions": 1, "changed_files": 1,
+            },
+        });
+        let evs = webhook_events(&body, 5);
+        assert_eq!(evs.len(), 1, "{evs:?}");
+        let e = &evs[0];
+        assert_eq!((e.on.as_str(), e.key.as_str()), ("pr.review_requested", "pr:12:review:bo:2026-11-28T09:00:00Z"));
+        assert_eq!(e.payload["reviewer"], "bo");
+        assert_eq!(e.payload["reviewers"], json!(["cy", "bo", "acme/core"]));
+        assert_eq!(
+            (e.payload["author"].clone(), e.payload["size"].clone(), e.payload["repo"].clone()),
+            (json!("ada"), json!(4), json!("acme/app"))
+        );
+        // the poll seeing the same PR after it, with bo already in its cursor, makes nothing new
+        let polled = json!([{ "number": 12, "title": "Fix slug", "updatedAt": "2026-11-28T09:00:00Z",
+            "reviewRequests": [{ "login": "cy" }, { "login": "bo" }] }]);
+        let (again, _) = review_events("pr.review_requested", &polled.to_string(), &json!({ "12": ["cy", "bo"] }), 6, "").unwrap();
+        assert!(again.is_empty());
+        // a team asked
+        let team = json!({ "action": "review_requested", "requested_team": { "slug": "core" }, "organization": { "login": "acme" },
+            "pull_request": { "number": 3, "updated_at": "t", "requested_teams": [{ "slug": "core" }] } });
+        assert_eq!(webhook_events(&team, 1)[0].payload["reviewer"], "acme/core");
+        assert!(webhook_events(&json!({ "action": "opened", "pull_request": {} }), 1).is_empty());
     }
 }
