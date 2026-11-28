@@ -13,6 +13,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   *on* the computer it runs on, its branch, then its usage and context (the usage used to sit between the project and
   the computer). The narrow bar and the phone sheet are unchanged.
 
+### Fixed
+
+- **Home's tips link to the right guide and show three at a time.** Each tip opened `trywisp.dev/guides#<id>`, a page
+  with no such section; each now opens the docs section that explains it. Home shows three tips, picked at random on
+  each visit (a setup card such as Sign in to GitHub takes one of the three), and **More tips** moves on to three more
+  until every tip has shown. The six old tips are now 18, reworded to match today's controls (**Compare with another
+  agent…**, **⋯ → Compare runs**). Tips about the **+** menu wait until New task shows its **+**.
+
 ## [1.0.0-alpha.19] - 2026-11-28
 
 ### Added
