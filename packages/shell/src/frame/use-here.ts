@@ -16,9 +16,6 @@ export function useHere(): Here {
   const home = shell.client.home();
   const info = useSignal(shell.client.peers.info(home));
   const hub = (): boolean => info()?.kind === 'hub';
-  return {
-    hub,
-    name: () => (hub() ? info()?.name || shell.client.peers.name(home) || shell.t('shell.card.thisComputer') : shell.t('shell.card.thisComputer')),
-    icon: () => (hub() ? 'server' : 'laptop'),
-  };
+  const here = (): string => shell.t('shell.card.thisComputer');
+  return { hub, name: () => (hub() && info()?.name) || here(), icon: () => (hub() ? 'server' : 'laptop') };
 }

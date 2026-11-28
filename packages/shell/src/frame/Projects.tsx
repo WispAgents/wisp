@@ -14,7 +14,6 @@ import { projectCounts, type ProjectView } from './rows-view.ts';
 import { projectRemoveAsk } from './project-remove.ts';
 import { addedName, folderOf, nameFor, whereIs } from './project-names.ts';
 import '../i18n/lazy.ts';
-import { useHere } from './use-here.ts';
 
 const COLORS = ['violet', 'teal', 'amber', 'rose', 'sky', 'lime', 'orange', 'indigo', 'slate'] as const;
 const IS_URL = /^(https?:\/\/|git@|ssh:\/\/)/;
@@ -75,7 +74,6 @@ const clone = defineCommand<{ peer: string; url: string }, { dir: string }>({ id
 
 export default function Projects(_p: { readonly client: PluginClient; readonly params: unknown }): JSX.Element {
   const shell = useShell();
-  const here = useHere();
   const t = shell.t;
   const home = usePluginClient('shell').home;
   const { list, reorder } = useProjects(shell, home);
@@ -189,7 +187,7 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
   return (
     <>
       <ProjectsSheet
-        places={[{ id: '', label: here.name(), icon: 'folder', on: true }]}
+        places={[{ id: '', label: t('shell.card.thisComputer'), icon: 'folder', on: true }]}
         onPlace={() => undefined}
         addMachine={{ label: t('shell.projects.machine'), title: t('shell.projects.machineTitle'), onClick: openMachines }}
         field={

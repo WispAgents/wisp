@@ -811,7 +811,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       'launcher.where',
       placeOf()?.icon ?? (target() === home ? here.icon() : 'server'),
       // a phone's setup chip names the place in two words (UX 2026-11-18 phone #5); the sentence stays its tooltip
-      placeOf()?.label() ?? (target() === home ? (here.hub() ? t('shell.home.whereHub', { name: here.name() }) : t(shell.platform.phone ? 'shell.card.thisComputer' : 'shell.home.where')) : shell.client.peers.name(target())),
+      placeOf()?.label() ?? (target() === home ? (here.hub() ? here.name() : t(shell.platform.phone ? 'shell.card.thisComputer' : 'shell.home.where')) : shell.client.peers.name(target())),
       t('shell.home.where'),
       {
         text: target() !== home || placeOf() !== undefined,

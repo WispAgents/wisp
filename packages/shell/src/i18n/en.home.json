@@ -57,7 +57,6 @@
   "shell.home.folderHow": "Folder",
   "shell.home.placeholderPlus": "What should I go do? @ files · / recipes and commands",
   "shell.home.where": "Runs on this computer. Add a machine to run on other computers too.",
-  "shell.home.whereHub": "Runs on {name}, your team's hub on the grid.",
   "shell.home.delegate": "Delegate",
   "shell.home.delegateTitle": "Delegate: agents the lead can hand parts of the task to, on other harnesses or other machines",
   "shell.home.delegates.one": "{count} delegate",

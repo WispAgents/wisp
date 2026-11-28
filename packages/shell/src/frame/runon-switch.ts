@@ -6,7 +6,7 @@
 import type { PaletteItem, ShellContext } from '../contract.ts';
 import { ALL_COMPUTERS, knownComputer } from './computer-filter.ts';
 import { sandboxPeers } from './where.ts';
-import { hereIcon, hereName } from './here.ts';
+import { hubName } from './here.ts';
 
 /** New task's Run on list: a palette source that answers only while a prompt box has it open (never in ⌘K). */
 export const RUNON_SOURCE = 'shell.runon';
@@ -55,7 +55,7 @@ export function computersNow(ctx: ShellContext): string[] {
 
 /** A computer's name: This computer for the one this app runs on. */
 export function computerName(ctx: ShellContext, peer: string): string {
-  return peer === ctx.client.home() ? hereName(ctx.client, ctx.t) : ctx.client.peers.name(peer as never) || peer;
+  return peer === ctx.client.home() ? (hubName(ctx.client) ?? ctx.t('shell.card.thisComputer')) : ctx.client.peers.name(peer as never) || peer;
 }
 
 /** The list's computer filter: the palette on the computers alone. */
@@ -80,7 +80,7 @@ export function computerItems(ctx: ShellContext): PaletteItem[] {
         id: `computer:${p}`,
         group: g,
         label: computerName(ctx, p),
-        icon: p === ctx.client.home() ? hereIcon(ctx.client) : 'server',
+        icon: p === ctx.client.home() && !hubName(ctx.client) ? 'laptop' : 'server',
         rank: i + 1,
         ...(on === p && { sub: current }),
         keywords: `computer machine ${ctx.client.peers.name(p as never)}`,
