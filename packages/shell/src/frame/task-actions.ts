@@ -66,13 +66,16 @@ export interface TaskActionsCtx {
   readonly setOpenTurn: (id: string | undefined) => void;
   readonly setDetailsOpen: (open: boolean) => void;
   readonly setRestoreAsk: (turnId: string) => void;
+  /** Zen mode on this task (⌃., task-zen.ts) */
+  readonly zen: () => boolean;
+  readonly toggleZen: () => void;
 }
 
 /** The head's bar, the More menu and what its entries do; the task keys are listened for while the page is open. */
 export function useTaskActions(c: TaskActionsCtx): { readonly more: Accessor<MenuEntry[]>; readonly onMore: (v: string) => void; readonly headBar: (s: SessionRow) => HeadAction[] } {
   const { shell, t, key, bare, peer, run, clients, row, sessions, nav, phoneBar, busyNow, lastTurn, canRollback, forLaterNow, canSaveForLater } = c;
   const { compactOffer, hasPr, toShip, diff, harnessName, stepsShown, steps, stepTo, input, scrollCtrl, markDone, reopen, next, ship, side, sideNewest } = c;
-  const { takeOver, startRename, openFind, openFork, openRerun, toggleTranscript, setTaskTranscript, setOpenTurn, setDetailsOpen, setRestoreAsk } = c;
+  const { takeOver, startRename, openFind, openFork, openRerun, toggleTranscript, setTaskTranscript, setOpenTurn, setDetailsOpen, setRestoreAsk, zen, toggleZen } = c;
 // v1 moreMenu: what a task's right-click menu offers is here too: the entries other plugins attach to
 // `shell.row:menu` (Side discussion, Share, Ship it, Run app, Save as recipe, Add to crew, Set goal, Keep worktree);
 // the shell's own (Rerun, Fork, Changes, Shell) are on this page already
@@ -110,6 +113,8 @@ const moreEntries = (): MenuEntry[] => {
   own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: stepsShown() } });
   // Find in task (R4-3): a phone has no ⌘F, so it is here too
   own.push({ section: 'open', order: -25, entry: { value: 'find', label: t('shell.find.menu'), icon: 'search', keys: displayCombo('mod+f', shell.platform.apple).join('') } });
+  // Zen mode (⌃.): this task's chat shows its messages and answer only; a phone has no ⌃., so it is here too
+  own.push({ section: 'open', order: -27, entry: { value: 'zen', label: t('shell.zen.menu'), icon: 'eye', keys: displayCombo('ctrl+.', shell.platform.apple).join(''), checked: zen() } });
   if (!row()?.summary['sideOf'])
     own.push(
       { section: 'open', order: -20, entry: { value: 'rerun', label: t('shell.task.rerun'), icon: 'rerun', keys: '⇧R' } },
@@ -175,6 +180,7 @@ const onMore = (v: string): void => {
   else if (v === 'previous-task') stepTo(steps().previous);
   else if (v === 'transcript') toggleTranscript();
   else if (v === 'find') openFind();
+  else if (v === 'zen') toggleZen();
   else if (v === 'rerun') openRerun();
   else if (v === 'openIn') takeOver();
   else if (v === 'shell') side('shell');
@@ -281,6 +287,7 @@ const onKey = (e: Event): void => {
   const did = ((): boolean => {
     if (act === 'transcript') toggleTranscript();
     else if (act === 'find') openFind();
+    else if (act === 'zen') toggleZen();
     else if (act === 'rerun' || act === 'fork' || act === 'archive' || act === 'delete') onMore(act);
     else if (act === 'openIn') takeOver();
     else if (act === 'shell') side('shell');

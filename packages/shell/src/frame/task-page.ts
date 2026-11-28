@@ -3,7 +3,7 @@
 // its own component (TaskDock.tsx, TaskSide.tsx, TaskTop.tsx, TaskTurns.tsx).
 import '../i18n/lazy.ts';
 import '../i18n/home.ts';
-import { defineCommand, entityKey, ownerOf, type EntityKey } from '@wisp/client';
+import { defineCommand, entityKey, ownerOf, type EntityKey, type Json } from '@wisp/client';
 import { createMemo, createResource, createSignal, onCleanup, untrack } from 'solid-js';
 import { changeWhere as changeWhereOf, whereOf } from './change-where.ts';
 import { useSignal, type LedgerString, type TaskPlaceChip, type TaskScroll } from '@wisp/ui';
@@ -21,6 +21,8 @@ import { coldHint, compactItem } from './cold.ts';
 import { useNow } from '../clock.ts';
 import { turnClock } from './turn-clock.ts';
 import { useChatSettings } from './chat-settings.ts';
+import { asZenList, withZen, zenSet, zenStore } from './task-zen.ts';
+import { displayCombo } from '../keys.ts';
 import { dismiss, dismissedStore, type Dismissed } from './overlap-dismiss.ts';
 import { rateTurn, coldOf, isSaved, setState } from './commands.ts';
 import { uploadPath, uploadUrl } from './answer-of.ts';
@@ -154,7 +156,16 @@ export function useTaskPage(props: { readonly id: string; readonly onBack?: () =
   // Settings → Chat: Chat mode (`settings.transcript`: 'on'), Tool calls in chat, Show thinking, Send shortcut,
   // Chat width, Time format — all reactive so changing a setting updates open tasks immediately.
   // per-user preferences, written on this computer (Settings → Chat): read from home, not the task's computer
-  const chat = useChatSettings(shell.client, usePluginClient('shell').home);
+  // Zen mode (⌃., task-zen.ts): this task alone shows its messages and answer only, over what Settings says
+  const zens = zenStore(shell.client);
+  const zenList = useSignal(zens.value);
+  const zen = createMemo(() => asZenList(zenList()).includes(key));
+  const toggleZen = (): void => {
+    const on = !untrack(zen);
+    zens.set((cur) => zenSet(asZenList(cur), key, on) as unknown as Json);
+    shell.toast.show(t(on ? 'shell.zen.on' : 'shell.zen.off', { key: displayCombo('ctrl+.', shell.platform.apple).join('') }));
+  };
+  const chat = withZen(useChatSettings(shell.client, usePluginClient('shell').home), zen);
   const clock = (at: number): string => turnClock(at, undefined, chat.timeFormat());
   // Transcript view (V): off by default in both Chat mode (messages + answer only) and Cards mode, persisted per task
   // with its scroll place so returning to a task restores the same view and scroll position.
@@ -347,7 +358,7 @@ export function useTaskPage(props: { readonly id: string; readonly onBack?: () =
     shell, t, key, bare, peer, run, clients, row, sessions, nav, phoneBar, busyNow, lastTurn, canRollback, forLaterNow, canSaveForLater,
     compactOffer, hasPr, toShip, diff, harnessName, stepsShown, steps, stepTo, input: r.input, scrollCtrl: () => scrollCtrl, markDone, reopen,
     next, ship, side, sideNewest, takeOver, startRename, openFind, openFork, openRerun, toggleTranscript, setTaskTranscript, setOpenTurn,
-    setDetailsOpen, setRestoreAsk,
+    setDetailsOpen, setRestoreAsk, zen, toggleZen,
   });
   return {
     r,
