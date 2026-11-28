@@ -38,7 +38,8 @@ function mount() {
     navigate: () => undefined,
     watch: () => undefined,
   };
-  const toast = { show: () => undefined, success: () => undefined, error: (m: string) => errors.push(m) };
+  const dismissed: string[] = [];
+  const toast = { show: (m: string) => m, success: () => undefined, error: (m: string) => errors.push(m), dismiss: (id: string) => dismissed.push(id) };
   const shell = { nav, client: { nav: { nav } }, t: (k: string) => k, toast, platform: { openExternal: () => undefined, phone: false }, navigate: () => undefined };
   const host = document.createElement('div');
   document.body.append(host);
@@ -56,7 +57,7 @@ function mount() {
     stop();
     client.scope.dispose();
   };
-  return { runs, errors, done };
+  return { runs, errors, dismissed, done };
 }
 
 const part = (p: string): HTMLElement | null => document.querySelector(`[data-part="${p}"]`);
@@ -75,6 +76,7 @@ test('a_merge_the_branch_rules_hold_asks_to_bypass_and_bypass_merges_with_admin'
   expect(part('ship.merge.blocked'), 'the bypass confirm opened').not.toBeNull();
   expect(document.body.textContent).toContain(HELD);
   expect(m.errors, 'no toast of gh text').toEqual([]);
+  expect(m.dismissed, 'the Merging… toast went').toEqual(['Merging PR #1064…']);
   part('ship.merge.bypass')?.click();
   await settle();
   expect(m.runs.map((r) => r['admin'])).toEqual([false, true]);
