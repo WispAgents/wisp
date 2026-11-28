@@ -41,6 +41,9 @@
       { "id": "grid-client.keys", "title": "Your API keys for scripting your cloud wisp (never the keys themselves)", "readOnly": true },
       { "id": "grid-client.keysCreate", "title": "Make an API key for scripting your cloud wisp, shown once", "uiOnly": "the key is shown once, to a person who copies it: through an agent it would sit in a transcript" },
       { "id": "grid-client.keysRevoke", "title": "Revoke an API key: anything using it stops at once" },
+      { "id": "grid-client.hooks", "title": "This computer's webhook trigger URLs on the grid (never the URLs themselves)", "readOnly": true },
+      { "id": "grid-client.hooksCreate", "title": "Make a grid URL that starts one of this computer's webhook triggers, shown once", "uiOnly": "the URL is its own key, shown once to a person who copies it: through an agent it would sit in a transcript" },
+      { "id": "grid-client.hooksRevoke", "title": "Revoke a webhook trigger URL: calls to it stop at once" },
       { "id": "grid-client.reply", "title": "Report a routed task back to the chat it came from", "uiOnly": "wisp.channels reports a routed task's end through it; an agent has no thread to name" }
     ],
     "settings": [

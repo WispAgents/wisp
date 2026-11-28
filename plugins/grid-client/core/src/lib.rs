@@ -55,6 +55,32 @@ pub fn local_headers(from: &[(String, String)], port: u16, mark: &str) -> Vec<(S
     out
 }
 
+/// A webhook trigger's call the grid marked `x-wisp-route: hook` (ADR-0147): `POST /api/triggers/<name>`, one segment,
+/// is the only thing it may reach here.
+pub fn is_hook_call(method: &str, path: &str) -> bool {
+    method.eq_ignore_ascii_case("POST")
+        && path
+            .strip_prefix("/api/triggers/")
+            .is_some_and(|n| !n.is_empty() && !n.contains('/') && !n.contains("%2F") && !n.contains("%2f"))
+}
+
+/// A webhook trigger's call as wisp here takes it: from no one. Hop-by-hop headers, the grid's marks (`x-wisp-*` but
+/// the caller's `x-wisp-secret` and `x-wisp-delivery`), a session or token wisp would read (`cookie`, `x-wisp-token`,
+/// `x-wisp-key`) and Origin dropped, this computer's own Host, and never the tunnel's mark.
+pub fn hook_headers(from: &[(String, String)], port: u16) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = from
+        .iter()
+        .filter(|(k, _)| {
+            let k = k.to_ascii_lowercase();
+            let mark = k.starts_with("x-wisp-") && !matches!(k.as_str(), "x-wisp-secret" | "x-wisp-delivery");
+            !(k.starts_with(':') || HOP.contains(&k.as_str()) || mark || matches!(k.as_str(), "origin" | "cookie"))
+        })
+        .cloned()
+        .collect();
+    out.push(("host".into(), format!("127.0.0.1:{port}")));
+    out
+}
+
 /// Whether `got` is the mark, compared in constant time.
 pub fn is_mark(got: &[u8], mark: &[u8]) -> bool {
     if got.len() != mark.len() {
@@ -151,6 +177,40 @@ pub fn label_host(grid: &str, label: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_hook_call_reaches_one_trigger_only_and_as_no_one() {
+        assert!(is_hook_call("POST", "/api/triggers/deploy"));
+        for (m, p) in [
+            ("GET", "/api/triggers/deploy"),
+            ("POST", "/api/triggers/"),
+            ("POST", "/api/triggers/a/b"),
+            ("POST", "/api/triggers/a%2Fb"),
+            ("POST", "/api/cmd"),
+        ] {
+            assert!(!is_hook_call(m, p), "{m} {p}");
+        }
+        let from: Vec<(String, String)> = [
+            ("content-type", "application/json"),
+            ("x-wisp-secret", "s"),
+            ("x-wisp-delivery", "d"),
+            ("x-wisp-route", "hook"),
+            ("x-wisp-tunnel", "forged"),
+            ("x-wisp-token", "master?"),
+            ("x-wisp-key", "k"),
+            ("x-wisp-proxy-via", "key"),
+            ("cookie", "c"),
+            ("origin", "https://evil.example"),
+            ("connection", "close"),
+        ]
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect();
+        let out = hook_headers(&from, 4477);
+        let names: Vec<&str> = out.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(names, ["content-type", "x-wisp-secret", "x-wisp-delivery", "host"]);
+        assert!(!names.contains(&MARK_HEADER), "never the tunnel's mark: the call is no one, not this computer's person");
+    }
 
     #[test]
     fn the_tunnel_redials_1_2_5_15_30() {
