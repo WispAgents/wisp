@@ -51,7 +51,12 @@ pub struct Lister {
     cache: Mutex<core::IssueCache>,
     /// the gh login and when it was read (a trigger's `me`)
     me: Mutex<Option<(String, i64)>>,
+    /// whether a login may push to a repo, by `repo\nlogin`, and when it was read (a trigger's `trusted`)
+    trust: Mutex<std::collections::HashMap<String, (bool, i64)>>,
 }
+
+/// How long an author's permission is trusted before it's read again.
+const TRUST_FRESH_MS: i64 = 60 * 60_000;
 
 /// How long the gh login is trusted before it's read again (`gh auth switch` takes effect within it).
 const ME_FRESH_MS: i64 = 10 * 60_000;
@@ -68,7 +73,7 @@ pub fn why_of(stderr: &str) -> String {
 
 impl Lister {
     pub fn new(deps: Deps) -> Self {
-        Self { deps, cache: Mutex::new(core::IssueCache::default()), me: Mutex::new(None) }
+        Self { deps, cache: Mutex::new(core::IssueCache::default()), me: Mutex::new(None), trust: Mutex::default() }
     }
 
     pub fn clear(&self) {
@@ -172,6 +177,31 @@ impl Lister {
             *self.me.lock().unwrap_or_else(PoisonError::into_inner) = Some((login.clone(), now));
         }
         login
+    }
+
+    /// Whether `login` may push to `repo` (`trusted`): admin, maintain or write. A failed call is not trusted, and
+    /// the answer is kept an hour.
+    pub async fn may_push(&self, call: &Call, repo: &str, login: &str) -> bool {
+        if login.is_empty() || repo.is_empty() {
+            return false;
+        }
+        let now = (self.deps.now)();
+        let key = format!("{repo}\n{login}");
+        if let Some((t, _)) =
+            self.trust.lock().unwrap_or_else(PoisonError::into_inner).get(&key).copied().filter(|(_, at)| now - at < TRUST_FRESH_MS)
+        {
+            return t;
+        }
+        let env = Env::default().with("GH_PROMPT_DISABLED", "1").with("GH_NO_UPDATE_NOTIFIER", "1");
+        let opts = ExecOpts { env, timeout: Some(Duration::from_secs(15)), scope: Some(call.cancelled().clone()), ..ExecOpts::default() };
+        let args =
+            ["api".to_owned(), format!("repos/{repo}/collaborators/{login}/permission"), "--jq".to_owned(), ".permission".to_owned()];
+        let t = match self.deps.proc.exec(&self.deps.gh, &args, opts).await {
+            Ok(r) if r.exit.success() && !r.timed_out => matches!(r.stdout_text().trim(), "admin" | "maintain" | "write"),
+            _ => false,
+        };
+        self.trust.lock().unwrap_or_else(PoisonError::into_inner).insert(key, (t, now));
+        t
     }
 
     async fn gh(&self, repo: &str, q: &str, call: &Call) -> std::result::Result<Vec<wisp_issues_api::Issue>, Problem> {

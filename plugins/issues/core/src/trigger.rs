@@ -19,7 +19,7 @@ pub fn issue_events(on: &str, issues: &[Issue], cursor: &Value, at: i64, me: &st
     for i in issues {
         let was = before.as_ref().map(|b| b.get(&i.id));
         let ev = |key: String, summary: String, extra: Value| {
-            let mut payload = json!({ "id": i.id, "ref": i.reference, "number": i.number, "title": i.title, "url": i.url, "labels": i.labels, "assignee": i.assignee, "assignees": i.assignees, "author": i.author, "text": i.body });
+            let mut payload = json!({ "id": i.id, "ref": i.reference, "number": i.number, "title": i.title, "url": i.url, "labels": i.labels, "assignee": i.assignee, "assignees": i.assignees, "author": i.author, "bot": i.author_bot, "milestone": i.milestone, "text": i.body });
             if !me.is_empty()
                 && let Some(p) = payload.as_object_mut()
             {
@@ -73,6 +73,8 @@ mod tests {
             updated_at: None,
             author: String::new(),
             assignees: Vec::new(),
+            author_bot: false,
+            milestone: String::new(),
         }
     }
 
@@ -95,11 +97,14 @@ mod tests {
         i.author = "sam".into();
         i.assignees = vec!["lena".into(), "omar".into()];
         i.assignee = "lena".into();
+        i.author_bot = true;
+        i.milestone = "v2.1".into();
         let (_, c) = issue_events("issue.labeled", &[issue("7", &[])], &Value::Null, 0, "omar");
         let (ev, _) = issue_events("issue.labeled", &[i.clone()], &c, 1, "omar");
         let p = &ev[0].payload;
         assert_eq!((p["author"].as_str(), p["assignee"].as_str(), p["me"].as_str()), (Some("sam"), Some("lena"), Some("omar")));
         assert_eq!(p["assignees"], json!(["lena", "omar"]));
+        assert_eq!((p["bot"].as_bool(), p["milestone"].as_str()), (Some(true), Some("v2.1")));
         let (_, c) = issue_events("issue.labeled", &[issue("7", &[])], &Value::Null, 0, "");
         let (ev, _) = issue_events("issue.labeled", &[i], &c, 1, "");
         assert!(ev[0].payload.get("me").is_none(), "not signed in: no me, so `me` matches nothing");

@@ -42,6 +42,14 @@ pub struct Issue {
     #[serde(skip)]
     #[ts(skip)]
     pub assignees: Vec<String>,
+    /// its author is a bot (Dependabot, an app). Off the wire, as `author`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub author_bot: bool,
+    /// its milestone's title. Off the wire, as `author`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub milestone: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]

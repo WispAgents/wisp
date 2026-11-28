@@ -26,6 +26,10 @@ impl TriggerSource for Issues {
             "author": who("who opened it (a GitHub login, or me)"),
             "assignee": who("its first assignee (a GitHub login, or me)"),
             "assignees": who("any of its assignees (a GitHub login, or me)"),
+            "bot": { "type": "boolean", "description": "false: not opened by a bot (Dependabot, an app)" },
+            "trusted": { "type": "boolean", "description": "true: only authors who may push to the repo" },
+            "milestone": { "type": ["string", "array"], "description": "its milestone's title (a glob, or !v1*)" },
+            "labels": { "type": ["string", "array"], "description": "any of its labels, or !wip for none of them" },
         } });
         vec![
             SourceOn {
@@ -41,6 +45,7 @@ impl TriggerSource for Issues {
     fn poll(&self, on: &str, spec: &Value, cursor: Value) -> BoxFuture<'static, Result<Polled>> {
         let (lister, ctx, on) = (self.0.clone(), self.1.clone(), on.to_owned());
         let project = spec.get("project").and_then(Value::as_str).unwrap_or_default().to_owned();
+        let trusted = spec.get("match").and_then(|m| m.get("trusted")).is_some();
         Box::pin(async move {
             if project.is_empty() {
                 return Err(WireError::invalid(format!("{on} needs a project (the repo it watches)")));
@@ -52,7 +57,16 @@ impl TriggerSource for Issues {
             }
             let now = ctx.clock()?.now_ms();
             let me = lister.me(&call).await;
-            let (events, cursor) = wisp_issues_core::trigger::issue_events(&on, &list.issues, &cursor, now, &me);
+            let (mut events, cursor) = wisp_issues_core::trigger::issue_events(&on, &list.issues, &cursor, now, &me);
+            // `trusted` costs a gh call per new author (kept an hour): only for a trigger that filters on it
+            if trusted {
+                let repo = list.repo.clone().unwrap_or_default();
+                for e in &mut events {
+                    let login = e.payload.get("author").and_then(Value::as_str).unwrap_or_default().to_owned();
+                    let bot = e.payload.get("bot").and_then(Value::as_bool).unwrap_or(false);
+                    e.payload["trusted"] = json!(!bot && lister.may_push(&call, &repo, &login).await);
+                }
+            }
             Ok(Polled { events, cursor, retry_at: None })
         })
     }

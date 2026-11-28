@@ -16,8 +16,8 @@ it does is a task of its own, so you can open it, follow up and ship it like any
 - **Delegate**: a task can hand work to crew members (its Team tab shows them).
 - **Check-ins**: `cron: "every weekday at 9"` and it looks at its brief and decides what to do.
 - **Wakes**: triggers can wake it on an event (`pr.review_requested`, a CI failure, a chat message). A crew a team
-  shares in `.wisp/` wakes on each teammate's computer; `match: { assignees: me }` on an issue trigger keeps each
-  issue to the teammate it's assigned to ([Shared with a team](../../guides/run/schedules-and-triggers/#shared-with-a-team)).
+  shares in `.wisp/` wakes on each teammate's computer; `match: { assignees: me }` on an issue trigger, or `reviewer: me` on
+  `pr.review_requested`, keeps each issue or review to the teammate it's for ([Shared with a team](../../guides/run/schedules-and-triggers/#shared-with-a-team)).
 
 ## Where it works
 

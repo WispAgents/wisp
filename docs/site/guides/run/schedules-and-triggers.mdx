@@ -120,14 +120,17 @@ issues, so each wisp works on its teammate's. `me` is the GitHub login that comp
 <Tabs syncKey="way">
 <TabItem label="Desktop app">
 **New trigger** → **Issue labelled**, then pick **Issues**: **Anyone's** (the default), **Assigned to me** or
-**Opened by me**. The trigger's line in the list says "Watches my assigned issues labelled agent …".
+**Opened by me**. For reviews: **New trigger** → **Review requested**, then **Reviews** → **Asked of me**. The
+trigger's line in the list says "Watches my assigned issues labelled agent …" or "Watches review requests for me …".
 </TabItem>
 <TabItem label="CLI">
 ```sh
 wisp trigger add my-agent-issues issue.labeled "Fix {event.summary}" --label agent --assignee me
 wisp trigger add my-reports issue.opened "Triage {event.summary}" --author me
+wisp trigger add my-reviews pr.review_requested --reviewer me     # no prompt: a review of the PR, in Plan
 ```
-`--assignee` and `--author` write the same `match` the app's choice does; any GitHub login works in place of `me`.
+`--assignee`, `--author` and `--reviewer` write the same `match` the app's choice does; any GitHub login (or a team's
+`org/slug` for `--reviewer`) works in place of `me`.
 </TabItem>
 <TabItem label=".wisp/ folder">
 
@@ -138,6 +141,10 @@ triggers:
     label: agent
     match: { assignees: me }     # any of its assignees; `assignee` is the first one, `author` who opened it
     prompt: "Fix {event.summary}"
+
+  my-reviews:
+    on: pr.review_requested      # a reviewer newly asked on an open PR, polled with gh
+    match: { reviewer: me }      # only the teammate asked: one review, not one per teammate
 ```
 </TabItem>
 </Tabs>
@@ -145,6 +152,74 @@ triggers:
 `match` takes a login, a glob or a list (`author: [me, dependabot]`). Where `gh` isn't signed in, `me` matches
 nothing, so the trigger stays quiet rather than firing for everyone. An issue no one is assigned to still reaches
 every teammate whose trigger takes anyone's issues: assign it, or keep one teammate's trigger on **Anyone's**.
+
+## Filters
+
+Every field under `match` is checked against the event, and all of them must pass. A value can be a login, a glob,
+a list (any of them), or one of these:
+
+| Write | Means | Example |
+| --- | --- | --- |
+| `me` | the GitHub login this computer's `gh` is signed in as | `reviewer: me` |
+| `!x` | never `x`; on a list (labels), none of them is `x` | `author: "!dependabot"`, `labels: "!wip"` |
+| `[a, "!b"]` | any of the wanted values, and none of the `!` ones | `labels: [bug, "!wip"]` |
+| `<400`, `>=2` | a number compared | `size: "<400"` |
+| `true`, `false` | a yes/no field | `draft: false` |
+
+What the GitHub triggers' events carry, to filter on:
+
+| Field | Issues (`issue.opened`, `issue.labeled`) | Reviews (`pr.review_requested`) |
+| --- | --- | --- |
+| `author`, `bot` | who opened it; `bot: false` skips Dependabot, Renovate and apps | same |
+| `trusted` | `true`: only authors who may push to the repo (one cached `gh` call per author) | same |
+| `assignee`, `assignees` | its first assignee; any of them | |
+| `reviewer`, `reviewers` | | the reviewer just asked (a login, or a team's `org/slug`); everyone asked |
+| `label`, `labels` | the label just added (`issue.labeled`); all of them | `labels`: all of them |
+| `milestone` | its milestone's title | same |
+| `draft`, `fork` | | a draft PR; a PR from a fork |
+| `paths` | | the changed files, read like `.gitignore`: `[src/**, "!**/*.md"]` is a change in `src` that isn't only docs |
+| `size`, `additions`, `deletions`, `changedFiles` | | lines added + deleted, and each count |
+| `base`, `branch` | | the branch it merges into; its own branch |
+
+`trusted: true` and `fork: false` keep text from outside your team away from an agent: on a public repo anyone can
+open an issue or a PR, and the agent reads what they wrote.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+An **Issue labelled** or **Review requested** trigger has **From** (Anyone, People not bots, People who may push) and
+**Milestone**; a review also has **Drafts**, **Size** (up to 100, 400 or 1000 lines) and **Paths**. A filter the form
+doesn't show, written in a formula, is kept when you edit the trigger.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp trigger add small-reviews pr.review_requested --reviewer me --from trusted --no-drafts --no-forks \
+  --paths 'src/**,!**/*.md' --max-size 400 --milestone v2.1
+wisp trigger add triage issue.labeled "Triage {event.summary}" --label bug --from people --match 'labels=!wip'
+```
+`--from people` is `bot: false`, `--from trusted` is `trusted: true`, `--max-size 400` is `size: "<=400"`; any other
+filter goes in `--match key=value`.
+</TabItem>
+<TabItem label=".wisp/ folder">
+
+```yaml
+triggers:
+  small-reviews:
+    on: pr.review_requested
+    match:
+      reviewer: me
+      trusted: true
+      draft: false
+      fork: false
+      paths: [src/**, "!**/*.md"]
+      size: "<=400"
+  bugs-from-people:
+    on: issue.labeled
+    label: bug
+    match: { bot: false, labels: "!wip", milestone: "v2.*" }
+    prompt: "Fix {event.summary}"
+```
+</TabItem>
+</Tabs>
 
 ## Webhooks
 

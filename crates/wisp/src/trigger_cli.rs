@@ -1,7 +1,8 @@
 //! `wisp trigger …` and `wisp crew wake|graph` (ADR-0043): the one trigger engine from the terminal.
 //!
 //! - `wisp trigger add <name> <on> [prompt…] [--cron C] [--task T] [--crew M] [--workflow W] [--follow-up]
-//!   [--branch B] [--label L] [--assignee me|LOGIN] [--author me|LOGIN] [--every MIN] [--secret S] [--match k=v]… [--if EXPR] [--users a,b] [--rate 5/h]
+//!   [--branch B] [--label L] [--assignee me|LOGIN] [--author me|LOGIN] [--reviewer me|LOGIN] [--milestone M]
+//!   [--from anyone|people|trusted] [--no-drafts] [--no-forks] [--paths GLOB,…] [--max-size LINES] [--every MIN] [--secret S] [--match k=v]… [--if EXPR] [--users a,b] [--rate 5/h]
 //!   [--debounce 10m] [--concurrency skip|queue|replace|parallel:N] [--cooldown 30m] [--budget-day USD]
 //!   [--approval] [--tz ZONE] [-C dir] [--agent A] [--model M] [--mode M]`: writes the `trigger` resource (what
 //!   `wisp apply` would), so the formula, the app and the CLI share one spec. (`--on` is the machine flag: the
@@ -48,12 +49,23 @@ const GLOBAL: [&str; 9] = ["--cwd", "-C", "--agent", "-a", "--model", "--mode", 
 pub struct Said {
     pub words: Vec<String>,
     pub vals: BTreeMap<String, String>,
-    pub matches: Vec<(String, String)>,
+    pub matches: Vec<(String, Value)>,
     pub on_off: Vec<String>,
     pub every: Option<u32>,
     pub last: Option<u32>,
     pub budget_day: Option<f64>,
     pub users: Vec<String>,
+}
+
+/// `--assignee`, `--author`, `--reviewer`, `--milestone`: the `match` key each sets (`--assignee` is any assignee).
+fn match_flag(a: &str) -> Option<&'static str> {
+    Some(match a {
+        "--assignee" => "assignees",
+        "--author" => "author",
+        "--reviewer" => "reviewer",
+        "--milestone" => "milestone",
+        _ => return None,
+    })
 }
 
 pub fn read(rest: &[String]) -> std::result::Result<Said, String> {
@@ -66,11 +78,26 @@ pub fn read(rest: &[String]) -> std::result::Result<Said, String> {
         } else if a == "--match" {
             let v = val(a)?;
             let (k, x) = v.split_once('=').ok_or_else(|| format!("--match takes key=value (not {v})"))?;
-            s.matches.push((k.to_owned(), x.to_owned()));
-        } else if a == "--assignee" || a == "--author" {
-            // the same `match` the app's Issues choice (Assigned to me / Opened by me) writes
-            let key = if a == "--assignee" { "assignees" } else { "author" };
-            s.matches.push((key.to_owned(), val(a)?));
+            s.matches.push((k.to_owned(), json!(x)));
+        } else if let Some(key) = match_flag(a) {
+            // the same `match` the app's choices write (Assigned to me, Asked of me, Milestone…)
+            s.matches.push((key.to_owned(), json!(val(a)?)));
+        } else if a == "--paths" {
+            let v = val(a)?;
+            s.matches.push(("paths".into(), json!(v.split(',').map(str::trim).filter(|p| !p.is_empty()).collect::<Vec<_>>())));
+        } else if a == "--max-size" {
+            let n: u64 = val(a)?.parse().map_err(|_| "--max-size takes lines (added + deleted)".to_owned())?;
+            s.matches.push(("size".into(), json!(format!("<={n}"))));
+        } else if a == "--from" {
+            // the app's From choice: people (no bots) or people who may push
+            match val(a)?.as_str() {
+                "anyone" => {}
+                "people" => s.matches.push(("bot".into(), json!(false))),
+                "trusted" => s.matches.push(("trusted".into(), json!(true))),
+                v => return Err(format!("--from takes anyone, people or trusted (not {v})")),
+            }
+        } else if a == "--no-drafts" || a == "--no-forks" {
+            s.matches.push(((if a == "--no-drafts" { "draft" } else { "fork" }).to_owned(), json!(false)));
         } else if a == "--every" {
             s.every = Some(val(a)?.parse().map_err(|_| "--every takes minutes".to_owned())?);
         } else if a == "--last" {
@@ -117,7 +144,7 @@ pub fn spec_of(s: &Said, p: &Parsed, cwd: &str) -> std::result::Result<(String, 
         m.insert("users".into(), json!(s.users));
     }
     if !s.matches.is_empty() {
-        m.insert("match".into(), Value::Object(s.matches.iter().map(|(k, v)| (k.clone(), json!(v))).collect()));
+        m.insert("match".into(), Value::Object(s.matches.iter().map(|(k, v)| (k.clone(), v.clone())).collect()));
     }
     if let Some(d) = s.budget_day {
         m.insert("budget".into(), json!({ "perDay": d }));
@@ -408,6 +435,25 @@ mod tests {
         assert!(read(&words("x y --nope 1")).is_err(), "an unknown flag is said, not dropped");
         assert!(spec_of(&read(&words("only")).unwrap(), &p, "").is_err(), "needs an on");
         assert_eq!(spec["project"], "/w/api", "-C is the project");
+    }
+
+    /// The app's review and filter choices and the CLI write one spec: Asked of me is `reviewer: me`, From people
+    /// `bot: false`, From people who may push `trusted: true`, Skip drafts `draft: false`, Paths a list of globs and
+    /// a size `<=N` (plugins/automations/ui trigger-form.ts).
+    #[test]
+    fn review_and_filter_flags_write_the_same_match_as_the_app() {
+        let argv: Vec<String> = ["trigger", "add"].iter().map(|s| (*s).to_owned()).chain(words("r")).collect();
+        let p = crate::args::parse(&argv, None, std::path::Path::new("/h"), std::path::Path::new("/w")).unwrap();
+        let said = "r pr.review_requested --reviewer me --from trusted --no-drafts --no-forks --paths src/**,!**/*.md --max-size 400 --milestone v2.1";
+        let (_, spec) = spec_of(&read(&words(said)).unwrap(), &p, "/w/api").unwrap();
+        assert_eq!(
+            spec["match"],
+            json!({ "reviewer": "me", "trusted": true, "draft": false, "fork": false, "paths": ["src/**", "!**/*.md"], "size": "<=400", "milestone": "v2.1" })
+        );
+        let (_, spec) = spec_of(&read(&words("r issue.labeled --label agent --from people --match labels=!wip")).unwrap(), &p, "").unwrap();
+        assert_eq!(spec["match"], json!({ "bot": false, "labels": "!wip" }));
+        assert!(read(&words("r pr.review_requested --from everyone")).is_err());
+        assert!(read(&words("r pr.review_requested --max-size big")).is_err());
     }
 
     /// The app's Issues choice and the CLI write one spec: Assigned to me is `match.assignees: me`, Opened by me

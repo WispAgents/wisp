@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **A review request starts a review.** `pr.review_requested` fires when someone is newly asked to review an open PR
+  (polled with gh; app: **New trigger** → **Review requested**). With `reviewer: me` (app: **Reviews** → **Asked of
+  me**; CLI: `--reviewer me`) it wakes only the teammate asked, so a team sharing the trigger runs one review.
+- **Triggers filter much more.** `match` takes `!x` (never x; `labels: "!wip"` is none of them), number comparisons
+  (`size: "<400"`) and yes/no fields. Issue and review events say whether the author is a bot (`bot`), may push to the
+  repo (`trusted`), and the milestone; review events also say `draft`, `fork`, the changed `paths` (read like
+  `.gitignore`) and the size. The app's issue and review triggers get **From**, **Milestone**, and for reviews
+  **Drafts**, **Size** and **Paths**; the CLI gets `--from people|trusted`, `--no-drafts`, `--no-forks`, `--paths`,
+  `--max-size` and `--milestone`, writing the same spec.
 - **A trigger the team shares fires on one teammate's computer, not everyone's.** Issue triggers (`issue.opened`,
   `issue.labeled`) take `match: { assignees: me }`, `assignee: me` or `author: me`. `me` is the GitHub login that
   computer's `gh` is signed in as, so the same `.wisp/` trigger starts a task only on the computer of the teammate the
