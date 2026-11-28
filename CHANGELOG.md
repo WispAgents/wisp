@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Your messages look like chat messages in Chat mode.** A prompt is a bubble as wide as its words (up to 80% of
+  the column), on the right, instead of a full-width card. Presentation mode is unchanged.
 - **A task's details read as one line of thought.** The column beside the turns now goes: the harness, 📁 *in* the project,
   *on* the computer it runs on, its branch, then its usage and context (the usage used to sit between the project and
   the computer). The narrow bar and the phone sheet are unchanged.
