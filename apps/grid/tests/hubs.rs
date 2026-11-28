@@ -1,4 +1,4 @@
-//! A team's hub through the real edge (ADR-0147): made with its team, opened by the team's people by role (and what the
+//! A team's hub through the real edge (ADR-0148): made with its team, opened by the team's people by role (and what the
 //! hub's wisp hears of each), invite links, deploy keys that open their own hub only, deploys kept in a history, the
 //! hub's secrets in its box's environment, and the hub gone with its team.
 //!
@@ -188,7 +188,7 @@ async fn a_hub_lets_its_team_in_by_role_and_its_keys_deploy() {
     let (s, k) = send(g.web.post(g.api("/api/teams/acme/keys")).bearer_auth(&ada).json(&json!({ "name": "ci-main" }))).await;
     assert_eq!(s, 201, "{k}");
     let key = k["key"].as_str().unwrap().to_owned();
-    assert!(key.starts_with("wgh_"), "{key}");
+    assert!(key.starts_with("wgt_"), "{key}");
     assert_eq!(via(&g, &key).await.unwrap(), "deploy");
     let (_, plan) =
         send(g.web.post(g.api("/api/teams/acme/keys")).bearer_auth(&ada).json(&json!({ "name": "prs", "rights": "plan" }))).await;
@@ -277,7 +277,7 @@ async fn a_member_signs_in_at_the_hub_from_the_grid() {
     g.done();
 }
 
-/// The Teams pages' forms (ADR-0147): a person makes a team and a deploy key in the browser, with the page's CSRF token,
+/// The Teams pages' forms (ADR-0148): a person makes a team and a deploy key in the browser, with the page's CSRF token,
 /// and the key is said once; a form without the token, or someone outside the team, changes nothing.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_teams_pages_make_a_team_and_say_a_key_once() {
@@ -312,7 +312,7 @@ async fn the_teams_pages_make_a_team_and_say_a_key_once() {
     let both = format!("{cookie}; {held}");
     let html = g.web.get(g.api("/teams/acme")).header("cookie", &both).send().await.unwrap().text().await.unwrap();
     let key = html.split(r#"<code class="key">"#).nth(1).unwrap().split('<').next().unwrap().to_owned();
-    assert!(key.starts_with("wgh_"), "{key}");
+    assert!(key.starts_with("wgt_"), "{key}");
     let again = g.web.get(g.api("/teams/acme")).header("cookie", &both).send().await.unwrap().text().await.unwrap();
     assert!(!again.contains(&key), "said once");
     assert!(again.contains("ci-main"));

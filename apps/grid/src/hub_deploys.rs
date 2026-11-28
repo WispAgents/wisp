@@ -1,4 +1,4 @@
-//! A hub's deploys (ADR-0147 §5): one at a time, each kept with who made it, from where, what it changed and how it
+//! A hub's deploys (ADR-0148 §5): one at a time, each kept with who made it, from where, what it changed and how it
 //! ended. The edge opens one when `resources.apply` reaches a hub's wisp and closes it with the box's answer.
 //!
 //! The lock is the row itself: a deploy still `running` holds the hub; a second is refused with 409 and the first's

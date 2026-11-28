@@ -149,7 +149,7 @@ impl Accounts {
             return Err(bad("A handle is a-z, 0-9 and single dashes.", 400));
         }
         if let Some(u) = self.user_by_handle(&h)? {
-            // a team's hub is an account nobody signs in as, not even here (ADR-0147)
+            // a team's hub is an account nobody signs in as, not even here (ADR-0148)
             let hub = self.db.with(|c| c.query_row("SELECT 1 FROM teams WHERE hub_user_id = ?1", [&u.id], |_| Ok(())).optional())?;
             if hub.is_some() {
                 return Err(bad(format!("{h} is a team's hub: nobody signs in as it."), 403));

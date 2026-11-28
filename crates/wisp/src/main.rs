@@ -612,7 +612,7 @@ async fn shared_and_cloud(first: &str, p: &Parsed, o: &code::Opts, port: u16, cw
         "grid" if o.words.first().map(String::as_str) == Some("deploy") && !o.files.is_empty() => {
             grid_deploy(port, p.flags.on.is_some(), o, cwd).await?
         }
-        // a team's hub as code (ADR-0147): init, plan, deploy, deploys
+        // a team's hub as code (ADR-0148): init, plan, deploy, deploys
         "grid" if matches!(o.words.first().map(String::as_str), Some("init" | "plan" | "deploy" | "deploys" | "diff" | "validate")) => {
             grid_cli::run(port, &o, cwd).await?
         }
@@ -693,7 +693,7 @@ async fn areas(first: &str, p: &Parsed, o: &code::Opts, port: u16, cwd: &Path) -
         {
             cloud_cli::team(&connect().await?, &o).await?
         }
-        // a team's hub (ADR-0147): its address, people, invites, keys, secrets, deploys
+        // a team's hub (ADR-0148): its address, people, invites, keys, secrets, deploys
         "team" | "teams" if o.words.first().is_some_and(|w| hub_cli::OPS.contains(&w.as_str())) => {
             hub_cli::team(&connect().await?, &o).await?
         }

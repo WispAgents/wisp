@@ -804,7 +804,7 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
 /// `crew.wake`: the member's job, in the trigger's folder when it has one, as the trigger's answer (`session.id` names its
 /// task).
 async fn wake(ctx: &Ctx, call: &Call, member: &str, why: String, cwd: &str, by: &str) -> Result<Value> {
-    // the trigger's project, when it has one, is where the job works (ADR-0147): a hub's triager in the repo it names
+    // the trigger's project, when it has one, is where the job works (ADR-0148): a hub's triager in the repo it names
     let cwd = (!cwd.is_empty()).then(|| cwd.to_owned());
     let a = wisp_crew_api::commands::WakeArgs { id: member.to_owned(), why, source: Some(by.to_owned()), cwd };
     let started = ctx.run::<wisp_crew_api::commands::Wake>(call, a).await?;

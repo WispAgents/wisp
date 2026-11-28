@@ -65,7 +65,7 @@ impl Grid {
     pub(super) async fn sandboxes_route(&self, method: &Method, parts: &[&str], h: &HeaderMap, bytes: &[u8], who: &Who) -> Result<Resp> {
         let user = match who {
             Who::Device(u, _) | Who::Session(u) => u.clone(),
-            // a team's hub box makes its own (ADR-0147 §8): the hub is its own owner, under its own cap
+            // a team's hub box makes its own (ADR-0148 §8): the hub is its own owner, under its own cap
             Who::Box(u) if self.teams.is_hub(&u.id)? => u.clone(),
             Who::Box(_) => return Err(bad("A box asks for sandboxes through its owner's wisp.", 403)),
             Who::Nobody => return Err(bad("Sign in first.", 401)),

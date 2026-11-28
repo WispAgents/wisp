@@ -1,4 +1,4 @@
-//! A team's hub (ADR-0147): an account of the team's own, a `users` row with the team's slug as its handle and no
+//! A team's hub (ADR-0148): an account of the team's own, a `users` row with the team's slug as its handle and no
 //! identity, so nobody signs in as it and it gets a box like anyone's. `teams.hub_user_id` points at it.
 //!
 //! The team's slug and a person's handle share one namespace (both are `<label>.<domain>`), so a slug someone holds as

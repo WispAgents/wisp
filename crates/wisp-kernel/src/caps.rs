@@ -60,7 +60,7 @@ pub struct CapabilitySet {
     /// deny pattern → what the caller reads (v1's wording for capped refusals). Added in v2.0 (additive).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub why: BTreeMap<String, String>,
-    /// only read-only commands, whatever `allow` says: a hub's viewer (ADR-0147). Checked where a call starts
+    /// only read-only commands, whatever `allow` says: a hub's viewer (ADR-0148). Checked where a call starts
     /// (the edge, MCP), so a read that writes on its own (a mark, a cache) still works. Additive.
     #[serde(default, rename = "readOnly", skip_serializing_if = "std::ops::Not::not")]
     pub read_only: bool,

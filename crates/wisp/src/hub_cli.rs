@@ -1,4 +1,4 @@
-//! `wisp team …` for a team's hub (ADR-0147): its address, people, invite links, deploy keys, secrets and deploys,
+//! `wisp team …` for a team's hub (ADR-0148): its address, people, invite links, deploy keys, secrets and deploys,
 //! through this wisp's grid sign-in (`grid-client.hub*`). `wisp team new|ls|show|add|rm` stay in `cloud_cli.rs`.
 //!
 //! A secret's value or a harness token never goes on the command line (the shell's history would keep it): it's piped

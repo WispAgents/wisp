@@ -20,7 +20,7 @@ the task doesn't end well. It can also check the repo's `.wisp/` setup and post 
 ```
 
 ```yaml
-# a team hub's folder (ADR-0147): planned on every pull request, deployed on every merge to main
+# a team hub's folder (ADR-0148): planned on every pull request, deployed on every merge to main
 - uses: wisp-agents/action@v1
   with:
     hub: ops/hub                     # the folder with grid.yml (wisp grid init writes this workflow for you)
@@ -39,7 +39,7 @@ the task doesn't end well. It can also check the repo's `.wisp/` setup and post 
 | `check` | `validate` or `plan`: runs `wisp validate` (and `wisp plan`) on `.wisp/`, posts the output as the pull request comment and step summary, and fails on problems or secrets that aren't set. Needs no prompt or task | |
 | `deploy` | `plan` or `apply`: plans the hub folder (`wisp grid plan`) or deploys it to its team's hub (`wisp grid deploy --yes`) with `hub-key`, straight to the hub's address; posts the output as the pull request comment and step summary. Needs no prompt or task | |
 | `hub` | the hub's folder (it holds `grid.yml`), for `deploy` | `.` |
-| `hub-key` | a deploy key for the hub (`wgh_…`); `plan` takes a plan-only key | |
+| `hub-key` | a deploy key for the hub (`wgt_…`); `plan` takes a plan-only key | |
 | `project` | the folder it runs in | `.` |
 | `agent` | the harness (claude, codex, opencode, …); the task's or wisp's default when left out | |
 | `model` | the model | |

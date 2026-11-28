@@ -7,7 +7,7 @@ use http_body_util::BodyExt as _;
 use hyper::body::Incoming;
 use serde_json::json;
 
-use super::{Grid, PASSIVE, Via, Who, answer, handoff, incoming, media_route, no};
+use super::{Grid, PASSIVE, Via, Who, answer, handoff, hook, incoming, media_route, no};
 use crate::boxhost::{BoxHost, BoxState};
 use crate::error::{Result, bad};
 use crate::http::{Resp, empty, header_str, json, json_with};
@@ -45,6 +45,8 @@ impl Grid {
                         for _ in 0..50 {
                             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                             if watch.tunnels.online(&id) {
+                                // webhook calls held while it was away go to it now, in order (ADR-0147)
+                                watch.held.kick(&id);
                                 return watch.notify(&who);
                             }
                         }
@@ -70,6 +72,13 @@ impl Grid {
         let Some(owner) = self.accounts.user_by_id(&c.user_id)?.filter(|u| u.disabled == 0) else {
             return Ok(self.not_found(&req, "No such computer", "Nothing answers at this address."));
         };
+        // a webhook trigger's call by its URL's token (edge_hook.rs, ADR-0147): no sign-in
+        if preview.is_none()
+            && let Some(token) = hook::token_of(req.method(), req.uri().path())
+        {
+            let token = token.to_owned();
+            return self.computer_hook(req, c, &token).await;
+        }
         let go = format!("/go?computer={}", c.id);
         let req = if preview.is_some() {
             req
@@ -156,7 +165,7 @@ impl Grid {
         let Some(user) = self.accounts.user_by_handle(handle)?.filter(|u| u.disabled == 0) else {
             return Ok(self.not_found(&req, "Nobody here", "There's nobody with that handle here."));
         };
-        // a team's hub (ADR-0147): its members by role, and its deploy keys
+        // a team's hub (ADR-0148): its members by role, and its deploy keys
         if let Some(hub) = self.teams.hub_by_user(&user.id)? {
             return self.hub_edge(req, &user, &hub).await;
         }

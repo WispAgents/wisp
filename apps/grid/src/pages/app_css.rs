@@ -152,7 +152,7 @@ form.inline{display:inline}
 @media (pointer:coarse){.navt a,.t-go,.top .me a{min-height:44px}.m-acts .primary,.m-acts .ghost,.more,.add-pop>summary,.s-head .ghost,.a-main .ghost{height:44px}.more{width:44px}.copy{height:44px}}
 @media (prefers-reduced-motion:reduce){.t-go svg{transition:none}.dot{animation:none!important}.state i{animation:none!important}}
 .going{pointer-events:none;opacity:.55;cursor:progress}.primary.wait>svg,.ghost.wait>svg{display:none}.wait{pointer-events:none;opacity:.75}.wait::after{content:'';width:12px;height:12px;flex:none;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:wait-spin .7s linear infinite}@keyframes wait-spin{to{transform:rotate(360deg)}}
-/* Teams (ADR-0147): a hub's people, links, keys, secrets, deploys, in Account's rows */
+/* Teams (ADR-0148): a hub's people, links, keys, secrets, deploys, in Account's rows */
 .acct .a-main.solo{grid-column:1/-1;max-width:720px}
 a.r.link{color:inherit;text-decoration:none;cursor:pointer}a.r.link:hover{background:var(--bg-2)}a.r.link .ic:last-child{color:var(--faint)}
 .key-f select.input,.key-f .input.sel{flex:none;width:auto;height:32px;padding:0 28px 0 10px;font:13px var(--sans);cursor:pointer}

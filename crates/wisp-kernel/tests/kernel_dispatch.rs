@@ -81,7 +81,7 @@ async fn default_deny_and_capability_sets() {
     assert!(k.refusals().iter().any(|r| r.code == "forbidden" && r.stack.iter().any(|f| f == "wisp.alpha:alpha.echo")));
 }
 
-/// ADR-0147: a read-only set (a hub's viewer) starts reads and is refused a write, whatever its allow list says;
+/// ADR-0148: a read-only set (a hub's viewer) starts reads and is refused a write, whatever its allow list says;
 /// the same allow list without `readOnly` writes.
 #[tokio::test]
 async fn a_read_only_set_starts_reads_only() {

@@ -101,7 +101,7 @@ impl Teams {
                 "INSERT INTO team_members (team_id, user_id, role, created_at) VALUES (?1, ?2, 'owner', ?3)",
                 params![id, user.id, now],
             )?;
-            // the team's hub (ADR-0147): its own account, so it gets a box at <slug>.<domain>
+            // the team's hub (ADR-0148): its own account, so it gets a box at <slug>.<domain>
             crate::hubs::make(tx, &id, &slug, &name, now)?;
             Ok(())
         })?;

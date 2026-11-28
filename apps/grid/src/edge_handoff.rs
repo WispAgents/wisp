@@ -38,7 +38,7 @@ impl Grid {
         } else if let Some(id) = query(q, "sandbox") {
             self.sandboxes.get(&id)?.filter(|s| s.user_id == u.id).ok_or_else(|| bad("No such sandbox.", 404))?.label
         } else if let Some(slug) = query(q, "hub") {
-            // a team's hub (ADR-0147): anyone in the team gets a ticket to it, as themselves
+            // a team's hub (ADR-0148): anyone in the team gets a ticket to it, as themselves
             match self.teams.hub(&slug)? {
                 Some(h) if self.teams.role(&u.id, &slug)?.is_some() => h.slug,
                 _ => return Err(bad("No such hub, or you aren't in its team.", 404)),
@@ -112,7 +112,7 @@ impl Grid {
         self.accounts.address_session(&c, label).ok().flatten().filter(|u| self.holds_address(owner, &u.id))
     }
 
-    /// Whether `uid` may be signed in at `owner`'s address: its owner, or anyone in the team whose hub it is (ADR-0147).
+    /// Whether `uid` may be signed in at `owner`'s address: its owner, or anyone in the team whose hub it is (ADR-0148).
     fn holds_address(&self, owner: &UserRow, uid: &str) -> bool {
         if uid == owner.id {
             return true;

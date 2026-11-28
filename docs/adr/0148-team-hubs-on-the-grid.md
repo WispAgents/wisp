@@ -1,4 +1,4 @@
-# ADR-0147: A team's hub is a wisp on the grid that the team owns, deployed from a folder like Terraform
+# ADR-0148: A team's hub is a wisp on the grid that the team owns, deployed from a folder like Terraform
 
 - Status: accepted
 - Date: 2026-11-28
@@ -46,8 +46,8 @@ The edge opens a hub's address for **the team's members**, by their role. It tel
 | an owner or admin (session, device, cookie) | `owner` | `hub:owner` | everything a box's person may, and the hub's machines: a hub's only machines are the sandboxes it makes (a box never syncs a laptop), so `box`'s `machines:*` deny would stop its people starting sandboxed work |
 | a member | `member` | `hub:member` | start and follow up tasks (sandboxed too), run triggers and workflows, read everything; no settings, secrets, plugins, accounts or resources |
 | a viewer | `viewer` | `hub:viewer` | read topics, sessions, stuff |
-| a deploy key (`wgh_…`, rights deploy) | `deploy` | `hub:deploy` | plan and apply: what each kind reads and applies through its own plugin's commands (crew, triggers, projects…), but no work (no task, follow-up, wake, fire or run), no session, no secret, no machine, no key |
-| a plan key (`wgh_…`, rights plan) | `plan` | `hub:plan` | `hub:deploy`'s set, read-only |
+| a deploy key (`wgt_…`, rights deploy) | `deploy` | `hub:deploy` | plan and apply: what each kind reads and applies through its own plugin's commands (crew, triggers, projects…), but no work (no task, follow-up, wake, fire or run), no session, no secret, no machine, no key |
+| a plan key (`wgt_…`, rights plan) | `plan` | `hub:plan` | `hub:deploy`'s set, read-only |
 | anyone else | — | — | 403 "That hub is acme's: ask an owner to add you." |
 
 The trust table gets one credential, `HubKey`: it reaches `Box` (its own hub only, checked like a `wgk_` key's

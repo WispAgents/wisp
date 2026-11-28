@@ -1,4 +1,4 @@
-//! A team's hub (ADR-0147): its people, invite links, deploy keys, secrets and deploys, through this computer's sign-in.
+//! A team's hub (ADR-0148): its people, invite links, deploy keys, secrets and deploys, through this computer's sign-in.
 //! Making an invite, a key or a secret is a person's (`uiOnly`: a link, a key or a value through an agent would sit
 //! in a transcript); reading, revoking and deploying aren't.
 use serde::{Deserialize, Serialize};

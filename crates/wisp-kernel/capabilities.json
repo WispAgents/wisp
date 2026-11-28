@@ -95,7 +95,7 @@
       ]
     },
     {
-      "$comment": "ADR-0147: a team hub's owner or admin at its address: the box set, but the hub's machines are its own sandboxes (a box never syncs a laptop), so they're reachable",
+      "$comment": "ADR-0148: a team hub's owner or admin at its address: the box set, but the hub's machines are its own sandboxes (a box never syncs a laptop), so they're reachable",
       "id": "hub:owner",
       "allow": ["*"],
       "deny": [
@@ -106,7 +106,7 @@
       ]
     },
     {
-      "$comment": "ADR-0147: a team member at the hub's address: tasks, triggers, workflows, crew; nothing that changes the hub itself",
+      "$comment": "ADR-0148: a team member at the hub's address: tasks, triggers, workflows, crew; nothing that changes the hub itself",
       "id": "hub:member",
       "allow": ["*"],
       "deny": [
@@ -132,7 +132,7 @@
       ]
     },
     {
-      "$comment": "ADR-0147: a team viewer: reads only (readOnly: no command that writes starts under it)",
+      "$comment": "ADR-0148: a team viewer: reads only (readOnly: no command that writes starts under it)",
       "id": "hub:viewer",
       "readOnly": true,
       "allow": ["*"],
@@ -159,7 +159,7 @@
       ]
     },
     {
-      "$comment": "ADR-0147: a team's deploy key (wgh_, rights deploy): plan and apply the team's folder. Each kind reads and applies through its own plugin's commands, so the set reaches config; it does no work and reads no secret",
+      "$comment": "ADR-0148: a team's deploy key (wgt_, rights deploy): plan and apply the team's folder. Each kind reads and applies through its own plugin's commands, so the set reaches config; it does no work and reads no secret",
       "id": "hub:deploy",
       "allow": ["*"],
       "deny": [
@@ -184,7 +184,7 @@
       ]
     },
     {
-      "$comment": "ADR-0147: a team's plan-only key (wgh_, rights plan): what a pull request would change; reads only",
+      "$comment": "ADR-0148: a team's plan-only key (wgt_, rights plan): what a pull request would change; reads only",
       "id": "hub:plan",
       "readOnly": true,
       "allow": ["*"],

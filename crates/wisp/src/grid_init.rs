@@ -1,4 +1,4 @@
-//! What `wisp grid init <team>` writes (ADR-0147 §5): a formula folder for a team's hub, ready to `wisp grid plan`.
+//! What `wisp grid init <team>` writes (ADR-0148 §5): a formula folder for a team's hub, ready to `wisp grid plan`.
 //! It never overwrites a file: one that's there is kept and said. The GitHub workflow goes at the repo's root (where
 //! GitHub reads it), pointed at the folder; with no repo, in the folder.
 use std::path::{Path, PathBuf};
@@ -46,7 +46,7 @@ triggers:
 
 fn grid_yml(team: &str, grid: &str) -> String {
     format!(
-        "# Which hub this folder deploys to (wisp grid plan | deploy). ADR-0147.\ngrid: {grid}\nteam: {team}\nhub: {}\n",
+        "# Which hub this folder deploys to (wisp grid plan | deploy). ADR-0148.\ngrid: {grid}\nteam: {team}\nhub: {}\n",
         hub_url(grid, team)
     )
 }

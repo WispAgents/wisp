@@ -9,7 +9,7 @@
 //! | `x-wisp-token` = anything else                    | 403 `bad token`, whatever the route          |
 //! | via the proxy with `x-wisp-proxy-via: key`        | `apikey` (a grid API key, checked at the grid) |
 //! | via the proxy with `x-wisp-proxy-via: hook`       | `public`: a webhook delivery the grid let in unsigned-in (open routes only) |
-//! | via the proxy with `x-wisp-proxy-via: owner`, `member`, `viewer`, `deploy`, `plan` | a team hub's `hub:owner`, `hub:member`, `hub:viewer`, `hub:deploy`, `hub:plan` (ADR-0147) |
+//! | via the proxy with `x-wisp-proxy-via: owner`, `member`, `viewer`, `deploy`, `plan` | a team hub's `hub:owner`, `hub:member`, `hub:viewer`, `hub:deploy`, `hub:plan` (ADR-0148) |
 //! | via the proxy, otherwise                          | the user set                                 |
 //! | the local page (Host and Origin checked)          | the user set                                 |
 //! | either of those two with `x-wisp-plugin: user.<x>` | `plugin:user.<x>`: an untrusted plugin's UI (ADR-0048), never more than the user |
@@ -68,7 +68,7 @@ pub mod sets {
     pub const APIKEY: &str = "apikey";
     /// an open route's caller without a token (a webhook from the internet)
     pub const PUBLIC: &str = "public";
-    /// a team hub's people and keys, as the grid's edge names them (ADR-0147)
+    /// a team hub's people and keys, as the grid's edge names them (ADR-0148)
     pub const HUB_OWNER: &str = "hub:owner";
     pub const HUB_MEMBER: &str = "hub:member";
     pub const HUB_VIEWER: &str = "hub:viewer";
@@ -295,7 +295,7 @@ mod tests {
         assert_eq!(resolve(&hm(&[("x-wisp-proxy-via", "hook")]), &BTreeMap::new(), b"", &opts(true)).unwrap().set, "public");
     }
 
-    /// ADR-0147: a hub's member, viewer and keys each speak for their own set, only from behind the grid's proxy; a
+    /// ADR-0148: a hub's member, viewer and keys each speak for their own set, only from behind the grid's proxy; a
     /// word the edge doesn't send is the person's set, as before.
     #[test]
     fn a_hubs_people_and_keys_get_their_sets() {

@@ -67,7 +67,7 @@ pub struct Client {
     /// `--on <machine>`: commands go to that peer through this wisp (`machines.route`, same key)
     on: Option<String>,
     peer: std::sync::Arc<tokio::sync::OnceCell<(String, String)>>,
-    /// a team's hub (ADR-0147, `wisp grid plan|deploy`): every command goes there instead
+    /// a team's hub (ADR-0148, `wisp grid plan|deploy`): every command goes there instead
     hub: Option<hub::Hub>,
 }
 

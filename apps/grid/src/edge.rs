@@ -51,6 +51,8 @@ mod events;
 mod forms;
 #[path = "edge_handoff.rs"]
 mod handoff;
+#[path = "edge_hook.rs"]
+mod hook;
 #[path = "edge_hub.rs"]
 mod hub;
 #[path = "edge_hub_api.rs"]
@@ -102,6 +104,10 @@ pub struct Grid {
     pub accounts: Accounts,
     /// API keys (`wgk_…`): a script's way in to its user's own wisp (`keys.rs`)
     pub keys: crate::keys::ApiKeys,
+    /// a computer's webhook trigger URLs (`wgh_…`, `hooks.rs`, ADR-0147)
+    pub hooks: crate::hooks::Hooks,
+    /// webhook calls held for an offline computer until its tunnel is back (`hook_held.rs`, ADR-0147)
+    pub held: Arc<crate::hook_held::HookHeld>,
     /// per-user and per-address rate limits (a minute's window)
     limits: crate::http::Limiter,
     /// share passwords' scrypt, a few at a time on the blocking pool (`edge_shares.rs` `off_the_workers`); public so
@@ -327,7 +333,7 @@ impl Grid {
         let (head, body) = req.into_parts();
         let bytes = read_bytes(body, crate::shares::MAX_BYTES * 2).await?;
         let peer = head.extensions.get::<common::Peer>().map(|p| p.0);
-        // Teams and a team's hub (edge_teams_pages.rs, ADR-0147)
+        // Teams and a team's hub (edge_teams_pages.rs, ADR-0148)
         if let Some(r) = self.teams_pages(method.as_str(), parts.as_slice(), q, &head.headers, &bytes, &who).await {
             return r;
         }
@@ -346,6 +352,8 @@ impl Grid {
             }
             (_, ["api", "keys"]) => self.keys_route(&method, None, &head.headers, &bytes, &who),
             (_, ["api", "keys", id]) => self.keys_route(&method, Some(id), &head.headers, &bytes, &who),
+            (_, ["api", "hooks"]) => self.hooks_route(&method, None, &head.headers, &bytes, &who),
+            (_, ["api", "hooks", id]) => self.hooks_route(&method, Some(id), &head.headers, &bytes, &who),
             (_, ["api", "sandboxes", ..]) => self.sandboxes_route(&method, &parts, &head.headers, &bytes, &who).await,
             (_, ["api", "teams", ..] | ["api", "join"]) => match self.hub_api(&method, &parts, &head.headers, &bytes, &who).await {
                 Some(r) => r,

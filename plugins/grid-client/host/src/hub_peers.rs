@@ -1,4 +1,4 @@
-//! The hubs of your teams as machines (ADR-0147 §9): each a `grid` peer at the hub's address, opened with this
+//! The hubs of your teams as machines (ADR-0148 §9): each a `grid` peer at the hub's address, opened with this
 //! computer's device token (the hub's edge lets a member's device in, by their role). So the app's list, `--on acme`
 //! and the TUI reach a hub as they reach the cloud box. A hub you're no longer in leaves the list on the next sync.
 use std::sync::Arc;

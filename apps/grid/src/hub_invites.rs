@@ -1,4 +1,4 @@
-//! Invite links to a team (ADR-0147 §3): `<grid>/join/<code>`. The code is said once, in the answer that made it; the
+//! Invite links to a team (ADR-0148 §3): `<grid>/join/<code>`. The code is said once, in the answer that made it; the
 //! grid keeps its SHA-256. Opening it signed in adds you with the invite's role. An invite never makes an owner, an
 //! admin's never makes an admin, and a spent, expired or revoked one adds nobody.
 use rusqlite::{OptionalExtension, params};

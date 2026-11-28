@@ -1,4 +1,4 @@
-//! `wisp grid init|plan|deploy|deploys` (ADR-0147 §5): a team's hub as code, like Terraform. `init` writes a formula
+//! `wisp grid init|plan|deploy|deploys` (ADR-0148 §5): a team's hub as code, like Terraform. `init` writes a formula
 //! folder with a `grid.yml` that says which hub it's for; `plan` and `deploy` evaluate the folder here and run the
 //! same `resources.plan` / `resources.apply` as `wisp apply`, on the hub:
 //!

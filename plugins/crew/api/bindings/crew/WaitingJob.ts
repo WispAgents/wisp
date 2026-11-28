@@ -26,6 +26,6 @@ unattended?: boolean, run?: RunPick,
  */
 thread?: Record<string, unknown>, 
 /**
- * the folder it works in instead of the member's own: a trigger's project (ADR-0147). Additive.
+ * the folder it works in instead of the member's own: a trigger's project (ADR-0148). Additive.
  */
 cwd?: string, at: number, };

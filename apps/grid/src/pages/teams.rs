@@ -1,4 +1,4 @@
-//! Teams (`/teams`) and a team's hub (`/teams/<team>`), signed in (ADR-0147): the hubs you're in and a new team; then
+//! Teams (`/teams`) and a team's hub (`/teams/<team>`), signed in (ADR-0148): the hubs you're in and a new team; then
 //! one hub: open it, its people, invite links, deploy keys, secrets, deploys, and deleting it. Account's rows and
 //! forms, one section each; what someone may change shows only to an owner or admin.
 use super::home::{flash, hidden};

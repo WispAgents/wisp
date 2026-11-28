@@ -1,4 +1,4 @@
-//! A CLI client for a team's hub (ADR-0147, `wisp grid plan|deploy`): its commands go to the hub's address with a deploy
+//! A CLI client for a team's hub (ADR-0148, `wisp grid plan|deploy`): its commands go to the hub's address with a deploy
 //! key (no wisp needed on this machine), or through this computer's wisp and its grid sign-in.
 use std::time::Duration;
 

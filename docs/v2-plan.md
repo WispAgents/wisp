@@ -283,9 +283,9 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - [x] Events + triggers (ADR-0043, 0044)
 - [x] Grid leftovers: GitHub/Google sign-in, boxd container driver, sandboxes as peers, `wisp ssh`, teams in the CLI
-- [x] **Team hubs** (owner, 2026-11-28; ADR-0147): a team's own wisp on the grid (`teams.hub_user_id`, a box at
+- [x] **Team hubs** (owner, 2026-11-28; ADR-0148): a team's own wisp on the grid (`teams.hub_user_id`, a box at
       `<team>.<domain>`), people by role through the edge (`hub:member|viewer|deploy|plan`, a read-only set kind in the
-      kernel), invite links, `wgh_` deploy keys, sealed hub secrets, one deploy at a time with a history;
+      kernel), invite links, `wgt_` deploy keys, sealed hub secrets, one deploy at a time with a history;
       `wisp grid init|plan|deploy|deploys`, `wisp team …` hub ops, grid-client `hub*` commands; projects by `repo:`
       (cloned on apply); a hub makes its own sandboxes; grid Teams pages; hubs as machines; the Action's `deploy:`;
       guide `guides/declare/team-hubs`, site and README sections. Left: the GitHub App (webhooks and per-repo tokens;

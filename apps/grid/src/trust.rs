@@ -23,7 +23,7 @@ pub enum Credential {
     Device,
     /// an API key (`wgk_…`): a script, for its user's own wisp
     Key,
-    /// a team's deploy key (`wgh_…`, ADR-0147): CI, for its own team's hub
+    /// a team's deploy key (`wgt_…`, ADR-0148): CI, for its own team's hub
     HubKey,
     /// `Box <handle> <secret>`: the cloud wisp asking for itself
     Box,
@@ -106,10 +106,16 @@ pub enum Reach {
     /// /_route/<token>: `on laptop`, read by the grid and sent to a computer
     #[serde(rename = "route")]
     Route,
+    /// /api/hooks: making, listing and revoking a computer's webhook trigger URLs (ADR-0147)
+    #[serde(rename = "grid:hooks")]
+    GridHooks,
+    /// <computer>--<handle>/_hook/<token>: a webhook trigger's call, through that computer's tunnel (ADR-0147)
+    #[serde(rename = "trigger")]
+    Trigger,
 }
 
 impl Reach {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 19] = [
         Self::GridPages,
         Self::GridRoutePage,
         Self::GridDevice,
@@ -127,6 +133,8 @@ impl Reach {
         Self::Preview,
         Self::Inbox,
         Self::Route,
+        Self::GridHooks,
+        Self::Trigger,
     ];
 
     pub fn name(self) -> &'static str {
@@ -148,6 +156,8 @@ impl Reach {
             Self::Preview => "preview",
             Self::Inbox => "inbox",
             Self::Route => "route",
+            Self::GridHooks => "grid:hooks",
+            Self::Trigger => "trigger",
         }
     }
 }
@@ -194,7 +204,18 @@ pub const CAPABILITIES: [CapabilitySet; 10] = [
     },
     CapabilitySet {
         credential: Credential::Device,
-        allow: &[R::GridDevice, R::GridKeys, R::GridReport, R::GridPublish, R::GridTeams, R::GridTunnel, R::Box, R::Computer, R::Sandbox],
+        allow: &[
+            R::GridDevice,
+            R::GridKeys,
+            R::GridHooks,
+            R::GridReport,
+            R::GridPublish,
+            R::GridTeams,
+            R::GridTunnel,
+            R::Box,
+            R::Computer,
+            R::Sandbox,
+        ],
         deny: &[
             deny(R::GridChannels, "a channel’s URL and key are the box’s own word, for its own address"),
             deny(R::EdgeKeys, KEYS_IN_BROWSER),
@@ -213,6 +234,7 @@ pub const CAPABILITIES: [CapabilitySet; 10] = [
             deny(R::EdgeKeys, KEYS_IN_BROWSER),
             deny(R::GridPublish, KEY_OWN),
             deny(R::GridTeams, KEY_OWN),
+            deny(R::GridHooks, "a key opens its user’s own wisp, never a computer’s trigger"),
         ],
     },
     CapabilitySet {
@@ -242,6 +264,7 @@ pub const CAPABILITIES: [CapabilitySet; 10] = [
             deny(R::GridTunnel, "anything on a box can read its Box secret, so it can never be a computer"),
             deny(R::GridKeys, "anything on a box can read its Box secret: a cloud wisp’s person makes keys at its edge (/_grid/keys)"),
             deny(R::GridDevice, "anything on a box can read its Box secret: no sign-in links, no computers"),
+            deny(R::GridHooks, "anything on a box can read its Box secret, so it never makes a URL that starts work on a laptop"),
             deny(R::GridRoutePage, "the bot for `on laptop` is given on the grid’s own origin, out of a box page’s reach"),
             deny(
                 R::GridTeams,
@@ -261,7 +284,7 @@ pub const CAPABILITIES: [CapabilitySet; 10] = [
     CapabilitySet { credential: Credential::Hook, allow: &[R::Box], deny: &[] },
     CapabilitySet {
         credential: Credential::Webhook,
-        allow: &[R::Inbox, R::Route],
+        allow: &[R::Inbox, R::Route, R::Trigger],
         deny: &[deny(R::Box, "a channel’s message is held by the grid and delivered; it never signs in to the box")],
     },
 ];
@@ -324,5 +347,17 @@ mod tests {
         let why = may(Credential::Box, Reach::GridTeams);
         assert!(matches!(&why, Verdict::No(w) if w.contains("Box secret")), "{why:?}");
         assert!(Reach::ALL.contains(&Reach::GridTeams));
+    }
+
+    /// ADR-0147: a computer's trigger URLs are made by wisp on that computer (its device token) only, and a call
+    /// reaches a trigger by its URL's token alone: never a box's secret, a key or a sign-in.
+    #[test]
+    fn trigger_urls_are_made_by_a_device_and_called_by_their_token_only() {
+        let made: Vec<Credential> = Credential::ALL.iter().copied().filter(|c| may(*c, Reach::GridHooks).ok()).collect();
+        assert_eq!(made, [Credential::Device]);
+        let called: Vec<Credential> = Credential::ALL.iter().copied().filter(|c| may(*c, Reach::Trigger).ok()).collect();
+        assert_eq!(called, [Credential::Webhook]);
+        assert!(matches!(may(Credential::Box, Reach::GridHooks), Verdict::No(w) if w.contains("Box secret")));
+        assert!(Reach::ALL.contains(&Reach::GridHooks) && Reach::ALL.contains(&Reach::Trigger));
     }
 }

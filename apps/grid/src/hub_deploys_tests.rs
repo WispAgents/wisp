@@ -1,4 +1,4 @@
-//! One deploy at a time, and the history (ADR-0147 §5).
+//! One deploy at a time, and the history (ADR-0148 §5).
 #![allow(clippy::unwrap_used)]
 use std::sync::Arc;
 

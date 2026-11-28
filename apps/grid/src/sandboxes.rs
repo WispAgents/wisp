@@ -241,7 +241,7 @@ impl Sandboxes {
     }
 
     /// The env vars and sign-ins sealed for `owner`, without `WISP_SANDBOX`: what a team's hub box starts with
-    /// (ADR-0147 §6; a hub's are its team's secrets).
+    /// (ADR-0148 §6; a hub's are its team's secrets).
     pub fn hub_env(&self, owner: &str) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = self.read_env(owner).into_iter().collect();
         if let Some(s) = self.secrets.as_deref() {

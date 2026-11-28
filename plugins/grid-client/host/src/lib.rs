@@ -22,6 +22,7 @@ mod accounts;
 mod calls;
 mod cloud;
 pub mod computer;
+mod hooks;
 mod hub_peers;
 mod hubs;
 mod keys;
@@ -161,6 +162,9 @@ impl Plugin for GridClientPlugin {
         on!(s, slot, api::KeyList, |st, _a| async move { keys::list(&st).await });
         on!(s, slot, api::KeyCreate, |st, a| async move { keys::create(&st, &a.name).await });
         on!(s, slot, api::KeyRevoke, |st, a| async move { keys::revoke(&st, &a.id).await });
+        on!(s, slot, api::HookList, |st, a| async move { hooks::list(&st, &a.trigger).await });
+        on!(s, slot, api::HookCreate, |st, a| async move { hooks::create(&st, &a.trigger).await });
+        on!(s, slot, api::HookRevoke, |st, a| async move { hooks::revoke(&st, &a.id).await });
         on!(s, slot, api::Reply, |st, a| async move { Ok::<_, WireError>(computer::reply(&st, &a).await) });
         s.on_start(move |ctx| async move {
             let store = ctx.service::<Store>()?.as_ref().clone();

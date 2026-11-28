@@ -1,4 +1,4 @@
-//! A team's hub (ADR-0147) through the grid's `/api/teams/<team>/…`, with this computer's device token: what `wisp team`
+//! A team's hub (ADR-0148) through the grid's `/api/teams/<team>/…`, with this computer's device token: what `wisp team`
 //! and the Settings pane ask. `hubCall` runs a deploy's `resources.*` command on the hub itself, as you, so
 //! `wisp grid deploy` works without a key; the grid keeps that deploy in the hub's history under your handle.
 use std::sync::Arc;

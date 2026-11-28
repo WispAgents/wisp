@@ -84,17 +84,17 @@ expect "check plan fails on missing secrets" 1
 go WISP_CHECK=nope
 expect "an unknown check is refused" 2
 
-# deploy (ADR-0147): a hub's folder planned or deployed with the key, never without one
-go WISP_DEPLOY=plan WISP_HUB_DIR=hub WISP_HUB_KEY=wgh_k
-expect "deploy plan runs wisp grid plan with the key" 0 "key=wgh_k plan hub --yes"
+# deploy (ADR-0148): a hub's folder planned or deployed with the key, never without one
+go WISP_DEPLOY=plan WISP_HUB_DIR=hub WISP_HUB_KEY=wgt_k
+expect "deploy plan runs wisp grid plan with the key" 0 "key=wgt_k plan hub --yes"
 grep -q "wisp hub plan: planned" "$tmp/summary" && echo "ok   the hub plan is in the summary" || { echo "FAIL the hub plan is in the summary"; fails=$((fails + 1)); }
-go WISP_DEPLOY=apply WISP_HUB_DIR=hub WISP_HUB_KEY=wgh_k
-expect "deploy apply runs wisp grid deploy" 0 "key=wgh_k deploy hub --yes"
-go WISP_DEPLOY=apply WISP_HUB_KEY=wgh_k STUB_GRID_RC=1
+go WISP_DEPLOY=apply WISP_HUB_DIR=hub WISP_HUB_KEY=wgt_k
+expect "deploy apply runs wisp grid deploy" 0 "key=wgt_k deploy hub --yes"
+go WISP_DEPLOY=apply WISP_HUB_KEY=wgt_k STUB_GRID_RC=1
 expect "a failed deploy fails the job" 1 "::error::wisp: the hub deploy failed"
 go WISP_DEPLOY=apply
 expect "deploy without a key says so" 2 "deploy needs hub-key"
-go WISP_DEPLOY=ship WISP_HUB_KEY=wgh_k
+go WISP_DEPLOY=ship WISP_HUB_KEY=wgt_k
 expect "deploy is plan or apply" 2 "deploy is plan or apply"
 
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

@@ -1,4 +1,4 @@
-//! What the Teams pages show, and to whom (ADR-0147).
+//! What the Teams pages show, and to whom (ADR-0148).
 use super::*;
 
 fn cfg() -> PageCfg {
@@ -71,12 +71,12 @@ fn an_owner_runs_the_hub_and_a_member_sees_its_people_and_deploys_only() {
 #[test]
 fn a_key_or_a_link_just_made_is_said_once_and_what_people_typed_is_escaped() {
     let mut p = hub("owner");
-    p.fresh = Some(("ci-main".into(), "wgh_secret".into()));
+    p.fresh = Some(("ci-main".into(), "wgt_secret".into()));
     let page = team_page(&cfg(), &p);
-    assert!(page.contains("wgh_secret") && page.contains("gh secret set WISP_HUB_KEY"));
+    assert!(page.contains("wgt_secret") && page.contains("gh secret set WISP_HUB_KEY"));
     p.fresh = Some(("invite".into(), "https://grid.test/join/wgi_x".into()));
     let page = team_page(&cfg(), &p);
-    assert!(page.contains("https://grid.test/join/wgi_x") && !page.contains("wgh_secret"));
+    assert!(page.contains("https://grid.test/join/wgi_x") && !page.contains("wgt_secret"));
     p.name = "<script>x</script>".into();
     assert!(!team_page(&cfg(), &p).contains("<script>x</script>"));
     let list = teams_page(

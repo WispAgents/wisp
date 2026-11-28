@@ -1,4 +1,4 @@
-//! The Teams pages and their forms (ADR-0147), signed in on the grid's own origin: `/teams`, `/teams/<team>`, and an
+//! The Teams pages and their forms (ADR-0148), signed in on the grid's own origin: `/teams`, `/teams/<team>`, and an
 //! invite link's `/join/<code>`. Every form is the session's own POST with its CSRF token, answered with a redirect back
 //! and a flash line (`pages_route`'s way); a deploy key or an invite link just made is said once, as Account's keys are
 //! (`fresh_keys`, the `wisp_new_key` cookie naming it).

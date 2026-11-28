@@ -74,6 +74,8 @@ impl Grid {
             mail_threads(&inbox, m);
         }
         let keys = crate::keys::ApiKeys { db: db.clone(), clock: clock.clone() };
+        let hooks = crate::hooks::Hooks { db: db.clone(), clock: clock.clone() };
+        let held = Arc::new(crate::hook_held::HookHeld::new(db.clone(), clock.clone(), secrets.clone(), tunnels.clone()));
         let push = push_of(&cfg, &db, &clock);
         Arc::new(Self {
             cfg,
@@ -81,6 +83,8 @@ impl Grid {
             clock,
             accounts,
             keys,
+            hooks,
+            held,
             limits: crate::http::Limiter::default(),
             scrypt: Arc::new(tokio::sync::Semaphore::new(SCRYPT_PERMITS)),
             fresh_keys: crate::keys_fresh::FreshKeys::default(),
@@ -186,7 +190,7 @@ fn sandboxes_of(cfg: &GridConfig, db: &Arc<Db>, clock: &SharedClock, secrets: Se
         if let Some(o) = u.owner.as_deref().filter(|_| u.sandbox.is_some()) {
             return sb.env_for(o);
         }
-        // a team's hub box starts with its team's secrets (ADR-0147 §6); a person's own box never with sandboxes'
+        // a team's hub box starts with its team's secrets (ADR-0148 §6); a person's own box never with sandboxes'
         // and says it's a hub, so it keeps the plugins its sandboxes need (`HubPlugins`)
         if teams.is_hub(&u.id).unwrap_or(false) {
             let mut env = sb.hub_env(&u.id);

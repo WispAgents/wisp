@@ -1,4 +1,4 @@
-//! A team's hub through the grid's own API (ADR-0147 §1, §3, §4, §6), for wisp on a computer (its device token) and the
+//! A team's hub through the grid's own API (ADR-0148 §1, §3, §4, §6), for wisp on a computer (its device token) and the
 //! grid's pages (a session). Never a box's, never a key's (`trust`: `GridTeams`).
 //!
 //! | route | who | what |

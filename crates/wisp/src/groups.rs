@@ -4,7 +4,7 @@
 //! crate isn't in this build is skipped (and `wisp plugin` says so).
 //!   `DefaultPlugins`   everything wisp ships: `wisp` on a laptop and the desktop app
 //!   `BoxPlugins`       Default minus machines and update: a grid box (its proc is the grid's)
-//!   `HubPlugins`       Box with machines: a team's hub box, whose sandbox plugin adds the sandboxes it makes (ADR-0147)
+//!   `HubPlugins`       Box with machines: a team's hub box, whose sandbox plugin adds the sandboxes it makes (ADR-0148)
 //!   `HeadlessPlugins`  runtime, the harnesses, git, mcp: CI, `wisp mcp`, servers
 //!   `MinimalPlugins`   runtime, one harness: the smallest working wisp, and the base for tests
 use std::path::PathBuf;
@@ -77,7 +77,7 @@ pub const DEFAULT: [&str; 54] = [
 ];
 /// A grid box serves the web frontend only (ADR-0024).
 pub const BOX_OFF: [&str; 3] = ["machines", "update", "cli"];
-/// A team's hub box (ADR-0147 §8): a box that keeps machines, so its sandboxes are peers it reaches. People there still
+/// A team's hub box (ADR-0148 §8): a box that keeps machines, so its sandboxes are peers it reaches. People there still
 /// can't (every box and hub set denies `machines:*`); only plugins, on their own grants.
 pub const HUB_OFF: [&str; 2] = ["update", "cli"];
 pub const HEADLESS: [&str; 16] = [

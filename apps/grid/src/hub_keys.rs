@@ -1,4 +1,4 @@
-//! A team's deploy keys (ADR-0147 §4): `Authorization: Bearer wgh_…` at the hub's own address, for CI and scripts that
+//! A team's deploy keys (ADR-0148 §4): `Authorization: Bearer wgt_…` at the hub's own address, for CI and scripts that
 //! plan and apply the team's folder. Like an API key (`keys.rs`): said once, kept as its SHA-256 and last four
 //! characters, `last_used_at` at most once a minute, revoked at once. A key opens its own team's hub and nothing else
 //! (`trust`: `HubKey` reaches `box` and `grid:hub`), and the hub's wisp gives it `hub:deploy` (resources only).
@@ -11,7 +11,7 @@ use crate::hubs::Hub;
 use crate::rows::UserRow;
 use crate::teams::Teams;
 
-pub const PREFIX: &str = "wgh_";
+pub const PREFIX: &str = "wgt_";
 /// Live keys a team may hold at once.
 pub const MAX_KEYS: i64 = 20;
 const USED_EVERY_MS: i64 = 60_000;
@@ -61,7 +61,7 @@ pub struct HubKey {
     pub hub: Hub,
 }
 
-/// The key a `Bearer wgh_…` header carries.
+/// The key a `Bearer wgt_…` header carries.
 pub fn bearer(auth: &str) -> Option<&str> {
     let a = auth.trim();
     let t = match a.split_once(char::is_whitespace) {
@@ -153,7 +153,7 @@ impl Teams {
         Ok(())
     }
 
-    /// The live key a header carries, with its team's hub; None for no `wgh_` key, an unknown or revoked one.
+    /// The live key a header carries, with its team's hub; None for no `wgt_` key, an unknown or revoked one.
     pub fn key_check(&self, auth: &str) -> Result<Option<HubKey>> {
         let Some(key) = bearer(auth) else { return Ok(None) };
         let row: Option<(String, String, String, Option<i64>, String)> = self.db.with(|c| {

@@ -24,7 +24,7 @@ inputs:
     description: "validate or plan: check the .wisp/ setup (wisp validate, and wisp plan) and post the plan, running nothing; fails on problems or secrets that aren't set. Needs no prompt or task"
     required: false
   deploy:
-    description: "plan or apply: a team hub's folder (ADR-0147) planned (the plan posted on the pull request) or deployed to its hub, with hub-key; needs no prompt or task"
+    description: "plan or apply: a team hub's folder (ADR-0148) planned (the plan posted on the pull request) or deployed to its hub, with hub-key; needs no prompt or task"
     required: false
   hub:
     description: "The hub's folder (it holds grid.yml), for deploy"

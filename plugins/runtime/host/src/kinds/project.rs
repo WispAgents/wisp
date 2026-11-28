@@ -54,7 +54,7 @@ pub struct ProjectSpec {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub path: String,
     /// the repo (`https://github.com/acme/api`, `git@…`, or `acme/api`): with no `path`, wisp clones it on apply into a
-    /// folder of its own and works there (ADR-0147: how a team's hub gets its projects)
+    /// folder of its own and works there (ADR-0148: how a team's hub gets its projects)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub repo: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]

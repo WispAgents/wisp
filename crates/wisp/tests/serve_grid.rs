@@ -617,6 +617,96 @@ async fn an_api_key_scripts_the_cloud_wisp_without_a_browser_until_revoked() {
     drop((s, g));
 }
 
+/// ADR-0147: a webhook trigger on a computer, started from the internet by a grid URL the person made for it. The URL
+/// names the computer and carries a token; the call reaches the trigger through the tunnel as no one, so the
+/// trigger's own secret is still checked, and a trigger's name alone opens nothing. A call while the computer is off is
+/// held and starts its task once it's back. Revoked, the URL is a 404.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_grid_url_starts_a_computers_webhook_trigger_until_revoked() {
+    let root = temp("serve-grid-hooks");
+    // a master key, so the grid can hold calls (sealed) while the computer is offline
+    std::fs::create_dir_all(root.join("grid/secrets")).unwrap();
+    let master = root.join("grid/secrets/master.json");
+    std::fs::write(&master, json!({ "current": "k1", "keys": { "k1": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=" } }).to_string())
+        .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&master, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let g = grid(&root).await;
+    let d = root.join("a");
+    std::fs::create_dir_all(d.join("proj")).unwrap();
+    let (s, p) = start_with(&d, &[]);
+    let a = api(p);
+    sign_in(&a, &g, "ada").await;
+    let off = a.try_cmd("grid-client.hooksCreate", json!({ "trigger": "deploy" })).await;
+    assert!(off["ok"] != true && off.to_string().contains("on the grid first"), "a URL needs this computer on the grid: {off}");
+    a.cmd("grid-client.computer", json!({ "on": true, "name": "studio" })).await;
+    until_state(&a, "online").await;
+    a.cmd("settings.set", json!({ "key": "automations.webhookTriggers", "value": true })).await;
+    let spec = json!({ "on": "webhook", "secret": "s3cret-hook-value", "prompt": "Deploy {event.payload.ref}", "project": d.join("proj") });
+    a.cmd("resources.apply", json!({ "resources": [{ "kind": "trigger", "name": "deploy", "spec": spec }], "trust": true })).await;
+
+    let made = a.cmd("grid-client.hooksCreate", json!({ "trigger": "deploy" })).await;
+    let url = made["url"].as_str().unwrap().to_owned();
+    let host = format!("studio--ada.{}", g.url.split("://").nth(1).unwrap().split(':').next().unwrap());
+    assert!(url.starts_with(&format!("http://{host}:{}/_hook/wgh_", g.port)), "{url}");
+    let listed = a.cmd("grid-client.hooks", json!({ "trigger": "deploy" })).await;
+    assert_eq!(listed.as_array().unwrap().len(), 1, "{listed}");
+    assert!(!listed.to_string().contains("wgh_"), "a list never says the URL: {listed}");
+    for f in ["home/wisp.db", "home/wisp.db-wal"] {
+        let bytes = std::fs::read(d.join(f)).unwrap_or_default();
+        assert!(!String::from_utf8_lossy(&bytes).contains(url.rsplit('/').next().unwrap()), "{f} holds the URL's token");
+    }
+    let web = browser(g.port, &[&host]);
+    let post = |u: String, secret: &'static str| {
+        web.post(u).header("content-type", "application/json").header("x-wisp-secret", secret).body(r#"{"ref":"refs/heads/main"}"#).send()
+    };
+    // through the grid the computer still checks the trigger's secret
+    assert_eq!(post(url.clone(), "wrong").await.unwrap().status(), 404);
+    assert_eq!(a.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0);
+    // a trigger's name at the computer's address is no URL: it asks for a sign-in and starts nothing
+    let by_name = post(format!("http://{host}:{}/api/triggers/deploy", g.port), "s3cret-hook-value").await.unwrap();
+    assert!(matches!(by_name.status().as_u16(), 302 | 401), "{}", by_name.status());
+    assert_eq!(a.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0);
+
+    let r = post(url.clone(), "s3cret-hook-value").await.unwrap();
+    let status = r.status().as_u16();
+    let body: Value = serde_json::from_str(&r.text().await.unwrap()).unwrap_or_default();
+    assert_eq!(status, 202, "{body}");
+    let id = body["id"].as_str().unwrap_or_else(|| panic!("started no task: {body}")).to_owned();
+    let spec = a.cmd("runtime.spec", json!({ "id": id })).await;
+    assert_eq!(spec["lineage"]["triggeredBy"], "trigger:deploy");
+    assert!(spec["prompt"].as_str().unwrap().contains("refs/heads/main"), "{spec}");
+
+    // the computer off the grid: a call is held (202), and starts its task once the computer is back
+    a.cmd("grid-client.computer", json!({ "on": false })).await;
+    let cid = g.edge.accounts.computers(&g.edge.accounts.user_by_handle("ada").unwrap().unwrap().id).unwrap()[0].id.clone();
+    let at = Instant::now();
+    while g.edge.tunnels.online(&cid) {
+        assert!(at.elapsed() < Duration::from_secs(20), "the tunnel never went");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let r = post(url.clone(), "s3cret-hook-value").await.unwrap();
+    assert_eq!(r.status(), 202);
+    assert_eq!(r.json::<Value>().await.unwrap()["held"], true);
+    assert_eq!(a.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 1, "nothing started while it was away");
+    a.cmd("grid-client.computer", json!({ "on": true, "name": "studio" })).await;
+    until_state(&a, "online").await;
+    let at = Instant::now();
+    while a.cmd("runtime.list", json!({})).await.as_array().unwrap().len() < 2 {
+        assert!(at.elapsed() < Duration::from_secs(30), "the held call never started its task");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    // revoked: the URL opens nothing
+    assert_eq!(a.cmd("grid-client.hooksRevoke", json!({ "id": made["id"] })).await["ok"], true);
+    assert_eq!(post(url, "s3cret-hook-value").await.unwrap().status(), 404);
+    assert_eq!(a.cmd("grid-client.hooks", json!({})).await, json!([]));
+    drop((s, g));
+}
+
 /// What `wisp computer status` says, and the computer's state in this wisp.
 async fn computer_state(a: &Api) -> (bool, String) {
     let c = a.cmd("grid-client.status", json!({})).await["computer"].clone();

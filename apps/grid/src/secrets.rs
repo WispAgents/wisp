@@ -223,6 +223,19 @@ impl Secrets {
         Ok(Some(String::from_utf8_lossy(&plain).into_owned()))
     }
 
+    /// `plain` sealed under the user's data key, for a row kept elsewhere (a held webhook call, ADR-0147); `purpose`
+    /// binds it to its place, so a sealed value moved to another row or user doesn't open.
+    pub fn seal_bytes(&self, user_id: &str, purpose: &str, plain: &[u8]) -> Result<String> {
+        let k = self.dek(user_id, true)?.ok_or_else(|| GridError::Crypto("No data key.".into()))?;
+        gcm(&k, plain, &format!("{user_id}|{purpose}"))
+    }
+
+    /// What [`Self::seal_bytes`] sealed, for the same user and purpose.
+    pub fn open_bytes(&self, user_id: &str, purpose: &str, sealed: &str) -> Result<Vec<u8>> {
+        let k = self.dek(user_id, false)?.ok_or_else(|| GridError::Crypto("No data key.".into()))?;
+        ungcm(&k, sealed, &format!("{user_id}|{purpose}"))
+    }
+
     pub fn drop_secret(&self, user_id: &str, purpose: &str) -> Result<()> {
         self.db.with(|c| c.prepare_cached("DELETE FROM user_secrets WHERE user_id = ?1 AND purpose = ?2")?.execute([user_id, purpose]))?;
         Ok(())

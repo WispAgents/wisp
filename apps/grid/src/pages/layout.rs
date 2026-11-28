@@ -11,7 +11,7 @@ pub(super) enum Tab {
     None,
     Home,
     Account,
-    /// Teams and a team's hub (ADR-0147)
+    /// Teams and a team's hub (ADR-0148)
     Teams,
     /// Home and Account in the header, neither of them this page (Activate)
     Neither,

@@ -63,7 +63,7 @@ if [ -n "${WISP_CHECK:-}" ]; then
   exit 0
 fi
 
-# `deploy: plan|apply` (ADR-0147): a team hub's folder planned or deployed to its hub with a deploy key, straight to the
+# `deploy: plan|apply` (ADR-0148): a team hub's folder planned or deployed to its hub with a deploy key, straight to the
 # hub's address (no wisp runs here); the plan or what was applied goes on the pull request
 if [ -n "${WISP_DEPLOY:-}" ]; then
   case "$WISP_DEPLOY" in

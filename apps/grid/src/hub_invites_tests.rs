@@ -1,4 +1,4 @@
-//! Invite links (ADR-0147 §3) and the hub an account is (§1).
+//! Invite links (ADR-0148 §3) and the hub an account is (§1).
 #![allow(clippy::unwrap_used)]
 use std::sync::Arc;
 

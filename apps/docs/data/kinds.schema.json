@@ -1195,7 +1195,7 @@
           "type": "string"
         },
         "repo": {
-          "description": "the repo (`https://github.com/acme/api`, `git@…`, or `acme/api`): with no `path`, wisp clones it on apply into a\nfolder of its own and works there (ADR-0147: how a team's hub gets its projects)",
+          "description": "the repo (`https://github.com/acme/api`, `git@…`, or `acme/api`): with no `path`, wisp clones it on apply into a\nfolder of its own and works there (ADR-0148: how a team's hub gets its projects)",
           "type": "string"
         },
         "run": {

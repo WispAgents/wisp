@@ -517,7 +517,7 @@ async fn a_job_gets_the_members_folders_and_fallbacks() {
     assert_eq!(picks, [(Some("codex"), Some("gpt-5.5")), (None, Some("sonnet"))]);
 }
 
-/// ADR-0147: a trigger's project is where a woken member's job works, not the member's own folder (a team hub's
+/// ADR-0148: a trigger's project is where a woken member's job works, not the member's own folder (a team hub's
 /// triager wakes on an issue in the repo the trigger names: `crew.wake {cwd}`); with none, the member's own.
 #[tokio::test]
 async fn a_job_with_a_folder_works_there_and_without_one_in_the_members() {

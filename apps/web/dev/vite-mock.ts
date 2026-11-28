@@ -31,6 +31,7 @@ import { encodeFrame, heartbeat } from '@wisp/sync';
 import { createMockPeer, type MockPeer, type MockTimers } from './mock-peer.ts';
 import { STUDIO, v1Captured, type V1Seed } from './seed.ts';
 import { resetGit } from './mock-git.ts';
+import { resetHooks } from './mock-hooks.ts';
 import { resetKeys } from './mock-keys.ts';
 
 function body(req: IncomingMessage): Promise<string> {
@@ -117,6 +118,7 @@ function middleware(box: { peer: MockPeer; others: Map<string, MockPeer>; fresh:
       box.others = made.others;
       resetGit();
       resetKeys();
+      resetHooks();
       return void res.writeHead(204).end();
     }
     // another computer's wisp, as the app reaches it through this one (`/api/peer/<machine>/…`)

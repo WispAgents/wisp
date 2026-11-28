@@ -1,4 +1,4 @@
-//! A team's hub at `<team>.<domain>` (ADR-0147 §2, §5): the team's members by role, its deploy keys, and its deploys.
+//! A team's hub at `<team>.<domain>` (ADR-0148 §2, §5): the team's members by role, its deploy keys, and its deploys.
 //!
 //! Who gets in, and what the hub's wisp hears (`x-wisp-proxy-via`, set here only; wisp-api auth.rs turns it into a set):
 //! an owner or admin `owner`, a member `member`, a viewer `viewer`, a deploy key `deploy` or
@@ -118,7 +118,7 @@ impl Grid {
                 return Ok(Ok(At::Key(k)));
             }
             if crate::keys::bearer_key(auth).is_some() {
-                return Err(bad("An API key opens your own wisp. A hub takes its team's deploy keys (wgh_…).", 403));
+                return Err(bad("An API key opens your own wisp. A hub takes its team's deploy keys (wgt_…).", 403));
             }
         }
         let (person, cred) = match (who.user().cloned(), who.credential()) {

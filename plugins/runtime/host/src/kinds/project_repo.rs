@@ -1,4 +1,4 @@
-//! A project by its repo (ADR-0147 §7): `repo: https://github.com/acme/api` and no `path`. Applied, wisp clones it into
+//! A project by its repo (ADR-0148 §7): `repo: https://github.com/acme/api` and no `path`. Applied, wisp clones it into
 //! a folder of its own (`<wisp home>/repos/<project>/<repo>`, through `git.clone`, which tries `gh repo clone` first so a
 //! hub's `GH_TOKEN` reaches a private repo) and keeps that folder as the project's path. A formula that names the repo
 //! only plans as unchanged once it's cloned: its path, left out, is that folder ([`ResourceKind::normalize_named`]).

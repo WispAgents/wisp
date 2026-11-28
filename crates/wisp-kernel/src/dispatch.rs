@@ -80,7 +80,7 @@ fn enter(k: &Arc<KernelState>, e: &CmdEntry, from: Option<&Ctx>, parent: &Call) 
     if let Err(why) = checked {
         return Err(refuse(k, Code::Forbidden, format!("{} refused: {}", e.id, why.message), who, stack()));
     }
-    // a read-only set (a hub's viewer, ADR-0147) starts reads only; what a read does inside is its own
+    // a read-only set (a hub's viewer, ADR-0148) starts reads only; what a read does inside is its own
     if !in_cmd && !e.read_only && set.as_deref().is_some_and(|s| s.read_only) {
         return Err(refuse(k, Code::Forbidden, format!("{} writes, and {} only reads", e.id, p.caller.set), who, stack()));
     }
