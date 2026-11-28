@@ -13,6 +13,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   *on* the computer it runs on, its branch, then its usage and context (the usage used to sit between the project and
   the computer). The narrow bar and the phone sheet are unchanged.
 
+### Fixed
+
+- A picture or video an agent shows in its answer holds its place with a loading skeleton until it arrives, instead of
+  an empty strip with only its caption. It also arrives sooner: the server reads only the bytes asked for (a video starts
+  on its first 4 MiB instead of the whole file being read for every seek), checks only the files that path can name
+  instead of every file the task's answers ever named, and lets the browser keep a copy (wisp's kept copies for a day,
+  others revalidated with an ETag).
+
 ## [1.0.0-alpha.19] - 2026-11-28
 
 ### Added
