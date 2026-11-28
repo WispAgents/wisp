@@ -16,7 +16,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `wisp grid plan` / `wisp grid deploy` send it to the hub, as you or with `WISP_HUB_KEY` and no wisp running (one
   deploy at a time, each kept with its commit: `wisp grid deploys`). The GitHub Action gets `deploy: plan|apply`,
   `hub` and `hub-key`. A project can name its `repo:`, cloned on apply; a hub's crew with `sandbox: job` runs each job
-  in a sandbox the hub owns.
+  in a sandbox the hub owns. A hub's webhook triggers get URLs at its own address (`wisp team url acme sentry`, the
+  team's page, or the hub's Automations page); the hub wakes for each call, and a trigger's `${secret:NAME}` reads the
+  team's secrets there.
 - **Webhook triggers work from the internet on any of your computers, through the grid.** Open a saved webhook
   trigger and press **Make a grid URL**. You get `https://<computer>--<you>.<grid>/_hook/wgh_…`: the address names the
   computer that runs the trigger, and the token is the only way in, so a trigger's name alone opens nothing. wisp shows

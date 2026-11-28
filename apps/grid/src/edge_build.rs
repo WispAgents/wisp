@@ -194,6 +194,9 @@ fn sandboxes_of(cfg: &GridConfig, db: &Arc<Db>, clock: &SharedClock, secrets: Se
         // and says it's a hub, so it keeps the plugins its sandboxes need (`HubPlugins`)
         if teams.is_hub(&u.id).unwrap_or(false) {
             let mut env = sb.hub_env(&u.id);
+            // its team's secrets answer as ${secret:NAME} there (wisp's FileSecrets): their names, never more
+            let names: Vec<String> = sb.env_keys(&u.id);
+            env.push(("WISP_HUB_SECRETS".into(), names.join(",")));
             env.push(("WISP_HUB".into(), "1".into()));
             env
         } else {

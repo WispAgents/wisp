@@ -5,7 +5,8 @@
  */
 export type HubArgs = { 
 /**
- * show | create | restart | delete | invites | uninvite | join | keys | unkey | secrets | unset | logout | deploys
+ * show | create | restart | delete | invites | uninvite | join | keys | unkey | secrets | unset | logout | deploys |
+ * urls | unurl
  */
 op: string, 
 /**
@@ -13,7 +14,7 @@ op: string,
  */
 team: string, 
 /**
- * an invite's or a key's id (uninvite, unkey)
+ * an invite's, a key's or a trigger URL's id (uninvite, unkey, unurl)
  */
 id: string, 
 /**

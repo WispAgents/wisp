@@ -180,7 +180,8 @@ pub const MIGRATIONS: &[&str] = &[
      tries INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, UNIQUE(hook_id, delivery));
    CREATE INDEX hook_held_computer ON hook_held(computer_id, id);",
     // ADR-0148: a team's hub is an account of its own (a users row with the team's slug and no identity), so it gets a
-    // box like anyone's. Invite links, deploy keys (`wgt_`) and deploys belong to the team and go with it.
+    // box like anyone's. Invite links, deploy keys (`wgt_`), deploys and its webhook trigger URLs (`team_hooks`, ADR-0147's tokens at the hub's
+    // address) belong to the team and go with it.
     r"ALTER TABLE teams ADD COLUMN hub_user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
    CREATE UNIQUE INDEX teams_hub ON teams(hub_user_id) WHERE hub_user_id IS NOT NULL;
    CREATE TABLE team_invites (
@@ -196,7 +197,12 @@ pub const MIGRATIONS: &[&str] = &[
    CREATE TABLE team_deploys (
      team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE, n INTEGER NOT NULL, by_kind TEXT NOT NULL,
      by_name TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', state TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '{}',
-     error TEXT, started_at INTEGER NOT NULL, finished_at INTEGER, PRIMARY KEY (team_id, n));",
+     error TEXT, started_at INTEGER NOT NULL, finished_at INTEGER, PRIMARY KEY (team_id, n));
+   CREATE TABLE team_hooks (
+     id TEXT PRIMARY KEY, team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE, trigger TEXT NOT NULL,
+     token_hash TEXT UNIQUE NOT NULL, hint TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
+     last_used_at INTEGER, calls INTEGER NOT NULL DEFAULT 0, revoked_at INTEGER);
+   CREATE INDEX team_hooks_team ON team_hooks(team_id);",
 ];
 
 /// Every table the migrations make (and `meta`), for tests and `wisp grid backup` checks.

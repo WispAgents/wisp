@@ -49,6 +49,7 @@ pub mod route;
 
 // publishing and reach
 pub mod hub_deploys;
+pub mod hub_hooks;
 pub mod hub_invites;
 pub mod hub_keys;
 pub mod hubs;

@@ -57,6 +57,8 @@ mod hook;
 mod hub;
 #[path = "edge_hub_api.rs"]
 mod hub_api;
+#[path = "edge_hub_hook.rs"]
+mod hub_hook;
 #[path = "edge_inbox.rs"]
 mod inbox;
 #[path = "edge_keys.rs"]

@@ -47,6 +47,7 @@ fn an_owner_runs_the_hub_and_a_member_sees_its_people_and_deploys_only() {
         r#"action="/teams/acme/invites""#,
         r#"action="/teams/acme/keys""#,
         r#"action="/teams/acme/secrets""#,
+        r#"action="/teams/acme/hooks""#,
         r#"action="/teams/acme/delete""#,
         "ci-main",
         "GH_TOKEN",
@@ -60,7 +61,15 @@ fn an_owner_runs_the_hub_and_a_member_sees_its_people_and_deploys_only() {
     for part in [r#"href="/go?hub=acme""#, "acme/agents@a1b2c3", "Leave"] {
         assert!(member.contains(part), "a member's page has {part}");
     }
-    for part in ["/teams/acme/keys", "/teams/acme/secrets", "/teams/acme/invites", "/teams/acme/delete", "GH_TOKEN", "/members/bo/remove"] {
+    for part in [
+        "/teams/acme/keys",
+        "/teams/acme/secrets",
+        "/teams/acme/invites",
+        "/teams/acme/delete",
+        "/teams/acme/hooks",
+        "GH_TOKEN",
+        "/members/bo/remove",
+    ] {
         assert!(!member.contains(part), "a member's page has no {part}");
     }
     // an admin manages, but deletes nothing and makes no owners

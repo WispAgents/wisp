@@ -62,6 +62,10 @@ fn cmd_refusal(status: u16, code: &str, message: &str, retry: bool) -> Resp {
 
 impl Grid {
     pub(super) async fn hub_edge(&self, req: http::Request<Incoming>, acct: &UserRow, hub: &Hub) -> Result<Resp> {
+        // a webhook trigger URL (`edge_hub_hook.rs`): before any sign-in, its token the only way in
+        if let Some(token) = super::hook::token_of(req.method(), req.uri().path()).map(str::to_owned) {
+            return self.hub_hook(req, acct, hub, &token).await;
+        }
         let go = format!("/go?hub={}", hub.slug);
         let req = match self.address_own(req, &hub.slug, acct, &go, false) {
             handoff::Own::Done(r) => return Ok(r),

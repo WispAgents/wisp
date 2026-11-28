@@ -11,9 +11,29 @@ use crate::code::Opts;
 use crate::scripted::say;
 
 /// The `wisp team` words this file answers.
-pub const OPS: [&str; 19] = [
-    "help", "hub", "open", "restart", "delete", "invite", "invites", "uninvite", "join", "role", "keys", "key", "unkey", "secrets",
-    "secret", "unset", "login", "logout", "deploys",
+pub const OPS: [&str; 22] = [
+    "help",
+    "hub",
+    "open",
+    "restart",
+    "delete",
+    "invite",
+    "invites",
+    "uninvite",
+    "join",
+    "role",
+    "keys",
+    "key",
+    "unkey",
+    "secrets",
+    "secret",
+    "unset",
+    "login",
+    "logout",
+    "deploys",
+    "url",
+    "urls",
+    "url-revoke",
 ];
 
 pub const USAGE: &str = "wisp team new <team> [name]        a team, and its hub: its own wisp at <team>.<grid>
@@ -28,6 +48,8 @@ wisp team secret <team> NAME        one of the hub's env vars, piped in or typed
 wisp team secrets|unset <team> [NAME]   their names; take one out
 wisp team login|logout <team> claude   the hub's Claude sign-in (claude setup-token, piped in or typed)
 wisp team deploys <team>            what was deployed to the hub, by whom, from where
+wisp team url <team> <trigger>      a URL that starts the hub's webhook trigger from the internet, shown once
+wisp team urls|url-revoke <team> [id]   the hub's trigger URLs; revoke one
 wisp team delete <team> --yes       the team, its hub and everything on it";
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
@@ -157,6 +179,7 @@ pub async fn team(c: &Client, o: &Opts) -> Result<i32> {
             Value::Null
         }
         "key" | "keys" | "secret" | "login" | "secrets" | "unset" | "logout" => keys_and_secrets(c, &op, &team, o, &st).await?,
+        "url" | "urls" | "url-revoke" => trigger_urls(c, &op, &team, o, &st).await?,
         "deploys" => {
             need("")?;
             let v = hub(json!({ "op": "deploys", "team": team })).await?;
@@ -229,6 +252,45 @@ async fn keys_and_secrets(c: &Client, op: &str, team: &str, o: &Opts, st: &wisp_
             let name = if op == "logout" && word(2).is_empty() { "claude".to_owned() } else { word(2) };
             hub(json!({ "op": op, "team": team, "name": name })).await?;
             say(&format!("  {} {name} taken out of {team}'s hub", paint(st, GREEN, "✓")));
+            Value::Null
+        }
+        _ => return Err(CliError::usage(USAGE)),
+    })
+}
+
+/// `wisp team url|urls|url-revoke …`: the hub's webhook trigger URLs (ADR-0148 with ADR-0147's tokens).
+async fn trigger_urls(c: &Client, op: &str, team: &str, o: &Opts, st: &wisp_cli_core::Style) -> Result<Value> {
+    let word = |i: usize| o.words.get(i).cloned().unwrap_or_default();
+    if team.is_empty() || (op != "urls" && word(2).is_empty()) {
+        return Err(CliError::usage(format!(
+            "wisp team {op} <team>{}",
+            if op == "urls" {
+                ""
+            } else if op == "url" {
+                " <trigger>"
+            } else {
+                " <id>"
+            }
+        )));
+    }
+    Ok(match op {
+        "url" => {
+            let v = c.cmd("grid-client.hubHookCreate", json!({ "team": team, "trigger": word(2) })).await?;
+            say(&format!("  {} a URL for {}'s trigger {}, shown once:", paint(st, GREEN, "✓"), team, s(&v, "trigger")));
+            say(&format!("    {}", paint(st, BOLD, s(&v, "url"))));
+            say(&paint(st, DIM, "    GitHub: repo Settings → Webhooks → this URL, application/json, the trigger's secret"));
+            v
+        }
+        "urls" => {
+            let v = c.cmd("grid-client.hub", json!({ "op": "urls", "team": team })).await?;
+            for h in v["hooks"].as_array().into_iter().flatten() {
+                say(&format!("  {}  {:<24} …{}  called {}", s(h, "id"), s(h, "trigger"), s(h, "hint"), when(&h["lastUsedAt"])));
+            }
+            v
+        }
+        "url-revoke" => {
+            c.cmd("grid-client.hub", json!({ "op": "unurl", "team": team, "id": word(2) })).await?;
+            say(&format!("  {} trigger URL revoked: it opens nothing now", paint(st, GREEN, "✓")));
             Value::Null
         }
         _ => return Err(CliError::usage(USAGE)),

@@ -12,7 +12,7 @@ use crate::error::{Result, bad};
 use crate::http::{CookieOptions, Resp, add_cookie, cookie, cookies, encode_component, html, parse_body, redirect};
 use crate::hub_invites::Ask;
 use crate::hub_keys::Rights;
-use crate::pages::{self, DeployRow, HubKeyRow, InviteRow, MemberRow, TeamPage, TeamRow, TeamsPage};
+use crate::pages::{self, DeployRow, HookRow, HubKeyRow, InviteRow, MemberRow, TeamPage, TeamRow, TeamsPage};
 use crate::rows::UserRow;
 use crate::teams::Role;
 
@@ -135,6 +135,20 @@ impl Grid {
                     }
                 })
                 .collect(),
+            hooks: if manage {
+                self.teams
+                    .hooks_of(&hub)?
+                    .iter()
+                    .map(|h| HookRow {
+                        id: s(h, "id"),
+                        trigger: s(h, "trigger"),
+                        hint: s(h, "hint"),
+                        last_used_at: h["lastUsedAt"].as_i64(),
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            },
             fresh,
             slug: hub.slug,
             name: hub.name,
@@ -196,6 +210,8 @@ impl Grid {
                 .teams
                 .key_revoke(u, slug, id)
                 .map(|()| self.back(&to(slug, "keys"), "Revoked: CI using it is refused from now on.", false)),
+            [slug, "hooks"] => self.form_hook(u, slug, &body),
+            [slug, "hooks", id, "revoke"] => self.form_hook_revoke(u, slug, id),
             [slug, "secrets", ..] => self.form_secret(u, slug, &rest[2..], &body),
             [slug, "delete"] => match self.teams.delete(u, slug, &field("confirm")) {
                 Ok(acct) => {
@@ -216,6 +232,31 @@ impl Grid {
             }
             Err(e) => Err(e),
         }
+    }
+
+    fn form_hook(&self, u: &UserRow, slug: &str, b: &Map<String, Value>) -> Result<Resp> {
+        if !self.teams.role(&u.id, slug)?.is_some_and(Role::manages) {
+            return Err(bad(format!("Only an owner or admin of {slug} makes trigger URLs."), 403));
+        }
+        let hub = self.teams.hub(slug)?.ok_or_else(|| bad("No such hub.", 404))?;
+        self.limits.hit(&format!("hook|{}", hub.user_id), crate::hooks::CREATES_PER_MINUTE, self.clock.now_ms())?;
+        let trigger = crate::hooks::trigger_name(b.get("trigger"))?;
+        let (_, token) = self.teams.hook_create(&hub, &u.handle, &trigger)?;
+        let url = format!("{}/_hook/{token}", self.cfg.instance_url(&hub.slug));
+        Ok(self.said_once(u, &format!("/teams/{slug}#hooks"), "url", &url))
+    }
+
+    fn form_hook_revoke(&self, u: &UserRow, slug: &str, id: &str) -> Result<Resp> {
+        if !self.teams.role(&u.id, slug)?.is_some_and(Role::manages) {
+            return Err(bad(format!("Only an owner or admin of {slug} revokes trigger URLs."), 403));
+        }
+        let hub = self.teams.hub(slug)?.ok_or_else(|| bad("No such hub.", 404))?;
+        let gone = self.teams.hook_revoke(&hub, id)?;
+        Ok(self.back(
+            &format!("/teams/{slug}#hooks"),
+            if gone { "Revoked: that URL opens nothing now." } else { "That URL was already revoked." },
+            !gone,
+        ))
     }
 
     fn form_invite(&self, u: &UserRow, slug: &str, b: &Map<String, Value>) -> Result<Resp> {

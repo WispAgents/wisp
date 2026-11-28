@@ -19,14 +19,14 @@ fn machine_of(list: &[Peer], id: &str) -> String {
 
 /// How this wisp asks the grid for sandboxes: its grid, handle, and credential (an `Authorization` value).
 pub(crate) struct Asker {
-    grid: String,
-    handle: String,
-    auth: String,
+    pub(crate) grid: String,
+    pub(crate) handle: String,
+    pub(crate) auth: String,
 }
 
 /// A team's hub box (ADR-0148 §8) makes its own sandboxes with its box secret (`Box <handle> <secret>`, which the grid
 /// takes from a hub's box only); anywhere else, this computer's device token. A sandbox never makes one.
-fn box_asker(env: &dyn Fn(&str) -> Option<String>) -> Option<Asker> {
+pub(crate) fn box_asker(env: &dyn Fn(&str) -> Option<String>) -> Option<Asker> {
     if env("WISP_BOX").as_deref() != Some("1") || env("WISP_SANDBOX").as_deref() == Some("1") {
         return None;
     }

@@ -53,9 +53,11 @@ pub fn hub_call(a: &api::HubArgs) -> Result<(&'static str, String, Option<Value>
         "unset" => ("DELETE", format!("/api/teams/{t}/secrets/{}", segment(&a.name, "secret")?), None),
         "logout" => ("DELETE", format!("/api/teams/{t}/secrets/logins/{}", segment(&a.name, "sign-in")?), None),
         "deploys" => ("GET", format!("/api/teams/{t}/deploys"), None),
+        "urls" => ("GET", format!("/api/teams/{t}/hooks"), None),
+        "unurl" => ("DELETE", format!("/api/teams/{t}/hooks/{}", segment(&a.id, "trigger URL")?), None),
         other => {
             return Err(WireError::invalid(format!(
-                "hub {other}: show, create, restart, delete, invites, uninvite, join, keys, unkey, secrets, unset, logout or deploys"
+                "hub {other}: show, create, restart, delete, invites, uninvite, join, keys, unkey, secrets, unset, logout, deploys, urls or unurl"
             )));
         }
     })
@@ -97,6 +99,12 @@ pub async fn key_create(st: &Arc<St>, a: &api::HubKeyArgs) -> Result<Value> {
     let t = slug(&a.team)?;
     let rights = if a.rights.is_empty() { "deploy" } else { &a.rights };
     grid(st, "POST", &format!("/api/teams/{t}/keys"), Some(&json!({ "name": a.name, "rights": rights }))).await
+}
+
+/// A trigger URL for one of the hub's webhook triggers (owners and admins), said once.
+pub async fn hook_create(st: &Arc<St>, a: &api::HubHookArgs) -> Result<Value> {
+    let t = slug(&a.team)?;
+    grid(st, "POST", &format!("/api/teams/{t}/hooks"), Some(&json!({ "trigger": a.trigger }))).await
 }
 
 pub async fn secret_set(st: &Arc<St>, a: &api::HubSecretArgs) -> Result<Value> {
@@ -156,9 +164,11 @@ mod tests {
 
     #[test]
     fn hub_ops_are_the_grids_hub_api_and_nothing_else_reaches_a_path() {
-        let path = |a: &api::HubArgs| hub_call(a).map(|c| (c.0, c.1)).unwrap_or_else(|e| (e.message.leak() as &str, String::new()));
+        let path = |a: &api::HubArgs| hub_call(a).map_or_else(|e| (e.message.leak() as &str, String::new()), |c| (c.0, c.1));
         assert_eq!(path(&op("show", "acme")), ("GET", "/api/teams/acme/hub".to_owned()));
         assert_eq!(path(&op("deploys", "acme")), ("GET", "/api/teams/acme/deploys".to_owned()));
+        assert_eq!(path(&op("urls", "acme")), ("GET", "/api/teams/acme/hooks".to_owned()));
+        assert_eq!(path(&api::HubArgs { id: "0a1b".into(), ..op("unurl", "acme") }), ("DELETE", "/api/teams/acme/hooks/0a1b".to_owned()));
         assert_eq!(path(&api::HubArgs { id: "0a1b".into(), ..op("unkey", "acme") }), ("DELETE", "/api/teams/acme/keys/0a1b".to_owned()));
         assert_eq!(
             path(&api::HubArgs { name: "GH_TOKEN".into(), ..op("unset", "acme") }),

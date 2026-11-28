@@ -119,6 +119,24 @@ hub's box only, counted against the hub's sandbox cap), so `/sandbox`, `sandbox.
 agent sets `sandbox: job`; a default of a sandbox for every hub task, and fork PRs always sandboxed, come with the
 GitHub App.
 
+### 8b. Webhook triggers from the internet (with ADR-0147's tokens)
+
+- A hub's webhook triggers get URLs at the hub's own address: `https://<team>.<domain>/_hook/wgh_…`, ADR-0147's token
+  shape, kept in `team_hooks` (the team's, as a computer's are in `hook_tokens`): said once, its SHA-256 and last four
+  characters kept, at most 50 live per hub, revoked at once, gone with the team.
+- The call (`edge_hub_hook.rs`), before any sign-in: a token unknown, revoked or another hub's is the same 404; over
+  1 MB, 413. It goes to the hub's wisp as `POST /api/triggers/<trigger>` with the caller's own headers and none of the
+  grid's (ADR-0147's `hook_headers`, which now drops a `wgt_` bearer too), marked `x-wisp-proxy-via: hook`, so the hub
+  takes it as `public` and the trigger checks its own secret or signature. The box wakes for it: nothing is held.
+- Who makes one: an owner or admin (the team's page, `wisp team url`, `grid-client.hubHookCreate`, uiOnly), or the hub's
+  own wisp for its Automations page: `grid-client.hooks*` on a hub's box (`WISP_HUB=1`) asks `/api/hooks` with the box's
+  secret, which the grid takes from a hub's box only. ADR-0147's rule stands: a person's box makes no URL (a hub's URL
+  starts work on the hub, never on a laptop).
+- **Team secrets as `${secret:NAME}`:** the grid gives a hub's box the names of its team's secrets
+  (`WISP_HUB_SECRETS`); wisp's secrets service answers those names from its environment when `secrets.json` has none
+  (the file's own value wins). So a trigger's `secret: ${secret:SENTRY_HOOK}` and plan's missing-secret check both see
+  a secret set with `wisp team secret`.
+
 ### 9. The desktop app and the GitHub Action
 
 - **A hub is a machine.** `grid-client` lists the hubs of the signed-in person's teams (`/api/me` gains `hubs`) and
@@ -152,4 +170,6 @@ GitHub App.
 | keys: shown once, rights, 20 cap, revoke, `wgk_` never opens a hub | `apps/grid/tests/hubs.rs` |
 | one deploy at a time; history rows with source and counts | `apps/grid/tests/hubs.rs` |
 | a member's set can't change settings or secrets; a deploy key only resources | `crates/wisp-api/src/auth.rs` tests |
-| `wisp grid init` writes the folder and never overwrites | `crates/wisp/src/hub_cli.rs` tests |
+| `wisp grid init` writes the folder and never overwrites | `crates/wisp/src/grid_init.rs` tests |
+| a hub's trigger URL: said once, as no one with the caller's headers, other hub/token/name 404, the hub's box manages its own, a person's box can't | `apps/grid/tests/hubs.rs`, `apps/grid/src/hub_hooks.rs` |
+| team secrets answer as `${secret:NAME}` on a hub only, the file wins | `crates/wisp/src/services_tests.rs` |

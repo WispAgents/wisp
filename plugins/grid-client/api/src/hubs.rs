@@ -12,12 +12,13 @@ use crate::NoArgs;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "grid-client/")]
 pub struct HubArgs {
-    /// show | create | restart | delete | invites | uninvite | join | keys | unkey | secrets | unset | logout | deploys
+    /// show | create | restart | delete | invites | uninvite | join | keys | unkey | secrets | unset | logout | deploys |
+    /// urls | unurl
     pub op: String,
     /// the team (its slug)
     #[serde(default)]
     pub team: String,
-    /// an invite's or a key's id (uninvite, unkey)
+    /// an invite's, a key's or a trigger URL's id (uninvite, unkey, unurl)
     #[serde(default)]
     pub id: String,
     /// join: the invite link or its code
@@ -60,6 +61,14 @@ pub struct HubKeyArgs {
     pub rights: String,
 }
 
+/// `grid-client.hubHookCreate`: a URL that starts one of the hub's webhook triggers from the internet, said once.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "grid-client/")]
+pub struct HubHookArgs {
+    pub team: String,
+    pub trigger: String,
+}
+
 /// `grid-client.hubSecretSet`: one of the hub's secrets (an env var its box and sandboxes start with), or with `login`
 /// a harness sign-in (`name: claude`, the token from `claude setup-token`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -96,3 +105,4 @@ command!(HubInvite = "grid-client.hubInvite" : HubInviteArgs => Value);
 command!(HubKeyCreate = "grid-client.hubKeyCreate" : HubKeyArgs => Value);
 command!(HubSecretSet = "grid-client.hubSecretSet" : HubSecretArgs => Value);
 command!(HubCall = "grid-client.hubCall" : HubCallArgs => Value);
+command!(HubHookCreate = "grid-client.hubHookCreate" : HubHookArgs => Value);

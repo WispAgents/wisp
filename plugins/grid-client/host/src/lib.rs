@@ -159,6 +159,7 @@ impl Plugin for GridClientPlugin {
         on!(s, slot, api::HubKeyCreate, |st, a| async move { hubs::key_create(&st, &a).await });
         on!(s, slot, api::HubSecretSet, |st, a| async move { hubs::secret_set(&st, &a).await });
         on!(s, slot, api::HubCall, |st, a| async move { hubs::call(&st, &a).await });
+        on!(s, slot, api::HubHookCreate, |st, a| async move { hubs::hook_create(&st, &a).await });
         on!(s, slot, api::KeyList, |st, _a| async move { keys::list(&st).await });
         on!(s, slot, api::KeyCreate, |st, a| async move { keys::create(&st, &a.name).await });
         on!(s, slot, api::KeyRevoke, |st, a| async move { keys::revoke(&st, &a.id).await });

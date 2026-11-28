@@ -52,7 +52,7 @@ fn fake_box_serve() {
             let ops = [json!({ "op": "create", "kind": "trigger", "name": "a" }), json!({ "op": "create", "kind": "crew", "name": "b" })];
             json!({ "ok": true, "seq": 1, "result": { "plan": { "ops": ops, "unchanged": 0 }, "applied": 2 } })
         } else {
-            json!({ "ok": true, "headers": got, "env": env })
+            json!({ "ok": true, "line": line.trim(), "headers": got, "env": env })
         };
         let out = out.to_string();
         let mut s = r.into_inner();
@@ -321,5 +321,66 @@ async fn the_teams_pages_make_a_team_and_say_a_key_once() {
     let bo_cookie = format!("wisp_grid={}", g.grid.accounts.new_session(&bo.id).unwrap());
     let r = g.web.get(g.api("/teams/acme")).header("cookie", &bo_cookie).send().await.unwrap();
     assert_eq!(r.status(), 302, "back to /teams with why");
+    g.done();
+}
+
+/// A hub's webhook trigger URL (ADR-0148 with ADR-0147's tokens): an owner makes one, it's said once, and a call to
+/// `<team>/_hook/<token>` reaches the hub's `POST /api/triggers/<name>` as no one, with the caller's own headers and none
+/// of the grid's; a wrong token, another hub's address, or a revoked URL opens nothing. The hub's own box manages its
+/// hub's URLs with its secret; a person's own box can't make one.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hubs_trigger_url_starts_its_trigger_as_no_one_until_revoked() {
+    let g = rig("hooks").await;
+    let (ada, bo) = (g.device("ada"), g.device("bo"));
+    send(g.web.post(g.api("/api/teams")).bearer_auth(&ada).json(&json!({ "slug": "acme" }))).await;
+    send(g.web.post(g.api("/api/teams")).bearer_auth(&bo).json(&json!({ "slug": "zeta" }))).await;
+    assert_eq!(send(g.web.post(g.api("/api/teams/acme/hooks")).bearer_auth(&bo).json(&json!({ "trigger": "deploy" }))).await.0, 403);
+    let (s, made) = send(g.web.post(g.api("/api/teams/acme/hooks")).bearer_auth(&ada).json(&json!({ "trigger": "deploy" }))).await;
+    assert_eq!(s, 201, "{made}");
+    let url = made["url"].as_str().unwrap().to_owned();
+    assert!(url.starts_with(&format!("{}/_hook/wgh_", g.at("acme"))), "{url}");
+    let (_, list) = send(g.web.get(g.api("/api/teams/acme/hooks")).bearer_auth(&ada)).await;
+    assert!(!list.to_string().contains(made["token"].as_str().unwrap()), "said once");
+
+    let (s, v) = send(
+        g.web
+            .post(format!("{url}?ref=main"))
+            .header("x-github-delivery", "d-1")
+            .header("x-hub-signature-256", "sha256=abc")
+            .header("x-wisp-proxy-via", "owner")
+            .bearer_auth(&ada)
+            .body(r#"{"action":"opened"}"#),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["line"], "POST /api/triggers/deploy?ref=main HTTP/1.1");
+    let h = &v["headers"];
+    assert_eq!(h["x-wisp-proxy-via"], "hook", "as no one, whatever the caller sent");
+    assert_eq!((h["x-github-delivery"].clone(), h["x-hub-signature-256"].clone()), (json!("d-1"), json!("sha256=abc")));
+    assert!(h.get("authorization").is_none(), "no grid credential reaches the hub");
+    // nothing else opens it: a wrong token, another hub's address, the trigger's name
+    // a second call within the minute goes through too (its last use isn't written each time)
+    assert_eq!(send(g.web.post(&url).body("{}")).await.0, 200);
+    let token = url.rsplit('/').next().unwrap().to_owned();
+    assert_eq!(send(g.web.post(format!("{}/_hook/{token}", g.at("zeta")))).await.0, 404);
+    assert_eq!(send(g.web.post(format!("{}/_hook/wgh_nope", g.at("acme")))).await.0, 404);
+    assert_eq!(send(g.web.post(format!("{}/_hook/deploy", g.at("acme")))).await.0, 404);
+
+    // the hub's own box (its secret) manages its hub's URLs; a person's own box doesn't make one
+    let hub = g.grid.teams.hub("acme").unwrap().unwrap();
+    let secret = g.grid.boxes.secret(&hub.user_id).expect("the hub's box is running");
+    let (s, own) = send(g.web.get(g.api("/api/hooks")).header("authorization", format!("Box acme {secret}"))).await;
+    assert_eq!((s, own["hooks"][0]["trigger"].clone()), (200, json!("deploy")), "{own}");
+    send(g.web.get(format!("{}/api/whoami", g.at("ada"))).bearer_auth(&ada)).await;
+    let ada_box = g.grid.accounts.user_by_handle("ada").unwrap().unwrap();
+    let ada_secret = g.grid.boxes.secret(&ada_box.id).expect("ada's box is running");
+    let s = send(g.web.post(g.api("/api/hooks")).header("authorization", format!("Box ada {ada_secret}")).json(&json!({ "trigger": "x" })))
+        .await
+        .0;
+    assert_eq!(s, 403, "a person's box never makes a URL");
+
+    let id = made["id"].as_str().unwrap();
+    assert_eq!(send(g.web.delete(g.api(&format!("/api/teams/acme/hooks/{id}"))).bearer_auth(&ada)).await.0, 200);
+    assert_eq!(send(g.web.post(&url)).await.0, 404, "revoked");
     g.done();
 }

@@ -13,6 +13,7 @@
 //! | `GET /api/teams/<t>/secrets`, `PUT {key, value}`, `DELETE …/secrets/<key>` | owner, admin | the hub's env |
 //! | `PUT·DELETE /api/teams/<t>/secrets/logins/<agent> {token}` | owner, admin | the hub's harness sign-ins |
 //! | `GET /api/teams/<t>/deploys` | anyone in it | the hub's deploys |
+//! | `GET·POST /api/teams/<t>/hooks`, `DELETE …/hooks/<id>` | owner, admin | the hub's webhook trigger URLs (a new one said once) |
 use http::{HeaderMap, Method};
 use serde_json::{Map, Value, json};
 
@@ -36,7 +37,7 @@ impl Grid {
     pub(super) async fn hub_api(&self, method: &Method, parts: &[&str], h: &HeaderMap, bytes: &[u8], who: &Who) -> Option<Result<Resp>> {
         let hub_path = parts == ["api", "join"]
             || (*method == Method::DELETE && matches!(parts, ["api", "teams", _]))
-            || matches!(parts, ["api", "teams", _, "hub" | "invites" | "keys" | "secrets" | "deploys", ..]);
+            || matches!(parts, ["api", "teams", _, "hub" | "invites" | "keys" | "secrets" | "deploys" | "hooks", ..]);
         if !hub_path {
             return None;
         }
@@ -76,6 +77,10 @@ impl Grid {
             (_, ["api", "teams", slug, "invites", rest @ ..]) => self.invites_api(method, &me, slug, rest, &b),
             (_, ["api", "teams", slug, "keys", rest @ ..]) => self.keys_api(method, &me, slug, rest, &b),
             (_, ["api", "teams", slug, "secrets", rest @ ..]) => self.secrets_api(method, &me, slug, rest, &b),
+            (_, ["api", "teams", slug, "hooks", rest @ ..]) => {
+                let hub = self.managed_hub(&me, slug)?;
+                self.hub_hooks_api(method, rest.first().copied(), &b, &hub, &me.handle)
+            }
             ("GET", ["api", "teams", slug, "deploys"]) => {
                 let hub = self.member_hub(&me, slug)?;
                 Ok(json(200, &json!({ "deploys": t.deploys(&hub.team_id, 50)? })))

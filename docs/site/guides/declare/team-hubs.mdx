@@ -207,6 +207,45 @@ then plans each pull request, with the plan as a comment, and deploys each merge
 Anywhere else, `WISP_HUB_KEY=… wisp grid deploy --yes` deploys straight to the hub. It needs no wisp running on
 that machine.
 
+## 8. Webhooks from the internet
+
+A hub has a public address, so GitHub, Sentry or Linear can start its webhook triggers directly. Declare the trigger
+and switch webhook triggers on in the folder; set its secret on the grid:
+
+```yaml
+wisp: 1
+settings:
+  automations.webhookTriggers: true
+triggers:
+  sentry:
+    on: webhook
+    header: Sentry-Hook-Signature
+    secret: "${secret:SENTRY_HOOK}"    # a team secret: wisp team secret acme SENTRY_HOOK
+    project: app
+    mode: plan
+    prompt: "A Sentry alert: {event.summary}. Find the cause; don't fix yet."
+```
+
+On a hub, `${secret:NAME}` reads the team's secrets, so the value never goes in the repo or through CI. Then make its
+URL (shown once):
+
+<Tabs syncKey="way">
+<TabItem label="Grid">
+On the team's page, **Trigger URLs** → the trigger's name → **Make a URL**. Or in the hub itself: Settings →
+Automations → the trigger → **Make a grid URL**.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp team url acme sentry        # https://acme.grid.trywisp.dev/_hook/wgh_…, printed once
+wisp team urls acme              # the live ones, by their last four characters
+wisp team url-revoke acme <id>
+```
+</TabItem>
+</Tabs>
+
+The token is the only way in, and the trigger still checks its secret or signature. The hub wakes for each call, so
+nothing waits for a laptop to come back.
+
 ## What a key and a role can't do
 
 - A deploy key changes what's declared on its own team's hub. It can't start tasks, read tasks or secrets, reach

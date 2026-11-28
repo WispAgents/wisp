@@ -48,6 +48,9 @@ pub struct FileSecrets {
 struct Inner {
     file: PathBuf,
     data: Mutex<Option<Data>>,
+    /// a team hub's secrets (ADR-0148): set on the grid, given to its box as env vars, named in `WISP_HUB_SECRETS`.
+    /// They answer as `${secret:NAME}` when the file has no such key (read once: a box's env doesn't change).
+    team: std::collections::BTreeMap<String, String>,
 }
 
 fn split(key: &str) -> (String, String) {
@@ -89,8 +92,23 @@ fn parse(b: &[u8]) -> Result<Data> {
 
 impl FileSecrets {
     pub fn new(home: &Path) -> Self {
-        Self { inner: Arc::new(Inner { file: home.join("secrets.json"), data: Mutex::new(None) }) }
+        Self::with_team(home, team_secrets(&|k| std::env::var(k).ok()))
     }
+
+    /// With a team hub's secrets beside the file's (tests give their own).
+    pub fn with_team(home: &Path, team: std::collections::BTreeMap<String, String>) -> Self {
+        Self { inner: Arc::new(Inner { file: home.join("secrets.json"), data: Mutex::new(None), team }) }
+    }
+}
+
+/// A team hub's secrets from its environment: the names in `WISP_HUB_SECRETS` (comma-separated, set by the grid for a
+/// hub's box only, `WISP_HUB=1`), each with its env var's value. Anywhere else, none.
+pub fn team_secrets(env: &dyn Fn(&str) -> Option<String>) -> std::collections::BTreeMap<String, String> {
+    if env("WISP_HUB").as_deref() != Some("1") {
+        return std::collections::BTreeMap::new();
+    }
+    let names = env("WISP_HUB_SECRETS").unwrap_or_default();
+    names.split(',').map(str::trim).filter(|n| !n.is_empty()).filter_map(|n| Some((n.to_owned(), env(n)?))).collect()
 }
 
 impl Inner {
@@ -179,7 +197,8 @@ impl Secrets for FileSecrets {
         let (me, (ns, k)) = (self.inner.clone(), split(key));
         Box::pin(async move {
             let mut slot = me.data.lock().await;
-            Ok(me.load(&mut slot).await?.get(&ns).and_then(|m| m.get(&k)).cloned())
+            let own = me.load(&mut slot).await?.get(&ns).and_then(|m| m.get(&k)).cloned();
+            Ok(own.or_else(|| if ns == "wisp" { me.team.get(&k).cloned() } else { None }))
         })
     }
     fn set(&self, key: &str, value: &str) -> BoxFuture<'static, Result<()>> {
@@ -214,9 +233,11 @@ impl Secrets for FileSecrets {
             let mut out: Vec<String> = d
                 .iter()
                 .flat_map(|(ns, kv)| kv.keys().map(move |k| if ns == "wisp" { k.clone() } else { format!("{ns}/{k}") }))
+                .chain(me.team.keys().cloned())
                 .filter(|k| k.starts_with(&prefix))
                 .collect();
             out.sort();
+            out.dedup();
             Ok(out)
         })
     }

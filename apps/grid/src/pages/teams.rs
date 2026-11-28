@@ -53,6 +53,15 @@ pub struct HubKeyRow {
     pub last_used_at: Option<i64>,
 }
 
+/// One of the hub's webhook trigger URLs: never the token, its last four characters.
+#[derive(Debug, Clone, Default)]
+pub struct HookRow {
+    pub id: String,
+    pub trigger: String,
+    pub hint: String,
+    pub last_used_at: Option<i64>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct DeployRow {
     pub n: i64,
@@ -83,6 +92,8 @@ pub struct TeamPage {
     /// the grid keeps secrets (it has a master key)
     pub sealed: bool,
     pub deploys: Vec<DeployRow>,
+    /// the hub's webhook trigger URLs (owners and admins)
+    pub hooks: Vec<HookRow>,
     /// a key or an invite link just made: (what, the value), said this once
     pub fresh: Option<(String, String)>,
     pub csrf: String,
@@ -224,7 +235,7 @@ fn invites(p: &TeamPage, hidden: &str) -> String {
 fn keys(p: &TeamPage, hidden: &str) -> String {
     let base = format!("/teams/{}", esc(&p.slug));
     let fresh = match &p.fresh {
-        Some((what, key)) if what != "invite" => format!(
+        Some((what, key)) if what != "invite" && what != "url" => format!(
             r#"<div class="r new-key" role="status"><span class="ic">{KEY}</span><div class="tx"><b>{name} is made. Copy it now: it won’t be shown again.</b><code class="key">{k}</code><small>In GitHub: <code>gh secret set WISP_HUB_KEY</code>, then the workflow <code>wisp grid init</code> wrote deploys on every merge.</small></div><button class="primary" type="button" data-copy="{k}"><span>Copy</span></button></div>"#,
             name = esc(what),
             k = esc(key)
@@ -297,6 +308,33 @@ fn secrets(p: &TeamPage, hidden: &str) -> String {
     )
 }
 
+fn hooks(p: &TeamPage, hidden: &str) -> String {
+    let base = format!("/teams/{}", esc(&p.slug));
+    let fresh = match &p.fresh {
+        Some((what, url)) if what == "url" => format!(
+            r#"<div class="r new-key" role="status"><span class="ic">{BOLT}</span><div class="tx"><b>Copy it now: it won’t be shown again.</b><code class="key">{u}</code><small>In GitHub: the repo’s Settings → Webhooks → this URL, <code>application/json</code>, and the trigger’s secret. The hub wakes for each call.</small></div><button class="primary" type="button" data-copy="{u}"><span>Copy</span></button></div>"#,
+            u = esc(url)
+        ),
+        _ => String::new(),
+    };
+    let rows: String = p
+        .hooks
+        .iter()
+        .map(|h| {
+            format!(
+                r#"<div class="r"><span class="ic">{BOLT}</span><div class="tx"><b>{trigger}</b><small>…{hint} · last called {used}</small></div><form class="inline" method="post" action="{base}/hooks/{id}/revoke" data-confirm="Revoke it? Its sender's calls stop starting {trigger}.">{hidden}<button class="ghost line">Revoke</button></form></div>"#,
+                trigger = esc(&h.trigger),
+                hint = esc(&h.hint),
+                used = ago(h.last_used_at, p.now_ms),
+                id = esc(&h.id),
+            )
+        })
+        .collect();
+    format!(
+        r#"{fresh}{rows}<form class="r key-f" method="post" action="{base}/hooks">{hidden}<input class="input" name="trigger" placeholder="a webhook trigger's name, like deploy" aria-label="The trigger's name" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" required><button class="ghost line">Make a URL</button></form>"#
+    )
+}
+
 fn deploys(p: &TeamPage) -> String {
     if p.deploys.is_empty() {
         return format!(
@@ -326,8 +364,11 @@ pub fn team_page(cfg: &PageCfg, p: &TeamPage) -> String {
     let hidden = hidden(&p.csrf);
     let base = format!("/teams/{}", esc(&p.slug));
     let manage = p.manages();
-    let nav_more =
-        if manage { r##"<a href="#invites">Invite links</a><a href="#keys">Deploy keys</a><a href="#secrets">Secrets</a>"## } else { "" };
+    let nav_more = if manage {
+        r##"<a href="#invites">Invite links</a><a href="#keys">Deploy keys</a><a href="#secrets">Secrets</a><a href="#hooks">Trigger URLs</a>"##
+    } else {
+        ""
+    };
     let owner_zone = if p.role == "owner" {
         format!(
             r#"<details class="danger-zone" id="delete"><summary><h2 class="sec">Danger zone</h2><small>Delete the team and its hub</small></summary>
@@ -352,10 +393,15 @@ pub fn team_page(cfg: &PageCfg, p: &TeamPage) -> String {
       <h2 class="sec" id="secrets">Secrets</h2>
       <p class="hint">The hub and its sandboxes start with these: <code>GH_TOKEN</code> for its repos, the harness sign-ins its agents run with. A formula names them; it never holds them.</p>
       <div class="group">{secrets}</div>
+
+      <h2 class="sec" id="hooks">Trigger URLs</h2>
+      <p class="hint">A URL starts one of the hub’s webhook triggers from the internet: GitHub, Sentry, Linear. It’s shown once, and the trigger still checks its own secret.</p>
+      <div class="group">{hooks}</div>
 "#,
             invites = invites(p, &hidden),
             keys = keys(p, &hidden),
             secrets = secrets(p, &hidden),
+            hooks = hooks(p, &hidden),
         )
     } else {
         String::new()
