@@ -11,6 +11,8 @@
 //! - `wisp trigger ls | rm <name> | off <name> | on <name> | fire <name> [--payload @file|JSON] | test <name>
 //!   [--event @file] [--last N] | log <name> | resume <name> | approve <name> <job> [--no] | sources` (`off`/`on`
 //!   change only `enabled`, audit H13)
+//! - `wisp trigger url <name>`: a grid URL that starts that webhook trigger on this computer (ADR-0147), printed once;
+//!   `wisp trigger urls [<name>]` lists them by their last four characters; `wisp trigger url-revoke <id>` stops one
 //! - `wisp crew wake <member> [--why TEXT]`, `wisp crew graph`, `wisp crew pause <member>`, `wisp crew resume <member>`
 //!   (by name or id; audit G12: only `crew update <member> --paused false` resumed one)
 use std::collections::BTreeMap;
@@ -20,6 +22,9 @@ use serde_json::{Map, Value, json};
 use crate::args::Parsed;
 use crate::client::{CliError, Client, Result};
 use crate::scripted::say;
+
+/// What `wisp trigger` does, for its usage line.
+const VERBS: &str = "add, ls, off, on, rm, fire, test, log, resume, approve, sources, url, urls or url-revoke";
 
 /// The flags `trigger add` takes a value for, and the spec field each sets.
 const VALUED: [(&str, &str); 16] = [
@@ -321,13 +326,47 @@ async fn trigger(c: &Client, p: &Parsed, verb: &str, s: &Said, cwd: &str) -> Res
                 say(&format!("{:<22} {:<6} {:<18} {}{off}", line(r, "on"), line(r, "mode"), line(r, "plugin"), line(r, "title")));
             }
         }
-        other => {
-            return Err(CliError::usage(format!(
-                "wisp trigger {other}: add, ls, off, on, rm, fire, test, log, resume, approve or sources"
-            )));
-        }
+        "url" | "urls" | "url-revoke" => grid_urls(c, verb, s, json).await?,
+        other => return Err(CliError::usage(format!("wisp trigger {other}: {VERBS}"))),
     }
     Ok(0)
+}
+
+/// `wisp trigger url | urls | url-revoke` (ADR-0147): this computer's grid URLs for its webhook triggers.
+async fn grid_urls(c: &Client, verb: &str, s: &Said, json: bool) -> Result<()> {
+    let name = || s.words.first().cloned().ok_or_else(|| CliError::usage(format!("wisp trigger {verb} <name>")));
+    match verb {
+        "url" => {
+            let v = c.cmd("grid-client.hooksCreate", json!({ "trigger": name()? })).await?;
+            if json {
+                say(&v.to_string());
+                return Ok(());
+            }
+            say(&format!("  ✓ {}", line(&v, "url")));
+            say("    wisp shows this URL once: anything that has it can start this trigger here (its secret is still checked)");
+        }
+        "urls" => {
+            let trigger = s.words.first().cloned().unwrap_or_default();
+            let v = c.cmd("grid-client.hooks", json!({ "trigger": trigger })).await?;
+            for h in v.as_array().into_iter().flatten() {
+                if json {
+                    say(&h.to_string());
+                    continue;
+                }
+                let used = h["lastUsedAt"]
+                    .as_i64()
+                    .map_or_else(|| "never called".to_owned(), |ms| format!("called {}", wisp_cli_core::human::ago(ms, now_ms())));
+                say(&format!("{:<14} {:<28} …{:<6} {used}", line(h, "id"), line(h, "trigger"), line(h, "hint")));
+            }
+        }
+        "url-revoke" => {
+            let id = s.words.first().ok_or_else(|| CliError::usage("wisp trigger url-revoke <id> (wisp trigger urls lists them)"))?;
+            c.cmd("grid-client.hooksRevoke", json!({ "id": id })).await?;
+            say("  ✓ revoked: calls to that URL stop now");
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 async fn crew(c: &Client, p: &Parsed, verb: &str, s: &Said) -> Result<i32> {

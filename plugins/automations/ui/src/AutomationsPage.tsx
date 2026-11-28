@@ -30,6 +30,7 @@ import {
   useSignal,
 } from '@wisp/ui';
 import { lastRunWords } from './panes/summary.ts';
+import { GridUrls } from './GridUrls.tsx';
 import { McpEventFields } from './McpEventFields.tsx';
 import { TriggerFilters } from './TriggerFilters.tsx';
 import { fireTrigger, recipes, removeRecipe, removeTrigger, saveTrigger, switchTrigger, triggers, type Recipe, type Trigger } from './commands.ts';
@@ -386,7 +387,9 @@ function TriggerForm(props: {
       <Show when={hook()}>
         <Show when={kind() !== 'slack'}>
           <AutoRow label={say('automations.form.url')}>
-            <small>{say('automations.form.urlLater')}</small>
+            <Show when={old && old.spec['on'] === 'webhook'} fallback={<small>{say('automations.form.urlLater')}</small>}>
+              <GridUrls client={c} trigger={old?.name ?? ''} />
+            </Show>
           </AutoRow>
         </Show>
         <AutoNote tone="muted">{say(`automations.form.how.${kind()}`)}</AutoNote>

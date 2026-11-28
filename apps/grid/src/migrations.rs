@@ -164,6 +164,21 @@ pub const MIGRATIONS: &[&str] = &[
     // there is gets one now; a new share gets its own when it's made (`shares.rs`).
     r"ALTER TABLE shares ADD COLUMN cap TEXT;
    UPDATE shares SET cap = lower(hex(randomblob(16))) WHERE cap IS NULL;",
+    // ADR-0147: a computer's webhook trigger URLs (`<computer>--<handle>/_hook/<token>`). Only the token's hash is kept
+    // and its last four characters (`hint`); a revoked one keeps its row (`revoked_at`) so a list can say so. Calls to
+    // an offline computer are held in `hook_held`, sealed under the user's data key, until its tunnel is back.
+    r"CREATE TABLE hook_tokens (
+     id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     computer_id TEXT NOT NULL REFERENCES computers(id) ON DELETE CASCADE, trigger TEXT NOT NULL,
+     token_hash TEXT UNIQUE NOT NULL, hint TEXT NOT NULL, created_at INTEGER NOT NULL, last_used_at INTEGER,
+     calls INTEGER NOT NULL DEFAULT 0, revoked_at INTEGER);
+   CREATE INDEX hook_tokens_computer ON hook_tokens(computer_id);
+   CREATE TABLE hook_held (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, hook_id TEXT NOT NULL REFERENCES hook_tokens(id) ON DELETE CASCADE,
+     computer_id TEXT NOT NULL REFERENCES computers(id) ON DELETE CASCADE, user_id TEXT NOT NULL,
+     delivery TEXT, sealed TEXT NOT NULL, size INTEGER NOT NULL, at INTEGER NOT NULL,
+     tries INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, UNIQUE(hook_id, delivery));
+   CREATE INDEX hook_held_computer ON hook_held(computer_id, id);",
 ];
 
 /// Every table the migrations make (and `meta`), for tests and `wisp grid backup` checks.

@@ -241,6 +241,28 @@ triggers:
 With `header`, each call must be signed with the secret, which is never sent, only checked. Set it with
 `wisp secret set SENTRY_HOOK`. What comes from outside can steer the agent, so start webhook tasks in Plan.
 
+### From the internet, through the grid
+
+Your laptop has no public address, so GitHub or Sentry can't reach `POST /api/triggers/<name>` on it. Put the computer
+on the grid (`wisp computer on`), open the saved webhook trigger and press **Make a grid URL**:
+
+```text
+https://studio--ada.grid.trywisp.dev/_hook/wgh_…
+```
+
+The address names the computer that runs the trigger (`studio`), and the token is the only way in: a trigger's name
+alone opens nothing. wisp shows the URL once, so copy it into the sender then. Calls go through the computer's tunnel
+(no open port), and the trigger's secret or signature is still checked on the computer. While the computer is offline
+the grid holds its calls (encrypted, up to a day, answered `202 {"held": true}`) and delivers them in order when it's
+back. Each live URL is listed by its last four characters; **Revoke** stops one
+at once. From a terminal:
+
+```sh
+wisp trigger url sentry          # make one (printed once)
+wisp trigger urls                # list them
+wisp trigger url-revoke <id>     # stop one
+```
+
 ## Declared tasks and workflows
 
 A declared task can carry its own schedule, and a workflow chains several:

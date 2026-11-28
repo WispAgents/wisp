@@ -74,6 +74,8 @@ impl Grid {
             mail_threads(&inbox, m);
         }
         let keys = crate::keys::ApiKeys { db: db.clone(), clock: clock.clone() };
+        let hooks = crate::hooks::Hooks { db: db.clone(), clock: clock.clone() };
+        let held = Arc::new(crate::hook_held::HookHeld::new(db.clone(), clock.clone(), secrets.clone(), tunnels.clone()));
         let push = push_of(&cfg, &db, &clock);
         Arc::new(Self {
             cfg,
@@ -81,6 +83,8 @@ impl Grid {
             clock,
             accounts,
             keys,
+            hooks,
+            held,
             limits: crate::http::Limiter::default(),
             scrypt: Arc::new(tokio::sync::Semaphore::new(SCRYPT_PERMITS)),
             fresh_keys: crate::keys_fresh::FreshKeys::default(),

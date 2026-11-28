@@ -29,7 +29,7 @@ use wisp_kernel::{CancellationToken, Result, WireError};
 use crate::net;
 use crate::state::{St, lock};
 
-type Body = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
+pub(crate) type Body = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
 
 /// The reason on a refusal that signing in again would fix (no sign-in here, or the grid ended it).
 pub const SIGN_IN: &str = "sign_in";
@@ -269,7 +269,7 @@ fn local_port(st: &St) -> u16 {
         .unwrap_or(4477)
 }
 
-fn answer(status: u16, body: &Value) -> http::Response<Body> {
+pub(crate) fn answer(status: u16, body: &Value) -> http::Response<Body> {
     let mut r = http::Response::new(http_body_util::Full::new(Bytes::from(body.to_string())).map_err(|e| match e {}).boxed());
     *r.status_mut() = http::StatusCode::from_u16(status).unwrap_or(http::StatusCode::BAD_GATEWAY);
     r.headers_mut().insert("content-type", http::HeaderValue::from_static("application/json"));
@@ -300,6 +300,10 @@ async fn serve(st: &St, local: &Client<HttpConnector, Body>, port: u16, req: htt
     }
     let from: Vec<(String, String)> =
         parts.headers.iter().filter_map(|(k, v)| Some((k.as_str().to_owned(), v.to_str().ok()?.to_owned()))).collect();
+    // a webhook trigger's call the grid let in by its URL's token (ADR-0147): to that trigger only, as no one
+    if parts.headers.get("x-wisp-route").and_then(|v| v.to_str().ok()) == Some("hook") {
+        return crate::hooks::forward(local, port, &parts, &from, body).await;
+    }
     let preview = parts.headers.get("x-wisp-preview").map(|v| preview_port(v.to_str().ok()));
     let target = match preview {
         Some(_) if !previews_on(st) => {

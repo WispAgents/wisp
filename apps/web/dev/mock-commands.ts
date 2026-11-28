@@ -7,6 +7,7 @@
 import type { EntityOp, PatchOp, Topic } from '@wisp/protocol';
 import { filesOf, gitChanges, gitCommit, gitRevert, gitStage, type GitCtx } from './mock-git.ts';
 import { CLOUD_COMMANDS } from './mock-cloud.ts';
+import { HOOK_COMMANDS, keepTriggers } from './mock-hooks.ts';
 import { KEY_COMMANDS } from './mock-keys.ts';
 import { READS } from './mock-reads.ts';
 import { THREAD_COMMANDS } from './mock-threads.ts';
@@ -321,6 +322,7 @@ export const COMMANDS: Record<string, CommandFn> = {
   ...READS,
   ...THREAD_COMMANDS,
   ...KEY_COMMANDS,
+  ...HOOK_COMMANDS,
   ...CLOUD_COMMANDS,
   'runtime.rename': (a, ctx) => {
     const x = obj(a);
@@ -1013,6 +1015,7 @@ export const COMMANDS: Record<string, CommandFn> = {
   // a project added on this computer (`resources.apply`, kind project): a Run on checkout joins its projects
   'resources.apply': (a, ctx) => {
     const list = Array.isArray(obj(a)['resources']) ? (obj(a)['resources'] as Args[]) : [];
+    keepTriggers(list);
     const ops: EntityOp[] = list
       .filter((r) => r['kind'] === 'project')
       .map((r) => {
@@ -1141,7 +1144,6 @@ export const COMMANDS: Record<string, CommandFn> = {
   // Automations: no recipes or triggers yet (v1's reference shows Recipes 0 · Triggers 0)
   'automations.tasks': () => ({ ops: [], result: COMPOSER ? RECIPES : [] }),
   'automations.task.run': () => ({ ops: [], result: {} }),
-  'automations.trigger.ls': () => ({ ops: [], result: [] }),
   // the MCP server event trigger's pickers (ADR-0146): one remote connector serving events, one serving none
   'connectors.list': () => ({
     ops: [],
