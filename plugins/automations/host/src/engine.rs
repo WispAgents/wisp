@@ -779,7 +779,7 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
             let made = ctx.run::<rt::Create>(call, a).await?;
             serde_json::to_value(made).map_err(|e| WireError::internal(e.to_string()))?
         }
-        Target::Crew(member) => wake(ctx, call, member, text("{event.summary}"), &by).await?,
+        Target::Crew(member) => wake(ctx, call, member, text("{event.summary}"), &cwd, &by).await?,
         Target::Workflow(w) => run_workflow(ctx, call, w, &first, &cwd, &by).await?,
         Target::FollowUp => {
             let Some(id) = first.subject.clone() else {
@@ -801,9 +801,12 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
     id_of(&made).ok_or_else(|| WireError::internal(format!("{} started, but its answer names no task: {made}", t.name)))
 }
 
-/// `crew.wake`: the member's job, as the trigger's answer (`session.id` names its task).
-async fn wake(ctx: &Ctx, call: &Call, member: &str, why: String, by: &str) -> Result<Value> {
-    let a = wisp_crew_api::commands::WakeArgs { id: member.to_owned(), why, source: Some(by.to_owned()) };
+/// `crew.wake`: the member's job, in the trigger's folder when it has one, as the trigger's answer (`session.id` names its
+/// task).
+async fn wake(ctx: &Ctx, call: &Call, member: &str, why: String, cwd: &str, by: &str) -> Result<Value> {
+    // the trigger's project, when it has one, is where the job works (ADR-0147): a hub's triager in the repo it names
+    let cwd = (!cwd.is_empty()).then(|| cwd.to_owned());
+    let a = wisp_crew_api::commands::WakeArgs { id: member.to_owned(), why, source: Some(by.to_owned()), cwd };
     let started = ctx.run::<wisp_crew_api::commands::Wake>(call, a).await?;
     serde_json::to_value(started).map_err(|e| WireError::internal(e.to_string()))
 }

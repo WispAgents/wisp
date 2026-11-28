@@ -5,7 +5,7 @@
 //! The box is this test binary: hostd runs `<bin> serve` with `WISP_BOX=1`, so `fake_box_serve` (the only test here
 //! whose name holds "serve") answers as a box's wisp would: the headers it was sent, a few env vars, and for a
 //! `resources.apply` an answer that created two resources. Run normally, it does nothing.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::too_many_lines)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::too_many_lines, clippy::many_single_char_names)]
 
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::path::PathBuf;
@@ -154,8 +154,8 @@ async fn a_hub_lets_its_team_in_by_role_and_its_keys_deploy() {
     let (_, me) = send(g.web.get(g.api("/api/me")).bearer_auth(&ada)).await;
     assert_eq!(me["hubs"][0]["url"], json!(g.at("acme")), "{me}");
 
-    // the owner is the hub's person; an outsider is refused
-    assert_eq!(via(&g, &ada).await.unwrap(), "");
+    // the owner runs the hub; an outsider is refused
+    assert_eq!(via(&g, &ada).await.unwrap(), "owner");
     let (_, env) = send(g.web.get(format!("{}/api/whoami", g.at("acme"))).bearer_auth(&ada)).await;
     assert_eq!(env["env"], json!({ "GH_TOKEN": "ghp_x" }), "{env}");
     let (s, v) = via(&g, &bo).await.unwrap_err();

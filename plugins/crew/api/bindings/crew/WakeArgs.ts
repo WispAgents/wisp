@@ -15,4 +15,8 @@ why: string,
 /**
  * where it came from (`trigger:review`, `chat`, `mcp`), recorded on the job
  */
-source?: string, };
+source?: string, 
+/**
+ * the folder the job works in instead of the member's own: the trigger's project (ADR-0147). Additive.
+ */
+cwd?: string, };

@@ -1,7 +1,7 @@
 //! A team's hub at `<team>.<domain>` (ADR-0147 §2, §5): the team's members by role, its deploy keys, and its deploys.
 //!
 //! Who gets in, and what the hub's wisp hears (`x-wisp-proxy-via`, set here only; wisp-api auth.rs turns it into a set):
-//! an owner or admin nothing (the box's person), a member `member`, a viewer `viewer`, a deploy key `deploy` or
+//! an owner or admin `owner`, a member `member`, a viewer `viewer`, a deploy key `deploy` or
 //! `plan`, a connector's webhook `hook`. Anyone else is refused. A person's API key (`wgk_`) opens their own wisp only.
 //!
 //! `POST /api/cmd` with `resources.apply` is a deploy: one at a time per hub (`hub_deploys.rs`), kept with its source
@@ -37,6 +37,8 @@ impl At {
         match self {
             Self::Key(k) if k.rights == Rights::Deploy => Some("deploy"),
             Self::Key(_) => Some("plan"),
+            // the box's person, with its machines (the hub's own sandboxes)
+            Self::Person(_, Role::Owner | Role::Admin, c) if *c != Credential::Box => Some("owner"),
             Self::Person(_, Role::Owner | Role::Admin, _) => None,
             Self::Person(_, Role::Member, _) => Some("member"),
             Self::Person(_, Role::Viewer, _) => Some("viewer"),

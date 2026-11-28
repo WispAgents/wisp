@@ -187,7 +187,14 @@ fn sandboxes_of(cfg: &GridConfig, db: &Arc<Db>, clock: &SharedClock, secrets: Se
             return sb.env_for(o);
         }
         // a team's hub box starts with its team's secrets (ADR-0147 §6); a person's own box never with sandboxes'
-        if teams.is_hub(&u.id).unwrap_or(false) { sb.hub_env(&u.id) } else { Vec::new() }
+        // and says it's a hub, so it keeps the plugins its sandboxes need (`HubPlugins`)
+        if teams.is_hub(&u.id).unwrap_or(false) {
+            let mut env = sb.hub_env(&u.id);
+            env.push(("WISP_HUB".into(), "1".into()));
+            env
+        } else {
+            Vec::new()
+        }
     }));
     sandboxes
 }

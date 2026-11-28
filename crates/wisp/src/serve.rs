@@ -354,7 +354,11 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     let hub = Hub::new();
     let notify: NotifyService = hub.clone();
     let at = Where { home: home.to_owned(), user_home: crate::services::user_home().unwrap_or_else(|| home.to_owned()) };
-    let fallback = if box_mode { Group::Box } else { Group::Default };
+    let fallback = match (box_mode, env("WISP_HUB").is_some_and(|v| v == "1")) {
+        (true, true) => Group::Hub,
+        (true, false) => Group::Box,
+        _ => Group::Default,
+    };
     let group = env("WISP_PLUGINS").and_then(|g| Group::named(&g)).unwrap_or(fallback);
     tracing::info!("plugins in this build: {:?}", crate::groups::compiled(group));
     // one server per home, before its store is opened or its server.json written; a second says where the first is

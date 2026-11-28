@@ -790,6 +790,10 @@ pub struct WakeArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub source: Option<String>,
+    /// the folder the job works in instead of the member's own: the trigger's project (ADR-0147). Additive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cwd: Option<String>,
 }
 
 /// `crew.wakeMentions`: every member a text mentions (`@ada`) gets a job.

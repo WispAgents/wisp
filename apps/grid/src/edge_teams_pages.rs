@@ -163,22 +163,22 @@ impl Grid {
         r
     }
 
-    async fn team_form(&self, u: &UserRow, rest: &[&str], h: &HeaderMap, bytes: &[u8]) -> Result<Resp> {
-        let b = parse_body(h, bytes)?;
-        let f = |k: &str| b.get(k).and_then(Value::as_str).unwrap_or_default().trim().to_owned();
-        if f("csrf") != Self::csrf(&cookies(h).get(COOKIE).cloned().unwrap_or_default()) {
+    async fn team_form(&self, u: &UserRow, rest: &[&str], headers: &HeaderMap, bytes: &[u8]) -> Result<Resp> {
+        let body = parse_body(headers, bytes)?;
+        let field = |k: &str| body.get(k).and_then(Value::as_str).unwrap_or_default().trim().to_owned();
+        if field("csrf") != Self::csrf(&cookies(headers).get(COOKIE).cloned().unwrap_or_default()) {
             return Err(bad("That form is stale. Go back and try again.", 403));
         }
         let to = |slug: &str, at: &str| format!("/teams/{slug}#{at}");
         let out: Result<Resp> = match rest {
             [] => self
                 .teams
-                .create(u, &f("slug"), &f("name"))
+                .create(u, &field("slug"), &field("name"))
                 .map(|v| self.back(&format!("/teams/{}", s(&v, "slug")), "Made. Its hub wakes the first time someone opens it.", false)),
             [slug, "members"] => self
                 .teams
-                .add(u, slug, &f("handle"), &f("role"))
-                .map(|()| self.back(&to(slug, "people"), &format!("{} is {} now.", f("handle"), f("role")), false)),
+                .add(u, slug, &field("handle"), &field("role"))
+                .map(|()| self.back(&to(slug, "people"), &format!("{} is {} now.", field("handle"), field("role")), false)),
             [slug, "members", handle, "remove"] => self.teams.remove(u, slug, handle).map(|()| {
                 if *handle == u.handle {
                     self.back("/teams", &format!("You left {slug}."), false)
@@ -186,18 +186,18 @@ impl Grid {
                     self.back(&to(slug, "people"), &format!("{handle} is out of {slug}."), false)
                 }
             }),
-            [slug, "invites"] => self.form_invite(u, slug, &b),
+            [slug, "invites"] => self.form_invite(u, slug, &body),
             [slug, "invites", id, "revoke"] => self
                 .teams
                 .revoke_invite(u, slug, id)
                 .map(|()| self.back(&to(slug, "invites"), "Revoked: that link adds nobody now.", false)),
-            [slug, "keys"] => self.form_key(u, slug, &b),
+            [slug, "keys"] => self.form_key(u, slug, &body),
             [slug, "keys", id, "revoke"] => self
                 .teams
                 .key_revoke(u, slug, id)
                 .map(|()| self.back(&to(slug, "keys"), "Revoked: CI using it is refused from now on.", false)),
-            [slug, "secrets", ..] => self.form_secret(u, slug, &rest[2..], &b),
-            [slug, "delete"] => match self.teams.delete(u, slug, &f("confirm")) {
+            [slug, "secrets", ..] => self.form_secret(u, slug, &rest[2..], &body),
+            [slug, "delete"] => match self.teams.delete(u, slug, &field("confirm")) {
                 Ok(acct) => {
                     if let Some(a) = acct {
                         self.delete_user(&a).await?;

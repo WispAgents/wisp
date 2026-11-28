@@ -330,10 +330,10 @@ pub fn team_page(cfg: &PageCfg, p: &TeamPage) -> String {
         if manage { r##"<a href="#invites">Invite links</a><a href="#keys">Deploy keys</a><a href="#secrets">Secrets</a>"## } else { "" };
     let owner_zone = if p.role == "owner" {
         format!(
-            r##"<details class="danger-zone" id="delete"><summary><h2 class="sec">Danger zone</h2><small>Delete the team and its hub</small></summary>
+            r#"<details class="danger-zone" id="delete"><summary><h2 class="sec">Danger zone</h2><small>Delete the team and its hub</small></summary>
       <div class="group"><form class="r del" method="post" action="{base}/delete"><span class="ic">{TRASH}</span><div class="tx"><b>Delete {slug} and its hub</b><small>The hub, its files, tasks, secrets, keys and invite links are deleted for good.</small></div>
         {hidden}<input class="input" name="confirm" placeholder="Type {slug}" aria-label="Type {slug} to confirm" autocomplete="off" autocapitalize="none" spellcheck="false" required pattern="{slug}"><button class="ghost line danger">Delete</button></form></div>
-      </details>"##,
+      </details>"#,
             slug = esc(&p.slug)
         )
     } else {

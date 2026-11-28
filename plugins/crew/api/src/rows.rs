@@ -363,6 +363,10 @@ pub struct WaitingJob {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "Record<string, unknown>")]
     pub thread: Option<Value>,
+    /// the folder it works in instead of the member's own: a trigger's project (ADR-0147). Additive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cwd: Option<String>,
     #[ts(type = "number")]
     pub at: i64,
 }

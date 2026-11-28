@@ -43,8 +43,8 @@ The edge opens a hub's address for **the team's members**, by their role. It tel
 
 | asker | via | set on the hub's wisp | may |
 |---|---|---|---|
-| an owner or admin (session, device, cookie) | — | `box` (as a person's own box) | everything a box's person may |
-| a member | `member` | `hub:member` | start and follow up tasks, run triggers and workflows, read everything; no settings, secrets, plugins, accounts or resources |
+| an owner or admin (session, device, cookie) | `owner` | `hub:owner` | everything a box's person may, and the hub's machines: a hub's only machines are the sandboxes it makes (a box never syncs a laptop), so `box`'s `machines:*` deny would stop its people starting sandboxed work |
+| a member | `member` | `hub:member` | start and follow up tasks (sandboxed too), run triggers and workflows, read everything; no settings, secrets, plugins, accounts or resources |
 | a viewer | `viewer` | `hub:viewer` | read topics, sessions, stuff |
 | a deploy key (`wgh_…`, rights deploy) | `deploy` | `hub:deploy` | plan and apply: what each kind reads and applies through its own plugin's commands (crew, triggers, projects…), but no work (no task, follow-up, wake, fire or run), no session, no secret, no machine, no key |
 | a plan key (`wgh_…`, rights plan) | `plan` | `hub:plan` | `hub:deploy`'s set, read-only |
@@ -109,6 +109,9 @@ unchanged once it's cloned (`normalize_named`). Triggers and crew already point 
 fetch before each task, are later.
 
 ### 8. Tasks in sandboxes
+
+A hub's box runs `HubPlugins` (the box group with `machines`): the grid tells it it's a hub (`WISP_HUB=1`), so its
+sandbox plugin can keep the sandboxes it makes as peers.
 
 The hub's own box can make sandboxes for itself (its `Box <handle> <secret>` credential, which the grid takes from a
 hub's box only, counted against the hub's sandbox cap), so `/sandbox`, `sandbox.place` and crew members'

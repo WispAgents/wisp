@@ -128,6 +128,14 @@ pub(crate) fn tree_reuse(args: &mut Value, m: &Member, job: JobKind) {
 /// or when it fails to start).
 /// `w.run`: this job's own pick (`wisp_crew_core::run`), already checked. `capped`: a capped lead's cap
 /// (`{ mode }`), which a job it delegated runs under (v1 `atCap`, and the job keeps it as a child would).
+/// The member as this job sees them: in the job's own folder (a trigger's project, ADR-0147) when it has one.
+fn in_its_folder<'a>(m: &'a Member, w: &WaitingJob) -> std::borrow::Cow<'a, Member> {
+    match &w.cwd {
+        Some(c) if *c != m.cwd => std::borrow::Cow::Owned(Member { cwd: c.clone(), ..m.clone() }),
+        _ => std::borrow::Cow::Borrowed(m),
+    }
+}
+
 async fn start(
     ctx: &Ctx,
     call: &Call,
@@ -137,6 +145,7 @@ async fn start(
     capped: Option<&Value>,
     slot: Slot<'_>,
 ) -> Result<Value, WireError> {
+    let m = &*in_its_folder(m, w);
     let (prompt, job, attachments) = (&w.prompt, w.job, &w.attachments);
     // what it was asked, for its page (a check-in's prompt is the crew's own)
     let asked = (job != JobKind::Checkin && !prompt.trim().is_empty()).then(|| prompt.chars().take(2000).collect::<String>());
@@ -402,7 +411,9 @@ fn wakes(s: &mut Setup, st: &Arc<State>) {
             Some(src) => format!("{why}\n\n(woken by {src})"),
             None => why,
         };
-        let w = WaitingJob { origin: woken_by(a.source.as_ref()), ..work(prompt, JobKind::Task, Vec::new(), None) };
+        // a trigger's project: the job works there, not in the member's own folder (ADR-0147)
+        let cwd = a.cwd.as_deref().map(str::trim).filter(|c| !c.is_empty()).map(str::to_owned);
+        let w = WaitingJob { origin: woken_by(a.source.as_ref()), cwd, ..work(prompt, JobKind::Task, Vec::new(), None) };
         assign(&ctx, &call, &st, &m, w).await
     });
     on!(s, st, c::WakeMentions, |st, ctx, call, a| Ok(wake_mentions(&ctx, &call, &st, &a).await));
