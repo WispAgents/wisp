@@ -48,7 +48,9 @@ pub mod push;
 pub mod route;
 
 // publishing and reach
+pub mod github_app;
 pub mod hub_deploys;
+pub mod hub_github;
 pub mod hub_hooks;
 pub mod hub_invites;
 pub mod hub_keys;

@@ -36,7 +36,8 @@ const Q: &str = "\
     27838ac5e0c7e14c341c11a97b9a02c8c5aff92eb6fbc135e6a74bf03ad892c0cd3e03f5f4ea3cfcffd5bd61bd28ecdc52d8\
     bb03e036b1f23f0af60fdc57649a7f0fe218c6eb96d73b0d901e4101";
 
-fn rsa_key() -> rsa::RsaPrivateKey {
+/// A fixed 2048-bit test key (also the GitHub App's in its tests).
+pub(crate) fn rsa_key() -> rsa::RsaPrivateKey {
     let big = |h: &str| rsa::BigUint::parse_bytes(h.as_bytes(), 16).unwrap();
     rsa::RsaPrivateKey::from_components(big(N), big("10001"), big(D), vec![big(P), big(Q)]).unwrap()
 }

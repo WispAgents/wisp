@@ -386,6 +386,20 @@ fn a_trigger_on_a_windows_project_hears_its_tasks_and_their_subfolders() {
     assert!(matches!(admit("t", &unc, &mut State::default(), e, &w(0)), Decision::Start(_)));
 }
 
+/// A hub's webhook event says its project both ways (ADR-0148 §8e): a trigger naming the project by name or by folder
+/// hears it, and one on another project doesn't.
+#[test]
+fn a_webhook_event_says_its_project_by_name_and_folder_and_either_matches() {
+    let at = |project: &str, n: &str| {
+        let s = TriggerSpec { project: project.into(), ..spec() };
+        let e = TriggerEvent { payload: json!({ "project": "app", "cwd": "/hub/repos/app/app" }), ..ev(n) };
+        matches!(admit("t", &s, &mut State::default(), e, &w(0)), Decision::Start(_))
+    };
+    assert!(at("app", "1"), "by name");
+    assert!(at("/hub/repos/app/app", "2"), "by folder");
+    assert!(!at("web", "3") && !at("/hub/repos/web/web", "4"), "another project");
+}
+
 fn starts(d: &[Decision]) -> Vec<String> {
     d.iter().filter_map(|x| if let Decision::Start(j) = x { Some(j.events[0].key.clone()) } else { None }).collect()
 }

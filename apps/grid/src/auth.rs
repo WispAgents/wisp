@@ -373,4 +373,4 @@ fn oidc_identity(provider: &str, c: &Value) -> Identity {
 
 #[cfg(test)]
 #[path = "auth_tests.rs"]
-mod tests;
+pub(crate) mod tests;

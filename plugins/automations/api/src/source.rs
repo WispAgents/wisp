@@ -141,3 +141,76 @@ pub trait TriggerProvider: Send + Sync + 'static {
 }
 
 pub const PROVIDERS: Point<dyn TriggerProvider> = Point::new("trigger.provider", 1);
+
+/// A repo as `owner/name`, lowercase, from any way it's written (`https://github.com/acme/app.git`,
+/// `git@github.com:acme/app.git`, `acme/app`): how a webhook's repository finds the project that names it (ADR-0148
+/// §8e). Empty for anything without both parts.
+pub fn repo_slug(repo: &str) -> String {
+    let r = repo.trim().trim_end_matches('/');
+    let r = r.strip_suffix(".git").unwrap_or(r);
+    let path = r
+        .split_once("://")
+        .map_or_else(|| r.split_once(':').map_or(r, |(_, p)| p), |(_, rest)| rest.split_once('/').map_or("", |(_, p)| p));
+    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+    match parts.as_slice() {
+        [.., owner, name] => format!("{owner}/{name}").to_lowercase(),
+        _ => String::new(),
+    }
+}
+
+/// A webhook's events (each saying its `repo`) placed in the projects that name that repo: one copy per such project,
+/// saying it as `project` (its name) and `cwd` (its folder), which a trigger's `project:` matches either way. A repo no
+/// project names places nothing: its events reach no trigger. `projects`: `(name, folder, repo)`.
+pub fn placed(events: Vec<TriggerEvent>, projects: &[(String, String, String)]) -> Vec<TriggerEvent> {
+    let mut out = Vec::new();
+    for e in events {
+        let repo = repo_slug(e.payload.get("repo").and_then(Value::as_str).unwrap_or_default());
+        if repo.is_empty() {
+            continue;
+        }
+        for (name, folder, _) in projects.iter().filter(|(_, _, r)| repo_slug(r) == repo) {
+            let mut one = e.clone();
+            one.payload["project"] = Value::String(name.clone());
+            one.payload["cwd"] = Value::String(folder.clone());
+            out.push(one);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+#[allow(clippy::assert_is_empty)]
+mod repo_tests {
+    use super::{TriggerEvent, placed, repo_slug};
+    use serde_json::json;
+
+    #[test]
+    fn a_webhooks_event_goes_to_each_project_naming_its_repo_and_nowhere_else() {
+        let ev = TriggerEvent {
+            on: "issue.opened".into(),
+            key: "issue:3:opened".into(),
+            payload: json!({ "repo": "acme/app" }),
+            ..TriggerEvent::default()
+        };
+        let projects = [
+            ("app".to_owned(), "/hub/repos/app/app".to_owned(), "https://github.com/acme/app".to_owned()),
+            ("web".to_owned(), "/hub/repos/web/web".to_owned(), "acme/web".to_owned()),
+            ("app-2".to_owned(), "/hub/repos/app-2/app".to_owned(), "git@github.com:Acme/app.git".to_owned()),
+        ];
+        let out = placed(vec![ev.clone()], &projects);
+        let places: Vec<_> = out.iter().map(|e| (e.payload["project"].clone(), e.payload["cwd"].clone())).collect();
+        assert_eq!(places, vec![(json!("app"), json!("/hub/repos/app/app")), (json!("app-2"), json!("/hub/repos/app-2/app"))]);
+        assert!(placed(vec![TriggerEvent { payload: json!({ "repo": "acme/other" }), ..ev.clone() }], &projects).is_empty());
+        assert!(placed(vec![TriggerEvent { payload: json!({}), ..ev }], &projects).is_empty(), "no repo: nowhere");
+    }
+
+    #[test]
+    fn a_repo_is_its_owner_and_name_however_written() {
+        for r in ["https://github.com/Acme/App", "https://github.com/acme/app.git", "git@github.com:acme/app.git", "acme/app", "acme/app/"]
+        {
+            assert_eq!(repo_slug(r), "acme/app", "{r}");
+        }
+        assert_eq!(repo_slug("app"), "");
+        assert_eq!(repo_slug(""), "");
+    }
+}

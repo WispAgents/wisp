@@ -16,7 +16,8 @@ issue gets triaged even when everyone's laptop is closed.
 - **Agents, projects and triggers** live in a folder of YAML in a repo. `wisp grid deploy` sends that folder to the
   hub, from your terminal or from GitHub Actions on every merge. It works like Terraform: plan, review, apply.
 - **Deploy keys** let CI deploy without anyone's sign-in. A key opens its own team's hub and nothing else.
-- **Secrets** (a GitHub token, the hub's Claude sign-in) are kept on the grid, never in the repo.
+- **GitHub** through the grid's GitHub App (an hour's token for the repos you pick, and webhooks), or a `GH_TOKEN`.
+- **Secrets** (the hub's Claude sign-in, a token) are kept on the grid, never in the repo.
 
 ## 1. Make a team
 
@@ -91,7 +92,8 @@ The hub and the sandboxes it makes start with these. A formula names them (`${en
 <Tabs syncKey="way">
 <TabItem label="Grid">
 On the team's page, **Secrets**: sign the hub in to **Claude** with a token from `claude setup-token`, and set
-`GH_TOKEN` (a GitHub token that can read the team's repos and comment on their issues).
+`GH_TOKEN` (a GitHub token that can read the team's repos and comment on their issues), unless the team connects
+the grid's GitHub App (step 5).
 </TabItem>
 <TabItem label="CLI">
 ```sh
@@ -104,7 +106,54 @@ wisp team restart acme          # a running hub picks them up when it next start
 </TabItem>
 </Tabs>
 
-## 5. The hub as code
+## 5. GitHub: the App, or a token
+
+A hub reaches its team's repos one of two ways:
+
+- **The grid's GitHub App** (best). Install it on your org and pick the repos. The hub gets a fresh token for those
+  repos every hour, and no one's personal token sits on the grid. Each new or labelled issue, and each review request,
+  reaches the hub's triggers the moment it happens, waking the hub if it's asleep.
+- **A `GH_TOKEN` secret** (step 4), on a grid without the App. The hub then polls GitHub every few minutes.
+
+<Tabs syncKey="way">
+<TabItem label="Grid">
+On the team's page, **GitHub** → **Connect GitHub**. GitHub asks where to install the App and which repos it may
+use, then brings you back, connected.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp team github acme connect      # prints the link to install the App: open it signed in to the grid
+wisp team github acme              # connected to what, by whom
+wisp team github acme disconnect
+```
+</TabItem>
+</Tabs>
+
+Connecting checks that GitHub really let *you* install it on that account: a link to someone else's installation
+connects nothing. With the App connected, the hub's `gh` and `git` use its tokens, and a `GH_TOKEN` secret is used
+only after you disconnect. Webhooks only speed things up: the hub still polls, and an event fires a trigger once,
+whichever comes first. A webhook reaches the triggers of the project whose `repo:` names that repo.
+
+<details>
+<summary>Running your own grid: making its GitHub App</summary>
+
+On GitHub, **Settings → Developer settings → GitHub Apps → New GitHub App**:
+
+- **Callback URL** and **Setup URL**: `https://<your grid>/github/setup`. Tick **Request user authorization (OAuth)
+  during installation**.
+- **Webhook URL**: `https://<your grid>/github/webhook`, with a secret you make.
+- **Repository permissions**: Contents, Issues and Pull requests: read and write; Metadata: read.
+- **Subscribe to events**: Issues, Pull request.
+
+Then give the grid its id, URL name and client id, and its three secrets (each also as a file with `_FILE`):
+
+```sh
+GRID_GITHUB_APP_ID=123456 GRID_GITHUB_APP_SLUG=acme-wisp GRID_GITHUB_APP_CLIENT_ID=Iv1.abc
+GRID_GITHUB_APP_CLIENT_SECRET=…  GRID_GITHUB_APP_PRIVATE_KEY_FILE=/etc/wisp/app.pem  GRID_GITHUB_APP_WEBHOOK_SECRET=…
+```
+</details>
+
+## 6. The hub as code
 
 ```sh
 wisp grid init acme ops/hub
@@ -124,8 +173,8 @@ ops/hub/
 [Build a software factory as code](/docs/guides/declare/software-factory-as-code/) works there too: crew, workflows,
 connectors, modules, variables.
 
-**A project by its repo.** On a hub, a project names its repo. Deploying clones it into the hub with the hub's
-`GH_TOKEN`:
+**A project by its repo.** On a hub, a project names its repo. Deploying clones it into the hub with the App's
+token (or the hub's `GH_TOKEN`):
 
 ```yaml
 wisp: 1
@@ -160,7 +209,7 @@ the hub's. Any harness runs there: Claude with the hub's sign-in, opencode's fre
 A hub sleeps when nobody uses it, and wakes by itself when one of its triggers is due (a poll, a schedule), so an
 issue opened at night is triaged at night.
 
-## 6. Plan and deploy
+## 7. Plan and deploy
 
 ```sh
 cd ops/hub
@@ -182,7 +231,7 @@ Plan (ops/hub)
 From your terminal, wisp deploys as you, through your grid sign-in. The hub keeps one deploy at a time: a second one
 waits for the first and says whose it is.
 
-## 7. Deploy from CI
+## 8. Deploy from CI
 
 <Tabs syncKey="way">
 <TabItem label="Grid">
@@ -213,7 +262,7 @@ then plans each pull request, with the plan as a comment, and deploys each merge
 Anywhere else, `WISP_HUB_KEY=… wisp grid deploy --yes` deploys straight to the hub. It needs no wisp running on
 that machine.
 
-## 8. Webhooks from the internet
+## 9. Webhooks from the internet
 
 A hub has a public address, so GitHub, Sentry or Linear can start its webhook triggers directly. Declare the trigger
 and switch webhook triggers on in the folder; set its secret on the grid:

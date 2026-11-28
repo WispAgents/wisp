@@ -159,8 +159,8 @@ mod tests {
         // 14th push_handles (the phone relay, ADR-0065); the 15th app_waitlist (the site's Get the app); the 16th
         // device_codes.requester_ip and requester_agent (ADR-0129), no table; the 17th shares.cap (ADR-0130), no table; the
         // 18th hook_tokens and hook_held (a computer's webhook trigger URLs and the calls held for it, ADR-0148); the 19th
-        // team_invites, team_keys, team_deploys and team_hooks (team hubs, ADR-0148).
-        assert_eq!(want.len(), 37);
-        assert_eq!(MIGRATIONS.len(), 19);
+        // team_invites, team_keys, team_deploys and team_hooks (team hubs, ADR-0148); the 20th team_github (its GitHub App).
+        assert_eq!(want.len(), 38);
+        assert_eq!(MIGRATIONS.len(), 20);
     }
 }

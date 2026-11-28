@@ -3,6 +3,7 @@
 
 pub mod list;
 mod trigger;
+mod webhook;
 
 use std::sync::Arc;
 
@@ -33,6 +34,8 @@ impl Plugin for IssuesPlugin {
             let span = tracing::info_span!("issues.list", source = args.source.as_str());
             async move { l.list(&call, args).await }.instrument(span)
         });
+        // a team hub's GitHub App sends new and labelled issues here (ADR-0148 §8e)
+        s.route(webhook::route());
         Ok(())
     }
 }

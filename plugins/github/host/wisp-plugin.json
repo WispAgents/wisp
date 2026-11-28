@@ -11,7 +11,7 @@
   "requires": {
     "wisp.channels": "^1.0.0-0"
   },
-  "permissions": ["proc:exec{bin:gh}"],
+  "permissions": ["proc:exec{bin:gh}", "automations:run", "resources:read"],
   "activation": [
     "onStartup"
   ],

@@ -203,6 +203,11 @@ pub const MIGRATIONS: &[&str] = &[
      token_hash TEXT UNIQUE NOT NULL, hint TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
      last_used_at INTEGER, calls INTEGER NOT NULL DEFAULT 0, revoked_at INTEGER);
    CREATE INDEX team_hooks_team ON team_hooks(team_id);",
+    // ADR-0148 §8e: the GitHub App installation a team connected to its hub (one each way: an installation is one
+    // team's), proven its installer's at connect time
+    r"CREATE TABLE team_github (
+     team_id TEXT PRIMARY KEY REFERENCES teams(id) ON DELETE CASCADE, installation_id INTEGER UNIQUE NOT NULL,
+     account TEXT NOT NULL, connected_by TEXT NOT NULL, connected_at INTEGER NOT NULL);",
 ];
 
 /// Every table the migrations make (and `meta`), for tests and `wisp grid backup` checks.

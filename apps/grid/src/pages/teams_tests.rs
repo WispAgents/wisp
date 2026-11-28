@@ -103,3 +103,17 @@ fn a_key_or_a_link_just_made_is_said_once_and_what_people_typed_is_escaped() {
     );
     assert!(list.contains(r#"href="/teams/acme""#) && list.contains("acme.grid.test") && list.contains(r#"action="/teams""#));
 }
+
+/// A team's GitHub (ADR-0148 §8e): no App on the grid points at `GH_TOKEN`; with one, Connect; connected, its account
+/// and Disconnect. Only an owner or admin sees it.
+#[test]
+fn github_says_whether_the_grid_has_an_app_and_the_teams_installation() {
+    let page = |g: GithubRow, role: &str| team_page(&cfg(), &TeamPage { github: g, ..hub(role) });
+    let none = page(GithubRow::default(), "owner");
+    assert!(none.contains(r#"id="github""#) && none.contains("No GitHub App on this grid") && !none.contains("Connect GitHub"), "{none}");
+    let can = page(GithubRow { app: true, connected: None }, "admin");
+    assert!(can.contains(r#"action="/teams/acme/github/connect""#) && can.contains("Connect GitHub"), "{can}");
+    let on = page(GithubRow { app: true, connected: Some(("acme-<org>".into(), "ada".into(), 1_793_000_000_000)) }, "owner");
+    assert!(on.contains("Connected to acme-&#60;org&#62;") && on.contains(r#"action="/teams/acme/github/disconnect""#), "{on}");
+    assert!(!page(GithubRow { app: true, connected: None }, "member").contains(r#"id="github""#), "a member doesn't manage it");
+}

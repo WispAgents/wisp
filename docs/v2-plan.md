@@ -288,8 +288,10 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
       kernel), invite links, `wgt_` deploy keys, sealed hub secrets, one deploy at a time with a history;
       `wisp grid init|plan|deploy|deploys`, `wisp team …` hub ops, grid-client `hub*` commands; projects by `repo:`
       (cloned on apply); a hub makes its own sandboxes; grid Teams pages; hubs as machines; the Action's `deploy:`;
-      guide `guides/declare/team-hubs`, site and README sections. Left: the GitHub App (webhooks and per-repo tokens;
-      `GH_TOKEN` as a hub secret meanwhile), spaces per team, OIDC instead of a stored key
+      guide `guides/declare/team-hubs`, site and README sections; the grid's GitHub App (§8e: connect proven by the
+      installer's OAuth, hourly tokens the hub renews for gh/git, signed webhooks → `issue.*`/`pr.review_requested` at
+      once, `GH_TOKEN` the fallback); a hub's sandboxes sleep; a hub is called by its name. Left: `ci.*` webhooks,
+      spaces per team, OIDC instead of a stored key
 - [x] Terminal context (ADR-0023)
 - [x] Rest of the backend: chat transports, computer pane, update host, telemetry, settings, mentions, setup, copilot reader
 - [x] GitHub Action and image, git hook (ADR-0040)

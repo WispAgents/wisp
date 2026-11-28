@@ -6,6 +6,7 @@
 //! And the channels transport `github` (`comments.rs`): `/wisp …` comments on your repos start or follow up tasks.
 
 pub mod comments;
+mod webhook;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -208,6 +209,8 @@ impl Plugin for GithubPlugin {
         s.contribute(&SOURCE, src);
         let t: Arc<dyn wisp_channels_api::TransportDef> = Arc::new(comments::Def);
         s.contribute(&wisp_channels_api::TRANSPORTS, t);
+        // a team hub's GitHub App sends review requests here (ADR-0148 §8e)
+        s.route(webhook::route());
         Ok(())
     }
 }

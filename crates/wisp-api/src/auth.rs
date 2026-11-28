@@ -74,6 +74,8 @@ pub mod sets {
     pub const HUB_VIEWER: &str = "hub:viewer";
     pub const HUB_DEPLOY: &str = "hub:deploy";
     pub const HUB_PLAN: &str = "hub:plan";
+    /// a GitHub App webhook the grid checked (its signature) and passed to a team's hub (ADR-0148 §8e)
+    pub const GRID_GITHUB: &str = "grid:github";
 }
 
 /// The set a grid edge's `x-wisp-proxy-via` names, when it names one.
@@ -87,6 +89,7 @@ fn proxied_set(via: Option<&str>) -> Option<&'static str> {
         "viewer" => sets::HUB_VIEWER,
         "deploy" => sets::HUB_DEPLOY,
         "plan" => sets::HUB_PLAN,
+        "github" => sets::GRID_GITHUB,
         _ => return None,
     })
 }

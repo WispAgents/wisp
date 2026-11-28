@@ -57,7 +57,8 @@ impl Grid {
             k.copy_from_slice(&crate::secrets::random_bytes(32));
             k
         }));
-        let sandboxes = sandboxes_of(&cfg, &db, &clock, secrets.clone(), &boxes);
+        let github = github_of(&cfg, &clock);
+        let sandboxes = sandboxes_of(&cfg, &db, &clock, secrets.clone(), &boxes, github.clone());
         let urls = cfg.clone();
         let sites = crate::sites::Sites::new(
             db.clone(),
@@ -103,6 +104,7 @@ impl Grid {
             routes,
             mail,
             push,
+            github,
             notes: tokio::sync::broadcast::channel(64).0,
             media,
         })
@@ -175,7 +177,27 @@ type Sealed = Option<Arc<crate::secrets::Secrets>>;
 
 /// Sandboxes, and the env and sign-ins their boxes start with (a sandbox's box gets its owner's, a hub's box its team's;
 /// a person's own box never).
-fn sandboxes_of(cfg: &GridConfig, db: &Arc<Db>, clock: &SharedClock, secrets: Sealed, boxes: &ProcessHost) -> crate::sandboxes::Sandboxes {
+/// The GitHub App grid.json names (its secrets read now): a grid whose App can't be read says why and runs without it.
+fn github_of(cfg: &GridConfig, clock: &SharedClock) -> Option<Arc<crate::github_app::GitHubApp>> {
+    match crate::github_app::GitHubApp::from_config(cfg.file_cfg.github_app.as_ref(), &crate::config::process_env(), clock.clone()) {
+        Ok(app) => app.map(Arc::new),
+        Err(e) => {
+            tracing::error!("grid: the GitHub App is off: {e}");
+            None
+        }
+    }
+}
+
+type App = Option<Arc<crate::github_app::GitHubApp>>;
+
+fn sandboxes_of(
+    cfg: &GridConfig,
+    db: &Arc<Db>,
+    clock: &SharedClock,
+    secrets: Sealed,
+    boxes: &ProcessHost,
+    github: App,
+) -> crate::sandboxes::Sandboxes {
     let sb_cfg = cfg.sandboxes.clone().unwrap_or_default();
     let sandboxes = crate::sandboxes::Sandboxes {
         db: db.clone(),
@@ -186,9 +208,26 @@ fn sandboxes_of(cfg: &GridConfig, db: &Arc<Db>, clock: &SharedClock, secrets: Se
     };
     let sb = sandboxes.clone();
     let teams = crate::teams::Teams { db: db.clone(), clock: clock.clone() };
+    // a team's GitHub App installation (ADR-0148 §8e), when the hub's team connected one
+    let connected = {
+        let (teams, github) = (teams.clone(), github.clone());
+        move |hub_user: &str| -> Option<i64> {
+            github.as_ref()?;
+            let hub = teams.hub_by_user(hub_user).ok().flatten()?;
+            teams.github_of(&hub.team_id).ok().flatten().map(|c| c.installation_id)
+        }
+    };
     boxes.set_env_for(Arc::new(move |u: &BoxUser| {
         if let Some(o) = u.owner.as_deref().filter(|_| u.sandbox.is_some()) {
-            return sb.env_for(o);
+            let mut env = sb.env_for(o);
+            // a hub's sandbox, with GitHub connected: the App's token for its job (an hour; a job is shorter), in place of
+            // a GH_TOKEN secret
+            if let Some(t) = connected(o).and_then(|id| github.as_ref().and_then(|a| a.cached(id))) {
+                env.retain(|(k, _)| k != "GH_TOKEN" && k != "GITHUB_TOKEN");
+                env.push(("GH_TOKEN".into(), t.clone()));
+                env.push(("GITHUB_TOKEN".into(), t));
+            }
+            return env;
         }
         // a team's hub box starts with its team's secrets (ADR-0148 §6); a person's own box never with sandboxes'
         // and says it's a hub, so it keeps the plugins its sandboxes need (`HubPlugins`)
@@ -201,6 +240,11 @@ fn sandboxes_of(cfg: &GridConfig, db: &Arc<Db>, clock: &SharedClock, secrets: Se
             let names: Vec<String> = sb.env_keys(&u.id);
             env.push(("WISP_HUB_SECRETS".into(), names.join(",")));
             env.push(("WISP_HUB".into(), "1".into()));
+            // with GitHub connected its gh and git use the App's tokens, which it renews itself (grid-client): a
+            // GH_TOKEN in its env would win over them and stop working within the hour
+            if connected(&u.id).is_some() {
+                env.retain(|(k, _)| k != "GH_TOKEN" && k != "GITHUB_TOKEN");
+            }
             env
         } else {
             Vec::new()

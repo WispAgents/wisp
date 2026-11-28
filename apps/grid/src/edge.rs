@@ -57,6 +57,8 @@ mod hook;
 mod hub;
 #[path = "edge_hub_api.rs"]
 mod hub_api;
+#[path = "edge_hub_github.rs"]
+mod hub_github;
 #[path = "edge_hub_hook.rs"]
 mod hub_hook;
 #[path = "edge_inbox.rs"]
@@ -91,7 +93,7 @@ mod sites;
 mod teams_pages;
 #[path = "edge_waitlist.rs"]
 mod waitlist;
-pub use serve::{bytes_body, dev, serve};
+pub use serve::{bytes_body, dev, dev_with, serve};
 pub use signin::{Reqwest, SignIn};
 
 /// The grid's session cookie.
@@ -139,6 +141,8 @@ pub struct Grid {
     pub mail: Option<Arc<crate::mail::service::MailService>>,
     /// the phone relay: a handle → FCM/APNs token, ciphertext through (`push.rs`, ADR-0065 §3)
     pub push: crate::push::Relay,
+    /// the GitHub App teams connect to their hubs, when grid.json names one (`github_app.rs`, ADR-0148 §8e)
+    pub github: Option<Arc<crate::github_app::GitHubApp>>,
     /// whose pages changed, for their open `/events` streams (`edge_events.rs`)
     notes: tokio::sync::broadcast::Sender<String>,
     /// signs the phone app's media links (`media.rs`, `edge_media.rs`)
@@ -332,6 +336,10 @@ impl Grid {
             let q = q.to_owned();
             return self.sites_route(req, &who, key.as_deref(), &q).await;
         }
+        // GitHub's App webhooks: their body is checked against its signature as it came (edge_hub_github.rs)
+        if method == http::Method::POST && parts.as_slice() == ["github", "webhook"] {
+            return self.github_webhook(req).await;
+        }
         let (head, body) = req.into_parts();
         let bytes = read_bytes(body, crate::shares::MAX_BYTES * 2).await?;
         let peer = head.extensions.get::<common::Peer>().map(|p| p.0);
@@ -366,6 +374,8 @@ impl Grid {
             }
             (_, ["api", "channels", which @ ("route" | "reply")]) => self.route_api(&method, which, &head.headers, &bytes, &who).await,
             (_, ["api", "push", which @ ("register" | "send")]) => self.push_route(&method, which, &head.headers, &bytes, &who).await,
+            ("GET", ["github", "setup"]) => self.github_setup(q, &who).await,
+            ("GET", ["api", "github", "token"]) => self.github_token(&who).await,
             ("POST", ["_route", tok]) => self.route_in(&head.headers, tok, &bytes),
             ("POST", ["_mail", provider]) => self.mail_in(provider, &bytes).await,
             ("POST", ["api", "channels", "mail", "reply"]) => {

@@ -40,7 +40,7 @@ pub use in_app::{InApp, Os, browser_name, in_app_browser, open_outside};
 pub use machines::{MachineView, Wish};
 pub use share::{SharePassPage, ShareViewPage, WebLook, share_pass_page, share_view_page};
 pub use signin::{Seats, SignInPage, dev_sign_in_page, sign_in_page};
-pub use teams::{DeployRow, HookRow, HubKeyRow, InviteRow, MemberRow, TeamPage, TeamRow, TeamsPage, team_page, teams_page};
+pub use teams::{DeployRow, GithubRow, HookRow, HubKeyRow, InviteRow, MemberRow, TeamPage, TeamRow, TeamsPage, team_page, teams_page};
 pub use time::iso_day;
 
 use crate::config::GridConfig;

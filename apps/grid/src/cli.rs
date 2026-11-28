@@ -173,7 +173,12 @@ async fn dev(args: &[String]) -> i32 {
     let env: Vec<(String, String)> = std::env::vars().collect();
     let (pass, said) = dev_harness_env(&env, &data, args.iter().any(|a| a == "--real-harnesses"));
     eprintln!("{said}");
-    match crate::edge::dev(&data, port, bin, pass, idle).await {
+    // a GitHub App to try team hubs with (GRID_GITHUB_APP_*), as `serve` takes one
+    let mut more = serde_json::Map::new();
+    if let Some(app) = crate::config::github_app_env(&crate::config::process_env()) {
+        more.insert("githubApp".into(), app);
+    }
+    match crate::edge::dev_with(&data, port, bin, pass, idle, more).await {
         Ok((grid, port, stop)) => {
             eprintln!(
                 "\n  ◌ wisp Grid (dev) at http://wisp.localhost:{port}  ·  sign in at /auth/dev\n    sign in from wisp: wisp cloud signin http://wisp.localhost:{port}\n"

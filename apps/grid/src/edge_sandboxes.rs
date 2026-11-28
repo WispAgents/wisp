@@ -88,6 +88,8 @@ impl Grid {
                 };
                 let (row, token) = s.create(&user, b.get("name").and_then(Value::as_str).unwrap_or_default(), &taken)?;
                 tracing::info!("grid: {} made sandbox {}", user.handle, row.id);
+                // a hub's sandbox starts with its team's GitHub App token (ADR-0148 §8e): one in hand before it starts
+                self.github_warm(&user.id).await;
                 let mut v = self.sandbox_view(&row);
                 v["token"] = json!(token);
                 Ok(json(201, &v))

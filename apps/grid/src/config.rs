@@ -61,6 +61,9 @@ pub struct GridFile {
     pub sandboxes: Option<FeatureConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push: Option<PushConfig>,
+    /// the grid's GitHub App, which teams install for their hubs (ADR-0148 §8e)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_app: Option<GitHubAppConfig>,
 }
 
 /// The settings in force: grid.json, the environment and the command line, checked.
@@ -197,7 +200,23 @@ fn from_env(env: &Env) -> Value {
     if !providers.is_empty() {
         out.insert("auth".into(), json!({ "providers": providers }));
     }
+    if let Some(app) = github_app_env(env) {
+        out.insert("githubApp".into(), app);
+    }
     Value::Object(out)
+}
+
+/// The GitHub App teams install for their hubs, from env: its id, its URL name and its OAuth client (its secrets stay
+/// in env, read when the grid starts). `wisp grid serve` and `wisp-grid dev` both take it.
+pub fn github_app_env(env: &Env) -> Option<Value> {
+    let (id, slug, cid) = (env.get("GRID_GITHUB_APP_ID")?, env.get("GRID_GITHUB_APP_SLUG")?, env.get("GRID_GITHUB_APP_CLIENT_ID")?);
+    let mut app = json!({ "id": id, "slug": slug, "clientId": cid });
+    for (k, var) in [("api", "GRID_GITHUB_API"), ("web", "GRID_GITHUB_WEB")] {
+        if let Some(v) = env.get(var) {
+            app[k] = json!(v);
+        }
+    }
+    Some(app)
 }
 
 /// What `load` is given.

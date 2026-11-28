@@ -12,7 +12,7 @@ use crate::error::{Result, bad};
 use crate::http::{CookieOptions, Resp, add_cookie, cookie, cookies, encode_component, html, parse_body, redirect};
 use crate::hub_invites::Ask;
 use crate::hub_keys::Rights;
-use crate::pages::{self, DeployRow, HookRow, HubKeyRow, InviteRow, MemberRow, TeamPage, TeamRow, TeamsPage};
+use crate::pages::{self, DeployRow, GithubRow, HookRow, HubKeyRow, InviteRow, MemberRow, TeamPage, TeamRow, TeamsPage};
 use crate::rows::UserRow;
 use crate::teams::Role;
 
@@ -149,6 +149,10 @@ impl Grid {
             } else {
                 Vec::new()
             },
+            github: GithubRow {
+                app: self.github.is_some(),
+                connected: self.teams.github_of(&hub.team_id)?.map(|c| (c.account, c.connected_by, c.connected_at)),
+            },
             fresh,
             slug: hub.slug,
             name: hub.name,
@@ -213,6 +217,19 @@ impl Grid {
             [slug, "hooks"] => self.form_hook(u, slug, &body),
             [slug, "hooks", id, "revoke"] => self.form_hook_revoke(u, slug, id),
             [slug, "secrets", ..] => self.form_secret(u, slug, &rest[2..], &body),
+            // GitHub's install page, with a state for this team and person (ADR-0148 §8e)
+            [slug, "github", "connect"] => self.managed_hub(u, slug).and_then(|hub| {
+                let app = self.github.as_ref().ok_or_else(|| bad("This grid has no GitHub App.", 409))?;
+                let url = app.install_url(crate::github_app::Started { team_id: hub.team_id, slug: hub.slug, user_id: u.id.clone() });
+                Ok(redirect(&url, &[]))
+            }),
+            [slug, "github", "disconnect"] => self.managed_hub(u, slug).and_then(|hub| {
+                let was = self.teams.github_disconnect(&hub.team_id)?;
+                if let (Some(id), Some(app)) = (was, self.github.as_ref()) {
+                    app.forget(id);
+                }
+                Ok(self.back(&to(slug, "github"), "GitHub disconnected. A GH_TOKEN secret, if set, is what the hub uses now.", false))
+            }),
             [slug, "delete"] => match self.teams.delete(u, slug, &field("confirm")) {
                 Ok(acct) => {
                     if let Some(a) = acct {

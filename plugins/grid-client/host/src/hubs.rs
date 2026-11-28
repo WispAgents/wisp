@@ -54,10 +54,15 @@ pub fn hub_call(a: &api::HubArgs) -> Result<(&'static str, String, Option<Value>
         "logout" => ("DELETE", format!("/api/teams/{t}/secrets/logins/{}", segment(&a.name, "sign-in")?), None),
         "deploys" => ("GET", format!("/api/teams/{t}/deploys"), None),
         "urls" => ("GET", format!("/api/teams/{t}/hooks"), None),
+        // its GitHub App (ADR-0148 §8e): whether the grid has one and the team's installation; where to install it;
+        // untie it
+        "github" => ("GET", format!("/api/teams/{t}/github"), None),
+        "github-connect" => ("POST", format!("/api/teams/{t}/github"), None),
+        "github-disconnect" => ("DELETE", format!("/api/teams/{t}/github"), None),
         "unurl" => ("DELETE", format!("/api/teams/{t}/hooks/{}", segment(&a.id, "trigger URL")?), None),
         other => {
             return Err(WireError::invalid(format!(
-                "hub {other}: show, create, restart, delete, invites, uninvite, join, keys, unkey, secrets, unset, logout, deploys, urls or unurl"
+                "hub {other}: show, create, restart, delete, invites, uninvite, join, keys, unkey, secrets, unset, logout, deploys, urls, unurl, github, github-connect or github-disconnect"
             )));
         }
     })
@@ -168,6 +173,9 @@ mod tests {
         assert_eq!(path(&op("show", "acme")), ("GET", "/api/teams/acme/hub".to_owned()));
         assert_eq!(path(&op("deploys", "acme")), ("GET", "/api/teams/acme/deploys".to_owned()));
         assert_eq!(path(&op("urls", "acme")), ("GET", "/api/teams/acme/hooks".to_owned()));
+        assert_eq!(path(&op("github", "acme")), ("GET", "/api/teams/acme/github".to_owned()));
+        assert_eq!(path(&op("github-connect", "acme")), ("POST", "/api/teams/acme/github".to_owned()));
+        assert_eq!(path(&op("github-disconnect", "acme")), ("DELETE", "/api/teams/acme/github".to_owned()));
         assert_eq!(path(&api::HubArgs { id: "0a1b".into(), ..op("unurl", "acme") }), ("DELETE", "/api/teams/acme/hooks/0a1b".to_owned()));
         assert_eq!(path(&api::HubArgs { id: "0a1b".into(), ..op("unkey", "acme") }), ("DELETE", "/api/teams/acme/keys/0a1b".to_owned()));
         assert_eq!(

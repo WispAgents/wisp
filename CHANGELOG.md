@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **A team hub connects the grid's GitHub App.** On the team's page (**GitHub → Connect GitHub**) or with `wisp team
+  github <team> connect`, an owner installs the App on the org and picks repos. The hub then gets an hour's token for
+  them, renewed by itself, and their new issues, labels and review requests reach its triggers at once, waking it. A
+  grid without an App keeps the `GH_TOKEN` secret. Running your own grid: set `GRID_GITHUB_APP_*`
+  (the team hubs guide).
 - **Team hubs: your team's own wisp on the Grid, deployed like Terraform.** Making a team (grid **Teams** → **New team**,
   or `wisp team new acme`) makes its hub at `acme.<grid>`, where the team's shared agents and triggers run while
   laptops sleep. People open it by their role (owner, admin, member, viewer) from the browser, the desktop app (each hub

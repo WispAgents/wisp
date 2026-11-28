@@ -14,6 +14,7 @@
 //! | `PUT·DELETE /api/teams/<t>/secrets/logins/<agent> {token}` | owner, admin | the hub's harness sign-ins |
 //! | `GET /api/teams/<t>/deploys` | anyone in it | the hub's deploys |
 //! | `GET·POST /api/teams/<t>/hooks`, `DELETE …/hooks/<id>` | owner, admin | the hub's webhook trigger URLs (a new one said once) |
+//! | `GET·POST·DELETE /api/teams/<t>/github` | in it; owner, admin to change | its GitHub App (edge_hub_github.rs) |
 use http::{HeaderMap, Method};
 use serde_json::{Map, Value, json};
 
@@ -37,7 +38,7 @@ impl Grid {
     pub(super) async fn hub_api(&self, method: &Method, parts: &[&str], h: &HeaderMap, bytes: &[u8], who: &Who) -> Option<Result<Resp>> {
         let hub_path = parts == ["api", "join"]
             || (*method == Method::DELETE && matches!(parts, ["api", "teams", _]))
-            || matches!(parts, ["api", "teams", _, "hub" | "invites" | "keys" | "secrets" | "deploys" | "hooks", ..]);
+            || matches!(parts, ["api", "teams", _, "hub" | "invites" | "keys" | "secrets" | "deploys" | "hooks" | "github", ..]);
         if !hub_path {
             return None;
         }
@@ -81,6 +82,7 @@ impl Grid {
                 let hub = self.managed_hub(&me, slug)?;
                 self.hub_hooks_api(method, rest.first().copied(), &b, &hub, &me.handle)
             }
+            (_, ["api", "teams", slug, "github"]) => self.hub_github_api(method, &me, slug),
             ("GET", ["api", "teams", slug, "deploys"]) => {
                 let hub = self.member_hub(&me, slug)?;
                 Ok(json(200, &json!({ "deploys": t.deploys(&hub.team_id, 50)? })))
@@ -89,14 +91,14 @@ impl Grid {
         }
     }
 
-    fn member_hub(&self, me: &UserRow, slug: &str) -> Result<Hub> {
+    pub(super) fn member_hub(&self, me: &UserRow, slug: &str) -> Result<Hub> {
         if self.teams.role(&me.id, slug)?.is_none() {
             return Err(bad(format!("You aren't in {slug}."), 403));
         }
         self.teams.hub(slug)?.ok_or_else(|| bad(format!("{slug} has no hub yet: wisp team hub {slug}"), 409))
     }
 
-    fn managed_hub(&self, me: &UserRow, slug: &str) -> Result<Hub> {
+    pub(super) fn managed_hub(&self, me: &UserRow, slug: &str) -> Result<Hub> {
         if !self.teams.role(&me.id, slug)?.is_some_and(Role::manages) {
             return Err(bad(format!("Only an owner or admin of {slug} does that."), 403));
         }

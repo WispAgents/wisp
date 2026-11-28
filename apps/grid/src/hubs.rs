@@ -63,6 +63,15 @@ impl Teams {
         })
     }
 
+    /// The hub of the team with id `team_id`.
+    pub fn hub_by_team(&self, team_id: &str) -> Result<Option<Hub>> {
+        self.db.with(|c| {
+            c.prepare_cached("SELECT id, slug, name, hub_user_id FROM teams WHERE id = ?1 AND hub_user_id IS NOT NULL")?
+                .query_row([team_id], hub_of)
+                .optional()
+        })
+    }
+
     /// Whether an account is a hub's (it never signs in, never counts as a person).
     pub fn is_hub(&self, user_id: &str) -> Result<bool> {
         Ok(self.hub_by_user(user_id)?.is_some())

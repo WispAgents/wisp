@@ -116,8 +116,7 @@ sandbox plugin can keep the sandboxes it makes as peers.
 The hub's own box can make sandboxes for itself (its `Box <handle> <secret>` credential, which the grid takes from a
 hub's box only, counted against the hub's sandbox cap), so `/sandbox`, `sandbox.place` and crew members'
 `sandbox: job` work on a hub as on a laptop. A sandbox the hub owns gets the hub's secrets. `wisp grid init`'s
-agent sets `sandbox: job`; a default of a sandbox for every hub task, and fork PRs always sandboxed, come with the
-GitHub App.
+agent sets `sandbox: job`; a default of a sandbox for every hub task, and fork PRs always sandboxed, come later (§10).
 
 ### 8b. Webhook triggers from the internet (with ADR-0147's tokens)
 
@@ -167,6 +166,35 @@ task's side, crew's places, Automations' words) a hub says its name and a server
 older client ignores `kind`; an older server sends none, which reads as a computer. Settings' *This computer* pane keeps
 its static title (registered before any welcome).
 
+### 8e. The grid's GitHub App (with `GH_TOKEN` as the fallback)
+
+A team installs the grid's GitHub App on its org and picks the repos; its hub gets short-lived tokens for them and
+their webhooks. A grid without an App (grid.json `githubApp`, or `GRID_GITHUB_APP_*`) keeps the `GH_TOKEN` secret.
+
+- **Connecting proves the installer.** GitHub's redirect after an install carries the installation id in its URL, and
+  an id is a guessable number: trusted as is, anyone could tie another org's installation to their team and get
+  tokens for its repos. The App asks GitHub to authorize the installer during the install; the grid trades that code
+  for their token and ties the installation only if it's among theirs (`GET /user/installations`). The state ties the
+  return to the team and the owner or admin who began it, for 15 minutes, once. An installation is one team's
+  (`team_github`, migration 20).
+- **Tokens.** The grid mints a token with the App's key (RS256 JWT, from the `rsa` crate it already has) and keeps one
+  per installation until 5 minutes before its hour ends. A hub's box asks for its own (`GET /api/github/token`, its box
+  secret) every half hour and hands it to `gh auth login --with-token` (stdin) and `gh auth setup-git`, so `gh`, `gh
+  repo clone` and git use it. Its env then carries no `GH_TOKEN` of the team's (an env token would win over gh's own
+  and stop working within the hour). A sandbox has no account to ask with: it starts with the token in its env (made
+  when the hub asks for the sandbox), and a job outlasting the hour falls back to nothing.
+- **Webhooks.** `POST /github/webhook` checks GitHub's signature (`X-Hub-Signature-256`, the App's secret) before
+  reading, finds the team by installation, and passes `pull_request` to wisp.github's `/api/github/webhook` and
+  `issues` to wisp.issues' `/api/issues/webhook` on the team's hub (waking it), as `x-wisp-proxy-via: github` → the
+  `grid:github` set, which reaches those two routes only (people, viewers and keys are denied them). Each plugin makes
+  the poll's own events of it (same payload, same key: the engine fires a trigger once, webhook or poll first),
+  places each in the projects whose `repo:` names that repo (`project` and `cwd`; a trigger's `project:` now matches
+  either), and pushes them (`automations.trigger.push`). Other events aren't worth a wake. `installation.deleted`
+  unties the team.
+- **Reaches** (ADR-0040): the team's page (GitHub section), `wisp team github <team> [connect|disconnect]`, and
+  `grid-client.hub` ops `github`, `github-connect`, `github-disconnect` for agents (connecting still needs the
+  person's browser).
+
 ### 9. The desktop app and the GitHub Action
 
 - **A hub is a machine.** `grid-client` lists the hubs of the signed-in person's teams (`/api/me` gains `hubs`) and
@@ -176,9 +204,8 @@ its static title (registered before any welcome).
 
 ### 10. Later, not here
 
-- A GitHub App the team installs (short-lived per-repo tokens, webhooks feeding `pr.*`/`issue.*` triggers at once),
-  with `GH_TOKEN` as a hub secret meanwhile and for self-hosted grids. Until then, `issue.*` and `pr.*` triggers poll
-  through `gh` as they do on a laptop.
+- `ci.*` from the App's `check_suite`/`workflow_run` webhooks (they poll for now), a sandbox's token renewed past its
+  first hour, and a default of a sandbox for every hub task with fork PRs always sandboxed.
 - Several spaces per team (staging, prod), GitHub OIDC instead of a stored key, members declared in the folder.
 
 ## Consequences

@@ -14,8 +14,8 @@ pub struct Written {
 }
 
 const PROJECT: &str = r"wisp: 1
-# A repo the hub's agents work in. The hub clones it with its GH_TOKEN secret (wisp team secret <team> GH_TOKEN)
-# and fetches it before each task.
+# A repo the hub's agents work in. The hub clones it with the grid's GitHub App (wisp team github <team> connect)
+# or its GH_TOKEN secret (wisp team secret <team> GH_TOKEN), and fetches it before each task.
 projects:
   app:
     path: https://github.com/your-org/your-repo
@@ -38,7 +38,8 @@ crew:
 ";
 
 const TRIGGER: &str = r#"wisp: 1
-# What starts work on the hub. issue.opened polls GitHub with the hub's GH_TOKEN; see the triggers reference for
+# What starts work on the hub. issue.opened comes at once from the GitHub App's webhooks, else polls GitHub with
+# the hub's GH_TOKEN; see the triggers reference for
 # pr.opened, pr.review_requested, ci.failed, schedule, webhook and the rest.
 triggers:
   triage-new-issues:

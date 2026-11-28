@@ -2,7 +2,7 @@
 //! one hub: open it, its people, invite links, deploy keys, secrets, deploys, and deleting it. Account's rows and
 //! forms, one section each; what someone may change shows only to an owner or admin.
 use super::home::{flash, hidden};
-use super::icons::{ARROW, BOLT, CLOUD, CODE, KEY, PLUS, SHARE, SHIELD, STACK, TRASH};
+use super::icons::{ARROW, BOLT, CLOUD, CODE, GITHUB, KEY, PLUS, SHARE, SHIELD, STACK, TRASH};
 use super::layout::{AppPage, Tab, app_page, state_label};
 use super::scripts::{COPY_JS, LIVE};
 use super::time::{ago, until};
@@ -74,6 +74,15 @@ pub struct DeployRow {
     pub started_at: i64,
 }
 
+/// A team's GitHub App, as its page says it.
+#[derive(Debug, Clone, Default)]
+pub struct GithubRow {
+    /// the grid has a GitHub App teams can install
+    pub app: bool,
+    /// connected: the account it's on, who connected it and when
+    pub connected: Option<(String, String, i64)>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TeamPage {
     pub user: PageUser,
@@ -94,6 +103,8 @@ pub struct TeamPage {
     pub deploys: Vec<DeployRow>,
     /// the hub's webhook trigger URLs (owners and admins)
     pub hooks: Vec<HookRow>,
+    /// its GitHub App: whether the grid has one, and the team's installation (ADR-0148 §8e)
+    pub github: GithubRow,
     /// a key or an invite link just made: (what, the value), said this once
     pub fresh: Option<(String, String)>,
     pub csrf: String,
@@ -335,6 +346,27 @@ fn hooks(p: &TeamPage, hidden: &str) -> String {
     )
 }
 
+fn github(p: &TeamPage, hidden: &str) -> String {
+    let base = format!("/teams/{}", esc(&p.slug));
+    let g = &p.github;
+    if !g.app {
+        return format!(
+            r#"<div class="r"><span class="ic">{GITHUB}</span><div class="tx"><b>No GitHub App on this grid</b><small>Give the hub a <code>GH_TOKEN</code> secret above: its gh and git use that.</small></div></div>"#
+        );
+    }
+    match &g.connected {
+        Some((account, by, at)) => format!(
+            r#"<div class="r"><span class="ic">{GITHUB}</span><div class="tx"><b>Connected to {account}</b><small>by {by}, {when} · the hub's gh and git use the App's tokens for the repos you gave it; their pull requests and issues reach its triggers at once</small></div><form class="inline" method="post" action="{base}/github/disconnect" data-confirm="Disconnect GitHub? The hub's agents lose the App's access; a GH_TOKEN secret is used again.">{hidden}<button class="ghost line">Disconnect</button></form></div>"#,
+            account = esc(account),
+            by = esc(by),
+            when = ago(Some(*at), p.now_ms),
+        ),
+        None => format!(
+            r#"<form class="r" method="post" action="{base}/github/connect"><span class="ic">{GITHUB}</span><div class="tx"><b>Connect GitHub</b><small>Install the grid's GitHub App on your org and pick the repos: the hub gets a fresh token for them each hour, and their pull requests and issues reach its triggers at once.</small></div>{hidden}<button class="primary">Connect GitHub</button></form>"#
+        ),
+    }
+}
+
 fn deploys(p: &TeamPage) -> String {
     if p.deploys.is_empty() {
         return format!(
@@ -365,7 +397,7 @@ pub fn team_page(cfg: &PageCfg, p: &TeamPage) -> String {
     let base = format!("/teams/{}", esc(&p.slug));
     let manage = p.manages();
     let nav_more = if manage {
-        r##"<a href="#invites">Invite links</a><a href="#keys">Deploy keys</a><a href="#secrets">Secrets</a><a href="#hooks">Trigger URLs</a>"##
+        r##"<a href="#invites">Invite links</a><a href="#keys">Deploy keys</a><a href="#secrets">Secrets</a><a href="#github">GitHub</a><a href="#hooks">Trigger URLs</a>"##
     } else {
         ""
     };
@@ -394,6 +426,10 @@ pub fn team_page(cfg: &PageCfg, p: &TeamPage) -> String {
       <p class="hint">The hub and its sandboxes start with these: <code>GH_TOKEN</code> for its repos, the harness sign-ins its agents run with. A formula names them; it never holds them.</p>
       <div class="group">{secrets}</div>
 
+      <h2 class="sec" id="github">GitHub</h2>
+      <p class="hint">The hub reaches its repos with the grid's GitHub App, or a <code>GH_TOKEN</code> secret where there's none.</p>
+      <div class="group">{github}</div>
+
       <h2 class="sec" id="hooks">Trigger URLs</h2>
       <p class="hint">A URL starts one of the hub’s webhook triggers from the internet: GitHub, Sentry, Linear. It’s shown once, and the trigger still checks its own secret.</p>
       <div class="group">{hooks}</div>
@@ -402,6 +438,7 @@ pub fn team_page(cfg: &PageCfg, p: &TeamPage) -> String {
             keys = keys(p, &hidden),
             secrets = secrets(p, &hidden),
             hooks = hooks(p, &hidden),
+            github = github(p, &hidden),
         )
     } else {
         String::new()

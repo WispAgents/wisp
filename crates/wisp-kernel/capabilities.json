@@ -88,6 +88,8 @@
       "id": "apikey",
       "allow": ["edge:health", "runtime:*", "session:*", "stuff:read", "stuff:save", "topic:read", "crew:read", "budget:read"],
       "deny": [
+        { "permission": "github:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
+        { "permission": "issues:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
         { "permission": "apikeys:*", "why": "make or revoke API keys" },
         { "permission": "plugins:*", "why": "change plugins" },
         { "permission": "secrets:*", "why": "read secrets" },
@@ -110,6 +112,8 @@
       "id": "hub:member",
       "allow": ["*"],
       "deny": [
+        { "permission": "github:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
+        { "permission": "issues:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
         { "permission": "grid-client:computer", "why": "be one of your computers: a box never gets a laptop token" },
         { "permission": "update:*", "why": "update wisp on a grid box: the grid does" },
         { "permission": "notify:native", "why": "show a desktop notification on a grid box" },
@@ -137,6 +141,8 @@
       "readOnly": true,
       "allow": ["*"],
       "deny": [
+        { "permission": "github:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
+        { "permission": "issues:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
         { "permission": "grid-client:computer", "why": "be one of your computers: a box never gets a laptop token" },
         { "permission": "update:*", "why": "update wisp on a grid box: the grid does" },
         { "permission": "notify:native", "why": "show a desktop notification on a grid box" },
@@ -163,6 +169,8 @@
       "id": "hub:deploy",
       "allow": ["*"],
       "deny": [
+        { "permission": "github:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
+        { "permission": "issues:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
         { "permission": "machines:*", "why": "reach other machines from a grid box" },
         { "permission": "grid-client:*", "why": "change the hub's grid sign-in, its sandboxes or its keys" },
         { "permission": "apikeys:*", "why": "make or revoke keys" },
@@ -189,6 +197,8 @@
       "readOnly": true,
       "allow": ["*"],
       "deny": [
+        { "permission": "github:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
+        { "permission": "issues:webhook", "why": "pass a GitHub event to the hub's triggers: only the grid, which checked GitHub's signature, does" },
         { "permission": "machines:*", "why": "reach other machines from a grid box" },
         { "permission": "grid-client:*", "why": "change the hub's grid sign-in, its sandboxes or its keys" },
         { "permission": "apikeys:*", "why": "make or revoke keys" },
@@ -213,7 +223,8 @@
       { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
     ] },
     { "id": "grid:inbox", "allow": ["channels:inbound"] },
-    { "id": "grid:route", "allow": ["channels:routed"] }
+    { "id": "grid:route", "allow": ["channels:routed"] },
+    { "$comment": "ADR-0148 §8e: a GitHub App webhook the grid checked and passed to a team's hub: it hands GitHub's event to the hub's triggers, nothing else", "id": "grid:github", "allow": ["github:webhook", "issues:webhook"] }
   ],
   "aboveMode": [
     { "permission": "runtime:start{mode:{mode}}", "why": "start a task at {label}, above this task’s {cap}" },

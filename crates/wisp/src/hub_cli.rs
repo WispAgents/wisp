@@ -11,7 +11,7 @@ use crate::code::Opts;
 use crate::scripted::say;
 
 /// The `wisp team` words this file answers.
-pub const OPS: [&str; 22] = [
+pub const OPS: [&str; 23] = [
     "help",
     "hub",
     "open",
@@ -34,6 +34,7 @@ pub const OPS: [&str; 22] = [
     "url",
     "urls",
     "url-revoke",
+    "github",
 ];
 
 pub const USAGE: &str = "wisp team new <team> [name]        a team, and its hub: its own wisp at <team>.<grid>
@@ -50,6 +51,7 @@ wisp team login|logout <team> claude   the hub's Claude sign-in (claude setup-to
 wisp team deploys <team>            what was deployed to the hub, by whom, from where
 wisp team url <team> <trigger>      a URL that starts the hub's webhook trigger from the internet, shown once
 wisp team urls|url-revoke <team> [id]   the hub's trigger URLs; revoke one
+wisp team github <team> [connect|disconnect]   the hub's GitHub App: connected to what; install it; untie it
 wisp team delete <team> --yes       the team, its hub and everything on it";
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
@@ -180,6 +182,10 @@ pub async fn team(c: &Client, o: &Opts) -> Result<i32> {
         }
         "key" | "keys" | "secret" | "login" | "secrets" | "unset" | "logout" => keys_and_secrets(c, &op, &team, o, &st).await?,
         "url" | "urls" | "url-revoke" => trigger_urls(c, &op, &team, o, &st).await?,
+        "github" => {
+            need("")?;
+            github(c, &team, &word(2), &st).await?
+        }
         "deploys" => {
             need("")?;
             let v = hub(json!({ "op": "deploys", "team": team })).await?;
@@ -192,6 +198,43 @@ pub async fn team(c: &Client, o: &Opts) -> Result<i32> {
         say(&out.to_string());
     }
     Ok(0)
+}
+
+/// `wisp team github <team> [connect|disconnect]`: the hub's GitHub App (ADR-0148 §8e).
+async fn github(c: &Client, team: &str, sub: &str, st: &wisp_cli_core::Style) -> Result<Value> {
+    let op = match sub {
+        "" | "show" | "status" => "github",
+        "connect" => "github-connect",
+        "disconnect" => "github-disconnect",
+        _ => return Err(CliError::usage("wisp team github <team> [connect|disconnect]")),
+    };
+    let v = c.cmd("grid-client.hub", json!({ "op": op, "team": team })).await?;
+    match op {
+        "github-connect" => {
+            say(&format!("  Open this to install the grid's GitHub App on your org and pick {team}'s repos:"));
+            say(&format!("    {}", paint(st, BOLD, s(&v, "url"))));
+            say(&paint(st, DIM, "    signed in to the grid in that browser as you; the link holds for 15 minutes"));
+        }
+        "github-disconnect" => {
+            let was = v["disconnected"] == true;
+            say(&format!(
+                "  {} {}",
+                paint(st, GREEN, "✓"),
+                if was { "GitHub untied: the hub uses a GH_TOKEN secret, if set" } else { "it wasn't connected" }
+            ));
+        }
+        _ => match (v["app"].is_null(), v["connected"].is_null()) {
+            (true, _) => say("  This grid has no GitHub App: give the hub a GH_TOKEN secret (wisp team secret <team> GH_TOKEN)."),
+            (false, true) => say(&format!("  Not connected. wisp team github {team} connect")),
+            (false, false) => say(&format!(
+                "  {} connected to {} by {}",
+                paint(st, GREEN, "●"),
+                paint(st, BOLD, s(&v["connected"], "account")),
+                s(&v["connected"], "connectedBy")
+            )),
+        },
+    }
+    Ok(v)
 }
 
 /// `wisp team key|keys|secret|login|secrets|unset|logout …`: a hub's deploy keys and secrets.

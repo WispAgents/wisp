@@ -424,6 +424,12 @@ mod tests {
         assert!(!allowed(&Caller::set("preview"), "session:write"));
         assert!(allowed(&Caller::set("grid:inbox"), "channels:inbound"));
         assert!(!allowed(&Caller::set("grid:inbox"), "channels:routed"));
+        // a GitHub App webhook the grid checked reaches the hub's triggers' routes only, and no person or key posts one
+        assert!(allowed(&Caller::set("grid:github"), "github:webhook") && allowed(&Caller::set("grid:github"), "issues:webhook"));
+        assert!(!allowed(&Caller::set("grid:github"), "automations:run") && !allowed(&Caller::set("grid:github"), "runtime:start"));
+        for s in ["hub:member", "hub:viewer", "hub:deploy", "hub:plan", "apikey"] {
+            assert!(!allowed(&Caller::set(s), "github:webhook") && !allowed(&Caller::set(s), "issues:webhook"), "{s}");
+        }
         assert!(allowed(&Caller::plugin("wisp.runtime"), "runtime:start"));
         assert!(!allowed(&Caller::plugin("wisp.runtime"), "git:push"));
         assert!(!allowed(&Caller::set("nobody"), "a:b"));

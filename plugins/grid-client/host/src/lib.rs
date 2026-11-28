@@ -22,6 +22,7 @@ mod accounts;
 mod calls;
 mod cloud;
 pub mod computer;
+mod github_token;
 mod hooks;
 mod hub_peers;
 mod hubs;
@@ -175,6 +176,8 @@ impl Plugin for GridClientPlugin {
             let _ = slot.set(st.clone());
             computer::resume(&st).await;
             view::publish(&st);
+            // a team hub's box keeps its GitHub App token fresh for gh and git (ADR-0148 §8e)
+            github_token::start(&st);
             let st2 = st.clone();
             st.ctx.spawn(async move {
                 calls::warn("the account's computers", peers::sync_computers(&st2).await);
