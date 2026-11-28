@@ -150,14 +150,55 @@
       ]
     },
     {
-      "$comment": "ADR-0147: a team's deploy key (wgh_, rights deploy): plan and apply the team's folder",
+      "$comment": "ADR-0147: a team's deploy key (wgh_, rights deploy): plan and apply the team's folder. Each kind reads and applies through its own plugin's commands, so the set reaches config; it does no work and reads no secret",
       "id": "hub:deploy",
-      "allow": ["edge:health", "resources:kinds", "resources:plan", "resources:apply", "resources:export", "resources:read", "resources:refresh"]
+      "allow": ["*"],
+      "deny": [
+        { "permission": "machines:*", "why": "reach other machines from a grid box" },
+        { "permission": "grid-client:*", "why": "change the hub's grid sign-in, its sandboxes or its keys" },
+        { "permission": "apikeys:*", "why": "make or revoke keys" },
+        { "permission": "update:*", "why": "update wisp on a grid box: the grid does" },
+        { "permission": "notify:native", "why": "show a desktop notification on a grid box" },
+        { "permission": "proc:spawn{sandbox:none}", "why": "run a process outside the box sandbox" },
+        { "permission": "secrets:read", "why": "read the hub's secrets: a deploy names them, the grid sets them" },
+        { "permission": "resources:secretSet", "why": "set secrets: they're set on the grid, never by a deploy" },
+        { "permission": "resources:secretRemove", "why": "remove secrets: they're set on the grid, never by a deploy" },
+        { "permission": "runtime:create", "why": "start a task: a deploy changes what's declared, it does no work" },
+        { "permission": "runtime:start", "why": "start a task: a deploy changes what's declared, it does no work" },
+        { "permission": "runtime:followUp", "why": "send a task a message: a deploy does no work" },
+        { "permission": "session:*", "why": "read or change a task: a deploy changes what's declared" },
+        { "permission": "crew:wake", "why": "wake a crew member: a deploy does no work" },
+        { "permission": "automations:fire", "why": "fire a trigger: a deploy does no work" },
+        { "permission": "workflows:run", "why": "run a workflow: a deploy does no work" },
+        { "permission": "accounts:login*", "why": "sign the hub in to a harness: an owner does, on the grid" },
+        { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
+      ]
     },
     {
-      "$comment": "ADR-0147: a team's plan-only key (wgh_, rights plan): what a pull request would change",
+      "$comment": "ADR-0147: a team's plan-only key (wgh_, rights plan): what a pull request would change; reads only",
       "id": "hub:plan",
-      "allow": ["edge:health", "resources:kinds", "resources:plan", "resources:export", "resources:read"]
+      "readOnly": true,
+      "allow": ["*"],
+      "deny": [
+        { "permission": "machines:*", "why": "reach other machines from a grid box" },
+        { "permission": "grid-client:*", "why": "change the hub's grid sign-in, its sandboxes or its keys" },
+        { "permission": "apikeys:*", "why": "make or revoke keys" },
+        { "permission": "update:*", "why": "update wisp on a grid box: the grid does" },
+        { "permission": "notify:native", "why": "show a desktop notification on a grid box" },
+        { "permission": "proc:spawn{sandbox:none}", "why": "run a process outside the box sandbox" },
+        { "permission": "secrets:read", "why": "read the hub's secrets: a deploy names them, the grid sets them" },
+        { "permission": "resources:secretSet", "why": "set secrets: they're set on the grid, never by a deploy" },
+        { "permission": "resources:secretRemove", "why": "remove secrets: they're set on the grid, never by a deploy" },
+        { "permission": "runtime:create", "why": "start a task: a deploy changes what's declared, it does no work" },
+        { "permission": "runtime:start", "why": "start a task: a deploy changes what's declared, it does no work" },
+        { "permission": "runtime:followUp", "why": "send a task a message: a deploy does no work" },
+        { "permission": "session:*", "why": "read or change a task: a deploy changes what's declared" },
+        { "permission": "crew:wake", "why": "wake a crew member: a deploy does no work" },
+        { "permission": "automations:fire", "why": "fire a trigger: a deploy does no work" },
+        { "permission": "workflows:run", "why": "run a workflow: a deploy does no work" },
+        { "permission": "accounts:login*", "why": "sign the hub in to a harness: an owner does, on the grid" },
+        { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
+      ]
     },
     { "id": "preview", "allow": ["topic:read", "session:read", "stuff:read", "blob:read"], "deny": [
       { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }

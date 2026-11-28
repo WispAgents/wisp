@@ -165,6 +165,10 @@ async fn dev(args: &[String]) -> i32 {
         eprintln!("  ✗ {}: {e}", data.display());
         return 1;
     }
+    // a master key of its own (secrets/master.json), so a dev grid keeps sandboxes' sign-ins and hubs' secrets
+    if let Err(e) = crate::secrets::ensure_master(&data) {
+        eprintln!("  ! no master key in {}: {e} (no sandboxes, no hub secrets)", data.display());
+    }
     // dev only: the fake harnesses and the web bundle for the boxes too, when set here; never a real CLI unasked
     let env: Vec<(String, String)> = std::env::vars().collect();
     let (pass, said) = dev_harness_env(&env, &data, args.iter().any(|a| a == "--real-harnesses"));

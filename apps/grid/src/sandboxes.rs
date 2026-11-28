@@ -68,7 +68,7 @@ pub struct Sandboxes {
 
 impl Sandboxes {
     fn secrets(&self) -> Result<&Secrets> {
-        self.secrets.as_deref().ok_or_else(|| bad("This grid has no master key, so it keeps no sandboxes.", 503))
+        self.secrets.as_deref().ok_or_else(|| bad("This grid has no master key, so it keeps no sandboxes and no hub secrets (GRID_MASTER_KEY, or secrets/master.json in its data folder).", 503))
     }
 
     pub fn get(&self, id: &str) -> Result<Option<SandboxRow>> {

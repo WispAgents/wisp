@@ -369,3 +369,6 @@ command!(Reply = "grid-client.reply" : ReplyArgs => Replied);
 command!(KeyList = "grid-client.keys" read yes : NoArgs => Keys);
 command!(KeyCreate = "grid-client.keysCreate" : KeyArgs => NewKey);
 command!(KeyRevoke = "grid-client.keysRevoke" : IdArgs => Value);
+
+mod hubs;
+pub use hubs::*;

@@ -313,8 +313,15 @@ mod tests {
             assert!(!may("hub:member", p), "a member may not {p}");
             assert!(!may("hub:viewer", p), "a viewer may not {p}");
         }
-        assert!(may("hub:deploy", "resources:apply") && may("hub:deploy", "resources:plan"));
-        assert!(!may("hub:deploy", "runtime:create") && !may("hub:deploy", "resources:secretSet"));
-        assert!(may("hub:plan", "resources:plan") && !may("hub:plan", "resources:apply"));
+        // a deploy reaches what each kind reads and applies through (crew, triggers, projects…), and does no work
+        assert!(may("hub:deploy", "resources:apply") && may("hub:deploy", "resources:plan") && may("hub:deploy", "crew:read"));
+        for p in ["runtime:create", "session:followUp", "resources:secretSet", "secrets:read{key:x}", "machines:route", "automations:fire"]
+        {
+            assert!(!may("hub:deploy", p), "a deploy key may not {p}");
+            assert!(!may("hub:plan", p), "a plan key may not {p}");
+        }
+        // a plan key holds the same set, read-only (the kernel refuses its writes: wisp-kernel kernel_dispatch.rs)
+        assert!(wisp_kernel::caps::set_of("hub:plan").is_some_and(|s| s.read_only));
+        assert!(!wisp_kernel::caps::set_of("hub:deploy").is_some_and(|s| s.read_only));
     }
 }
