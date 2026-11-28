@@ -42,10 +42,14 @@ fn wisp_all(dir: &Path, port: u16, lines: &[Vec<String>]) -> Vec<(i32, String, S
 /// `words::VERB_PATHS`, read from its source (one `vp("cmd", &[verbs…], …)` per line), so this test follows the table.
 fn built_in_paths() -> Vec<Vec<String>> {
     let src = include_str!("../src/words.rs");
+    // the table's entries with their whitespace taken out: rustfmt spreads an entry over lines once it's past max_width
+    // (`vp(\n "trigger",\n &[\n "add",…`), so reading it line by line missed those
+    let table = src.split("pub const VERB_PATHS").nth(1).unwrap().split("\n];").next().unwrap();
+    let table: String = table.lines().map(|l| l.split("//").next().unwrap()).collect::<String>().split_whitespace().collect();
     let mut out = Vec::new();
-    for line in src.lines().map(str::trim).filter(|l| l.starts_with("vp(\"")) {
-        let cmd = line.trim_start_matches("vp(\"").split('"').next().unwrap().to_owned();
-        let verbs = line.split("&[").nth(1).unwrap().split(']').next().unwrap();
+    for entry in table.split("vp(\"").skip(1) {
+        let cmd = entry.split('"').next().unwrap().to_owned();
+        let verbs = entry.split("&[").nth(1).unwrap().split(']').next().unwrap();
         for v in verbs.split(',').map(|v| v.trim().trim_matches('"')).filter(|v| !v.is_empty()) {
             out.push(vec![cmd.clone(), v.to_owned()]);
         }
