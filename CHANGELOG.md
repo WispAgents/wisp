@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Webhook triggers work from the internet on any of your computers, through the grid.** Open a saved webhook
+  trigger and press **Make a grid URL**. You get `https://<computer>--<you>.<grid>/_hook/wgh_…`: the address names the
+  computer that runs the trigger, and the token is the only way in, so a trigger's name alone opens nothing. wisp shows
+  the URL once (**Copy URL**); the list shows each live one by its last four characters, with **Revoke**. Calls go
+  through the computer's tunnel with no open port, and the trigger's secret or signature is still checked there. While
+  the computer is offline the grid holds its calls (encrypted, up to a day) and delivers them in order when it's back.
+  From a terminal: `wisp trigger url <name>`, `wisp trigger urls`, `wisp trigger url-revoke <id>`.
 - **Zen mode on one task.** **Ctrl+.** (⌃. on a Mac), or **⋯** → **Zen mode**, shows only the messages and answers in
   that task's chat: no tool calls, thinking or in-between steps, whatever Settings → Chat says for the others. Press it
   again to leave; each task remembers it in this browser.

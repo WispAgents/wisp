@@ -51,6 +51,8 @@ mod events;
 mod forms;
 #[path = "edge_handoff.rs"]
 mod handoff;
+#[path = "edge_hook.rs"]
+mod hook;
 #[path = "edge_inbox.rs"]
 mod inbox;
 #[path = "edge_keys.rs"]
@@ -96,6 +98,10 @@ pub struct Grid {
     pub accounts: Accounts,
     /// API keys (`wgk_…`): a script's way in to its user's own wisp (`keys.rs`)
     pub keys: crate::keys::ApiKeys,
+    /// a computer's webhook trigger URLs (`wgh_…`, `hooks.rs`, ADR-0147)
+    pub hooks: crate::hooks::Hooks,
+    /// webhook calls held for an offline computer until its tunnel is back (`hook_held.rs`, ADR-0147)
+    pub held: Arc<crate::hook_held::HookHeld>,
     /// per-user and per-address rate limits (a minute's window)
     limits: crate::http::Limiter,
     /// share passwords' scrypt, a few at a time on the blocking pool (`edge_shares.rs` `off_the_workers`); public so
@@ -336,6 +342,8 @@ impl Grid {
             }
             (_, ["api", "keys"]) => self.keys_route(&method, None, &head.headers, &bytes, &who),
             (_, ["api", "keys", id]) => self.keys_route(&method, Some(id), &head.headers, &bytes, &who),
+            (_, ["api", "hooks"]) => self.hooks_route(&method, None, &head.headers, &bytes, &who),
+            (_, ["api", "hooks", id]) => self.hooks_route(&method, Some(id), &head.headers, &bytes, &who),
             (_, ["api", "sandboxes", ..]) => self.sandboxes_route(&method, &parts, &head.headers, &bytes, &who).await,
             (_, ["api", "teams", ..]) => self.teams_route(&method, &parts, &head.headers, &bytes, &who),
             (_, ["api", "channels", which @ ("url" | "rotate" | "key")]) => {

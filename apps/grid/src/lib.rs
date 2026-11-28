@@ -24,6 +24,8 @@ pub mod trust;
 pub mod accounts;
 pub mod auth;
 pub mod handoff;
+pub mod hook_held;
+pub mod hooks;
 pub mod keys;
 #[path = "keys_fresh.rs"]
 pub mod keys_fresh;

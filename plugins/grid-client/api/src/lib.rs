@@ -326,6 +326,50 @@ pub struct NewKey {
     pub key: String,
 }
 
+/// `grid-client.hooks` and `grid-client.hooksCreate`: a webhook trigger on this computer (ADR-0147).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "grid-client/")]
+pub struct HookArgs {
+    /// the webhook trigger's name; `grid-client.hooks` lists every trigger's when it's empty
+    #[serde(default)]
+    pub trigger: String,
+}
+
+/// A URL that starts one of this computer's webhook triggers through the grid, as wisp shows it: never its token.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "grid-client/")]
+pub struct TriggerHook {
+    pub id: String,
+    pub trigger: String,
+    /// the computer it starts work on (its name on the grid)
+    #[serde(default)]
+    pub computer: String,
+    /// the token's last four characters, to tell URLs apart
+    pub hint: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub last_used_at: Option<i64>,
+}
+
+/// A URL just made: the only answer that carries it. wisp keeps it nowhere (no row, no topic, no log).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "grid-client/")]
+pub struct NewHook {
+    pub id: String,
+    pub trigger: String,
+    #[serde(default)]
+    pub computer: String,
+    pub hint: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    /// `https://<computer>--<handle>.<domain>/_hook/wgh_…`: POST to it
+    pub url: String,
+}
+
 macro_rules! command {
     ($name:ident = $id:literal $(read $ro:ident)? : $args:ty => $out:ty) => {
         #[derive(Debug)]
@@ -369,3 +413,6 @@ command!(Reply = "grid-client.reply" : ReplyArgs => Replied);
 command!(KeyList = "grid-client.keys" read yes : NoArgs => Keys);
 command!(KeyCreate = "grid-client.keysCreate" : KeyArgs => NewKey);
 command!(KeyRevoke = "grid-client.keysRevoke" : IdArgs => Value);
+command!(HookList = "grid-client.hooks" read yes : HookArgs => Vec<TriggerHook>);
+command!(HookCreate = "grid-client.hooksCreate" : HookArgs => NewHook);
+command!(HookRevoke = "grid-client.hooksRevoke" : IdArgs => Value);
