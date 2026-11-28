@@ -15,6 +15,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Home's tips link to the right guide and show three at a time.** Each tip opened `trywisp.dev/guides#<id>`, a page
+  with no such section; each now opens the docs section that explains it. Home shows three tips, picked at random on
+  each visit (a setup card such as Sign in to GitHub takes one of the three), and **More tips** moves on to three more
+  until every tip has shown. The six old tips are now 18, reworded to match today's controls (**Compare with another
+  agent…**, **⋯ → Compare runs**). Tips about the **+** menu wait until New task shows its **+**.
 - A picture or video an agent shows in its answer holds its place with a loading skeleton until it arrives, instead of
   an empty strip with only its caption. It also arrives sooner: the server reads only the bytes asked for (a video starts
   on its first 4 MiB instead of the whole file being read for every seek), checks only the files that path can name

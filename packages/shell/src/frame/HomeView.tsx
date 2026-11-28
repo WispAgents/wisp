@@ -16,7 +16,7 @@ import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
 import { Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, on, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
 import { githubTip, tools as githubTools } from './github-tip.ts';
-import { tipPick } from './home-tips.ts';
+import { TIPS_SHOWN, tipOrder as tipsFor, tipPage } from './home-tips.ts';
 import { computed, entityKey, newRowId, ownerOf, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip, type SetupTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
@@ -79,14 +79,9 @@ interface SettingRow {
   readonly value: unknown;
 }
 
-const TIPS = ['goal1', 'goal2', 'vs', 'compare', 'auto', 'limit'] as const;
-
 /** A compare run's button on New task (the `i`th), for its picker to anchor on; undefined when there's none. */
 export const compareButton = (i: number | undefined): Element | undefined =>
   i === undefined ? undefined : document.querySelectorAll('[data-part="launcher.compare.runner"]')[i];
-/** the tips about Auto: shown only while its switch is on (owner #37) */
-const AUTO_TIPS: ReadonlySet<string> = new Set(['auto', 'limit']);
-const GUIDE = 'https://trywisp.dev/guides';
 
 /** New task's Worktree / In place default (wisp.worktrees declares it). */
 const WORKTREE_KEY = 'worktrees.worktree';
@@ -321,6 +316,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const [formula, setFormula] = createSignal<FormulaPick>();
   const [where, setWhere] = createSignal<string | undefined>(undefined); // a project id, 'none', or the first project
   const [tipAt, setTipAt] = createSignal(0);
+  // each visit to Home draws its own order of tips
+  const tipSeed = Math.floor(Math.random() * 2 ** 32);
   // what Auto would run for the prompt (v1 auto-preview.js): asked after a pause in typing, the newest answer wins;
   // kept when you then pick your own harness, so the task tells Auto what it had shown (autoOverride)
   const [preview, setPreview] = createSignal<AutoPreview | undefined>(undefined);
@@ -789,8 +786,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     ...((f) => (f ? [{ id: 'formula', icon: 'file' as const, label: t('shell.home.formulaChip', { name: f.name }), removeLabel: t('shell.home.formulaOff'), onRemove: () => setFormula(undefined) }] : []))(formula()),
   ];
   const pluginTips = useSignal(computed(() => (shell.homeTips?.()() ?? []).filter((d) => d.offered?.(d.client) ?? true)));
-  const offeredTips = (): readonly string[] => (autoOn() ? TIPS : TIPS.filter((x) => !AUTO_TIPS.has(x)));
-  // UX 2026-11-18 #8: one tip at a time, the setup cards (GitHub, the Grid) among them; More tips moves one on
+  // three tips, in an order drawn at random for this visit; a setup card (GitHub, the Grid) takes one row of the three,
+  // and More tips moves on to the next three
+  const tipOrder = createMemo(() => tipsFor(tipSeed, { autoOn: autoOn(), firstRun: firstRun() }));
   const setupTips = (): SetupTip[] => [
     ...(githubTip(ghTools())
       ? [{ kind: 'tool' as const, icon: 'github' as const, title: t('shell.tips.github'), body: t('shell.tips.githubBody'), cta: t('shell.tips.signIn'), onClick: () => settingsSheet('accounts') }]
@@ -798,10 +796,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     // plugins' set-up tips (wisp.grid-client: Reach this wisp from anywhere, never on a grid box; docs/ux/2026-11-18-grid.md #9)
     ...pluginTips().map((d): SetupTip => ({ kind: 'grid', icon: d.icon, title: d.title(), body: d.body(), cta: d.cta(), onClick: () => d.open({ client: d.client, settings: settingsSheet }) })),
   ];
-  const tipNow = () => tipPick(tipAt(), setupTips().length, offeredTips());
+  const tipNow = createMemo(() => tipPage(tipAt(), setupTips().length, tipOrder(), TIPS_SHOWN));
   const tips = (): PlainTip[] =>
-    ((p) => (p?.kind === 'tip' ? [{ before: t(`shell.tips.${p.id}`), bold: t(`shell.tips.${p.id}b`), after: t(`shell.tips.${p.id}a`), href: `${GUIDE}#${p.id}` }] : []))(tipNow());
-  const setupNow = (): SetupTip[] => ((p) => (p?.kind === 'setup' ? setupTips().slice(p.i, p.i + 1) : []))(tipNow());
+    tipNow().flatMap((p) => (p.kind === 'tip' ? [{ before: t(`shell.tips.${p.tip.id}`), bold: t(`shell.tips.${p.tip.id}b`), after: t(`shell.tips.${p.tip.id}a`), href: p.tip.href }] : []));
+  const setupNow = (): SetupTip[] => tipNow().flatMap((p) => (p.kind === 'setup' ? setupTips().slice(p.i, p.i + 1) : []));
   // the footer's tools, one definition each: the old footer (the phone's sheet, the first run) and the desktop's one
   // footer (docs/ux/2026-11-18-desktop.md #3) draw the same controls
   const whereTool = (): LauncherTool =>
