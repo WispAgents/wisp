@@ -8,7 +8,7 @@
 import { parsePick } from '@wisp/shell/pure';
 import { createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, onMount, Show, Switch, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
-import { RunnerPicker, cronWords, projectList, useShell } from '@wisp/shell';
+import { RunnerPicker, cronWords, projectList, useHere, useShell } from '@wisp/shell';
 import {
   AutoFoot,
   AutoList,
@@ -51,6 +51,7 @@ import {
   keyOfSpec,
   kindOf,
   pick,
+  projectItems,
   readBack,
   specOfEdit,
   specOfForm,
@@ -71,6 +72,7 @@ export interface PageParams {
 export default function AutomationsPage(props: { readonly client: PluginClient; readonly params: PageParams }): JSX.Element {
   const c = props.client;
   const peer = c.home;
+  const here = useHere(); // a team's hub: its triggers' words say the hub, not this machine
   const projectFilter = useSignal(useShell().projectFilter?.value ?? ((): string | undefined => undefined)); // a new trigger starts in it
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
   const [tab, setTab] = createSignal<'recipes' | 'triggers'>(props.params.tab);
@@ -212,7 +214,11 @@ export default function AutomationsPage(props: { readonly client: PluginClient; 
             })}
             empty={say('automations.page.noTriggers')}
             add={{ label: say('automations.page.newTrigger'), onClick: () => setEditing({}) }}
-            hint={[say('automations.page.triggersHint1'), { code: 'gh' }, say('automations.page.triggersHint2')]}
+            hint={
+              here.hub()
+                ? [say('automations.page.triggersHintHub1'), { code: 'GH_TOKEN' }, say('automations.page.triggersHintHub2')]
+                : [say('automations.page.triggersHint1'), { code: 'gh' }, say('automations.page.triggersHint2')]
+            }
           />
         </Match>
         <Match when={tab() === 'recipes'}>
@@ -355,7 +361,7 @@ function TriggerForm(props: {
           aria-label={say('automations.form.project')}
           value={f().project}
           onChange={(v) => ((picked = true), set({ project: v }))}
-          items={[...(TASK_KINDS.has(kind()) || members().length ? [{ value: '', label: anyProject() }] : []), ...projects().map((p) => ({ value: p.path, label: p.name }))]}
+          items={[...(TASK_KINDS.has(kind()) || members().length ? [{ value: '', label: anyProject() }] : []), ...projectItems(projects(), f().project)]}
         />
       </AutoRow>
       <Show when={kind() === 'schedule'}>

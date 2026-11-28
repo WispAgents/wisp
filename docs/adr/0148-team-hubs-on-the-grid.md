@@ -150,6 +150,22 @@ GitHub App.
 - **Any harness in a sandbox**, as wisp.sandbox's `may_start` already said: a crew member with `sandbox: job` was refused
   anything but Claude. `wisp grid init`'s triager runs on opencode's free model, which needs no sign-in.
 - **A queued crew job is `queued`** in a trigger's log, never a failure.
+- **Its sandboxes sleep.** Only a write is use: wisp's edge counts a `POST /api/cmd` or a sync `mutate` only for a
+  command that isn't read-only (a link's hello, sub or window never). The grid leaves use on those two routes to the
+  box's own `lastActivityAt`, never holds a box up under a passive event stream (someone watching), and doesn't touch a
+  running box for a passive request. The grid transport connects with a passive look first (it wakes only an asleep
+  box), wisp.sandbox's owner check waits one tick after start (the saved state says "online"), and crew counts live
+  jobs without asking an asleep sandbox (a live turn keeps a box up). Each of these kept a job's sandbox up for good.
+- **A next wake survives a stop at start:** a box says no `nextWakeAt` until its plugins load; for its first minute the
+  one it had (still ahead) stands in, so a grid restart then doesn't lose a hub's schedule.
+
+### 8d. A hub is called by its name
+
+`PeerInfo` (the sync welcome) gains an optional `kind`, `"hub"` on a team's hub (`WISP_HUB=1`), and the grid starts a
+hub's box with `WISP_NAME="<Team> hub"`. Where the UI says "This computer" (New task's place, the list's computer, the
+task's side, crew's places, Automations' words) a hub says its name and a server icon (`@wisp/shell`'s `useHere`). An
+older client ignores `kind`; an older server sends none, which reads as a computer. Settings' *This computer* pane keeps
+its static title (registered before any welcome).
 
 ### 9. The desktop app and the GitHub Action
 

@@ -61,6 +61,7 @@ import { barArgs, fileRunner } from './file-runner.ts';
 import { TEAMS_SETTING, presetsOf, teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
 import type { DelegatePlace } from './DelegatePanel.tsx';
 import '../i18n/home.ts';
+import { useHere } from './use-here.ts';
 
 // Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
 const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
@@ -88,6 +89,7 @@ const WORKTREE_KEY = 'worktrees.worktree';
 
 export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const shell = useShell();
+  const here = useHere();
   // the harness picker's code: fetched once the first screen is drawn (ADR-0105), so the first press finds it
   shell.afterFirstScreen?.(() => void pickerPart.load().catch(() => undefined));
   // the phone apps (Android, iPhone): New task's own bar; set once, as the platform never changes
@@ -737,6 +739,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           (p) => shell.client.peers.name(p as PeerId),
           t,
           targets().map((d) => ({ id: d.id, label: d.label(), icon: d.icon })),
+          { label: here.name(), icon: here.icon() },
         ),
         { kind: 'separator' },
         { value: 'add', label: t('shell.home.addMachine'), icon: 'plus' },
@@ -748,7 +751,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // where a delegate can run away from the lead (v1 team.js whereMenu): this computer when the lead is elsewhere, and
   // every other machine
   const delegatePlaces = (): DelegatePlace[] => [
-    ...(target() === home ? [] : [{ id: 'here', label: t('shell.card.thisComputer'), icon: 'laptop' as const }]),
+    ...(target() === home ? [] : [{ id: 'here', label: here.name(), icon: here.icon() }]),
     ...runOnPeers()
       .filter((p) => p !== home && p !== target())
       .map((p) => ({ id: p, label: shell.client.peers.name(p as PeerId), icon: 'server' as const })),
@@ -806,9 +809,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     tool(
       'where',
       'launcher.where',
-      placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'),
+      placeOf()?.icon ?? (target() === home ? here.icon() : 'server'),
       // a phone's setup chip names the place in two words (UX 2026-11-18 phone #5); the sentence stays its tooltip
-      placeOf()?.label() ?? (target() === home ? t(shell.platform.phone ? 'shell.card.thisComputer' : 'shell.home.where') : shell.client.peers.name(target())),
+      placeOf()?.label() ?? (target() === home ? (here.hub() ? t('shell.home.whereHub', { name: here.name() }) : t(shell.platform.phone ? 'shell.card.thisComputer' : 'shell.home.where')) : shell.client.peers.name(target())),
       t('shell.home.where'),
       {
         text: target() !== home || placeOf() !== undefined,
@@ -831,7 +834,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                 agent: agent(),
                 run: [agentName(t, harnesses(), agent()), agent() === 'auto' ? (shown()?.label ?? '') : runnerPick({ agent: agent(), name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: '', fallback: defaultName(agent(), t('shell.runner.default')) })].filter(Boolean).join(' · '),
                 logo: agent() === 'auto' ? undefined : harnessOf(harnesses(), agent()).logo,
-                place: { icon: placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), label: placeOf()?.label() ?? (target() === home ? t('shell.card.thisComputer') : shell.client.peers.name(target())), title: t('shell.home.where') },
+                place: { icon: placeOf()?.icon ?? (target() === home ? here.icon() : 'server'), label: placeOf()?.label() ?? (target() === home ? here.name() : shell.client.peers.name(target())), title: t('shell.home.where') },
                 placeAct: whereAct(),
               }}
               team={team()}
@@ -954,11 +957,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   };
   onCleanup(() => releaseRunOn(runOnTarget));
   const runOnSelect = (): NonNullable<LauncherProps['runOn']> => {
-    const place = placeOf()?.label() ?? (target() === home ? t('shell.card.thisComputer') : shell.client.peers.name(target()));
+    const place = placeOf()?.label() ?? (target() === home ? here.name() : shell.client.peers.name(target()));
     const label = whereHow() ? `${place} · ${whereHow()}` : place;
     return {
       label: t('shell.home.on'),
-      select: { label, colors: [], icon: placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), title: t('shell.home.whereHow'), ariaLabel: `${t('shell.home.whereHow')}: ${label}`, onOpen: () => openRunOn(shell, runOnTarget, t('shell.home.whereHow')) },
+      select: { label, colors: [], icon: placeOf()?.icon ?? (target() === home ? here.icon() : 'server'), title: t('shell.home.whereHow'), ariaLabel: `${t('shell.home.whereHow')}: ${label}`, onOpen: () => openRunOn(shell, runOnTarget, t('shell.home.whereHow')) },
     };
   };
   // the chip names a declared goal it sends by name, else what Done when says

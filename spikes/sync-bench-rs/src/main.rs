@@ -261,6 +261,7 @@ fn v2(evs: &[Ev], seconds: f64, open: impl Fn(u64) -> String) -> Run {
         proto_min: 2,
         proto_max: 2,
         plugins: vec![],
+        kind: None,
     };
     let mut server = SyncServer::new(SyncOptions::new(
         "E",

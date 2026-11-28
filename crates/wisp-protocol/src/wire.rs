@@ -69,6 +69,11 @@ pub struct PeerInfo {
     pub proto_min: u32,
     pub proto_max: u32,
     pub plugins: Vec<PeerPlugin>,
+    /// what this wisp is, when it isn't a person's own computer: `"hub"`, a team's hub on a grid (ADR-0148), which
+    /// its UI names by its name ("Acme hub") where it says "This computer" anywhere else. Absent: a computer
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub kind: Option<String>,
 }
 
 // ---------- client → server ----------

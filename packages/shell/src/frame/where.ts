@@ -20,10 +20,11 @@ export function whereItems(
   name: (p: string) => string,
   t: (k: string) => string,
   targets: readonly WhereTarget[] = [],
+  here?: { readonly label: string; readonly icon: IconName },
 ): MenuEntry[] {
   const others = peers.filter((p) => p !== home);
   return [
-    { value: home, label: t('shell.card.thisComputer'), icon: 'laptop', checked: picked === home },
+    { value: home, label: here?.label ?? t('shell.card.thisComputer'), icon: here?.icon ?? 'laptop', checked: picked === home },
     ...others.map((p): MenuEntry => ({ value: p, label: name(p), icon: 'server', checked: picked === p })),
     ...targets.map((x): MenuEntry => ({ value: targetValue(x.id), label: x.label, icon: x.icon, checked: picked === targetValue(x.id) })),
   ];

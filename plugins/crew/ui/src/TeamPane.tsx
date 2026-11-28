@@ -5,7 +5,7 @@
 // task of its own. A sideTabs pane: its tab shows only while the task has such jobs (later.ts).
 import { createMemo, createSignal, createEffect, For, Show, onCleanup, type Accessor, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
-import { useShell } from '@wisp/shell';
+import { useHere, useShell } from '@wisp/shell';
 import { Avatar, Button, Dialog, Each, Face, ListRow, Markdown, Pill, Stack, TeamPlace, TeamTime, Text, useSignal } from '@wisp/ui';
 import { crewData } from './data.ts';
 import { t } from './i18n.ts';
@@ -126,6 +126,7 @@ export default function TeamPane(props: { readonly client: PluginClient; readonl
   const jobs = useSignal(data.jobs);
   const members = useSignal(data.members);
   const harnesses = useSignal(useShell().harnesses());
+  const here = useHere();
   const tasks = useSignal(subagentData(c).tasks);
   const steps = useSignal(subagentData(c).steps);
   const harnessName = (id: string): string => harnesses().find((h) => h.id === id)?.name ?? id;
@@ -138,7 +139,7 @@ export default function TeamPane(props: { readonly client: PluginClient; readonl
   const rows = createMemo((): TeamRow[] => {
     const l = lead();
     const all: TeamRow[] = [
-      ...teamRows(jobs(), props.task, (id) => members().find((m) => m.id === id), say, c.home),
+      ...teamRows(jobs(), props.task, (id) => members().find((m) => m.id === id), say, c.home, here.hub() ? here.name() : undefined),
       ...delegateRows(tasks(), props.task, harnessName, say),
       ...builtinRows(steps(), props.task, l?.agent ?? '', String(l?.summary?.['model'] ?? ''), l?.state === 'running', harnessName, say, cwdOf(l)),
     ];

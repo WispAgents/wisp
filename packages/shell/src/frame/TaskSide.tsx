@@ -4,6 +4,7 @@
 import '../i18n/lazy.ts';
 import { createMemo, type JSX } from 'solid-js';
 import { worktreePath } from './change-where.ts';
+import { useHere } from './use-here.ts';
 import { TaskDetails } from '@wisp/ui';
 import { modelWords } from './run-words.ts';
 import { statusOf } from './rows-view.ts';
@@ -15,6 +16,7 @@ import type { SessionRow } from '../rows.ts';
 /** The task's details, with what plugins pin beside the turns (`extra`, the computer's column only). */
 export function TaskSide(props: { readonly p: TaskPage; readonly s: () => SessionRow; readonly extra?: JSX.Element }): JSX.Element {
   const { shell, t, turns, harnessView, placeChips } = props.p;
+  const here = useHere();
   const { text, defaultName } = props.p.r;
   const s = props.s;
   // a factory run names its factory where another task names its harness (ADR-0114)
@@ -30,7 +32,7 @@ export function TaskSide(props: { readonly p: TaskPage; readonly s: () => Sessio
     const m = s().summary['machine'] as { name?: string; kind?: string } | null | undefined;
     if (m?.kind === 'sandbox') return { name: m.name || t('shell.task.sandbox'), icon: 'box' };
     if (m) return { name: m.name || t('shell.task.remote'), icon: 'server' };
-    return { name: t('shell.card.thisComputer'), icon: 'laptop' };
+    return { name: here.name(), icon: here.icon() === 'server' ? 'server' : 'laptop' };
   };
   // the branch chip: a click copies the worktree's path (where the task's work is), the tooltip says so
   const branchChip = () => {

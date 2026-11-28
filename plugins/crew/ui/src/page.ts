@@ -18,7 +18,7 @@ export interface Fact {
 const base = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
 /** v1's side: cadence, how many at once, where (and their other folders), which harness and mode, their fallbacks, delegates. */
-export function facts(m: Member, o: { t: T; harness: (id: string) => { name: string; logo?: string | undefined }; place: (machine: string) => string; onTeam?: () => void }): Fact[] {
+export function facts(m: Member, o: { t: T; harness: (id: string) => { name: string; logo?: string | undefined }; place: (machine: string) => string; onTeam?: () => void; here?: string }): Fact[] {
   const { t } = o;
   const h = o.harness(m.agent);
   const mode = m.mode === 'plan' || m.mode === 'edits' ? m.mode : 'auto';
@@ -32,7 +32,7 @@ export function facts(m: Member, o: { t: T; harness: (id: string) => { name: str
       text: [
         m.cwd ? base(m.cwd) : t('wisp.crew.page.noFolder'),
         ...(m.cwd && m.dirs?.length ? [t('wisp.crew.page.moreFolders', { count: m.dirs.length })] : []),
-        m.machine ? o.place(m.machine) : t('wisp.crew.page.here'),
+        m.machine ? o.place(m.machine) : (o.here ?? t('wisp.crew.page.here')),
       ].join(' · '),
     },
     { icon: 'agent', text: [h.name, t(`wisp.crew.page.mode.${mode}`)].join(' · '), logo: h.logo },

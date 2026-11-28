@@ -1,6 +1,6 @@
 // v1's trigger form on v2's trigger spec (src/trigger-form.ts, v1 automations.js triggerForm).
 import { expect, test } from 'vitest';
-import { argFields, DEFAULT_PROMPTS, describeSpec, emptyForm, formOfSpec, keyOfSpec, KINDS, kindGroups, pick, readBack, specOfForm, typedArg, warning } from '../src/trigger-form.ts';
+import { argFields, DEFAULT_PROMPTS, describeSpec, emptyForm, formOfSpec, keyOfSpec, KINDS, kindGroups, pick, projectItems, readBack, specOfForm, typedArg, warning } from '../src/trigger-form.ts';
 
 test('each kind saves the spec its v2 source reads; a kind v2 has no source for says so_v1_trigger_form', () => {
   const f = { ...emptyForm('/code/web'), name: 'Morning tidy', when: 'every weekday at 9am', prompt: 'Tidy the repo' };
@@ -100,4 +100,21 @@ test('kindGroups puts every kind under one heading, by where its event comes fro
   expect(groups.find((g) => g.id === 'github')?.kinds.map((k) => k.key)).toEqual(['ci', 'issues', 'review']);
   expect(groups.find((g) => g.id === 'app')?.kinds.map((k) => k.key)).toEqual(['slack', 'linear', 'webhook:sentry', 'webhook:pagerduty']);
   expect(groups.find((g) => g.id === 'any')?.kinds.map((k) => k.key)).toEqual(['webhook', 'mcp']);
+});
+
+test('a formula trigger’s project by name shows picked and saves back as the formula says (it was blank on a hub)', () => {
+  const projects = [
+    { id: 'p1', name: 'app', path: '/hub/repos/app/app' },
+    { id: 'p2', name: 'web', path: '/hub/repos/web/web' },
+  ];
+  // `project: app` (a hub folder writes names): its item carries `app`, so the select shows it and a save keeps it
+  expect(projectItems(projects, 'app')).toEqual([
+    { value: 'app', label: 'app' },
+    { value: '/hub/repos/web/web', label: 'web' },
+  ]);
+  // a path (the form's own pick) is matched as it always was
+  expect(projectItems(projects, '/hub/repos/web/web').map((i) => i.value)).toEqual(['/hub/repos/app/app', '/hub/repos/web/web']);
+  // one that names no project here is still shown, as it is, never blank
+  expect(projectItems(projects, 'gone').at(-1)).toEqual({ value: 'gone', label: 'gone' });
+  expect(projectItems(projects, '')).toHaveLength(2);
 });

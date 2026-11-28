@@ -62,7 +62,9 @@ fn peer(kernel: &Kernel, name: String) -> wisp_protocol::PeerInfo {
             wisp_protocol::PeerPlugin { id: s.id, version: s.version, commands, topics, blocks: Vec::new() }
         })
         .collect();
-    wisp_protocol::PeerInfo { peer: id, name, build: VERSION.into(), version: VERSION.into(), proto_min: 2, proto_max: 2, plugins }
+    // a team's hub (the grid says so, ADR-0148): its UI names it by its name, never "This computer"
+    let kind = env("WISP_HUB").filter(|v| v == "1").map(|_| "hub".to_owned());
+    wisp_protocol::PeerInfo { peer: id, name, build: VERSION.into(), version: VERSION.into(), proto_min: 2, proto_max: 2, plugins, kind }
 }
 
 /// How a task's agent reaches this wisp: the edge's address, and the task's own token (HMAC of the
