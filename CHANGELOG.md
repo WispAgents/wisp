@@ -7,6 +7,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Zen mode on one task.** **Ctrl+.** (⌃. on a Mac), or **⋯** → **Zen mode**, shows only the messages and answers in
+  that task's chat: no tool calls, thinking or in-between steps, whatever Settings → Chat says for the others. Press it
+  again to leave; each task remembers it in this browser.
 - **A review request starts a review.** `pr.review_requested` fires when someone is newly asked to review an open PR
   (polled with gh; app: **New trigger** → **Review requested**). With `reviewer: me` (app: **Reviews** → **Asked of
   me**; CLI: `--reviewer me`) it wakes only the teammate asked, so a team sharing the trigger runs one review.
@@ -25,6 +28,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **A new trigger starts with one Starts when field.** The 12 trigger tiles that filled the top of the New trigger form are
+  now one field showing what starts it; it opens them grouped by where the event comes from (On a schedule, On GitHub,
+  In wisp, From an app, From anything) under a search box: type to narrow, ↑ ↓ and Enter to pick. Name, When and the
+  prompt now sit right under it instead of below the fold.
 - **Your messages look like chat messages in Chat mode.** A prompt is a bubble as wide as its words (up to 80% of
   the column), on the right, instead of a full-width card. Presentation mode is unchanged.
 - **A task's details read as one line of thought.** The column beside the turns now goes: the harness, 📁 *in* the project,

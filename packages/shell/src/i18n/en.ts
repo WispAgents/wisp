@@ -74,6 +74,7 @@ export const SHELL_STRINGS = {
   'shell.key.changes': 'Changes',
   'shell.key.transcript': 'Full transcript',
   'shell.key.find': 'Find in task',
+  'shell.key.zen': 'Zen mode on this task',
   'shell.key.rerun': 'Rerun',
   'shell.key.fork': 'Fork',
   'shell.key.ship': 'Ship it',
