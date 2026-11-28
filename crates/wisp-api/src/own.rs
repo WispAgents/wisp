@@ -34,10 +34,24 @@ pub(crate) async fn run(
         Own::EventsPost => {
             let m = edge.hub.mounted().ok_or_else(not_mounted)?;
             let client = header(&parts.headers, "x-wisp-client").unwrap_or("").to_owned();
+            if writes(edge, &body) {
+                edge.activity.touch(crate::edge::now_ms());
+            }
             m.message(caller, client, body).await?;
             Ok(respond::plain_json(200, &json!({"ok": true})))
         }
         Own::Cmd => Ok(cmd(edge, caller, &parts.headers, &body).await),
+    }
+}
+
+/// Whether a sync message is use: a mutate of a command that isn't read-only. A hello, sub, unsub or window is a
+/// client looking, and something it can't read is counted (as every other write is).
+fn writes(edge: &Edge, body: &[u8]) -> bool {
+    let Ok(v) = serde_json::from_slice::<Value>(body) else { return true };
+    match v.get("t").and_then(Value::as_str) {
+        Some("hello" | "sub" | "unsub" | "window") => false,
+        Some("mutate") => !v.get("cmd").and_then(Value::as_str).is_some_and(|c| edge.backend.read_only(c)),
+        _ => true,
     }
 }
 
@@ -98,6 +112,9 @@ async fn cmd(edge: &Edge, caller: Caller, h: &http::HeaderMap, body: &[u8]) -> A
     let id = format!("{}|{}|{key}", caller.set, caller.session.as_deref().unwrap_or(""));
     // a read runs again on a retry: keeping its answer protects nothing and only grows the server (perf audit #1)
     let read = parsed.as_ref().is_ok_and(|(cmd, _)| edge.backend.read_only(cmd));
+    if !read {
+        edge.activity.touch(crate::edge::now_ms());
+    }
     let backend = edge.backend.clone();
     let seq = || edge.hub.mounted().map_or(0, |m| m.head_seq());
     let run = async move {

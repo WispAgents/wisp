@@ -281,7 +281,14 @@ impl Grid {
             self.start_behind(bu);
             return Ok(self.waking(&bu.id));
         }
-        let running = match self.boxes.ensure(bu, false).await {
+        let watching = passive && path == "/api/events" && req.method() == Method::GET;
+        // a command or a sync message is use only if it writes, which the box's wisp knows and the grid can't (it never
+        // reads the body): the box's own `lastActivityAt` says it, read at every tick. Otherwise a link's sub, or a
+        // read-only command (a hub asking its sandbox about its task each minute), kept the box up forever.
+        let box_says = req.method() == Method::POST && matches!(path.as_str(), "/api/cmd" | "/api/events");
+        // reaching a box that's up is use only for a request that is (a start always is: the box counts it)
+        let quiet = (passive || box_says) && self.boxes.state(&bu.id) == BoxState::Running;
+        let running = match self.boxes.ensure(bu, quiet).await {
             Ok(r) => r,
             // in line for room: a caller that isn't a page hears when to ask again
             Err(e) if self.boxes.state(&bu.id) == BoxState::Queued => {
@@ -290,7 +297,11 @@ impl Grid {
             }
             Err(e) => return Err(e),
         };
-        let busy = std::sync::Mutex::new(self.boxes.begin(&bu.id, !passive));
+        // a passive event stream is someone watching (another wisp's link, a hub's to its sandbox): it never holds the
+        // box up, so a link that stays open all day doesn't keep its peer awake all day; the box stops, the stream ends,
+        // and the watcher looks every 20 s without waking it. Any other request is in flight until it's answered.
+        let busy =
+            std::sync::Mutex::new(if watching { crate::boxhost::Busy::none() } else { self.boxes.begin(&bu.id, !passive && !box_says) });
         let secret = self.boxes.secret(&bu.id).unwrap_or_default();
         let (mut head, body) = req.into_parts();
         let via = head.extensions.remove::<Via>();

@@ -59,6 +59,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A hub's sandboxes sleep again.** A crew job's sandbox stayed up for good. The hub's link to it, its read-only checks,
+  and the crew counting live jobs each kept it awake, and a hub waking for its schedule woke every sandbox. Now only a
+  write counts as use, a watching link never holds a box up, and an asleep sandbox is never woken to ask whether it is
+  busy. A box the grid restarts right after it started keeps its next scheduled wake.
 - A webhook trigger's grid URLs list loads its own strings, so its labels never show as raw keys.
 - `wisp grid deploy` in a folder with no `grid.yml` is a usage error (exit 2) that says `wisp grid init <team>` or `-f <formula>`.
 - **Issue and PR triggers with a project fire again.** `issue.opened`, `issue.labeled`, `pr.review_requested` and the

@@ -55,13 +55,19 @@ async fn hello_sub_snapshot_mutate_ack() {
 
     let post =
         |body: &'static str| async move { send(p, "POST", "/api/events", &[json_h(), ("x-wisp-client", "c1")], body.as_bytes()).await };
+    let last = || async move { send(p, "GET", "/api/status", &[], b"").await.json()["lastActivityAt"].as_i64().unwrap() };
+    let t0 = last().await;
+    tokio::time::sleep(Duration::from_millis(5)).await;
     assert_eq!(post(r#"{"t":"sub","topic":"list"}"#).await.status, 200);
     until(&mut c, &mut seen, "snapshot").await;
+    // a link's sub is looking: it never keeps the box awake (a hub's link to its sandbox did, all day)
+    assert_eq!(last().await, t0, "a sub doesn't count as use");
     assert!(seen.contains("\"topic\":\"list\""), "{seen}");
     // the machine's clock wakes the actor only when it asks: a quiet stream still gets its frames
     assert_eq!(post(r#"{"t":"mutate","mid":"m1","cmd":"runtime.rename","args":{"title":"x"}}"#).await.status, 200);
     until(&mut c, &mut seen, "\"mid\":\"m1\"").await;
     assert!(seen.contains("ack"), "{seen}");
+    assert!(last().await > t0, "a mutate does");
     // the same mid again runs nothing
     assert_eq!(post(r#"{"t":"mutate","mid":"m1","cmd":"runtime.rename","args":{"title":"x"}}"#).await.status, 200);
     tokio::time::sleep(Duration::from_millis(100)).await;

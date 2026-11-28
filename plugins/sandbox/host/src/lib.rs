@@ -204,11 +204,13 @@ fn watch(s: &mut Setup) {
                     sweep(&c).await;
                     since_sweep = 0;
                 }
-                owners_gone(&c).await;
+                // the look at task owners waits a tick: at start each sandbox's state is the one saved when this wisp
+                // stopped ("online"), so asking then woke every sandbox each time a hub woke for its schedule
                 tokio::select! {
                     () = scope.cancelled() => return,
                     () = clock.sleep(every) => since_sweep += every,
                 }
+                owners_gone(&c).await;
             }
         });
         Ok(())

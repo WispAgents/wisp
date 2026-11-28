@@ -190,8 +190,19 @@ async fn bullet9_status_for_the_grid() {
     );
     send(p, "GET", "/api/settings", &[], b"").await;
     assert_eq!(send(p, "GET", "/api/status", &[], b"").await.json()["lastActivityAt"].as_i64().unwrap(), t0, "reads don't count");
+    // a read-only command through POST /api/cmd is a read too (a hub checking its sandbox's task kept it awake)
+    send(p, "POST", "/api/cmd", &[json_h(), ("idempotency-key", "r1")], br#"{"cmd":"x.list","args":{}}"#).await;
+    assert_eq!(
+        send(p, "GET", "/api/status", &[], b"").await.json()["lastActivityAt"].as_i64().unwrap(),
+        t0,
+        "a read command doesn't count"
+    );
+    send(p, "POST", "/api/cmd", &[json_h(), ("idempotency-key", "w1")], br#"{"cmd":"x.do","args":{}}"#).await;
+    let t1 = send(p, "GET", "/api/status", &[], b"").await.json()["lastActivityAt"].as_i64().unwrap();
+    assert!(t1 > t0, "a write command counts");
+    tokio::time::sleep(Duration::from_millis(5)).await;
     send(p, "POST", "/api/sessions/s1/reply", &[json_h()], b"{}").await;
-    assert!(send(p, "GET", "/api/status", &[], b"").await.json()["lastActivityAt"].as_i64().unwrap() > t0);
+    assert!(send(p, "GET", "/api/status", &[], b"").await.json()["lastActivityAt"].as_i64().unwrap() > t1);
     // a stream without its hello is refused (v2 only, ADR-0031)
     let r = send(p, "GET", "/api/events", &[], b"").await;
     assert_eq!(r.status, 400);

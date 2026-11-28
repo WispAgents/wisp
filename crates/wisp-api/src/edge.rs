@@ -198,7 +198,10 @@ impl Edge {
             if !open {
                 guard::content_ok(&method, &parts.headers, found.as_ref().is_some_and(|(e, _)| e.max_body.is_some()))?;
             }
-            if perm != Some(OPEN_QUIET) {
+            // `/cmd` and `/events` count only a write (own.rs): a read, or a sync link's hello, sub or window, is
+            // looking, and looking never keeps a box awake (a hub checking its sandbox's task once a minute did)
+            let says_later = found.as_ref().is_some_and(|(e, _)| matches!(e.target, Target::Own(Own::Cmd | Own::EventsPost)));
+            if perm != Some(OPEN_QUIET) && !says_later {
                 self.activity.touch(now_ms());
             }
         }

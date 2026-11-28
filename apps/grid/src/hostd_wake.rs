@@ -56,6 +56,9 @@ pub fn retry_in(base: i64, attempt: u32) -> Duration {
     Duration::from_millis(u64::try_from(ms).unwrap_or(0))
 }
 
+/// How long a started box may say no next wake before that's taken as its schedule (its plugins load lazily).
+const NEW_BOX_MS: i64 = 60_000;
+
 impl ProcessHost {
     pub(super) fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
@@ -81,7 +84,14 @@ impl ProcessHost {
             let quiet = {
                 let mut m = lock(&self.inst);
                 let Some(i) = m.get_mut(&id).filter(|i| i.state == BoxState::Running) else { continue };
-                i.next_wake_at = s.next_wake_at;
+                // a box just started says no next wake until its plugins load: for its first minute the one it had
+                // (still ahead) stands in, so a stop in those seconds (the grid's own restart) doesn't lose a hub's
+                // schedule for good. After that, or once it says one, what it says is its schedule.
+                let new = i.started_at.is_some_and(|t| now - t < NEW_BOX_MS);
+                if s.next_wake_at.is_some() || !new {
+                    i.wake_before = None;
+                }
+                i.next_wake_at = s.next_wake_at.or(i.wake_before.filter(|t| *t > now));
                 i.last_active_at = s.last_activity_at.max(i.last_active_at);
                 // checked after the await: a request may have come in meanwhile
                 let last = s.last_activity_at.unwrap_or(0).max(i.last_touch);
