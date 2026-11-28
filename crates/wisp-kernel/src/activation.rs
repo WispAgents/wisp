@@ -1,6 +1,7 @@
 //! Activation events (plan §6.4, VS Code's model): a lazy plugin's code loads on its first event.
 //! `onStartup`, `onCommand:<id>{k:v}`, `onTopic:<topic>`, `onRoute:[METHOD ]<path>`, `onView:<id>`,
-//! `onBlock:<type>`, `onSchedule:<every>|<name>`. Names may glob with `*`.
+//! `onBlock:<type>`, `onSchedule:<every>|<name>`, and `onTriggerSource:<on>` (implicit for `contributes.triggerSources`).
+//! Names may glob with `*`.
 use serde_json::Value;
 
 use crate::manifest::Manifest;
@@ -29,6 +30,13 @@ fn arg_str(v: &Value) -> String {
 /// `onCommand` implicitly, so a lazy plugin can't hide a command it declares.
 pub fn wakes(m: &Manifest, kind: &str, name: &str, args: Option<&Value>) -> bool {
     if kind == "onCommand" && m.commands().iter().any(|c| c.id == name) {
+        return true;
+    }
+    // a trigger source it declares (`contributes.triggerSources`) wakes it when a trigger needs it, as a command it
+    // declares does: a lazy plugin's polled source then runs where no one opened anything (a team hub, ADR-0148)
+    if kind == "onTriggerSource"
+        && m.contributes.get("triggerSources").and_then(Value::as_array).is_some_and(|l| l.iter().any(|t| t.as_str() == Some(name)))
+    {
         return true;
     }
     m.activation.iter().any(|a| {
@@ -95,6 +103,17 @@ mod tests {
         assert!(!wakes(&x, "onRoute", "POST /api/x/1", None));
         assert!(wakes(&x, "onView", "shell.task", None));
         assert!(!wakes(&x, "onBlock", "chart", None));
+    }
+
+    /// ADR-0148: a trigger source a lazy plugin declares wakes it when a trigger needs it (a team hub's `issue.opened`
+    /// polled where nobody opened the issues list), as a command it declares does; anything else it doesn't declare, not.
+    #[test]
+    fn a_declared_trigger_source_wakes_its_plugin() {
+        let mut x = m(&["onCommand:issues.list"], &[]);
+        x.contributes.insert("triggerSources".to_owned(), serde_json::json!(["issue.opened", "issue.labeled"]));
+        assert!(wakes(&x, "onTriggerSource", "issue.opened", None));
+        assert!(!wakes(&x, "onTriggerSource", "pr.opened", None));
+        assert!(!wakes(&m(&[], &[]), "onTriggerSource", "issue.opened", None));
     }
 
     #[test]

@@ -141,6 +141,9 @@ wisp: 1
 crew:
   triager:
     role: triager
+    agent: opencode                           # free models, no sign-in; or claude (wisp team login acme claude)
+    model: opencode/deepseek-v4.1-flash-free
+    mode: auto                                # it runs `gh issue comment` without asking
     brief: Read each new issue, find the code it's about, and comment with what you found. Never merge.
     sandbox: job              # each job in a sandbox of its own, which the hub makes and drops
 triggers:
@@ -152,7 +155,10 @@ triggers:
 ```
 
 With `sandbox: job`, each job runs in a fresh sandbox on the grid: the repo, the hub's secrets, and nothing else of
-the hub's.
+the hub's. Any harness runs there: Claude with the hub's sign-in, opencode's free models with none.
+
+A hub sleeps when nobody uses it, and wakes by itself when one of its triggers is due (a poll, a schedule), so an
+issue opened at night is triaged at night.
 
 ## 6. Plan and deploy
 

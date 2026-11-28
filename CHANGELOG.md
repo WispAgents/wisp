@@ -59,6 +59,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Issue and PR triggers with a project fire again.** `issue.opened`, `issue.labeled`, `pr.review_requested` and the
+  CI triggers took their `project` as a filter on events that never say their project, so every event was dropped
+  without a word. A polled event now comes from its trigger's project.
+- **A cloud computer (or a team hub) wakes for its triggers.** It slept through every poll and schedule: nothing told
+  the grid when its next trigger was due. Now it does, and the grid wakes it then. A trigger's source plugin that
+  hadn't loaded yet (issues, until someone opened the issues list) is woken for it too.
+- **A crew member whose jobs run in a sandbox can use any harness**, not only Claude Code (opencode's free models need
+  no sign-in at all). A trigger's job waiting in a member's queue is logged as queued, not failed.
+
 - **No "Save this task to the repo?" while the task works.** A task that finished, offered Save to repo and was
   then reopened kept the offer under its answer while the agent ran again; it now shows only once the task stops.
 - **An issue trigger's `author` filter matches.** The issue triggers offered an `author` field, but their events never

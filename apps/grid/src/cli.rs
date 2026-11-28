@@ -128,7 +128,7 @@ const HARNESS_BINS: [(&str, &str); 7] = [
 fn dev_harness_env(env: &[(String, String)], data: &std::path::Path, real: bool) -> (Vec<(String, String)>, String) {
     let mut out: Vec<(String, String)> = env
         .iter()
-        .filter(|(k, v)| !v.is_empty() && ((k.starts_with("WISP_") && k.ends_with("_BIN")) || k == "WISP_WEB_DIR"))
+        .filter(|(k, v)| !v.is_empty() && ((k.starts_with("WISP_") && k.ends_with("_BIN")) || k == "WISP_WEB_DIR" || k == "WISP_LOG"))
         .cloned()
         .collect();
     let unset: Vec<(&str, &str)> = HARNESS_BINS.iter().copied().filter(|(_, var)| !out.iter().any(|(k, _)| k == var)).collect();

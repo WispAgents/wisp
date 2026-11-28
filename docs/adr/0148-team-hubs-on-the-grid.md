@@ -137,6 +137,20 @@ GitHub App.
   (the file's own value wins). So a trigger's `secret: ${secret:SENTRY_HOOK}` and plan's missing-secret check both see
   a secret set with `wisp team secret`.
 
+### 8c. A hub works while nobody has it open (found running it end to end)
+
+- **It wakes for its triggers.** wisp.automations reports the earliest moment a live trigger needs the tick (its next
+  poll, a schedule's next minute, a one-off, a batch closing) as `nextWakeAt` in `GET /api/status` (`kernel.status`),
+  so hostd wakes a sleeping box then. No plugin reported it before: a cloud box slept through every poll and schedule.
+- **A lazy source is woken for its trigger.** A plugin that declares `contributes.triggerSources` activates on
+  `onTriggerSource:<on>` (implicit, as a declared command is `onCommand`), and the engine asks for that (`Ctx::wake`,
+  additive) when a poll finds no active source. `wisp.issues` activated only on `issues.list` before.
+- **A polled event comes from its trigger's project:** the engine sets its `cwd` to the trigger's project when it names
+  none, so `project:` (a filter on these events) passes; issue and PR events never carried one and were all dropped.
+- **Any harness in a sandbox**, as wisp.sandbox's `may_start` already said: a crew member with `sandbox: job` was refused
+  anything but Claude. `wisp grid init`'s triager runs on opencode's free model, which needs no sign-in.
+- **A queued crew job is `queued`** in a trigger's log, never a failure.
+
 ### 9. The desktop app and the GitHub Action
 
 - **A hub is a machine.** `grid-client` lists the hubs of the signed-in person's teams (`/api/me` gains `hubs`) and
@@ -173,3 +187,6 @@ GitHub App.
 | `wisp grid init` writes the folder and never overwrites | `crates/wisp/src/grid_init.rs` tests |
 | a hub's trigger URL: said once, as no one with the caller's headers, other hub/token/name 404, the hub's box manages its own, a person's box can't | `apps/grid/tests/hubs.rs`, `apps/grid/src/hub_hooks.rs` |
 | team secrets answer as `${secret:NAME}` on a hub only, the file wins | `crates/wisp/src/services_tests.rs` |
+| a trigger's next wake (poll, schedule, one-off, batch); a polled event passes its project filter; queued words | `plugins/automations/host/src/engine.rs` `wake_tests` |
+| a declared trigger source wakes its lazy plugin | `crates/wisp-kernel/src/activation.rs` |
+| a sandboxed crew member runs any harness | `plugins/crew/core/tests/sandboxed_harness.rs` |

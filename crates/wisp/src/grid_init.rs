@@ -23,13 +23,17 @@ projects:
 
 const AGENT: &str = r"wisp: 1
 # The team's agents: crew members that triggers and people hand work to. Each runs on the hub, in a sandbox of
-# its own per job, with the harness the hub is signed in to (wisp team login <team> claude).
+# its own per job. opencode's free models need no sign-in, so this works as soon as it's deployed; for Claude,
+# `agent: claude` and sign the hub in (wisp team login <team> claude).
 crew:
   triager:
     role: triager
+    agent: opencode
+    model: opencode/deepseek-v4.1-flash-free
+    mode: auto
     brief: >-
-      You look at new issues first. Read the code the issue is about, say where the problem is and how you'd fix it,
-      in a comment on the issue. Don't open a pull request and never merge.
+      You look at new issues first. Read the code the issue is about, find where the problem is and how you'd fix it,
+      and say so in one comment on the issue with gh. Don't change files, don't open a pull request, never merge.
     sandbox: job
 ";
 

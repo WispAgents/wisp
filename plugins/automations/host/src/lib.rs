@@ -223,6 +223,15 @@ pub async fn run_by(ctx: &Ctx, call: &Call, store: &Store, name: &str, cwd: &str
     run(ctx, call, store, RunTask { name: name.to_owned(), over, ..RunTask::default() }, by).await
 }
 
+/// The triggers' next wake, as this wisp's status says it (`kernel.status`).
+struct Wakes(Arc<engine::Engine>);
+
+impl wisp_kernel::http::StatusPart for Wakes {
+    fn liveness(&self) -> wisp_kernel::http::Liveness {
+        wisp_kernel::http::Liveness { next_wake_at: self.0.next_wake_at(), ..wisp_kernel::http::Liveness::default() }
+    }
+}
+
 /// Once a minute: every declared task whose schedule came due since its last run, once. On local wall-clock minutes
 /// in this computer's zone, as a `schedule` trigger is (`schedule::due`): a minute the tick missed (asleep, a slow
 /// tick) runs once, late, never twice (audit doc23c: it matched this UTC minute only, so `0 9 * * *` ran at 09:00 UTC
@@ -341,6 +350,9 @@ impl Plugin for AutomationsPlugin {
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
         let engine = Arc::new(engine::Engine::new());
+        // `GET /api/status`'s `nextWakeAt`: a grid box asleep wakes for its triggers' polls and schedules (ADR-0148)
+        let wakes: Arc<dyn wisp_kernel::http::StatusPart> = Arc::new(Wakes(engine.clone()));
+        s.contribute(&wisp_kernel::http::STATUS, wakes);
         crate::trigger::register(s, &engine);
         crate::plan::on_started(s, &engine);
         let started = engine.clone();
