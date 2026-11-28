@@ -23,7 +23,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Merging a PR the branch rules hold asks instead of failing.** When the base branch's rules (required checks or
   reviews) block a merge, Merge used to toast gh's advice about `--admin` and `--auto` flags. It now opens a confirm:
   *Bypass and merge* merges at once with your admin rights (`gh pr merge --admin`), *Wait for requirements* closes it.
-  `ship.merge` takes `admin: true` for the same bypass from the CLI and MCP.
+  *Merge anyway* (shown when checks fail or a review or risk warns) bypasses them at once. `wisp merge <id> --admin`
+  and `ship.merge` with `admin: true` do the same from the CLI and MCP.
 
 ## [1.0.0-alpha.19] - 2026-11-28
 

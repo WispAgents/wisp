@@ -98,7 +98,7 @@ function mergeFlow(client: PluginClient, shell: () => ShipShell, key: EntityKey)
         confirming: { on: { cancel: 'idle', confirm: 'merging' } },
         merging: {
           async invoke() {
-            // `bypass` carries the admin ask; `confirm` never does
+            // `bypass` carries the admin ask, and so does `confirm` from Merge anyway
             const admin = merge.data === 'admin';
             try {
               const r = await client.run(mergeCmd, { key, admin });

@@ -43,8 +43,9 @@ export function useMerge(flows: TaskFlows, s: Accessor<ShipSession | undefined>,
   });
   const go = (): void => {
     const p = plan();
-    // confirm first: closing the dialog may report a close, which must not cancel the merge
-    const went = flows.merge.send('confirm');
+    // confirm first: closing the dialog may report a close, which must not cancel the merge. Merge anyway (the
+    // user saw what's wrong: failing or pending checks, no review, high risk) bypasses the branch's rules at once
+    const went = flows.merge.send('confirm', p?.danger ? 'admin' : undefined);
     if (went && p) toast = shell.toast.show(p.merging);
   };
   const bypass = (): void => {
@@ -110,6 +111,11 @@ export function useMerge(flows: TaskFlows, s: Accessor<ShipSession | undefined>,
                 </Text>
               )}
             </For>
+            <Show when={p().danger}>
+              <Text as="p" size="sm" tone="muted" part="ship.merge.admin">
+                {t('wisp.ship.merge.anywayAdmin')}
+              </Text>
+            </Show>
           </Stack>
         </Dialog>
       )}

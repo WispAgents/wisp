@@ -208,10 +208,12 @@ async fn drive(ctx: &Ctx, st: &Arc<State>, id: &str, mut m: Run, input_v: &Value
                     Err(e) => Event::Shipped { ok: false, pr: String::new(), why: e.message },
                 }
             }
-            Next::Merge { task } => match ctx.run::<wisp_ship_api::Merge>(&call, wisp_ship_api::SessionArgs { session: task }).await {
-                Ok(m) => Event::Merged { ok: true, why: String::new(), local: if m.sync.ok { String::new() } else { m.sync.text } },
-                Err(e) => Event::Merged { ok: false, why: e.message, local: String::new() },
-            },
+            Next::Merge { task } => {
+                match ctx.run::<wisp_ship_api::Merge>(&call, wisp_ship_api::MergeArgs { session: task, admin: false }).await {
+                    Ok(m) => Event::Merged { ok: true, why: String::new(), local: if m.sync.ok { String::new() } else { m.sync.text } },
+                    Err(e) => Event::Merged { ok: false, why: e.message, local: String::new() },
+                }
+            }
         };
         next = m.on(event);
     }

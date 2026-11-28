@@ -251,6 +251,8 @@ fn a_scripted_command_refuses_a_flag_it_does_not_read_and_a_bad_count() {
         let said = refused(a).unwrap_or_else(|| panic!("{a:?} ran"));
         assert!(said.starts_with(&format!("  ✗ wisp ls doesn't take {bad}\n")), "{said}");
     }
+    assert!(p(&["merge", "last", "--admin"]).flags.admin, "wisp merge --admin bypasses the branch's rules");
+    assert!(!p(&["merge", "last"]).flags.admin);
     let ok = p(&["ls", "--state", "done", "--limit", "5"]);
     assert_eq!((ok.flags.state.as_deref(), ok.flags.limit), (Some("done"), Some(5)));
     for a in [
@@ -258,6 +260,7 @@ fn a_scripted_command_refuses_a_flag_it_does_not_read_and_a_bad_count() {
         &["ls", "-a", "--json", "--port", "4500"],
         &["ls", "--repo", "--json"],
         &["ship", "last", "--draft"],
+        &["merge", "last", "--admin"],
         &["wait", "abc123abc123", "--timeout", "10m"],
         &["reply", "abc123abc123", "--", "use --force"],
         &["reply", "abc123abc123", "ok", "--", "--force"],

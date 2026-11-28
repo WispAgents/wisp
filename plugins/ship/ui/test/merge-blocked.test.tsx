@@ -18,9 +18,9 @@ const KEY = 'laptop:s2';
 const PR = { number: 1064, url: 'https://github.com/o/r/pull/1064', title: 'Fix add', state: 'OPEN', checks: { fail: 0, pending: 0, pass: 2 } };
 const HELD = "PR #1064 can't merge yet: the base branch's rules (required checks or reviews) aren't met.";
 
-function mount() {
+function mount(pr: Record<string, unknown> = PR) {
   const nav = signal<Nav>({ main: { kind: 'task', id: KEY }, side: { kind: 'none' }, overlays: [], layout: 'split' } as unknown as Nav);
-  const session = signal<unknown>({ id: 's2', state: 'review', pr: PR, project: 'o/r', branch: 'wisp/fix-add' });
+  const session = signal<unknown>({ id: 's2', state: 'review', pr, project: 'o/r', branch: 'wisp/fix-add' });
   const none = signal<unknown>(undefined);
   const runs: Record<string, unknown>[] = [];
   const errors: string[] = [];
@@ -91,5 +91,18 @@ test('wait_for_requirements_closes_without_merging', async () => {
   await settle();
   expect(part('ship.merge.blocked')).toBeNull();
   expect(m.runs).toHaveLength(1);
+  m.done();
+});
+
+test('merge_anyway_bypasses_the_branch_rules_at_once', async () => {
+  const m = mount({ ...PR, checks: { fail: 1, pending: 0, pass: 1 } });
+  mergeRequest(KEY);
+  const go = part('ship.merge.go');
+  expect(go?.textContent).toContain('Merge anyway');
+  expect(part('ship.merge.admin'), 'the confirm says it uses admin rights').not.toBeNull();
+  go?.click();
+  await settle();
+  expect(m.runs.map((r) => r['admin']), 'one run, with admin').toEqual([true]);
+  expect(part('ship.merge.blocked'), 'never held').toBeNull();
   m.done();
 });

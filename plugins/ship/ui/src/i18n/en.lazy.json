@@ -199,5 +199,6 @@
   "wisp.ship.merge.blockedTitle": "Branch rules block this merge",
   "wisp.ship.merge.bypass": "Bypass and merge",
   "wisp.ship.merge.wait": "Wait for requirements",
-  "wisp.ship.merge.bypassWhy": "Bypassing merges now with your admin rights, skipping the required checks and reviews."
+  "wisp.ship.merge.bypassWhy": "Bypassing merges now with your admin rights, skipping the required checks and reviews.",
+  "wisp.ship.merge.anywayAdmin": "Merge anyway uses your admin rights, so the base branch's rules (required checks, reviews) don't hold it."
 }
