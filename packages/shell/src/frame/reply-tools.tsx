@@ -20,7 +20,6 @@ import type { SessionRow } from '../rows.ts';
 import type { PickOptions } from '../platform/types.ts';
 import type { useProjects } from './projects.ts';
 import type { useGoalKit } from './goal-kit.ts';
-import { useHere } from './use-here.ts';
 
 // Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
 const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
@@ -69,7 +68,6 @@ export interface ReplyToolsCtx {
 /** The Delegate panel's act, the `+` (its entries kept while they say the same) and the chips of what's on. */
 export function useReplyTools(c: ReplyToolsCtx): { readonly replyTeamAct: () => Act; readonly replyPlusNow: Accessor<LauncherTool>; readonly replyChips: () => LauncherTool[] } {
   const { shell, t, peer, shellHome, s, row, sessions, projects, now, h, shownRun, replyRun, defaultName, replyBox, attach, picking, goals, declared } = c;
-  const here = useHere();
   const { goal, setGoalText, pickedReplyGoal, setPickedReplyGoal, goalGoing, liveGoalText, editLiveGoal, goalInput, team, setTeam, replyPreset, setReplyPreset } = c;
   const { replyDelegateOpen, setReplyDelegateOpen, when, setWhen } = c;
   // the reply box's Delegate panel: on its button in the old footer, on its chip in the desktop's one footer
@@ -86,7 +84,7 @@ export function useReplyTools(c: ReplyToolsCtx): { readonly replyTeamAct: () => 
             agent: replyRun()?.agent ?? s().agent,
             run: runWords(h().name, shownRun(), defaultName(shownRun().agent, t('shell.runner.default'))),
             logo: h().logo,
-            place: peer === shellHome ? { icon: here.icon(), label: here.name(), title: t('shell.home.where') } : { icon: 'server', label: shell.client.peers.name(peer), title: t('shell.home.where') },
+            place: peer === shellHome ? { icon: 'laptop', label: t('shell.card.thisComputer'), title: t('shell.home.where') } : { icon: 'server', label: shell.client.peers.name(peer), title: t('shell.home.where') },
           }}
           team={team()}
           onChange={setTeam}

@@ -8,7 +8,7 @@ import { computed, ownerOf, type EntityKey, type Json } from '@wisp/client';
 import { forLater, isSaved, markRead, setState } from './commands.ts';
 import { listShown } from './pane-widths.ts';
 import { openSwitcher } from './project-switch.ts';
-import { computersNow, openComputers } from './runon-switch.ts';
+import { computerName, computersNow, openComputers } from './runon-switch.ts';
 import { ALL_COMPUTERS, hasComputerFilter, knownComputer } from './computer-filter.ts';
 import { parsePick, pickLabel, pickOnly, pickRemove, pickValue, pickedProjects, pickHas } from './project-pick.ts';
 import { displayCombo } from '../keys.ts';
@@ -24,7 +24,6 @@ import { useProjects } from './projects.ts';
 import { defaultModelName, runModelWord } from './default-models.ts';
 import { meOf, type PeerDoc, type StatusDoc } from './me.ts';
 import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
-import { useHere } from './use-here.ts';
 
 interface CrewRow {
   readonly id: string;
@@ -179,7 +178,6 @@ export function useAccount() {
 /** The project the list shows (All is 'all'): the chips set it, the list follows. */
 export function Head(props: { readonly filter: () => string; readonly setFilter: (id: string) => void }): JSX.Element {
   const shell = useShell();
-  const here = useHere();
   const { chips, pick, on, reorder } = useHeadChips(props.filter);
   const account = useAccount();
   const me = account.me;
@@ -195,8 +193,8 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
   const computer = (): SidebarHeadProps['computer'] => {
     if (!hasComputerFilter(computers())) return undefined;
     const on = computerOn();
-    const label = on === ALL_COMPUTERS ? shell.t('shell.phone.allComputers') : on === shell.client.home() ? here.name() : shell.client.peers.name(on as never) || on;
-    return { label, colors: [], icon: on === ALL_COMPUTERS ? 'server' : on === shell.client.home() ? here.icon() : 'server', title: shell.t('shell.computers.title'), ariaLabel: shell.t('shell.computers.aria', { name: label }), onOpen: () => openComputers(shell) };
+    const label = on === ALL_COMPUTERS ? shell.t('shell.phone.allComputers') : computerName(shell, on);
+    return { label, colors: [], icon: on === ALL_COMPUTERS ? 'server' : on === shell.client.home() ? 'laptop' : 'server', title: shell.t('shell.computers.title'), ariaLabel: shell.t('shell.computers.aria', { name: label }), onOpen: () => openComputers(shell) };
   };
   return (
     <SidebarHead
@@ -273,7 +271,6 @@ export function SidebarTop(props: { readonly onNew: () => void; readonly homeOn:
 
 export function SidebarList(props: { readonly onNew: () => void; readonly homeOn: boolean; readonly filter: () => string }): JSX.Element {
   const shell = useShell();
-  const here = useHere();
   const sessions = useSessions();
   const nav = useSignal(shell.nav);
   const now = useNow(shell.client);
@@ -324,7 +321,7 @@ export function SidebarList(props: { readonly onNew: () => void; readonly homeOn
                 {(s) => {
                   // the third line names a coding agent: only one a harness plugin describes
                   const h = harnesses().some((x) => x.id === s.agent) ? harnessOf(harnesses(), s.agent) : undefined;
-                  const where = here.name();
+                  const where = shell.t('shell.card.thisComputer');
                   const goal = goalOf(s, shell.t);
                   const overlap = overlapOf(s, titleOf, shell.t);
                   // Auto picked this run: the logo's dot, and why in its tip (v1 runners.js modelBadge)

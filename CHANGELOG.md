@@ -64,9 +64,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
-- **A team hub is called by its name.** On a hub, New task, the task list, a task's side, crew and Automations said
-  "This computer" (and "this machine" for its triggers); they now say "Acme hub" with a server icon, and Automations says
-  the hub wakes for its triggers with the team's `GH_TOKEN`.
+- **A team hub is called by its name.** On a hub, a task's side panel, crew and Automations said "This computer" (and
+  "this machine" for its triggers); they now say "Acme hub", and Automations says the hub wakes for its triggers with
+  the team's `GH_TOKEN`.
 - A trigger from a formula that names its project (`project: app`) shows that project in its form, where the select was
   blank; saving it unchanged keeps the name.
 - **A hub's sandboxes sleep again.** A crew job's sandbox stayed up for good. The hub's link to it, its read-only checks,
