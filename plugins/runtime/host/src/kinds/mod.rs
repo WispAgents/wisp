@@ -12,6 +12,7 @@ mod brief;
 mod harness;
 mod issues;
 mod project;
+mod project_repo;
 mod team;
 
 use wisp_kernel::Setup;
@@ -63,7 +64,8 @@ fn project_kind(s: &mut Setup, owner: &'static str) -> std::sync::Arc<StoredKind
             .unique_by("path", project::folder_identity)
             .checked(project::check_project),
     );
-    let as_kind: std::sync::Arc<dyn ResourceKind> = k.clone();
+    // a project by its repo is cloned on apply (ADR-0147 §7)
+    let as_kind: std::sync::Arc<dyn ResourceKind> = std::sync::Arc::new(project_repo::ProjectKind::new(k.clone(), s.ctx()));
     s.contribute(&wisp_resources_api::RESOURCE_KIND, as_kind);
     let start = k.clone();
     s.on_start(move |_| async move { start.ensure() });
